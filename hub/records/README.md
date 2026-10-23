@@ -260,13 +260,48 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
       when the bytes are ingested again (the connector or generator reads them anew), and that newer record decides
       (decision 6).
 
+19. **Carrying findings acceptance to derived bytes** (task `derived-acceptance`, 2026-10-23; extends decision 18).
+    `IngestInput.derivedSources` offers source byte digests for a Hub-generated artifact. Records verifies the links,
+    the source records and their entire Hub-owned ancestry, current administrative acceptance and complete scans. Each
+    finding of the derived bytes must match an accepted source finding exactly, in memory. The internal scanner returns
+    the detected credential value for assignments/authentication forms, the token for token-shaped forms and the complete
+    observed private-key material (not a shared header). Existing decoding/unescaping applies; key JSON escapes are decoded.
+    Alternative decoded hits collapsed to one reported position all need coverage; extraction beyond its bound fails closed.
+    - This is not an automatic administrative decision. The stored scan has `derived.sources`: source byte SHA-256,
+      the exact source-artifact record and its covering administrative decisions (`by`, `at`, `authorization`). No
+      matched text, substring, context, password fingerprint or matched-text digest is stored, logged or returned.
+      Source bytes and authorized document reads still use the ordinary artifact pipeline. `scan.accepted` remains
+      the separate, direct acceptance of these exact bytes; `ArtifactSource.acceptance` reports effective `direct` or
+      `derived` coverage, or is absent when there is no effective acceptance. The stored record is never rewritten.
+      `source held` lists scan-hit byte sequences, including those now accepted, with current tier and one of
+      “直接受理 / 由派生覆盖 / 没有受理”; `source findings` shows the same current state and safe source/decision references.
+      This includes revoked derived receipts whose historical record still says model-readable.
+    - Only actual inputs qualify. `src:` names source bytes and `rec:` can pin a source-artifact record. A knowledge
+      view names `tree:<root>/` and pins the exact `tree_root@1` composition with a `rec:` reference; records verifies
+      its inline sources and `tree_root-sources@1` parts. A different composition or an accepted document elsewhere
+      in the Hub cannot provide coverage. Unknown input links fail closed. Every input, including clean inputs, must
+      have a Hub-owned ancestry: an upload or human author anywhere in the chain prevents inherited acceptance.
+      Cycles and chains beyond 32 records fail closed; explicit retain-only source records cannot provide coverage.
+    - At every artifact read, all newest scan evidence and all recorded dependencies are checked again. Revoking any
+      source acceptance immediately withholds derived bytes, including through a multi-stage chain and a pinned read.
+      No result is cached across reads. A replacement administrative decision needs a new ingest to refresh an
+      existing derived receipt; a historical receipt cannot silently substitute another source record or decision.
+      Truncated or uninspected scans, and incomplete exact-match extraction, cannot provide or receive coverage.
+    - `Artifacts.coverDerived` is an in-memory check for parts of a Hub-generated artifact. It returns source/decision
+      references only; knowledge uses it to omit uncovered entries while retaining covered ones, then ingests and
+      checks the complete answer through the same boundary. An uncovered finding keeps the whole artifact retain-only.
+    - **Model-owner handoff:** this extends the administrative exception described in decision 18, not the set of
+      automatically trusted credential content. B02 R[4] must describe inheritance from explicitly accepted Hub sources,
+      while uploads and human ancestry remain excluded. B04 F[0] must include that derived use of a scan acceptance;
+      B04 R[1] still requires current decisions on every read. No model or contracts bytes were changed here.
+
 ## Limits
 
 - The scanner is heuristic: it misses credentials written as free prose ("the default password of the bed is ..."), BOM-less
   UTF-16 text with no ASCII characters, and content inside containers it cannot read (recorded as not inspected); it may
   flag unusual strings. A literal example password in a document (a manual's `user add … password Test@1234`, an example
   URL `ftp://user:Test1234@192.0.2.10/`) is a hit: such a manual read through a connector is `retain_only` until an admin
-  accepts the findings of exactly those bytes (decision 18). Placeholder passwords are no hit (`ftp://user:secret@host/path`
+  accepts the findings of exactly those bytes (decision 18), or their findings are covered by their actual accepted inputs (decision 19). Placeholder passwords are no hit (`ftp://user:secret@host/path`
   is not one: `secret` is a placeholder word). Rules are versioned (`credential-scan@2`); changing them means a new
   scanner version, and a new version's findings need a new acceptance.
 - An acceptance is per byte sequence: every edited release of a manual needs its own decision. A scan with more than 100
@@ -317,7 +352,9 @@ reader's own (record, media type, provenance); reads pinned to one record; a tru
 configuration, at ingest or at read; records with a person as author refused, never lifted, also when an older scanner
 passed them; notes that copy text around a finding refused for a URL line, a YAML value on the next line, a hit two
 escape levels down in a double-encoded answer and key material over several lines); `scanWithContexts` gives the same
-scan as `scanForCredentials`; tier-aware `source()`;
+scan as `scanForCredentials`; derived coverage in `derived.test.ts` (offset/JSON transformations, every hit covered,
+unrelated sources, withdrawals through chains, human ancestry, truncation, no matched text or matched-text digest in
+records/metadata, full private-key material and multiple escaped hits at a shared position); tier-aware `source()`;
 the visibility matrix with record shares and assignments; stale principals; NUL-stripped previews over intact bytes; token
 lifecycle; role history and last-admin protection; authorization chains under a frozen clock and under concurrency, expiry,
 deciders, publication rules and the first-publication race; pointer compare-and-set race, transactional rollback and

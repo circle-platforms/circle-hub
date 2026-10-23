@@ -22,7 +22,7 @@ const MAX_NESTING = 4;
 const BINARY_CONTROL_SHARE = 0.05;
 const SAMPLE_BYTES = 64 * 1024;
 
-type Report = (index: number) => void;
+type Report = (index: number, matched: string) => void;
 
 /** Where a hit was found: the decoded (and, inside a quoted string, unescaped) text and the index in it. */
 interface Located {
@@ -35,6 +35,9 @@ interface RawHit {
   index: number;
   /** Kept only when the caller asked for the text around the findings (scanWithContexts). */
   at?: Located;
+  matched?: string;
+  additional?: string[];
+  incomplete?: boolean;
 }
 
 /** Characters a context takes before a hit, after it (its line and the next one at most), and after a key header. */
@@ -117,12 +120,12 @@ function shortKeyAllowed(text: string, index: number): boolean {
 }
 
 /** Runs a global pattern, reporting accepted matches; stops after MAX_FINDINGS + 1 of them (later ones are never kept). */
-function each(text: string, pattern: RegExp, accept: (match: RegExpExecArray) => boolean, report: Report, at: (match: RegExpExecArray) => number = (match) => match.index): void {
+function each(text: string, pattern: RegExp, accept: (match: RegExpExecArray) => boolean, report: Report, at: (match: RegExpExecArray) => number = (match) => match.index, matched: (match: RegExpExecArray) => string = match => match[0]): void {
   pattern.lastIndex = 0;
   let accepted = 0;
   for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
     if (accept(match)) {
-      report(at(match));
+      report(at(match),matched(match));
       if (++accepted > MAX_FINDINGS) return;
     }
     if (match[0].length === 0) pattern.lastIndex++;
@@ -130,14 +133,14 @@ function each(text: string, pattern: RegExp, accept: (match: RegExpExecArray) =>
 }
 
 /** Calls `check(match, limit)` for each match, where limit is the start of the next match (a look-ahead never reaches past it). */
-function eachBounded(text: string, pattern: RegExp, check: (match: RegExpExecArray, limit: number) => boolean, report: Report): void {
+function eachBounded(text: string, pattern: RegExp, check: (match: RegExpExecArray, limit: number) => boolean, report: Report, matchText: (match: RegExpExecArray, limit: number) => string = match => match[0]): void {
   pattern.lastIndex = 0;
   let accepted = 0;
   let pending = pattern.exec(text);
   while (pending !== null) {
     const next = pattern.exec(text);
     if (check(pending, next === null ? text.length : next.index)) {
-      report(pending.index);
+      report(pending.index, matchText(pending,next === null ? text.length : next.index));
       if (++accepted > MAX_FINDINGS) return;
     }
     pending = next;
@@ -186,7 +189,17 @@ function keyMaterialFollows(text: string, from: number, to: number): boolean {
 }
 
 function privateKeys(text: string, report: Report): void {
-  eachBounded(text, PEM_HEADER, (match, limit) => keyMaterialFollows(text, match.index + match[0].length, Math.min(limit, match.index + match[0].length + 800)), report);
+  eachBounded(text, PEM_HEADER, (match, limit) => keyMaterialFollows(text, match.index + match[0].length, Math.min(limit, match.index + match[0].length + 800)), report, (match, limit) => {
+    // A header alone is shared by unrelated private keys. Include the entire observed key,
+    // including its material; without a closing marker conservatively include the remainder.
+    const close = text.indexOf('-----END ',match.index + match[0].length);
+    const end = close < 0 ? -1 : text.indexOf('-----',close + 9);
+    let material = text.slice(match.index,end < 0 || end + 5 > limit ? limit : end + 5);
+    // JSON may spell the key's line breaks and slashes as escapes. The key alphabet
+    // contains no literal backslashes, so compare the exact decoded key material.
+    for (let depth = 0; depth < MAX_NESTING && material.includes('\\'); depth++) material = unescape(material);
+    return material;
+  });
   // A PuTTY key file: its Private-Lines line follows the header within 4000 characters and before the next header.
   PUTTY_PRIVATE.lastIndex = 0;
   let privateLine = PUTTY_PRIVATE.exec(text);
@@ -198,16 +211,17 @@ function privateKeys(text: string, report: Report): void {
       return privateLine !== null && privateLine.index < Math.min(limit, match.index + 4000);
     },
     report,
+    (match, limit) => text.slice(match.index,limit),
   );
 }
 
 function bearerCredentials(text: string, report: Report): void {
-  each(text, /\bBearer\s+([A-Za-z0-9\-._~+/]{20,}=*)/gi, (match) => isTokenValue(match[1]), report);
+  each(text, /\bBearer\s+([A-Za-z0-9\-._~+/]{20,}=*)/gi, (match) => isTokenValue(match[1]), report, undefined, match => match[1]);
   each(
     text,
     /\b(?:authorization|proxy-authorization|x-api-key|x-auth-token|x-access-token|private-token|api-key)(?:\\?["'])?[ \t]*[:=：][ \t]*(?:\\?["'])?([A-Za-z0-9\-._~+/]{16,}=*)/gi,
     (match) => isTokenValue(match[1]),
-    report,
+    report, undefined, match => match[1],
   );
 }
 
@@ -220,7 +234,7 @@ function basicCredentials(text: string, report: Report): void {
       if (decoded.toString('base64') !== match[1]) return false;
       return /^[\x21-\x7e]{1,200}:[\x20-\x7e]{1,200}$/.test(decoded.toString('latin1'));
     },
-    report,
+    report, undefined, match => match[1],
   );
   each(
     text,
@@ -229,7 +243,7 @@ function basicCredentials(text: string, report: Report): void {
       const password = match[2];
       return !isPlaceholder(password) && !/^[$%]/.test(password) && !/^\{\{.*\}\}$/.test(password);
     },
-    report,
+    report, undefined, match => match[2],
   );
 }
 
@@ -281,20 +295,21 @@ function passwordAssignments(text: string, report: Report): void {
       const value = match[2] ?? match[3] ?? match[4] ?? match[5] ?? '';
       return keyword === 'token' ? tokenAccepted(prefixBefore(text, match.index), value) : isSecretValue(value);
     },
-    report,
+    report, undefined, match => match[2] ?? match[3] ?? match[4] ?? match[5] ?? '',
   );
-  each(text, SPACED, (match) => isStrictSecretValue(match[2]), report);
-  each(text, ELEMENT, (match) => (match[1].toLowerCase() === 'token' ? isTokenValue(match[2]) : isSecretValue(match[2])), report);
+  each(text, SPACED, (match) => isStrictSecretValue(match[2]), report, undefined, match => match[2]);
+  each(text, ELEMENT, (match) => (match[1].toLowerCase() === 'token' ? isTokenValue(match[2]) : isSecretValue(match[2])), report, undefined, match => match[2]);
   each(
     text,
     NEXT_LINE,
     (match) => (match[2].toLowerCase() === 'token' ? tokenAccepted(match[1], match[3]) : isSecretValue(match[3])),
     report,
     (match) => match.indices?.[2]?.[0] ?? match.index,
+    match => match[3],
   );
-  each(text, PGPASS, (match) => isSecretValue(match[5]), report, (match) => (text[match.index] === '\n' ? match.index + 1 : match.index));
-  each(text, CN_ASSIGNMENT, (match) => isSecretValue(match[1] ?? match[2] ?? ''), report);
-  each(text, CN_SPACED, (match) => isStrictSecretValue(match[1]), report);
+  each(text, PGPASS, (match) => isSecretValue(match[5]), report, (match) => (text[match.index] === '\n' ? match.index + 1 : match.index), match => match[5]);
+  each(text, CN_ASSIGNMENT, (match) => isSecretValue(match[1] ?? match[2] ?? ''), report, undefined, match => match[1] ?? match[2] ?? '');
+  each(text, CN_SPACED, (match) => isStrictSecretValue(match[1]), report, undefined, match => match[1]);
 }
 
 function hasMixedCase(value: string): boolean {
@@ -305,7 +320,7 @@ function cloudKeys(text: string, report: Report): void {
   const always = () => true;
   const patterns: Array<[RegExp, (match: RegExpExecArray) => boolean]> = [
     [/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}\b/g, (match) => !isPlaceholder(match[0])],
-    [/\baws_secret_access_key(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])/gi, (match) => !isPlaceholder(match[0])],
+    [/\baws_secret_access_key(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/gi, (match) => !isPlaceholder(match[0])],
     [/\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g, always],
     [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b/g, always],
     [/\bgithub_pat_[A-Za-z0-9_]{60,}\b/g, always],
@@ -315,9 +330,9 @@ function cloudKeys(text: string, report: Report): void {
     [/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/g, (match) => hasMixedCase(match[0])],
     [/\bLTAI[A-Za-z0-9]{12,20}\b/g, (match) => /[0-9]/.test(match[0].slice(4))],
     [/\bAKID[A-Za-z0-9]{13,40}\b/g, (match) => hasMixedCase(match[0].slice(4))],
-    [/\bAccountKey=[A-Za-z0-9+/]{40,}={0,2}/g, always],
+    [/\bAccountKey=([A-Za-z0-9+/]{40,}={0,2})/g, always],
   ];
-  for (const [pattern, accept] of patterns) each(text, pattern, accept, report);
+  for (const [pattern, accept] of patterns) each(text, pattern, accept, report, undefined, match => match[1] ?? match[0]);
 }
 
 const DETECTORS: ReadonlyArray<{ id: CredentialDetector; run: (text: string, report: Report) => void }> = [
@@ -383,7 +398,7 @@ function escapedLiterals(text: string, visit: (literal: Literal) => boolean): vo
 function scanText(text: string, depth: number, located: boolean): RawHit[] {
   const hits: RawHit[] = [];
   for (const detector of DETECTORS) {
-    detector.run(text, (index) => hits.push(located ? { detector: detector.id, index, at: { text, index } } : { detector: detector.id, index }));
+    detector.run(text, (index, matched) => hits.push(located ? { detector: detector.id, index, at: { text, index }, matched } : { detector: detector.id, index }));
   }
   if (depth >= MAX_NESTING || !text.includes('\\')) return hits;
   const direct = [...hits].sort((a, b) => a.index - b.index);
@@ -395,16 +410,23 @@ function scanText(text: string, depth: number, located: boolean): RawHit[] {
       if (direct[middle].index <= start) low = middle + 1;
       else high = middle;
     }
-    for (let index = low; index < direct.length && direct[index].index < end; index++) if (direct[index].detector === detector) return true;
-    return false;
+    for (let index = low; index < direct.length && direct[index].index < end; index++) if (direct[index].detector === detector) return direct[index];
+    return null;
   };
   let literalsWithHits = 0;
   escapedLiterals(text, (literal) => {
     const inner = scanText(literal.value, depth + 1, located);
     let added = false;
     for (const hit of inner) {
-      if (coveredBy(hit.detector, literal.start, literal.end)) continue;
-      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at } : { detector: hit.detector, index: literal.start });
+      const covering = coveredBy(hit.detector,literal.start,literal.end);
+      if (covering !== null) {
+        if (located) {
+          (covering.additional ??= []).push(...(hit.matched === undefined ? [] : [hit.matched]),...(hit.additional ?? []));
+          if (inner.length > MAX_FINDINGS || hit.incomplete) covering.incomplete = true;
+        }
+        continue;
+      }
+      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at, matched: hit.matched, additional:hit.additional, incomplete:hit.incomplete || inner.length > MAX_FINDINGS } : { detector: hit.detector, index: literal.start });
       added = true;
     }
     // A literal hit after MAX_FINDINGS + 1 earlier literal hits can never be among the first MAX_FINDINGS findings.
@@ -708,11 +730,13 @@ function contextOf(at: Located | undefined, detector: string): string {
   return text.slice(lineStart, index + (nextEnd < 0 ? after.length : nextEnd));
 }
 
-function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan; contexts: string[] } {
+function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan; contexts: string[]; matches: string[]; complete: boolean } {
   const { views, inspected } = decode(bytes);
-  const found = new Map<string, { finding: CredentialFinding; at?: Located }>();
+  const found = new Map<string, { finding: CredentialFinding; at?: Located; matches: Set<string> }>();
+  let complete = true;
   for (const view of views) {
     const hits = scanText(view.text, 0, located);
+    if (hits.length > MAX_FINDINGS || hits.some(hit => hit.incomplete)) complete = false;
     if (hits.length === 0) continue;
     hits.sort((a, b) => a.index - b.index || CREDENTIAL_DETECTORS.indexOf(a.detector) - CREDENTIAL_DETECTORS.indexOf(b.detector));
     const indices = [...new Set(hits.map((hit) => hit.index))];
@@ -722,9 +746,13 @@ function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan;
     for (const hit of hits) {
       const offset = offsets.get(hit.index) ?? 0;
       const key = `${hit.detector}:${offset}`;
-      if (found.has(key)) continue;
+      if (found.has(key)) {
+        if (hit.matched !== undefined) found.get(key)!.matches.add(hit.matched);
+        for (const value of hit.additional ?? []) found.get(key)!.matches.add(value);
+        continue;
+      }
       const line = lineOf(starts, hit.index);
-      found.set(key, { finding: { detector: hit.detector, offset, line: line + 1, column: hit.index - starts[line] + 1 }, at: hit.at });
+      found.set(key, { finding: { detector: hit.detector, offset, line: line + 1, column: hit.index - starts[line] + 1 }, at: hit.at, matches: new Set([...(hit.matched === undefined ? [] : [hit.matched]),...(hit.additional ?? [])]) });
     }
   }
   const all = [...found.values()].sort(
@@ -735,7 +763,7 @@ function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan;
   const kept = all.slice(0, MAX_FINDINGS);
   const findings = kept.map((entry) => entry.finding);
   const scan = { scanner: CREDENTIAL_SCANNER, inspected, clean: inspected && findings.length === 0, findings, truncated: all.length > findings.length };
-  return { scan, contexts: located ? kept.map((entry) => contextOf(entry.at, entry.finding.detector)) : [] };
+  return { scan, contexts: located ? kept.map((entry) => contextOf(entry.at, entry.finding.detector)) : [], matches: kept.flatMap(entry => [...entry.matches]), complete };
 }
 
 /**
@@ -752,7 +780,14 @@ export function scanForCredentials(bytes: Uint8Array): CredentialScan {
  * so they serve only to check that an admin's note does not copy it, and are never stored, logged or returned.
  */
 export function scanWithContexts(bytes: Uint8Array): { scan: CredentialScan; contexts: string[] } {
-  return scanBytes(bytes, true);
+  const {scan,contexts} = scanBytes(bytes,true);
+  return {scan,contexts};
+}
+
+/** Exact decoded matches for coverage only. Package-internal: never return, log, store or hash them. */
+export function scanWithMatches(bytes: Uint8Array): {scan: CredentialScan; matches: string[]; complete: boolean} {
+  const {scan,matches,complete} = scanBytes(bytes,true);
+  return {scan,matches,complete};
 }
 
 /** The scanner's order of findings (offset, then CREDENTIAL_DETECTORS order); an unknown id sorts after the known ones. */

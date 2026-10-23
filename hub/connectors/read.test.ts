@@ -621,3 +621,34 @@ test('a refused request with an oversized path is recorded within the manifest b
   assert.equal(stored.items.length, 0, 'no mislabelled read-manifest@1 record');
   await manifestsParse(w);
 });
+test('a projection inherits accepted findings only from its actual original', async t => {
+  const secret = 'FtpSynthetic7834';
+  const docs = {...DOCUMENTS,'/manuals/accepted.md':`# 手册\npassword = ${secret}\n\n| password | port |\n| --- | --- |\n| ${secret} | 8080 |\n`};
+  let projected = secret;
+  const wrapped: PackFunctionRunner = async (target,input,kind) => {
+    if (kind === 'project') return {artifacts:[{name:'content',media_type:'application/json',json:{password:projected}}]};
+    return (await callPackFunction(target,input,{}, {requireOsIsolation:false})).output;
+  };
+  const w = await world(t,{callFunction:wrapped}, {docs});
+  const id = 'manual:rows:manuals/accepted.md';
+  failure(await w.k.connectors.reader.read(id,w.ctx),/SOURCE_CREDENTIAL/);
+  const sha = sha256Hex(Buffer.from(docs['/manuals/accepted.md']));
+  await w.k.records.artifacts.acceptFindings(w.k.admin,sha,'合成手册中的虚构示例');
+  const result = success(await w.k.connectors.reader.read(id,w.ctx));
+  const outputs = result.artifacts.filter(a => a.name !== 'original');
+  assert.ok(outputs.length > 0);
+  assert.ok(outputs.some(a => a.artifact.body.scan.derived !== undefined));
+  for (const {artifact} of outputs) {
+    assert.equal(artifact.body.read_tier,'model_readable');
+    assert.ok(await w.k.records.artifacts.source(w.k.user,artifact.body.sha256));
+  }
+  projected = 'FtpUnrelated8902';
+  const other = {bytes:Buffer.from(`password = ${projected}`),mediaType:'text/plain',origin:{read:{object:'synthetic:manual:other'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};
+  const unrelated = await w.k.records.artifacts.ingest(other);
+  await w.k.records.artifacts.acceptFindings(w.k.admin,unrelated.body.sha256,'无关合成来源的示例');
+  await w.k.records.artifacts.ingest(other);
+  const ungrounded = success(await w.k.connectors.reader.read(id,w.ctx));
+  assert.equal(ungrounded.artifacts.find(a => a.name === 'content')?.artifact.body.read_tier,'retain_only');
+  await w.k.records.artifacts.revokeFindings(w.k.admin,sha);
+  for (const {artifact} of outputs.filter(a => a.artifact.body.scan.findings.length > 0)) assert.equal((await w.k.records.artifacts.source(w.k.user,artifact.body.sha256))?.bytes,null);
+});

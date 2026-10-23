@@ -821,53 +821,60 @@ export class KnowledgeViews {
     }
     const revision = roots.join('..');
     if (request.revision !== null && request.revision !== revision) return { ok: false, id: bare, reason: `要求修订 ${cutText(request.revision, 140)}，现在是 ${revision}` };
+    const compositions = await Promise.all([...new Set(roots)].map(root => this.#reading.compositionOf(root)));
     const inputs = [...new Set(roots)].map((root) => `tree:${root}/`);
+    const derivedSources = new Set<string>();
+    for (const composition of compositions) {
+      if (composition === null) continue;
+      // Pin the actual composition, not any other production with the same root content.
+      inputs.push(`rec:${composition.record}`);
+      for (const source of await composition.sources()) {
+        // Records selects only current accepted coverage; the product reader need not be
+        // allowed to read the raw source itself, and no source text crosses this boundary.
+        derivedSources.add(source.sha256);
+      }
+    }
+    const origin = {generated:{generator:COMPONENTS.views,inputs}};
+    const cover = (bytes: Uint8Array) => this.#context.records.artifacts.coverDerived({bytes,origin,author:{user:null},derivedSources:[...derivedSources]});
     const visibility = { readers: [principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array): Promise<SourceArtifact> =>
       this.#context.records.artifacts.ingest({
         bytes,
         mediaType: 'application/json',
-        origin: { generated: { generator: COMPONENTS.views, inputs } },
+        origin,
+        derivedSources:[...derivedSources],
         author: { user: null },
         provenanceType: 'projected',
         visibility,
         name: `${request.type}-view.json`,
       });
     const tooLarge = (bytes: Uint8Array): string | null => (bytes.byteLength > this.#context.limits.maxViewBytes ? `视图有 ${bytes.byteLength} 字节，超过 ${this.#context.limits.maxViewBytes} 字节` : null);
-    let bytes = this.#cache.get(key);
-    let artifact: SourceArtifact;
-    if (bytes !== undefined) {
-      artifact = await ingest(bytes);
-    } else {
-      let view = await compute(new Set());
-      bytes = canonicalBytes(view);
-      const large = tooLarge(bytes);
-      if (large !== null) return { ok: false, id: bare, reason: large };
-      artifact = await ingest(bytes);
-      if (artifact.body.read_tier !== 'model_readable') {
-        // Text that entered the tree as model readable (an administrator may have accepted a source's findings) is found
-        // again by the scan of the derived answer: the parts whose own text has hits are left out, with a note, and the
-        // rest is served.
-        const flagged = flaggedParts(view);
-        if (flagged.size > 0) {
-          view = await compute(flagged);
-          bytes = canonicalBytes(view);
-          const again = tooLarge(bytes);
-          if (again !== null) return { ok: false, id: bare, reason: again };
-          artifact = await ingest(bytes);
-        }
-      }
-      if (artifact.body.read_tier === 'model_readable') this.#cache.set(key, bytes);
-    }
+    let originalBytes = this.#cache.get(key);
+    let view: ImpactView | FacetView | IndexView;
+    if (originalBytes === undefined) {
+      view = await compute(new Set());
+      originalBytes = canonicalBytes(view);
+      const large = tooLarge(originalBytes);
+      if (large !== null) return {ok:false,id:bare,reason:large};
+      // Cache the unfiltered answer only. Every use rechecks source acceptance and omissions.
+      this.#cache.set(key,originalBytes);
+    } else view = JSON.parse(Buffer.from(originalBytes).toString('utf8')) as ImpactView | FacetView | IndexView;
+    const flagged = await flaggedParts(view,async value => await cover(canonicalBytes(value)) !== null);
+    if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
+    const final = flagged.excluded.size > 0 ? await flaggedParts(view,async value => await cover(canonicalBytes(value)) !== null) : flagged;
+    if (final.covered > 0) view.notes.push(`有 ${final.covered} 个${view.schema === 'facet-view@1' ? '计数行' : '条目'}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
+    const bytes = canonicalBytes(view);
     const large = tooLarge(bytes);
     if (large !== null) return { ok: false, id: bare, reason: large };
+    const artifact = await ingest(bytes);
     if (artifact.body.read_tier !== 'model_readable') {
       return { ok: false, id: bare, reason: `视图 ${artifact.body.sha256} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给任务包` };
     }
     const meta = await this.#context.records.artifacts.ingest({
       bytes: canonicalBytes({ title, view: request.type, product, roots, revision }),
       mediaType: 'application/json',
-      origin: { generated: { generator: COMPONENTS.views, inputs } },
+      origin,
+      derivedSources:[...derivedSources],
       author: { user: null },
       provenanceType: 'projected',
       visibility,
@@ -918,15 +925,21 @@ export class KnowledgeViews {
  * The parts of an answer whose own text has credential scan hits: entries by digest (impact and index), rows by the
  * canonical JSON of their values (facets).
  */
-function flaggedParts(view: ImpactView | FacetView | IndexView): Set<string> {
+async function flaggedParts(view: ImpactView | FacetView | IndexView, covered: (value: unknown) => Promise<boolean>): Promise<{excluded:Set<string>;covered:number}> {
   const hit = (value: unknown): boolean => scanForCredentials(canonicalBytes(value)).findings.length > 0;
-  const out = new Set<string>();
+  const excluded = new Set<string>();
+  let count = 0;
   if (view.schema === 'facet-view@1') {
-    for (const row of view.rows) if (hit(row)) out.add(canonicalize(view.by.map((field) => row.values[field] ?? null)));
-    return out;
+    for (const row of view.rows) if (hit(row)) {
+      if (await covered(row)) count++;
+      else excluded.add(canonicalize(view.by.map((field) => row.values[field] ?? null)));
+    }
+  } else {
+    for (const [digest,entry] of Object.entries(view.entries)) if (hit(entry)) {
+      if (await covered(entry)) count++; else excluded.add(digest);
+    }
   }
-  for (const [digest, entry] of Object.entries(view.entries)) if (hit(entry)) out.add(digest);
-  return out;
+  return {excluded,covered:count};
 }
 
 /** The ExternalReaderPort of the knowledge views (`knowledge:impact|facets|index:...`). */

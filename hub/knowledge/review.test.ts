@@ -346,7 +346,7 @@ describe('index keys from data values (finding: __proto__)', () => {
 });
 
 describe('credential findings an administrator accepted (finding: every view over the entry is refused)', () => {
-  test('a view over an entry from an accepted source is served without that entry, with a note', async (t) => {
+  test('views retain covered entries and recheck the acceptance even with a warm cache', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const ids = documents(w, 1, 3);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2', module: 'M2' }, [{ id: 'd2-c1', text: '[cmd: system reboot] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
@@ -362,21 +362,50 @@ describe('credential findings an administrator accepted (finding: every view ove
     assert.ok(accepted, 'get_nodes shows the accepted entry');
     const views = reader(w);
     const index = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
-    assert.equal(index.truncated, true);
-    assert.ok(!Object.values(index.keys).flat().includes(accepted.entry), 'the entry with the finding is left out');
-    assert.equal(Object.keys(index.entries).length, 4, 'the other cases are served');
-    assert.ok(index.notes.some((n) => n.includes(accepted.reference) && /凭据扫描命中/.test(n)), index.notes.join('\n'));
+    assert.equal(index.truncated,false);
+    assert.ok(Object.values(index.keys).flat().includes(accepted.entry),'the covered entry is preserved');
+    assert.equal(Object.keys(index.entries).length,5);
+    assert.ok(index.notes.some(n => /1 个条目.*来源的受理覆盖/.test(n)),index.notes.join('\n'));
     w.external.set(`site:tree:${B}`, { bytes: catalogXml({ ...BASE_CATALOG, system: [{ ...BASE_CATALOG.system[0], params: [{ name: 'delay', type: 'int', min: 0, max: 900 }] }, BASE_CATALOG.system[1]] }), mediaType: XML });
     const b = await w.knowledge.produceTree({ product: w.product, build: build(B, ids) });
     assert.equal(b.ok, true, b.reason ?? '');
     const impact = ImpactView.parse((await views.json(`knowledge:impact:acme:${A}..${B}`)).value);
     assert.deepEqual(impact.changes.map((c) => c.path), ['/commands/system/reboot']);
-    assert.ok(!impact.placements[0].to.includes(accepted.entry));
-    assert.deepEqual([impact.placements[0].from.length, impact.placements[0].to.length], [2, 2], 'the reboot cases of d1 and d3 on both sides');
-    assert.deepEqual(impact.totals, { changed_paths: 1, attached_from: 3, attached_to: 3 });
-    assert.equal(impact.truncated, true);
-    assert.ok(impact.notes.some((n) => /凭据扫描命中/.test(n)));
+    assert.ok(impact.placements[0].to.includes(accepted.entry));
+    assert.deepEqual([impact.placements[0].from.length, impact.placements[0].to.length],[3,3]);
+    assert.deepEqual(impact.totals,{changed_paths:1,attached_from:3,attached_to:3});
+    assert.equal(impact.truncated,false);
+    assert.ok(impact.notes.some(n => /来源的受理覆盖/.test(n)));
+    await w.kit.artifacts.revokeFindings(w.admin,sha,'撤回合成来源受理');
+    const withdrawn = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
+    assert.equal(withdrawn.truncated,true);
+    assert.ok(!Object.values(withdrawn.keys).flat().includes(accepted.entry));
+    assert.equal(Object.keys(withdrawn.entries).length,4);
+    assert.ok(withdrawn.notes.some(n => n.includes(accepted.reference) && /凭据扫描命中/.test(n)));
+    const impactAfter = ImpactView.parse((await views.json(`knowledge:impact:acme:${A}..${B}`)).value);
+    assert.ok(!impactAfter.placements[0].to.includes(accepted.entry));
   });
+});
+
+test('a view retains covered text while omitting novel text even if another unrelated source accepted it', async t => {
+  const known = 'FtpSynthetic7779', novel = 'FtpSynthetic9993';
+  const cases = CASES_SOURCE.replace('statement: node.text +',`statement: (data.id === 'd1-c1' ? 'invented password = ${novel}' : node.text) +`);
+  const w = await world(t,[DEFAULT_PRODUCERS[0],casesProducer()],{pack:{functions:{'cases.ts':cases}}});
+  const ids = documents(w,1,3);
+  w.external.set(ids[1],{bytes:mindMap({id:'d2',module:'M2'},[{id:'d2-c1',text:`[cmd: system reboot] password = ${known}`,expected:['ok']}]),mediaType:JSON_TYPE});
+  const initial = await w.knowledge.produceTree({product:w.product,build:build(A,ids)});
+  const sha = /源文件 ([0-9a-f]{64})/.exec(initial.skipped[0].reason)?.[1]; assert.ok(sha);
+  await w.kit.artifacts.acceptFindings(w.admin,sha,'合成示例，允许处理');
+  const unrelatedInput = {bytes:Buffer.from(`unrelated password = ${novel}`),mediaType:'text/plain',origin:{read:{object:'store:manual:unrelated'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};
+  const unrelated = await w.kit.artifacts.ingest(unrelatedInput);
+  await w.kit.artifacts.acceptFindings(w.admin,unrelated.body.sha256,'合成示例，独立来源');
+  await w.kit.artifacts.ingest(unrelatedInput);
+  const produced = await w.knowledge.produceTree({product:w.product,build:build(A,ids)}); assert.equal(produced.ok,true);
+  const result = IndexView.parse((await reader(w).json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
+  assert.ok(Object.values(result.entries).some(entry => entry.statement.includes(known)));
+  assert.ok(Object.values(result.entries).every(entry => !entry.statement.includes(novel)));
+  assert.ok(result.notes.some(note => /1 个条目.*来源的受理覆盖/.test(note)));
+  assert.equal(result.truncated,true);
 });
 
 describe('list roles in records (finding: list ids copied into every build record, action and composition)', () => {

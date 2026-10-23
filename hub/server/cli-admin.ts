@@ -20,7 +20,7 @@ import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateRes
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
-import { RecordsError, isSha256, scanForCredentials, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import { RecordsError, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -876,6 +876,13 @@ function shapeAround(line: string, column: number): string {
     .replace(/[\u0080-\uffff]/g, '字');
 }
 
+/** Effective acceptance, not the historical scan annotation; no matched text is ever formatted. */
+function sourceAcceptanceText(acceptance: EffectiveScanAcceptance | undefined): string {
+  if (acceptance === undefined) return '没有受理';
+  if (acceptance.kind === 'direct') return `直接受理（决定 ${acceptance.acceptance.authorization}）`;
+  return `由派生覆盖（${acceptance.acceptance.sources.length} 份来源）`;
+}
+
 async function sourceCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
@@ -893,17 +900,18 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
         const page: Page<StoredRecord<SourceArtifactBody>> = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', newestFirst: true, limit: 200, ...(cursor === null ? {} : { cursor }) });
         for (const record of page.items) {
           const body = record.body;
-          if (body.read_tier !== 'retain_only' || body.scan.findings.length === 0 || seen.has(body.sha256)) continue;
+          if (body.scan.findings.length === 0 || seen.has(body.sha256)) continue;
           seen.add(body.sha256);
           const origin = 'read' in body.origin ? body.origin.read.object : 'upload' in body.origin ? '上传' : '生成';
           const detectors = [...new Set(body.scan.findings.map((f) => f.detector))].join('、');
           const note = body.scan.truncated ? '，命中太多，不能接受' : '';
-          lines.push([body.sha256, `${body.size} 字节`, origin, `${body.scan.findings.length} 处命中（${detectors}）${note}`, body.captured_at].join('\t'));
+          const effective = await kit.artifacts.source(viewer,body.sha256);
+          lines.push([body.sha256, `${body.size} 字节`, origin, `${body.scan.findings.length} 处命中（${detectors}）${note}`, sourceAcceptanceText(effective?.acceptance), `当前档位 ${labelOf('read_tier',effective?.readTier ?? body.read_tier)}`, body.captured_at].join('\t'));
           if (lines.length >= limit) break;
         }
         cursor = lines.length >= limit ? null : page.next;
       } while (cursor !== null);
-      if (lines.length === 0) session.out('没有被只保留的内容');
+      if (lines.length === 0) session.out('没有凭据扫描命中的来源');
       for (const line of lines) session.out(line);
       return 0;
     }
@@ -917,6 +925,9 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
       const bytes = await kit.artifacts.trustedBytes(sha);
       if (bytes === null) throw new CliError('Hub 没有保存这份字节');
       const scan = scanForCredentials(bytes);
+      const effective = await kit.artifacts.source(viewer,sha);
+      session.out(`受理状态：${sourceAcceptanceText(effective?.acceptance)}；当前档位 ${labelOf('read_tier',effective?.readTier ?? 'retain_only')}`);
+      if (effective?.acceptance?.kind === 'derived') for (const source of effective.acceptance.acceptance.sources) session.out(`覆盖来源 ${source.sha256}；来源记录 ${source.record}；受理决定 ${source.acceptances.map(a => a.authorization).join('、')}`);
       session.out(`扫描器 ${scan.scanner}：${scan.findings.length} 处命中${scan.truncated ? '（超过可列出的上限，不能接受）' : ''}；下面只写探测器和位置，行的内容只给形状（字母写成 x，数字写成 9）`);
       const lines = new TextDecoder('utf-8', { fatal: false }).decode(bytes).split(/\r?\n/);
       for (const finding of scan.findings.slice(0, 100)) {

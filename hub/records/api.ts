@@ -244,6 +244,21 @@ export interface ScanAcceptance {
   authorization: string;
 }
 
+/** Safe proof: references to source bytes, their deciding records and the admin decisions, never finding text or hashes. */
+export interface DerivedScanAcceptance {
+  sources: Array<{ sha256: string; record: string; acceptances: ScanAcceptance[] }>;
+}
+export type EffectiveScanAcceptance =
+  | { kind: 'direct'; acceptance: ScanAcceptance }
+  | { kind: 'derived'; acceptance: DerivedScanAcceptance };
+export interface DerivedScanInput {
+  bytes: Uint8Array;
+  origin: ArtifactOrigin;
+  author: ArtifactAuthor;
+  /** Only actual inputs may be offered; records verifies origin links, provenance and current acceptances. */
+  derivedSources: readonly string[];
+}
+
 /** Scan conclusion: positions and detector ids only, never the matched text. */
 export interface CredentialScan {
   scanner: string;
@@ -260,6 +275,8 @@ export interface CredentialScan {
    * acceptance is still in force (README decision 18).
    */
   accepted?: ScanAcceptance;
+  /** The accepted sources that covered all findings at ingest; revalidated at every read. */
+  derived?: DerivedScanAcceptance;
 }
 
 /** Body of a `source_artifact@1` record. */
@@ -280,6 +297,8 @@ export interface SourceArtifactBody {
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
 export interface IngestInput {
+  /** Source byte digests for a Hub-generated derivative; never a global pool of accepted text. */
+  derivedSources?: readonly string[];
   bytes: Uint8Array;
   mediaType: string;
   origin: ArtifactOrigin;
@@ -288,8 +307,9 @@ export interface IngestInput {
   visibility: Visibility;
   /**
    * Default model_readable. A credential hit on a read or generated artifact forces retain_only, unless an admin accepted
-   * exactly these findings of exactly these bytes (acceptFindings) and the Hub read or made them (`author.user` null); an
-   * upload with a hit is refused whatever was accepted, and a record with a person as author keeps retain_only.
+   * exactly these findings of exactly these bytes (acceptFindings), or all findings have verified derived coverage.
+   * Only entirely Hub-owned ancestry qualifies; an upload with a hit is refused whatever was accepted, and a record
+   * with a person as author keeps retain_only.
    */
   readTier?: ReadTier;
   name?: string | null;
@@ -309,6 +329,8 @@ export interface ArtifactText {
 
 /** A by-reference read of stored bytes for one reader (the shape hub/refs' SourceReader asks for, plus the deciding record). */
 export interface ArtifactSource {
+  /** Current coverage, rechecked for this record; the immutable stored scan remains historical. */
+  acceptance?: EffectiveScanAcceptance;
   /** The record that decides for this reader (same rule as text() and readable()). */
   artifact: SourceArtifact;
   sha256: string;
@@ -333,12 +355,15 @@ export interface Artifacts {
    * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
    * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
    * A read or generated artifact with a hit is stored at retain_only, unless an acceptance in force covers these bytes and
-   * this finding set: then it keeps the requested tier and its scan names the acceptance (`scan.accepted`).
+   * this finding set, or verified accepted inputs cover all derived findings: it keeps the requested tier and its scan
+   * names direct acceptance (`scan.accepted`) or source/decision-only derived coverage (`scan.derived`).
    * Bytes the scanner cannot read as text are stored with `scan.inspected: false`. Repeating the same ingest (same bytes,
    * origin, author, visibility, tier, name, acceptance) returns the existing record. Every check runs before any byte is
    * written.
    */
   ingest(input: IngestInput): Promise<SourceArtifact>;
+  /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
+  coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
   /** B02 R[3] for one record. The account is re-read: a disabled or demoted account loses access at once. */

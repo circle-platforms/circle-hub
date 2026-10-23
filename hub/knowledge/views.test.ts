@@ -580,7 +580,13 @@ describe('ids, readers and stored answers', () => {
     // The manifest is the record of the view's computation.
     const manifest = await f.w.kit.store.get<{ component: string; inputs: string[] }>(first.manifest);
     assert.equal(manifest?.body.component, 'knowledge.views@1');
-    assert.deepEqual(manifest?.body.inputs, [`tree:${f.roots.b}/`]);
+    assert.equal(manifest?.body.inputs[0],`tree:${f.roots.b}/`);
+    assert.equal(manifest?.body.inputs.length,2);
+    const compositionRef = manifest!.body.inputs[1];
+    assert.match(compositionRef,/^rec:[a-f0-9]{64}$/);
+    const composition = await f.w.kit.store.get<{root:string}>(compositionRef.slice(4));
+    assert.equal(composition?.schema,'tree_root@1');
+    assert.equal(composition?.body.root,f.roots.b);
   });
 
   test('a reader without the product, unknown products and builds and malformed ids give ok:false with the real reason', async (t) => {
