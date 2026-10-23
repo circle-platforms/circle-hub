@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../../hub/connectors/testing/credentials.ts';
 // The end-to-end bed of this package (tests only, not part of a pack): the real Hub packages wired as the server wires them,
 // on a temporary PostgreSQL and loopback stubs serving synthetic data.
 // - records kit, an admin, a pack owner with a publish right, a reviewer the workflow packs are assigned to;
@@ -102,12 +103,12 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
 
     const connectorLog: ConnectorLogEvent[] = [];
     const connectors = createConnectors({ records: kit, packs, log: (event) => void connectorLog.push(event), sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
-    const add = (input: Parameters<Connectors['admin']['addResource']>[1]) => connectors.admin.addResource(admin, input);
+    const add = (input: Parameters<Connectors['admin']['addResource']>[1]) => addSyntheticResource(kit, packs, connectors, admin, input);
     const agileResource = await add({ system_pack: 'agile-platform', name: '合成敏捷平台', environment: 'test', origins: { 'agile-oauth': agile.origin, 'agile-api': agile.origin }, allow_plaintext: [agile.origin], settings: { roots: [ROOTS.first, ROOTS.second] } });
     const plmResource = await add({ system_pack: 'plm', name: '合成 PLM', environment: 'test', origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin] });
     for (const resource of [agileResource, plmResource]) {
-      await connectors.admin.setCredential(admin, resource.id, 'username', AGILE_ACCOUNT.username);
-      await connectors.admin.setCredential(admin, resource.id, 'password', AGILE_ACCOUNT.password);
+      await setSyntheticCredential(kit, connectors, admin, resource.id, 'username', AGILE_ACCOUNT.username);
+      await setSyntheticCredential(kit, connectors, admin, resource.id, 'password', AGILE_ACCOUNT.password);
     }
     await add({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${site.origin}${SITE_BASE}` }, settings: { index_page: 'index.html' } });
     await add({ system_pack: 'manual-store', name: '合成文档库', environment: 'test', origins: { 'manual-store': store.origin } });

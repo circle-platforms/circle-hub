@@ -42,3 +42,13 @@ test('maskSent keeps the whole structure and masks sent values in strings and ke
   const big = Array.from({ length: 120 }, (_, i) => i);
   assert.deepEqual(r.maskSent({ path: `/a/${TOKEN}`, list: [1, TOKEN, null], [TOKEN]: true, big }), { path: '/a/***', list: [1, '***', null], '***': true, big });
 });
+
+test('both long Basic components and secret digest forms are protected before a request is sent',async()=>{
+ const {createHash}=await import('node:crypto');
+ const r=new Redactor(),username='DEMO_User42',password='DEMO!Password42';
+ r.addSent('Basic '+Buffer.from(username+':'+password).toString('base64'));
+ for(const value of [username,password]) {
+  assert.equal(r.echoedIn(Buffer.from(value),'text/plain'),true);
+  for(const algorithm of ['sha256','sha512'])assert.equal(r.text(createHash(algorithm).update(value).digest('hex')),'***');
+ }
+});

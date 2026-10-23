@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { EffectOutcomeSchema, DynamicTerminalSchema, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { canonicalBytes, sha256Hex, parseStrictJson } from '../../../hub/records/api.ts';
-import { ExecutorDefinition, type JobStatus } from '../../../hub/dispatch/api.ts';
+import { ExecutorDefinition, ExecutorSource, resolveExecutorValues, type JobStatus } from '../../../hub/dispatch/api.ts';
+import {referencesIn} from '../../../contracts/src/variables.ts';
 import { staging, FactError, requireFact } from '../convert/io.ts';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown): string => typeof v === 'string' ? v : '';
@@ -41,15 +42,17 @@ export function continuation(previous: string, current: string, answer: string):
   requireFact(answer === '已用首例证据更新认证', '缺集成者明确确认：请输入“已用首例证据更新认证”；这是人工确认，不是机械核对认证字段');
   return '人工确认，不是机械核对认证字段';
 }
-export function checkedDefinition(input: unknown, id: string, listed: string): { definition: ExecutorDefinition; digest: string } {
+export function checkedDefinition(input: unknown, id: string, listed: string,values:ReadonlyMap<string,unknown>=new Map()): { definition: ExecutorDefinition; digest: string;resolved_digest:string } {
   requireFact(object(input), '本地执行器定义不是对象；请导出登记定义');
-  const parsed = ExecutorDefinition.safeParse({ ...input, id }); requireFact(parsed.success, '本地执行器定义无效；请管理员核对当前派发格式和固定 CA');
-  const definition = parsed.data;
+  const parsed = ExecutorSource.safeParse({ ...input, id }); requireFact(parsed.success, '本地执行器定义无效；请管理员核对当前派发格式和固定 CA');
+  const source=parsed.data;
+  const definition=resolveExecutorValues(source,values);
   requireFact(new URL(definition.endpoint).protocol === 'https:' && definition.ca.length > 0 && definition.enabled, '真机脚本只接受启用的 HTTPS 执行器和固定 CA；请管理员修正定义');
-  const digest = sha256Hex(canonicalBytes(definition));
+  const digest = sha256Hex(canonicalBytes(source)),resolved_digest=sha256Hex(canonicalBytes(definition));
   const matching = listed.split('\n').filter(line => line.startsWith(`执行器编号 ${id}；`));
   requireFact(matching.length === 1 && matching[0].includes(`定义摘要 ${digest}；启用 1；具备派发登记 1`), '本地定义与 executor list 的已登记摘要不等或登记未完成；请导出当前定义并核对后重跑');
-  return { definition, digest };
+  requireFact(matching[0].includes(`；解析后摘要 ${resolved_digest}；`),'解析后定义摘要与当前变量不等；重做第零步核对当前变量与执行器');
+  return { definition, digest,resolved_digest };
 }
 
 const qualificationFields = ['missing_fact', 'missing_facts', 'reason', 'next_action', 'qualifier', 'nature', 'provenance', 'marks', 'accepted_as_fact', 'limits', 'limitation'] as const;
@@ -154,8 +157,16 @@ export async function main(argv: string[]): Promise<number> {
     };
     const stageZero = async () => {
       const listed = await cli(['executor', 'list']); requireFact(listed.code === 0, 'executor list 失败；请集成者核对当前部署的管理员 CLI');
-      const checked = checkedDefinition(parseStrictJson(read(config.definition).toString('utf8')), args['--executor'], listed.stdout);
-      say('阶段零核对', { definition_sha256: checked.digest, https: true, fixed_ca: true }); return checked;
+      const input=parseStrictJson(read(config.definition).toString('utf8'));
+      const source=ExecutorSource.parse({...input as object,id:args['--executor']});
+      const values=new Map<string,unknown>();
+      for(const name of new Set(referencesIn(source).filter(ref=>ref.kind==='var').map(ref=>ref.name))) {
+        const value=await cli(['var','show',name,'--value']);
+        requireFact(value.code===0,'普通变量 '+name+' 不可读；先 var set 后重做第零步');
+        try {values.set(name,parseStrictJson(value.stdout.trimEnd().split('\n').at(-1)!));}catch{throw new FactError('普通变量 '+name+' 没有可核对的当前 JSON 值；先 var set 后重做第零步');}
+      }
+      const checked = checkedDefinition(input, args['--executor'], listed.stdout,values);
+      say('阶段零核对', { definition_sha256: checked.digest,resolved_definition_sha256:checked.resolved_digest, https: true, fixed_ca: true }); return checked;
     };
     const checked = await stageZero();
     requireFact(checked.definition.manifest_sha256 === sha256Hex(read(config.inventory)), '本地清单不是执行器期望的那份；请用当前清单重跑计划及核验');
@@ -235,7 +246,7 @@ export async function main(argv: string[]): Promise<number> {
         requireFact(text(booked.pack).startsWith('test-bed@') && groups.some(g => g.action === 'acquire' && g.bed === checked.definition.target), '计划前驱不是本台架占用；请 Circle 重新占台架并在本例谱系完成计划及核验');
         return { run: verified.run, sha256: verified.sha256, booking: text(booked.run) };
       },
-      async confirm(_id, digest) { const current = await stageZero(); requireFact(current.digest === checked.digest, '执行器已更新；请重跑第零步并重新核对本例，当前不派发'); say('派发前确认', { case_index: state.completed.length + 1, sha256: digest }); return rl.question('请核对本例工作簿、执行器与台架，输入“确认派发”：'); },
+      async confirm(_id, digest) { const current = await stageZero(); requireFact(current.digest === checked.digest && current.resolved_digest===checked.resolved_digest, '执行器已更新；请重跑第零步并重新核对本例，当前不派发'); say('派发前确认', { case_index: state.completed.length + 1, sha256: digest }); return rl.question('请核对本例工作簿、执行器与台架，输入“确认派发”：'); },
       async dispatch(prepared) {
         state.pending = { autoid: ids[state.completed.length], ...prepared }; save();
         const reply = await cli(['job', 'dispatch', '--run', prepared.run, '--executor', args['--executor']], stdout => { const job = /作业摘要 ([a-f0-9]{64})/.exec(stdout)?.[1]; if (job && state.pending && state.pending.job !== job) { state.pending.job = job; save(); } });

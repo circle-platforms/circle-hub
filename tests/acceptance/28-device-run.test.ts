@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
 // All endpoints, documents, models and workbook bytes in this suite are synthetic.
 import assert from 'node:assert/strict';
 import CASE_COMPILE_PACK from '../../packs/workflow/case-compile/pack.json' with { type: 'json' };
@@ -160,7 +161,7 @@ before(async () => {
     probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
-  executor = (await dispatch().registry.add(bed.hub.admin.principal, configured, 'synthetic-dispatch-key')).id;
+  executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
 });
 after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 

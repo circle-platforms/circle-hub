@@ -13,7 +13,7 @@ await runs.startRun(user, input, { traceId, sessionId });   // RunsService of hu
 resolveReference, getRun, listRuns; answers are the tool outputs without `trace`) plus `startRunDetailed` (the answer, the
 whole production result of a fact-only pack, the run record digest and the evidence gaps), `startHubRun` (a run the Hub
 executes for a standing obligation), `getResult` (a result by its submission digest, accepted or not) and `runsFor`.
-Deps: `records` (store, objects, artifacts of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
+Deps: `records` (store, objects, artifacts and the read-only `variables.snapshot` port of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
 start_run size a run before storing anything; pass the whole kit), the ports `WorkflowStore`, `PacksPort`, `KnowledgePort`,
 `ExternalReaderPort` (the assembly gives it the knowledge views beside the connectors); optional `parsers` (default the core
 parsers), `sandbox` and `sandboxLimits` for every pack function call, `now`, `clientKeyWindowMs` (default 24 h) and
@@ -36,6 +36,12 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
+
+## Ordinary-variable snapshots and parameter admission
+
+Each accepted `start_run` call reads all current ordinary-variable decisions in one verified snapshot. Input binding and expected-source reads receive the same process-local map through `ExternalReadContext`; nested connector reads inherit it. The map is never serialized into the run. The returned input bytes and their source references remain frozen, so a later variable change affects a new run only. A newly referenced name absent from this snapshot requires setting the name and reopening the operation; it is never silently resolved against current state.
+
+Before schema diagnostics or any external read, the entry point scans the complete JSON tool arguments for recognizable credentials. A hit refuses the whole call with `SUBMISSION_SCHEMA_VIOLATION` and the fixed instruction “参数里不能有凭据”; no run is stored and neither values nor sensitive syntax are quoted. Reference-looking parameter strings are ordinary text: the Hub never substitutes them, and accepted parameters remain byte-equivalent JSON values in the run.
 
 ## Decisions
 

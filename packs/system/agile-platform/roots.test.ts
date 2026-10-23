@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 // agile:tree:roots: the read of every configured root at once (round sizes, titles from the listing, documents with their
 // folders, completeness, the revision), checked on its own against the answers of the case-index corpus and through the
 // real connectors against loopback stubs.
@@ -230,7 +231,7 @@ describe('agile:tree:roots through the connectors', () => {
   })();
 
   async function resource(origin: string, roots: string[], limits?: { concurrency: number }): Promise<string> {
-    const added = await kit.connectors.admin.addResource(kit.admin, {
+    const added = await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, {
       system_pack: 'agile-platform',
       name: `合成敏捷平台 ${origin}`,
       environment: 'test',
@@ -239,8 +240,8 @@ describe('agile:tree:roots through the connectors', () => {
       settings: { roots },
       ...(limits === undefined ? {} : { limits }),
     });
-    await kit.connectors.admin.setCredential(kit.admin, added.id, 'username', CASE_INDEX_ACCOUNT.username);
-    await kit.connectors.admin.setCredential(kit.admin, added.id, 'password', CASE_INDEX_ACCOUNT.password);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, added.id, 'username', CASE_INDEX_ACCOUNT.username);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, added.id, 'password', CASE_INDEX_ACCOUNT.password);
     return added.id;
   }
 

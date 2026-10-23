@@ -2,17 +2,18 @@
 // - system@1: the system pack profile (system.json): roles, authentication, the route allow-list and the reads with their
 //   planner and projection functions. Product dialect stays in the pack's functions and settings, never in the core.
 // - resource@1: a deployment instance of a system (admin-managed, never in Git): the exact system pack version and digest,
-//   base URL per role, the origins allowed to carry credentials over plain HTTP, the vault entry names and digest rules of
+//   base URL per role, the origins allowed to carry credentials over plain HTTP, the vault entry names of
 //   its credentials and non-secret settings.
 // - read-manifest@1: the action record of one read (B05): what was requested, through which routes, when, the digests of
 //   every response and derived artifact, and the coverage the Hub computed.
 // - read-plan-*@1, read-projection-*@1: inputs and outputs of the planner and projection functions of a system pack.
-// The closed sets below (HTTP methods, response kinds, authentication kinds, password digest rules, header schemes, expiry
+// The closed sets below (HTTP methods, response kinds, authentication kinds, header schemes, expiry
 // units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import { SecretReference, VariableUse } from './variables.ts';
 import type {ProtocolCode} from '../generated/protocol.ts';
-import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
+import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
 import { ExternalObjectId } from './reference.ts';
@@ -25,9 +26,6 @@ export const RESPONSE_KINDS = ['json', 'text', 'xml', 'html', 'bytes'] as const;
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
 export const AUTH_KINDS = ['none', 'static_header', 'login_token'] as const;
 export type AuthKind = (typeof AUTH_KINDS)[number];
-/** How a credential is kept in the vault and sent: as given, or Base64(SHA-512(UTF-8 of the value)). */
-export const DIGEST_RULES = ['plain', 'sha512_base64'] as const;
-export type DigestRule = (typeof DIGEST_RULES)[number];
 /** raw: the header value is the token itself; bearer: `Bearer <token>`. */
 export const HEADER_SCHEMES = ['raw', 'bearer'] as const;
 export type HeaderScheme = (typeof HEADER_SCHEMES)[number];
@@ -425,7 +423,7 @@ export const HeaderDeclaration = z.strictObject({ name: HeaderName, scheme: z.en
 
 export const CredentialDeclaration = z.strictObject({
   name: CredentialName,
-  digest: z.enum(DIGEST_RULES).describe('what the vault keeps and the request carries: the value as given, or Base64(SHA-512(value))'),
+  digest: DigestRuleSchema.describe('what the vault keeps and the request carries: the value as given, or Base64(SHA-512(value))'),
   description: Description.optional(),
 });
 
@@ -656,8 +654,8 @@ export const ResourceRecord = z
     environment: EnvironmentSchema,
     origins: z.record(RoleName, BaseUrl).describe('base URL of each role of the system pack'),
     allow_plaintext: z.array(z.string().max(300)).max(16).describe('origins (scheme://host[:port]) whose plain HTTP may carry credentials'),
-    credentials: z.record(CredentialName, VaultEntryName).describe('vault entry of each credential the system pack declares'),
-    credential_digests: z.record(CredentialName, z.enum(DIGEST_RULES)).describe('the digest rule each credential is kept under in the vault'),
+    credentials: z.record(CredentialName, z.union([VaultEntryName, SecretReference])).describe('named secret reference of each credential; legacy vault entry names are decoded only for history'),
+    credential_digests: z.record(CredentialName, DigestRuleSchema).describe('the digest rule each credential is kept under in the vault'),
     settings: z.record(z.string(), z.unknown()).describe('non-secret deployment values handed to the read functions as input.settings'),
     limits: ResourceLimits.optional(),
     created_by: UserId,
@@ -879,6 +877,7 @@ export const ReadManifest = z.strictObject({
     z.strictObject({ name: z.string(), record: Sha256, sha256: Sha256, media_type: z.string(), size: z.number().int().nonnegative() }),
   ),
   coverage: Coverage,
+  variables: z.array(VariableUse).optional().describe('exact named deployment decisions used by this read'),
   reason: z.string().max(2000).nullable().describe('why the read failed, for the admin log'),
   warnings: z.array(z.string().max(500)).max(50),
 });

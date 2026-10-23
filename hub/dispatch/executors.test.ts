@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from './testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { openTestRecords } from '../testing/records.ts';
@@ -8,8 +9,8 @@ test('executor definitions are canonical, authorized by digest, versioned and di
   const kit = await openTestRecords(); t.after(() => kit.close());
   const admin = (await kit.principals.bootstrapAdmin('合成管理员')).user;
   const registry = new ExecutorRegistry(kit);
-  const first = await registry.add(admin, definition('http://127.0.0.1:1/mcp'), 'synthetic-secret');
-  assert.ok(await kit.vault.has(`executor.${first.id}.bearer`));
+  const first = await addSyntheticExecutor(kit,registry,admin,definition('http://127.0.0.1:1/mcp'),'synthetic-secret');
+  assert.equal(await kit.vault.has(`executor.${first.id}.bearer`),false);assert.equal((await kit.variables.list(admin)).filter(v=>v.kind==='secret').length,1);
   assert.equal((await registry.get(first.id))?.digest, first.digest);
   const next = await registry.update(admin, first.id, { ...first.definition, max_run_ms: 6000 });
   assert.notEqual(next.digest, first.digest);
@@ -28,5 +29,5 @@ test('definitions reject external plaintext, unlisted calls, invalid mapping val
   for (const input of [definition('http://192.0.2.1/mcp'), definition('https://192.0.2.1/mcp'),
     { ...definition('http://127.0.0.1:1/mcp'), allowed_tools: [] },
     { ...definition('http://127.0.0.1:1/mcp'), status: { pointer: '/state', map: { fake: { effect_outcome: 'invented' } } } },
-  ]) await assert.rejects(registry.add(admin, input, 'synthetic-secret'));
+  ]) await assert.rejects(addSyntheticExecutor(kit,registry,admin,input,'synthetic-secret'));
 });

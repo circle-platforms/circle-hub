@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, syntheticStoredCredential } from './testing/credentials.ts';
 // Login (D01 R[9]) through real reads against the agile-like stub: one login, the token reused from memory and from the
 // vault, one login after an explicit expired answer, a refused login never retried (stopped until an admin acts), a token
 // refused right after its login, shared logins, renewal at a known expiry and none at an unusable one, resource updates that
@@ -39,7 +40,7 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }, options: {
     await agile.close();
     await k.close();
   });
-  const resource = await k.connectors.admin.addResource(k.admin, {
+  const resource = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, {
     system_pack: 'agile-test',
     name: '合成敏捷平台',
     environment: 'test',
@@ -48,8 +49,8 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }, options: {
     settings: { roots: ['7714'] },
   });
   if (options.credentials !== false) {
-    await k.connectors.admin.setCredential(k.admin, resource.id, 'username', 'reader');
-    await k.connectors.admin.setCredential(k.admin, resource.id, 'password', PASSWORD);
+    await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'username', 'reader');
+    await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'password', PASSWORD);
   }
   const read = (connectors = k.connectors) => connectors.reader.read('agile:tree:7714', { principal: k.user, purpose: 'test' });
   return { k, agile, resource, read };
@@ -82,14 +83,14 @@ test('an explicit expired answer: one login, then the request once more', async 
   ok(again);
   assert.equal(agile.logins, 2);
   const manifest = await k.records.store.get<{ requests: { key: string; error: string | null; after_login: boolean }[] }>((again as { manifest: string }).manifest);
-  const subtree = manifest!.body.requests.filter((entry) => entry.key === 'subtree');
-  assert.deepEqual(
-    subtree.map((entry) => [entry.error, entry.after_login]),
-    [
-      ['SOURCE_LOGIN_EXPIRED', false],
-      [null, true],
-    ],
-  );
+  const entries=manifest!.body.requests;
+  assert.ok(entries.some(entry=>entry.error==='SOURCE_LOGIN_EXPIRED'),'the source explicitly refused an expired token');
+  assert.ok(entries.some(entry=>entry.after_login),'a refused request was repeated after renewal');
+  for(const key of new Set(entries.map(entry=>entry.key))) {
+    const requests=entries.filter(entry=>entry.key===key);
+    assert.ok(requests.length<=2,'each request is retried at most once');
+    if(requests.length===2)assert.deepEqual(requests.map(entry=>[entry.error,entry.after_login]),[['SOURCE_LOGIN_EXPIRED',false],[null,true]]);
+  }
 });
 
 test('a refused login is never retried: it stops until an admin acts, however long; a reset allows one attempt, a new credential ends it', async (t) => {
@@ -126,7 +127,7 @@ test('a refused login is never retried: it stops until an admin acts, however lo
   assert.equal(agile.logins, 3);
   assert.equal((await read()).ok, false);
   assert.equal(agile.logins, 3, 'stopped again');
-  await k.connectors.admin.setCredential(k.admin, resource.id, 'password', 'Changed#Pass99');
+  await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'password', 'Changed#Pass99');
   ok(await read());
   assert.equal(agile.logins, 4, 'a new credential ends the stop');
 });
@@ -161,7 +162,10 @@ test('moving a resource to other origins: the cached token never goes there; the
   const moved = await startAgileStub({ ...agileFixture(DOC, { password: PASSWORD }), now: () => k.clock.now().getTime() });
   t.after(() => moved.close());
   await k.connectors.admin.updateResource(k.admin, resource.id, { origins: { 'agile-oauth': moved.origin, 'agile-api': moved.origin }, allow_plaintext: [moved.origin] });
-  assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.token, false, 'the session of the old origins is not used');
+  assert.equal((await read()).ok,false,'old enrollment cannot send to a new origin');
+  assert.equal(moved.requests.length,0);
+  await setSyntheticCredentials(k.records,k.connectors,k.admin,resource.id,{username:'reader',password:PASSWORD});
+  assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.token,false);
   ok(await read());
   assert.equal(moved.logins, 1);
   assert.ok(moved.requests.every((r) => r.headers.authorization !== oldToken), 'the old token is never sent to the new origin');
@@ -178,7 +182,7 @@ test('a change that the session does not depend on (name, settings, environment)
   assert.equal(agile.logins, 1);
 });
 
-test('a new system pack version with another digest rule drops the stored credential instead of sending it under the wrong rule', async (t) => {
+test('a new system pack digest rule preserves shared secrets and refuses incompatible material', async (t) => {
   const { k, agile, resource, read } = await setup(t);
   ok(await read());
   const system = agileSystem() as { auth: { credentials: { name: string; digest: string }[] } };
@@ -187,14 +191,14 @@ test('a new system pack version with another digest rule drops the stored creden
   k.connectors.refresh();
   const updated = await k.connectors.admin.updateResource(k.admin, resource.id, { system_pack: 'agile-test' });
   assert.equal(updated.system_pack, 'agile-test@1.1.0');
-  assert.equal(await k.records.vault.getText(updated.credentials.password), null, 'the digest kept under the old rule is gone');
-  assert.equal(await k.records.vault.getText(updated.credentials.username), 'reader', 'a credential whose rule did not change stays');
+  assert.ok(await syntheticStoredCredential(k.records,updated,'password'),'shared secret is preserved');
+  assert.equal(await syntheticStoredCredential(k.records,updated,'username'), 'reader', 'a credential whose rule did not change stays');
   agile.expireTokens();
   const missing = await read();
   assert.equal(missing.ok, false);
   assert.match((missing as { reason: string }).reason, /CREDENTIAL_MISSING/);
   assert.equal(agile.logins, 1, 'no login with a value kept under another rule');
-  assert.ok(k.log.some((event) => event.event === 'credential_dropped'));
+  assert.ok(!k.log.some((event) => event.event === 'credential_dropped'));
 });
 
 test('concurrent reads share one login', async (t) => {

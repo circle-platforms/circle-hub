@@ -13,6 +13,7 @@ import { PgPointers } from './pointers.ts';
 import { PgPrincipals } from './principals.ts';
 import { PgRecordStore } from './store.ts';
 import { FileVault } from './vault.ts';
+import { RecordVariables } from './variables.ts';
 
 export * from './api.ts';
 export { argumentDigest, newSpanId, MIGRATIONS, RUNTIME_GRANTS };
@@ -54,14 +55,18 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now });
   const authorizations = new RecordAuthorizations(db, store, now);
+  const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
+  const principals = new PgPrincipals(db, now);
+  const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   let closed: Promise<void> | undefined;
   return {
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },
     store,
     objects,
     artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now, onCredentialScan:options.onCredentialScan }),
-    vault: new FileVault(join(config.dataDir, 'vault'), options.keyProvider),
-    principals: new PgPrincipals(db, now),
+    vault,
+    variables,
+    principals,
     authorizations,
     pointers: new PgPointers(db, store, now),
     callLog: new PgCallLog(db, store, config.logDir, now),
