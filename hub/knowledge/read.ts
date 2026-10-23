@@ -409,43 +409,92 @@ export class TreeReading {
       });
       return { grounds, tagged };
     };
-    // The machine-checkable validity of what is read (B01 R[2]): rule_withdrawn (the deciding pack version is
-    // unpublished), cited_fragment_changed (another composition of this root carries a different entry digest at the
-    // same path than the one the caller cited), contradicted (a verified contradiction relation names a claim here).
-    // grounds_withdrawn and premise_failed have no data source today and are never claimed (README); tree entries
-    // carry no expiry of their own, so expired is computed for record claims only (hub/refs).
-    const validityOfRows = async (digests: readonly string[]): Promise<{ status: ValidityStatus; bound: string[]; contradictions: Array<{ source: string; at: string; other: string }> }> => {
-      const bound = [root, ...digests];
-      let status: ValidityStatus = 'valid';
+    // The machine-checkable validity of what is read (B01 R[2], K03 R[5]). Every condition that holds is listed with
+    // its source; the status is the first of them in the fixed order rule_withdrawn > cited_fragment_changed >
+    // contradicted (README). grounds_withdrawn and premise_failed have no data source today; tree entries carry no
+    // expiry (record claims: hub/refs). cited_fragment_changed compares the cited root X with the reader's root Y —
+    // the root of the composition the reader's lock names: X ≠ Y and Y's entry at the same path differs or is absent
+    // (K03 R[5]). The same root never flags (roots are content-addressed); without a lock there is no reader root to
+    // compare against, and nothing is claimed, honestly.
+    const readerRoot = bound === null ? null : (await this.#context.store.composition(bound))?.root ?? null;
+    // Pack lookups of one read are cached (a withdrawn version is asked once, not once per row).
+    const packCache = new Map<string, Promise<boolean>>();
+    const withdrawn = (ref: string): Promise<boolean> => {
+      let hit = packCache.get(ref);
+      if (hit === undefined) {
+        hit = this.#context.packs.pack(ref).then((pack) => pack === null);
+        packCache.set(ref, hit);
+      }
+      return hit;
+    };
+    type Condition = 'rule_withdrawn' | 'cited_fragment_changed' | 'contradicted';
+    const ORDER: readonly Condition[] = ['rule_withdrawn', 'cited_fragment_changed', 'contradicted'];
+    type Relation = { digest: string; source: string; at: string; other: string; by: string; provenance: string };
+    /** Every contradiction relation of these digests: ONE findMany per read (all digests at once — the query count
+     * never grows with the entry count); findMany pages internally until exhausted, so nothing is silently capped. */
+    const relationsOf = async (digests: readonly string[]): Promise<Relation[]> => {
+      const out: Relation[] = [];
+      if (digests.length === 0) return out;
+      const records = await this.#context.store.records.findMany<{ relation?: string; at?: string; other?: string; by?: string; claim?: string }>({ key: CONTRADICTION, values: [...digests], kind: 'claim' });
+      for (const record of records) {
+        const body = record.body as { relation?: string; at?: string; other?: string; by?: string; claim?: string };
+        if (body.relation !== 'contradicts') continue;
+        // The claim address names the digest this relation flags (tree:<root>/<path>@<digest>).
+        const digest = /@([0-9a-f]{64})$/.exec(body.claim ?? '')?.[1] ?? digests[0]!;
+        out.push({ digest, source: `rec:${record.digest}`, at: body.at ?? record.created_at, other: body.other ?? '', by: body.by ?? '', provenance: record.provenance });
+      }
+      return out;
+    };
+
+    const validityOfRows = async (digests: readonly string[]): Promise<{
+      status: ValidityStatus;
+      bound: string[];
+      conditions: Array<{ condition: Condition; source: string }>;
+      contradictions: Array<{ source: string; at: string; other: string }>;
+      cited_root?: string;
+      reader_root?: string;
+    }> => {
+      const conditions: Array<{ condition: Condition; source: string }> = [];
+      // rule_withdrawn: the pack version that decided a row is no longer published.
       const decidedBy = new Set<string>();
-      for (const c of compositions) for (const digest of digests) {
-        const row = (await c.rowsAt(canonical)).get(digest);
+      for (const [i, c] of compositions.entries()) for (const digest of digests) {
+        const row = rowsOf[i].get(digest);
         if (row !== undefined) decidedBy.add(row.decided_by);
       }
-      for (const ref of decidedBy) {
-        const pack = await this.#context.packs.pack(ref);
-        if (pack === null) { status = 'rule_withdrawn'; break; }
-      }
-      if (status === 'valid' && digests.length === 1) {
-        // The caller cited one entry: another composition of this root carrying any different entry at the same path
-        // means the cited fragment has changed under this root (the reader's lock is the root, B01 R[2]).
-        for (const c of compositions) {
-          const rows = await c.rowsAt(canonical);
-          if (rows.size === 0) continue;
-          if (!rows.has(digests[0]!)) { status = 'cited_fragment_changed'; break; }
+      for (const ref of [...decidedBy].sort()) if (await withdrawn(ref)) conditions.push({ condition: 'rule_withdrawn', source: ref });
+      // cited_fragment_changed: X ≠ Y, and Y's entry at the same path differs or the path is absent in Y.
+      if (digests.length === 1 && readerRoot !== null && readerRoot !== root) {
+        const view = (await this.compositionsOf(readerRoot))[0];
+        const yRows = view === undefined ? null : await view.rowsAt(canonical);
+        if (yRows === null || !yRows.has(digests[0]!)) {
+          conditions.push({ condition: 'cited_fragment_changed', source: `引用根 ${root}，读者根 ${readerRoot}` });
         }
       }
+      // contradicted: relations this reader may see — their own candidate relations and the Hub's deterministic ones
+      // (K05 R[4]: someone else's private candidate relation never flags another reader, an admin included).
       const contradictions: Array<{ source: string; at: string; other: string }> = [];
-      for (const digest of digests) {
-        const page = await this.#context.store.records.find<{ relation?: string; at?: string; other?: string }>({ key: CONTRADICTION, value: digest, kind: 'claim', limit: 10 });
-        for (const record of page.items) {
-          const body = record.body as { relation?: string; at?: string; other?: string };
-          if (body.relation !== 'contradicts') continue;
-          contradictions.push({ source: `rec:${record.digest}`, at: body.at ?? record.created_at, other: body.other ?? '' });
-        }
+      const relations = await relationsOf(digests);
+      for (const relation of relations) {
+        if (!digests.includes(relation.digest)) continue;
+        const visible = relation.provenance !== 'candidate' || relation.by === reader.user;
+        if (visible) contradictions.push({ source: relation.source, at: relation.at, other: relation.other });
       }
-      if (contradictions.length > 0) status = 'contradicted';
-      return { status, bound, contradictions };
+      if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
+      let status: ValidityStatus = 'valid';
+      for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }
+      const result: {
+        status: ValidityStatus;
+        bound: string[];
+        conditions: Array<{ condition: Condition; source: string }>;
+        contradictions: Array<{ source: string; at: string; other: string }>;
+        cited_root?: string;
+        reader_root?: string;
+      } = { status, bound: [root, ...digests], conditions, contradictions };
+      if (digests.length === 1 && readerRoot !== null && readerRoot !== root) {
+        result.cited_root = root;
+        result.reader_root = readerRoot;
+      }
+      return result;
     };
 
     if (entry !== null) {
