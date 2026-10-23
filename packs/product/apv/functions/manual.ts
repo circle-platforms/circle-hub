@@ -381,6 +381,9 @@ const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequ
 /** The product's own names are never models (APV and NSAE name one product). */
 const PRODUCT_NAMES_LOWER: ReadonlySet<string> = new Set(PRODUCT_LINE.names.map((name) => name.toLowerCase()));
 
+/** A model value is a listed ASCII model atom (research 3 rec 1; the 7f046dde rewrite lost this shape). */
+const MODEL_ATOM = /^[A-Za-z0-9][A-Za-z0-9-]{0,31}$/;
+
 /** Escapes a literal for use inside a RegExp. */
 const escapeRe = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** List connectives between items (a coordinated list counts only when every item is readable). */
@@ -392,7 +395,7 @@ const CLAUSE_NEGATION = /[不未无非没勿]/;
 /** These right before the trigger widen instead of restrict (也适用于): unread. */
 const ALSO_BEFORE = /(?:也|同样|亦|还)\s*$/;
 /** The applicability triggers: what follows one, up to the clause's end, is the candidate series. */
-const TRIGGERS = [/适用于/gu, /(?:仅|只)\s*(?=[^。；，：]*?支持)/gu];
+const TRIGGERS = [/适用于/gu];
 
 /** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
 const CLAUSE_END = /[。；，：\n]/;
@@ -405,10 +408,17 @@ const CLAUSE_END = /[。；，：\n]/;
  */
 function conditionsOf(text: string): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
-  for (const trigger of TRIGGERS) {
-    trigger.lastIndex = 0;
-    let at: RegExpExecArray | null;
-    while ((at = trigger.exec(text)) !== null) {
+  // The tight 仅/只 trigger: the items begin directly after 仅/只 and the clause's LAST noun is followed directly
+  // by 支持 at the clause end ('仅 X9000 系列支持'): a 支持 deep in the text or another word between noun and 支持
+  // never fires it (closure findings 3 and 12).
+  const candidates: Array<{ index: number; 0: string }> = [];
+  for (const match of text.matchAll(/(?:仅|只)\s*/gu)) {
+    candidates.push({ index: match.index ?? 0, 0: match[0] });
+  }
+  for (const match of text.matchAll(/适用于/gu)) {
+    candidates.push({ index: match.index ?? 0, 0: match[0] });
+  }
+  for (const at of candidates) {
       // The clause before the trigger: back to the previous clause boundary.
       let boundary = 0;
       for (let k = at.index - 1; k >= 0; k -= 1) {
@@ -467,6 +477,14 @@ function conditionsOf(text: string): Conditions {
         quiet = true;
         break;
       }
+      // The 仅/只 trigger is tight (closure 12): its clause must END with the noun followed directly by 支持
+      // ('仅 X9000 系列支持'); '该功能仅支持 X9000 系列' (支持 before the items) leaves no 支持 at the end and never reads.
+      // Tight 仅/只 (closure 12): the clause must END with 支持 right after the noun ('仅 hg-k 平台支持硬件加速'
+      // passes: the noun's own 支持 ends it, a quiet Han tail follows and is allowed). '该功能仅支持 X9000 系列'
+      // (支持 before the items) never reads: no 支持 follows its noun.
+      if (at[0].startsWith('仅') || at[0].startsWith('只')) {
+        if (!/(?:平台|系列|机型|型号)\s*支持/u.test(candidate)) { continue; }
+      }
       if (!ok || field === null || quiet === false && rest.trim() !== '') continue;
       void quiet;
       const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
@@ -475,11 +493,12 @@ function conditionsOf(text: string): Conditions {
       if (field === 'platforms') {
         const lowered = tokens.map((token) => token.toLowerCase());
         if (lowered.every((token) => PLATFORM_WORDS.has(token))) lowered.forEach((token) => found.platforms.add(token));
-      } else if (tokens.every((token) => !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) {
+      } else if (tokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) {
+        // A model value is a listed ASCII model atom (research 3 rec 1): a vague, deictic or Han word fails the
+        // shape and the whole series stays unread (closure findings 3 and 12).
         tokens.forEach((token) => found.models.add(token));
       }
     }
-  }
   const out: Conditions = {};
   if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
   if (found.models.size > 0) out.models = [...found.models].sort(compareText);

@@ -840,6 +840,34 @@ describe('applicability from explicit conditions', () => {
   });
 
 
+
+  it('reads no vague, deictic, negated, exception or garbled model value (closure findings 3 and 12)', () => {
+    const sentences = [
+      '适用于所有型号。',
+      '仅部分型号支持。',
+      '适用于该系列。',
+      '适用于以下机型：X9000。',
+      '适用于大多数机型。',
+      '适用于硬件型号。',
+      '适用于 X9000 等系列。',
+      '仅在 X9000 系列上支持。',
+      '适用于 X9000 系列及以上机型。',
+      '该功能仅支持 X9000 系列。',
+      '适用于非 X9000 系列。',
+      '适用于除 X9000 以外的系列。',
+      '只有部分型号支持。',
+      '| 适用于 | X9000 系列 |',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text' && String(entry.statement).includes(sentence.slice(0, 4)));
+      assert.equal(behaviour?.applicability ?? null, null, `${sentence} 不该读出型号`);
+    }
+    // The readable forms still read.
+    const readable = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n仅 X9000 系列支持。\n'));
+    assert.deepEqual(readable.entries.find((entry) => entry.data.form === 'text')?.applicability, { models: ['X9000'] }, 'a tight 仅支持 still reads');
+  });
+
   it('reads no negated, hedged, inclusive or partly listed condition, and no exception list (second review findings 3 and 6)', () => {
     const sentences = [
       '不会适用于 hg-k 平台。',
