@@ -289,3 +289,9 @@ test('decoded NULs are removed and counted once at their source in cells, sheet 
   assert.equal(document.model.nulRemoved, 3); assert.equal(document.summary().nulRemoved, 3);
   assert.ok(!JSON.stringify(document.model).includes('\\u0000'));
 });
+
+test('OPC rejects ASCII case-equivalent member names and resolves case-equivalent targets', () => {
+  refuses(zip([{ name: 'xl/a.xml' }, { name: 'XL/A.XML' }]), /重复/);
+  const document = parseWorkbook({ relations: `<Relationship Id="case" Type="${DOC_REL}/styles" Target="WORKSHEETS/SHEET1.XML"/>` });
+  assert.equal(document.model.sheets.length, 1);
+});

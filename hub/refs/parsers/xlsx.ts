@@ -5,6 +5,7 @@ import { checkSize, effectiveLimits, mediaTypeEssence, nodesError, selectorChars
 import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from '../reference.ts';
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
+const asciiFold = (value: string): string => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 /** Sum of UTF-8 value text placed in cells, including each use of a shared string. */
 export const XLSX_CELL_TEXT_LIMIT = 32 * 1024 * 1024;
 /** Hard container caps. Parser options may lower input size, but cannot raise these security limits. */
@@ -156,9 +157,9 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     const path = entry.name.endsWith('/') ? entry.name.slice(0, -1) : entry.name;
     if (!path || entry.name.length > 512 || /[\\:\u0000-\u001f\u007f]/.test(entry.name) || path.split('/').some((part) => part === '' || part === '.' || part === '..'))
       forbidden('ZIP 成员路径不安全或过长');
-    if (seen.has(entry.name))
+    if (seen.has(asciiFold(entry.name)))
       syntax('ZIP 成员路径重复');
-    seen.add(entry.name);
+    seen.add(asciiFold(entry.name));
     verifyUnicodePath(fields, entry);
     expanded += entry.size;
     if (expanded > limits.maxExpandedBytes)
@@ -420,9 +421,12 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   const xstring = (value: string): string => decodeXstring(value, (count) => { nulRemoved += count; });
   if (!archive.has('[Content_Types].xml') || !archive.has('_rels/.rels'))
     syntax('XLSX 缺少工作簿必需部件');
+  const actualNames = new Map([...archive.keys()].map((name) => [asciiFold(name), name]));
+  const actualPart = (name: string): string => actualNames.get(asciiFold(name)) ?? name;
   const cache = new Map<string, Element>();
   let nodeCount = 0;
   const part = (name: string): Element => {
+    name = actualPart(name);
     const cached = cache.get(name);
     if (cached)
       return cached;
@@ -545,7 +549,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/.exec(path);
       if (!match)
         syntax('XLSX 关系部件路径无效');
-      source = [match![1], match![2]].filter(Boolean).join('/');
+      source = actualPart([match![1], match![2]].filter(Boolean).join('/'));
       if (!archive.has(source))
         syntax('XLSX 关系部件的源部件不存在');
     }
@@ -562,7 +566,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (ids.has(id))
         syntax('XLSX 关系标识重复');
       ids.add(id);
-      const resolved = external ? null : partTarget(source, target);
+      const resolved = external ? null : actualPart(partTarget(source, target));
       if (resolved !== null && !archive.has(resolved))
         syntax('XLSX 关系指向不存在的部件（关系断链）');
       relationships.push({ source, id, type, target, external });
