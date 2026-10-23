@@ -17,7 +17,7 @@ test('client response rules match the retained validator including distributions
 test('reuse identity records and token estimates match the pure reference', () => {
   const input = { model, question: request.questions.q, stateDigest: reference.inputDigest(request.state) };
   assert.equal(client.reuseKey(input), reference.reuseKey(input)); assert.equal(client.estimateTokens('合成 manual 123'), reference.estimateTokens('合成 manual 123'));
- 
+
 });
 
 test('ask planning splits sendable question groups by token budget and preserves their exact state',async()=>{
