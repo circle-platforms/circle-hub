@@ -61,7 +61,7 @@ export function parseQuoteReference(reference: string): Target | null {
   return null;
 }
 export interface QuoteInputs { sources?: ReadonlyMap<string, Uint8Array>; manual?: readonly Uint8Array[]; run?: unknown; fixField?: string }
-export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field' | 'unknown_target'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null; gap?: { fact: string; action: string; owner: string } }
+export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field' | 'unknown_target' | 'quote_absent'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null; gap?: { fact: string; action: string; owner: string } }
 const unknown = (category: QuoteFinding['category'], why: Reason = reason('no_check'), scope: QuoteFinding['scope'] = 'fragment'): QuoteFinding => ({ verdict: UNKNOWN, category, reason: why, scope, expectedVerbatim: null, gap: { fact: why === 'missing_input' ? 'referenced_source_bytes_or_manual' : 'reference_parser_or_fragment_rule', action: why === 'missing_input' ? 'export_original_and_retry' : 'request_parser_rule_from_named_integrator', owner: 'Claude' } });
 function sliceRange(text: string, range?: [number, number]): string | null {
   if (!range) return text;
@@ -134,17 +134,18 @@ export function judgeQuote(reference: string, quote: string, expected: string, i
 }
 export function quotesReport(submission: unknown, hub: unknown, inputs: QuoteInputs) {
   const drafts = locatedDrafts(submission);
-  const found = drafts.flatMap(d => (d.data.expected?.length ? d.data.expected : [{}]).map((e, expected) => ({ item: d.item, draft: d.draft, expected: expected + 1,
-    ...(!e.quote || typeof e.quote.reference !== 'string' || typeof e.quote.text !== 'string' ? unknown('other', reason('missing_input')) : judgeQuote(e.quote.reference, e.quote.text, e.text ?? '', inputs)),
+  const shapes=drafts.filter(d=>!d.data.expected?.length).map(d=>({draft:d.draft,category:'expected_absent'}));
+  const found = drafts.flatMap(d => (d.data.expected??[]).map((e, expected) => ({ item: d.item, draft: d.draft, expected: expected + 1,
+    ...(!e.quote || typeof e.quote.reference !== 'string' || typeof e.quote.text !== 'string' ? {verdict:REFUTE,category:'quote_absent' as const,scope:'fragment' as const,expectedVerbatim:false} : judgeQuote(e.quote.reference, e.quote.text, e.text ?? '', inputs)),
   })));
   const items = [...new Set(drafts.map(d => d.item))].map(item => {
     const own = found.filter(f => f.item === item);
-    const verdict = own.some(f => f.verdict === REFUTE) ? REFUTE : own.length === 0 || own.some(f => f.verdict === UNKNOWN) ? UNKNOWN : SUPPORT;
+    const verdict = drafts.some(d=>d.item===item&&!d.data.expected?.length)||own.some(f => f.verdict === REFUTE) ? REFUTE : own.length === 0 || own.some(f => f.verdict === UNKNOWN) ? UNKNOWN : SUPPORT;
     const status=requirementStatus(hub,item,'grounded');
     return {verdict,comparison:compareStatus(verdict,status),hubOutputMissing:verdict!==UNKNOWN&&(status===null||status==='pending')};
   });
-  return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.verdict === v).length])),
-    targets: Object.fromEntries(['fix','defect_other','manual','other','unknown_defect_field','unknown_target'].map(c => [c, Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.category === c && f.verdict === v).length]))])),
+  return { shapes,counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.verdict === v).length])),
+    targets: Object.fromEntries(['fix','defect_other','manual','other','unknown_defect_field','unknown_target','quote_absent'].map(c => [c, Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.category === c && f.verdict === v).length]))])),
     expectedVerbatim: found.filter(f => f.verdict === SUPPORT && f.expectedVerbatim).length,
     paraphrased: found.filter(f => f.verdict === SUPPORT && f.expectedVerbatim === false).length,
     necessaryOnly: found.filter(f => f.scope === 'necessary').length, items,

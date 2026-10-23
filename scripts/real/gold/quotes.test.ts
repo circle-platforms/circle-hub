@@ -63,3 +63,10 @@ test('missing original bytes remain a missing-input transition with an export ac
   const found=judgeQuote(`src:${digest}/json@1/p/fix%2F说明`,'执行成功','执行成功',{...opts,sources:new Map()});
   assert.equal(found.verdict,'unknown');assert.equal(found.reason,'missing_input');assert.equal(found.gap?.action,'export_original_and_retry');
 });
+test('missing quotes are refutations while missing expected results are shape findings',()=>{
+  const submit=(expected:any[])=>({items:[{item:'i',slots:{cases:[{data:{expected}}]}}]});
+  const result=quotesReport(submit([{text:'text'}]),{},opts);
+  assert.equal(result.counts.refute,1);assert.equal(result.counts.unknown,0);assert.equal(result.details[0].category,'quote_absent');assert.equal(result.details[0].gap,undefined);
+  const empty=quotesReport(submit([]),{},opts);
+  assert.equal(empty.details.length,0);assert.equal(empty.counts.unknown,0);assert.deepEqual(empty.shapes,[{draft:1,category:'expected_absent'}]);
+});

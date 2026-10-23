@@ -281,7 +281,7 @@ export function renderComparison(comparison: Comparison): string {
     lines.push(`引文来源类别 ${category}：支持 ${row.support}；反驳 ${row.refute}；暂态待补证 ${row.unknown}`);
   }
   lines.push(`期望文字逐字 ${independent.expectedVerbatim}；改写 ${independent.paraphrased}（只报告）`);
-  lines.push(`引文：${independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
+  lines.push(`引文：${independent.shapes.length===0 && independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
   lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
   const questions = evidenceQuestions(comparison);
   if (questions.length) lines.push(`设计缺口 ${questions.length} 项；补证动作：请求集成者 Claude 按位置补齐事实后重算；不作为已完成的未知`);
@@ -322,6 +322,7 @@ export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
 /** Details contain positions and explanatory categories only, never input strings. */
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
+    ...comparison.quoteOracle.shapes,
     ...(comparison.parameters?.domains.differences ?? []),
     ...comparison.quoteOracle.items.flatMap((item,index)=>item.hubOutputMissing?[{item_position:index+1,category:'hub_output_missing'}]:[]),
     ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),

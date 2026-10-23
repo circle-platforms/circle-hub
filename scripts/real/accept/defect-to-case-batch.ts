@@ -39,7 +39,7 @@ function lockEvidence(path:string):void {
 function gates(c:Comparison) {
   const p=c.parameters,q=c.quoteOracle;
   return {commands:!!p&&p.domains.items.length>0&&p.domains.items.every(i=>i.comparison==='equal'&&!i.hasUnknown),
-    quotes:q.details.length>0&&q.counts.refute===0&&q.counts.unknown===0&&q.items.every(i=>i.comparison==='equal'),
+    quotes:q.shapes.length===0&&q.details.length>0&&q.counts.refute===0&&q.counts.unknown===0&&q.items.every(i=>i.comparison==='equal'),
     origins:q.details.length>0&&q.details.every(d=>d.category==='fix'||d.category==='manual')};
 }
 export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDeps):Promise<{code:number;text:string;totals:Record<string,number>}> {
