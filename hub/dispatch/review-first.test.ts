@@ -125,3 +125,11 @@ test('R12 every main condition is recorded and cited by the intent',async t=>{
   assert.equal((assessed.body.detail.conditions as any[]).length,c.executor.definition.conditions.length);
   const intent=events.find(e=>e.body.detail.phase==='intent')!;assert.ok(assessed.body.inputs.every(ref=>intent.body.inputs.includes(ref)));
 });
+
+test('R13 the newest accepted verification is reread and its current record authorizes unchanged bytes',async t=>{
+  let c:Awaited<ReturnType<typeof setup>>;const newer='d'.repeat(64);
+  c=await setup({alter:(name,v)=>{if(name==='inspect_slot')c.detail.latest!.record=newer;return v;}});t.after(()=>c.close());
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const intent=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='intent')!;
+  assert.equal(intent.body.detail.verification_result,newer);assert.ok(intent.body.inputs.includes(`rec:${newer}`));
+});
