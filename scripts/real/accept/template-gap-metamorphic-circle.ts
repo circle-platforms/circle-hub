@@ -105,13 +105,21 @@ interface Pending {
 
 export default function scenario(gold: GapCircleGold): Scenario {
   const area = '模板缺口检查';
-  if (gold.documents.length < 2) throw new Error('gold 里至少要两份文档');
+  const refused = (message: string, action: string): Scenario => ({ name: 'template-gap-metamorphic', area, prompt: '输入前提未满足，不执行工具调用', respond: () => [{ text: `输入前提不符：${message}；下一步：${action}` }], check: () => [{ area, name: '输入前提', ok: false, expected: action, actual: message }], sections: [{ title: '没做的副本（按原因）', lines: [`输入前提不符：${message}；下一步：${action}`] }] });
+  if (!gold || typeof gold !== 'object' || !Array.isArray(gold.documents) || gold.documents.length < 2) return refused('documents 至少要两份文档', '提供 documents 数组，至少两份可读的原始脑图 JSON');
+  if (!Number.isSafeInteger(gold.batch) || gold.batch < 1) return refused('batch 必须为至少 1 的整数', '提供正整数 batch');
+  if (!Number.isSafeInteger(gold.maxCases) || gold.maxCases < 1) return refused('maxCases 必须为至少 1 的整数', '提供正整数 maxCases');
+  const trees: MindTree[] = []; const outerIds: string[][] = [];
+  for (const [document, entry] of gold.documents.entries()) {
+    if (!entry || typeof entry.file !== 'string' || !entry.file) return refused(`documents 第 ${document + 1} 份缺少 file`, '提供该份原始脑图 JSON 文件');
+    let tree: MindTree; let keys: string[];
+    try { tree = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(entry.file))) as MindTree; keys = outerCaseIdsOf(tree); }
+    catch { return refused(`documents 第 ${document + 1} 份没有可读的合法脑图结构`, '补充该份可读的原始脑图 JSON'); }
+    if (!keys.length) return refused(`第 ${document + 1} 份文档没有最外层用例`, '选择至少有一个最外层用例的脑图');
+    if (keys.length > gold.maxCases) return refused(`第 ${document + 1} 份的用例 ${keys.length} 个超过 maxCases ${gold.maxCases}`, '提高 maxCases 或选择较小的文档');
+    trees.push(tree); outerIds.push(keys);
+  }
   const categories = readCategories(JSON.parse(readFileSync(join(import.meta.dirname, '../../../packs/workflow/template-gap/tables/template-v3.json'), 'utf8')));
-  const trees = gold.documents.map((d) => JSON.parse(readFileSync(d.file, 'utf8')) as MindTree);
-  const outerIds = trees.map((t) => outerCaseIdsOf(t));
-  outerIds.forEach((ids, i) => {
-    if (ids.length > gold.maxCases) throw new Error(`第 ${i + 1} 份文档的最外层用例（${ids.length} 个）超过 maxCases（${gold.maxCases}）`);
-  });
 
   let workdir = '';
   let phase = 1;

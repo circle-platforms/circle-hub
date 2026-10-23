@@ -358,3 +358,19 @@ test('review 14: evidence is per document and copy, and category tallies compare
   assert.match(lines.find(line => line.startsWith('security（'))!, /b 相符 1 不符 1/);
   assert.match(lines.find(line => line.startsWith('database（'))!, /b 相符 2 不符 0/);
 });
+
+test('review 16: invalid gold records a field-specific refusal before any tool call', () => {
+  const { gold, dir } = goldOf(); writeFileSync(join(dir, 'notes.json'), JSON.stringify({ root: group('notes', '合成说明') }));
+  const inputs = [
+    { value: {}, field: 'documents' }, { value: { ...gold, documents: [] }, field: 'documents' },
+    { value: { ...gold, batch: 0 }, field: 'batch' }, { value: { ...gold, batch: undefined }, field: 'batch' },
+    { value: { ...gold, maxCases: undefined }, field: 'maxCases' }, { value: { ...gold, maxCases: 1 }, field: 'maxCases' },
+    { value: { ...gold, documents: [{ file: join(dir, 'notes.json') }, gold.documents[1]] }, field: '用例' },
+  ];
+  for (const { value, field } of inputs) {
+    const scenario = build(value as never); const reply = scenario.respond(turn(0)) as any[];
+    assert.ok(reply.length > 0 && reply.every(item => typeof item.text === 'string'));
+    const checks = scenario.check([]); assert.ok(checks.some(check => !check.ok && check.actual.includes(field)));
+    assert.ok(!JSON.stringify(checks).includes(dir));
+  }
+});
