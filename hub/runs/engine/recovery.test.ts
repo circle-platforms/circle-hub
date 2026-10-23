@@ -54,3 +54,11 @@ test('awaiting_step carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('所等步骤的完'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('output_failed carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'output_failed' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('能回读且与重'));
+  assert.ok(LayerResult.safeParse(result).success);
+});
