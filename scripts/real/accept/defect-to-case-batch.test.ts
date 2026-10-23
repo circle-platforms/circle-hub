@@ -9,7 +9,8 @@ function fixture(){
   const root=mkdtempSync(join(tmpdir(),'gold-d2c-synthetic-')),out=join(root,'out');
   const xml='<commands><scope type="global"><menu name="widget"><item name="set"><arguments><arg name="n" type="U16"/></arguments></item><item name="other"/></menu></scope></commands>';
   const commands=join(root,'commands.xml'),manual=join(root,'manual.txt');writeFileSync(commands,xml);writeFileSync(manual,'SYNTHETIC_MANUAL_TEXT');
-  const originals=new Map<string,Buffer>(),details=new Map<string,any>(),submissions=new Map<string,unknown>(),records:string[]=[],reviews:string[][]=[];
+  const originals=new Map<string,Buffer>();const manualBytes=readFileSync(manual),manualSha=sha256(manualBytes);originals.set(manualSha,manualBytes);
+  const details=new Map<string,any>(),submissions=new Map<string,unknown>(),records:string[]=[],reviews:string[][]=[];
   const config:Pairings={product:'Demo',prompt:'{product} {build} 缺陷 {defect}',fix_field:'fix',pairings:[]};
   for(let i=0;i<2;i++){
     const defect=String(160001+i),document=String(24110+i),run=`run_synthetic_${i}`,source=Buffer.from(JSON.stringify({fix:'SYNTHETIC_FIX_QUOTATION',defect})),sourceSha=sha256(source);
@@ -18,7 +19,7 @@ function fixture(){
     const record=(i?'f':'e').repeat(64),validation=(i?'2':'1').repeat(64);
     submissions.set(record,{run,items:[{item:'item',slots:{cases:[{data:{title:'SYNTHETIC_DRAFT_TITLE',negative:false,expects_refutation:false,steps:[{command:'widget set 5'}],expected:[{text:'SYNTHETIC_FIX_QUOTATION',quote:{text:'SYNTHETIC_FIX_QUOTATION',reference:`src:${sourceSha}/json@1/p/fix`}}]}}]}}]});
     const requirements=['fields','commands','grounded','not_duplicate','traceability'];
-    const detail={run:{run,pack:'defect-to-case@1.0.0',pack_digest:'b'.repeat(64),root:'a'.repeat(64),sources:[{slot:'defects',reference:`src:${sourceSha}`},{slot:'indexed_cases',reference:`src:${indexSha}`}],requirements:requirements.map(key=>({key,repair_rounds:2}))},submissions:[{record,result:validation,acceptance:'accepted'},{record:'3'.repeat(64),result:null,acceptance:'not_accepted'}],latest:{record:validation,result:{schema:'validation@1',submission:'4'.repeat(64),rounds:{used:1,max:2},partitions:{delivered:[{item:'item',requirements:requirements.map(requirement=>({requirement,status:'satisfied',claims:[]}))}]}}}};
+    const detail={run:{run,pack:'defect-to-case@1.0.0',pack_digest:'b'.repeat(64),root:'a'.repeat(64),sources:[{slot:'defects',reference:`src:${sourceSha}`},{slot:'indexed_cases',reference:`src:${indexSha}`},{role:'expected',external:'manual:cli:10.6.1',reference:`src:${manualSha}`}],requirements:requirements.map(key=>({key,repair_rounds:2}))},submissions:[{record,result:validation,acceptance:'accepted'},{record:'3'.repeat(64),result:null,acceptance:'not_accepted'}],latest:{record:validation,result:{schema:'validation@1',submission:'4'.repeat(64),rounds:{used:1,max:2},partitions:{delivered:[{item:'item',requirements:requirements.map(requirement=>({requirement,status:'satisfied',claims:[]}))}]}}}};
     details.set(run,detail);
     const map=join(root,`map-${i}.json`);writeFileSync(map,JSON.stringify({root:{data:{text:`缺陷${defect} 回归`,id:'root'},children:[{data:{text:'widget set 5',id:'case',resource:['功能']}}]}}));
     config.pairings.push({defect,build:'Demo_1',commands,manual,regression_map:map,document});
@@ -156,10 +157,10 @@ test('fake child stdout and stderr for every process stay in private pairing evi
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},deps);
     assert.equal(report.code,0);assert.ok(!report.text.includes(marker));assert.ok(!report.text.includes('PRIVATE_SYNTHETIC_TOKEN'));
     assert.equal(report.text.split('\n').filter(line=>line.startsWith('配对 ')).length,1);
-    assert.deepEqual(calls,['admin','review','show','export','export']);
+    assert.deepEqual(calls,['admin','review','show','export','export','export']);
     const files=(dir:string):string[]=>readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?files(join(dir,entry.name)):[join(dir,entry.name)]);
     const captures=files(f.out).filter(path=>/process-.*\.(stdout|stderr)\.txt$/.test(path));
-    assert.equal(captures.length,10);assert.ok(captures.some(path=>readFileSync(path,'utf8').includes(marker)));
+    assert.equal(captures.length,12);assert.ok(captures.some(path=>readFileSync(path,'utf8').includes(marker)));
     for(const path of captures)assert.equal(statSync(path).mode&0o777,0o600);
   }finally{f.close();}
 });
@@ -221,5 +222,30 @@ test('a skipped task launches the client only once unless retries were explicitl
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
     assert.equal(attempts,1);assert.equal(report.code,1);assert.match(report.text,/no_defect_to_case_run/);
     assert.ok(JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8')).some((q:any)=>q.next_action==='rerun_pairing_with_explicit_retries'));
+  }finally{f.close();}
+});
+
+test('supplemental index bytes are frozen before client work and their digest reaches the pairing line',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0');
+    const bound=detail.run.sources.find((source:any)=>source.slot==='indexed_cases').reference.slice(4);
+    const view=JSON.parse(f.originals.get(bound)!.toString());view.notes=['PRIVATE_INDEX_NOTE'];
+    const bytes=Buffer.from(JSON.stringify(view)),path=join(f.root,'supplemental.json');writeFileSync(path,bytes);f.config.pairings[0].indexes=[path];
+    const review=f.deps.review;f.deps.review=async(args,out)=>{writeFileSync(path,'changed after preflight');return review(args,out);};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.ok(report.text.includes(sha256(bytes)));assert.doesNotMatch(report.text,/PRIVATE_INDEX_NOTE/);
+  }finally{f.close();}
+});
+test('a pairing manual must match an expected manual actually bound to the run',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);writeFileSync(f.config.pairings[0].manual,'UNBOUND_SYNTHETIC_MANUAL');
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.match(report.text,/pairing_manual_binding_mismatch/);assert.equal(report.totals.defects,0);assert.equal(report.totals.design_gaps,0);
+  }finally{f.close();}
+});
+test('all expected manuals bound to the run are recognized as manual quote targets',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const bytes=Buffer.from('SECOND_BOUND_MANUAL'),digest=sha256(bytes);f.originals.set(digest,bytes);
+    f.details.get('run_synthetic_0').run.sources.push({role:'expected',external:'manual:app:10.6.1',reference:`src:${digest}`});
+    (f.submissions.get('e'.repeat(64)) as any).items[0].slots.cases[0].data.expected=[{text:bytes.toString(),quote:{text:bytes.toString(),reference:`src:${digest}`}}];
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.equal(report.totals.quote_manual_support,1);assert.equal(report.totals.quote_other_support,0);
   }finally{f.close();}
 });

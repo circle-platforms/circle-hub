@@ -62,8 +62,9 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       field='regression_map';const mapBytes=readFileSync(outsideGit(pair.regression_map)),map=JSON.parse(mapBytes.toString('utf8'));
       const gold=regressionDocGold(pair.document,map,{commandTreeXml:xml});
       if(!gold.defects.includes(pair.defect)){cause='root_defect_mismatch';throw new Error();}
-      field='indexes';for(const path of pair.indexes??[])JSON.parse(readFileSync(outsideGit(path),'utf8'));
-      prepared.push({commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes});
+      field='indexes';const extraIndexes=(pair.indexes??[]).map(path=>{const bytes=readFileSync(outsideGit(path));return {bytes,view:JSON.parse(bytes.toString('utf8'))};});
+      if(extraIndexes.length)recountDuplicates(extraIndexes.map(index=>index.view),{items:[]},xml,{});
+      prepared.push({commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes,extraIndexes});
     }catch{return {code:2,text:`配对 ${position+1}/${config.pairings.length}：输入不通过；字段 ${field}；${cause}`,totals:{pairs:config.pairings.length,completed:0,failed:1,defects:0}};}
   }
   const out=outsideGit(options.out);mkdirSync(out,{recursive:true,mode:0o700});
@@ -78,7 +79,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
     const actions:{position:number;attempt:number;category:string}[]=[],requests:EvidenceQuestion[]=[];
     const performed=(category:string,attempt:number)=>{actions.push({position:actions.length+1,attempt,category});totals.recovery_actions++;};
     try {
-      const {commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes}=prepared[position];
+      const {commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes,extraIndexes}=prepared[position];
       const prompt=config.prompt.replace(/\{(defect|product|build)\}/g,(_,key:string)=>key==='product'?config.product:pair[key as 'defect'|'build']);
       let selected:any;
       const allRuns=new Map<string,any>();
@@ -153,6 +154,10 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
         if(binding.slot==='indexed_cases')indexes.push(JSON.parse(Buffer.from(bytes).toString('utf8')));
       }
       if(slots.size!==2){category='required_source_missing';throw new Error(category);}
+      const manualDigests=run.sources.flatMap((binding:any)=>binding.role==='expected'&&typeof binding.external==='string'&&binding.external.startsWith('manual:')&&typeof binding.reference==='string'?(/^src:([a-f0-9]{64})(?:\/|$)/.exec(binding.reference)?.[1]??[]):[]);
+      if(!manualDigests.includes(sha256(manual))){category='pairing_manual_binding_mismatch';throw new Error(category);}
+      const manuals:Uint8Array[]=[...new Set<string>(manualDigests)].map(digest=>sources.get(digest)!);
+
       // A quote can name another stored original. Export it automatically before treating its bytes as missing.
       for(const draft of locatedDrafts(submission))for(const expected of draft.data.expected??[]) {
         const digest=typeof expected.quote?.reference==='string'?/^src:([a-f0-9]{64})(?:\/|$)/.exec(expected.quote.reference)?.[1]:undefined;
@@ -160,10 +165,10 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
           try{await obtain(digest,true);}catch{requests.push({draft:draft.draft,category:'design_gap',reason:MISSING,missing_fact:'quoted_source_original',next_action:'repair_original_export_then_rerun',owner:'Claude'});}
         }
       }
-      for(const path of pair.indexes??[])indexes.push(JSON.parse(readFileSync(outsideGit(path),'utf8')));
+      indexes.push(...extraIndexes.map(index=>index.view));
       if(indexes.some(v=>!object(v)||!object(v.build)||v.build.root!==run.root)){category='index_root_mismatch';throw new Error(category);}
       category='comparison_unavailable';
-      const inputs={commandTreeXml:xml,commandCatalog,manual:[manual],sources,run,fixField:config.fix_field};
+      const inputs={commandTreeXml:xml,commandCatalog,manual:manuals,sources,run,fixField:config.fix_field};
       let comparison=computeComparison(gold,submission,result,inputs);
       category='index_view_schema_or_identity_defect';
       let duplicates=recountDuplicates(indexes,submission,xml,result);
@@ -190,16 +195,17 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       const buckets=object(result.partitions)?Object.values(result.partitions).flatMap(v=>Array.isArray(v)?v:[]):[],requirements=Array.isArray(run.requirements)?run.requirements:[];
       const satisfied=requirements.filter((r:any)=>buckets.length>0&&buckets.every(b=>(b.requirements??[]).some((v:any)=>v.requirement===r.key&&v.status===REQUIREMENT_STATUS[0]))).length;
       const rounds=validRounds(result)?`${result.rounds.used}/${result.rounds.max}`:'输出缺失';
-      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；提交 ${selected.submissions.length}；受理 ${selected.submissions.filter((s:any)=>s.acceptance==='accepted').length}；修复轮 ${rounds}；要求项 ${satisfied}/${requirements.length}；任务包 ${run.pack}；摘要 ${run.pack_digest}；输入摘要 ${[sha256(commandBytes),sha256(manual),sha256(mapBytes),...(declarationBytes?[sha256(declarationBytes)]:[]),...sources.keys()].join(' ')}；${ok?'通过':'不通过'}`);
+      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；提交 ${selected.submissions.length}；受理 ${selected.submissions.filter((s:any)=>s.acceptance==='accepted').length}；修复轮 ${rounds}；要求项 ${satisfied}/${requirements.length}；任务包 ${run.pack}；摘要 ${run.pack_digest}；输入摘要 ${[sha256(commandBytes),sha256(manual),sha256(mapBytes),...extraIndexes.map(index=>sha256(index.bytes)),...(declarationBytes?[sha256(declarationBytes)]:[]),...sources.keys()].join(' ')}；${ok?'通过':'不通过'}`);
 
       writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:ok?'passed':requests.length?'design_gap':'comparison_defect',positions:[...comparisonDetails(comparison),...(hubOutputMissing?[{category:'hub_output_missing'}]:[])],duplicates:duplicates.details});
     }catch{
       const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','export_integrity_mismatch','index_view_schema_or_identity_defect','invalid_run'].includes(category);
       if(definite)totals.defects++;
-      if(!definite&&!requests.length)requests.push({category:'design_gap',reason:MISSING,missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'rerun_pairing_with_explicit_retries':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
+      const inputMismatch=category==='pairing_manual_binding_mismatch';
+      if(!definite&&!inputMismatch&&!requests.length)requests.push({category:'design_gap',reason:MISSING,missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'rerun_pairing_with_explicit_retries':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
       totals.design_gaps+=requests.length;totals.failed++;
-      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；不通过；${definite?'确定缺陷':labelOf('reason',MISSING)} ${category}`);
-      writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:definite?'confirmed_defect':'design_gap',finding:category});
+      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；不通过；${definite?'确定缺陷':inputMismatch?'输入不匹配':labelOf('reason',MISSING)} ${category}`);
+      writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:definite?'confirmed_defect':inputMismatch?'input_mismatch':'design_gap',finding:category});
     }finally{
       if(requests.length){writePrivateJson(join(dir,'followup.json'),requests);lines[pairLine]+=`；补证清单已写入配对目录 ${requests.length} 项，待集成者 Claude 执行；流程未完成`;}
       writePrivateJson(join(dir,'actions.json'),actions);lockEvidence(dir);
