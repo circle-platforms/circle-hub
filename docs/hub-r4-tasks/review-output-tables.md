@@ -14,7 +14,7 @@
   - `packs/workflow/case-review/SKILL.md`、`README.md`、`pack.json`（只改“评审最后一步”那两处，重新签名）；
   - `tests/acceptance/26-review-report.test.ts`；`tests/acceptance/support/review.ts` 只加辅助函数；
   - `docs/hub-r4-guide.md` 的“用例评审”一节；
-  - 核心（`hub/**`、`contracts/**`）不改，缺什么先停下回报。
+  - 核心（`hub/**`、`contracts/**`）不改，缺什么先停下回报。例外一处：`hub/server/console/**`，运行页加一节“投影字符串字段（只读）”，通用、转义、不写工作流的字段名（集成者当时答的“完整的表放在控制台运行页”，补记为决定 42）。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；git commit -s）。所有者的规矩：Hub 只核验，不生成内容、不调用模型——表里只有已受理的记录和源文件原文，排法是固定规则，不新增主张；未知只能是过渡状态，写明缺的事实和下一步动作；枚举只来自生成的词表，包里的码和中文名只来自包里的表；核心不出现产品词。
 - 验证：`npx tsc --noEmit`；`node --test --test-concurrency=1 "packs/workflow/case-review-report/**/*.test.ts" "packs/workflow/case-review-verify/**/*.test.ts" "packs/workflow/case-review/**/*.test.ts" tests/acceptance/26-review-report.test.ts`（数据库测试别和别的终端同时跑）；`node packs/workflow/case-review/packaging.ts check case-review case-review-verify case-review-report`。
 
