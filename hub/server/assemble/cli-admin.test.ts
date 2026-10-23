@@ -1610,3 +1610,20 @@ test('c3 Secrets documentation follows the supported irreversible key loss proce
  assert.match(procedure,/loaded service/);assert.match(procedure,/configured port/);assert.match(procedure,/present key/);assert.match(procedure,/Plain `key init` refuses a nonempty vault/);
  assert.ok(!text.includes('the advice is always to restore'));
 });
+
+test('pack publish forwards repeated explicit answer-request flags without touching the real keychain',async()=>{
+  const admin=await setup();
+  await expectOk(admin,['pack','grant-publish','根管理员']);
+  await expectOk(admin,['pack','publish',packs.review]);
+  const requestIds=await withKit(admin,async kit=>{
+    const {createRequestService}=await import('../../requests/api.ts');
+    const owner=(await kit.principals.findByName('根管理员'))!;
+    const version=(await kit.store.list<{digest:string}>({kind:'pack_version',limit:10})).items[0];
+    const requests=createRequestService(kit);
+    return Promise.all(['合成缺口甲','合成缺口乙'].map(missing=>requests.write({pack_digest:version.body.digest,kind:'repair',audience:owner.id,due:'2026-10-26T00:00:00.000Z',missing,next_action:'发布修复版本',source:version.digest,code:'check_error'}))).then(records=>records.map(r=>r.digest));
+  });
+  const dir=(await writePack(join(packRoot,'explicit-answer'),reviewPack('1.0.1'))).dir;
+  const answer=await expectOk(admin,['pack','publish',dir,'--answer-request',requestIds[0],'--answer-request',requestIds[1]]);
+  assert.match(answer.text,/请求作答.*2 个指定请求/);
+  await withKit(admin,async kit=>{const {createRequestService}=await import('../../requests/api.ts');for(const id of requestIds)assert.ok((await createRequestService(kit).inspect(id))?.answered_by);});
+});

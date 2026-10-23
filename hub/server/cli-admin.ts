@@ -47,7 +47,7 @@ export interface AdminCommandOptions {
 }
 
 export const PACK_USAGE =
-  'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
+  'pack publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
 export const RESOURCE_USAGE =
   'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret import --env-file <文件> --key <键名>=<资源>/<凭据项>… [--basic <用户键>:<密码键>=<资源>/<凭据项>] [--dry-run] | set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
@@ -197,17 +197,19 @@ class Session {
   }
 
   /** The operator token and its enabled admin; refused (before anything is read or written) when there is none. */
-  async #operator(): Promise<{ admin: Principal; token: string }> {
+  async #operator(requireAdmin=true): Promise<{ admin: Principal; token: string }> {
     const kit = await this.records();
     const token = await this.operatorToken();
     if (token === null) {
+      if(!requireAdmin)throw new CliError('这个命令会改变运行状态，需要有效操作令牌',`通过 ${OPERATOR_TOKEN_VARIABLE} 提供运行者本人或管理员的令牌；不采用只读命令的身份回退`);
       throw new CliError(
         '这个命令会改变 Hub 的状态，要管理员令牌，没有找到',
         `已有管理员而钥匙串项丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin <名字> 建立；或者${ONE_COMMAND_TOKEN}`,
       );
     }
     const principal = await kit.principals.authenticate(`Bearer ${token}`);
-    if (principal === null || principal.role !== 'admin') {
+    if (principal === null || requireAdmin&&principal.role !== 'admin') {
+      if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
       const hint =
         this.envToken === null
           ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${DEAD_ITEM}`
@@ -216,6 +218,8 @@ class Session {
     }
     return { admin: principal, token };
   }
+
+  async member():Promise<Principal>{return (await this.#operator(false)).admin;}
 
   /** The operator of a state-changing command that may cut off its own token (token revoke, user disable). */
   async act(): Promise<OperatorAct> {
@@ -326,7 +330,7 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
   const [sub, ...rest] = args;
   switch (sub) {
     case 'publish': {
-      const { positionals, values } = parse(rest, { stage: { type: 'boolean' } }, 1);
+      const { positionals, values } = parse(rest, { stage: { type: 'boolean' }, 'answer-request':{type:'string',multiple:true} }, 1);
       const source = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);
       const admin = await session.admin();
       const hub = await session.hub();
@@ -334,7 +338,7 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       const staged = values.stage === true ? await stagePackDirectory(source) : null;
       let outcome;
       try {
-        outcome = await decided(() => hub.registry.publish(admin, staged ?? source));
+        outcome = await decided(() => hub.registry.publish(admin, staged ?? source,{answerRequests:values['answer-request']??[]}));
       } finally {
         if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
       }
@@ -350,8 +354,9 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       session.out(
         outcome.created
           ? `已发布 ${ref}（${labelOf('pack_kind', version.kind)}，摘要 ${version.digest}）：样例 ${samples.passed}/${samples.total} 通过`
-          : `${ref} 已经以同样的内容发布过（摘要 ${version.digest}），没有新的记录`,
+          : `${ref} 已经以同样的内容发布过（摘要 ${version.digest}），包版本没有新的记录`,
       );
+      if(values['answer-request']?.length)session.out(`请求作答：发布记录 rec:${version.record} 对应 ${new Set(values['answer-request']).size} 个指定请求（重复作答不增写）`);
       for (const warning of outcome.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
       if (version.kind === 'product' && !(await hub.registry.isActive(version.id))) session.out(`产品包启用后才生效：circle-hub pack activate ${version.id}`);
       if (version.kind === 'workflow') session.out(`工作流包分配给用户后才能用：circle-hub pack assign <用户> ${version.id}`);
@@ -1265,6 +1270,8 @@ function terminalSafeError(error: unknown): unknown {
 export function operatorAdmin(ctx: CliContext, options: AdminCommandOptions = {}): Promise<Principal> {
   return new Session(ctx, options).admin();
 }
+
+export function operatorMember(ctx:CliContext,options:AdminCommandOptions={}):Promise<Principal>{return new Session(ctx,options).member();}
 
 /** operatorAdmin for a command that may cut off its own token: afterwards it says whether the operator token still works. */
 export function operatorAct(ctx: CliContext, options: AdminCommandOptions = {}): Promise<OperatorAct> {
