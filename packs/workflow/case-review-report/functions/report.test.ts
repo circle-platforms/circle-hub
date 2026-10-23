@@ -24,8 +24,8 @@ function block(spec: Block): Record<string, unknown> {
     label: `用例 ${entry.item}`,
     location: `src:${DIGEST}/kityminder@1/n/${entry.item}`,
     requirements: [
-      { requirement: 'verification', claims: [{ qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1'},statement: { code: entry.kind ?? 'verified', text: entry.text ?? `发现 ${entry.item}`, rank: entry.rank ?? 'minor' }, data: {} }] },
-      { requirement: 'final', claims: [] },
+      { requirement: 'verification', status:'satisfied', claims: [{ qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1',independence:'model_family_declared'},statement: { code: entry.kind ?? 'verified', text: entry.text ?? `发现 ${entry.item}`, rank: entry.rank ?? 'minor' }, data: {} }] },
+      { requirement: 'final', status:'satisfied', claims: [] },
     ],
   }));
   // The real-data shape: a block that carries entries it did not deliver lists them unfinished (the first half), the
@@ -45,7 +45,7 @@ function block(spec: Block): Record<string, unknown> {
           cross_item: [
             // 存储的真实形状：模型的结论主张 pointer 在顶层、code/rank 在 statement 里；Hub 的事实主张可能排在它
             // 前面，所以按 pointer 对照；Hub 的 final 事实主张带 requirement、pointer 和 statement.verdict。
-            { qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1'},statement: { code: spec.verdict, rank: spec.level, text: '结论' }, grounds: [], pointer: '/cross_item/0', requirement: 'final' },
+            { qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1',independence:'model_family_declared'},statement: { code: spec.verdict, rank: spec.level, text: '结论' }, grounds: [], pointer: '/cross_item/0', requirement: 'final' },
             { requirement: 'final', pointer: '/cross_item/0', statement: { verdict: spec.hub ?? 'support', text: '与处置一致', data: {} }, grounds: [] },
           ],
         }),
@@ -350,4 +350,16 @@ it('the user guide includes the mandatory table report and its raw-field continu
   const section=guide.split('## 用例评审')[1].split('\n## ')[0];
   assert.match(section,/case-review-report/);assert.match(section,/#\/items\/0\/fields\/review_tables/);
   assert.match(section,/不分块也/);assert.match(section,/有下一页.*读完/);
+});
+
+it('a settled independent block may carry an ungraded cross item suggestion',()=>{
+  const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+  (result.cross_item as any[]).push({qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1',independence:'unknown'},statement:{code:'suggestion',rank:'minor',text:'补：合成边界；因为：缺下界；期望：拒绝非法输入'},grounds:[`src:${DIGEST}/kityminder@1/n/c1`]});
+  const output=run([{result}]);assert.ok(!output.error,JSON.stringify(output.error));assert.match(String(output.items![0].fields.review_tables),/补：合成边界/);
+});
+
+it('refuses a block still carrying repair errors or an unsatisfied independence requirement',()=>{
+  const repair=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});repair.errors=[{code:'case-review-verify.suggestion_target_missing',item:'c1',requirement:'verification',rounds_left:2}];
+  const independent=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});Object.assign((independent.partitions as any).delivered[0].requirements[0],{status:'unsatisfied',unsatisfied_reason:'independence_unknown'});
+  for(const result of [repair,independent]){const out=run([{result}]);assert.equal(out.error?.code,'case-review-report.block_unsettled');assert.match(out.error?.fix??'',/修复.*重交|不同.*家族/);assert.ok(!out.items);}
 });

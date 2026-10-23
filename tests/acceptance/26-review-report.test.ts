@@ -13,7 +13,7 @@ import { DOCUMENTS } from '../fixtures/agile/index.ts';
 import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
-import { startReview, draft, finding, level, VERIFIER, readProjectedText, oracleCases, type SlotClaim } from './support/review.ts';
+import { startReview, draft, finding, level, VERIFIER, DRAFTER, readProjectedText, oracleCases, type SlotClaim } from './support/review.ts';
 
 const REPORTER = 'omega-reporter 1.0 (scripted, temperature 0)';
 let postgres: TemporaryPostgres;
@@ -72,6 +72,8 @@ const verifyBlock = async (options: {
   suggestions?:(run:RunSummary)=>Record<string,unknown>[];
   freshText?:string;
   repairSuggestion?:boolean;
+  keepUnrepaired?:boolean;
+  model?:string;
 }): Promise<RunSummary> => {
   const verifier=await bed.connect(bed.reviewer,options.session);
   const started = await verifier.call('start_run', {
@@ -109,7 +111,7 @@ const verifyBlock = async (options: {
   });
   if(options.freshText&&items[0])items[0].slots.verification.push({text:options.freshText,code:'new_finding',rank:'minor',location:run.items[0].location,quotes:[{reference:run.items[0].location,text:run.items[0].label}],data:{probe:'edge_case_gap'}});
   const cross:Record<string,unknown>[]=[{nature:'judgment',statement:'结论 '+options.verdict,grounds:[],code:options.verdict,rank:options.level},...(options.suggestions?.(run)??[])];
-  const payload={run:run.run,model:VERIFIER,items,cross_item:cross};
+  const payload={run:run.run,model:options.model??VERIFIER,items,cross_item:cross};
   if(options.repairSuggestion){
     const bad=structuredClone(payload);bad.cross_item[1].grounds=[];
     const repair=await verifier.call('submit_result',bad);
@@ -119,6 +121,7 @@ const verifyBlock = async (options: {
     const result=repair.out.result!;
     const facts=[...result.cross_item,...Object.values(result.partitions).flatMap(entries=>entries.flatMap(entry=>entry.requirements.flatMap(requirement=>requirement.claims)))];
     assert.ok(facts.some(claim=>claim.statement.code==='case-review-verify.suggestion_target_missing'&&claim.item===items[0].item&&claim.pointer==='/cross_item/1'),'the stored check fact names the exact suggestion, separately from the receipt item path');
+    if(options.keepUnrepaired)return run;
   }
   const answer=await verifier.call('submit_result',payload);
   assert.equal(answer.isError, false, answer.text.slice(0, 500));
@@ -230,7 +233,8 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const itemC = draftC.items[0]!;
     await client.call('submit_result', draft(draftC, new Map([[itemC.id, [finding(itemC, { text: '字面问题：标题重复', code: 'literal_issue', rank: 'minor' })]]])));
 
-    const startedD = await client.call('start_run', {
+    const independentVerifier=await bed.connect(bed.reviewer,'synthetic-refutation-independent');
+    const startedD = await independentVerifier.call('start_run', {
       pack: 'case-review-verify',
       product: bed.product.names[0],
       version: bed.site.LINE,
@@ -240,7 +244,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const runD = startedD.out.run as RunSummary;
     const itemD = runD.items[0]!;
     const draftFindings = (itemD.fields.draft_findings ?? []) as Array<{ reference: string }>;
-    const verified = await client.call('submit_result', {
+    const verified = await independentVerifier.call('submit_result', {
       run: runD.run,
       model: VERIFIER,
       items: runD.items.map((it) => {
@@ -465,4 +469,20 @@ test('IPv4 subitem tables preserve original cells, dispositions, suggestions and
   assert.match(actual.text,/【部分正确·次要】/);assert.match(actual.text,/【新增·次要·边界用例缺口】/);
   const counts=report.fields.review_counts as {total:{cases:number;findings:number;suggestions:number};subitems:unknown[]};
   assert.equal(counts.total.cases,cases.length);assert.equal(counts.total.findings,cases.length+1);assert.equal(counts.total.suggestions,2);assert.equal(counts.subitems.length,1);
+});
+
+
+test('report admission rejects an unrepaired accepted verification receipt',async()=>{
+  const initial=await startReview(client,{product:bed.product.names[0],version:bed.site.LINE,inputs:{subject:{external:`agile:mindmap:${DOCUMENTS.review}`}},parameters:{slice:{from:1,to:1}}});
+  await client.call('submit_result',passDraftOf(initial));
+  const verified=await verifyBlock({draftRun:initial,verdict:'PARTIAL',level:'P4',session:'synthetic-unrepaired',repairSuggestion:true,keepUnrepaired:true,suggestions:run=>[{nature:'judgment',statement:'补：合成边界；因为：仅正常值；期望：非法输入拒绝',grounds:[run.items[0].location],code:'suggestion',rank:'minor'}]});
+  const final=await startReport([await receiptOf(verified.run)]);assert.equal(final.isError,true);assert.ok(final.out.errors.some(error=>error.code==='case-review-report.block_unsettled'),JSON.stringify(final.out.errors));
+});
+test('report admission rejects a verification made by the drafter model in another session',async()=>{
+  const initial=await startReview(client,{product:bed.product.names[0],version:bed.site.LINE,inputs:{subject:{external:`agile:mindmap:${DOCUMENTS.review}`}},parameters:{slice:{from:2,to:2}}});
+  await client.call('submit_result',passDraftOf(initial));
+  const verified=await verifyBlock({draftRun:initial,verdict:'PARTIAL',level:'P4',session:'synthetic-not-independent',model:DRAFTER});
+  const stored=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,verified.run))!.latest!.result;
+  assert.ok(Object.values(stored.partitions).flat().some(item=>item.requirements.some(requirement=>requirement.unsatisfied_reason==='independence_unknown')));
+  const final=await startReport([await receiptOf(verified.run)]);assert.equal(final.isError,true);assert.ok(final.out.errors.some(error=>error.code==='case-review-report.block_unsettled'),JSON.stringify(final.out.errors));
 });

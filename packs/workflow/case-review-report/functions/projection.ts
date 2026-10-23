@@ -99,6 +99,26 @@ export function dispositionsOf(result: Record<string, unknown>, block: { record:
   return out;
 }
 
+/** Admission is decided from stored structured statuses, never from human error text. */
+function unsettled(result: Record<string, unknown>, block: number): ReturnType<typeof failure> | null {
+  const next = `先按第 ${block} 块的回执修复并重交复核；轮数耗尽或独立性不足时，另开会话、换不同模型家族重新复核，再用新回执开始终稿`;
+  const errors = Array.isArray(result.errors) ? result.errors.filter(isRecord) : [];
+  if (errors.length) { const error = errors[0]; return failure('block_unsettled', `第 ${block} 块仍有核对错误：条目 ${String(error.item ?? '跨条目')}，码 ${String(error.code ?? '未提供')}；共 ${errors.length} 条`, next); }
+  const partitions = isRecord(result.partitions) ? result.partitions : {};
+  const claims: Record<string, unknown>[] = Array.isArray(result.cross_item) ? result.cross_item.filter(isRecord).filter(claim=>claim.requirement==='final') : [];
+  for (const item of Array.isArray(partitions.delivered) ? partitions.delivered.filter(isRecord) : []) {
+    for (const requirement of Array.isArray(item.requirements) ? item.requirements.filter(isRecord) : []) {
+      if (requirement.status !== 'satisfied') return failure('block_unsettled', `第 ${block} 块条目 ${String(item.item)} 的 ${String(requirement.requirement)} 未满足：${String(requirement.unsatisfied_reason ?? requirement.status ?? '缺少状态')}`, next);
+      claims.push(...(Array.isArray(requirement.claims) ? requirement.claims.filter(isRecord) : []));
+    }
+  }
+  for (const claim of claims) {
+    if (!isRecord(claim.qualifier) || claim.qualifier.nature !== 'judgment' || !isRecord(claim.warrant) || claim.warrant.producer !== 'model') continue;
+    if (claim.warrant.independence === undefined || claim.warrant.independence === 'unknown' || claim.warrant.independence === 'not_independent') return failure('block_unsettled', `第 ${block} 块条目 ${String(claim.item ?? '跨条目')} 的复核独立性未成立`, next);
+  }
+  return null;
+}
+
 export default function project(input: unknown): unknown {
   return guarded(() => {
     const model = isRecord(input) ? input : {};
@@ -118,6 +138,7 @@ export default function project(input: unknown): unknown {
       const sha256 = typeof bound.sha256 === 'string' ? bound.sha256 : '';
       const digest = typeof meta.record === 'string' ? meta.record : '';
       if(!/^[a-f0-9]{64}$/.test(digest)||record.result.acceptance!=='accepted')return failure('block_invalid','复核结果不是已受理的原始记录','先完成复核，再用其已受理 validation_result 的 rec: 引用，不用上传的 JSON 或子指针');
+      const refusal = unsettled(record.result, b + 1); if (refusal) return refusal;
       blocks.push({ result: record.result, sha256, base: record.base, record: digest });
     }
 

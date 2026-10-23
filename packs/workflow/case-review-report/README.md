@@ -64,3 +64,5 @@ target 必填；按原始子项分表，模型判断与源文件归责事实分�
 `functions/report.test.ts` 覆盖投影（最差、合并交付、重叠拒绝、缺条目、缺结论未知）和两个检查；`tests/acceptance/26-review-report.test.ts` 走真 Hub。
 
 每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。
+
+终稿准入先检查已存结构化状态：复核仍有错误、已交付条目仍有未满足要求项，或复核模型独立性未知/不成立时，返回 block_unsettled。动作先修复重交原复核，轮数耗尽或独立性不足则另开会话、换模型家族重做，再用新回执开终稿。无落点的展示规则不构成绕过阻断复核的特例。
