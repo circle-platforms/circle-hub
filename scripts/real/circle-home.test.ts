@@ -468,3 +468,37 @@ test('glob permits only nonempty relative literal and star segments with no expa
     }
   } finally { f.close(); }
 });
+
+for (const pattern of ['linked/*', 'linked/**/*.txt', '**/linked/*', '*/*.txt']) {
+  test(`glob refuses directory symlink traversal ${pattern}`, async () => {
+    const { symlinkSync } = await import('node:fs'); const f = skillsFixture();
+    try {
+      const outside = join(f.dir, 'outside'); mkdirSync(outside); writeFileSync(join(outside, 'synthetic-outside.txt'), 'synthetic');
+      symlinkSync(outside, join(f.workdir, 'linked'), 'dir');
+      const reply = f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir]));
+      assert.equal(reply.decision, 'deny'); assert.match(reply.reason, /glob.*软链接.*重试/);
+    } finally { f.close(); }
+  });
+}
+
+test('glob checks nested and wildcard directory segments while allowing searches that never traverse a link', async () => {
+  const { symlinkSync } = await import('node:fs'); const f = skillsFixture();
+  try {
+    const safe = join(f.workdir, 'safe'); mkdirSync(safe); writeFileSync(join(safe, 'synthetic-inside.txt'), 'synthetic');
+    const outside = join(f.dir, 'outside'); mkdirSync(outside); writeFileSync(join(outside, 'synthetic-outside.txt'), 'synthetic');
+    symlinkSync(outside, join(f.workdir, 'linked'), 'dir'); symlinkSync(outside, join(safe, 'nested-link'), 'dir');
+    symlinkSync(safe, join(f.workdir, 'inside-alias'), 'dir'); symlinkSync(join(f.dir, 'absent'), join(f.workdir, 'dangling'), 'dir');
+    for (const pattern of ['safe/*.txt', '**/*.txt', 'safe/missing/*.txt']) assert.equal(f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir])).decision, 'allow', pattern);
+    for (const pattern of ['safe/nested-link/*', 'safe/*/*.txt', 'safe/**/*.txt', '**/nested-link/*', 'l*/*.txt', 'inside-alias/*.txt', 'dangling/*']) assert.equal(f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir])).decision, 'deny', pattern);
+  } finally { f.close(); }
+});
+
+
+test('glob wildcard directory checks include names containing a newline', async () => {
+  const { symlinkSync } = await import('node:fs'); const f = skillsFixture();
+  try {
+    const outside = join(f.dir, 'outside'); mkdirSync(outside); writeFileSync(join(outside, 'synthetic-outside.txt'), 'synthetic');
+    symlinkSync(outside, join(f.workdir, 'line\nbreak'), 'dir');
+    assert.equal(f.decide(f.input('glob', { pattern: '*/*.txt', path: f.workdir }, [f.workdir])).decision, 'deny');
+  } finally { f.close(); }
+});

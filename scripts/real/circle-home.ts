@@ -142,6 +142,42 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     return value.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..'
       && (!segment.includes('**') || segment === '**'));
   };
+  const globWithin = (base: string, pattern: string, root: string): void => {
+    // Walk the accepted grammar's directory states without following links. A
+    // literal or single-star segment may cross a link even with glob follow:false.
+    // Only a leading globstar skips links in glob 13. A later globstar may
+    // follow one link even with follow:false. The zero-directory branch also
+    // checks the next segment, so **/linked/* cannot hide a literal traversal.
+    const segments = pattern.split('/');
+    const stack = [{ directory: base, index: 0 }]; const seen = new Set<string>();
+    const matchers = segments.map(segment => new RegExp('^' + [...segment].map(char => char === '*' ? '[^/]*' : char === '.' ? '\\.' : char).join('') + '$', process.platform === 'darwin' || process.platform === 'win32' ? 'i' : ''));
+    const inspect = (file: string) => {
+      try { return fs.lstatSync(file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return null; refuse('glob 缺少可核验的路径元数据；请核对工作目录的读取权限后重试'); }
+    };
+    const noLink = (file: string) => refuse(`glob 模式经过软链接段 ${JSON.stringify(path.relative(root, file))}；请改用工作目录内的真实目录或不经过该链接的模式后重试`);
+    while (stack.length) {
+      const current = stack.pop()!; const key = current.directory + '\0' + current.index;
+      if (seen.has(key)) continue; seen.add(key);
+      if (seen.size > 10000) refuse('glob 的目录核对超过上限，尚不能证明全部路径在工作目录内；请缩小真实目录前缀后重试');
+      const info = inspect(current.directory); if (!info) continue;
+      if (info.isSymbolicLink()) noLink(current.directory);
+      if (!info.isDirectory()) continue;
+      if (!under(canonical(current.directory), root)) refuse('glob 的真实目录已越过工作目录；请恢复目录并改用工作目录内的真实路径后重试');
+      const segment = segments[current.index]; const last = current.index === segments.length - 1;
+      if (segment === '**' && !last) stack.push({ directory: current.directory, index: current.index + 1 });
+      let names: string[];
+      try { names = segment.includes('*') ? fs.readdirSync(current.directory) : [segment]; }
+      catch { refuse('glob 缺少可核验的目录列表；请核对工作目录的读取权限或缩小真实目录前缀后重试'); }
+      for (const name of names) {
+        if (!matchers[current.index].test(name)) continue;
+        const file = path.join(current.directory, name); const entry = inspect(file); if (!entry) continue;
+        if (entry.isSymbolicLink()) { if (segment === '**' && current.index === 0 && !last) continue; noLink(file); }
+        if (!under(canonical(file), root)) refuse('glob 的匹配真实路径已越过工作目录；请恢复目录并改用工作目录内的真实路径后重试');
+        if (entry.isDirectory() && (segment === '**' || !last)) stack.push({ directory: file, index: segment === '**' ? current.index : current.index + 1 });
+      }
+    }
+  };
   const scriptOf = (command: string, root: string): string | null => {
     let line = command;
     if (command.includes('\n')) {
@@ -301,7 +337,9 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
       if (!Array.isArray(input.paths) || !input.paths.length) refuse(`${input.tool_name} 缺少路径；请填写工作目录内的 path 或 file_path 后重试`);
       for (const file of input.paths) {
         if (typeof file !== 'string' || !file.length) refuse(`${input.tool_name} 含空路径；请补齐工作目录内的路径后重试`);
-        if (!under(canonical(path.resolve(input.cwd, file)), root)) refuse(`只读目标 ${JSON.stringify(file)} 不在工作目录 ${JSON.stringify(root)} 内；请改用工作目录内路径，其他目录由集成者另行设置专用主目录`);
+        const target = canonical(path.resolve(input.cwd, file));
+        if (!under(target, root)) refuse(`只读目标 ${JSON.stringify(file)} 不在工作目录 ${JSON.stringify(root)} 内；请改用工作目录内路径，其他目录由集成者另行设置专用主目录`);
+        if (input.tool_name === 'glob') globWithin(target, input.tool_input.pattern as string, root);
       }
       result = allow();
     } else if (input.tool_name === 'execute') {
