@@ -71,7 +71,7 @@ describe('the verbatim report reads the Hub’s claims, never re-judged', () => 
     const comparison = computeComparison(docGold, submissionOf(draft('a', 'show health')), resultWith([supportClaim, supportClaim]));
     assert.equal(comparison.quotes.allVerbatim, true);
     assert.equal(comparison.quotes.support, 2);
-    assert.match(renderComparison(comparison), /每条期望结果的引用都已被 Hub 判为逐字/);
+    assert.match(renderComparison(comparison), /支持 2 条/);
   });
 
   test('a refute claim is reported with its verdict and text', () => {

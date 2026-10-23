@@ -12,9 +12,9 @@
 //    computes from gold and submission against the set the Hub's duplicate check flagged
 //    (defect-to-case.duplicate_case claims), and whether the two sets are equal.
 //   node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json>
-import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, realpathSync, lstatSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import {
   buildCatalog,
   normalizeHead,
@@ -25,6 +25,7 @@ import {
   type SplitCommand,
 } from '../gold/regression-doc.ts';
 
+import { quotesReport, type QuoteInputs } from '../gold/quotes.ts';
 import { domainReport } from '../gold/command-domains.ts';
 
 export interface DraftCase {
@@ -68,6 +69,7 @@ export interface Comparison {
   headOverlap: HeadOverlap;
   quotes: QuotesReport;
   duplicates: DuplicatesReport;
+  quoteOracle: ReturnType<typeof quotesReport>;
   parameters?: { same: number; different: number; absent: number; draftPairs: number; docPairs: number; shared: number; docRatio: number | null; domains: ReturnType<typeof domainReport> };
 }
 
@@ -216,7 +218,7 @@ function duplicatesReportOf(
   return { goldIdentical: [...goldIdentical].sort(), hubFlagged: [...hubFlagged].sort(), equal: onlyGold.length === 0 && onlyHub.length === 0, onlyGold, onlyHub };
 }
 
-export interface CompareOptions {
+export interface CompareOptions extends QuoteInputs {
   commandTreeXml?: string;
   catalog?: Set<string>;
 }
@@ -247,6 +249,7 @@ export function computeComparison(
     headOverlap: overlapOf(drafts, gold, catalog),
     ...(options.commandTreeXml ? { parameters: parametersReport(drafts, gold, submission, result, options.commandTreeXml) } : {}),
     quotes: quotesReportOf(result),
+    quoteOracle: quotesReport(submission, result, options),
     duplicates: duplicatesReportOf(drafts, gold, result, catalog),
   };
 }
@@ -260,8 +263,8 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`   草稿的命令头里已有文档也用到的比例：${percent(h.draftRatio)}；已有文档的命令头里草稿也用到的比例：${percent(h.docRatio)}`);
   lines.push(`   草稿独有 ${h.missingInDoc.length}；文档独有 ${h.missingInDrafts.length}；未识别文档行 ${h.unrecognizedInDoc?.length ?? 0}；未识别草稿行 ${h.unrecognizedInDrafts?.length ?? 0}`);
   lines.push('');
-  lines.push(`2. 期望结果的引文（读 Hub 的判定，不重做）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
-  lines.push(q.allVerbatim ? '   每条期望结果的引用都已被 Hub 判为逐字' : '   不是每条引用都被判为逐字：');
+  lines.push(`2. Hub 引文主张（仅作对照）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
+  lines.push('   独立重判不采信这些主张作为答案');
   lines.push(`   引文问题 ${q.problems.length} 条`);
   lines.push('');
   lines.push('3. 与已有用例完全相同（命令头和参数值都相同）的草稿：');
@@ -274,6 +277,15 @@ export function renderComparison(comparison: Comparison): string {
     lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；未知 ${p.domains.counts.unknown}`);
     lines.push(`命令与参数：${items.length > 0 && items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}；一致 ${items.filter(i => i.comparison === 'equal').length}；不一致 ${items.filter(i => i.comparison === 'different').length}；未知 ${items.filter(i => i.comparison === 'unknown').length}`);
   }
+  const independent = comparison.quoteOracle;
+  lines.push(`引文重判：支持 ${independent.counts.support}；反驳 ${independent.counts.refute}；未知 ${independent.counts.unknown}；仅必要条件 ${independent.necessaryOnly}`);
+  for (const category of ['fix','defect_other','manual','other','unknown_defect_field']) {
+    const row = independent.targets[category];
+    lines.push(`引文来源类别 ${category}：支持 ${row.support}；反驳 ${row.refute}；未知 ${row.unknown}`);
+  }
+  lines.push(`期望文字逐字 ${independent.expectedVerbatim}；改写 ${independent.paraphrased}（只报告）`);
+  lines.push(`引文：${independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
+  lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
   return lines.join('\n');
 }
 
@@ -299,7 +311,7 @@ export function writePrivateJson(path: string, value: unknown): void {
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
     ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),
-    ...comparison.quotes.problems.map((_, quote) => ({ quote: quote + 1, category: 'hub_quote_problem' })),
+    ...comparison.quoteOracle.details.map(d => ({ draft: d.draft, expected: d.expected, category: [d.category, d.verdict, d.reason ?? '', d.scope, d.expectedVerbatim === false ? 'paraphrased' : ''].filter(Boolean).join('.') })),
     ...comparison.duplicates.goldIdentical.map((_, draft) => ({ draft: draft + 1, category: 'legacy_document_command_match' })),
   ];
 }
@@ -328,7 +340,11 @@ export function main(argv: string[]): number {
     const gold = JSON.parse(readFileSync(resolve(goldPath), 'utf8')) as unknown;
     const submission = JSON.parse(readFileSync(resolve(draftsPath), 'utf8')) as unknown;
     const result = JSON.parse(readFileSync(resolve(resultPath), 'utf8')) as unknown;
-    const comparison = computeComparison(gold, submission, result, { commandTreeXml });
+    const sources = new Map<string, Uint8Array>();
+    if (value('sources')) for (const name of readdirSync(value('sources')!)) if (/^[a-f0-9]{64}$/.test(name)) sources.set(name, readFileSync(join(value('sources')!, name)));
+    const run = value('run') ? JSON.parse(readFileSync(value('run')!, 'utf8')) : undefined;
+    const manual = value('manual') ? [readFileSync(value('manual')!)] : undefined;
+    const comparison = computeComparison(gold, submission, result, { commandTreeXml, sources, run, manual, fixField: value('fix-field') });
     if (value('details')) writePrivateJson(value('details')!, comparisonDetails(comparison));
     process.stdout.write(`${renderComparison(comparison)}\n`);
     return 0;
