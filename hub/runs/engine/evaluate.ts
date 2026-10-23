@@ -13,7 +13,7 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
@@ -254,24 +254,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       documents: ctx.documents,
     };
   } else {
-    // Hub standing obligation: Hub's own system read path
-    const systemSources: SourceReader = {
-      async read(sha256) {
-        const records = await ctx.deps.records.artifacts.records(sha256);
-        const first = records[0];
-        if (first !== undefined && first.body.read_tier === 'retain_only') {
-          return { bytes: null, mediaType: first.body.media_type, size: first.body.size, readTier: first.body.read_tier };
-        }
-        const bytes = await ctx.deps.records.artifacts.trustedBytes(sha256);
-        if (bytes === null) return null;
-        return {
-          bytes,
-          mediaType: first?.body.media_type ?? 'application/octet-stream',
-          size: bytes.byteLength,
-          readTier: first?.body.read_tier ?? 'function_bytes_only',
-        };
-      },
-    };
+    // Standing obligations read as their configuring admin through the same effective-tier gate as ordinary runs.
     const systemRecords: RecordReader = {
       async read(digest) {
         const record = await ctx.deps.records.store.get(digest);
@@ -280,9 +263,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       },
     };
     resolveCtx = {
-      reader: { user: 'hub', role: 'admin', run: run.run },
+      reader: { user: run.configurer ?? 'hub', role: 'admin', run: run.run },
       parsers: ctx.parsers,
-      sources: systemSources,
+      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
       records: systemRecords,
       consumer: 'function',
