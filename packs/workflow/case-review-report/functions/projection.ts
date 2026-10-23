@@ -152,7 +152,6 @@ export default function project(input: unknown): unknown {
       const sha256 = typeof bound.sha256 === 'string' ? bound.sha256 : '';
       const digest = typeof meta.record === 'string' ? meta.record : '';
       if(!/^[a-f0-9]{64}$/.test(digest)||record.result.acceptance!=='accepted')return failure('block_invalid','复核结果不是已受理的原始记录','先完成复核，再用其已受理 validation_result 的 rec: 引用，不用上传的 JSON 或子指针');
-      const refusal = unsettled(record.result, b + 1); if (refusal) return refusal;
       blocks.push({ result: record.result, sha256, base: record.base, record: digest });
     }
 
@@ -166,6 +165,7 @@ export default function project(input: unknown): unknown {
         return failure('block_invalid', `第 ${String(b + 1)} 块来自任务包 ${locked ?? '（未知）'}，不是复核任务包 ${VERIFY_PACK}`, `每条 verifications 给 ${VERIFY_PACK} 运行 submit_result 回执里的 rec: 引用`);
       }
     }
+    for (const [index, block] of blocks.entries()) { const refusal = unsettled(block.result, index + 1); if (refusal) return refusal; }
     const sources=new Set(blocks.flatMap(block=>entriesOf(block.result).map(entry=>/^src:([a-f0-9]{64})\/kityminder@1\//.exec(entry.location)?.[1]??null)));
     if(sources.size!==1||sources.has(null))return failure('sources_differ','各块复核条目位置不是同一份源文件，不能合成终稿','逐个核对各块条目位置的 src: 摘要，改用同一份脑图重新复核后再开终稿');
     const source=[...sources][0]!;

@@ -431,3 +431,13 @@ it('requires established model independence and refuses absent unknown negative 
     assert.ok(run([{result}]).items);
   }
 });
+
+it('rejects initial review receipts as the wrong package before inspecting verification independence or status',()=>{
+  for(const pending of [false,true]){
+    const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+    (result.locks as any).pack='case-review@1.0.7';
+    delete (result.partitions as any).delivered[0].requirements[0].claims[0].warrant.independence;
+    if(pending)Object.assign((result.partitions as any).delivered[0].requirements[0],{status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
+    const out=run([{result}]);assert.equal(out.error?.code,'case-review-report.block_invalid');assert.match(out.error?.message??'',/不是复核任务包/);assert.match(out.error?.fix??'',/case-review-verify.*rec:/);
+  }
+});
