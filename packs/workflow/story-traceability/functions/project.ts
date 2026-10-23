@@ -85,7 +85,10 @@ export function projectItems(input: unknown): unknown {
     if (build.stories.length === 0) return fail(`构建记录 ${buildId} 的需求编号数组为空`, '请用户提供要核对的需求编号，或请管理员确认该构建的需求范围；不把空数组解释成字段缺失');
     for (const id of build.stories) add(String(id), null, source, `p/builds/${at}`);
   }
-  if (rows.size === 0 || rows.size > 8000) return fail('需求范围为空或超过 8000 条', '提供非空需求编号列表；超限则分批运行');
+  if (rows.size === 0) return fail('需求范围为空', '提供非空需求编号列表后重新绑定');
+  if (rows.size > 8000) return selectedBuild
+    ? fail(`PLM 构建记录 ${selectedBuild.id} 的需求范围有 ${rows.size} 条，超过每运行 8000 条上限`, '请任务包维护人提供保留同一构建来源的分块核对，或由用户明确给出需求编号后按声明范围另开分批运行；不要重复绑定整份构建范围')
+    : fail(`用户声明的需求范围有 ${rows.size} 条，超过每运行 8000 条上限`, '把用户明确给出的需求编号列表分批，每批最多 8000 条后运行');
   const byId = new Map<string, Map<string, Case>>();
   const digestsById = new Map<string, Set<string>>();
   for (const [key, digests] of Object.entries(view.keys)) {

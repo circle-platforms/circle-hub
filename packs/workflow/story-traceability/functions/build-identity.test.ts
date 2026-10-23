@@ -93,3 +93,24 @@ test('an oversized build scope names its source and never advises splitting an i
   assert.match(out.error.fix, /同一构建来源.*或由用户明确/);
   assert.notEqual(out.error.fix, '把需求编号列表分成更小的批次');
 });
+
+test('the row cap names an oversized build record and offers an executable scoped alternative',()=>{
+  const value=input(buildName) as any;
+  value.parameters.build_id='81001';
+  Object.assign(value.inputs[1].model.builds[0],{id:'81001',stories:Array.from({length:8001},(_,i)=>String(i+1))});
+  const out=project(value) as any;
+  assert.match(out.error.message,/PLM 构建记录 81001.*8001.*8000/);
+  assert.doesNotMatch(out.error.message,/为空/);
+  assert.match(out.error.fix,/同一构建来源.*或由用户明确/);
+  assert.doesNotMatch(out.error.fix,/超限则分批运行/);
+});
+test('the declared row cap states the actual size and limit',()=>{
+  const value=input(buildName) as any;
+  value.inputs=value.inputs.filter((source:any)=>source.slot==='cases');
+  for(let from=1;from<=8001;from+=50){
+    const ids=Array.from({length:Math.min(50,8002-from)},(_,i)=>String(from+i));
+    value.inputs.push(boundView('stories',{stories:ids.map(id=>({id,status:null,stage:null})),unread:[]},`plm:stories:${ids.join('+')}`));
+  }
+  const out=project(value) as any;
+  assert.match(out.error.message,/8001.*8000/);assert.match(out.error.fix,/分批/);
+});
