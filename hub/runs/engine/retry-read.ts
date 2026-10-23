@@ -1,10 +1,11 @@
 // Local, integrity-checked reference reads: fixed registered reasons and a bounded backoff, never free-text failures.
 import { setTimeout } from 'node:timers/promises';
 import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
-import type { Reason } from '../../../contracts/generated/vocabulary.ts';
+import type { Reason, ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 
 export type ReadFailureReason = Extract<Reason, 'check_error' | 'integrity_unproven' | 'missing_input' | 'budget_exhausted'>
-  | Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED'>;
+  | Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED'>
+  | Extract<ValidityStatus, 'credential_unreadable'>;
 export interface ReadAttempt {
   attempt: number;
   durationMs: number;

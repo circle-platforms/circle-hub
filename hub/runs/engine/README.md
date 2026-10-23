@@ -477,3 +477,7 @@ limits, timeout or violation trigger bounded individual fallback under the old c
 Stopping/cancellation is never revived by fallback. Ordinary per-item throws remain per-item outcomes. Skipped checks and
 failed subject construction explicitly complete their collector slot to avoid deadlock. The parent may stage item calls
 concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.
+
+Retain-only bound sources preserve their read tier through both runner and Hub readers. They are read once, never
+retried as transient faults, and are passed/stored as credential_unreadable with the missing administrator acceptance
+and an administrator acceptance/re-evaluation request. Other withheld bytes remain an internal read failure, not a credential fact.

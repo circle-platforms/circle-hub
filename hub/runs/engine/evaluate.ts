@@ -326,7 +326,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             return { resolved: false, text: null, reason: result.reason ?? result.code };
           }
           if (result.text === null) {
-            return { resolved: true, text: null, reason: 'missing_input' as const };
+            return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? 'credential_unreadable' as const : 'missing_input' as const };
           }
           const byteLength = Buffer.byteLength(result.text, 'utf8');
           return { resolved: true, text: result.text, byteLength };
@@ -368,6 +368,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const extra = {
         ...(s.external !== undefined ? { external: s.external } : {}),
         ...(s.slot !== undefined ? { slot: s.slot } : {}),
+        ...(result.reason === 'credential_unreadable' ? { missing_fact: '管理员尚未接受此来源', next_action: '请求管理员接受来源，接受后重新核验' } : {}),
       };
       if (!result.resolved) {
         unreadSources.push({ reference: s.reference, reason: result.reason ?? 'SOURCE_UNAVAILABLE', ...extra });

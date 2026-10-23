@@ -40,6 +40,8 @@ export interface UnreadSource {
   reason: string;
   external?: string;
   slot?: string;
+  missing_fact?: string;
+  next_action?: string;
 }
 
 export interface CheckBindings {

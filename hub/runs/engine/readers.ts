@@ -22,12 +22,12 @@ export function principalOf(reader: ReaderIdentity): Principal {
   return { id: reader.user, name: reader.user, role: reader.role };
 }
 
-/** Stored bytes through the records' tier-aware read; withheld bytes (retain_only) are unavailable. */
+/** Preserve withheld source tiers so refs can distinguish retain-only from missing bytes. */
 export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): SourceReader {
   return {
     async read(sha256, reader) {
       const source = await artifacts.source(principalOf(reader), sha256, { consumer });
-      if (source === null || source.bytes === null) return null;
+      if (source === null) return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },
   };
