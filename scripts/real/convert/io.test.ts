@@ -147,3 +147,20 @@ test('case CLI discloses safe parser causes and distinguishes limit recovery fro
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('local file handoff preserves the original digest through the Circle normalization step', async () => {
+  const { normalizeMindmap } = await import('../../../packs/workflow/case-compile/scripts/normalize-mindmap.ts');
+  const guide = readFileSync('scripts/real/convert/README.md', 'utf8');
+  assert.match(guide, /交给 Circle 的是原始导出文件/);
+  assert.match(guide, /before_sha256.*sha256.*after_sha256.*normalized_sha256/);
+  assert.ok(!guide.includes('那份字节，可交给 Circle 上传'));
+  const dir = mkdtempSync(join(tmpdir(), 'convert-handoff-'));
+  try {
+    const original = '\uffff\uffff' + JSON.stringify([{ data: { text: '合成原件' }, children: Array.from({ length: 5 }, (_, i) => ({ data: { text: '合成用例', priority: 2, auto: 'YES', autoid: `synthetic-${i}` } })) }]);
+    output(dir, 'original.json', original);
+    const child = spawnSync(process.execPath, ['scripts/real/convert/auto-cases.ts', join(dir, 'original.json'), '--out', join(dir, 'out')], { encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr); const receipt = JSON.parse(child.stdout);
+    const circle = normalizeMindmap(Buffer.from(original));
+    assert.equal(circle.before_sha256, receipt.sha256); assert.equal(circle.after_sha256, receipt.normalized_sha256); assert.equal(circle.transformations.length, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
