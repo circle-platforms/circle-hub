@@ -65,3 +65,5 @@ place 保留停法、下一步、候选、阈值、版本、概率及判断记�
 read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json，运行时从快照读取，--check 比对。submit_result.model 写 `<确切版本>（Circle 技能 jev，<包 id>@<包号>）`；这里包号只取 start_run 回答的运行摘要 pack_digest，并保存于 lock.json 或 run-identities.jsonl，不写进 generated.json。Jev 版本同时留在提议陈述和判断记录里。
 
 判断记录上传不绑定为可共享运行输入，仅经 submit_result.notes 的 src 引用关联；上传只对本人和管理员可见，普通回注读者不能据此查看判断记录。因此 K04 R[5] 的记录可查只对提交人和管理员成立，这是本版限制，不声称对所有回注读者成立。
+
+外发流水先写 `phase: sending` 再发请求，完成后追加 `phase: completed`；用 request_digest 和 attempts 配对。sending 记时间、片段摘要/引用/种类、选择加入和题目标识；completed 另记状态及服务请求号。被终止时只有 sending 表示可能已外发、处理情况未取得，不能当作未发送。

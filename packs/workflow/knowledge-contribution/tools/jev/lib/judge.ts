@@ -18,11 +18,12 @@ export class Judge {
   model: string; client: HttpJev; store: LocalStore; send: string[]; cache = new Map<string, JevJudgmentRecord>();
   constructor(model: string, key: () => string, baseUrl: string | undefined, store: LocalStore, send: string[], options: Partial<HttpJevOptions> = {}) {
     this.model = model; this.store = store; this.send = send;
-    this.client = new HttpJev({ ...options, apiKey: key, model, baseUrl, onAttempt: async (event) => {
-      this.attempts++;
+    this.client = new HttpJev({ ...options, apiKey: key, model, baseUrl, onSending:async(event)=>{
+      this.attempts++;const fragments=Object.entries(event.request.state).map(([id,value])=>({id,sha256:sha(typeof value==='string'?value:JSON.stringify(value)),bytes:Buffer.byteLength(typeof value==='string'?value:JSON.stringify(value)),...this.activePieces.get(id)}));for(const fragment of fragments)if(fragment.reference&&fragment.kind)this.sentFragments.set(fragment.reference,fragment.kind);await store.append('requests.jsonl',{phase:'sending',at:new Date().toISOString(),request_digest:inputDigest(event.request),fragments,send,questions:Object.keys(event.request.questions),attempts:event.attempt});
+    },onAttempt: async (event) => {
       const fragments = Object.entries(event.request.state).map(([id, value]) => ({ id, sha256: sha(typeof value === 'string' ? value : JSON.stringify(value)), bytes: Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value)), ...this.activePieces.get(id) }));
       for(const fragment of fragments){if(fragment.reference&&fragment.kind)this.sentFragments.set(fragment.reference,fragment.kind);}
-      await store.append('requests.jsonl', { at: new Date().toISOString(), request_digest: inputDigest(event.request), fragments, send, questions: Object.keys(event.request.questions), attempts: event.attempt, http_status: event.status, request_id: event.requestId, result: event.result });
+      await store.append('requests.jsonl', { phase:'completed', at: new Date().toISOString(), request_digest: inputDigest(event.request), fragments, send, questions: Object.keys(event.request.questions), attempts: event.attempt, http_status: event.status, request_id: event.requestId, result: event.result });
     } });
   }
   activePieces = new Map<string, { reference: string; kind: string }>();

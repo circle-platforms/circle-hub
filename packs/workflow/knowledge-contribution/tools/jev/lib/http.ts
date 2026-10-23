@@ -38,6 +38,7 @@ const ASCTIME_DATE = new RegExp(`^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (${MONTH}) ([ 
 const KEY_TIMEOUT = Symbol('key timeout');
 
 export interface HttpJevOptions {
+  onSending?: (event:{request:JevRequest;attempt:number})=>Promise<void>;
   onAttempt?: (event: {request:JevRequest;attempt:number;status:number|null;requestId:string|null;result:string}) => Promise<void>;
   /** Returns the API key; called once per attempt. Never stored, logged or put into an error. */
   apiKey: () => string | Promise<string>;
@@ -281,6 +282,7 @@ function statusFault(status: number, scan: ErrorScan, requestId: string | null, 
 export class HttpJev implements JevClient {
   readonly pinnedModel: string;
   #onAttempt: HttpJevOptions["onAttempt"];
+  #onSending: HttpJevOptions["onSending"];
   #apiKey: () => string | Promise<string>;
   #endpoint: URL;
   #fetch: typeof globalThis.fetch;
@@ -297,7 +299,7 @@ export class HttpJev implements JevClient {
     if (typeof options.apiKey !== 'function') throw new TypeError('apiKey 必须是返回 API 密钥的函数');
     this.pinnedModel = checkModel(options.model, false);
     this.#apiKey = options.apiKey;
-    this.#onAttempt = options.onAttempt;
+    this.#onAttempt = options.onAttempt;this.#onSending=options.onSending;
     this.#endpoint = endpointOf(options.baseUrl ?? DEFAULT_BASE_URL);
     if (this.pinnedModel.includes('scripted') && !isLoopback(this.#endpoint.hostname)) throw new JevError('JEV_BAD_REQUEST', 'scripted 版本只能用于本机回环');
     for (const name of ['fetch', 'random', 'sleep', 'now'] as const) {
@@ -319,7 +321,7 @@ export class HttpJev implements JevClient {
     // The failure of the last request that was sent: the cause when a later attempt fails before sending.
     let previous: Fault | null = null;
     for (;;) {
-      const outcome = await this.#attempt(checked, sent + 1);
+      let outcome:Outcome;try{outcome=await this.#attempt(checked,sent+1);}catch(error){if(error instanceof JevError)await this.#onAttempt?.({request:checked.request,attempt:sent+1,status:error.status,requestId:error.requestId,result:error.code});throw error;}
       if (outcome.ok || outcome.sent) await this.#onAttempt?.({request:checked.request,attempt:sent+1,status:outcome.ok?200:outcome.status,requestId:outcome.ok?outcome.response.requestId??null:outcome.requestId,result:outcome.ok?'validated':outcome.code});
       if (outcome.ok) return outcome.response;
       let note = '';
@@ -396,6 +398,7 @@ export class HttpJev implements JevClient {
         timedOut
           ? fault('JEV_UNAVAILABLE', `Jev 请求超时（${this.#timeoutMs} 毫秒）`, true)
           : fault('JEV_UNAVAILABLE', `连不上 Jev 服务（${transportTag(error)}）`, true);
+      await this.#onSending?.({request:checked.request,attempt});
       let response: Response;
       try {
         response = await this.#fetch(this.#endpoint, {
