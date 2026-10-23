@@ -26,7 +26,7 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 
 ## The answer
 
-Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<target build>?kind=case&by=commands`, matching the impact product and target root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. `uncovered_changes` adds a support disclosure: N cases have no parsed command and were excluded from scope. This does not change the items, reasons or detail table. The client skill continues by listing those cases for the user to establish command ownership.
+Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<target build>?kind=case&by=commands`, matching the impact product and target root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. The client reads the bound facet source and relays a hint disclosure: N cases have no parsed command and were excluded from scope. This does not change the items, reasons or detail table. The client skill continues by listing those cases for the user to establish command ownership.
 
 
 Each item is one case, id `<document>:<node>`, sorted by id. A case on several added or modified paths is one item; its
@@ -90,7 +90,7 @@ fake reader. Both use a temporary PostgreSQL and are skipped where `sandbox-exec
 
 ## Limits
 
-- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`regression-scope.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a definite disclosure, not an unknown scope verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`regression-scope.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a hint disclosure, not an unknown scope verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
 
 
 - At most 10,000 check outcomes in one call (the engine's cap). A larger run becomes one `check_error`. The 5,000-case
@@ -121,4 +121,10 @@ regression-scope@1.6.1 改用生成词表的类型及包内运行时快照。包
 
 ## Independent gold boundary
 
-The separate raw-map gold imports no Hub or pack code. Its hand-truth exception is `not-prose-ping`: the product README does not specify an English prose stop-word guard for a complete single-word command. No vocabulary axis was added. The integration owner clarified that positive unplaced counts are support disclosures and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes.
+The separate raw-map gold imports no Hub or pack code. The raw-map gold now follows both documented phrase and abbreviation rules; all hand-written rows agree. No vocabulary axis was added. The integration owner clarified that positive unplaced counts are hint disclosures with no support or refutation claims and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes.
+
+The bound facets are hints (A03 R[6]): zero and positive counts produce no support or refutation claim. Because run summaries omit projection groups, the skill explicitly reads the bound facet source before answering, then reads root entries page by page to list unplaced cases. No core rendering change is needed.
+
+## Client acceptance boundary
+
+The scenario requires `caseCommandsUnplaced`: copy `totals.unplaced` from the independent `case-commands.ts` gold for the selected build (later for regression scope, earlier for maintenance sweep). After `start_run`, it reads the **bound** facets source via MCP `get_nodes`, follows every source page and automatically compares its null-row count with that independent count. Missing pages, skipped sources and truncated views fail this mandatory check. Optional `unplaced` separately checks the disclosure sentence in replays containing client text. Numeric correctness is checked automatically; whether the real client follows SKILL, reads the hint and discloses it to the user is accepted by the integrator. No real-client run was performed in this worktree.

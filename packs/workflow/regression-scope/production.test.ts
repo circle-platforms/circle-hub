@@ -1,3 +1,4 @@
+import { facetCountCheck } from '../../../scripts/real/accept/regression-scope.ts';
 // A production run end to end: the published pack, the real run engine, and a fake reader serving hand-built impact
 // views. start_run computes and stores the validation result. The real knowledge reader waits on the cases index.
 import assert from 'node:assert/strict';
@@ -109,7 +110,7 @@ describe('a production run of regression-scope', { skip }, () => {
     assert.ok(doc1.grounds.every((ref) => ref.startsWith('src:')));
     // 命令差总结是 uncovered_changes 的第一条跨条目结论：事实，依据是影响视图，整个差都列得出（删除路径注明不进范围）。
     const cross = result.cross_item.filter((claim) => claim.requirement === 'uncovered_changes');
-    assert.equal(cross.length, 3);
+    assert.equal(cross.length, 2);
     const summary = cross[0];
     assert.equal(summary.statement.verdict, 'support');
     assert.equal(summary.qualifier.nature, 'fact');
@@ -155,7 +156,7 @@ describe('a production run of regression-scope', { skip }, () => {
     assert.deepEqual(stored.run.parameters, { include_added: false });
     assert.deepEqual((stored.run.groups?.[0] as { uncovered: unknown }).uncovered, []);
     const cross = detail.production!.result.cross_item;
-    assert.equal(cross.length, 3);
+    assert.equal(cross.length, 2);
     const [summary, covered] = cross;
     assert.equal(summary.statement.verdict, 'support');
     assert.ok(summary.statement.text.startsWith('命令差共 6 条'), summary.statement.text);
@@ -313,7 +314,24 @@ describe('the real knowledge reader', () => {
     const run = detail.answer.run!;
     // The later build's arp case lands in the scope through the real reader's definition-only view.
     assert.ok(run.items.length > 0, 'the real reader answers an impact view the projection accepts');
-    assert.ok(detail.production!.result.cross_item.some((claim) => claim.statement.text.includes('1 个用例没有解析出命令')));
+    const storedRun = (await runHub.service.getRun(runHub.alice, detail.answer.run!.run))!;
+    assert.equal(storedRun.run.groups?.[0].unplaced, 1);
+    // Read the already-bound hint over the same MCP tool boundary used by the scripted client.
+    const facetSource = detail.answer.run!.sources.find((source) => source.slot === 'facets')!;
+    const context = call('synthetic-facet-client');
+    const response = await callTool({ records: runHub.kit, runs: runHub.service, packs: createPacksPort(runHub.registry), knowledge: w.knowledge, now: () => new Date() } as unknown as Parameters<typeof callTool>[0], {
+      principal: runHub.alice, traceId: context.traceId, sessionId: context.sessionId,
+      context: { ...context, adminNote: () => {} }, state: {},
+    } as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: facetSource.reference });
+    assert.equal(response.isError, false);
+    const numeric = facetCountCheck('synthetic', 1, [
+      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 'start', text: `- 线索 ${facetSource.reference}（输入 facets）`, isError: false }] },
+      { index: 2, tools: [], toolResults: [{ id: 'read', text: response.content[0].text, isError: false }] },
+    ]);
+    assert.equal(numeric.ok, true, JSON.stringify(numeric));
+
+    assert.match(String(storedRun.run.groups?.[0].message), /1 个用例没有解析出命令/);
+    assert.ok(detail.production!.result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     void makeWorld; void DEFAULT_PRODUCERS;
     await runHub.close();
     await w.close();
