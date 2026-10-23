@@ -560,3 +560,24 @@ test('admission refusal codes and fixes come from the core registry rather than 
   const result=await w.service.submitResult(w.admin,args,call);const error=result.errors.find(error=>error.item==='classification'&&error.code==='core.contribution.source_not_original');
   assert.ok(error,JSON.stringify(result.errors));assert.equal(error.fix,CORE_VIOLATION_CODES['core.contribution.source_not_original'].fix);
 });
+
+test('credential-bearing session headers are refused before append and never reach public node or record reads',async t=>{
+  const w=await setup(t),layer=w.knowledge.layers.contributions;
+  const secret='synthetic-session-secret',session='https://probe:'+secret+'@192.0.2.44/v1';
+  const append=layer.append.bind(layer);let calls=0;
+  t.mock.method(layer,'append',async(...args:Parameters<typeof append>)=>{calls++;return append(...args);});
+  const result=await w.service.submitResult(w.admin,w.args(),{...call,sessionId:session});
+  assert.equal(result.result?.contributions?.stored.length,0);assert.equal(calls,0);
+  assert.equal(result.result?.contributions?.not_stored.length,4);assert.ok(result.errors.some(error=>error.code==='CREDENTIAL_IN_UPLOAD'));
+  const records=await w.kit.store.find({key:'knowledge.contribution.product',value:w.product.product.id,kind:'claim',limit:100});assert.equal(records.items.length,0);
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);assert.ok(!JSON.stringify(page).includes(secret));
+  const safe=await w.service.submitResult(w.admin,{...w.args(),notes:'safe session control'},call);assert.equal(safe.result?.contributions?.stored.length,4);
+  for(const item of safe.result!.contributions!.stored){const record=await layer.read(item.record,w.user);assert.ok(record);assert.ok(!JSON.stringify(record).includes(secret));assert.equal((record.body as {session:string}).session,call.sessionId);}
+});
+
+test('append scans the actual session again before an identity can reuse a public record',async t=>{
+  const w=await setup(t),layer=w.knowledge.layers.contributions,append=layer.append.bind(layer);
+  t.mock.method(layer,'append',async(...[prepared,origin,tx]:Parameters<typeof append>)=>append(prepared,{...origin,session:'https://probe:synthetic-append-secret@192.0.2.44/v1'},tx));
+  await assert.rejects(w.service.submitResult(w.admin,w.args(),call),error=>error instanceof Error&&'admissionCode'in error&&error.admissionCode==='CREDENTIAL_IN_UPLOAD');
+  assert.deepEqual(await layer.list(w.root,['/commands/system/show'],w.user),[]);
+});
