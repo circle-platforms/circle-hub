@@ -34,3 +34,8 @@
 - `plan-evidence.md` 第 5、6 条，照那一页做，包括页尾集成者的答复。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实冒烟由集成者做。
+
+## 集成者 10-24 凌晨答 codex-f（第三轮收尾核对第 3、4 条）
+
+- 第 3 条：外部标识字节上限那一处修复（472335bd）除了 connectors.ts 的 `reader.read` 提示，还改了 `hub/knowledge/read.ts`、`reader.accepts` 和连接器 README。这几处保留，可改路径补上它们。
+- 第 4 条：有权读者面前，外部标识超长是确定、可改的错误，不再中和成“对你不可用”。可改路径补上 `hub/ports.ts`、连接器返回处、`hub/runs/engine/inputs.ts` 和对应测试。码先跟 inputs.ts 里 start_run 其他参数校验失败现在用的码一致；没有统一的码就用 `SUBMISSION_SCHEMA_VIOLATION`，start_run 参数错误用哪个码由集成者在模型修订里定。回答写字节数、上限和缩短键的办法；无权读者照旧只看到中性码（D05）。
