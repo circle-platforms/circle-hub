@@ -73,7 +73,7 @@ export class DispatchService {
       await client.connect(); lease = await this.acquire(binding, d, client, this.context(binding));
       stop = this.heartbeat(binding, d, client, lease).stop;
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
-      try { const response = await this.retryRead(binding, client, 'precheck', context, Infinity); verified = this.conditions(d.conditions, response.value, context); } catch { verified = false; }
+      try { const response = await this.retryRead(binding, client, 'precheck', context, Infinity); verified = await this.assessConditions(binding,d.conditions,response,context,'precheck.evaluated'); } catch { verified = false; }
       const extra = await this.extraPrechecks(binding, d, client, context, true);
       const probed = await this.probeSeats(binding,d,client,context);
       verified = verified && extra && probed;
@@ -150,7 +150,7 @@ export class DispatchService {
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
       const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source.bytes).toString('base64') };
       const precheck = await this.retryRead(binding, session, 'precheck', context, Infinity);
-      if (!this.conditions(d.conditions, precheck.value, context)) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
+      if (!await this.assessConditions(binding,d.conditions,precheck,context,'precheck.evaluated')) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
       if (!deviceIdentity) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
@@ -167,6 +167,7 @@ export class DispatchService {
       const sequence = attempts.length ? Number(attempts[0].body.detail.sequence) : (await this.options.records.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [input.lineage] })).filter(e => (e.body as Record<string, unknown>)?.detail && ((e.body as { detail: Record<string, unknown> }).detail.phase === 'intent')).length + 1;
       const key = attempts.length ? String(attempts[0].body.detail.intent_key) : digestOfValue([input.lineage, input.item, d.proof.slot, sequence]);
       context.request_id = `${key}:${attempt}`; context.not_after = notAfter;
+      const precheckSources=[...new Set((await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase)) || e.body.detail.phase==='device_probe').flatMap(e=>e.body.inputs))];
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
       if(!pulse.held())throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');
       await this.options.records.store.withTransaction(async tx => {
@@ -176,7 +177,7 @@ export class DispatchService {
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
         const intent = await this.journal.append(binding, 'intent', 'validate', 'completed', { intent_key: key, verification_result:currentProof.result, request_id: context.request_id, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, effect_class: 'job', retry_safety: d.retry_safety, signing: 'service_on_behalf', on_behalf_of: input.user,
-          before_state_bound: false, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
+          before_state_bound: false, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
       intended = true;
@@ -466,6 +467,17 @@ export class DispatchService {
     await this.journal.append(binding, 'acquire', 'read', 'completed', { remote_lease: lease }, [response.source]);this.#leaseClocks.set(lease,{...started,ttl:lease.ttl}); return lease;
   }
   private opaque(value: unknown): boolean { return (typeof value === 'string' && value.length > 0 && value.length <= 4096 && !value.includes('[已隐藏]')) || (typeof value === 'number' && Number.isSafeInteger(value)); }
+  private async assessConditions(binding:JobBinding,conditions:ExecutorDefinition['conditions'],response:Exchange,context:Record<string,unknown>,phase:string):Promise<boolean> {
+    const checks=conditions.map(c=>{
+      const operator=Object.hasOwn(c,'equals')?'equals':c.at_least!==undefined?'at_least':'sha256';
+      let expected:unknown;let matched=false;
+      try{expected=bind(operator==='equals'?c.equals:operator==='at_least'?c.at_least:c.sha256,context);matched=this.conditions([c],response.value,context);}catch{}
+      return {pointer:c.pointer,operator,expected_sha256:expected===undefined?null:digestOfValue(expected),matched};
+    });
+    const matched=checks.length>0 && checks.every(c=>c.matched);
+    await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
+    return matched;
+  }
   private conditions(conditions: ExecutorDefinition['conditions'], value: unknown, context: Record<string, unknown>): boolean {
     return conditions.length > 0 && conditions.every(c => { const actual = at(value, c.pointer);
       if (Object.hasOwn(c, 'equals')) return same(actual, bind(c.equals, context));
@@ -489,7 +501,7 @@ export class DispatchService {
           catch(error){const retry=canRetryRead(error,d,context);await this.journal.append(binding,`precheck.${index+1}.retry`,'read','error',{attempt,next_action:retry && attempt<3?'自动重读该来源，未提交':'修复读取声明、权限或存储后重跑预检，未提交'});if(!retry)break;if(attempt<3)await this.sleep(d.poll_ms);}
         }
         if(!reply)throw new Error('只读来源连续三次读取失败');
-        ok = this.conditions(check.conditions, reply.value, context);
+        ok = await this.assessConditions(binding,check.conditions,reply,context,`precheck.${index+1}`);
         await this.journal.append(binding, `precheck.${index + 1}`, 'validate', 'completed', { matched: check.conditions.length ? ok : null, ...(check.conditions.length ? {} : { missing_fact: '只读原件已取得，但尚未登记期望条件；请转换核对后 update' }), started_at: reply.started_at, ended_at: reply.received_at }, [reply.source]);
       } catch { await this.journal.append(binding, `precheck.${index + 1}`, 'read', 'error', { missing_fact: '该登记只读核对没有完整应答或期望输入；不能判为通过', next_action: '核对原件和登记条件后重跑预检' }); }
       verified = verified && ok;

@@ -118,3 +118,10 @@ test('R11 submission timeout consumes only the remaining committed window',async
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(result.outcome,'unknown');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
+
+test('R12 every main condition is recorded and cited by the intent',async t=>{
+  const c=await setup();t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const events=await c.service.journal.events(state.job);
+  const assessed=events.find(e=>e.body.detail.phase==='precheck.evaluated')!;assert.ok(assessed);
+  assert.equal((assessed.body.detail.conditions as any[]).length,c.executor.definition.conditions.length);
+  const intent=events.find(e=>e.body.detail.phase==='intent')!;assert.ok(assessed.body.inputs.every(ref=>intent.body.inputs.includes(ref)));
+});
