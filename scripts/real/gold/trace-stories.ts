@@ -62,7 +62,7 @@ export function parseStoryIds(raw: unknown): string[] {
   return [...new Set(list.map(id => norm(String(id))))].sort((a, b) => Number(a) - Number(b));
 }
 export function parseStoryRecords(raw: unknown): StoryRecord[] {
-  const list = Array.isArray(raw) ? raw : record(raw) && Array.isArray(raw.stories) ? raw.stories : record(raw) && Array.isArray(raw.data) ? raw.data : null;
+  const list = record(raw) && raw.code === 1000 && Array.isArray(raw.data) ? raw.data : null;
   if (list === null || list.some(r => !record(r) || !isId(String(r.id)))) throw new Error('PLM 原件形状无效');
   return list as StoryRecord[];
 }
@@ -118,11 +118,11 @@ export function main(argv: string[]): number {
       maps.push({ document, map: read(resolve(value('cases-dir')!, file)) });
     }
     const missingDocuments = [...docs].filter(d => !maps.some(m => m.document === d)).sort();
-    const plm = [];
+    const plm = []; let plmFiles = 0;
     for (let i = 0; i < argv.length; i++) if (argv[i] === '--plm') {
-      for (let j = i + 1; j < argv.length && !argv[j].startsWith('--'); j++) plm.push(...parseStoryRecords(read(argv[j])));
+      for (let j = i + 1; j < argv.length && !argv[j].startsWith('--'); j++) { plm.push(...parseStoryRecords(read(argv[j]))); plmFiles++; }
     }
-    if (!argv.includes('--plm')) throw new Error('缺少 PLM 原件');
+    if (plmFiles === 0) throw new Error('缺少 PLM 原件');
     const caseRule = value('case-rule');
     if (caseRule !== undefined && caseRule !== 'marked' && caseRule !== 'tagged') throw new Error('用例规则无效');
     const gold = storyGold({ ids: parseStoryIds(read(value('stories')!)), plm, maps, tree: read(value('tree')!), product: value('product')!, build: value('build')!, caseRule, missingDocuments });

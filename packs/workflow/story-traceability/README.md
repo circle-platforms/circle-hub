@@ -35,3 +35,5 @@
 复核 7：范围依据只用 provenance_type 代码，expected_sources 只比较 observed，不依赖显示文案。包内标签快照由 testing/generate-vocabulary.ts 从 contracts/generated 生成，--check 和回归测试校验未漂移；不手写词表、不改全局生成器。buildsProject 的旧 scope_note 字段在这里不再驱动逻辑，其清理由 plm-fields 分支处理，避免修改同一函数。
 
 复核 8（本分支部分）：build_id 与应答记录编号都去首尾空白和前导零再比较；缺构建记录、没有可用数组和空数组分别拒绝。投影未提供原始字段名时不猜字段名。buildsProject 的需求数组元素规范化留给 plm-fields，本分支未修改该函数。
+
+复核 9：独立答案只接受 code 为数值 1000 且 data 为数组的 PLM 原件信封。裸数组、Hub 的 stories/unread 投影、无 code 或失败 code 都拒绝，避免把投影结果当作独立输入核对自身。

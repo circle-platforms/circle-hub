@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { storyGold } from './trace-stories.ts';
+import { storyGold, parseStoryRecords } from './trace-stories.ts';
 const node = (text: string, id: string, children: unknown[] = [], resource: string[] = []) => ({ data: { text, id, resource }, children });
 const map = { root: node('需求 00021 合成文档', 'root', [node('目录需求 22', 'group', [node('合成用例', 'c1', [node('期望', 'e1')], ['Functional']), node('缺陷 23', 'c2', [node('期望', 'e2')], ['Functional'])])]) };
 const tree = { id: 'root', label: '需求 24', children: [{ id: '91', label: '合成标题', children: [] }] };
@@ -20,12 +20,13 @@ test('CLI requires document scope, excludes outside documents and prints counts 
   const root = mkdtempSync(join(tmpdir(), 'story-gold-'));
   try {
     mkdirSync(join(root, 'maps'));
-    const files: Record<string, unknown> = { 'ids.json': ['21', '22', '23', '24'], 'plm.json': { data: [{ id: 21, status: 'synthetic' }] }, 'tree.json': tree, 'docs.json': ['91'], 'maps/91.json': map, 'maps/92.json': { root: node('需求 23', 'root', [node('额外', 'c3', [node('期望', 'e')], ['Functional'])]) } };
+    const files: Record<string, unknown> = { 'ids.json': ['21', '22', '23', '24'], 'plm.json': { code: 1000, data: [{ id: 21, status: 'synthetic' }] }, 'tree.json': tree, 'docs.json': ['91'], 'maps/91.json': map, 'maps/92.json': { root: node('需求 23', 'root', [node('额外', 'c3', [node('期望', 'e')], ['Functional'])]) } };
     for (const [name, value] of Object.entries(files)) writeFileSync(join(root, name), JSON.stringify(value));
-    const run = (docs: string) => spawnSync(process.execPath, ['scripts/real/gold/trace-stories.ts', '--stories', join(root, 'ids.json'), '--plm', join(root, 'plm.json'), '--cases-dir', join(root, 'maps'), '--tree', join(root, 'tree.json'), '--docs', join(root, docs), '--product', 'synthetic', '--build', 'Synthetic_10_6', '--out', join(root, 'out.json')], { encoding: 'utf8' });
+    const run = (docs: string, withPlm = true) => spawnSync(process.execPath, ['scripts/real/gold/trace-stories.ts', '--stories', join(root, 'ids.json'), '--plm', ...(withPlm ? [join(root, 'plm.json')] : []), '--cases-dir', join(root, 'maps'), '--tree', join(root, 'tree.json'), '--docs', join(root, docs), '--product', 'synthetic', '--build', 'Synthetic_10_6', '--out', join(root, 'out.json')], { encoding: 'utf8' });
     const r = run('docs.json'); assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /需求 4/); assert.doesNotMatch(r.stdout + r.stderr, /Synthetic_10_6|合成|00021|synthetic/);
     assert.equal(JSON.parse(readFileSync(join(root, 'out.json'), 'utf8')).stories[2].cases.length, 0);
+    assert.equal(run('docs.json', false).status, 1, 'a bare --plm flag is not evidence of a successful response');
     writeFileSync(join(root, 'maps/91.json'), JSON.stringify({ root: node('合成占用 ' + Array.from({ length: 90 }, (_, i) => String(i + 10)).join(' '), 'root', [node('需求 01', 'case', [node('期望', 'e')], ['Functional'])]) }));
     const exhausted = run('docs.json'); assert.equal(exhausted.status, 1); assert.match(exhausted.stderr, /位宽 2，尚缺 1 个占位值/);
     assert.doesNotMatch(exhausted.stdout + exhausted.stderr, /合成占用|Synthetic_10_6|需求 01/);
@@ -62,4 +63,11 @@ test('notes-only documents contribute a count without aborting the scoped answer
   const gold = storyGold({ ids: ['21'], plm: [], maps: [{ document: '90', map: notes }, { document: '91', map }], tree, product: 'synthetic', build: 'Synthetic_10_6' });
   assert.equal(gold.documents, 2); assert.equal(gold.documents_without_cases, 1); assert.equal(gold.stories[0].cases.length, 2);
   assert.throws(() => storyGold({ ids: ['21'], plm: [], maps: [{ document: '91', map: null }], tree, product: 'synthetic', build: 'Synthetic_10_6' }));
+});
+
+
+test('story originals require a successful raw PLM envelope, never projected content or bare arrays', () => {
+  const rows = [{ id: 21, status: 3, stage: 'synthetic' }];
+  assert.deepEqual(parseStoryRecords({ code: 1000, data: rows }), rows);
+  for (const raw of [rows, { stories: rows, unread: [] }, { data: rows }, { code: '1000', data: rows }, { code: 1005, data: rows }, { code: 1000, data: { stories: rows } }]) assert.throws(() => parseStoryRecords(raw), /PLM 原件/);
 });
