@@ -57,11 +57,16 @@ export function parseSummary(summary: string, categories: readonly TemplateCateg
 /** The reference a clipped summary names for the full text (hub/server/text.ts writes it at the clip). A summary
  * that shows the clipped, id-only form but no readable '全文 <引用>' is a format this script does not recognize:
  * that is an error to fix here and now, not an unknown. */
+export class SummaryReadRefusal extends Error {
+  readonly reason = 'summary_reference_missing' as const;
+  constructor(){super('摘要已截断但认不出全文引用；下一步重读该运行记录的条目摘要，补全文引用格式后重新读取');this.name='SummaryReadRefusal';}
+}
+
 export function truncationReference(summary: string): string | null {
   const at = /全文 (rec:[0-9a-f]{64}#\/items\/[0-9]+)(?=）)/.exec(summary);
   if (at !== null) return at[1]!;
   if (/…（共 [0-9]+ 个字符/.test(summary)) {
-    throw new Error('摘要已截断但认不出全文引用；需要修复读取解析');
+    throw new SummaryReadRefusal();
   }
   return null;
 }
@@ -157,7 +162,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         list.push({ key: `b-${d}`, name: `d${d}-b.json`, tree: plan.b, kind: 'b', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.b, outerIds[d]!, singleCounts[d]) });
       } else {
         const original = answerOf.get(`a-${d}`);
-        if (!original || unknown.has(`a-${d}`) || original.caseCount !== caseCountOf(trees[d]!)) { unknown.set(`phase2-${d}`, `第 ${d + 1} 份原件用例数未与独立计数核对一致；没有运行单用例副本`); continue; }
+        if (!original || unknown.has(`a-${d}`) || original.caseCount !== caseCountOf(trees[d]!)) { unknown.set(`phase2-${d}`, `第 ${d + 1} 份原件用例数未与独立计数核对一致；没有运行单用例副本；下一步重读原件条目摘要并核对独立计数，仍不一致交集成者修正后重跑第2段`); continue; }
         for (const [i, id] of outerIds[d]!.entries()) {
           list.push({ key: `c-${d}-${i}`, name: `d${d}-c${i}.json`, tree: plan.c[i]!, kind: 'c', contains: [{ document: d, caseId: id }], premise: premiseOf(plan.c[i]!, [id], singleCounts[d]) });
         }
@@ -194,7 +199,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: misses, ...(other === undefined ? {} : { other }) });
       for (const entry of plan.d) {
         if ('skipped' in entry) {
-          unknown.set(`d-${d}-${entry.category}`, entry.skipped.reason);
+          unknown.set(`d-${d}-${entry.category}`, entry.skipped.reason + '；下一步换用满足该变换前提的文档或类别；依赖答案缺失时先重读并核对第2段结果');
           continue;
         }
         const owners = outerIds[d]!.filter((id) => misses.has(id) && !misses.get(id)!.has(entry.category));
@@ -203,17 +208,17 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const dCopy: Pending = { key: `d-${d}-${entry.category}`, name: `d${d}-x-${entry.category}.json`, tree: entry.copy, kind: 'd', category: entry.category, contains, premise: copyPremise(entry.copy, contains) };
         dCopy.premise = copyPremise(entry.copy, contains);
         dCopy.premiseBroken = !dCopy.premise.ok;
-        if (dCopy.premiseBroken) unknown.set(dCopy.key, '前提不成立'); else list.push(dCopy);
+        if (dCopy.premiseBroken) unknown.set(dCopy.key, '前提不成立；下一步换用保持用例边界的文档或类别后重新生成副本'); else list.push(dCopy);
         if (entry.restored !== undefined) {
           const eContains = [...contains, { document: d, caseId: owners[0]! }];
           const eCopy: Pending = { key: `e-${d}-${entry.category}`, name: `d${d}-r-${entry.category}.json`, tree: entry.restored, kind: 'e', category: entry.category, contains: eContains, premise: copyPremise(entry.restored, eContains) };
           eCopy.premiseBroken = !eCopy.premise.ok;
-          if (eCopy.premiseBroken) unknown.set(eCopy.key, '前提不成立'); else list.push(eCopy);
+          if (eCopy.premiseBroken) unknown.set(eCopy.key, '前提不成立；下一步换用保持用例边界的文档或类别后重新生成副本'); else list.push(eCopy);
         }
       }
       for (const entry of plan.f) {
         if ('skipped' in entry) {
-          unknown.set(`f-${d}-${entry.category}`, entry.skipped.reason);
+          unknown.set(`f-${d}-${entry.category}`, entry.skipped.reason + '；下一步换用满足该变换前提的文档或类别；依赖答案缺失时先重读并核对第2段结果');
           continue;
         }
         const bDoc = (d + 1) % trees.length;
@@ -221,7 +226,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const contains = [...outerIds[d]!.filter((id) => misses.has(id)).map((caseId) => ({ document: d, caseId })), ...(bDoc !== d && bCase !== undefined ? [{ document: bDoc, caseId: bCase }] : [])];
         const fCopy: Pending = { key: `f-${d}-${entry.category}`, name: `d${d}-j-${entry.category}.json`, tree: entry.copy, kind: 'f', category: entry.category, contains, premise: copyPremise(entry.copy, contains) };
         fCopy.premiseBroken = !fCopy.premise.ok;
-        if (fCopy.premiseBroken) unknown.set(fCopy.key, '前提不成立'); else list.push(fCopy);
+        if (fCopy.premiseBroken) unknown.set(fCopy.key, '前提不成立；下一步换用保持用例边界的文档或类别后重新生成副本'); else list.push(fCopy);
       }
     }
     queue = list;
@@ -240,7 +245,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       const text = turn.toolResults.map((r) => r.text).join('\n');
       if (turn.toolResults.some((r) => r.isError)) {
         const code = text.split(/\r?\n/).map(line => /^- ([A-Z_]+)：/.exec(line)?.[1]).find(code => code !== undefined && Object.hasOwn(PROTOCOL_CODES, code));
-        for (const { key } of openRun) unknown.set(key, `开始运行被拒${code ? `（${code}）` : ''}；需核对该次运行回执`);
+        for (const { key } of openRun) unknown.set(key, `开始运行被拒${code ? `（${code}）` : ''}；下一步核对开始运行应答的错误码和运行回执，修正输入后重跑该批`);
       } else {
         const items = new Map<string, string>();
         for (const line of text.split('\n')) {
@@ -248,19 +253,19 @@ export default function scenario(gold: GapCircleGold): Scenario {
           if (parsed !== null) items.set(parsed.item, parsed.summary);
         }
         if (items.size !== openRun.length) {
-          for (const { key } of openRun) unknown.set(key, '条目数与这一批的份数不符');
+          for (const { key } of openRun) unknown.set(key, '条目数与这一批的份数不符；下一步用 get_nodes 重读该运行记录的 items，核对完整条目后缩小 batch 重跑');
         }
         for (const { key, sha } of openRun) {
           if (unknown.has(key)) continue;
           const summary = items.get(uploadIdOf(sha));
           if (summary === undefined) {
-            if (!unknown.has(key)) unknown.set(key, '条目数与这一批的份数不符');
+            if (!unknown.has(key)) unknown.set(key, '条目数与这一批的份数不符；下一步用 get_nodes 重读该运行记录的 items，核对完整条目后缩小 batch 重跑');
             continue;
           }
           let reference: string | null;
-          try { reference = truncationReference(summary); } catch { unknown.set(key, '摘要缺少可识别的全文引用；下一步修复读取解析'); if (!fatal) fatal = { key, run: runsOfPhase.reduce((a, b) => a + b, 0), item: openRun.findIndex(copy => copy.key === key) + 1 }; continue; }
+          try { reference = truncationReference(summary); } catch (error) { if(!(error instanceof SummaryReadRefusal))throw error; unknown.set(key, error.message); if (!fatal) fatal = { key, run: runsOfPhase.reduce((a, b) => a + b, 0), item: openRun.findIndex(copy => copy.key === key) + 1 }; continue; }
           if (reference !== null) truncated.set(key, reference);
-          else { const parsed = parseSummary(summary, categories); if (!parsed.valid) unknown.set(key, '缺少可解析的用例数或完整类别集合'); else answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
+          else { const parsed = parseSummary(summary, categories); if (!parsed.valid) unknown.set(key, '缺少可解析的用例数或完整类别集合；下一步重读对应条目的完整 summary，并核对计数与类别集合格式'); else answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
         }
       }
       openRun = null;
@@ -273,17 +278,17 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       for (const copy of lastUploaded) {
         if (uploadVerdicts.get(copy.key) === true) phaseUploaded.push(copy.key);
-        else { uploadVerdicts.set(copy.key, false); unknown.set(copy.key, '上传被拒或未给出匹配的 sha256'); }
+        else { uploadVerdicts.set(copy.key, false); unknown.set(copy.key, '上传被拒或未给出匹配的 sha256；下一步检查上传应答的错误码，选择无凭据文本的文档或重新上传并核对摘要'); }
       }
       lastUploaded = [];
     }
     if (fatal) return [{ text: halted() }];
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
       const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
-      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
+      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文；下一步用该副本已记录的截断引用加 /summary 再调用 hub_get_nodes 重读');
       else {
         const parsed = parseSummary(full, categories);
-        if (!parsed.valid) unknown.set(pendingGetNodes.key, '全文缺少可解析的用例数或完整类别集合');
+        if (!parsed.valid) unknown.set(pendingGetNodes.key, '全文缺少可解析的用例数或完整类别集合；下一步重读已保存的全文引用并核对完整计数与类别集合，仍不符交集成者修正读取解析');
         else answerOf.set(pendingGetNodes.key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: full });
       }
       pendingGetNodes = null;
@@ -399,7 +404,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         checks.push(verdict(label, !bad.length, expected, bad.length ? bad.map(describe).join('；') : `核对 ${copies.length} 份，相符 ${copies.length}`));
       };
       const ofKind = (kind: string) => own.filter(copy => copy.kind === kind);
-      put('上传字节', own, copy => uploadVerdicts.get(copy.key) === true, '上传引用等于写下字节的摘要', copy => `${digest(copy)} 上传摘要未核实`);
+      put('上传字节', own, copy => uploadVerdicts.get(copy.key) === true, '上传引用等于写下字节的摘要', copy => `${digest(copy)} ${unknown.get(copy.key) ?? '上传摘要未核实；下一步重读上传应答并核对写入字节的摘要'}`);
       put('原件用例数', ofKind('a'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于独立计数', copy => unknown.has(copy.key) ? `${digest(copy)} ${unknown.get(copy.key)}` : `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
       put('单用例副本用例数', ofKind('c'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于该副本独立计数', copy => unknown.has(copy.key) ? `${digest(copy)} ${unknown.get(copy.key)}` : `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
       put('换序', ofKind('b'), copy => scores.get(copy.key)?.ok === true && answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary, 'b 与 a 缺失集合和摘要逐字相同', copy => `${details(copy)}；${answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary ? '摘要相同' : '摘要不同'}`);
@@ -412,7 +417,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     }
     if (fatal) checks.push(verdict('摘要读取格式', false, '截断摘要提供可识别的全文引用', `${uploaded.get(fatal.key)?.slice(0, 12)}；${halted()}`));
     const missing = [...attempted.keys()].filter(key => !answerOf.has(key) || unknown.has(key));
-    checks.push(verdict('副本回答完整', attempted.size > 0 && !missing.length, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} 缺结果；下一步核对运行回执和读取解析`).join('；') : '完整'));
+    checks.push(verdict('副本回答完整', attempted.size > 0 && !missing.length, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} ${unknown.get(key) ?? '缺结果；下一步重读对应运行的完整条目摘要并核对解析'}`).join('；') : '完整'));
     const completed = trees.filter((_tree, document) => [['a','b'],['c'],['d','e','f']].every(kinds => scored.some(row => ownerOf(row.key) === document && kinds.includes(attempted.get(row.key)!.kind)))).length;
     checks.push(verdict('至少两份文档走完三段', completed >= 2, '至少 2 份', `${completed} 份；上传 ${uploadsOfPhase.join('、')}；运行 ${runsOfPhase.join('、')}`));
     const targetGroups = new Set(scored.filter(row => ['d','f'].includes(attempted.get(row.key)!.kind)).map(row => categories.find(category => category.id === attempted.get(row.key)!.category)?.group));
@@ -430,7 +435,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       const weight = key.startsWith('phase2-') ? outerIds[Number(key.split('-')[1])]?.length ?? 1 : 1;
       reasons.set(reason, (reasons.get(reason) ?? 0) + weight);
     }
-    for (const finding of checkFindings) if (!unknown.has(finding.runKey)) reasons.set('单用例副本结果不可核对', (reasons.get('单用例副本结果不可核对') ?? 0) + 1);
+    for (const finding of checkFindings) if (!unknown.has(finding.runKey)) reasons.set('单用例副本结果不可核对；下一步重读并核对该单用例结果，修复计数差异后重跑依赖段', (reasons.get('单用例副本结果不可核对；下一步重读并核对该单用例结果，修复计数差异后重跑依赖段') ?? 0) + 1);
     return reasons;
   };
   const phaseLines = () => uploadsOfPhase.map((uploads, phase) => `第 ${phase + 1} 段：上传 ${uploads}，运行 ${runsOfPhase[phase]}`);
@@ -455,8 +460,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
         if ('skipped' in entry) skipped.push(`第 ${d + 1} 份文档 ${entry.category}：${entry.skipped.reason}——${entry.skipped.detail}`);
       }
     }
-    const findingLines = checkFindings.map(f => `第 ${f.document + 1} 份文档，用例 ${outerIds[f.document]!.indexOf(f.caseId) + 1}，副本 ${uploaded.get(f.runKey)?.slice(0, 12) ?? '未上传'} 结果不可核对：${f.why}；依赖副本没有核对`);
-    sections.push({ title: '没做的副本（按原因）', lines: [...[...notDoneChecks].map(name => `${name}：没有可核对的副本`), ...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
+    const findingLines = checkFindings.map(f => `第 ${f.document + 1} 份文档，用例 ${outerIds[f.document]!.indexOf(f.caseId) + 1}，副本 ${uploaded.get(f.runKey)?.slice(0, 12) ?? '未上传'} 结果不可核对：${f.why}；依赖副本没有核对；下一步重读并核对该副本，修复差异后重跑依赖段`);
+    sections.push({ title: '没做的副本（按原因）', lines: [...[...notDoneChecks].map(name => `${name}：没有可核对的副本；下一步补齐依赖答案或换用满足前提的文档后重跑`), ...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
     return sections;
   };
   return {

@@ -441,3 +441,13 @@ test('closure unknown phase-two batch never feeds phase-three copies or agreemen
  const lines=scenario.sections?.flatMap(s=>s.lines).join('\n') ?? '';assert.match(lines,/单用例副本答案未知/);
  for(const check of result.checks.filter(c=>c.name.includes('单用例副本用例数'))){assert.ok(!/用例 \d+\/\d+/.test(check.actual));assert.ok(check.actual.includes('条目数与这一批的份数不符'));}
 });
+
+test('closure every anonymous unknown count names its own executable next action', () => {
+ for(const options of [{badUpload:true},{dropRows:true},{refuseStart:true},{mutate:(info:CopyInfo,answer:Answer)=>({...answer,count:info.kind==='a'?99:answer.count})}]) {
+  const {gold}=goldOf();const scenario=build(gold);drive(scenario,undefined,options);
+  const skipped=(scenario.countLines ?? []).filter(line=>line.startsWith('没做：'));
+  assert.ok(skipped.length);for(const line of skipped)assert.ok(line.includes('下一步'),line);
+  const text=scenario.sections?.flatMap(s=>s.lines).join('\n') ?? '';
+  if('badUpload' in options)assert.match(text,/上传被拒[\s\S]*下一步[\s\S]*上传应答/);
+ }
+});
