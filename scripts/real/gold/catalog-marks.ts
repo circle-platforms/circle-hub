@@ -430,6 +430,9 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
     if (!object(submission) || submission.run !== record.run || !Array.isArray(submission.items)) add('submission', '/run', '属于本次运行的完整提交正文（含 items）', exportSubmission);
   }
   const parameters = object(record.parameters) ? record.parameters : {};
+  for (const [name, value] of Object.entries({case_priority:2,group_priority:1,precondition_priority:3})) {
+    if (parameters[name] !== undefined && parameters[name] !== value) add('run','/run/parameters/'+name,'金标准尚未实现此投影优先级参数','请集成者确认锁定版本的投影规则并补充该参数的金标准实现后重跑；不能套用默认值');
+  }
   const rule = parameters.case_rule;
   if (rule !== undefined && rule !== 'marked' && rule !== 'tagged') add('run', '/run/parameters/case_rule', '识别用例的版本化规则', '请集成者确认 case_rule 的声明和锁定版本后补充金标准，不默认套用 marked');
   // Carry-over brings another submission's slot values; one current body cannot prove their exact cited commands.

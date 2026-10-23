@@ -301,3 +301,12 @@ test('missing Hub pointer or command is an output mismatch rather than a missing
   assert.match(report.extra[0].output_error ?? '',/输出缺字段/);
  }
 });
+
+test('nondefault projection priorities request their exact run parameter positions', async () => {
+ const {catalogMarks}=await import('./catalog-marks.ts');
+ for(const key of ['case_priority','group_priority','precondition_priority']) {
+  const shown=receiptRun(); shown.run.parameters={[key]:9};
+  const report=catalogMarks({packManifest,tableBytes,argumentTypes:[],treeXml:tree,sourceBytes,run:shown,submissionBytes:bytes,table});
+  assert.equal(report.expected.length,0); assert.ok(report.requests.some(r=>r.pointer==='/run/parameters/'+key));
+ }
+});
