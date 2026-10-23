@@ -83,3 +83,7 @@ test('review 14 an optional-only signature still cannot encode a zero-value G ce
   const method = contractOf().enabled.find((v) => v.object === 'widget-host' && v.method === 'shell')!; const optional = { ...method, parameters: method.parameters.map((v) => ({ ...v, required: false })) };
   const result = bindArguments(optional, { object: optional.object, method: optional.method, args: [], keywords: {} }, '/step'); assert.ok(result.problems.some((v) => v.code === 'param_arity' && v.message.includes('None')));
 });
+test('review 15 an unreplaced off-bed source points to its replacement repair first', () => {
+  const data = goodData(); data.steps[0].args = ['widget address 192.0.2.200']; data.expects[0].quote.text = '原文 192.0.2.200 健康检查间隔设置成功'; data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }];
+  const result = checkAddresses(subjectOf(data)); assert.ok(codes(result).includes('case-compile.replacement_missing')); assert.ok(!codes(result).includes('case-compile.address_off_bed'));
+});

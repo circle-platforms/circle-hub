@@ -56,7 +56,7 @@
     {
       "code": "case-compile.address_off_bed",
       "when": "字面地址或替换目标不在台架或本血缘分配中",
-      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行"
+      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行；用例原文的台架外地址应加入 replacements 并在槽位写替换后的最终文字"
     },
     {
       "code": "case-compile.address_wrong_device",

@@ -74,9 +74,10 @@ export function checkAddresses(input: unknown): Outcome[] {
     for (const address of literalAddresses(value)) {
       if (!isHostLiteral(address, value, bed)) continue;
       count++;
+      if (slots.replacements.some((v) => addressKey(v.case) === address.key && addressKey(v.bed) !== address.key)) { out.push(refute(s, 'replacement_missing', '步骤或期望文字仍有原用例地址；按 replacements 改成最终文字，Hub 不改写步骤', pointer)); continue; }
       const found = readAddress(bed, s.leases, s.now, address.text);
       if (found.kind === 'off_bed') { out.push(refute(s, 'address_off_bed', `字面地址 ${address.text} 不在本台架或本血缘分配集合里`, pointer)); continue; }
-      if (slots.replacements.some((v) => addressKey(v.case) === address.key && addressKey(v.bed) !== address.key)) out.push(refute(s, 'replacement_missing', '步骤或期望文字里仍有未替换的原用例地址；槽位必须写最终文字', pointer));
+
       if (device && found.kind === 'interface' && found.device !== device && found.type !== 'server') out.push(refute(s, 'address_wrong_device', '设备命令只许本设备接口地址、本血缘分配地址和服务器接口地址', pointer));
     }
   };
