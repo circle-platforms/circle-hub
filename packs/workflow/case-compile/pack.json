@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "03937f90afdbf9f412a46e76d7e2db1e2a08add7b2324ae9e7ef14f8321a0d71",
-      "size": 5169
+      "sha256": "aff2ade3ba81057f110b99e2daae2a4de1a7c2bbd2156188eb9bc035ee5de432",
+      "size": 5165
     },
     {
       "path": "checks.json",
@@ -383,7 +383,7 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "05bb514ac7890bde8cee447cb6c8bb22e9bbc1e3d4541f4bd6b163e3113019ba",
+      "sha256": "0a35fa75fdb580e878fe90b8b22167cab89423a77732ef4e8eecbac3d516db7b",
       "size": 29477
     },
     {
@@ -618,7 +618,7 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "50f02fc62c0e338c28ef8c83803efdbfcd034f29d3a21205257f538e6f7bb628",
+      "sha256": "359d2e677507396907fa740a5a941f0020e49165f5f8b9060f55800733b2b5b5",
       "size": 29431
     },
     {
@@ -658,7 +658,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "e7f3a9b1c2cef7486be45faa5ab9b0ea06aa0952bd0ff5d103190521e9a9fe34",
+      "sha256": "44b7efbd1850a656b4e6be659df8a8aea97d347c16c6e8b9a6d52f6b4f42584f",
       "size": 555
     },
     {
