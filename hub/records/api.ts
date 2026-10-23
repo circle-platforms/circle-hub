@@ -17,7 +17,7 @@ import type { HubConfig } from '../config/index.ts';
 export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
-export { RecordVariables, VariableError, secretForms } from './variables.ts';
+export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';

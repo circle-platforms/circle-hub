@@ -40,6 +40,7 @@ export interface PreparedSecrets {
     readonly reason: string;
 }
 export interface VariableWriteOptions {
+    names?: readonly string[];
     notSecret?: boolean;
     validate?: (tx: Transaction) => Promise<void>;
 }
@@ -60,7 +61,7 @@ export interface VariablePorts {
     now?: () => Date;
 }
 export function secretForms(value: string): string[] { return [...new Set([value, JSON.stringify(value).slice(1, -1), encodeURIComponent(value), Buffer.from(value).toString('base64'), createHash('sha256').update(value).digest('hex'), createHash('sha512').update(value).digest('hex')])]; }
-function reasonText(reason: unknown, values: readonly string[] = []): string {
+export function validateChangeReason(reason: unknown, values: readonly string[] = []): string {
     if (typeof reason !== 'string' || !reason.trim() || [...reason].length > 500 || scanForCredentials(Buffer.from(reason)).findings.length)
         throw new VariableError('理由必填、至多 500 个字符且不能含凭据；请重写理由');
     for (const value of values)
@@ -76,7 +77,7 @@ export class RecordVariables {
     readonly #now: () => Date;
     readonly #prepared = new WeakSet<object>();
     constructor(ports: VariablePorts) { this.#p = ports; this.#now = ports.now ?? (() => new Date()); }
-    async #admin(by: Principal) { const actual = await this.#p.principals.get(by.id); if (!actual || actual.disabled || actual.role !== 'admin')
+    async assertAdmin(by: Principal) { const actual = await this.#p.principals.get(by.id); if (!actual || actual.disabled || actual.role !== 'admin')
         throw new AccessError('只有管理员可以设置或查看变量与密钥'); }
     #name(name: unknown, kind: VariableKind): string { const parsed = (kind === 'var' ? OrdinaryVariableName : VariableName).safeParse(name); if (!parsed.success)
         throw new VariableError(parsed.error.issues[0]?.message ?? '名字不合规则；请核对参数'); return parsed.data; }
@@ -110,7 +111,7 @@ export class RecordVariables {
         value: NamedVersion;
         created: boolean;
     }> {
-        await this.#admin(by);
+        await this.assertAdmin(by);
         name = this.#name(name, 'var');
         const parsed = VariableValue.safeParse(value);
         if (!parsed.success)
@@ -119,11 +120,11 @@ export class RecordVariables {
         const token = (v: unknown): boolean => typeof v === 'string' ? v.length >= 16 && !/\s/u.test(v) && /[A-Z]/.test(v) && /[a-z]/.test(v) && /\d/.test(v) : Array.isArray(v) ? v.some(token) : v !== null && typeof v === 'object' ? Object.values(v).some(token) : false;
         if (!options.notSecret && (scanForCredentials(Buffer.from(text)).findings.length || token(value)))
             throw new VariableError('值像是凭据：用 circle-hub secret set；确实不是时显式给 --not-secret');
-        const note = reasonText(reason + (options.notSecret ? '；已确认不是密钥（--not-secret）' : ''));
+        const note = validateChangeReason(reason + (options.notSecret ? '；已确认不是密钥（--not-secret）' : ''));
         const definition = VariableRecord.parse({ schema: 'variable@1', name, value });
         const object = await this.#p.objects.put(canonicalBytes(definition), 'application/json');
         return this.#p.store.withTransaction(async (tx) => {
-            await this.lockNames([name], tx);
+            await this.lockNames([name, ...(options.names ?? [])], tx);
             await this.#kindFree(name, 'var', tx);
             await options.validate?.(tx);
             const history = await this.#history('var', name, tx), previous = history[0];
@@ -134,7 +135,7 @@ export class RecordVariables {
         });
     }
     async prepareSecrets(by: Principal, input: readonly SecretWrite[], reason: string): Promise<PreparedSecrets> {
-        await this.#admin(by);
+        await this.assertAdmin(by);
         if (!input.length || new Set(input.map(v => v.name)).size !== input.length)
             throw new VariableError('密钥名字不能为空或重复；逐项核对 --name');
 
@@ -150,7 +151,7 @@ export class RecordVariables {
                 throw new VariableError(`第 ${index + 1} 个密钥缺少有效的使用者、地址绑定或说明`);
             return { name, stored, metadata: metadata.data };
         });
-        const note = reasonText(reason, [...input.map(v => v.value), ...validated.map(v => v.stored)]);
+        const note = validateChangeReason(reason, [...input.map(v => v.value), ...validated.map(v => v.stored)]);
         const items = [];
         for (const v of validated) {
             await this.#p.vault.put(v.metadata.entry, v.stored);
@@ -180,9 +181,9 @@ export class RecordVariables {
     async setSecrets(by: Principal, input: readonly SecretWrite[], reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<NamedVersion[]> { const prepared = await this.prepareSecrets(by, input, reason); const out = await this.#p.store.withTransaction(tx => this.commitSecrets(by, prepared, tx, validate)); for (const item of input)
         await this.cleanupSecret(item.name); return out; }
     async unset(by: Principal, kind: VariableKind, name: string, reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<NamedVersion> {
-        await this.#admin(by);
+        await this.assertAdmin(by);
         name = this.#name(name, kind);
-        const note = reasonText(reason);
+        const note = validateChangeReason(reason);
         const result = await this.#p.store.withTransaction(async (tx) => { await this.lockNames([name], tx); await this.#kindFree(name, kind, tx); await validate?.(tx); const history = await this.#history(kind, name, tx); if (!history.length)
             throw new VariableError('名字没有设置决定；请核对名字'); const decision = await this.#p.authorizations.configureResourceInTransaction(by, kind + ':' + name, null, note, tx, true); return this.#version(kind, name, decision, [decision, ...history]); });
         if (kind === 'secret')
@@ -191,9 +192,9 @@ export class RecordVariables {
                     await this.#p.vault.remove(entry);
         return result;
     }
-    async history(by: Principal, kind: VariableKind, name: string): Promise<NamedVersion[]> { await this.#admin(by); name = this.#name(name, kind); const rows = await this.#history(kind, name); return Promise.all(rows.map(row => this.#version(kind, name, row, rows))); }
+    async history(by: Principal, kind: VariableKind, name: string): Promise<NamedVersion[]> { await this.assertAdmin(by); name = this.#name(name, kind); const rows = await this.#history(kind, name); return Promise.all(rows.map(row => this.#version(kind, name, row, rows))); }
     async list(by: Principal): Promise<NamedVersion[]> {
-        await this.#admin(by);
+        await this.assertAdmin(by);
         const latest = new Map<string, AuthorizationRecord>();
         let cursor: string | null = null;
         do {
