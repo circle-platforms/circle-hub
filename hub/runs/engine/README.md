@@ -419,3 +419,12 @@ module and item where applicable, fixed codes, durations and 50/100 ms backoff. 
 retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache still
 shares successful construction only, and replay of a completed identical submission creates no new attempt or action.
 Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
+
+Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
+action retains bound_source retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
+use registered check_error or integrity_unproven, an unresolved selector REFERENCE_UNRESOLVED. Text that cannot be provided
+uses missing_input; a pinned text exceeding reads.max_bytes uses budget_exhausted. Deterministic no-text/size limits do not
+repeat identical reads. Free-text diagnostics go only to the admin log. Every affected check outcome carries the actual
+unread list into its fact claim's statement.data.unread_sources even if the pack omits it. This is not a new top-level
+validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Exit ownership,
+requests, deadlines and whether unread_sources belongs at top level await hub-unknown-model.

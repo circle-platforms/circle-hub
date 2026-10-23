@@ -17,6 +17,7 @@ import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordRead
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
+import { retryRead, type ReadFailureReason } from './retry-read.ts';
 import { createSubjectBuilder } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
@@ -302,7 +303,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     };
   }
 
-  const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: string }>>();
+  const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
     let pending = boundSourceCache.get(reference);
@@ -310,17 +311,21 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       pending = (async () => {
         try {
           const parsed = parseReference(reference);
-          const result = await resolveReference(parsed, resolveCtx);
+          const result = await retryRead(() => resolveReference(parsed, resolveCtx), result => result.resolved ? null
+            : { reason: result.reason ?? result.code, retry: result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
+              if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation: 'bound_source', reference, ...attempt });
+            });
           if (!result.resolved) {
-            return { resolved: false, text: null, reason: result.message };
+            return { resolved: false, text: null, reason: result.reason ?? result.code };
           }
           if (result.text === null) {
-            return { resolved: true, text: null, reason: result.note ?? '内容没有文本' };
+            return { resolved: true, text: null, reason: 'missing_input' as const };
           }
           const byteLength = Buffer.byteLength(result.text, 'utf8');
           return { resolved: true, text: result.text, byteLength };
         } catch (error) {
-          return { resolved: false, text: null, reason: describe(error) };
+          onError(error, 'bound source');
+          return { resolved: false, text: null, reason: 'check_error' as const };
         }
       })();
       boundSourceCache.set(reference, pending);
@@ -358,13 +363,13 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         ...(s.slot !== undefined ? { slot: s.slot } : {}),
       };
       if (!result.resolved) {
-        unreadSources.push({ reference: s.reference, reason: result.reason ?? '来源不可用', ...extra });
+        unreadSources.push({ reference: s.reference, reason: result.reason ?? 'SOURCE_UNAVAILABLE', ...extra });
       } else if (result.text === null) {
-        unreadSources.push({ reference: s.reference, reason: result.reason ?? '内容没有文本', ...extra });
+        unreadSources.push({ reference: s.reference, reason: result.reason ?? 'missing_input', ...extra });
       } else if (result.byteLength !== undefined && result.byteLength > maxBytes) {
         unreadSources.push({
           reference: s.reference,
-          reason: `超过大小上限（${result.byteLength} 字节，上限 ${maxBytes} 字节）`,
+          reason: 'budget_exhausted',
           ...extra,
         });
       } else {
@@ -485,7 +490,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         onError,
       },
     );
-    return outcomes.map((o) => bounded(check, o));
+    return outcomes.map((o) => bounded(check, unreadSources.length ? { ...o, data: { ...o.data, unread_sources: unreadSources } } : o));
   };
   const subjectBuilder = () => createSubjectBuilder(async (target, subjectInput) =>
     (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, sandboxFor('subject', target.module,
