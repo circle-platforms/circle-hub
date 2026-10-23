@@ -35,3 +35,7 @@ Needs: none.
 Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
 `fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
 The unreleased package stays at 1.1.0; story projection fixes only require re-signing this manifest.
+
+Closure B2: storiesProject retains the entire batch when status or stage is not a scalar. It emits fields_nonscalar,
+separate from fields_absent and explicit null; the workflow counts these observed fields outside the scalar-status groups.
+A regression feeds this actual projection into story-traceability instead of manufacturing the marker in a fixture.
