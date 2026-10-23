@@ -27,7 +27,7 @@ interface RemoteLease { id: unknown; token: unknown; ttl: number; }
 const operationDefinition = (d:ExecutorDefinition) => ({target:d.target,endpoint:d.endpoint,ca:d.ca,resources:[...d.resources].sort(),manifest_sha256:d.manifest_sha256,actor_header:d.actor?.header.toLowerCase() ?? null,slot:d.proof.slot,payload_argument:d.payload_argument,submit:{tool:d.calls.submit.tool,arguments:d.calls.submit.arguments}});
 // Every future field stays fixed unless explicitly admitted as a read-only repair here.
 const fixedForReading = (d:ExecutorDefinition) => {
- const {status,result,reconciliation,premises,read_retry_when,allowed_tools,refused_tools,credential,limitations,side_effects,clock_skew_ms,receipt,max_bytes,poll_ms,...fixed}=d;
+ const {status,result,reconciliation,premises,read_retry_when,allowed_tools,refused_tools,limitations,side_effects,clock_skew_ms,receipt,max_bytes,poll_ms,...fixed}=d;
  const {status:statusCall,result:resultCall,query,...calls}=fixed.calls;
  return {...fixed,calls};
 };
