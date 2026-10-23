@@ -15,6 +15,7 @@ export const CODE_DUPLICATE_KEY = 'core.structure.duplicate_key';
 
 /** The raw fields the folded GoldMap loses: a priority that is present but malformed, and blank tags. */
 interface RawNode {
+  text: unknown;
   priorityPresent: boolean;
   /** The raw priority value, whatever it is. */
   priority: unknown;
@@ -32,7 +33,7 @@ function rawWalk(root: unknown, map: GoldMap): RawNode[] {
       return;
     }
     const record = ((value as { data?: unknown }).data ?? {}) as Record<string, unknown>;
-    raw.push({ priorityPresent: 'priority' in record && record.priority !== null && record.priority !== undefined, priority: record.priority, resource: record.resource });
+    raw.push({ text: record.text, priorityPresent: 'priority' in record && record.priority !== null && record.priority !== undefined, priority: record.priority, resource: record.resource });
     const list = Array.isArray((value as { children?: unknown }).children) ? ((value as { children?: unknown[] }).children as unknown[]) : [];
     for (const child of list.slice(0, 1000)) walk(child);
   };
@@ -127,6 +128,7 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   for (const node of cases) {
     const id = node.id;
     const reading = readCase(recognized, node);
+    reading.title = typeof raw[node.index].text === 'string' ? raw[node.index].text as string : '';
     readings.set(`${node.index}`, reading);
     if (id === '' || (idsSeen.get(id) ?? 0) > 1) {
       noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0, reason: id === '' ? 'data.id 缺失' : 'data.id 重复' });

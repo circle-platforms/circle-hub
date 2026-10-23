@@ -188,3 +188,10 @@ test('review 13: independence guards relative dynamic and transitive target impo
   for (const code of ["import { x } from '../../../hub/fake.ts';", "export * from '../../../packs/fake.ts';", "import('../../../hub/fake.ts');"]) assert.ok(independentImports(entry, root, () => code).length);
   assert.ok(independentImports(entry, root, file => file === entry ? "import './cases.ts';" : "export * from '../../../hub/fake.ts';").length);
 });
+
+test('review 20: absent null and nonstring raw titles are all empty', () => {
+  for (const value of [undefined, null, 123]) {
+    const node = kase('c1', 'temporary', 'expected'); if (value === undefined) delete node.data.text; else (node.data as Record<string, unknown>).text = value;
+    assert.ok(answerOf(doc(group('r', 'synthetic', node)), 'c1').includes(CODE_REQUIRED_EMPTY));
+  }
+});
