@@ -59,7 +59,8 @@ list and release notes `defect`; the finer form stays in
 | `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
 | `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
 | `adoc/index.ts` | `compileAdoc` | `{ main, revision, files, attributes? }` of one manual group on one SVN revision → `{ ok: true, composition, model, report }` (the expanded intermediate model) or `{ ok: false, error }` for the whole group |
-| `adoc/k1-model.ts` | `toK1Model` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads |
+| `adoc/k1-model.ts` | `toK1Model`, `citationFor` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads, each block with its own citation, plus the report lines and the blocks that could not be cited |
+| `adoc/entries.ts` | `produceAdocEntries` | the mapped model → K1's entries with every fragment rewritten to `{slot, source, parser: text@1, selector}`, or one typed group refusal |
 | `adoc/families.ts` | `compileFamilies`, `familyManualName` | `{ main, revision, families, familyAttributes }` and the product's names → one expanded model, composition and report per name family, or one group failure |
 
 ## Walking the build site (brief section 8)
@@ -444,9 +445,17 @@ accepted.
 
 - `k1-model.ts` maps the expanded model to the markdown@1 shape: the `=` levels become sections (a `[discrete]` heading is
   a block, not a section; a `=======` line is reported by step one and stays an ordinary block), blocks carry their section
-  path, and the references are text@1 `l/<a>-<b>` line selectors (a table block's reference is the first verified source
-  among its cells). K1's placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures
-  hang at /commands, table rows split, text entries hang at their section node.
+  path, and every block carries its citation: the chapter file's digest and the plain text@1 `l/<a>-<b>` line selector of
+  the range step one verified, as two fields (a table block's citation is the first verified source among its cells). K1's
+  placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures hang at /commands,
+  table rows split, text entries hang at their section node.
+- K1 copies a block's `selector` verbatim into the fragments of the entries it makes and stamps its own parser key on them
+  (`markdown@1`), so the mapped model puts a citation key of its own in that field (`cite/<index of the block>`) and
+  `entries.ts` (`produceAdocEntries`) turns every fragment back into the shape the Hub verifies: the chapter file's digest
+  in `source`, `text@1` as the parser, the plain line selector and the producer's slot. A byte range inside a mapped
+  table's text is only how K1 names a row; the fragment of a row is that row's own source line, with no range. A fragment
+  this rewrite cannot resolve (`apv.adoc.fragment_not_cited`) refuses the whole group: no entry goes out citing a
+  reference to nothing, and the old root does not move.
 - Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
   each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,
   and a description-list entry becomes one block for the term and the value of one source line, used only when the two

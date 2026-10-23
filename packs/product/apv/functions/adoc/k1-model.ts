@@ -3,12 +3,80 @@
 // and stay ordinary blocks), blocks with kind/section/text/path, and every block cites the text@1 line selector of
 // its verified original range. K1's placement code (produceManualEntries) applies to the result unchanged.
 //
-// Nothing is placed that cannot be cited: a block whose text step one could not verify against a source line fails the
-// whole group with a typed reason instead of being handed to K1 without a selector, because K1 counts such a block as
-// malformed and skips it — the content would disappear from the knowledge with only a count left behind.
+// Nothing is placed that cannot be cited. A block whose text step one could not verify against a source line stays out
+// of the model and is reported with its kind, file, line, reason and next action, because K1 counts a block without a
+// selector as malformed and skips it: the content would disappear from the knowledge with only a count left behind.
+// A block's citation is kept as the chapter file's digest and the plain text@1 line selector (Citation); the selector
+// field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
-import type { MarkdownBlock, MarkdownModel, MarkdownSection } from '../../../../../hub/refs/api.ts';
+import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
 import { inlineMarkdown, plainText } from './text.ts';
+
+/**
+ * One fragment of one chapter file: the file's digest and the text@1 line selector of the verified range, kept apart.
+ * The Hub's FragmentRef holds them in separate fields (`source` and `selector`), and only that shape verifies.
+ */
+export interface Citation {
+  file: string;
+  sha256: string;
+  /** text@1 selector of the verified range: `l/<n>` or `l/<a>-<b>`. */
+  selector: string;
+}
+
+/**
+ * The citation one fragment of the mapped model stands for: a block's own citation, the citation of one row of a table
+ * block (K1 gives a row as a byte range inside the block's text), or a section's heading line. Null when the mapped
+ * model has no citation for it, which the producer refuses instead of inventing a reference.
+ */
+export function citationFor(model: AdocModel, selector: string, range?: [number, number]): Citation | null {
+  const key = CITE_KEY.exec(selector);
+  if (key !== null) {
+    const block = model.blocks[Number(key[1])];
+    if (block === undefined) return null;
+    if (range === undefined) return block.cite;
+    const row = (block.rowCites ?? []).find((one) => one.range[0] === range[0] && one.range[1] === range[1]);
+    return row === undefined ? null : row.cite;
+  }
+  if (selector.startsWith('h/')) {
+    for (const section of model.sections) if (section.selector === selector) return section.cite;
+  }
+  return null;
+}
+
+/** One row of a mapped table: the byte range K1 computes inside the block's text, and the row's own citation. */
+export interface RowCite {
+  range: [number, number];
+  cite: Citation;
+}
+
+/**
+ * A block of the mapped model. K1 copies `selector` verbatim into the fragments of the entries it makes, and it never
+ * reads a block selector, so the mapped model puts a citation key there (`cite/<index of the block>`) and keeps the real
+ * text@1 selector and the file digest in `cite`; `entries.ts` turns the two into a FragmentRef the Hub verifies. A key
+ * that never reaches that rewrite is not a reference either: verifyFragment refuses it, so nothing cites a chapter file
+ * by accident.
+ */
+export interface AdocBlock extends MarkdownBlock {
+  cite: Citation;
+  rowCites?: RowCite[];
+}
+
+/** A section of the mapped model: `cite` is the heading's own verified source line, null when it has none. */
+export interface AdocSection extends MarkdownSection {
+  cite: Citation | null;
+}
+
+export interface AdocModel {
+  charset: string;
+  lines: number;
+  sections: AdocSection[];
+  blocks: AdocBlock[];
+  nulRemoved: number;
+}
+
+/** The citation key K1 carries through to a fragment's `selector`, and its two directions. */
+export const citeKey = (index: number): string => `cite/${index}`;
+const CITE_KEY = /^cite\/([0-9]+)$/;
 
 export const K1_KINDS: Readonly<Record<string, string>> = {
   paragraph: 'paragraph',
@@ -124,10 +192,10 @@ export interface Uncited {
 }
 
 /** What one mapping of the expanded model gives: the K1 model, the report lines of the production, and the blocks that
- * could not be cited and therefore are not in the model (never a block without a selector: K1 counts one as malformed
+ * could not be cited and therefore are not in the model (never a block without a citation: K1 counts one as malformed
  * and skips it, so the content would vanish with only a count left behind). */
 export interface Mapped {
-  model: MarkdownModel;
+  model: AdocModel;
   warnings: string[];
   uncited: Uncited[];
 }
@@ -136,9 +204,10 @@ export interface Mapped {
  * One K1 model of the expanded adoc. `manualName` names the manual of every fragment reference (the K1 producer
  * composes `/manual/<name>/<章节路径>` from it); the composition ties the model to its inputs.
  */
-export function toK1Model(model: ExpandedModel, composition: Composition, manualName: string): Mapped {  const sections: MarkdownSection[] = [{ level: 0, title: '', key: '', ordinal: 0, parent: null, children: [], blocks: [], line: 0, end: 0, selector: null, attributes: null }];
+export function toK1Model(model: ExpandedModel, composition: Composition, manualName: string): Mapped {
+  const sections: AdocSection[] = [{ level: 0, title: '', key: '', ordinal: 0, parent: null, children: [], blocks: [], line: 0, end: 0, selector: null, attributes: null, cite: null }];
   const byPath = new Map<string, number>([['', 0]]);
-  const blocks: MarkdownBlock[] = [];
+  const blocks: AdocBlock[] = [];
   let ordinal = 0;
   const keyOf = (path: Block['path']): string => path.map((s) => s.title).join('/');
   const sectionOf = (path: Block['path']): number => {
@@ -149,27 +218,31 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     ordinal += 1;
     const at = sections.length;
     const title = path[path.length - 1]!.title;
-    sections.push({ level: path.length, title, key: title, ordinal, parent, children: [], blocks: [], line: 0, end: 0, selector: `h/${key}`, attributes: null });
+    sections.push({ level: path.length, title, key: title, ordinal, parent, children: [], blocks: [], line: 0, end: 0, selector: `h/${key}`, attributes: null, cite: null });
     sections[parent]!.children.push(at);
     byPath.set(key, at);
     return at;
   };
-  const cite = (origin: VerifiedRange): string => `src:${composition.files.find((f) => f.file === origin.file)?.sha256 ?? ''}/text@1/${origin.selector}`;
-  const emit = (block: Block, text: string, origin: VerifiedRange | null): void => {
+  const citationOf = (origin: VerifiedRange): Citation => ({
+    file: origin.file,
+    sha256: composition.files.find((file) => file.file === origin.file)?.sha256 ?? '',
+    selector: origin.selector,
+  });
+  /** One mapped block: the citation key K1 carries into its fragments, and the citation the key stands for. */
+  const emit = (block: Block, kind: string, text: string, origin: VerifiedRange): void => {
     const section = sectionOf(block.path);
     const index = sections[section]!.blocks.length;
     sections[section]!.blocks.push(blocks.length);
-    // Paragraphs cite their RAW source text (the verbatim line step one checked), not the engine's inline output — the
-    // raw is what was verified against the source, and K1's anchor grammar reads it directly.
     blocks.push({
-      kind: kindOf(block),
+      kind,
       section,
       index,
-      line: (origin?.from ?? 1) - 1,
-      lines: origin === null ? 1 : origin.to - origin.from + 1,
+      line: origin.from - 1,
+      lines: origin.to - origin.from + 1,
       text,
-      selector: origin === null ? null : cite(origin),
+      selector: citeKey(blocks.length),
       path: block.path.map((s) => s.title),
+      cite: citationOf(origin),
     });
   };
   const uncited: Uncited[] = [];
@@ -187,10 +260,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       for (const line of block.raw.split('\n')) {
         const marked = /^\*\*/.test(line) ? line : `**${line}**`;
         const lineOrigin = block.origins.find((one) => one.verbatim.split('\n').includes(line)) ?? origin;
-        const section = sectionOf(block.path);
-        const index = sections[section]!.blocks.length;
-        sections[section]!.blocks.push(blocks.length);
-        blocks.push({ kind: 'paragraph', section, index, line: (lineOrigin.from ?? 1) - 1, lines: 1, text: marked, selector: cite(lineOrigin), path: block.path.map((s) => s.title) });
+        emit(block, 'paragraph', marked, lineOrigin);
       }
       continue;
     }
@@ -201,7 +271,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     if (block.kind === 'list_item' && block.listAt !== null && model.blocks[block.listAt]?.kind === 'dlist') {
       const entry = describedEntry(block, model.blocks[at + 1]);
       if (entry !== null) {
-        emit(block, entry.text, entry.origin);
+        emit(block, kindOf(block), entry.text, entry.origin);
         at++;
         continue;
       }
@@ -211,7 +281,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       uncited.push(uncitedOf(model, block));
       continue;
     }
-    emit(block, text, origin);
+    emit(block, kindOf(block), text, origin);
   }
   const warnings: string[] = [];
   if (uncited.length > 0) {

@@ -12,6 +12,11 @@
       "size": 2957
     },
     {
+      "path": "functions/adoc/entries.ts",
+      "sha256": "482bb23bd2c9b1c8a6ccf95c46133c51314aadfbf997323ddea0f09803361fc3",
+      "size": 4438
+    },
+    {
       "path": "functions/adoc/families.ts",
       "sha256": "74dd6ebc425d110f3e7ffcd502fa4f5ff98f306b4300adf9ccb5ad2e67de08d4",
       "size": 3913
@@ -33,8 +38,8 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "f397c5854208e2c92fe1f9dc7ebdb09863bc08a3936e5e629d3ee2a0d09f630d",
-      "size": 12497
+      "sha256": "5a1979d94b7325d57a2f31948c10335485a99d8652b26b870fd81b90ddb34c9a",
+      "size": 15099
     },
     {
       "path": "functions/adoc/origins.ts",

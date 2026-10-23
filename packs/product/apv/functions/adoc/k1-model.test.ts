@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { toK1Model, type Mapped } from './k1-model.ts';
 import { compileAdoc } from './index.ts';
 import { produceManualEntries } from '../manual.ts';
+import { ADOC_PARSER, produceAdocEntries } from './entries.ts';
 
 const compile = async (files: Record<string, string>, main = 'main.adoc', attributes: Record<string, string | boolean> = {}): Promise<Extract<Awaited<ReturnType<typeof compileAdoc>>, { ok: true }>> => {
   const out = await compileAdoc({ main, revision: '42', attributes, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, { text, revision: '42', sha256: createHash('sha256').update(text).digest('hex') }])) });
@@ -32,10 +33,13 @@ test('the expanded model maps to the markdown@1 shape: sections, blocks, selecto
   assert.equal(model.sections.length, 3, 'the document section plus First and Nested (the `= Book` title is the document itself, no extra section)');
   assert.equal(model.sections[1]!.title, 'First');
   assert.equal(model.sections[2]!.title, 'Nested');
-  const nested = model.blocks.find((b: { text: string }) => b.text === 'nested text.');
+  const nested = model.blocks.find((b) => b.text === 'nested text.');
   assert.ok(nested !== undefined);
   assert.deepEqual(nested.path, ['First', 'Nested'], 'the heading path rides along');
-  assert.match(nested.selector ?? '', /^src:[0-9a-f]{64}\/text@1\/l\/9$/, 'the nested paragraph cites its verified source line');
+  assert.equal(nested.selector, `cite/${model.blocks.indexOf(nested)}`, 'K1 carries a citation key of the mapped model, never a packed reference');
+  assert.equal(nested.cite.file, 'main.adoc', 'the nested paragraph cites its own chapter file');
+  assert.equal(nested.cite.selector, 'l/9', 'and its own verified source line');
+  assert.match(nested.cite.sha256, /^[0-9a-f]{64}$/);
 });
 
 test('discrete headings are marked and invalid ======= lines are reported, not headings', async () => {
@@ -125,7 +129,9 @@ test('a description list, marked list items, an admonition and a retained single
   );
   const result = mapped(out);
   assert.ok(result.model.blocks.every((block) => typeof block.selector === 'string' && block.selector !== ''), 'every mapped block carries a citation');
-  const placed = produceManualEntries(result.model, null, { name: 'cli' });
+  const produced = produceAdocEntries(result, { name: 'cli' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const placed = { entries: produced.entries, warnings: produced.warnings };
   assert.deepEqual(placed.warnings, [], placed.warnings.join('；'));
   const statements = placed.entries.map((entry) => String(entry.statement));
   for (const text of ['name:: 成员名称', 'weight:: 权重，取值 1 到 100', 'demo pool add', '支持热备', 'change it', '需要管理员权限', 'APV 独有的一行说明']) {
@@ -134,7 +140,8 @@ test('a description list, marked list items, an admonition and a retained single
   // The description-list entry cites the one source line that holds both of its items.
   const described = placed.entries.find((entry) => String(entry.statement).startsWith('name::'));
   assert.ok(described !== undefined);
-  assert.match(described.fragments[0]!.selector, /text@1\/l\/5$/);
+  assert.equal(described.fragments[0]!.parser, ADOC_PARSER);
+  assert.equal(described.fragments[0]!.selector, 'l/5');
 });
 
 test('a block that cannot be cited stays out of the model and is reported with file, line and reason', async () => {
