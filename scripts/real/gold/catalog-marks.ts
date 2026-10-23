@@ -6,6 +6,8 @@
 import { SaxesParser } from 'saxes';
 import { isIP } from 'node:net';
 import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import type { CoreViolationCode } from '../../../contracts/generated/protocol.ts';
 
@@ -304,7 +306,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
 }
 
 export interface CatalogReport extends CatalogComparison {
-  inputs: { tree_sha256: string; source_sha256: string; submission_sha256: string | null; expected_submission_sha256: string | null; locked_root: string | null };
+  inputs: { tree_sha256: string | null; source_sha256: string | null; submission_sha256: string | null; expected_submission_sha256: string | null; locked_root: string | null };
 }
 export interface CatalogInputs {
   treeXml: string; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
@@ -364,3 +366,78 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   const allRequests = [...requests, ...compared.requests];
   return { ...compared, requests: allRequests, summary: { ...compared.summary, design_gaps: allRequests.length }, inputs };
 }
+
+/** Public declaration bytes are read, never imported as executable target code. */
+export function readDeclaration(file?: string): { table: unknown; bytes: Uint8Array } {
+  const bytes = readFileSync(file ?? new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url));
+  return { table: parseJson(bytes), bytes };
+}
+
+function outsideGit(path: string): string {
+  const absolute = resolve(path);
+  const check = (start: string): void => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new Error('输出在 Git 中'); if (dirname(at) === at) break; } };
+  check(absolute);
+  let existing = absolute;
+  while (!existsSync(existing)) { if (dirname(existing) === existing) throw new Error('路径无效'); existing = dirname(existing); }
+  const canonical = resolve(realpathSync(existing), relative(existing, absolute)); check(canonical);
+  if (dirname(canonical) === canonical) throw new Error('不是独立输出目录');
+  return canonical;
+}
+
+/** New files only. Real identifiers and command text never enter a screen summary. */
+export function writeCatalogReport(out: string, report: CatalogReport): void {
+  const directory = outsideGit(out);
+  const names = ['catalog-marks.json', 'evidence-requests.json'];
+  if (names.some(name => existsSync(join(directory, name)))) throw new Error('已有输出，拒绝覆盖');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(join(directory, names[0]), JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  writeFileSync(join(directory, names[1]), JSON.stringify(report.requests, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+}
+export function catalogSummary(report: CatalogComparison): string {
+  return `目录独立核对：一致 ${report.supported.length}，Hub 漏了 ${report.missed.length}，Hub 多了 ${report.extra.length}；反向预期反驳 ${report.negative_expected.length}，反向无归责反驳 ${report.negative_observed.length}；设计缺口 ${report.requests.length}`;
+}
+function emptyGap(at: Position, fact: string, next_action: string): CatalogReport {
+  const requests = [request(at, fact, next_action)];
+  return { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests, summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 1 }, inputs: { tree_sha256: null, source_sha256: null, submission_sha256: null, expected_submission_sha256: null, locked_root: null } };
+}
+
+export function main(argv: string[], say: (line: string) => void = line => process.stdout.write(line + '\n')): number {
+  const flags = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
+    flags.set(argv[i], argv[i + 1]);
+  }
+  if (!['--tree', '--source', '--run', '--out'].every(key => flags.has(key))) { say('设计缺口 1；缺 --tree、--source、--run 或 --out；下一步：补齐这些输入后重跑'); return 1; }
+  let out: string;
+  try { out = outsideGit(flags.get('--out')!); } catch { say('设计缺口 1；下一步：改用 Git 外的独立新输出目录，不能覆盖旧证据'); return 1; }
+  let report: CatalogReport;
+  let stage = 'tree';
+  try {
+    const read = (key: string): Uint8Array => { stage = key; return readFileSync(outsideGit(flags.get('--' + key)!)); };
+    const treeBytes = read('tree'), treeXml = new TextDecoder('utf-8', { fatal: true }).decode(treeBytes);
+    const sourceBytes = read('source'), runBytes = read('run'), run = parseJson(runBytes);
+    stage = 'table'; const declaration = readDeclaration(flags.get('--table'));
+    let excludeNodes: string[] = [];
+    if (flags.has('--gold')) {
+      const value = parseJson(read('gold'));
+      if (!Array.isArray(value) || !value.every(entry => object(entry) && typeof entry.node === 'string')) throw new Error('注入身份无效');
+      excludeNodes = value.flatMap(entry => [entry.node, ...(typeof entry.copy === 'string' ? [entry.copy] : []), ...array(entry.deletedCases).filter((v): v is string => typeof v === 'string')]);
+    }
+    const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
+    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, excludeNodes });
+    report.inputs.tree_sha256 = sha256(treeBytes);
+    Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
+  } catch {
+    report = emptyGap({ input: stage, pointer: '/' }, `缺可读且完整的 --${stage} 输入`, `由集成者补取这份输入的原始文件和编码声明，再带 --${stage} 重跑；保留原字节，不把解析失败当零标记`);
+  }
+  try { writeCatalogReport(out, report); }
+  catch { say('设计缺口 1；下一步：使用 Git 外的新目录重新保存明细，不覆盖已有文件'); return 1; }
+  say(catalogSummary(report));
+  say(`核对用例 ${report.summary.cases}，引用 ${report.summary.cited}，非本用例引文 ${report.summary.not_quoted}，开头不解析 ${report.summary.unresolved_heads}`);
+  for (const [name, digest] of Object.entries(report.inputs)) if (typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)) say(`${name} sha256 ${digest}`);
+  if (report.requests.length) say(`设计缺口 ${report.requests.length}；下一步：由集成者按私有补证文件的位置补取事实或规则，再重跑`);
+  const passed = !report.requests.length && !report.missed.length && !report.extra.length;
+  say('通过：' + (passed ? '是' : '否'));
+  return passed ? 0 : 1;
+}
+if (import.meta.main) process.exitCode = main(process.argv.slice(2));

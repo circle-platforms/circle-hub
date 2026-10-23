@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { readCatalog, judgeCommand, quoteFromCase } from './catalog-marks.ts';
+import { readCatalog, judgeCommand, quoteFromCase, type EvidenceRequest } from './catalog-marks.ts';
 
 const tree = `<catalog version="10.8.1"><menu name="widget">
  <item name="port"><arguments><arg name="port" type="U16" limit="[1 - 20]"/></arguments></item>
@@ -159,4 +159,53 @@ test('source identity, malformed submissions and missing case evidence are never
   assert.ok(badSource.requests.some(r => r.input === 'source'));
   const value = receiptRun(); value.latest.result.submission = createHash('sha256').update('{broken').digest('hex');
   assert.ok(catalogMarks({ treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
+});
+
+import { mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const privateInputs = (t: { after(fn: () => void): void }) => {
+  const directory = mkdtempSync(join(tmpdir(), 'gold-catalog-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
+  writeFileSync(files.tree, tree); writeFileSync(files.source, sourceBytes); writeFileSync(files.run, JSON.stringify(receiptRun())); writeFileSync(files.submission, bytes); writeFileSync(files.table, JSON.stringify(table));
+  return files;
+};
+const cliArgs = (files: ReturnType<typeof privateInputs>) => ['--tree', files.tree, '--source', files.source, '--run', files.run, '--submission', files.submission, '--table', files.table, '--out', files.out];
+
+test('CLI writes detailed evidence only to private immutable files and screens counts and digests', async t => {
+  const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
+  assert.equal(main(cliArgs(files), line => screen.push(line)), 0);
+  assert.equal(statSync(join(files.out, 'catalog-marks.json')).mode & 0o777, 0o600);
+  assert.equal(statSync(join(files.out, 'evidence-requests.json')).mode & 0o777, 0o600);
+  assert.ok(JSON.parse(read(join(files.out, 'catalog-marks.json'), 'utf8')).supported.length);
+  const visible = screen.join('\n').replace(/[a-f0-9]{64}/g, '<digest>');
+  for (const value of ['case-range', 'widget port', 'run_synthetic', 'core.catalog', '10.8.1']) assert.ok(!visible.includes(value));
+  const original = read(join(files.out, 'catalog-marks.json'), 'utf8');
+  assert.equal(main(cliArgs(files), () => {}), 1); assert.equal(read(join(files.out, 'catalog-marks.json'), 'utf8'), original);
+});
+test('unknown parameter types exit one and preserve XML position in the supplement request', async t => {
+  const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t);
+  writeFileSync(files.tree, tree.replace('type="U16"', 'type="SYNTHETIC_UNKNOWN"'));
+  assert.equal(main(cliArgs(files), () => {}), 1);
+  const requests = JSON.parse(read(join(files.out, 'evidence-requests.json'), 'utf8'));
+  assert.ok(requests.some((r: EvidenceRequest) => r.input === 'tree' && r.pointer.includes('@type') && r.line! > 0 && r.column! > 0));
+});
+test('scope drift and missing submission bytes exit one with a request, never as a successful zero-mark report', async t => {
+  const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t);
+  writeFileSync(files.table, JSON.stringify({ ...table, scope: 'all' }));
+  assert.equal(main(cliArgs(files), () => {}), 1);
+  assert.ok(JSON.parse(read(join(files.out, 'evidence-requests.json'), 'utf8')).some((r: EvidenceRequest) => r.pointer === '/scope'));
+});
+test('output in a Git checkout and malformed input cannot leak file paths or source values', async t => {
+  const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
+  const args = cliArgs(files); args[args.length - 1] = new URL('./forbidden-output', import.meta.url).pathname;
+  assert.equal(main(args, line => screen.push(line)), 1);
+  assert.ok(!screen.join('').includes(files.source));
+});
+
+test('malformed receipt fields never appear on the screen as if they were digests', async t => {
+  const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
+  const bad = receiptRun(); bad.run.root = 'synthetic-private-root-value'; writeFileSync(files.run, JSON.stringify(bad));
+  assert.equal(main(cliArgs(files), line => screen.push(line)), 1);
+  assert.ok(!screen.join('').includes('synthetic-private-root-value'));
 });
