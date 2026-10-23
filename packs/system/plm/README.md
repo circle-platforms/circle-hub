@@ -23,3 +23,9 @@ the write path of `tests/fixtures/plm` unreachable; bugs and stories with number
 id). The end-to-end test binds `plm:story` and `plm:bug` as expected sources of a review.
 
 Needs: none.
+
+## 批量需求读取
+
+`plm:stories:<编号>+<编号>+…` 使用现有只读需求详情路由；最多 50 个编号，数值排序、去重。内容为 `{stories: [{id,status,stage,title}], unread: [...]}`。状态和阶段独立保留原样；缺字段为 null，未返回编号单列，不推断已交付或已关闭。调用方把更多编号分成每组至多 50 个。
+
+合成验证：`node --test --test-concurrency=1 packs/system/plm/*.test.ts`。真实需求状态与阶段取值由集成者核实，当前不需要新词表轴。

@@ -158,3 +158,31 @@ export function bugsProject(input: unknown): unknown {
     ],
   };
 }
+
+/** Batch requirements use the same read-only detail route as a single story. */
+export function storiesPlan(input: unknown): PlanOutput {
+  const { type, key } = partsOf(input);
+  const ids = type === 'stories' ? parseBugsKey(key) : null;
+  return { requests: ids === null ? [] : [{ key: 'detail', route: 'story-detail', body: { story_ids: ids.map(Number) } }], done: true };
+}
+
+/** Status and stage are separate raw fields; no delivery semantics are inferred. */
+export function storiesProject(input: unknown): unknown {
+  const { type, key, responses, original } = partsOf(input);
+  const ids = type === 'stories' ? parseBugsKey(key) : null;
+  if (ids === null) return { error: { code: 'plm.invalid_key', message: '需求编号标识无效（最多 50 个正整数编号用 + 连接）' } };
+  const data = isRecord(responses[original]?.json) ? (responses[original].json as Record<string, unknown>).data : undefined;
+  if (!Array.isArray(data)) return { error: { code: 'plm.no_records', message: '详情应答的 data 不是数组' } };
+  const stories = [];
+  const unread = [];
+  for (const id of ids) {
+    const record = data.find((item) => isRecord(item) && idText(item.id) === id);
+    if (!isRecord(record)) { unread.push(id); continue; }
+    stories.push({ id, status: typeof record.status === 'string' ? record.status : null,
+      stage: typeof record.stage === 'string' ? record.stage : null, title: typeof record.title === 'string' ? record.title : null });
+  }
+  return { artifacts: [
+    { name: 'content', media_type: 'application/json', json: { stories, unread } },
+    { name: 'meta', media_type: 'application/json', json: { count: stories.length, unread: unread.length } },
+  ] };
+}
