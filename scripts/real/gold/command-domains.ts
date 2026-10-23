@@ -37,11 +37,13 @@ export function commandDomains(xml: string): Domains {
       const head = normalizeHead([...words, ...own].join(' '));
       if (!head) return;
       const lists = kids(node).filter(n => n.name === 'arguments');
-      const overloads = (lists.length ? lists : [{ ...node, children: [] }]).map(list => kids(list).filter(n => n.name === 'arg').map(arg => ({
+      const overloads = (lists.length ? lists : [{ ...node, children: [] }]).map(list => kids(list).filter(n => n.name === 'arg').map(arg => {
+        const body=helpBodies[argument++]??'';
+        return ({
         type: entity(arg.attributes.type ?? '').toUpperCase(), optional: /^(yes|y|true|1)$/i.test(arg.attributes.optional ?? ''),
         limit: entity(arg.attributes.limit ?? '').trim(), length: entity(arg.attributes.length ?? '').trim(),
-        otherForm: /\bor\b|host\s*name|\burl\b|[a-z]+:\/\//i.test(`${text(arg)} ${helpBodies[argument++] ?? ''}`),
-      })));
+        otherForm: /\bor\b|host\s*name|\burl\b|[a-z]+:\/\//i.test(entity(arg.attributes.help_string??'')||`${text(arg)} ${body}`),
+      });}));
       out.set(head, [...(out.get(head) ?? []), ...overloads]);
       return;
     }
@@ -74,7 +76,8 @@ function checkArg(arg: Arg, value: string): DomainResult {
       if (!Number.isSafeInteger(magnitude) || magnitude < 0 || magnitude > (arg.type === 'U16' ? 65535 : 4294967295)) return result('range');
       break;
     case 'DOTTEDIP':
-      if (arg.otherForm || isIP(value) !== 4) return unknown('DOTTEDIP_alternative_domain');
+      if (arg.otherForm) return unknown('DOTTEDIP_alternative_domain');
+      if(isIP(value)!==4)return result('type');
       break;
     case 'IPADDR': if (!isIP(value) || value.includes('%')) return result('type'); break;
     case 'IPMASK': {

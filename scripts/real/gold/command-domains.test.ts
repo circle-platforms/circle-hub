@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { commandDomains, judgeCommand, domainReport, compareStatus } from './command-domains.ts';
 const xml = (args: string) => `<commands><scope type="global"><menu name="widget"><item name="set"><arguments>${args}</arguments></item></menu></scope></commands>`;
-const judge = (type: string, value: string, attrs = '', help = '') => judgeCommand({ head: 'widget set', parameters: [value] }, commandDomains(xml(`<arg name="value" type="${type}" ${attrs}>${help}</arg>`)));
+const judge = (type: string, value: string, attrs = '', help = '') => judgeCommand({ head: 'widget set', parameters: [value] }, commandDomains(xml(`<arg name="" type="${type}" help_string="${help.replaceAll('"','&quot;')}" optional="no" default_value="" ${attrs}/>`)));
 for (const [type, good, bad, verdict] of [
   ['STRING','abc','toolong','refute'], ['XSTRING','甲乙','甲乙丙丁','refute'], ['U16','65535','65536','refute'], ['U32','4294967295','4294967296','refute'],
-  ['DOTTEDIP','192.0.2.1','hostname','unknown'], ['IPADDR','2001:db8::1','host','refute'], ['IPMASK','255.255.255.0','255.0.255.0','refute'],
+  ['DOTTEDIP','192.0.2.1','hostname','refute'], ['IPADDR','2001:db8::1','host','refute'], ['IPMASK','255.255.255.0','255.0.255.0','refute'],
 ]) test(`type ${type}: valid and invalid`, () => {
   const attrs = ['STRING','XSTRING'].includes(type) ? 'length="3"' : '';
   assert.equal(judge(type, good, attrs).verdict, 'support'); assert.equal(judge(type, bad, attrs).verdict, verdict);
@@ -87,4 +87,9 @@ for(const command of ['show widget set 5','widgte foo; widget set 5','widget set
 
 for(const constraint of ['4','2~4','2..4','2 to 4','(2-4)','(on,off)','[on|off]','on,off'])test(`undocumented limit remains an unsupported rule: ${constraint}`,()=>{
   for(const value of ['3','5'])assert.equal(judge('U16',value,`limit="${constraint}"`).verdict,'unknown');
+});
+
+test('DOTTEDIP reads real help attributes and rejects invalid plain IPv4 values',()=>{
+  for(const value of ['192.0.2.1','hostname'])assert.equal(judge('DOTTEDIP',value,'','IPv4 address or host name').verdict,'unknown');
+  assert.equal(judge('DOTTEDIP','999.1.1.1','','IPv4 address').category,'type');
 });
