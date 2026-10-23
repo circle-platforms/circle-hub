@@ -249,6 +249,7 @@ const partitionCountShape = Object.fromEntries(PARTITION.map((p) => [p, count]))
 export const PartitionCounts = z.strictObject({
   ...partitionCountShape,
   unknown: count.describe('items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])'),
+  pending_unknown: count.optional().describe('Additional count, not a partition: items whose layers retain unresolved unknown gaps beside their primary terminal'),
 });
 export type PartitionCounts = z.infer<typeof PartitionCounts>;
 
@@ -259,7 +260,8 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
   for (const p of PARTITION) {
     for (const it of partitions[p]) if (it.requirements.some((r) => r.layers.some(isUnknownTerminal))) unknown++;
   }
-  return { ...counts, unknown };
+  const pending_unknown=PARTITION.reduce((sum,p)=>sum+partitions[p].filter(it=>it.requirements.some(r=>r.layers.some(l=>(l.gaps?.length??0)>0))).length,0);
+  return { ...counts, unknown, ...(pending_unknown>0?{pending_unknown}:{}) };
 }
 
 

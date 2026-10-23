@@ -25,3 +25,9 @@ test('recovery retains every distinct missing fact and binds Hub-owned audiences
   assert.equal(layer.gaps?.[0].missing,'缺少原件摘要相符的字节');
   assert.deepEqual(layer.gaps?.[0].exit.audience,{user:context.administrator});
 });
+
+test('settled violations retain other unresolved causes rather than hiding their missing facts',()=>{
+  const layer=bindRecovery({layer:'static',terminal:'violation',code:'core.structure.required_empty'},context,[{verdict:'unknown',reason:'missing_input',missing:'缺少第二份原件',statement:'缺第二份',grounds:[],tier:'advisory'}]);
+  assert.equal(layer.terminal,'violation');
+  assert.equal(layer.gaps?.[0].missing,'缺少第二份原件');
+});

@@ -30,6 +30,7 @@ import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
   bindRecovery,
+  waitForRepairs,
   dynamicLayer,
   expectationFor,
   repairRounds,
@@ -690,6 +691,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const sourceSha = rootDigest(it.location);
     let rejection: string | null = null;
     const results: RequirementResult[] = [];
+    const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
@@ -709,7 +711,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
       const layers = [] as typeof unresolved;
       for (const layer of unresolved) {
-        if (layer.terminal === 'unchecked' || layer.terminal === 'incomplete' || layer.terminal === 'not_run' || layer.terminal === 'no_verdict') {
+        if (layer.terminal === 'unchecked' || layer.terminal === 'incomplete' || layer.terminal === 'not_run' || layer.terminal === 'no_verdict' || outcomes.some(o=>o.outcome.verdict==='unknown')) {
           const owner = await ctx.deps.workflows.ownerOf?.(run.pack_digest);
           const administrator = (await ctx.deps.records.principals?.list?.())?.find(p => p.role === 'admin' && !p.disabled)?.id;
           const runner = run.runner ?? run.configurer;
@@ -782,7 +784,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           requirement: t.key,
           ...(r.action === 'repair' || r.outcome.outcome.verdict === 'unknown' ? { rounds_left: r.roundsLeft ?? roundsLeftOf(t) } : {}),
         });
-        if (r.action === 'repair') problems.add(t.key);
+        if (r.action === 'repair') {
+          problems.add(t.key);
+          const runner=run.runner??run.configurer;
+          if(path&&runner){
+            const wait=bindRecovery({layer:'static',terminal:'incomplete',reason:'awaiting_step'},{runner,owner:runner,administrator:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),location:`${it.id} / ${t.key}`});
+            waitingRepairs.push({requirement:t.key,pointer:path,exit:wait.exit!});
+          }
+        }
       }
       for (const outcome of outcomes.filter(o => o.outcome.verdict === 'unknown')) {
         problems.add(t.key);
@@ -798,6 +807,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
+    waitForRepairs(results,waitingRepairs);
     const notCovered = submission !== null && handling === 'not_covered' && itemTemplates.some(t => t.required && (isJudgment(t) || artifactRequirements.has(t.key)));
     if (notCovered) {
       const judged = itemTemplates.filter((t) => isJudgment(t) && itemSlotKeys.has(t.key));

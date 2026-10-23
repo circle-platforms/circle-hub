@@ -47,7 +47,7 @@ const UNKNOWN_TERMINAL = {
   timeout: 'unchecked',
   missing_input: 'unchecked',
   integrity_unproven: 'unchecked',
-  budget_exhausted: 'incomplete',
+  budget_exhausted: 'unchecked',
   declared_skip: 'incomplete',
   not_covered: 'incomplete',
   awaiting_step: 'incomplete',
@@ -121,7 +121,7 @@ export function staticTerminal(input: StaticInput): RawStatic {
   if (!input.hasProducer) return { terminal: 'unchecked', reason: 'no_check', ...none };
   const judgment = input.producer !== 'fact';
   if (!judgment && (input.checks === 0 || input.outcomes.length === 0)) {
-    return { terminal: 'unchecked', reason: 'no_check', ...none };
+    return { terminal: 'unchecked', reason: input.checks === 0 ? 'no_check' : 'check_error', ...none };
   }
   const refutes = input.outcomes.filter((o) => o.outcome.verdict === 'refute');
   if (refutes.length > 0) {
@@ -268,7 +268,6 @@ export interface RecoveryContext {
 
 /** Bind new results only. Stored results are read through readStoredValidationResult, never passed here. */
 export function bindRecovery(layer: LayerResult, context: RecoveryContext, outcomes: readonly CheckOutcome[] = []): LayerResult {
-  if (!isUnsettled(layer)) return layer;
   const reason = layer.reason ?? 'check_error';
   const gap = (cause: Reason, missing: string) => {
     const policy = EXIT_BY_REASON[cause];
@@ -282,6 +281,7 @@ export function bindRecovery(layer: LayerResult, context: RecoveryContext, outco
     const missing = outcome.missing ?? outcome.statement;
     distinct.set(JSON.stringify([cause, missing]), gap(cause, missing));
   }
+  if (!isUnsettled(layer)) return distinct.size ? {...layer,gaps:[...distinct.values()]} : layer;
   const selected = [...distinct.values()].find(g => g.reason === reason)
     ?? gap(reason, `${context.location}：缺少${reason === 'not_covered' || reason === 'declared_skip' || reason === 'repair_exhausted' ? '完整的条目提交' : '该层可核验的结果'}（${reason}）`);
   const rest = [...distinct.values()].filter(g => g !== selected);
@@ -355,6 +355,7 @@ export function staticLayer(routed: RoutedStatic, expectation: Expectation): Lay
  * budget: EVERY_LAYER), shown by its static terminal; then incomplete with the same reason.
  */
 export function dynamicLayer(statics?: Pick<RoutedStatic, 'terminal' | 'reason'>): LayerResult {
+  if (statics?.reason === 'output_failed') return {layer:'dynamic',terminal:'not_run',reason:'output_failed',attribution:attributionByReason('output_failed')};
   if (statics !== undefined && statics.terminal === 'incomplete' && everyLayer(statics.reason)) {
     return { layer: 'dynamic', terminal: 'incomplete', reason: statics.reason, attribution: attributionByReason(statics.reason) };
   }
@@ -428,4 +429,18 @@ export function itemCell(requirements: readonly RequirementResult[]): ItemCell {
     }
   }
   return cell;
+}
+
+/** Explicit premise paths only: a dependency is never inferred from prose or a shared word. */
+export function waitForRepairs(results: RequirementResult[], repairs: Array<{requirement:string;pointer:string;exit:UnknownExit}>): void {
+  const boundary=(premise:string,pointer:string)=>premise===pointer||premise.startsWith(pointer+'/')||pointer.startsWith(premise+'/');
+  for(const result of results){
+    const waits=repairs.filter(repair=>repair.requirement!==result.requirement&&result.claims.some(claim=>claim.validity.premises.some(p=>p.startsWith('/')&&boundary(p,repair.pointer))));
+    if(!waits.length)continue;
+    result.layers=result.layers.map(layer=>{
+      const gaps=waits.map(repair=>({reason:'awaiting_step' as const,missing:`等待要求项 ${repair.requirement} 的修复（${repair.pointer}）`,exit:repair.exit}));
+      return {...layer,terminal:'incomplete' as const,reason:'awaiting_step' as const,missing:gaps[0].missing,exit:gaps[0].exit,attribution:'transient' as const,gaps:[...(layer.gaps??[]),...gaps.slice(1)]};
+    });
+    result.status='pending';delete result.unsatisfied_reason;
+  }
 }

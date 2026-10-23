@@ -182,7 +182,7 @@ function reasonCounts(items: readonly ItemResult[] | undefined): string {
 /** Items per partition (a declared skip is told apart from an item the submission did not cover) and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
 export function countsText(counts: PartitionCounts, partitions?: Partitions): string {
   const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p])}`).join('，');
-  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}`;
+  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}${counts.pending_unknown ? `；其中 ${counts.pending_unknown} 个还有未决未知` : ''}`;
 }
 
 /** The partition counts line: receipt, items per partition and the items with an unknown terminal. */

@@ -578,3 +578,10 @@ full replacement submissions remain allowed after exhaustion. Answers reference 
 rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. Unknown-routing
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
+
+Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
+`output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.
+Every distinct unknown is retained in layer gaps even beside a settled violation. `pending_unknown` is an optional
+additional item count, never a partition; the primary-terminal partitions remain disjoint and covering. Replies state
+“其中 N 个还有未决未知”. Explicit `Claim.validity.premises` submission paths can wait on another requirement's repair;
+these layers inherit its named exit and identify the requirement and repair path. No dependency is inferred from prose.
