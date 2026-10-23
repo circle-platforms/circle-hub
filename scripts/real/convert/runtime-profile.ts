@@ -80,6 +80,6 @@ export function run(args: string[]): void {
   const profile = checking ? (checkProfile(source, manifest, contract), source) : draftProfile(source, manifest, contract, options['--decisions'] ? readJson(options['--decisions']) : undefined);
   const bytes = jsonBytes(profile); const filename = checking ? 'runtime-profile.json' : 'runtime-profile.draft.json';
   output(options['--out'] ?? '', filename, bytes);
-  summary(record(profile) && Array.isArray(profile.allowed) ? profile.allowed.length : 0, bytes, { name: 'runtime-profile', file: filename });
+  summary(record(profile) && Array.isArray(profile.allowed) ? profile.allowed.length : 0, bytes, checking ? { name: 'runtime-profile', file: filename } : undefined);
 }
 main(import.meta.url, run);

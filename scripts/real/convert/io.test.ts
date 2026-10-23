@@ -43,7 +43,7 @@ test('topology and profile CLIs print only counted digests and staged publicatio
     const contract = runtimeDocument(); output(dir, 'contract.json', JSON.stringify(contract)); output(dir, 'environment.json', JSON.stringify({ ready: true, device_count: 2 }));
     const args = ['scripts/real/convert/runtime-profile.ts', join(dir, 'environment.json'), join(dir, 'inventory/test-bed-manifest.json'), join(dir, 'contract.json'), '--out', join(dir, 'profile')];
     const draft = spawnSync(process.execPath, args, { encoding: 'utf8' }); assert.equal(draft.status, 0, draft.stderr);
-    assert.match(draft.stdout, /^\{"count":\d+,"sha256":"[a-f0-9]{64}"\}\ncircle-hub doc put runtime-profile runtime-profile.draft.json\n$/);
+    assert.match(draft.stdout, /^\{"count":\d+,"sha256":"[a-f0-9]{64}"\}\n$/); assert.ok(!draft.stdout.includes('doc put'));
     const check = spawnSync(process.execPath, ['scripts/real/convert/runtime-profile.ts', join(dir, 'profile/runtime-profile.draft.json'), args[2]!, args[3]!, '--check', '--out', join(dir, 'verified')], { encoding: 'utf8' });
     assert.equal(check.status, 1); assert.equal(check.stdout, ''); assert.ok(!check.stderr.includes('widget-seat'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
