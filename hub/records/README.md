@@ -501,3 +501,9 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   such a version today.
 - **acceptance**: to run the server as a child process, start the cluster with `startPostgres({ socket: true, passwordless:
   true })` and pass `CIRCLE_HUB_DATABASE_SOCKET_DIR` = `postgres.socketDir`; `CIRCLE_HUB_*` variables never carry a password.
+
+## Unique business keys
+
+`RecordInput.unique_key` atomically binds `(kind, unique_key)` to one immutable record. The key is 1–1000 UTF-8 bytes, well-formed and without NUL. Concurrent duplicates return the first verified record with `created: false`, including its original body, schema and time; a losing candidate contributes no index entries. Callers must compare that record's binding before using it. `RecordStore.getByKey` reads the binding through the public API. A caller-owned transaction rolls back the record, its index and key together. When acquiring multiple keys in an outer transaction, callers use one global key order.
+
+Migration 3 adds append-only `record_keys` with primary key `(kind,key)` and a foreign key to `records`; the runtime receives SELECT and INSERT only. Migrations 1 and 2 are unchanged. Tests: `node --test --test-concurrency=1 hub/records/*.test.ts`.

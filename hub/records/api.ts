@@ -115,6 +115,8 @@ export interface RecordInput<B = unknown> {
   /** ISO 8601 UTC with milliseconds (`Date.prototype.toISOString`). Defaults to now; give it to make a put repeatable. */
   created_at?: string;
   index?: IndexEntry[];
+  /** Atomic first-writer key within this record kind. A duplicate returns the original verified record, unchanged. */
+  unique_key?: string;
 }
 
 /** A stored record (contracts RecordEnvelope). Its digest is verified every time it is read. */
@@ -158,6 +160,7 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
+  getByKey<B = unknown>(kind: RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;

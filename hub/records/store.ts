@@ -46,9 +46,15 @@ export class PgRecordStore implements RecordStore {
       });
     }
     const index = validateIndex(input.index ?? []);
+    if (input.unique_key !== undefined) validateUniqueKey(input.unique_key);
     const meta = { kind: kind.data, schema: input.schema, provenance: input.provenance, created_at: createdAt };
     const digest = sha256Hex(envelopeCanonical(meta, body));
     return this.#db.transaction(async (t) => {
+      if (input.unique_key !== undefined) {
+        await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [730157, `${meta.kind}:${input.unique_key}`], t);
+        const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
+        if (existing !== null) return { ...existing, created: false };
+      }
       const inserted = await this.#db.query<{ seq: string; id: string }>(
         `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
@@ -70,8 +76,19 @@ export class PgRecordStore implements RecordStore {
           t,
         );
       }
+      if (input.unique_key !== undefined) await this.#db.query('INSERT INTO record_keys (kind, key, digest) VALUES ($1, $2, $3)', [meta.kind, input.unique_key, digest], t);
       return { id: row.id, ...meta, digest, body: JSON.parse(body) as B, created };
     }, tx);
+  }
+
+  async getByKey<B = unknown>(kind: import('./api.ts').RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
+    if (!RecordKindSchema.safeParse(kind).success) throw new TypeError('unknown record kind');
+    validateUniqueKey(key);
+    const found = await this.#db.query<{ digest: string }>('SELECT digest FROM record_keys WHERE kind = $1 AND key = $2', [kind, key], tx);
+    if (!found.rows.length) return null;
+    const record = await this.get<B>(found.rows[0].digest, tx);
+    if (!record || record.kind !== kind) throw new IntegrityError('唯一业务键没有对应的完整记录');
+    return record;
   }
 
   async get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
@@ -206,4 +223,8 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
     throw new IntegrityError('记录正文不是 JSON', { detail: { record: row.id }, cause: error });
   }
   return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed };
+}
+
+function validateUniqueKey(key: string): void {
+  if (typeof key !== 'string' || key.length === 0 || !isIndexValue(key)) throw new TypeError('unique key must be 1..1000 UTF-8 bytes, well formed, without NUL');
 }
