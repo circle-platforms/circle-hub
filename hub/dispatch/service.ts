@@ -625,21 +625,26 @@ export class DispatchService {
     }
     await stopHeartbeat();
     const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);
-    const ownership = await this.certified(binding,d,client,'result_ownership');
+    const ownershipCertified = await this.certified(binding,d,client,'result_ownership');
+    const attribution=d.result.ownership;
+    const ownershipReported=attribution?at(response.value,attribution.pointer):undefined;
+    const ownershipReason=attribution?at(response.value,attribution.reason):undefined;
+    const ownership=ownershipCertified && !!attribution && ownershipReported===attribution.value;
+    const ownershipObservation={certified:ownershipCertified,matched:ownership,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:typeof ownershipReason==='string'?ownershipReason:null};
     const projected = input.items.map(id => {
       const found = Array.isArray(rows) ? rows.filter(r => at(r, d.result.item_id) === id) : [];
       const reported = complete && found.length === 1 ? mapped(d.result.map, at(found[0], d.result.item_outcome)) ?? null : null;
       const row = found.length === 1 ? found[0] : null;
       const log = d.result.log ? at(row,d.result.log) : undefined;
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:found.length === 1,fresh:!!d.result.log_stale && at(row,d.result.log_stale) === false,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:!drift && !leaseInterrupted});
-      return {item:id,reported_terminal:reported,...disposition,...(disposition.dynamic_terminal==='no_verdict'?{missing_fact:!ownership?'结果按派发身份归属尚未认证；该值只转述目标报告':'动态完整性事实尚不齐全；见 missing_facts 和下一步'}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
+      return {item:id,reported_terminal:reported,...disposition,...(disposition.dynamic_terminal==='no_verdict'?{missing_fact:!ownership?'本结果没有取得已认证的唯一派发归属事实；该值只转述目标报告':'动态完整性事实尚不齐全；见 missing_facts 和下一步',...(!ownership?{next_action:`请管理员 ${binding.acting_by ?? binding.initiated_by} 检查原派发日志、收集器目录和保留证据，恢复唯一归属并认证后重读原作业；该版本缺归属能力时明确登记能力缺口，不以重复读取代替恢复；不得重交`}:{})}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
       ...(d.result.sessions && object(at(row,d.result.sessions)) ? Object.values(at(row,d.result.sessions) as Record<string,unknown>).filter((v):v is string=>typeof v==='string') : []),
     ]) : [];
     const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:digestOfValue(d)});
-    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift: drift, lease_interrupted: leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS],limits:DISPATCH_QUALIFICATIONS.map(mark=>labelOf('qualifier_mark',mark)) }), mediaType: 'application/json',
+    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, ownership:ownershipObservation, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift: drift, lease_interrupted: leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS],limits:DISPATCH_QUALIFICATIONS.map(mark=>labelOf('qualifier_mark',mark)) }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.filter(row=>row.dynamic_terminal==='no_verdict').length }, [response.source]);
     await this.release(binding, client, remoteLease);
