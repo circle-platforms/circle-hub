@@ -93,8 +93,8 @@
     },
     {
       "path": "tools/jev/SKILL.md",
-      "sha256": "2f017da3f384ff98588682c8527c49364c0b519f70f88b382d91c3d092ffede8",
-      "size": 5285
+      "sha256": "c15172dff12f6f5471f628d4a52817071beb835236aee4a711685259f66be4c2",
+      "size": 5588
     },
     {
       "path": "tools/jev/egress.json",

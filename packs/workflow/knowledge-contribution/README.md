@@ -45,9 +45,9 @@
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 集成者另备的 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 中“包号”仅指 id@版本，本版 knowledge-contribution@1.1.0；它不能存整份清单摘要，否则自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.1.0；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
-默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。判断和请求记录保存在 Circle 的工作目录内，不在仓库，不进 Hub；submit 只上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
+默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 
 ask 的拒收、概率及模型校验、令牌估算、分批与复用键照保留的 hub/jev 纯规则改写；客户端传输由已移除的旧客户端改写。真实地址只用 HTTPS，回环假服务可 HTTP；scripted 模型只能对回环端点。每次尝试读取本进程 stdin 提供的密钥，密钥只进对应服务的 Authorization 头，不进请求体、记录、错误或终端。应答含密钥或连续 12 个字符时整份丢弃，不跟随重定向。请求每批最多 10 题，保守预算 48000/24000，默认并发 2；429/529/408/5xx/断网/超时重试两次；Retry-After 超过 60 秒直接失败；401/403 停止；413/上下文超限拆半一次。重跑复用同版本、同问题、同候选顺序和同 state 摘要的记录；改一片段只影响依赖该片段的批次。
 
@@ -58,8 +58,10 @@ place 保留停法、下一步、候选、阈值、版本、概率及判断记�
 旧 hub/jev、placement.ts、calibration.ts 只剩纯规则和测试形状；客户端不导入它们，通过对照测试保证收拒、复用身份、遮字和阈值一致。开发只用回环脚本化假 Jev；真实服务首次合成内容调用、技能安装和持久部署回注由集成者在所有者存好密钥后验收。
 
 
-本技能不能装到评审专用主目录：那里只放行 Hub 六个工具及 write_todos，技能工具和 execute 都被拒绝。集成者另备主目录，钩子放行技能工具及 execute 执行 `node <技能目录>/jev/jev.ts`（这里技能目录指该主目录的 skills），并在这个主目录存 JEV_API_KEY、HUB_TOKEN、JEV_MODEL、HUB_URL。技能 hooks.json 仅在会话加载技能后生效，不能保证直接执行脚本也出现确认卡片；集成者会把同一条 --send 的 ask 钩子同时装进该主目录自己的 hooks.json。主目录和钩子配置不由本分支修改。
+本技能安装在 circle-home-skills 任务通过 `scripts/real/circle-home.ts --profile skills` 创建的上机和技能用主目录，位置为该主目录的 skills/jev/；不能装到 `--profile review` 的评审主目录，后者只放行六个 Hub 工具及 write_todos。所有者在 skills 主目录保存 JEV_API_KEY、HUB_TOKEN、JEV_MODEL、HUB_URL。技能目录指已安装的 skills/jev，入口为 `node <技能目录>/jev.ts`。实际主目录由集成者创建，本分支不配置真实主目录。
 
-read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json，运行时从快照读取，--check 比对。submit_result.model 只写包 id@版本；Jev 确切版本仍在提议陈述与判断记录里。需要精确包身份时取 start_run 回答的 run.pack_digest，保存于 lock.json 或 run-identities.jsonl，不写进 generated.json。
+技能 hooks.json 只在会话加载技能后生效，单靠它不能保证直接执行脚本时出现确认卡片。skills 主目录自己的数据目录钩子始终生效，并会再次运行技能目录 hooks.json 中的 before_tool 钩子；因此未加载技能直接执行 `jev.ts --send` 也会走 ask。主目录及其钩子由 circle-home-skills 任务和集成者准备，本技能不修改它们。
+
+read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json，运行时从快照读取，--check 比对。submit_result.model 写 `<确切版本>（Circle 技能 jev，<包 id>@<包号>）`；这里包号只取 start_run 回答的运行摘要 pack_digest，并保存于 lock.json 或 run-identities.jsonl，不写进 generated.json。Jev 版本同时留在提议陈述和判断记录里。
 
 判断记录上传不绑定为可共享运行输入，仅经 submit_result.notes 的 src 引用关联；上传只对本人和管理员可见，普通回注读者不能据此查看判断记录。因此 K04 R[5] 的记录可查只对提交人和管理员成立，这是本版限制，不声称对所有回注读者成立。
