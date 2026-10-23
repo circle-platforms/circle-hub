@@ -2,7 +2,7 @@
 // it never supplies an evidence grade, provenance or an applicability declaration.
 import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, MAX_NODE_CONTRIBUTIONS, type KnowledgeContributionPageView, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
-import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
+import { CORE_VIOLATION_CODES, PROTOCOL_CODES, type CoreViolationCode, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../records/api.ts';
 import { digestOf, scanForCredentials, sha256Hex } from '../records/api.ts';
@@ -18,6 +18,7 @@ export interface ContributionScope {
   root: string | null;
   product: string | null;
   composition:string|null;
+  model?: string;
   resolve(reference: string): Promise<{ ok: true; value: { reference: string; text: string | null;
     recordSource?: { sha256: string; record: string; provenance: ProvenanceType; kind:string;schema:string } } } | { ok: false; message: string; code?: ProtocolCode }>;
 }
@@ -40,14 +41,29 @@ const fail = (message: string, code: ProtocolCode = 'SUBMISSION_SCHEMA_VIOLATION
 };
 
 /** A known admission-policy refutation. It is not a malformed submission or an unresolved exact value. */
+export type ContributionAdmissionCode = Extract<CoreViolationCode, `core.contribution.${string}`> | Extract<ProtocolCode, 'CREDENTIAL_IN_UPLOAD'>;
 export class ContributionRefusal extends KnowledgeError {
-  readonly rule:string;
-  override readonly fix:string;
-  constructor(rule:string,message:string,fix:string,detail:Record<string,unknown>={}){
-    super(message,{detail});this.rule=rule;this.fix=fix;
+  readonly admissionCode: ContributionAdmissionCode;
+  override readonly fix: string;
+  constructor(code: ContributionAdmissionCode, message: string, detail: Record<string, unknown> = {}) {
+    super(message, {detail}); this.admissionCode = code;
+    this.fix = code === 'CREDENTIAL_IN_UPLOAD' ? PROTOCOL_CODES[code].fix : CORE_VIOLATION_CODES[code].fix;
   }
 }
-const refuse=(rule:string,message:string,fix='本条先标为 skipped 并写明缺少的根据，其余条目照常提交',detail:Record<string,unknown>={}):never=>{throw new ContributionRefusal(rule,message,fix,detail);};
+const refuse = (code: ContributionAdmissionCode, message: string, detail: Record<string, unknown> = {}): never => { throw new ContributionRefusal(code, message, detail); };
+
+function scanPublicText(texts: readonly string[]): void {
+  for (const text of texts) {
+    const scan = scanForCredentials(new TextEncoder().encode(text));
+    if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字或模型声明未通过完整凭据扫描，缺少可安全公开的文本');
+  }
+}
+
+function identityOf(prepared: PreparedContribution): string {
+  return digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
+      source:{reference:prepared.source.reference,quote:prepared.source.quote},
+      ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
+}
 
 export class ContributionLayer {
   readonly #context: KnowledgeContext;
@@ -74,9 +90,9 @@ export class ContributionLayer {
     let preparation = readers.get(reader.id);
     if (preparation === undefined) {
       preparation = (async () => {
-        if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return refuse('product_unavailable','缺少当前产品的读取权限','请管理员恢复产品读取权限后用新摘要申请核验；本条也可先标为 skipped');
+        if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return refuse("core.contribution.product_unavailable", '缺少当前产品的读取权限');
         const body=scope.composition===null?null:await this.#context.store.composition(scope.composition);
-        if(body===null||body.product!==scope.product||body.root!==scope.root)return refuse('composition_missing','缺少本次运行锁定的产品、根和组成快照对应事实','恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped');
+        if(body===null||body.product!==scope.product||body.root!==scope.root)return refuse("core.contribution.composition_missing", '缺少本次运行锁定的产品、根和组成快照对应事实');
         const composition=new CompositionView(this.#context.store,scope.composition!,body);
         const originals = new Map((await composition.sources()).map(source => [source.sha256, source]));
         // Root publication authorizes its readers. The service account only rechecks the effective tier
@@ -100,19 +116,19 @@ export class ContributionLayer {
     const node = await this.#reading.nodeAt(input.root, segments);
     if (node === null) return fail(`归位路径在锁定的根里解析不出：${input.path}；缺少这个路径的节点，按 get_nodes 返回的现有 path 修正后重交`,'REFERENCE_UNRESOLVED');
     const inspect = async (record: SourceArtifact, seen: ReadonlySet<string> = new Set()): Promise<void> => {
-      if (seen.has(record.digest)) return refuse('lineage_unproven','来源血缘成环，缺少可追溯的 Hub 原件','修复生成记录的输入引用后重新生成并开运行；本条先标为 skipped');
-      if (seen.size >= 64) return refuse('lineage_unproven','来源血缘超过 64 环的核验上限，缺少可完整核验的生成链','缩短生成链并重新生成资料后重交；本条先标为 skipped');
+      if (seen.has(record.digest)) return refuse("core.contribution.lineage_unproven", '来源血缘成环，缺少可追溯的 Hub 原件');
+      if (seen.size >= 64) return refuse("core.contribution.lineage_unproven", '来源血缘超过 64 环的核验上限，缺少可完整核验的生成链');
       const body = record.body;
-      if (body.author.user !== null || 'upload' in body.origin || body.provenance_type === 'declared' || body.provenance_type === 'candidate') return refuse('signature_required',SIGNATURE,'缺少负责人署名；本版保留在 Circle，本条标为 skipped（待负责人署名），其余条目照常提交');
-      if (!body.visibility.admins) return refuse('personal_source','个人来源不能通过回注放宽可见范围，缺少可发布的原文根据','改引锁定根中的非个人 Hub 原件；本条先标为 skipped，其余条目照常提交');
+      if (body.author.user !== null || 'upload' in body.origin || body.provenance_type === 'declared' || body.provenance_type === 'candidate') return refuse("core.contribution.signature_required", SIGNATURE);
+      if (!body.visibility.admins) return refuse("core.contribution.personal_source", '个人来源不能通过回注放宽可见范围，缺少可发布的原文根据');
       const readable = await this.#context.records.artifacts.source(custodian, body.sha256, { consumer: 'model', record: record.digest });
-      if (readable?.bytes === null || readable === null) return refuse('source_unavailable','所引原文当前不可供模型核验，缺少可读原文事实','请管理员核查并恢复原文读取条件后用新摘要重交；本条也可先标为 skipped',{principal:custodian.id,record:record.digest,read_tier:readable?.readTier??null});
+      if (readable?.bytes === null || readable === null) return refuse("core.contribution.source_unavailable", '所引原文当前不可供模型核验，缺少可读原文事实', {principal:custodian.id,record:record.digest,read_tier:readable?.readTier??null});
       if ('read' in body.origin && body.provenance_type === 'observed') return;
-      if (!('generated' in body.origin) || body.provenance_type !== 'projected' || body.origin.generated.inputs.length === 0) return refuse('lineage_unproven','来源没有可追溯的 Hub 原件','补齐生成器输入与原件记录后重新生成资料；本条先标为 skipped');
+      if (!('generated' in body.origin) || body.provenance_type !== 'projected' || body.origin.generated.inputs.length === 0) return refuse("core.contribution.lineage_unproven", '来源没有可追溯的 Hub 原件');
       const next = new Set(seen).add(record.digest);
       for (const reference of body.origin.generated.inputs) {
         let ref;
-        try { ref = parseReference(reference); } catch { return refuse('lineage_unproven','生成来源的输入引用格式有误，缺少可追溯的原件定位','修复生成记录并重新生成资料；本条先标为 skipped'); }
+        try { ref = parseReference(reference); } catch { return refuse("core.contribution.lineage_unproven", '生成来源的输入引用格式有误，缺少可追溯的原件定位'); }
         let parent: StoredRecord | null = null;
         if (ref.scheme === 'rec') parent = await this.#context.records.store.get(ref.record);
         else if (ref.scheme === 'src') {
@@ -124,8 +140,8 @@ export class ContributionLayer {
           const hub = candidates.filter(r => r.body.author.user === null && !('upload' in r.body.origin));
           parent = (hub.length > 0 ? hub : candidates).at(-1) ?? null;
         }
-        if (parent?.kind !== 'source_artifact') return refuse('lineage_unproven','生成记录的输入没有对应的源文件记录','修复输入引用并重新生成资料；本条先标为 skipped');
-        if (next.has(parent.digest)) return refuse('lineage_unproven','来源血缘成环，缺少可追溯的原件','修复生成记录的输入引用后重新生成资料；本条先标为 skipped');
+        if (parent?.kind !== 'source_artifact') return refuse("core.contribution.lineage_unproven", '生成记录的输入没有对应的源文件记录');
+        if (next.has(parent.digest)) return refuse("core.contribution.lineage_unproven", '来源血缘成环，缺少可追溯的原件');
         let pending = lineage.get(parent.digest);
         if (pending === undefined) { pending = inspect(parent as SourceArtifact, next); lineage.set(parent.digest, pending); }
         await pending;
@@ -145,8 +161,8 @@ export class ContributionLayer {
       }
       else if (ref.scheme === 'rec') {
         const record=resolved.value.recordSource;
-        if(record?.kind==='submission'||(record?.kind==='source_artifact'&&(record.provenance==='declared'||record.provenance==='candidate')))return refuse('signature_required',SIGNATURE,'缺少负责人署名；本版保留在 Circle，本条先标为 skipped');
-        return refuse('record_not_original','记录转述或回注条目不能作回注根据，缺少锁定根中的原文片段','改引锁定根里原文的 src: 或 tree: 引用；本条先标为 skipped');
+        if(record?.kind==='submission'||(record?.kind==='source_artifact'&&(record.provenance==='declared'||record.provenance==='candidate')))return refuse("core.contribution.signature_required", SIGNATURE);
+        return refuse("core.contribution.record_not_original", '记录转述或回注条目不能作回注根据，缺少锁定根中的原文片段');
       }
       else if (ref.scheme === 'tree' && ref.root === input.root) {
         const rows = await composition.rowsAt(ref.path);
@@ -156,12 +172,12 @@ export class ContributionLayer {
         }
       }
       // A run-bound record not in the root is not silently attached to a root node.
-      if (shas.length === 0) return refuse('source_not_original','这个节点没有原文条目，读到的只是子节点名单，缺少原文片段','改引叶节点条目或它在锁定根中的源文件；本条先标为 skipped');
+      if (shas.length === 0) return refuse("core.contribution.source_not_original", '这个节点没有原文条目，读到的只是子节点名单，缺少原文片段');
       shas = [...new Set(shas)].sort();
       const records: string[] = [];
       for (const sha of shas) {
         const source = originals.get(sha);
-        if (source === undefined) return refuse('source_outside_root',OUTSIDE,'缺少锁定根中的原文；本条标为 skipped（来源未入锁定根），其余条目照常提交；来源入根后重新开回注运行');
+        if (source === undefined) return refuse("core.contribution.source_outside_root", OUTSIDE);
         const record = await this.#context.records.store.get(source.artifact);
         if (record?.kind !== 'source_artifact') return fail('来源记录不可读', 'SOURCE_UNAVAILABLE');
         let promise = lineage.get(record.digest);
@@ -171,18 +187,15 @@ export class ContributionLayer {
       }
       const artifact = await this.#context.records.store.get<SourceArtifact['body']>(records[0]);
       const provenance=ContributionSource.shape.provenance.safeParse(ref.scheme==='tree'?'projected':artifact?.body.provenance_type);
-      if(!provenance.success)return refuse('signature_required',SIGNATURE,'缺少可追溯 Hub 原件，当前条目标为 skipped；署名流程以后做');
+      if(!provenance.success)return refuse("core.contribution.signature_required", SIGNATURE);
       return { ...quoted, reference: resolved.value.reference, fragment: sha256Hex(resolved.value.text),
         provenance: provenance.data,
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };
     };
     const source = await quote(input.source);
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
-    for(const text of [input.statement,source.quote,...(relation===undefined?[]:[relation.other.quote])]){
-      const scan=scanForCredentials(new TextEncoder().encode(text));
-      if(!scan.inspected||scan.truncated||scan.findings.length>0)return refuse('sensitive_text','回注文字未通过完整凭据扫描，缺少可安全公开的文本','去掉明文凭据并缩短到可完整扫描的文本后重交；凭据保留在 Circle 本地，本条也可先标为 skipped');
-    }
-    if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse('self_relation','关系双方指向同一片段或重叠引文，缺少两个独立的原文端点','改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped');
+    scanPublicText([input.statement, source.quote, scope.model ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
+    if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse("core.contribution.self_relation", '关系双方指向同一片段或重叠引文，缺少两个独立的原文端点');
     if (!fragments.has(input.path)) fragments.set(input.path, (async () => {
       const fragment = await this.#reading.treeReader({composition:composition.record}).read(input.root, input.path, null, { user: reader.id, role: reader.role });
       return fragment === null ? null : sha256Hex(fragment.text);
@@ -196,11 +209,16 @@ export class ContributionLayer {
       basis_rank: 'judgment', applicability: null };
   }
 
+  /** Lock an entire transaction's identities in one global order before preserving item order in receipts. */
+  async lockIdentities(prepared: readonly PreparedContribution[], tx: Transaction): Promise<void> {
+    for (const key of [...new Set(prepared.map(identityOf))].sort()) await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
+  }
+
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
   async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
-    const key = digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
-      source:{reference:prepared.source.reference,quote:prepared.source.quote},
-      ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
+    scanPublicText([origin.model]);
+    const key = identityOf(prepared);
+    await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
     if (old.items.length > 0) return old.items[0].digest;
     const body = KnowledgeContributionBody.parse({ ...prepared, session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
@@ -280,6 +298,11 @@ export class ContributionLayer {
     const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
     const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
     const items:KnowledgeContributionPageView[]=[];
+    const deferred = () => {
+      const next = encode();
+      if (items.length === 0 && next !== null && next === options.cursor) throw new KnowledgeError('回注页预算不足以承载当前节点的引用标记；请管理员提高 pageBytes 后，保持原查询从第一页重读', {code:'SOURCE_UNAVAILABLE',detail:{budget,path}});
+      return {items,next};
+    };
     while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
       const before=cursor;const selected=await this.#context.store.records.find({key:'knowledge.contribution.node',value:digestOf({product:products[at],path}),kind:'claim',cursor,limit:1,newestFirst:true});
       const record=selected.items[0];scanned++;
@@ -289,16 +312,16 @@ export class ContributionLayer {
       if(view!==undefined){
         let shown:KnowledgeContributionPageView=view;let size=canonicalSize(view)+1;
         if(size>budget-bytes){
-          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return {items,next:encode()};
+          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return deferred();
           shown={record:view.record,status:view.status,note:(view.note??'')+'；本条回注超过节点页字节上限，缺少本页正文；用 get_nodes 按 rec:'+view.record+' 游标分段读取'};
           size=canonicalSize(shown)+1;
-          if(size>budget-bytes)return {items,next:encode()};
+          if(size>budget-bytes)return deferred();
         }
         items.push(shown);bytes+=size;
       }
       cursor=selected.next;if(cursor===null)at++;
     }
-    return {items,next:encode()};
+    return deferred();
   }
 
   /** Small-result convenience only. Larger callers must follow page.next; never silently return an incomplete array. */

@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ea0dcfec2b5019e7ffb3f4bf323a4c95d93f0054f20386e8f7d15c6e7da9c96c",
-      "size": 2202
+      "sha256": "b36e2c4696f1a06036aa21be9113cb75a96e288835c2aa60133fb0827d9597a1",
+      "size": 2568
     },
     {
       "path": "checks.json",
@@ -23,13 +23,13 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "2e4aecd5b837c4bb8be6ca68fa842659cd53e600bdb6b475a2f64167573559f6",
-      "size": 335
+      "sha256": "2fa20ac7db3485272a24b88124460be8b96f7674d967b9ddf5e31e090dcb7ee1",
+      "size": 219
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "35afa93918f38959937b10c1b5479351237c231738642f5155cdc4441f35535f",
-      "size": 707
+      "sha256": "f42066cd81843d2a170f4d51fbbf33ef7a88a5e38f85476e3d46e30e99d46716",
+      "size": 724
     },
     {
       "path": "functions/project.ts",
@@ -75,11 +75,6 @@
       "path": "slots.schema.json",
       "sha256": "a1e725d3741639afb1ef489b65658e20d78fa5ef24886801ccdf233921871138",
       "size": 2050
-    },
-    {
-      "path": "tables/codes.json",
-      "sha256": "7de8188e1d55b753b58f0f3043891daf85fc7e0384720ca81a92481b7ca43db2",
-      "size": 3323
     },
     {
       "path": "tables/quotes.json",

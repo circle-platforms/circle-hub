@@ -75,3 +75,7 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 本地预算超限写入校准集合的 excluded 或 placement.json 的 excluded=true，不属于未回答，不进入重试队列；只剩此类确定排除时退出 0。记录包含原条目引用、节点和令牌估算，并区分片段与节点选项超限。该项没有调用 Jev，也不会产生提议。
 
 状态诊断不猜处理结果：3xx 明确没有跟随并核对 --base-url；400/422 在 ask 可改题，calibrate/place 的题由技能生成，应报告集成者核对接口。HTTP 408 及 5xx（包括 503）均不能单凭状态证明远端未处理，按可能已处理/计费披露；429/529 只披露服务限流/过载及等待动作，不断言处理或计费事实。
+
+1.0.1 删除包内重复码表；回注准入码由 contracts/codes.json 的核心登记和生成物唯一提供，发出方是核心准入核对，不是包解释器。凭据拒绝使用 CREDENTIAL_IN_UPLOAD。每个异常在抛出时绑定生成码与登记修正动作，不依赖包名或错误文案分类。
+
+普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它仍收到中性 SOURCE_UNAVAILABLE，操作指引由 SKILL 第 1、3 步给出，不通过错误细节泄露权限事实。

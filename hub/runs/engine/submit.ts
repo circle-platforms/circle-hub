@@ -319,6 +319,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
         const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size+(outcome.refusals?.size??0), stored: [], not_stored: [...(outcome.refusals??new Map())].map(([item,reason])=>({item,reason})) };
         const eligible = new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
         const layer = ctx.deps.knowledge.layers!.contributions;
+        await layer.lockIdentities([...outcome.prepared!].filter(([item]) => eligible.has(item)).map(([, prepared]) => prepared), tx);
         for (const [item, prepared] of outcome.prepared!) {
           if (!eligible.has(item)) {
             const state = Object.values(outcome.result.partitions).flat().find(row => row.item === item);
@@ -420,6 +421,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const refusals=new Map<string,string>();
   const admission=capability===undefined?undefined:{requirement:capability.requirement,outcomes:new Map<string,CheckOutcome[]>()};
   const contributionScope: ContributionScope = {
+          model:submission.model,
           composition:(()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='build'&&c.statement.data?.root===run.root)?.statement.data?.composition;return typeof value==='string'?value:null;})(),
           root:run.root ?? null, product:run.product ?? null, resolve:async reference => {
             const resolved = await resolver.resolve(reference);
@@ -450,8 +452,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
         if(error instanceof ContributionRefusal){
           const statement=`${error.message}；${error.fix}`;
           refusals.set(item.item,statement);
-          admission!.outcomes.set(item.item,[{verdict:'refute',code:`${workflow.pack.id}.${error.rule}`,statement,grounds:[],tier:'blocking',pointer:`/slots/${slot}/0`,data:{fix:error.fix}}]);
-          ctx.log({traceId:call.traceId,run:run.run,what:'contribution.admission',detail:JSON.stringify({rule:error.rule,...error.detail})});
+          admission!.outcomes.set(item.item,[{verdict:'refute',code:error.admissionCode,statement,grounds:[],tier:'blocking',pointer:`/slots/${slot}/0`,data:{fix:error.fix}}]);
+          ctx.log({traceId:call.traceId,run:run.run,what:'contribution.admission',detail:JSON.stringify({code:error.admissionCode,...error.detail})});
           continue;
         }
         if (!(error instanceof KnowledgeError)) throw error;
@@ -465,7 +467,9 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const origin: ProducerOrigin = { sessions: [run.session ?? null, sessionOf(call)], model: submission.model };
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
-  const rejection = [...withRounds(workflow,submission,attribute(before),roundsUsed), ...moved(withRounds(workflow, submission, attribute([...structure, ...exact.errors]), roundsUsed))];
+  // Partial-schema errors already carry original argument positions and rounds.
+  const prior = before.map(error => { const attributed = attribute([error])[0]; return attributed.requirement === error.requirement ? error : withRounds(workflow, submission, [attributed], roundsUsed)[0]; });
+  const rejection = [...prior, ...moved(withRounds(workflow, submission, attribute([...structure, ...exact.errors]), roundsUsed))];
   const input = {
     run,
     workflow,
@@ -492,8 +496,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     const items = submission.items.filter(item => item.handling === 'handled');
     result.contributions = {
       submitted: items.length, stored: [], not_stored: items.map(item => ({item:item.item,
-        reason: rejection.filter(error => error.item === item.item).map(error => error.fix ?? error.message).join('；')
-          || '整份提交未受理，未入回注层；按边界修正说明修复后，用 submit_result 重交本次运行'})),
+        reason: refusals.get(item.item) ?? (rejection.filter(error => error.item === item.item).map(error => error.fix ?? error.message).join('；')
+          || '整份提交未受理，未入回注层；按边界修正说明修复后，用 submit_result 重交本次运行')})),
     };
   }
   return {
