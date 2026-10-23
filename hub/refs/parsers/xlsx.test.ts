@@ -249,3 +249,16 @@ test('ZIP legacy filename decoding covers all CP437 byte values without dropping
     if (i === 0x82) assert.equal(name, 'é.xml'); if (i === 0xff) assert.equal(name, '\u00a0.xml');
   }
 });
+
+test('xlsx rejects repeated resolved sheet parts before rebuilding their cell models', () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: 64 }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1"><v>1</v></c>'.repeat(256)}</row></sheetData></worksheet>`;
+  badWorkbook({ book, sheet }, /工作表.*同一个部件/);
+});
+
+test('five thousand sheets sharing one part are refused within a bounded parse time', { timeout: 5000 }, () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: 5000 }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
+  const started = performance.now();
+  badWorkbook({ book }, /工作表.*同一个部件/);
+  assert.ok(performance.now() - started < 2000);
+});

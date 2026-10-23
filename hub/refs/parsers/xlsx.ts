@@ -581,12 +581,20 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   }
   const definedNames = children(book, 'definedNames').flatMap((root) => children(root, 'definedName')).map((element) => ({ name: xstring(required(element, 'name')), scope: attribute(element, 'localSheetId') === undefined ? null : integer(attribute(element, 'localSheetId')!, '定义名作用域'), reference: textOf(element) }));
   const sheets: XlsxSheet[] = [];
-  for (const sheet of children(book, 'sheets').flatMap((root) => children(root, 'sheet'))) {
+  const sheetRelations = new Map(bookRelations.map((relationship) => [relationship.id, relationship]));
+  const usedSheetParts = new Set<string>();
+  // Validate all sheet identities before creating any rows or cells; a cached XML part must not amplify the model.
+  const sheetTargets = children(book, 'sheets').flatMap((root) => children(root, 'sheet')).map((sheet) => {
     const id = DOCUMENT_REL.map((uri) => attribute(sheet, 'id', uri)).find((id) => id !== undefined);
-    const relationship = bookRelations.find((r) => r.id === id);
+    const relationship = id === undefined ? undefined : sheetRelations.get(id);
     if (!relationship || relationship.external || !relationship.resolved)
       syntax('XLSX 工作表关系缺失或不是包内部件');
     const sheetPart = relationship!.resolved!;
+    if (usedSheetParts.has(sheetPart)) syntax('XLSX 多张工作表指向同一个部件');
+    usedSheetParts.add(sheetPart);
+    return { sheet, relationship: relationship!, sheetPart };
+  });
+  for (const { sheet, relationship, sheetPart } of sheetTargets) {
     const root = part(sheetPart);
     const rows: XlsxRow[] = [];
     let lastRow = 0;

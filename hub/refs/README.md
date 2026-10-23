@@ -369,3 +369,7 @@ The parser is available as `createDefaultRegistry().get('xlsx@1')`. An upload fi
 selects `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; a caller's explicit media type takes
 precedence. ZIP bytes without a filename or media type are not guessed to be spreadsheets. Non-ZIP bytes never match
 xlsx@1. Runtime registration was appended so the existing parser preference order stays intact.
+
+XLSX workbook sheet relationships are resolved through an id map. A second sheet targeting an already-used internal
+part refuses the package before any row/cell model is built; XML caching cannot multiply one worksheet's cells by the
+number of sheet entries. This is a structural identity and bounded-work rule, independent of workbook policy.
