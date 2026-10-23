@@ -144,7 +144,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
   );
-  const mechanicalAllFound = options.totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
+  const mechanicalAllFound = scores.every(s => s.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0);
   lines.push(
     `通过：Hub 看得见的注入缺陷全部查出 ${mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
@@ -234,7 +234,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   const lines = summaryLines({ copySha, goldSha: createHash('sha256').update(goldBytes).digest('hex'), manualSha: manual?.sha256 ?? null, cases: caseCount, injected: gold.length, repeat: options.repeat, hasVerify: options.verify !== undefined, rounds, totals, untouched });
   for (const line of lines) say(line);
   const validRounds = rounds.filter((r) => r.draftValid && (options.verify === undefined ? true : r.verifyValid));
-  const mechanicalAllFound = totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
+  const mechanicalAllFound = validRounds.every(r => r.score!.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const scores = validRounds.map((r) => r.score).filter((s): s is Score => s !== undefined);
   const structureClean = scores.length > 0 && scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0);
   return validRounds.length === rounds.length && rounds.length > 0 && mechanicalAllFound && structureClean ? 0 : 1;

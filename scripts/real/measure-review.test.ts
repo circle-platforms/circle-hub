@@ -208,3 +208,12 @@ test('measurement reports each catalog mark as lacking an independent answer wit
   assert.ok(lines.some(l => l.includes('目录类标记还没有独立答案 2 条')));
   assert.ok(!lines.join('\n').includes('core.catalog'));
 });
+
+test('review 1: judgment-only injections never fail the mechanical exit gate', () => {
+  const planned: Planned[] = [...plan, { label: '含糊期望', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c2', text: '正常' } }];
+  const f = fixtures(document(3), planned), lines: string[] = [];
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+  const drivers = fakeDrivers({ drafts: Array.from({ length: 3 }, () => ({ calls: callLine('rn_mixed', 'accepted'), run: () => runDetail({ run: 'rn_mixed', items: 3, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered }) })) });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, repeat: 3 }, drivers, line => lines.push(line)), 0);
+  assert.ok(lines.some(line => line.includes('Hub 看得见的注入缺陷全部查出 是')));
+});
