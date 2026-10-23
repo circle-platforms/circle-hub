@@ -30,7 +30,7 @@ test('authorized manifest and every listed dependency retain canonical identity 
 });
 test('unassigned withdrawn absent no-tool outside traversal and encoded-slash requests have identical answers', async () => {
   const paths = ['unassigned@10.6.0', 'withdrawn@10.6.0', 'absent@10.6.0', 'no-tools@10.6.0', 'fixture-tools@10.6.0/tools/absent.ts', 'fixture-tools@10.6.0/../product.json', 'fixture-tools@10.6.0/tools%2ffixture.ts'];
-  const results = await Promise.all(paths.map((path) => get('/local-tools/' + path)));
+  const results = await Promise.all([...paths.map((path) => get('/local-tools/' + path)), get('/local-tools%2ffixture-tools@10.6.0'), get('/local-tools/fixture-tools@10.6.0/%2e%2e/product.json')]);
   for (const result of results) { assert.equal(result.status, 404); assert.deepEqual(result.bytes, results[0]!.bytes); assert.equal(result.headers['content-digest'], undefined); }
 });
 test('authentication is checked on every request and missing and revoked tokens are identical', async () => {

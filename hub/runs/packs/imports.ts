@@ -4,7 +4,7 @@
 // are erased by Node's type stripping and are not imports; an import whose specifiers are all inline `type` ones is kept
 // by Node as a module load, so it counts. The sandbox admits ES modules only: a .ts or .js module whose stripped code has no
 // ES module syntax is loaded by Node as CommonJS, so the scan refuses it as well.
-import { builtinModules, isBuiltin } from 'node:module';
+import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
 import type * as TS from 'typescript';
 import { problem, utf8 } from './problems.ts';
@@ -350,7 +350,7 @@ async function scanModules(files: ReadonlyMap<string, Uint8Array>, entries: read
       if (spec.startsWith('node:') || isBuiltin(spec)) {
         const name = spec.startsWith('node:') ? spec.slice(5) : spec;
         if (!isBuiltin(spec)) problems.push(problem('functions.import_builtin', path, `${path} 第 ${use.line} 行导入的 ${spec} 不是 Node 的内置模块`, '删掉这个导入', at));
-        else if (!policy.builtins.includes(name)) {
+        else if (!tools && !policy.builtins.includes(name)) {
           problems.push(problem('functions.import_builtin', path, `${path} 第 ${use.line} 行导入了内置模块 ${spec}；沙箱里的包内函数只能用纯计算的内置模块（${policy.builtins.join('、')}）`, '包内函数不读写文件、不联网、不起进程：删掉这个导入，所需的数据作为函数输入传进来', at));
         }
         continue;
@@ -438,6 +438,10 @@ export function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entries: r
 /** Client-side tools have no Hub dependencies: all builtins, no third-party packages, no required export. */
 export async function scanTools(files: ReadonlyMap<string, Uint8Array>): Promise<PackProblem[]> {
   const entries = [...files.keys()].filter((path) => path.startsWith('tools/') && CODE.includes(posix.extname(path))).map((module) => ({ module, export: '', file: module, field: '' }));
-  const found = await scanModules(files, entries, { builtins: builtinModules.map((name) => name.replace(/^node:/, '')), packages: [] }, true);
-  return found.map((p) => ({ ...p, rule: p.rule.replace(/^functions\./, 'tools.'), message: p.message.replaceAll('包内函数', '本地工具').replaceAll('沙箱只运行', '本地工具只运行'), fix: p.rule === 'functions.import_package' ? '本地工具只能导入 Node 内置模块和清单里的包内文件；移除第三方依赖' : p.fix }));
+  const found = await scanModules(files, entries, { builtins: [], packages: [] }, true);
+  return found.map((p) => ({
+    ...p, line: p.line ?? 1, rule: p.rule.replace(/^functions\./, 'tools.'),
+    message: p.rule === 'functions.import_package' ? `${p.file} 第 ${p.line ?? 1} 行导入了第三方包；本地工具只能用 Node 内置模块和包内文件` : p.message.replaceAll('包内函数', '本地工具').replaceAll('沙箱只运行', '本地工具只运行'),
+    fix: p.rule === 'functions.import_package' ? '本地工具只能导入 Node 内置模块和清单里的包内文件；移除第三方依赖' : p.rule === 'functions.unsupported_syntax' ? '改用 ES 模块 import/export 和可擦除的 TypeScript 语法；不使用 CommonJS' : p.rule === 'functions.import_computed' ? '把模块名写成字符串字面量；本地工具只导入包内文件或 Node 内置模块' : p.fix,
+  }));
 }

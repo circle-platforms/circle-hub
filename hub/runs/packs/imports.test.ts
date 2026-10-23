@@ -190,3 +190,8 @@ test('local tools reject CommonJS even when mixed with ES module syntax or in mj
   for (const path of ['tools/task.ts', 'tools/task.mjs']) for (const text of ["export {}; require('fs');", 'export {}; module.exports = 1;', "export {}; exports['x'] = 1;"]) assert.ok((await scanTools(new Map([[path, encode(text)]]))).some((p) => p.rule === 'tools.unsupported_syntax'));
   assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode('console.log(1);')]])), []);
 });
+
+test('local tools accept every Node builtin including prefix-only builtins', async () => {
+  const { scanTools } = await import('./imports.ts');
+  for (const name of builtinModules) assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode(`import '${specifierOf(name)}';`)]])), [], name);
+});

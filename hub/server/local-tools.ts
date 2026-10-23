@@ -13,7 +13,7 @@ const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 export const digestHeader = (bytes: Uint8Array): string => `sha-256=:${Buffer.from(sha256Hex(bytes), 'hex').toString('base64')}:`;
-export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:\/|$)/i.test(target ?? ''); }
+export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:[\/\\%]|$)/i.test(target ?? ''); }
 function rawPath(target: string): string { return target.replace(/^http:\/\/[^/]+/i, ''); }
 export async function readPublishedFile(directory: string, path: string): Promise<Buffer> {
   let current = directory;
