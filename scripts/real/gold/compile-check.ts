@@ -165,6 +165,7 @@ export interface StepVerdict extends Answer { item: string; stepIndex: number; c
 export interface PlanReceipt { item: string; plan: string; sha256: string }
 export interface CompileCheckResult {
   allPassed: boolean; notes: string[]; stepVerdicts: StepVerdict[]; plans: PlanReceipt[];
+  position_comparisons: Array<{item:string;requirement:string;check:NonNullable<StepVerdict['check']>;equal:boolean;unknown:boolean;gold:Array<string|null>;hub:Array<string|null>}>;
   comparison: {equal: boolean; differences: string[]};
 }
 
@@ -506,6 +507,7 @@ export function compareCompileVerdicts(hub: readonly StepVerdict[], gold: readon
   for (const h of hub) { if (hm.has(key(h))) differences.push(`重复 Hub 判定 ${key(h)}`); hm.set(key(h),h); }
   for (const g of gold) {
     const h = hm.get(key(g));
+    if(g.verdict==='unknown'||h?.verdict==='unknown')differences.push(`未形成确定判定 ${key(g)}：${g.reason ?? h?.reason ?? '缺少事实'}；下一步补齐该事实并重新核对`);
     if (!h || h.verdict !== g.verdict) differences.push(`判定不同 ${key(g)}：Hub ${h?.verdict ?? '缺失'}，独立答案 ${g.verdict}`);
     hm.delete(key(g));
   }
@@ -546,6 +548,7 @@ const checkOfPointer = (pointer: string | undefined): 'function' | 'catalog' | '
 export function compileCheck(inputs: {run: RunShowExport; submission: Submission; contract: unknown; bed: unknown; commandTreeXml?: string; commandCatalog?: CommandCatalogDeclaration; sources?: ReadonlyMap<string,string>}): CompileCheckResult {
   const {run,submission} = inputs;
   const stepVerdicts: StepVerdict[] = [], plans: PlanReceipt[] = [], differences: string[] = [];
+  const position_comparisons:CompileCheckResult['position_comparisons']=[];
   const notes = ['不证明在真实设备上跑得通'];
   if (obj(inputs.contract) && inputs.contract.synthetic === true) notes.unshift('按合成合约核对');
   const cp = contractProblem(inputs.contract), bp = bedProblem(inputs.bed);
@@ -645,7 +648,8 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       // the independent answer counts as fail, like a violation. Any other incomplete stays the difference it is.
       const actual = exhausted ? 'fail' : rawTerminal === 'pass' ? 'pass' : rawTerminal === 'violation' ? 'fail' : rawTerminal === 'unchecked' ? 'unknown' : undefined;
       if (reqs.length !== 1 || actual !== gold) differences.push(`${entry.item}/${key}：Hub ${actual ?? '缺失或非事实终态'}${rawTerminal === 'incomplete' ? `（incomplete：${layers[0].reason ?? '无理由'}）` : ''}，独立答案 ${gold}`);
-      for (const r of reqs) if (r.status !== undefined && r.status !== expectedStatus) differences.push(`${entry.item}/${key}：Hub 状态 ${r.status}，独立答案 ${expectedStatus}`);
+      for (const r of reqs) if (r.status !== expectedStatus) differences.push(`${entry.item}/${key}：Hub 状态 ${r.status}，独立答案 ${expectedStatus}`);
+      if(actual==='unknown'||gold==='unknown')differences.push(`${entry.item}/${key}：检查仍未知：${stepVerdicts.filter(v=>v.item===entry.item&&v.checkType===type&&v.verdict==='unknown').map(v=>v.reason).join('；')||'Hub 没有给确定判定'}；下一步补齐对应输入并重新核对`);
       if (actual === 'fail' && gold === 'fail') {
         const maps = !shape && !cp ? pointerMaps(data,contract) : {phrases:[],quotes:[]};
         const local = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && v.verdict === 'fail');
@@ -654,18 +658,21 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
         for (const check of ['function','catalog','quote'] as const) {
           const localCheck = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && (v.check ?? 'function') === check);
           const hubCheck = reqs.flatMap(r => r.claims).filter(c => checkOfPointer(c.pointer) === check);
-          if (localCheck.some(v => v.verdict === 'unknown') && !localCheck.some(v => v.verdict === 'fail') || hubCheck.some(c => c.statement.verdict === 'unknown') && !hubCheck.some(c => c.statement.verdict === 'refute')) continue;
+          if(localCheck.some(v=>v.verdict==='unknown')||hubCheck.some(c=>c.statement.verdict==='unknown'))differences.push(`${entry.item}/${key}/${check}：仍有未知判定，不能跳过位置核对；下一步补齐对应来源或判定后重跑`);
           // Cap diagnostics per check before coalescing parameter errors to their judged step.
           const ours = local.filter(v => (v.check ?? 'function') === check).slice(0,10).map(v => judgedUnit(v.pointer,base,maps));
           const theirs = refutes.filter(c => checkOfPointer(c.pointer) === check).slice(0,10).map(c => judgedUnit(c.pointer,base,maps));
           const a = [...new Set(ours)], b = [...new Set(theirs)];
-          if (a.includes(null) || b.includes(null) || JSON.stringify(a) !== JSON.stringify(b)) differences.push(`${entry.item}/${key}/${check}：前 10 条不通过的位置或次序不同，不能确认逐步一致`);
+          const unresolved=localCheck.some(v=>v.verdict==='unknown')||hubCheck.some(c=>c.statement.verdict==='unknown');
+          const equal=!unresolved&&!a.includes(null)&&!b.includes(null)&&JSON.stringify(a)===JSON.stringify(b);
+          position_comparisons.push({item:entry.item,requirement:key,check,equal,unknown:unresolved,gold:a,hub:b});
+          if (!equal) differences.push(`${entry.item}/${key}/${check}：前 10 条不通过的位置或次序不同，不能确认逐步一致`);
         }
       }
 
     }
   }
-  return {allPassed:stepVerdicts.length > 0 && stepVerdicts.every(v => v.verdict === 'pass') && differences.length === 0,notes,stepVerdicts,plans,comparison:{equal:differences.length === 0,differences}};
+  return {position_comparisons,allPassed:stepVerdicts.length > 0 && stepVerdicts.every(v => v.verdict === 'pass') && differences.length === 0,notes,stepVerdicts,plans,comparison:{equal:differences.length === 0,differences}};
 }
 export function main(argv: string[] = process.argv.slice(2)): number {
   const value = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? undefined : argv[i+1]; };

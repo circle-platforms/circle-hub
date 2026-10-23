@@ -341,14 +341,16 @@ export function checkCandidateBuilds(
 
 export default function scenario(gold: LocationGold, detailsOut?: string): Scenario {
   const area = '用例定位', pagerState = createPagerState();
+  const countLines:string[]=[];
   const docs = 'documents' in gold ? gold.documents : [gold];
   const manualSections = buildManualPlmSections(docs, docs.length > 1);
   return {
-    name: 'case-location', area,
+    name: 'case-location', area, countLines,
     prompt: `请对敏捷平台上的测试脑图 ${docs.map(d => d.document).join('、')} 做用例定位。`,
     sections: manualSections.length ? manualSections : undefined,
     respond: turn => pagedRespond(turn, pagerState, () => [{ tool: 'hub_start_run', input: { pack: 'case-location', product: gold.product ?? 'apv', inputs: { documents: 'documents' in gold ? docs.map(d => ({ external: `agile:mindmap:${d.document}` })) : { external: `agile:mindmap:${docs[0].document}` } } } }], '定位完成。'),
     check(turns) {
+      countLines.length=0;
       const lines = reassembleResultLines(turns), text = lines.join('\n');
       const checks: Check[] = [];
       const at = process.argv.indexOf('--out');
@@ -386,6 +388,11 @@ export default function scenario(gold: LocationGold, detailsOut?: string): Scena
             [...expected].sort().forEach((id, j) => add(`${prefix}第 ${j + 1} 个${kind}分类`, actual.has(id)));
           }
         }
+        const candidateClaims=ownClaimTexts(lines,doc.document,'build_candidates');
+        const candidateUnknown=candidateClaims.some(claim=>/，未知(?=[（(，；]|$)/.test(claim));
+        add(prefix+'构建候选结论已确定',candidateClaims.length>0&&!candidateUnknown,'未知 0 项',candidateUnknown?'构建候选检查仍未知；下一步按私有回执缺失事实重读或补齐后重跑':candidateClaims.length?'确定结论':'缺少构建候选结论；下一步翻页补读，仍缺则重跑');
+        if(candidateUnknown || !candidateClaims.length)countLines.push(`未完成核对 1 项；原因：构建候选${candidateUnknown?'仍未知':'缺结论'}；下一步按私有回执补齐事实后重读或重跑`);
+        if(candidateUnknown)audits.push({document:doc.document,requirement:'build_candidates',statement:candidateClaims.join('\n'),next_action:'按本份回执的缺失事实重读或补齐，再重跑；未知不能作为通过'});
         checks.push(...checkCandidateBuilds(area, ownClaimTexts(lines, doc.document, 'build_candidates').join('\n'), doc.buildCandidates, doc.writtenBuilds, prefix));
       });
       if (destination !== undefined) { try { writePrivateJson(join(destination, 'case-location-details.json'), audits); } catch { add('定位私有明细已保存', false, '新明细文件 1 份', '明细文件 0 份；下一步：改用 Git 外新 --out 目录后重跑，不覆盖旧证据'); } }

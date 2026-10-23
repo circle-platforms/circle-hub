@@ -1,6 +1,6 @@
 // Capability 5, the traceability matrix, through the real client: the Hub's matrix of one build is compared with the
 // independent double-loop join in the gold file — every defect's listed cases are the same, a defect with no case is
-// reported as unknown.
+// is unresolved until closed-scope evidence exists; no unknown is accepted as a passing check.
 import { createHash } from 'node:crypto';
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
@@ -19,6 +19,8 @@ export interface DefectGold {
   status: string;
   /** Defect system: plm, bugzilla, or unknown. */
   system?: string;
+  systems?: string[];
+  ids?: string[];
   /** Defect system status from PLM, or null when unknown. */
   defect_system_status?: string | null;
   /** Reason when defect system status is unknown. */
@@ -37,6 +39,7 @@ export interface TraceGold {
   closed_traced?: number;
   closed_untraced?: number;
   status_unknown?: number;
+  status_unread?:number;
 }
 
 /**
@@ -68,8 +71,10 @@ export default function scenario(gold: TraceGold): Scenario {
   const area = '追溯矩阵';
   const pack = 'traceability';
   const pagerState = createPagerState();
+  const countLines:string[]=[];
 
   return {
+    countLines,
     name: 'traceability',
     area,
     prompt: `请对构建 ${gold.build} 出缺陷到用例的追溯矩阵。`,
@@ -83,8 +88,8 @@ export default function scenario(gold: TraceGold): Scenario {
             input: {
               pack,
               inputs: {
-                defects: { external: `knowledge:index:${gold.product}:${gold.build}?kind=defect&key=bug` },
-                cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=defects&fields=document,node,title` },
+                defects: { external: `knowledge:index:${gold.product}:${gold.build}?kind=defect&key=bug&only=${[...new Set(gold.defects.flatMap(d=>d.ids ?? [d.bug]))].map(encodeURIComponent).join(',')}` },
+                cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=defects&fields=document,node,title,system` },
               },
             },
           },
@@ -92,20 +97,25 @@ export default function scenario(gold: TraceGold): Scenario {
         '矩阵完成。',
       ),
     check(turns: LoggedTurn[]): Check[] {
+      countLines.length=0;
+      const pending=new Map<string,number>();
+      const note=(reason:string,n=1)=>pending.set(reason,(pending.get(reason)??0)+n);
       const text = resultTexts(turns).join('\n');
       const lines = text.split(/\r?\n/);
       const checks: Check[] = [runStarted(area, turns)];
 
       for (const [index, defect] of gold.defects.entries()) {
         const label = `#${index + 1} ${createHash('sha256').update(defect.bug).digest('hex').slice(0, 12)}`;
-        const linePrefix = `- ${defect.bug} | 缺陷 ${defect.bug} |`;
+        const system=defect.system ?? (defect.systems?.length===1?defect.systems[0]:undefined);
+        const identity=system && system!=='unknown'?encodeURIComponent(system)+':'+defect.bug:defect.bug;
+        const linePrefix = `- ${identity} |`;
         const matchingLines = lines.filter((line) => line.trim().startsWith(linePrefix));
 
         if (matchingLines.length === 0) {
           checks.push({
             area,
-            name: defect.cases.length === 0 ? `${label} 没有用例的缺陷是未知` : `${label} 列出的用例与独立连接一致`,
-            expected: defect.cases.length === 0 ? '无已索引用例（未知）' : `${defect.cases.length} 个用例`,
+            name: defect.cases.length === 0 ? `${label} 没有用例的缺陷需确定核对` : `${label} 列出的用例与独立连接一致`,
+            expected: defect.cases.length === 0 ? '范围和缺席观察支持的确定结论' : `${defect.cases.length} 个用例`,
             actual: '条目未出现',
             ok: false,
           });
@@ -113,13 +123,14 @@ export default function scenario(gold: TraceGold): Scenario {
         }
 
         if (defect.cases.length === 0) {
+          note('缺完整范围或缺席观察');
           const isUnknown = matchingLines.some((l) => l.includes('无已索引用例（未知）'));
           checks.push({
             area,
-            name: `${label} 没有用例的缺陷是未知`,
-            expected: '无已索引用例（未知）',
-            actual: isUnknown ? '无已索引用例（未知）' : '状态不一致',
-            ok: isUnknown,
+            name: `${label} 没有用例的缺陷需确定核对`,
+            expected: '范围和缺席观察支持的确定结论',
+            actual: isUnknown ? '追溯仍未知：缺完整范围或缺席观察；下一步请集成者补齐对应事实并重跑' : '未取得可核验的确定缺席结论；下一步补齐范围和缺席观察',
+            ok: false,
           });
         } else {
           const countMatch = matchingLines.map((l) => /(\d+)\s*个用例/.exec(l)).find(Boolean);
@@ -156,18 +167,20 @@ export default function scenario(gold: TraceGold): Scenario {
         }
 
         if (defect.defect_system_status !== undefined) {
+          if(defect.defect_system_status===null&&system!=='bugzilla')note('缺陷系统状态仍未取得');
+          const knownUnread=system==='bugzilla';
           const expectedStatus = defect.defect_system_status === null
             ? (defect.defect_system_unknown_reason ? `未知（${defect.defect_system_unknown_reason}）` : '未知')
             : defect.defect_system_status;
           const escaped = expectedStatus.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const statusPattern = new RegExp(`缺陷\\s+${defect.bug}[^\\n]*缺陷系统[：:]\\s*${escaped}`);
-          const hasStatus = statusPattern.test(text);
+          const hasStatus = knownUnread ? text.includes('状态未读：系统未接入（bugzilla）') : statusPattern.test(text);
           checks.push({
             area,
             name: `${label} 缺陷系统状态与独立依据一致`,
             expected: '状态一致',
-            actual: hasStatus ? '状态一致' : '状态不一致或未出现',
-            ok: hasStatus,
+            actual: knownUnread&&hasStatus?'系统未接入事实一致':defect.defect_system_status===null?'状态仍未知；下一步按原回执补读缺陷系统事实后重跑':hasStatus?'状态一致':'状态不一致或未出现',
+            ok: hasStatus && (knownUnread || defect.defect_system_status!==null),
           });
         }
       }
@@ -205,8 +218,8 @@ export default function scenario(gold: TraceGold): Scenario {
           area,
           name: '缺陷系统状态未知统计与独立依据一致',
           expected: expectedUnknown,
-          actual: hasUnknownCounts ? expectedUnknown : '统计不一致或未出现',
-          ok: hasUnknownCounts,
+          actual: gold.status_unknown!>0?'仍有状态未知的检查；下一步补齐缺陷系统事实后重跑':hasUnknownCounts?expectedUnknown:'统计不一致或未出现',
+          ok: hasUnknownCounts && gold.status_unknown===0,
         });
       }
 
@@ -215,6 +228,10 @@ export default function scenario(gold: TraceGold): Scenario {
       // only a gold that DID read statuses and found nothing points at other builds.
       const hasClosedStatus = gold.defects.some((d) => d.closed !== undefined) || gold.closed_defects !== undefined;
       checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : hasClosedStatus ? '0 个，正例没核到；导出其他构建并执行 trace-scan' : '未读：标准答案没有已关闭状态；重跑 trace.ts，加 --plm --closed-statuses', ok: positive > 0 });
+      const unresolved=lines.filter(line=>/，未知(?=[（(，；]|$)|缺陷系统[：:]\s*未知/.test(line));
+      if(unresolved.length)checks.push({area,name:'检查不能以未知结束',expected:'未知 0 项',actual:`未知 ${unresolved.length} 项；原因见私有原回执，下一步按缺失事实重读、补齐或重跑`,ok:false});
+      if(unresolved.length)note('回执仍含未知主张或状态',unresolved.length);
+      for(const [reason,count] of pending)countLines.push(`未完成核对 ${count} 项；原因：${reason}；下一步：由集成者按私有原回执补齐对应事实后重读或重跑`);
       checks.push(lengthBounded(area, turns));
       return checks;
     },
