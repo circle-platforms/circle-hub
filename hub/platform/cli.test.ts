@@ -188,6 +188,16 @@ describe('platform CLI', () => {
     assert.ok(!databases.some((row) => row.datname === 'circle_hub_dev'), 'no stray database was created');
   });
 
+  test('key init refuses a nonempty vault before touching the keychain', async () => {
+    const vault = join(root, 'vault'); await mkdir(vault, { recursive: true });
+    const entry = join(vault, 'synthetic-sealed-entry'); await writeFile(entry, 'synthetic sealed content');
+    const before = system.calls.length;
+    try {
+      const result = await run('key', 'init');
+      assert.equal(result.code, 1); assert.match(result.err, /set-aside/); assert.equal(system.calls.length, before);
+    } finally { await rm(entry); }
+  });
+
   test('key init and status never print the key and refuse to replace it', async () => {
     const absent = await run('key', 'status');
     assert.equal(absent.code, 3);

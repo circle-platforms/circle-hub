@@ -73,3 +73,50 @@ test('rehearsal can keep its root for inspection, extracted pack trees still rea
     await removeDir(parent);
   }
 });
+
+const security = '/usr/bin/security';
+const hasSecurity = await access(security).then(() => true, () => false);
+const keyLossSkip = !libpq ? LIBPQ_MISSING : !hasSecurity ? 'skipped: /usr/bin/security is only on macOS' : false;
+
+test('rehearsal loses both isolated keychain items, scans backups and always removes the keychain even with keep', { skip: keyLossSkip }, async () => {
+  const parent = await tempDir(); const calls: { args: readonly string[]; input: string }[] = [];
+  try {
+    const runner: CommandRunner = async (command, args, options) => {
+      if (command === security) calls.push({ args, input: options?.input ?? '' });
+      return runCommand(command, args, options);
+    };
+    const report = await rehearse({ parent, records: 3, objects: 1, keep: true, runner });
+    assert.equal(report.ok, true, report.differences.join('\n'));
+    assert.deepEqual(report.keyLoss, { skipped: false, items: 2, backupHits: 0, remaining: 0, setAsideFiles: 3 });
+    const keychain = join(report.root, 'synthetic.keychain-db');
+    for (const call of calls) assert.ok(call.args.at(-1) === keychain || (call.args[0] === '-i' && call.input.trimEnd().endsWith(`"${keychain}"`)));
+    await assert.rejects(access(keychain));
+  } finally { await removeDir(parent); }
+});
+
+test('rehearsal refuses a backup containing any secret encoding and never discloses the secret', { skip: keyLossSkip }, async () => {
+  const parent = await tempDir(); const values: string[] = [];
+  try {
+    const runner: CommandRunner = async (command, args, options) => {
+      const result = await runCommand(command, args, options);
+      if (command === security && args[0] === '-i') {
+        const input = options?.input ?? ''; const value = /-w ([0-9a-f]{64})/.exec(input)?.[1];
+        const keychain = /"([^"]+)"\s*$/.exec(input)?.[1];
+        if (value && keychain) { values.push(value); await writeFile(join(dirname(keychain), 'vault', 'planted'), Buffer.concat([Buffer.from(value.toUpperCase()), Buffer.from(value, 'hex')])); }
+      }
+      return result;
+    };
+    const report = await rehearse({ parent, records: 3, objects: 1, runner });
+    assert.equal(report.ok, false); assert.ok(report.keyLoss.backupHits >= 1);
+    for (const value of values) { assert.ok(!JSON.stringify(report).includes(value)); assert.ok(!JSON.stringify(report).includes(value.toUpperCase())); }
+    await assert.rejects(access(join(report.root, 'synthetic.keychain-db')));
+  } finally { await removeDir(parent); }
+});
+
+test('missing security explicitly skips key loss without weakening backup verification', { skip: libpq ? false : LIBPQ_MISSING }, async () => {
+  const parent = await tempDir();
+  try {
+    const report = await rehearse({ parent, records: 3, objects: 1, security: join(parent, 'absent-security') });
+    assert.equal(report.ok, true); assert.equal(report.keyLoss.skipped, true); assert.match(report.keyLoss.reason ?? '', /跳过，不算通过/);
+  } finally { await removeDir(parent); }
+});

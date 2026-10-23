@@ -228,6 +228,14 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    (`rollback: true`). A failure before the data moved restarts the current release; after it, the service is stopped and
    unloaded (or the message says it may still run), the progress stays, and the next `rollback` continues: it sets the
    partial state aside and restores again.
+10. **Rehearsal key loss**: when `security` is available, creates a temporary keychain file under the throwaway root,
+   with a one-off service and two random 32-byte items (vault key and operator token). Every security invocation explicitly
+   targets that file, including cleanup. Scans every backup file for either value as raw bytes and lowercase/uppercase
+   hex; any occurrence rejects the rehearsal without displaying the value. Deletes both items before restore, checks
+   that neither is restored, moves the restored vault to `set-aside/<time>-key-loss/vault` and creates a fresh master key.
+   The report lists item count, backup hits, remaining items and moved vault file count. If security is absent, key loss
+   is explicitly skipped, not passed; the other comparisons still run. The temporary keychain is deleted even with
+   `--keep` and on failure. This does not exercise a real deployment or the login keychain.
 10. **Rehearsal**: a throwaway root `chr-*` in the temporary directory with a marker file: init, synthetic records set up
    as the Hub's are (two tables with an identity column and an append-only trigger, created by the superuser role, which
    grants the application role SELECT and INSERT; the rows, with text, JSON, numeric, float, timestamp and bytea values,
@@ -427,3 +435,14 @@ the account the vault master key may not use).
 - **integrator**: add `"verify:postgres": "node scripts/verify-postgres.ts"` to `package.json` (CI's acceptance job calls
   it).
 - **acceptance**: check that every key of `serviceEnvironment(...)` is accepted by hub/config's `loadConfig`.
+
+### Recovering after irreversible key loss
+
+Stop the service. Prefer restoring the original keychain items: a new key cannot decrypt the existing vault.
+If the original master key cannot be recovered, move the entire data-root `vault/` to
+`set-aside/<time>-key-loss/` and leave the old sealed files there. Run `circle-hub key init`,
+`circle-hub operator-token reissue` (only when the operator token item is also missing), then
+`circle-hub secret import --env-file <file> --key <KEY>=<resource>/<credential>…` to reimport the named credentials,
+and start the service. `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
+in the database and `resource list` still works without the vault key. The platform rehearsal covers keys and backup;
+the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.

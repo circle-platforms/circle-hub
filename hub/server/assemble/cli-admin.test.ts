@@ -8,14 +8,14 @@
 // terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
-import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type CommandRunner } from '../../platform/api.ts';
+import { keychainKeyProvider, keychainStore, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
@@ -79,6 +79,7 @@ interface Admin {
 }
 
 interface SetupOptions {
+  keyProvider?: () => KeyProvider;
   tokens?: OperatorTokenStore & { value: string | null };
   /** Replaces the token store altogether (a keychain store over a fake security tool); `tokens` is then null. */
   store?: (config: HubConfig, service: string) => OperatorTokenStore;
@@ -113,8 +114,8 @@ async function setup(options: SetupOptions = {}): Promise<Admin> {
     init: null,
     stdin,
     // The server CLI's built-in state-changing commands read the same operator token store as the assembly's commands.
-    run: (argv, env = {}) => deployment.run(argv, { assembly: async () => module, operatorTokens: commandOptions.tokens }, env),
-    kit: () => openRecords(loadServerConfig(deployment.env), { migrate: false, keyProvider: deployment.key }),
+    run: (argv, env = {}) => deployment.run(argv, { assembly: async () => module, operatorTokens: commandOptions.tokens, ...(options.keyProvider ? { keyProvider: options.keyProvider } : {}) }, env),
+    kit: () => openRecords(loadServerConfig(deployment.env), { migrate: false, keyProvider: options.keyProvider?.() ?? deployment.key }),
   };
   if (options.initAdmin !== false) {
     const init = await admin.run(['init-admin', '根管理员']);
@@ -1368,5 +1369,61 @@ describe('secret import', () => {
     assert.match((await noKey.run(importArgs(missingFile, noKeyId))).text, /主密钥不可用/);
     const dry = await noKey.run([...importArgs(missingFile, noKeyId), '--dry-run']);
     assert.match(dry.text, /环境文件/); assert.doesNotMatch(dry.text, /主密钥不可用/);
+  });
+});
+
+
+describe('reimport after key loss', () => {
+  for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && process.platform !== 'darwin' ? 'skipped: /usr/bin/security is only on macOS' : false }, async () => {
+    const directory = await mkdtemp(join(harness.scratch, 'key-loss-'));
+    const file = join(directory, 'synthetic.keychain-db');
+    const service = `circle-hub-synthetic-${randomBytes(12).toString('hex')}`;
+    const runner: CommandRunner = async (command, args, options) => {
+      assert.equal(command, '/usr/bin/security');
+      assert.ok(args.at(-1) === file || (args[0] === '-i' && (options?.input ?? '').trimEnd().endsWith(`"${file}"`)), 'no default keychain');
+      return runCommand(command, args, options);
+    };
+    const master = keychainStore({ service, keychain: file, runner, item: VAULT_KEY_ITEM, account: 'vault-master-key' });
+    const operator = keychainStore({ service, keychain: file, runner, item: OPERATOR_TOKEN_ITEM, account: 'operator-token' });
+    try {
+      if (keychain) {
+        const password = randomBytes(20).toString('hex'); secrets.add(password);
+        for (const args of [['create-keychain', '-p', password, file], ['unlock-keychain', '-p', password, file], ['set-keychain-settings', file]]) assert.equal((await runner('/usr/bin/security', args)).code, 0);
+        await master.init();
+      }
+      const provider = () => keychainKeyProvider({ service, keychain: file, runner });
+      const admin = await setup(keychain ? { deployment: { key: false }, keyProvider: provider, store: () => keychainOperatorTokens({ service, keychain: file, runner }) } : {});
+      const id = await importResource(admin);
+      const env = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}\nUNUSED=SyntheticUnusedValue79`);
+      secrets.add('reader'); secrets.add('SyntheticUnusedValue79');
+      await expectOk(admin, importArgs(env, id));
+      const loginsBefore = agile.logins;
+      const read = async () => withKit(admin, async (kit) => {
+        const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
+        const by = (await kit.principals.findByName('根管理员'))!;
+        assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成钥匙恢复核对' })).ok, true);
+      });
+      await read(); assert.equal(agile.logins, loginsBefore + 1);
+      if (keychain) {
+        const bytes = await master.read(); secrets.add(Buffer.from(bytes).toString('hex'));
+        await master.delete(); await operator.delete();
+        const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+        assert.equal(refused.code, 1); assert.match(refused.text, /operator-token reissue/);
+        await expectOk(admin, ['operator-token', 'reissue']);
+        const store = keychainOperatorTokens({ service, keychain: file, runner }); secrets.add((await store.read())!);
+      } else await rm(admin.deployment.key.path);
+      const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+      assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
+      assert.equal((await admin.run(['resource', 'list'])).code, 0);
+      const aside = join(admin.deployment.dataDir, 'set-aside'); await mkdir(aside, { mode: 0o700 });
+      await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
+      if (keychain) await master.init(); else await admin.deployment.key.initKey();
+      await expectOk(admin, importArgs(env, id));
+      assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${id}.password`)), passwordDigest(PASSWORD));
+      await read(); assert.equal(agile.logins, loginsBefore + 2);
+    } finally {
+      if (keychain) await runner('/usr/bin/security', ['delete-keychain', file]);
+      await rm(file, { force: true });
+    }
   });
 });

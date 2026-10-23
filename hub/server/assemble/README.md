@@ -131,6 +131,13 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
   credentials are stored. Neither raw values, fragments nor digests of values appear in output.
 
+- **Irrecoverable key loss**: stop the service, preserve the old data-root `vault/` by moving it to
+  `set-aside/<time>-key-loss/`, run `circle-hub key init`, reissue the operator token with `circle-hub operator-token reissue`
+  if its item was lost too, reimport the named credentials with `secret import`, then start the service. A new master key
+  cannot open old entries. `key init` refuses while the vault is nonempty. `resource list` remains available without the
+  master key; commands needing secrets refuse before opening the environment file. Tests run this recovery with a
+  temporary file key on every platform and a fresh keychain provider per invocation on macOS, using only an explicitly
+  targeted temporary keychain file. They verify two successful logins, before loss and after reimport.
 - **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
   the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
   when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it

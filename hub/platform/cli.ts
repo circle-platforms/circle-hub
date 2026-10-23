@@ -193,6 +193,7 @@ const key: Handler = async (args, context, io) => {
   const store = keychainFor(context, await settingsOf(context));
   const item = `服务 ${store.service}，账户 ${store.account}`;
   if (action === 'init') {
+    if (!(await isMissingOrEmpty(context.layout.vault))) throw new PlatformError('密钥库非空，不新建主密钥', '先恢复原来的钥匙串项；找不回时停服务，把 vault/ 移到 set-aside/<时间>-key-loss/，再 key init、operator-token reissue、secret import，最后起服务');
     await store.init();
     io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
     return 0;
@@ -342,6 +343,7 @@ const rehearseCommand: Handler = async (args, context, io) => {
   const report = await rehearse({ runner: context.runner, libpqBin: context.libpqBin, binariesRoot: context.codeRoot, keep: values.keep === true, now: context.now });
   io.stdout(`演练数据根：${report.root}${report.kept ? '（保留；解包目录是只读的，删除前先 chmod -R u+w）' : '（已删除）'}`);
   io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个密钥库文件，${report.packFiles} 个解包文件（派生数据，不进备份）`);
+  io.stdout(report.keyLoss.skipped ? `钥匙丢失：${report.keyLoss.reason}` : `钥匙丢失：${report.keyLoss.items} 项；备份命中 ${report.keyLoss.backupHits}；丢失后找到 ${report.keyLoss.remaining} 项；移开密钥库 ${report.keyLoss.setAsideFiles} 个文件`);
   io.stdout(`应用角色 ${report.role}：恢复后 ${report.privileges} 项权限，删改历史或表结构的 ${report.refused} 条语句被拒绝`);
   if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象；解包目录不在备份里，恢复后原样保留');
   else for (const line of report.differences) io.stderr(`不一致：${line}`);
