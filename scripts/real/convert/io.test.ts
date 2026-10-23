@@ -134,3 +134,16 @@ test('manifest parser details are staged privately while terminal diagnostics hi
     assert.equal(statSync(file).mode & 0o777, 0o600);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('case CLI discloses safe parser causes and distinguishes limit recovery from incomplete exports', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'convert-parse-'));
+  try {
+    let deep: any = { data: { text: 'synthetic-private-text' } };
+    for (let i = 0; i < 220; i++) deep = { data: { text: 'synthetic-private-text' }, children: [deep] };
+    for (const [name, map, expected] of [['bad-node', { root: { data: { text: 'synthetic-private-text' }, children: [5] } }, /第 2 个节点不是对象.*重新导出完整脑图/], ['deep', { root: deep }, /嵌套层数超过上限.*拆分/]] as const) {
+      output(dir, `${name}.json`, JSON.stringify(map));
+      const child = spawnSync(process.execPath, ['scripts/real/convert/auto-cases.ts', join(dir, `${name}.json`), '--out', join(dir, name)], { encoding: 'utf8' });
+      assert.equal(child.status, 1); assert.match(child.stderr, expected); assert.ok(!child.stderr.includes('synthetic-private-text')); assert.equal(child.stdout, '');
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

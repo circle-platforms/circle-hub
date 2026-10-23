@@ -1,13 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { normalizeMindmap } from '../../../packs/workflow/case-compile/scripts/normalize-mindmap.ts';
-import { kityminderParser } from '../../../hub/refs/parsers/kityminder.ts';
+import { kityminderParser, ParseError, ParseLimitError } from '../../../hub/refs/api.ts';
 import { extractCases, type CaseRule } from '../../../packs/workflow/case-compile/functions/cases.ts';
 import { argumentsOf, jsonBytes, main, output, record, readJson, requireFact, sha256 } from './io.ts';
 function normalized(bytes: Uint8Array) {
   try { return normalizeMindmap(bytes); } catch { requireFact(false, '原件无法按公开规整规则读取；请集成者用 normalize-mindmap.ts 核对两项已知变换并补取有效原件后重跑，不猜修内容'); }
 }
 export function autoCases(bytes: Uint8Array, rule: CaseRule = 'marked', profile?: unknown): string[] {
-  const parsed = kityminderParser.parse(normalized(bytes).bytes); const extracted = extractCases(parsed.model, rule);
+  let parsed: ReturnType<typeof kityminderParser.parse>;
+  try { parsed = kityminderParser.parse(normalized(bytes).bytes); }
+  catch (error) {
+    if (!(error instanceof ParseError)) throw error;
+    requireFact(false, `${error.message}；下一步：${error instanceof ParseLimitError ? '集成者按报告的上限拆分脑图，保留各原件及范围后重跑' : '集成者从平台重新导出完整脑图后重跑，不猜修节点内容'}`);
+  }
+  const extracted = extractCases(parsed.model, rule);
   requireFact(extracted.impreciseAutoids.length === 0, '文档含有精度不确定的数值 autoid；集成者从原脑图以文本重导出全部编号，再按相同 case_rule 重跑，不能使用已舍入值');
   const selected = extracted.cases.filter((v) => v.auto === 'YES');
   requireFact(selected.length === 5, `找到 ${selected.length} 个 auto 正好为 YES 的用例，需要 5 个；集成者核对原脑图和 case_rule 后重跑，不补选`);
