@@ -7,12 +7,12 @@ import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
 import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasAmbiguousIpv4 } from './addresses.ts';
-interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string }
+interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[] }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const contract = parseRuntimeContract(raw.contract); const manifest = parseManifest(raw.manifest);
   const profile = contract.ok && manifest.ok ? parseProfile(raw.profile, contract.contract, manifest.beds) : null;
-  return { item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
+  return { case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
@@ -54,10 +54,13 @@ export function checkAddresses(input: unknown): Outcome[] {
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
   if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
   const out: Outcome[] = []; let count = 0;
+  const sourceAddresses = new Set([...s.case_texts, ...slots.expects.map((v) => v.quote.text)].flatMap((text) => literalAddresses(text).map((v) => v.key).filter((key): key is string => key !== null)));
   const from = new Set<string>(); const to = new Set<string>();
   for (const [i, replacement] of slots.replacements.entries()) {
     const source = addressKey(replacement.case); const target = addressKey(replacement.bed);
     if (!source || !target || from.has(source) || to.has(target)) out.push(refute(s, 'replacement_invalid', '替换表必须是一一对应的字面地址映射，按地址数值比较', `/data/replacements/${i}`));
+    if (source && !sourceAddresses.has(source)) out.push(refute(s, 'replacement_invalid', '替换源没有出现在原用例文字或期望引文中，不能披露为已核验映射', `/data/replacements/${i}/case`));
+    if (source && target && source !== target && slots.replacements.some((other, j) => j !== i && addressKey(other.case) === target)) out.push(refute(s, 'replacement_invalid', '替换表不能形成链或环；目标不能成为另一条替换源', `/data/replacements/${i}`));
     if (source) from.add(source); if (target) to.add(target);
     if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
   }

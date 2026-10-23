@@ -59,3 +59,8 @@ test('review 10 unsafe numeric autoids diagnose missing original precision rathe
   const result = projectItems(projectionInput(model)) as { error: { code: string; message: string; fix: string } };
   assert.equal(result.error.code, 'case-compile.autoid_imprecise'); assert.match(result.error.message, /安全|精度/); assert.match(result.error.fix, /文本.*重新|文本.*重.*导出/);
 });
+test('review 11 replacement chains and phantom source mappings cannot be disclosed as verified', () => {
+  const chain = goodData(); chain.expects[0].quote.text = '原文 192.0.2.250 与 192.0.2.10 健康检查间隔设置成功'; chain.replacements = [{ case: '192.0.2.250', bed: '192.0.2.10' }, { case: '192.0.2.10', bed: '192.0.2.90' }];
+  assert.ok(codes(checkAddresses(subjectOf(chain))).includes('case-compile.replacement_invalid'));
+  const phantom = goodData(); phantom.replacements = [{ case: '192.0.2.251', bed: '192.0.2.90' }]; assert.ok(codes(checkAddresses(subjectOf(phantom))).includes('case-compile.replacement_invalid'));
+});
