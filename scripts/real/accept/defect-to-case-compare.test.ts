@@ -152,7 +152,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     <menu name="demo">
       <item name="pool">
         <arguments>
-          <string name="name"/>
+          <arg name="name" type="STRING"/>
         </arguments>
       </item>
     </menu>
@@ -257,4 +257,11 @@ test('rendered output contains no synthetic title, command or quotation', () => 
   const comparison = computeComparison(docGold, submissionOf(draft('SYNTHETIC_TITLE', 'widget health interval pool1 5', 'SYNTHETIC_QUOTE')), resultWith([refuteQuoteClaim], [dupClaim('SYNTHETIC_TITLE')]));
   const text = renderComparison(comparison);
   for (const secret of ['SYNTHETIC_TITLE', 'widget health interval', 'SYNTHETIC_QUOTE', refuteQuoteClaim.statement.text]) assert.ok(!text.includes(secret));
+});
+
+test('parameter combinations have all three categories and reverse coverage',()=>{
+  const commands='<commands><menu name="widget"><item name="health interval"><arguments><arg name="name" type="STRING"/><arg name="n" type="U16"/></arguments></item><item name="new"><arguments/></item></menu></commands>';
+  const report=computeComparison(docGold,submissionOf(draft('a','widget health interval pool1 5'),draft('b','widget health interval pool1 6'),draft('c','widget new')),resultWith([]),{commandTreeXml:commands});
+  assert.deepEqual([report.parameters!.same,report.parameters!.different,report.parameters!.absent],[1,1,1]);
+  assert.equal(report.parameters!.docRatio,1/3);
 });

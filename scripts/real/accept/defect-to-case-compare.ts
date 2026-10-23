@@ -25,6 +25,8 @@ import {
   type SplitCommand,
 } from '../gold/regression-doc.ts';
 
+import { domainReport } from '../gold/command-domains.ts';
+
 export interface DraftCase {
   title: string;
   steps: Array<{ command?: string }>;
@@ -66,6 +68,7 @@ export interface Comparison {
   headOverlap: HeadOverlap;
   quotes: QuotesReport;
   duplicates: DuplicatesReport;
+  parameters?: { same: number; different: number; absent: number; draftPairs: number; docPairs: number; shared: number; docRatio: number | null; domains: ReturnType<typeof domainReport> };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -218,6 +221,20 @@ export interface CompareOptions {
   catalog?: Set<string>;
 }
 
+function parametersReport(drafts: DraftCase[], gold: unknown, submission: unknown, hub: unknown, xml: string) {
+  const catalog = buildCatalog(xml);
+  const doc = docCasesOf(gold).flatMap(c => c.commands);
+  const draft = drafts.flatMap(d => parseDraftSteps(d.steps, catalog).commands);
+  const pair = (c: SplitCommand) => JSON.stringify([normalizeHead(c.head), c.parameters]);
+  const docPairs = new Set(doc.map(pair)), draftPairs = new Set(draft.map(pair));
+  const heads = new Set(doc.map(c => normalizeHead(c.head)));
+  const same = draft.filter(c => docPairs.has(pair(c))).length;
+  const different = draft.filter(c => !docPairs.has(pair(c)) && heads.has(normalizeHead(c.head))).length;
+  const absent = draft.filter(c => !heads.has(normalizeHead(c.head))).length;
+  const shared = [...docPairs].filter(p => draftPairs.has(p)).length;
+  return { same, different, absent, draftPairs: draftPairs.size, docPairs: docPairs.size, shared, docRatio: docPairs.size ? shared / docPairs.size : null, domains: domainReport(submission, hub, xml) };
+}
+
 export function computeComparison(
   gold: unknown,
   submission: unknown,
@@ -228,6 +245,7 @@ export function computeComparison(
   const drafts = draftsOf(submission);
   return {
     headOverlap: overlapOf(drafts, gold, catalog),
+    ...(options.commandTreeXml ? { parameters: parametersReport(drafts, gold, submission, result, options.commandTreeXml) } : {}),
     quotes: quotesReportOf(result),
     duplicates: duplicatesReportOf(drafts, gold, result, catalog),
   };
@@ -249,6 +267,13 @@ export function renderComparison(comparison: Comparison): string {
   lines.push('3. 与已有用例完全相同（命令头和参数值都相同）的草稿：');
   lines.push(`   gold 集合 ${d.goldIdentical.length}；Hub 集合 ${d.hubFlagged.length}；仅 gold ${d.onlyGold.length}；仅 Hub ${d.onlyHub.length}`);
   lines.push(`   集合比对：${d.equal ? '通过' : '不通过'}`);
+  const p = comparison.parameters;
+  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : '参数：未提供命令树，未比较');
+  if (p) {
+    const items = p.domains.items;
+    lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；未知 ${p.domains.counts.unknown}`);
+    lines.push(`命令与参数：${items.length > 0 && items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}；一致 ${items.filter(i => i.comparison === 'equal').length}；不一致 ${items.filter(i => i.comparison === 'different').length}；未知 ${items.filter(i => i.comparison === 'unknown').length}`);
+  }
   return lines.join('\n');
 }
 
@@ -273,6 +298,7 @@ export function writePrivateJson(path: string, value: unknown): void {
 /** Details contain positions and explanatory categories only, never input strings. */
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
+    ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),
     ...comparison.quotes.problems.map((_, quote) => ({ quote: quote + 1, category: 'hub_quote_problem' })),
     ...comparison.duplicates.goldIdentical.map((_, draft) => ({ draft: draft + 1, category: 'legacy_document_command_match' })),
   ];
