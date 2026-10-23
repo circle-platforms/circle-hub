@@ -182,3 +182,68 @@ test('a block that cannot be cited stays out of the model and is reported with f
   assert.equal(placed.entries.some((entry) => String(entry.statement).includes('第二段说明')), false);
   assert.ok(result.warnings.some((warning) => warning.includes('回核不到原文行') && warning.includes('main.adoc:9')), result.warnings.join('；'));
 });
+
+test('a block whose verified lines are not contiguous becomes one block per range, each citing its own lines', async () => {
+  const source = [
+    '= Book',                    // 1
+    '',                          // 2
+    '== 说明',                    // 3
+    '',                          // 4
+    '第一行说明。',                // 5
+    'ifdef::brand-apv[]',         // 6
+    'APV 独有的第二行。',          // 7
+    'endif::[]',                  // 8
+    '第三行说明。',                // 9
+    '',                          // 10
+  ].join('\n');
+  const out = await compile({ 'main.adoc': source }, 'main.adoc', { 'brand-apv': true });
+  const paragraph = out.model.blocks.find((block) => block.kind === 'paragraph');
+  assert.ok(paragraph !== undefined);
+  assert.deepEqual(paragraph.origins.map((origin) => origin.selector), ['l/5', 'l/7', 'l/9'], 'step one verified three ranges, not one');
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(
+    produced.entries.map((entry) => [String(entry.statement), entry.fragments.map((fragment) => fragment.selector)]),
+    [
+      ['第一行说明。', ['l/5']],
+      ['APV 独有的第二行。', ['l/7']],
+      ['第三行说明。', ['l/9']],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.fragments])),
+  );
+  // Every cited line holds the words of the entry that cites it — the brand line decision 35 is about is among them.
+  const lines = source.split('\n');
+  for (const entry of produced.entries) {
+    const line = lines[Number(entry.fragments[0]!.selector.slice(2)) - 1]!;
+    assert.ok(line.includes(String(entry.statement)), `${JSON.stringify(entry.statement)} is not on ${JSON.stringify(line)}`);
+  }
+});
+
+test('a paragraph that runs across an include boundary cites each chapter file for its own part', async () => {
+  const out = await compile(
+    {
+      'book.adoc': '= Book\n\ninclude::a.adoc[]\ninclude::b.adoc[]\n',
+      'a.adoc': '甲文件的最后一行。\n',
+      'b.adoc': '乙文件的第一行。\n',
+    },
+    'book.adoc',
+  );
+  const paragraph = out.model.blocks.find((block) => block.kind === 'paragraph');
+  assert.ok(paragraph !== undefined);
+  assert.deepEqual(paragraph.origins.map((origin) => `${origin.file}:${origin.selector}`), ['a.adoc:l/1', 'b.adoc:l/1']);
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const digests = Object.fromEntries(mapped.model.blocks.map((block) => [block.cite.file, block.cite.sha256]));
+  assert.deepEqual(
+    produced.entries.map((entry) => [String(entry.statement), entry.fragments[0]!.selector, entry.fragments[0]!.source === digests[entry.statement.includes('甲') ? 'a.adoc' : 'b.adoc']]),
+    [
+      ['甲文件的最后一行。', 'l/1', true],
+      ['乙文件的第一行。', 'l/1', true],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.fragments])),
+  );
+});

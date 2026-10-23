@@ -321,6 +321,29 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
 }
 
 /**
+ * The parts of one block whose verified ranges are not contiguous (a conditional inside it, an include boundary, a line
+ * the reader dropped): one part per range, with its own lines and its own citation, so no fragment cites a range that
+ * holds only part of what the statement says. The text's lines map one to one onto the ranges' lines; null when they do
+ * not, and the block is then reported instead of being cited on its first range alone.
+ */
+function splitByOrigins(block: Block, text: string, digestOf: (file: string) => string): Array<{ text: string; cite: Citation }> | null {
+  const lines = text.split('\n');
+  const counts = block.origins.map((origin) => origin.to - origin.from + 1);
+  if (counts.reduce((sum, count) => sum + count, 0) !== lines.length) return null;
+  const out: Array<{ text: string; cite: Citation }> = [];
+  let at = 0;
+  block.origins.forEach((origin, index) => {
+    const size = counts[index] as number;
+    const part = lines.slice(at, at + size).join('\n');
+    at += size;
+    // A part that holds no words (a range of blank lines) makes no entry of its own.
+    if (squeeze(part) === '') return;
+    out.push({ text: part, cite: { file: origin.file, sha256: digestOf(origin.file), selector: origin.selector } });
+  });
+  return out;
+}
+
+/**
  * The text this block carries into the mapped model; '' for a container whose children carry its content. A statement
  * carries what the source says under this family's attribute set (K02 R[4] lets it differ from the source line, and the
  * fragment stays on the verified range): the engine substitutes nothing inside a listing or literal block, so those stay
@@ -539,6 +562,16 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
         at++;
         continue;
       }
+    }
+    if (table === null && block.origins.length > 1) {
+      // The block's verified lines are not one range: each range becomes its own mapped block, cited on its own lines.
+      const parts = splitByOrigins(block, text, digestOf);
+      if (parts === null) {
+        uncited.push(uncitedOf(model, block, '这个块已核对的原文行不连续，而它的文字与这些行对不上，不能分成各自引用的部分'));
+        continue;
+      }
+      for (const part of parts) emit(block, mappedKind(block), part.text, part.cite);
+      continue;
     }
     const cite = table === null ? (block.origins.length > 0 ? citationOf(block.origins[0]!) : null) : table.cite;
     if (cite === null) {

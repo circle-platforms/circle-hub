@@ -490,7 +490,11 @@ accepted.
 - Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
   each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,
   and a description-list entry becomes one block for the term and the value of one source line, used only when the two
-  items really are that line. A block whose text step one could not verify stays out of the model and is returned in
+  items really are that line. A block whose verified lines are not one contiguous range — a conditional branch inside it,
+  an include boundary, a line the reader dropped — becomes one mapped block per range, each part with its own lines and
+  its own citation, because a fragment has to hold the words its entry claims; when the text's lines do not map one to one
+  onto the ranges, the block is reported instead of being cited on its first range alone. A block whose text step one
+  could not verify stays out of the model and is returned in
   `uncited` with its kind, file, line, reason and next action, plus one warning line for the production: it is never
   handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
   from the knowledge with only a count left behind.
