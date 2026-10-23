@@ -2,6 +2,7 @@
 // node scripts/real/gold/catalog-marks.ts --tree <locked command XML> --source <mindmap original>
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
 //   [--table <cited-commands.json>] --out <new private directory>
+// --argument-types <JSON array> supplies the locked-root overrides: [{command,position,type,origin}], including [].
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
 import { canonicalJson } from './compile-check.ts';
 import { SaxesParser } from 'saxes';
@@ -26,7 +27,7 @@ export const fold = (value: string): string => value.normalize('NFKC').toLowerCa
 const request = (at: Position, fact: string, next_action: string): EvidenceRequest => ({ ...at, fact, next_action });
 
 export class CatalogInputError extends Error {
-  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure';
+  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure' | 'argument_types';
   constructor(reason: CatalogInputError['reason'], message: string) { super(message); this.reason = reason; this.name = 'CatalogInputError'; }
 }
 export function decodeCatalog(bytes: Uint8Array): string {
@@ -58,7 +59,15 @@ function tolerantStartTags(xml: string): string {
 }
 
 /** SAX is only an XML reader; menu paths, argument meaning and comparison are implemented here. */
-export function readCatalog(xml: string): Catalog {
+export interface DeclaredArgumentType { command: string; position: number; type: string; origin: string }
+export function readArgumentTypes(bytes: Uint8Array): DeclaredArgumentType[] {
+  let value: unknown;
+  try { value = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes)); }
+  catch (error) { if (error instanceof SyntaxError || error instanceof TypeError) throw new CatalogInputError('argument_types','类型声明不是有效 JSON'); throw error; }
+  if (!Array.isArray(value) || !value.every(row => object(row) && typeof row.command === 'string' && row.command.trim() !== '' && typeof row.position === 'number' && Number.isSafeInteger(row.position) && row.position > 0 && typeof row.type === 'string' && row.type.trim() !== '' && typeof row.origin === 'string' && row.origin.trim() !== '')) throw new CatalogInputError('argument_types','类型声明数组格式不对');
+  return value as DeclaredArgumentType[];
+}
+export function readCatalog(xml: string, argumentTypes: readonly DeclaredArgumentType[] = []): Catalog {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new CatalogInputError('tree_structure', '不支持 DTD 或实体声明');
   const catalog: Catalog = { commands: [], requests: [], unnamedItems: 0 };
   const byHead = new Map<string, Command>();
@@ -92,7 +101,10 @@ export function readCatalog(xml: string): Catalog {
       frame.signature = { args: [], at: position(path) }; frame.command.signatures.push(frame.signature);
     }
     if (tag.name === 'arg' && frame.signature) {
-      frame.arg = { name: attrs.name ?? `arg${frame.signature.args.length + 1}`, type: attrs.type ?? '', optional: /^(yes|y|true|1)$/i.test(attrs.optional ?? ''), ...(attrs.optional === undefined ? {} : { optionalRaw: attrs.optional }), ...(attrs.limit === undefined && attrs.range === undefined ? {} : { limit: attrs.limit ?? attrs.range }), ...(attrs.length === undefined ? {} : { length: attrs.length }), help: attrs.help ?? '', at: position(path) };
+      frame.arg = { name: attrs.name ?? `arg${frame.signature.args.length + 1}`, type: attrs.type ?? '', optional: /^(yes|y|true|1)$/i.test(attrs.optional ?? ''), ...(attrs.optional === undefined ? {} : { optionalRaw: attrs.optional }), ...(attrs.limit === undefined && attrs.range === undefined ? {} : { limit: attrs.limit ?? attrs.range }), ...(attrs.length === undefined ? {} : { length: attrs.length }), help: attrs.help_string ?? '', at: position(path) };
+      const override = argumentTypes.find(row => fold(row.command) === fold(frame.command!.words.join(' ')) && row.position === frame.signature!.args.length + 1);
+      if (override) frame.arg.type = override.type;
+      else if (frame.arg.type.toUpperCase() === 'DOTTEDIP' && /\bor\b|host\s*names?|\burls?\b/i.test(frame.arg.help)) frame.arg.type = 'STRING';
       frame.signature.args.push(frame.arg);
     }
     stack.push(frame);
@@ -155,7 +167,7 @@ function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest
   const type = raw.type.toUpperCase(), requests: EvidenceRequest[] = [];
   if (!['STRING', 'XSTRING', 'U16', 'U32', 'DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@type' }, '不认识的参数类型：' + raw.type, '请集成者提供该位置类型的定义、合法样例与反例，再补充金标准后重跑'));
   if (raw.optionalRaw !== undefined && !/^(yes|y|true|1|no|n|false|0)$/i.test(raw.optionalRaw)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@optional' }, '参数是否可省略的声明', '请集成者补取该位置 optional 的布尔语义后重跑'));
-  if (type === 'DOTTEDIP' && /\bor\b|host\s*name|https?:|\burl\b/i.test(raw.help)) requests.push(request(raw.at, 'IPv4 参数帮助中声明的其他输入形式', '请集成者补取该参数的正式类型或锁定根的类型覆盖声明，再核对；不能把其他形式硬判为 IPv4 错误'));
+
   const limit = constraint(raw.limit, raw.at, 'limit', type === 'STRING' || type === 'XSTRING');
   const length = constraint(raw.length, raw.at, 'length', true);
   if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者提供此位置 limit 的正式含义；不把数值约束直接当地址字符串长度'));
@@ -235,9 +247,9 @@ const displayCommand = (value: string): string => fold((tokenize(value.normalize
 const markKey = (mark: Mark): string => JSON.stringify([mark.item, mark.pointer, displayCommand(mark.command), mark.code]);
 
 /** Comparison uses the submitted phrases as its population, never the Hub's refutations as the oracle. */
-export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged' }): CatalogComparison {
+export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged'; argumentTypes?: readonly DeclaredArgumentType[] }): CatalogComparison {
   const report: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
-  const catalog = readCatalog(input.treeXml), parsed = parseMindMap(input.source);
+  const catalog = readCatalog(input.treeXml, input.argumentTypes), parsed = parseMindMap(input.source);
   const cases = caseNodesOf(parsed, { caseRule: input.caseRule }), indices = new Set(cases.map(c => c.index));
   const unique = new Map<string, number>(); parsed.nodes.forEach(node => unique.set(node.id, (unique.get(node.id) ?? 0) + 1));
   const reading = caseGold([{ document: 'source', map: input.source }], { caseRule: input.caseRule }).documents[0].items;
@@ -346,7 +358,7 @@ export interface CatalogReport extends CatalogComparison {
 }
 export interface CatalogInputs {
   treeXml: string; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
-  table: unknown; excludeNodes?: readonly string[];
+  table: unknown; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
 }
 const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const parseJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, ''));
@@ -384,6 +396,7 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   const requests = tableRequests(input.table);
   const add = (where: string, pointer: string, fact: string, next_action: string): void => { requests.push(request({ input: where, pointer }, fact, next_action)); };
   const recordRef = acceptedSubmissionReference(run) ?? '<run.submissions 中 result 等于 latest.record 的 record>';
+  if (input.argumentTypes === undefined) add('argument-types', '/', '锁定根生产参数中的 argumentTypes 声明（允许空数组）', '请集成者从锁定根对应生产记录导出声明数组，每项为 {command, position, type, origin}，保存为 Git 外 JSON，通过 --argument-types 传入后重跑');
   const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
 
   if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的原件字节 sha256', exportSubmission);
@@ -407,7 +420,7 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   if (object(submission)) array(submission.items).forEach((entry, index) => { if (object(entry) && entry.reuse !== undefined) add('submission', `/items/${index}/reuse`, '沿用条目的原始发现和命令引用', '按沿用的记录引用补取前序受理提交及摘要绑定，再补充本次独立核对输入；不能借 Hub 的反驳还原'); });
   let compared = empty;
   if (!requests.length) {
-    try { compared = compareCatalogMarks({ treeXml: input.treeXml, source, submission, run, excludeNodes: input.excludeNodes, caseRule: rule === 'tagged' ? 'tagged' : 'marked' }); }
+    try { compared = compareCatalogMarks({ treeXml: input.treeXml, source, submission, run, excludeNodes: input.excludeNodes, argumentTypes: input.argumentTypes, caseRule: rule === 'tagged' ? 'tagged' : 'marked' }); }
     catch { add('source/tree', '/', '可完整解析的命令树和脑图结构', '请集成者核对这两份原件的编码、完整性和结构，重新导出后重跑；不能把解析失败当零标记'); }
   }
   const allRequests = [...requests, ...compared.requests];
@@ -451,7 +464,7 @@ function emptyGap(at: Position, fact: string, next_action: string): CatalogRepor
 export function main(argv: string[], say: (line: string) => void = line => process.stdout.write(line + '\n')): number {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
-    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
+    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table', '--argument-types'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
     flags.set(argv[i], argv[i + 1]);
   }
   if (!['--tree', '--source', '--run', '--out'].every(key => flags.has(key))) { say('设计缺口 1；缺 --tree、--source、--run 或 --out；下一步：补齐这些输入后重跑'); return 1; }
@@ -471,7 +484,8 @@ export function main(argv: string[], say: (line: string) => void = line => proce
       excludeNodes = value.flatMap(entry => [entry.node, ...(typeof entry.copy === 'string' ? [entry.copy] : []), ...array(entry.deletedCases).filter((v): v is string => typeof v === 'string')]);
     }
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
-    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, excludeNodes });
+    const argumentTypes = flags.has('--argument-types') ? readArgumentTypes(read('argument-types')) : undefined;
+    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, excludeNodes, argumentTypes });
     report.inputs.tree_sha256 = sha256(treeBytes);
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
   } catch {

@@ -11,7 +11,7 @@ import { recordRefusal, refusalSummary } from './lib/inject.ts';
 //   HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <mindmap.json> --plan <plan.json> [--keep <n>]
 //     [--manual <fragment>] [--case-rule marked|tagged] --draft <session.json> [--verify <session.json>] [--repeat 3]
 //     [--baseline <previous --out>] [--tree <command XML>] [--submission <raw-file-{n}.json>]
-//     [--catalog-table <declaration.json>] --out <dir>
+//     [--catalog-table <declaration.json>] [--catalog-manifest <pack.json>] [--argument-types <JSON array>] --out <dir>
 // Missing accepted bytes generate an export-by-digest request and exit 1; marks are never reverse engineered.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -20,7 +20,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
-import { acceptedSubmissionReference, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
+import { readArgumentTypes, CatalogInputError, acceptedSubmissionReference, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport, type DeclaredArgumentType } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -118,6 +118,7 @@ export interface MeasureOptions {
   /** Raw submission path; {n} expands to the round number. */
   submission?: string;
   catalogTable?: string;
+  argumentTypes?: string;
   out: string;
 }
 
@@ -228,16 +229,17 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   }
 
   // Catalog declaration drift is refused before starting any review session.
-  let catalogInput: { treeXml: string; table: unknown } | undefined;
+  let catalogInput: { treeXml: string; table: unknown; argumentTypes?: DeclaredArgumentType[] } | undefined;
   if (options.tree !== undefined) {
     let preflight: CatalogReport | undefined;
     try {
       const treeBytes = readCatalogInput(options.tree), declaration = readDeclaration(options.catalogTable);
       const treeXml = decodeCatalog(treeBytes);
       const requests = catalogPreflight(treeXml, declaration.table);
+      if (options.argumentTypes === undefined) requests.push({ input: 'argument-types', pointer: '/', fact: '锁定根 argumentTypes 声明（可为空数组）', next_action: '请集成者导出 {command,position,type,origin} 声明数组并用 --argument-types 传入后重跑，评审会话尚未启动' });
       if (requests.length) preflight = catalogGapReport(requests, { tree_sha256: createHash('sha256').update(treeBytes).digest('hex'), source_sha256: copySha });
-      else catalogInput = { treeXml, table: declaration.table };
-    } catch { preflight = catalogGapReport([{ input: 'tree/table', pointer: '/', fact: '可读取的命令树原件和目录表声明', next_action: '请集成者补 --tree 原件与匹配的表声明，再启动度量；脚本尚未启动评审会话' }]); }
+      else catalogInput = { treeXml, table: declaration.table, argumentTypes: options.argumentTypes === undefined ? undefined : readArgumentTypes(readCatalogInput(options.argumentTypes)) };
+    } catch (error) { preflight = catalogGapReport([{ input: error instanceof CatalogInputError && error.reason === 'argument_types' ? 'argument-types' : 'tree/table', pointer: '/', fact: '可读取并解析的输入：' + (error instanceof CatalogInputError ? error.reason : 'input_unreadable'), next_action: error instanceof CatalogInputError && error.reason === 'argument_types' ? '请集成者按 {command,position,type,origin} 修正 --argument-types 声明数组后重跑；会话未启动' : '请集成者补 --tree 原件与匹配的表声明，再启动度量；脚本尚未启动评审会话' }]); }
     if (preflight !== undefined) {
       writeCatalogReport(join(options.out, 'catalog-preflight'), preflight);
       say(catalogSummary(preflight)); say('设计缺口 ' + preflight.requests.length + '；下一步按私有补证文件修正声明后重跑；评审会话未启动');
@@ -314,10 +316,10 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
         }
       }
       const excludeNodes = injected.gold.flatMap(entry => [entry.node, ...(entry.copy === undefined ? [] : [entry.copy]), ...(entry.deletedCases ?? [])]);
-      round.catalog = catalogMarks({ treeXml: catalogInput.treeXml, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, excludeNodes });
+      round.catalog = catalogMarks({ treeXml: catalogInput.treeXml, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, argumentTypes: catalogInput.argumentTypes, excludeNodes });
       for (const pending of round.catalog.requests) {
         pending.next_action += '；补证后运行 follow_up 参数里的独立核对，不要为重新计分再次开模型会话；提交原件路径和输出目录用新的仓库外文件';
-        pending.follow_up = { program: 'node', args: ['scripts/real/gold/catalog-marks.ts', '--tree', options.tree!, '--source', join(options.out, 'mutated.json'), '--run', join(dir, 'draft.run.json'), '--submission', '<已导出的提交原件文件>', '--gold', join(options.out, 'gold.json'), ...(options.catalogTable === undefined ? [] : ['--table', options.catalogTable]), '--out', '<仓库外新核对目录>'] };
+        pending.follow_up = { program: 'node', args: ['scripts/real/gold/catalog-marks.ts', '--tree', options.tree!, '--source', join(options.out, 'mutated.json'), '--run', join(dir, 'draft.run.json'), '--submission', '<已导出的提交原件文件>', '--gold', join(options.out, 'gold.json'), ...(options.argumentTypes === undefined ? [] : ['--argument-types', options.argumentTypes]), ...(options.catalogTable === undefined ? [] : ['--table', options.catalogTable]), '--out', '<仓库外新核对目录>'] };
       }
       writeCatalogReport(join(dir, 'catalog'), round.catalog);
       writeFileSync(join(dir, 'catalog-counts.json'), JSON.stringify(round.catalog.summary, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -373,7 +375,7 @@ function main(): number {
   const draftPath = arg('draft');
   const repeat = Number(arg('repeat') ?? 3);
   if (!source || !plan || !out || !draftPath) {
-    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <脑图 json> --plan <计划 json> [--keep <n>] [--manual <片段>] [--case-rule marked|tagged] --draft <会话 json> [--verify <会话 json>] [--repeat 3] [--baseline <基线目录>] [--tree <命令树原件>] [--submission <原件路径，{n}为轮次>] [--catalog-table <目录表>] --out <目录>');
+    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <脑图 json> --plan <计划 json> [--keep <n>] [--manual <片段>] [--case-rule marked|tagged] --draft <会话 json> [--verify <会话 json>] [--repeat 3] [--baseline <基线目录>] [--tree <命令树原件>] [--submission <原件路径，{n}为轮次>] [--catalog-table <目录表>] [--catalog-manifest <pack.json>] [--argument-types <声明数组 JSON>] --out <目录>');
     return 2;
   }
   if (!outAllowed(out)) {
@@ -400,6 +402,7 @@ function main(): number {
         ...(arg('baseline') === undefined ? {} : { baseline: arg('baseline') }),
         ...(arg('tree') === undefined ? {} : { tree: arg('tree') }),
         ...(arg('submission') === undefined ? {} : { submission: arg('submission') }),
+        ...(arg('argument-types') === undefined ? {} : { argumentTypes: arg('argument-types') }),
         ...(arg('catalog-table') === undefined ? {} : { catalogTable: arg('catalog-table') }),
         out,
       },

@@ -134,32 +134,32 @@ const receiptRun = () => {
 
 test('canonical submission identity accepts whitespace and key-order changes', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const value = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table });
+  const value = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table });
   assert.equal(value.summary.supported, 1); assert.equal(value.requests.length, 0);
-  const changed = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: Buffer.concat([bytes, Buffer.from('\n')]), table });
+  const changed = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: Buffer.concat([bytes, Buffer.from('\n')]), table });
   assert.equal(changed.requests.length, 0);
   assert.equal(changed.supported.length, 1);
 });
 test('missing original bytes or the latest accepted digest creates an actionable positioned design gap', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const missing = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), table });
+  const missing = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), table });
   assert.ok(missing.requests.some(r => r.next_action.includes('get_nodes') && r.next_action.includes('--submission')));
   const value = receiptRun(); delete value.latest.result.submission;
-  const gap = catalogMarks({ treeXml: tree, sourceBytes, run: value, submissionBytes: bytes, table });
+  const gap = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: bytes, table });
   assert.ok(gap.requests.some(r => r.pointer === '/latest/result/submission'));
 });
 test('scope drift refuses adjudication and states that only resolved is implemented', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const changed = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table: { ...table, scope: 'all' } });
+  const changed = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table: { ...table, scope: 'all' } });
   assert.equal(changed.expected.length, 0);
   assert.ok(changed.requests.some(r => r.pointer === '/scope' && r.fact.includes('resolved')));
 });
 test('source identity, malformed submissions and missing case evidence are never accepted as zero errors', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const badSource = catalogMarks({ treeXml: tree, sourceBytes: Buffer.from(JSON.stringify({ ...source, unused: true })), run: receiptRun(), submissionBytes: bytes, table });
+  const badSource = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes: Buffer.from(JSON.stringify({ ...source, unused: true })), run: receiptRun(), submissionBytes: bytes, table });
   assert.ok(badSource.requests.some(r => r.input === 'source'));
   const value = receiptRun(); value.latest.result.submission = createHash('sha256').update('{broken').digest('hex');
-  assert.ok(catalogMarks({ treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
+  assert.ok(catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
 });
 
 import { mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -167,11 +167,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const privateInputs = (t: { after(fn: () => void): void }) => {
   const directory = mkdtempSync(join(tmpdir(), 'gold-catalog-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
+  const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), types: join(directory, 'types.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
+  writeFileSync(files.types, '[]');
   writeFileSync(files.tree, tree); writeFileSync(files.source, sourceBytes); writeFileSync(files.run, JSON.stringify(receiptRun())); writeFileSync(files.submission, bytes); writeFileSync(files.table, JSON.stringify(table));
   return files;
 };
-const cliArgs = (files: ReturnType<typeof privateInputs>) => ['--tree', files.tree, '--source', files.source, '--run', files.run, '--submission', files.submission, '--table', files.table, '--out', files.out];
+const cliArgs = (files: ReturnType<typeof privateInputs>) => ['--argument-types', files.types, '--tree', files.tree, '--source', files.source, '--run', files.run, '--submission', files.submission, '--table', files.table, '--out', files.out];
 
 test('CLI writes detailed evidence only to private immutable files and screens counts and digests', async t => {
   const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
@@ -219,4 +220,20 @@ test('real-shaped Latin-1 trees tolerate stray help quotes and count unnamed ite
   assert.equal(catalog.commands.length, 1);
   assert.equal(judgeCommand(catalog, 'widget port 2').code, null);
   assert.equal(judgeCommand(catalog, 'widget port 2').requests.length, 0);
+});
+
+test('help_string names host forms and explicit locked-root type declarations take precedence', () => {
+  const xml = '<commands><item name="connect"><arguments><arg name="target" type="DOTTEDIP" help_string="address or host name"/></arguments></item></commands>';
+  assert.equal(judgeCommand(readCatalog(xml), 'connect host.example').requests.length, 0);
+  assert.equal(judgeCommand(readCatalog(xml), 'connect host.example').code, null);
+  const overridden = readCatalog(xml, [{command:'connect',position:1,type:'U16',origin:'synthetic declaration'}]);
+  assert.equal(judgeCommand(overridden, 'connect host.example').code, 'core.catalog.param_type_mismatch');
+});
+
+test('malformed declaration arrays have a fixed input reason at their own boundary', async () => {
+ const {readArgumentTypes,CatalogInputError}=await import('./catalog-marks.ts');
+ for(const value of ['{broken','{}','[null]','[{"command":"sample","position":0,"type":"U16","origin":"synthetic"}]']) {
+  assert.throws(()=>readArgumentTypes(Buffer.from(value)),e=>e instanceof CatalogInputError && e.reason==='argument_types');
+ }
+ assert.deepEqual(readArgumentTypes(Buffer.from('[]')),[]);
 });
