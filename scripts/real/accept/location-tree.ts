@@ -273,7 +273,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
   for (const expected of gold) {
     const rows = byDocument.get(expected.document) ?? [];
     const actual = rows.length === 1 ? rows[0] : null;
-    const category = rows.length === 0 ? (refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['version', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
+    const category = rows.length === 0 ? (refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['line', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
     if (category) {
       summary.missing[category]++;
       details.missing.push({ document: expected.document, reason: category === 'start_refused' ? refused.get(expected.document)! : category === 'no_item' ? '结果里没有条目' : '定位数据缺少或有多份冲突', next_action: category === 'start_refused' ? '按错误码检查该文档可读性后单独重跑' : '重读该结果的完整 JSON；仍缺则单独重跑该文档' });
@@ -281,7 +281,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
     }
     let unequal = false;
     for (const field of ['line', 'train', 'module'] as const) {
-      const a = actual!.location![field === 'line' ? 'version' : field] as string | null, g = expected[field];
+      const a = actual!.location![field] as string | null, g = expected[field];
       const equal = a === null || g === null ? a === g : field === 'line' ? lineKey(a) === lineKey(g) : norm(a) === norm(g);
       if (!equal) {
         unequal = true; summary.fields[field]++;

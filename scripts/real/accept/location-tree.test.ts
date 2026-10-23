@@ -8,7 +8,7 @@ import { locationsGold } from '../gold/locations.ts';
 import type { ToolText } from '../hub-call.ts';
 
 const tree = (count = 1): unknown => ({ root: { id: 'synthetic-root', label: '合成产品' }, children: [{ id: 'line', label: '181：10.8.1', children: [{ id: 'train', label: '182：10.8.1-R9', children: [{ id: 'module', label: '183：合成模块甲', children: Array.from({ length: count }, (_, i) => ({ id: String(940801 + i), label: '合成文档', children: [] })) }] }] }] });
-const data = (fields = {}): Record<string, unknown> => ({ case_id: '940801', version: '10.8.1', train: '10.8.1-R9', module: '合成模块甲', requirements: ['840001'], defects: ['850001'], unclassified: ['860001'], ...fields });
+const data = (fields = {}): Record<string, unknown> => ({ case_id: '940801', version: '10.8.1', line: '10.8.1', train: '10.8.1-R9', module: '合成模块甲', requirements: ['840001'], defects: ['850001'], unclassified: ['860001'], ...fields });
 const result = (documents = ['940801'], fields = {}): { partitions: { delivered: { item: string; requirements: { requirement: string; claims: { statement: { data: Record<string, unknown> } }[] }[] }[] } } => ({ partitions: { delivered: documents.map(document => ({ item: document, requirements: [{ requirement: 'location', claims: [{ statement: { data: data({ ...fields, case_id: document }) } }] }, { requirement: 'build_candidates', claims: [{ statement: { data: { candidates: [] } } }] }] })) } });
 const captures = (raw: unknown): Capture[] => [{ request: { tool: 'get_nodes', args: { reference: `rec:${'a'.repeat(64)}` } }, response: { isError: false, text: '', structured: { call_result: 'ok', content: { text: JSON.stringify(raw) } } } }];
 const emptyBuilds = [{ line: '10.8.1', candidates: [] }];
@@ -20,14 +20,14 @@ test('compares location statements in any partition and reports absent build inp
   assert.equal(missing.summary.candidates.not_run, 1);
   assert.ok(missing.details.not_run.every(row => row.next_action && row.fact));
 });
-for (const field of ['version', 'train', 'module']) test(`detects ${field} mismatch`, () => {
+for (const field of ['line', 'train', 'module']) test(`detects ${field} mismatch`, () => {
   const report = compareLocationTree(tree(), captures(result(['940801'], { [field]: '不同的合成值' })), emptyBuilds);
   assert.equal(report.summary.not_equal, 1);
-  assert.equal(report.summary.fields[field === 'version' ? 'line' : field as 'train' | 'module'], 1);
+  assert.equal(report.summary.fields[field as 'line' | 'train' | 'module'], 1);
 });
 test('10.6 and 10.6.0 are equal; normalization preserves null versus asserted values', () => {
   const input = JSON.parse(JSON.stringify(tree()).replaceAll('10.8.1', '10.6'));
-  const report = compareLocationTree(input, captures(result(['940801'], { version: '10.6.0', train: '10.6-R9', module: '　合成模块甲　' })), [{ line: '10.6', candidates: [] }]);
+  const report = compareLocationTree(input, captures(result(['940801'], { version: '10.6.0', line: '10.6.0', train: '10.6-R9', module: '　合成模块甲　' })), [{ line: '10.6', candidates: [] }]);
   assert.equal(report.summary.equal, 1);
   assert.equal(compareLocationTree(tree(), captures(result(['940801'], { module: null })), emptyBuilds).summary.not_equal, 1);
 });
@@ -145,11 +145,11 @@ test('production input accepts database record arrays and documents the required
 test('classifies only reproducible prefix and version-node differences', () => {
   const prefix = compareLocationTree(tree(), captures(result(['940801'], { module: '183：合成模块甲' })), emptyBuilds);
   assert.equal(prefix.summary.reasons.prefix_codes, 1);
-  const fabricated = compareLocationTree(tree(), captures(result(['940801'], { version: '10.9.1', version_source: 'tree', ancestor_path: ['181：10.8.1', '184：10.9.1'] })), emptyBuilds);
+  const fabricated = compareLocationTree(tree(), captures(result(['940801'], { version: '10.9.1', line: '10.9.1', version_source: 'tree', ancestor_path: ['181：10.8.1', '184：10.9.1'] })), emptyBuilds);
   assert.equal(fabricated.summary.reasons.version_nodes, 0, 'the checked output cannot invent an ancestor');
   const nested = { root: { id: 'root', label: '合成产品' }, children: [{ id: 'first', label: '181：10.8.1', children: [{ id: 'last', label: '184：10.9.1', children: [{ id: '940801', label: '合成文档', children: [] }] }] }] };
   const expected = locationsGold(nested).all![0];
-  const selected = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', train: expected.train, module: expected.module, version_source: 'tree' })), [{ line: expected.line!, candidates: [] }]);
+  const selected = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', line: '10.8.1', train: expected.train, module: expected.module, version_source: 'tree' })), [{ line: expected.line!, candidates: [] }]);
   assert.equal(selected.summary.reasons.version_nodes, 1);
 });
 test('production records of another facet root do not explain this root', () => {
@@ -188,4 +188,10 @@ test('location review 4: empty or wrong-shaped trees never start calls or pass v
     assert.equal(await main(['--tree', file, '--out', join(root, `out${i}`), '--collect', '--token-file', join(root, 'token')], { call: async () => { calls++; return []; }, print: s => screen.push(s) }), 2);
     assert.equal(calls, 0); assert.ok(screen.some(s => s.includes('--tree') && s.includes('重新导出')));
   }
+});
+
+test('location review 5: a title version is not a folder version line', () => {
+  const rawTree = { root: { id: 'root', label: '合成产品' }, children: [{ id: '940801', label: '合成 10.8.2.31 升级', children: [] }] };
+  const raw = result(['940801'], { version: '10.8.2.31', line: null, train: null, module: null, version_source: 'title' });
+  assert.equal(compareLocationTree(rawTree, captures(raw)).summary.not_equal, 0);
 });
