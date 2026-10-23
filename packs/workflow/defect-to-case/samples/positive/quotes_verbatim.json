@@ -7,13 +7,15 @@
     "item": "74001",
     "quotes": [
       {
-        "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
-        "text": "健康检查间隔设置成功"
+        "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+        "text": "健康检查间隔设置成功",
+        "case": 0,
+        "expected": 0
       }
     ]
   },
   "sources": {
-    "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix": "健康检查间隔设置成功，默认值为 5 秒。"
+    "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix": "修复说明：修复参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval <1-300>。期望结果：健康检查间隔设置成功，系统运行正常。"
   },
   "expect": [
     {

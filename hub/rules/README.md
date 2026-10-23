@@ -98,10 +98,11 @@ import only `hub/rules/api.ts`.
 - `coverage@1`: required members by value, by reference, by pack set name or selected from the subject; a declared skip
   counts only with a non-empty reason.
 - `membership@1` and `coverage@1` sets by reference: the bound fragment's text must be a JSON array of scalars.
-- `quote@1` uses `quoteMatches(fragmentText, quote)` from `text.ts`: every run of Unicode White_Space collapses to one space and
-  both ends are trimmed; case, punctuation, width and normalization form stay significant; an empty quote never matches. This
-  is the rule `hub/refs/quote.ts` chose; `quote-vectors.json` (27 vectors) pins it. Both implementations were checked against
-  the vectors by a scratch script outside the repository (0 disagreements); the packages do not import each other.
+- `quote@1` independently implements the decision-37 rule in `text.ts` with rules-local W/F data. A whitespace run adjacent to an
+  East_Asian_Width W/F code point disappears; other interior runs collapse to one space and both ends are trimmed.
+  Case, punctuation, character width and normalization form remain significant; empty quotations never match. The
+  29 shared vectors cross-check rules and refs independently and test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
+  representations retain their original whitespace normalization; this change affects quotation checking only.
 
 ### Catalog view (C07)
 
@@ -302,6 +303,37 @@ A pack-owned generation/read-back failure may return `unknown` with reason `outp
 check outcome, not `check_error`: the requirement's static layer is incomplete and the item enters the incomplete
 partition. Other model/submission-only reasons remain invalid as check outcomes.
 
+## Bounded transient function retries
+
+callPackFunction retries startup SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed; engine callers alone
+opt in to one wall-clock SANDBOX_TIMEOUT retry. CPU-limit timeouts are never retried.
+There are at most three attempts, with 50 and 100 ms backoff. Every attempt keeps the caller's resolved timeout and
+resource caps; no global limit is raised. Function defects, output limits, violations and missing OS isolation do not
+retry. The parent-only onAttempt observer receives fixed codes, durations and backoff, never arguments or output.
+A throwing observer cannot change execution. Retrying is centralized here: checks and subject builders do not multiply it.
+stopAll invalidates outstanding calls by generation, so backoff cannot resurrect a cancelled child; independent later
+calls can still start. Exhausted errors retain their existing conversion by runCheck; exit fields await hub-unknown-model.
+
+
+Evaluation-scoped callPackFunctionBatch lifts a declared pure function over independent JSON inputs in one fresh isolated
+child. The module is imported once, captures are kept per item, outputs/errors are ordered, and boundary violations remain
+fatal to the physical batch even when caught. Per-item and aggregate JSON budgets are enforced without raising limits.
+The engine falls back to original individual calls for aggregate failure and never falls back after stopping. The trusted
+functionRunner binding only replaces parent execution; every runCheck output still receives the same schema/namespace/tier
+validation. Neither callback nor batch mode is supplied by pack JSON or an MCP client. No module process survives an eval.
+
+Timeout retry scope: only engine checks and subject builders opt in, only wall-clock timeouts and at most once.
+CPU-limit failures and other callers (knowledge, connectors and projections) keep a single timeout attempt; their own
+split/timeout policies apply. Startup failures keep the bounded backoff. Declared maximum-limit escalation awaits the model.
+
+SourceView.unread optionally preserves a typed fragment read failure alongside the legacy why grade. Retain-only quotes
+wait for administrator acceptance (awaiting_step), storing generated credential_unreadable as the source-specific reason
+inside unread_sources, with missing_fact/next_action. The public CheckOutcome.reason stays within its generated axis.
+
+Synchronous spawn throws and asynchronous startup error events preserve errno and the original message in private
+SandboxError.detail. The public SandboxError.message remains fixed, onAttempt keeps only bounded control metadata,
+and check outcomes retain only the existing public-detail allowlist; free-text startup causes reach administrator logs only.
+
 ### Fragment read vocabulary
 
 `SourceView.why`, the engine's fragment cache and its warmed grades use the generated `FragmentRead` type from the
@@ -312,3 +344,9 @@ The boundary applies B01 R[4] to quotation references and grounds, including cro
 
 片段读取 integrity_unproven 沿用原因轴同码标签“完整性未证明”（决定 36 的模型负责人补充）。
 这类未知须由管理员从可信备份恢复记录或原始字节后重新核验；unavailable 只表示暂时读取故障。
+
+Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.
+
+Stale contract wording: QuoteTable in contracts/src/tables.ts and generated quote.v1.schema.json still describe every
+whitespace run as one space. The independent decision-37 implementations are authoritative for this owner-approved
+change; the integrator/rules contract owner must update the description and regenerate the schemas.

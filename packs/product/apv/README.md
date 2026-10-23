@@ -177,10 +177,15 @@ Text functions
 - `locateFromAncestors`: prefix codes are three letters or digits with a digit, optionally grouped, before an ASCII or
   full-width colon (NFKC). The first `<version>-<suffix>` label is the train, the nearest line label above it the line
   (else the line comes from the train); the label right under the train is the module when it is a plain name (no ids, no
-  version, not a test activity).
+  version, not a test activity). Input labels are truncated at 1000 characters before normalization; a module name
+  is at most 40 characters, and a name containing four or more consecutive digits is not a module name.
 - `idsFromTitle`: bug, story (`需求`, `Story#`) and PLM markers, misspellings seen in real titles included; lists after a
   marker; ids the title does not classify (a leading number, after 回归 or Test-) go to `unclassified`. Versions, dates,
-  years, numbers glued to short words and alarm-like numbers in running text are never ids.
+  years, numbers glued to short words and alarm-like numbers in running text are never ids. Preserve the original
+  spelling of every identifier; for identity comparisons, remove leading zeros only from nonzero identifiers. A digit
+  run consisting entirely of zeros is not an identifier. Length bounds are checked before removing leading zeros:
+  2–9 digits after a marker, 4–7 digits for an unclassified leading identifier. These rules follow the current mainline
+  `packs/product/apv/functions/ids.ts` implementation (the module-name limits are enforced by `functions/locate.ts`).
 
 ## The case index (brief section 6a, capabilities 4 and 6)
 

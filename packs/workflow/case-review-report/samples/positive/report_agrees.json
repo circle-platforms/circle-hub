@@ -2,7 +2,7 @@
   "id": "report_agrees",
   "source": "author",
   "check": "report",
-  "note": "合成样例",
+  "note": "终稿只声明整体结论和等级；不再逐条引用发现，建议由复核包检查并在表中显示",
   "subject": {
     "applies": "run",
     "items": [
@@ -54,11 +54,7 @@
       {
         "nature": "judgment",
         "statement": "终稿（中文全文略）：两块合成，发现逐条核对，B 块一条部分正确、一条新增",
-        "grounds": [
-          "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
-          "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0",
-          "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/1"
-        ],
+        "grounds": [],
         "code": "PARTIAL",
         "rank": "P5"
       },

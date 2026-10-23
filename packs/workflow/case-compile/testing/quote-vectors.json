@@ -1,0 +1,181 @@
+{
+  "description": "Shared test vectors for verbatim quotation matching (T04 R[1]). hub/rules (quote@1, quoteMatches in text.ts) and hub/refs (quoteMatches in quote.ts) must both pass every vector; each package reads this file in its tests and cross-check their independent implementations.",
+  "rule": "Interior whitespace adjacent to any Unicode East_Asian_Width W/F code point is removed; every other run of Unicode White_Space (U+0009-U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) collapses to one space and both ends are trimmed, in the fragment and in the quote; then the quote must be a non-empty substring of the fragment. Case, punctuation, character width and Unicode normalization form stay significant.",
+  "signature": "quoteMatches(fragmentText, quote) -> boolean",
+  "vectors": [
+    {
+      "note": "Latin word boundaries retain collapsed whitespace",
+      "fragment": "set 10 0",
+      "quote": "set 100",
+      "match": false
+    },
+    {
+      "note": "an extra space between Latin symbols still differs",
+      "fragment": "a+b",
+      "quote": "a +b",
+      "match": false
+    },
+    {
+      "note": "plain substring",
+      "fragment": "点击登录按钮后，页面跳转到首页。",
+      "quote": "页面跳转到首页",
+      "match": true
+    },
+    {
+      "note": "quote equals the fragment",
+      "fragment": "会话超时",
+      "quote": "会话超时",
+      "match": true
+    },
+    {
+      "note": "runs of spaces and a line break against single spaces",
+      "fragment": "show  version\nall",
+      "quote": "show version all",
+      "match": true
+    },
+    {
+      "note": "leading and trailing white space in the quote",
+      "fragment": "show version",
+      "quote": "  show version \n",
+      "match": true
+    },
+    {
+      "note": "leading and trailing white space in the fragment",
+      "fragment": "  abc  ",
+      "quote": "abc",
+      "match": true
+    },
+    {
+      "note": "tab and CRLF",
+      "fragment": "a\tb\r\nc",
+      "quote": "a b c",
+      "match": true
+    },
+    {
+      "note": "vertical tab is white space",
+      "fragment": "a\u000bb",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "a line break inside Chinese text matches one space",
+      "fragment": "页面跳转到\n首页",
+      "quote": "页面跳转到 首页",
+      "match": true
+    },
+    {
+      "note": "Chinese line breaks are removed beside wide characters",
+      "fragment": "页面跳转到\n首页",
+      "quote": "页面跳转到首页",
+      "match": true
+    },
+    {
+      "note": "an extra space beside a wide character is removed",
+      "fragment": "页面跳转到首页",
+      "quote": "页面跳转到 首页",
+      "match": true
+    },
+    {
+      "note": "case stays significant",
+      "fragment": "Show Version",
+      "quote": "show version",
+      "match": false
+    },
+    {
+      "note": "full-width and half-width punctuation differ",
+      "fragment": "超时（30 分钟）",
+      "quote": "超时(30 分钟)",
+      "match": false
+    },
+    {
+      "note": "normalization form stays significant (composed against decomposed)",
+      "fragment": "café",
+      "quote": "cafe\u0301",
+      "match": false
+    },
+    {
+      "note": "an empty quote never matches",
+      "fragment": "abc",
+      "quote": "",
+      "match": false
+    },
+    {
+      "note": "a quote of white space only never matches",
+      "fragment": "abc",
+      "quote": " \n\t",
+      "match": false
+    },
+    {
+      "note": "empty fragment",
+      "fragment": "",
+      "quote": "abc",
+      "match": false
+    },
+    {
+      "note": "quote longer than the fragment",
+      "fragment": "abc",
+      "quote": "abcd",
+      "match": false
+    },
+    {
+      "note": "ideographic space U+3000 is white space",
+      "fragment": "a\u3000b",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "no-break space U+00A0 is white space",
+      "fragment": "a\u00a0b",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "next line U+0085 is white space",
+      "fragment": "a\u0085b",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "line separator U+2028 is white space",
+      "fragment": "a\u2028b",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "narrow no-break space U+202F is white space",
+      "fragment": "a\u202fb",
+      "quote": "a b",
+      "match": true
+    },
+    {
+      "note": "byte order mark U+FEFF is not white space",
+      "fragment": "a\ufeffb",
+      "quote": "a b",
+      "match": false
+    },
+    {
+      "note": "zero width space U+200B is not white space",
+      "fragment": "a\u200bb",
+      "quote": "a b",
+      "match": false
+    },
+    {
+      "note": "Mongolian vowel separator U+180E is not white space",
+      "fragment": "a\u180eb",
+      "quote": "a b",
+      "match": false
+    },
+    {
+      "note": "information separator U+001C is not white space",
+      "fragment": "a\u001cb",
+      "quote": "a b",
+      "match": false
+    },
+    {
+      "note": "characters outside the Basic Multilingual Plane",
+      "fragment": "前缀 😀 后缀",
+      "quote": "😀 后缀",
+      "match": true
+    }
+  ]
+}

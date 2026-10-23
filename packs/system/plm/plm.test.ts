@@ -159,6 +159,17 @@ describe('reads through the connectors', () => {
     assert.deepEqual(content.unread, ['99999']);
   });
 
+  test('batch stories through connectors preserves raw fields and missing ids', async () => {
+    const content = (await artifact(await read('plm:stories:31057+99999'), 'content')) as {
+      stories: Array<{ id: string; status: string | null; stage: string | null }>; unread: string[];
+    };
+    assert.equal(content.stories.length, 1);
+    assert.equal(content.stories[0].id, '31057');
+    assert.equal(content.stories[0].status, null);
+    assert.equal(content.stories[0].stage, 'developed');
+    assert.deepEqual(content.unread, ['99999']);
+  });
+
   test('nothing ever reached the write route', () => {
     assert.equal(writes, 0);
     assert.ok(plm.requests.every((r) => r.path !== WRITE_PATH));

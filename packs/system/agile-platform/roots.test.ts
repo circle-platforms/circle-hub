@@ -166,7 +166,7 @@ describe('the content of agile:tree:roots', () => {
     const again = rootsProject({ external: { key: ROOTS_KEY }, settings: { roots: corpus.roots }, responses: runPlan(corpus, { roots: corpus.roots }).responses, original: 'page-1' }) as { revision: string };
     assert.equal(again.revision, output.revision);
     const moved = structuredClone(corpus);
-    moved.trees['7812'][0].children[0].label = '059：10.4.1（改名）';
+    moved.trees['7812'][0].children[0].label = '059：10.7.1（改名）';
     const changed = rootsProject({ external: { key: ROOTS_KEY }, settings: { roots: corpus.roots }, responses: runPlan(moved, { roots: corpus.roots }).responses, original: 'page-1' }) as { revision: string };
     assert.notEqual(changed.revision, output.revision);
   });

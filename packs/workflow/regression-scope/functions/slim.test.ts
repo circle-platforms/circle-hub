@@ -1,3 +1,4 @@
+import { facetInput } from './test-support.ts';
 // The slim impact view (attached_fields): the scope reads only document, node, title, priority, negative of a case, so the
 // slimmed view gives the same scope as the full one. And the guard: a scope that would not fit the sandbox's output budget
 // is a clean refusal (regression-scope.too_large), never a sandbox memory failure.
@@ -6,7 +7,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { callPackFunction } from '../../../../hub/rules/api.ts';
 import { osIsolationAvailable } from '../../../../hub/rules/api.ts';
-import { LIMITS, projectItems } from './project.ts';
+import { LIMITS, projectItems } from './test-support.ts';
 import { buildImpact, reversedView, reviewChanges, reviewOptions, type ChangeSpec } from './test-support.ts';
 
 const packDir = fileURLToPath(new URL('../', import.meta.url));
@@ -63,14 +64,14 @@ describe('the slim impact view (attached_fields)', () => {
   it('a scope beyond the output budget is a clean refusal, never a sandbox failure', () => {
     const view = buildImpact(bigChanges(40, 200));
     // Over the item cap.
-    const byCount = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }], parameters: {}, context: {} }, { maxItems: 100, outputBytes: 64 * 1024 * 1024 }) as { error?: { code: string; fix: string } };
+    const byCount = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }, facetInput(view)], parameters: {}, context: {} }, { maxItems: 100, outputBytes: 64 * 1024 * 1024 }) as { error?: { code: string; fix: string } };
     assert.equal(byCount.error?.code, 'regression-scope.too_large');
     // Under the item cap but over the output budget.
-    const byBytes = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }], parameters: {}, context: {} }, { maxItems: 9000, outputBytes: 1024 * 1024 }) as { error?: { code: string } };
+    const byBytes = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }, facetInput(view)], parameters: {}, context: {} }, { maxItems: 9000, outputBytes: 1024 * 1024 }) as { error?: { code: string } };
     assert.equal(byBytes.error?.code, 'regression-scope.too_large');
     assert.match(byCount.error?.fix ?? '', /priorities/);
     // Under the limits it goes through.
-    const ok = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }], parameters: {}, context: {} }, { maxItems: 9000, outputBytes: 16 * 1024 * 1024 }) as { items?: unknown[] };
+    const ok = projectItems({ inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }, facetInput(view)], parameters: {}, context: {} }, { maxItems: 9000, outputBytes: 16 * 1024 * 1024 }) as { items?: unknown[] };
     assert.equal(Array.isArray(ok.items) ? ok.items.length : -1, 8000);
   });
 
@@ -78,7 +79,7 @@ describe('the slim impact view (attached_fields)', () => {
     const view = slimmed(buildImpact(bigChanges(100, 40)));
     const out = await callPackFunction(
       { packDir, module: 'functions/project.ts' },
-      { inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }], parameters: {}, context: {} },
+      { inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }, facetInput(view)], parameters: {}, context: {} },
       { timeoutMs: 120_000 },
     );
     assert.equal((out.output as { items?: unknown[] }).items?.length ?? -1, 4_000, JSON.stringify(out.output).slice(0, 300));
@@ -89,7 +90,7 @@ describe('the slim impact view (attached_fields)', () => {
     const view = slimmed(buildImpact(bigChanges(200, 165)));
     const out = await callPackFunction(
       { packDir, module: 'functions/project.ts' },
-      { inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }], parameters: {}, context: {} },
+      { inputs: [{ slot: 'impact', sha256: 'ab'.repeat(32), parser: 'json@1', model: view, meta: null }, facetInput(view)], parameters: {}, context: {} },
       { timeoutMs: 120_000, inputBytes: 48 * 1024 * 1024 },
     );
     assert.equal((out.output as { error?: { code: string } }).error?.code, 'regression-scope.too_large');

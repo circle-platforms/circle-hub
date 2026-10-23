@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { BoundInput, RunContext } from '../../../../contracts/src/pack.ts';
-import { SYNTHETIC_BUG_74001, SYNTHETIC_BUG_71010_UNCHECKABLE, SYNTHETIC_INDEX_VIEW } from '../testing/fixtures.ts';
+import { SYNTHETIC_BOUND_MANUAL, SYNTHETIC_BUG_74001, SYNTHETIC_BUG_71010_UNCHECKABLE, SYNTHETIC_INDEX_VIEW } from '../testing/fixtures.ts';
 import { projectDefects } from './projection.ts';
 
 const DUMMY_CONTEXT: RunContext = {
@@ -42,7 +42,7 @@ describe('projection', () => {
   it('projects one item per defect with id, label, summary, location, and fields', () => {
     const bound = [makeBoundDefect(SYNTHETIC_BUG_74001), makeBoundIndex()];
     const result = projectDefects({
-      inputs: bound,
+      inputs: [...bound, SYNTHETIC_BOUND_MANUAL],
       parameters: {},
       context: DUMMY_CONTEXT,
     });
@@ -66,7 +66,7 @@ describe('projection', () => {
       makeBoundIndex(),
     ];
     const result = projectDefects({
-      inputs: bound,
+      inputs: [...bound, SYNTHETIC_BOUND_MANUAL],
       parameters: {},
       context: DUMMY_CONTEXT,
     });
@@ -80,7 +80,7 @@ describe('projection', () => {
   it('refuses when defects input slot is missing or empty', () => {
     const bound = [makeBoundIndex()];
     const result = projectDefects({
-      inputs: bound,
+      inputs: [...bound, SYNTHETIC_BOUND_MANUAL],
       parameters: {},
       context: DUMMY_CONTEXT,
     });
@@ -95,7 +95,7 @@ describe('projection', () => {
       makeBoundIndex(),
     ];
     const result = projectDefects({
-      inputs: bound,
+      inputs: [...bound, SYNTHETIC_BOUND_MANUAL],
       parameters: {},
       context: DUMMY_CONTEXT,
     });

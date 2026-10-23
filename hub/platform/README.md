@@ -31,7 +31,7 @@ name). Every directory is 0700.
 
 ## Commands
 
-`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init|status`,
+`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
 1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
@@ -239,6 +239,14 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    unchanged, and check that the role owns nothing and is still refused
    (42501) DELETE, TRUNCATE, DROP, ALTER and DISABLE TRIGGER on both tables and CREATE TABLE; the root is removed unless
    `--keep` (its read-only directories are made writable first, `removeTree` in `files.ts`).
+   **Key loss**: when `security` is available, creates a temporary keychain file under the throwaway root,
+   with a one-off service and two random 32-byte items (vault key and operator token). Every security invocation explicitly
+   targets that file, including cleanup. Scans every backup file for either value as raw bytes and lowercase/uppercase
+   hex; any occurrence rejects the rehearsal without displaying the value. Deletes both items before restore, checks
+   that neither is restored, moves the restored vault to `set-aside/<time>-key-loss/vault` and creates a fresh master key.
+   The report lists item count, backup hits, remaining items and moved vault file count. If security is absent, key loss
+   is explicitly skipped, not passed; the other comparisons still run. The temporary keychain is deleted even with
+   `--keep` and on failure. This does not exercise a real deployment or the login keychain.
 11. **One lock** (`run/platform.lock`) serialises deploy, rollback, backup and restore. It holds `<pid> <token>`, is
    created complete (written beside it, then hard-linked), and a lock of a dead process is taken over only by the one
    taker that holds `platform.lock.break`, and only while it still holds exactly the dead content. A lock that cannot be
@@ -427,3 +435,13 @@ the account the vault master key may not use).
 - **integrator**: add `"verify:postgres": "node scripts/verify-postgres.ts"` to `package.json` (CI's acceptance job calls
   it).
 - **acceptance**: check that every key of `serviceEnvironment(...)` is accepted by hub/config's `loadConfig`.
+
+### Recovering after irreversible key loss
+
+Stop the service. Prefer restoring the original keychain items: a new key cannot decrypt the existing vault.
+If the original master key cannot be recovered, run `circle-hub key init --set-aside-vault` after stopping the service. It takes the platform lock, refuses a loaded service, an occupied configured port or an existing key, moves only `vault/` to a unique `set-aside/<timestamp>-key-loss/vault`, recreates an empty 0700 vault and initializes the key. The database and objects stay in place and old sealed files remain in the archive. Then run
+`circle-hub operator-token reissue` (only when the operator token item is also missing), then
+`circle-hub secret import --env-file <file> --key <KEY>=<resource>/<credential>…` to reimport the named credentials,
+and start the service. Without `--set-aside-vault`, `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
+in the database and `resource list` still works without the vault key. The platform rehearsal covers keys and backup;
+the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.

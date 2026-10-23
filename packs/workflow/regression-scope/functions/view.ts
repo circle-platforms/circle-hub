@@ -38,7 +38,9 @@ export interface NormPlacement {
 export interface NormView {
   product: string;
   fromBuild: string;
+  fromRoot: string;
   toBuild: string;
+  toRoot: string;
   changedKinds: string[];
   attachedKinds: string[];
   /** The catalog the view was filtered to (members compared by syntax); null: no catalog filter. */
@@ -146,7 +148,9 @@ export function parseView(value: unknown): ParseResult {
     view: {
       product: value.product,
       fromBuild: value.from.build,
+      fromRoot: value.from.root,
       toBuild: value.to.build,
+      toRoot: value.to.root,
       changedKinds,
       attachedKinds,
       catalog: typeof value.catalog === 'string' ? value.catalog : null,

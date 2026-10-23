@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checkOutcomes } from './check.ts';
 import { definitionDiff } from './diff.ts';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 import { sweepOf } from './sweep.ts';
 import { buildImpact, SOURCE } from './test-support.ts';
 import { parseView } from './view.ts';

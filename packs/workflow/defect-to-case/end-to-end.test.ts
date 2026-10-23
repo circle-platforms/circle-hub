@@ -35,6 +35,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         product: 'apv',
         build: 'Rel_APV_10_6_1_57',
         inputs: {
+          manual: { external: 'manual:cli:10.6.1' },
           defects: [
             { external: 'plm:bug:74001' },
             { external: 'plm:bug:71010' },
@@ -55,7 +56,7 @@ describe('defect-to-case end to end run', { skip }, () => {
     // Locate the fix reference for 74001 from the bound defect source
     const defectSource = started.run.sources.find((s) => (s.external ?? '').includes('74001'));
     assert.ok(defectSource, 'defect source should be bound');
-    const fixRef = `${defectSource.reference}/json@1/p/html_fields/fix`;
+    const fixRef = `${defectSource.reference}/json@1/p/fields/fix`;
 
     // 2. Round 1 submission: with a quotation mismatch error for 74001
     const sub1 = await hub.service.submitResult(
@@ -167,6 +168,51 @@ describe('defect-to-case end to end run', { skip }, () => {
     assert.equal(skippedItem.reason, 'declared_skip');
   });
 
+  it('blocks a paraphrased expectation and consumes a repair round when it is resubmitted', async () => {
+    const started = await hub.service.startRun(hub.alice, {
+      pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
+      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+    }, call());
+    assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+    const run = started.run!;
+    const source = run.sources.find((s) => s.slot === 'defects')!;
+    const quote = { reference: `${source.reference}/json@1/p/fields/fix`, text: '健康检查间隔设置成功' };
+    const submit = (text: string) => hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: '合成回归', quotes: [quote], data: { title: '合成回归', priority: 2, negative: false, expects_refutation: false, steps: [{ command: 'widget health interval 60' }], expected: [{ text, quote }], tags: ['Functional'] } }] } }] }, call());
+    const first = await submit('健康检查间隔保存成功');
+    assert.equal(first.call_result, 'ok', JSON.stringify(first.errors));
+    const result = first.result as ValidationResult;
+    const error = result.errors.find((e) => e.code === 'defect-to-case.expect_not_in_quote');
+    assert.ok(error, JSON.stringify(result.errors));
+    assert.equal(error.rounds_left, 2);
+    assert.equal(error.path, '/items/0/slots/cases/0/data/expected/0/text');
+    assert.match(error.message, /修正/);
+    const item = Object.values(result.partitions).flat().find((i) => i.item === '74001')!;
+    assert.equal(item.requirements.find((r) => r.requirement === 'grounded')?.status, 'unsatisfied');
+    const repeated = await submit('健康检查间隔保存完毕');
+    assert.equal((repeated.result as ValidationResult).rounds.used, 1);
+    const repaired = await submit(quote.text);
+    assert.equal(repaired.acceptance, 'accepted', JSON.stringify(repaired.errors));
+    const healed = Object.values((repaired.result as ValidationResult).partitions).flat().find((i) => i.item === '74001')!;
+    assert.equal(healed.requirements.find((r) => r.requirement === 'grounded')?.status, 'satisfied');
+  });
+
+  it('rejects a valid quote from the wrong defect field and accepts the explicitly bound manual', async () => {
+    const started = await hub.service.startRun(hub.alice, {
+      pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
+      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+    }, call());
+    assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+    const run = started.run!;
+    const bug = run.sources.find((s) => s.slot === 'defects')!;
+    const manual = run.sources.find((s) => s.slot === 'manual')!;
+    const submit = (reference: string, text: string) => hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: '合成来源核对', quotes: [{ reference, text }], data: { title: '合成来源核对', priority: 2, negative: false, expects_refutation: false, steps: [{ command: 'widget health interval 60' }], expected: [{ text, quote: { reference, text } }], tags: ['Functional'] } }] } }] }, call());
+    const wrong = await submit(`${bug.reference}/json@1/p/fields/steps`, '进入合成页面');
+    assert.equal(wrong.call_result, 'ok', JSON.stringify(wrong.errors));
+    assert.ok((wrong.result as ValidationResult).errors.some((e) => e.code === 'defect-to-case.quote_source_forbidden'));
+    const good = await submit(`${manual.reference}/markdown@1/b/0`, '服务端口修改成功');
+    assert.equal(good.acceptance, 'accepted', JSON.stringify(good.errors));
+  });
+
   it('defect-to-case examples/submit-result.json is accepted by submitResult', async () => {
     const started = await hub.service.startRun(
       hub.alice,
@@ -175,6 +221,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         product: 'apv',
         build: 'Rel_APV_10_6_1_57',
         inputs: {
+          manual: { external: 'manual:cli:10.6.1' },
           defects: [{ external: 'plm:bug:74001' }],
           indexed_cases: {
             external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',

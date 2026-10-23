@@ -21,6 +21,7 @@
 - 分支和工作树：
   - 第一步（网关）：网关仓库从它的 `main` 开 `request-ids`，目录 `compile-excel-server-request-ids`，现在就能开始。集成者开好，并照网关仓库的 `docs/development.md` 备好 Python 环境和 `gateway/vendor/cex_core`（这一份不入库）。
   - 第二步（Hub）：`dispatch-gateway`，目录 `circle-hub-dispatch-gateway`，等 hub-job-dispatch 合并进 hub-redesign、第一步合进网关的 `main` 以后，集成者从 hub-redesign 开。`hub-device-run.md` 的“决定 35 的答复落到这里”一节里落到 `hub/dispatch` 的三件（第 13–15 条）也在这条分支上做，免得两条分支改同一批文件。
+    - 第 44 项注：hub-variables 第一步排在 dispatch-gateway 之后。那一件把执行器定义里能写变量的地方限定为期望值（`target`、`manifest_sha256`、只读核对条件里的 `equals`、`at_least`、`sha256`），这一步加的字段（`retry_safety`、`premises`、`actor`、`probes`、`refused_tools`、`side_effects`、`clock_skew_ms`、`reconciliation`、`conformance`、`read_retry_when`，和 `receipt`、`result` 里加的指针）都只照字面；调用执行器的钥匙改写成定义里的 `credential`（`${secret:名字}`），不再经 `executor update --secret`。dispatch-gateway 不用为它改什么。
 - 可以改的路径：
   - 第一步，只在网关仓库：`gateway/tools.py`、`gateway/state.py`、`gateway/framework.py`、`gateway/prune.py`、`gateway/agent/jumphost_agent.py`（只在结果改按落位目录取的那几行）、`gateway/service.py` 的版本号、`ces_version.py`、`tests/gateway/` 的新测试和受影响的旧测试、`docs/gateway.md` 的工具表和运维要点。不改 `gateway/vendor/**`（同步来的判据代码）、`gateway/gates.py`（上机前检查本身不动）、`requirements*.txt`、`install.sh` 和 `.github/**`。
   - 第二步：`hub/dispatch/**`；`hub/server/cli-job.ts`（加 `job conformance`，改状态和恢复的输出）。不改 `contracts/`（`executor@1` 还在 `hub/dispatch/definition.ts` 里）、`hub/records`、`hub/leases`。

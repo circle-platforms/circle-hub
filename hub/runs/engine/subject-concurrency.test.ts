@@ -19,15 +19,16 @@ let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(async () => { await postgres?.stop(); });
 
-for (const applies of ['item', 'run'] as const) test(`two concurrent one-item submissions build the shared ${applies} subject once each and retain both checks`, { skip }, async () => {
+for (const applies of ['item', 'run'] as const) for (const copyFault of [false, true]) test(`two concurrent one-item submissions build the shared ${applies} subject once each (copy fault ${copyFault})`, { skip }, async () => {
   const h = await openHarness(postgres);
   const root = await mkdtemp(join(tmpdir(), 'circle-hub-shared-subject-'));
   const originalSpawn = childProcess.spawn;
+  const originalParse = JSON.parse; let copyFailed = false;
   try {
     const spec = reviewPack(); spec.version = '1.0.1';
     spec.files['requirements.json'] = { json: { schema: 'requirements@1', requirements: [{ ...h.review.requirements[0], checks: ['first', 'second'] }, h.review.requirements[3]] } };
     spec.files['slots.schema.json'] = { json: { schema: 'slots@1', item: {}, run: h.review.slots.run } };
-    spec.files['functions/shared-subject.ts'] = `export default input => ({ items: input.items ?? [input.item] });`;
+    spec.files['functions/shared-subject.ts'] = `export default input => { let deep=7; for(let i=0;i<4000;i++) deep={next:deep}; return { items: input.items ?? [input.item], deep }; };`;
     spec.files['checks.json'] = { json: { schema: 'checks@1', checks: ['first', 'second'].map(id => ({
       id, applies, interpreter: 'structure@1', table: 'tables/structure.json', judges: 'subject', tier: 'blocking',
       subject: { module: 'functions/shared-subject.ts' },
@@ -57,17 +58,29 @@ for (const applies of ['item', 'run'] as const) test(`two concurrent one-item su
       return child;
     }) as typeof originalSpawn;
     syncBuiltinESMExports();
+    if (copyFault) JSON.parse = ((text: string, ...rest: unknown[]) => {
+      if (!copyFailed && text.startsWith('{"items":') && text.includes('"deep":')) {
+        copyFailed = true; throw new RangeError('synthetic host copy failure');
+      }
+      return Reflect.apply(originalParse, JSON, [text, ...rest]);
+    }) as typeof JSON.parse;
     const submissions = runs.map(run => ({ run: run.run, model: 'synthetic-model', items: [{ item: run.items[0].id, handling: 'handled', slots: {} }], cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }] }));
     const answers = await Promise.all(submissions.map(args => h.service.submitResult(h.alice, args, h.call())));
     for (const answer of answers) assert.equal(answer.acceptance, 'accepted');
-    assert.equal(checks, 4, 'both checks still execute independently in both submissions');
+    assert.equal(checks, copyFault ? 3 : 4, 'checks with an available subject execute independently');
+    if (copyFault) {
+      const claims = answers.flatMap(answer => Object.values(answer.result!.partitions).flat()).flatMap(item => item.requirements).flatMap(requirement => requirement.claims);
+      const failed = claims.filter(claim => claim.statement.data?.phase === 'subject_copy');
+      assert.equal(failed.length, 1); assert.ok(failed.every(claim => claim.statement.data?.sandbox === undefined));
+      assert.ok(failed.every(claim => claim.statement.text.includes('Hub 复制') && !claim.statement.text.includes('包内函数')));
+    }
     assert.equal(builds, 2, 'identical subject construction runs once per evaluation, never once per check');
     const repeats = await Promise.all([0, 0, 1, 1].map(index => h.service.submitResult(h.alice, structuredClone(submissions[index]), h.call())));
     for (const [i, answer] of repeats.entries()) {
       assert.deepEqual(answer, answers[i < 2 ? 0 : 1]);
       assert.equal(JSON.stringify(answer), JSON.stringify(answers[i < 2 ? 0 : 1]), 'the repeated receipt bytes are unchanged');
     }
-    assert.equal(builds, 2); assert.equal(checks, 4, 'idempotent resubmissions do not rerun checks');
+    assert.equal(builds, 2); assert.equal(checks, copyFault ? 3 : 4, 'idempotent resubmissions do not rerun checks');
     for (const run of runs) {
       for (const [key, kind] of [[INDEX.submissionRun, 'submission'], [INDEX.resultRun, 'validation_result']] as const) {
         assert.equal((await h.kit.store.find({ key, value: run.run, kind })).items.length, 1);
@@ -76,7 +89,7 @@ for (const applies of ['item', 'run'] as const) test(`two concurrent one-item su
       assert.equal(actions.filter(record => (record.body as ActionBody).action === 'validate').length, 1);
     }
   } finally {
-    childProcess.spawn = originalSpawn; syncBuiltinESMExports();
+    JSON.parse = originalParse; childProcess.spawn = originalSpawn; syncBuiltinESMExports();
     await h.close(); await rm(root, { recursive: true, force: true });
   }
 });

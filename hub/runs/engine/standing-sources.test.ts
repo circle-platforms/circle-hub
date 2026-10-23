@@ -62,7 +62,10 @@ test('a standing obligation loses function access when credential acceptance is 
   assert.equal(revoked.statement.reason, 'missing_input');
   assert.equal(revoked.statement.data?.count, 0);
   assert.equal((revoked.statement.data?.unread as unknown[]).length, 1);
-  assert.match((revoked.statement.data?.unread as Array<{reason:string}>)[0].reason, /含凭据，原文不可读.*管理员.*接受.*重评/);
+  const unread=(revoked.statement.data?.unread as Array<{reason:string;missing_fact:string;next_action:string}>)[0];
+  assert.equal(unread.reason,'credential_unreadable');
+  assert.match(unread.missing_fact,/管理员.*接受/);
+  assert.match(unread.next_action,/请求管理员.*接受.*重新核验/);
   await h.kit.principals.createUser(h.admin, '合成备用管理员', 'admin');
   await h.kit.principals.setRole(h.admin, h.admin.id, 'user');
   const roles: string[] = [];

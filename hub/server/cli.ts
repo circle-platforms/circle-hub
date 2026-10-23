@@ -20,6 +20,7 @@ import { jsonSafe, terminalSafe } from './assemble/terminal.ts';
 import type { OperatorAct } from './cli-admin.ts';
 import { AssemblyMissingError, CliError, UsageError, isAssemblyMissing } from './errors.ts';
 import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
+import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { countsLine } from './text.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -49,7 +50,7 @@ const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
   'operator-token': '管理操作令牌',
 };
 export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
-const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run']);
+const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools']);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();
@@ -78,6 +79,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  token revoke <令牌编号>                        撤销令牌（立即生效）',
     '  token list [<用户>]                           列出令牌（不显示令牌值）',
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
+    `  ${LOCAL_TOOLS_USAGE}`,
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
@@ -369,7 +371,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   out(io, `运行 ${run.run}：任务包 ${run.pack}，开始于 ${run.started_at}`);
   out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
   out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
-  out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
+  out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
   const latest = detail.latest;
   if (latest === null) io.stdout('还没有校验结果');
   else {
@@ -380,6 +382,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
 }
 
 const BUILT_IN_HANDLERS: Record<string, (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>> = {
+  'local-tools': (args, ctx) => localToolsCommand(args, ctx.io),
   user: userCommand,
   token: tokenCommand,
   logs: logsCommand,

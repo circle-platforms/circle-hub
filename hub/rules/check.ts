@@ -41,6 +41,8 @@ export interface UnreadSource {
   reason: string;
   external?: string;
   slot?: string;
+  missing_fact?: string;
+  next_action?: string;
 }
 
 export interface CheckBindings {
@@ -58,6 +60,8 @@ export interface CheckBindings {
   /** Sources that could not be read or exceeded max bytes. */
   unreadSources?: ReadonlyArray<UnreadSource>;
   sandbox?: SandboxOptions;
+  /** Trusted parent runner; outcomes are still validated normally. Not supplied by pack input. */
+  functionRunner?: typeof callPackFunction;
   /**
    * Receives the error behind an unknown outcome with what outcomes leave out (stack, timings, host paths, captured output),
    * for the admin log. Outcomes keep only a stable, path-free part.
@@ -203,7 +207,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     ...(declaration.catalogEntries && bindings.catalog ? { catalog: entriesOf(bindings.catalog) } : {}),
   };
   try {
-    const result = await callPackFunction({ packDir: bindings.packDir, module: fn.module, export: fn.export }, input, declaration.limits, bindings.sandbox);
+    const result = await (bindings.functionRunner ?? callPackFunction)({ packDir: bindings.packDir, module: fn.module, export: fn.export }, input, declaration.limits, bindings.sandbox);
     const parsed = Outcomes.safeParse(result.output);
     if (!parsed.success) return [unknown(base, 'check_error', `包内函数 ${name} 的输出不是 check-outcome@1 数组`, { data: { issues: parsed.error.issues.slice(0, 5).map((i) => i.message) } })];
     const problem = outcomeProblems(parsed.data, pack);

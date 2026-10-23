@@ -19,7 +19,7 @@ nav_order: 9
 
 | 步 | 谁 | 做什么 | 留下什么 |
 |---|---|---|---|
-| 0 | 集成者（管理员） | 登记网关执行器，密钥经标准输入进密钥库；把 case-compile、test-bed 分配给所有者的 Circle 用户；把包里的客户端脚本装进上机用的 Circle 主目录（集成者另备，钩子放行技能工具和这些脚本），按 `pack.json` 的摘要核对；`device-run.ts` 核对执行器定义的摘要 | 执行器定义 |
+| 0 | 集成者（管理员） | 登记网关执行器，密钥经标准输入进密钥库（hub-variables 第一步部署以后：定义里写 `credential` 引用 `GATEWAY_RUN_KEY`，钥匙经标准输入交给 `circle-hub secret set --name GATEWAY_RUN_KEY`；先登记，后交）；把 case-compile、test-bed 分配给所有者的 Circle 用户；把包里的客户端脚本装进上机用的 Circle 主目录（集成者另备，钩子放行技能工具和这些脚本），按 `pack.json` 的摘要核对；`device-run.ts` 核对执行器定义的摘要 | 执行器定义 |
 | 1 | 集成者 | `circle-hub job precheck`：取得网关租约，环境核对（构建、设备数、可达、规则），读缓存拓扑（不刷新），逐台只读探测，释放 | 原始回答存成观察，另存一份到暂存目录 |
 | 2 | 集成者 | 第 2 节的转换；`circle-hub doc put` 发布三份文档：`bed-topology`、`runner-contract`、`runtime-profile` | 三份命名文档 |
 | 3 | Circle | 每个用例开头：test-bed `acquire` 占住整个台架（清单里的每台设备），不写时长 | Hub 租约，由这个用例的谱系持有 |
@@ -53,7 +53,7 @@ nav_order: 9
   - 集成者按只读读到的运行器行为和第 1 步的回答起草，`--check` 用 case-compile 的配置解析器核，发布不再等所有者确认（第 2 问）。
 - **逐台只读探测**（第 6 问）：只在执行器定义里声明，由 `hub/dispatch` 发。每个座位两项：`version`、`interfaces`，各是一条命令原文加一条只有一个命名分组的正则；网关收的命令形状也是执行器定义里的字段。`version` 取出的值要等于锁定构建的某个名字（基础构建名或知识库记的别名），`interfaces` 取出的地址集合要等于清单里这台设备的地址集合；不符就“未发出”，写明哪台哪一项。
 - **用例**：所有者指定的脑图和 autoid。敏捷平台上有文档号就绑 `agile:mindmap:<id>`，由 Hub 自己读原件；只有本地文件时，Circle 脚本做公开的规整（去掉文件头的两个 U+FFFF，单元素数组改成 `{root}`），上传名改成中性的，原文件摘要写进上传说明，结论带“客户端规整”。用例内容会发给 Circle 所选模型的服务商（决定 7、27）。
-- **网关接入**：https 端点、固定的实验室 CA、只有运行权限的那把密钥，登记成执行器（第 11 问）。集成者 10-23 晚只读查过：环境配置、Hub 持久部署的密钥库、所有者 Circle 的密钥和 MCP 配置里都没有这把密钥，所以上台架前由所有者经标准输入交给 Hub。不读 InfoTest 的 environment 文件，不走 SSH（那条路不核主机密钥，密码是明文）。
+- **网关接入**：https 端点、固定的实验室 CA、只有运行权限的那把密钥，登记成执行器（第 11 问）。集成者 10-23 晚只读查过：环境配置、Hub 持久部署的密钥库、所有者 Circle 的密钥和 MCP 配置里都没有这把密钥，所以上台架前由所有者经标准输入交给 Hub（hub-variables 第一步部署以后：定义里写 `credential` 引用 `GATEWAY_RUN_KEY`，钥匙经标准输入交给 `circle-hub secret set --name GATEWAY_RUN_KEY`；先登记，后交）。执行器定义里期望的清单摘要可以写成 `${var:BED_MANIFEST_SHA256}`，重发台架清单以后执行 `var set`，不用 `executor update`（第 44 项）。不读 InfoTest 的 environment 文件，不走 SSH（那条路不核主机密钥，密码是明文）。
 - **不取**：InfoTest 的代码、模板字节、凭据；不把网关代码里钉住的合约摘要抄进 Hub 的代码。
 
 ## 3. Hub 对上传工作簿的核验

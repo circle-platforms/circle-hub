@@ -15,7 +15,8 @@
   动手时以集成者改后的模型为准，有出入写进 README。
 
 - 分支和工作树：`kb-unversioned`，目录 `circle-hub-kb-unversioned`。等这一批（K1、K2、kb-links、views-and-notes、hygiene-2）和 hub-unknown-model（也改 `contracts/src/validation.ts`）合并、集成者改完模型以后，从 hub-redesign 开出并通知。先后：
-  - apv-deployment-conventions、kb-applicability 也改 `contracts/src/product.ts` 和 APV 包，这一件合并排在它们后面；`packs/product/apv/pack.json` 的版本号和签名以合并后的为准，最后重签；
+  - hub-variables 第二步也改 `contracts/src/product.ts`（product@1 的 `variables`）、`knowledge.ts`（tree_root@1 的 `variables`）和 `hub/knowledge/sync.ts`、`sources.ts`、`produce.ts`。那一件先合并（它在决定 29 推送的路上），这一件第一步在它之后合并；不分版本的根的生产器照它解析变量，组成记录照它写 `variables`。
+  - apv-deployment-conventions 的 APV 那一步和 kb-applicability 也改 APV 包，这一件第二步排在它们后面；`packs/product/apv/pack.json` 的版本号和签名以合并后的为准，最后重签；kb-applicability 还改 `contracts/src/product.ts` 的 Applicability 一段，和这一件第一步段落不同；
   - hub-retry-split 管着 `exact.ts` 和 `evaluate.ts` 的 80–560 行，这一件第 4 条要改其中两段：排在 hub-retry-split 合并以后；
   - hub-unknown-exits、hub-read-absence 也改 `hub/runs/engine/start.ts`、`submit.ts`、`hub/ports.ts`、`hub/server/text.ts`、`hub/server/console/pages.ts`、`packs/system/**`：这一件在这些文件里只动下面点名的几段，并行时后合并的一方解决冲突；
   - hub-view-scope 排在这一件后面。那一页第 10 条里“产品同步不列出的用例文档放进不分版本线的范围”改由这一件做，已从那一页拿掉；那一页第 2 条“略去的文档”只再数既不在构建的根、也不在不分版本的根里的。
@@ -95,6 +96,7 @@
 
 8. **手册库列目录**：manual-store 系统包加一个读，列出声明的目录下的直接成员。
    - 目录清单是资源设置里的一个参数（`settings.spec_folders`，一列），不写死。这一件只接现在的规格目录；`product/`、`qa/` 要不要加，由集成者只读数过、定了以后改部署数据，不改代码。
+   - 目录清单仍是手册库资源的设置 `settings.spec_folders`（一列），包只读设置，代码不改；部署时这一项写成 `${var:MANUAL_SPEC_FOLDERS}`（hub-variables 的 `--setting-var`），`product/`、`qa/` 要不要加就是一条 `circle-hub var set`。原来的字符串设置 `settings.spec_folder` 并进列表还是保留，仍由这一件定。
    - 取目录照 spec-search 的做法；成员照 `functions/webdav.ts` 现有的 membersOf：不跟链接，放不进路径段的名字跳过并在读的警告里点名。
    - openkm 那份同名文件照测试保持一致：webdav.ts 逐字节相同，system.json 里加同一个读（前缀换成 openkm:），README 同步；两个包各升一个小版本，重签。
 

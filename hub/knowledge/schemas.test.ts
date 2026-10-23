@@ -67,15 +67,10 @@ const EXAMPLES: Record<string, unknown> = {
   'knowledge-build@1': { product: 'acme', build, pack: { id: 'acme', version: '1.0.0', digest: H('4') }, plan: null, sync: 'sync_01jacd5z8q3w7v9h2k4m6n8p0t' },
   'knowledge-calibration@1': { kind: 'placement.choice', model: 'jev-1.13.0', origin: 'declared', samples: [{ input: H('d'), expected: 'net', chosen: 'net', probability: 0.97 }], decided_by: 'usr_01jacd5z8q3w7v9h2k4m6n8p0t', root: null, note: null },
   'knowledge-observation@1': { product: 'acme', build: 'b1', device: 'unit-1', collected_at: '2026-02-01T08:00:00.000Z', echo: H('e'), declared_by: 'review@1.0.0' },
-  'knowledge-candidate@1': {
-    owner: 'usr_01jacd5z8q3w7v9h2k4m6n8p0t',
-    product: 'acme',
-    root: H('3'),
-    path: '/commands/net/ping',
-    cited_fragment: H('f'),
-    statement: 'ping 发回显请求',
-    ground: { reference: `src:${H('1')}`, quote: 'echo' },
-    applicability: null,
+  'knowledge-contribution@1': {
+    layer:'contribution', product:'acme',root:H('3'),path:'/commands/net/ping',cited_fragment:H('f'),
+    kind:'assertion',statement:'ping 发回显请求',source:{reference:`src:${H('1')}`,quote:'echo',fragment:H('2'),provenance:'observed',records:[H('3')],sources:[H('1')]},
+    applicability:null,basis_rank:'judgment',submitted_by:'usr_01jacd5z8q3w7v9h2k4m6n8p0t',session:null,submitted_at:'2026-10-23T08:00:00.000Z',model:'synthetic@1',
   },
 };
 

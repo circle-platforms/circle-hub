@@ -71,13 +71,18 @@ test('forUser: an assigned user gets the loaded workflow; unknown, unassigned, w
   ] as [Principal, string][]) {
     assert.equal(await store.forUser(who, ref), null, `${who.name} ${ref}`);
   }
+  assert.equal(await store.absence?.(bed.carol, 'demo-review@1.0.0'), 'unassigned');
+  assert.equal(await store.absence?.(bed.bob, 'unknown-pack@10.6.0'), 'unknown');
+  assert.equal(await store.absence?.(bed.bob, 'demo-review@1.0.0'), null);
   await bed.registry.retire(bed.admin, 'demo-review', '1.0.0');
+  assert.equal(await store.absence?.(bed.bob, 'demo-review@1.0.0'), 'withdrawn');
   assert.equal(await store.forUser(bed.bob, 'demo-review'), null, 'withdrawn: no latest version');
   assert.equal(await store.forUser(bed.bob, 'demo-review@1.0.0'), null, 'withdrawn: not by its version either');
   assert.equal((await store.byDigest(version.digest))?.pack.version, '1.0.0', 'a run that froze it still reads it');
   await bed.publish(bed.alice, workflowPack({ version: '1.0.1' }));
   assert.equal((await store.forUser(bed.bob, 'demo-review'))?.pack.version, '1.0.1', 'a new version is available to the assigned users at once');
   await bed.kit.principals.setDisabled(bed.admin, bed.bob.id, true);
+  assert.equal(await store.absence?.(bed.bob, 'demo-review@1.0.1'), 'disabled');
   assert.equal(await store.forUser(bed.bob, 'demo-review'), null, 'a disabled account gets nothing');
 });
 

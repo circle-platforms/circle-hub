@@ -30,6 +30,7 @@ type Row = {
     source: VersionSource;
     confidence: Confidence;
     verdict: 'support' | 'unknown' | 'refute';
+    conflict_code?: string;
     build?: string | null;
     /** Default: folders when there is a build date, else none. */
     build_source?: VersionSource;
@@ -58,7 +59,7 @@ const NESTED = [P0, '010：9.8', '020：10.6', '101：10.6-主线-2026/01', 'SLB
 
 const ROWS: Row[] = [
   // The convention held fully, partly, and with its variants.
-  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, unclassified: ['90101'], from: { '?:90101': ['title'] } } },
+  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, defects: ['90101'], from: { 'bug:90101': ['title'] } } },
   {
     id: 'customer-train',
     root: 'NSAE',
@@ -154,7 +155,7 @@ const ROWS: Row[] = [
     root: 'APV',
     ancestors: [],
     title: 'bug to case 90220 告警',
-    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', unclassified: ['90220'] },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', defects: ['90220'] },
   },
   // Build dates and patches count only at the version level (the version's label, the labels above it, the release train).
   {
@@ -232,35 +233,35 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: NESTED,
     title: '负载均衡',
-    expect: { product: NSAE, version: '9.8', line: '10.6', train: '10.6-主线-2026/01', module: 'SLB', source: 'folders', confidence: 'low', verdict: 'unknown', brief: '目录里有几个版本线：9.8、10.6' },
+    expect: { product: NSAE, version: '9.8', line: '10.6', train: '10.6-主线-2026/01', module: 'SLB', source: 'folders', confidence: 'low', verdict: 'refute', conflict_code: 'case-location.version_conflict', brief: '目录里有几个版本线：9.8、10.6' },
   },
   {
     id: 'train-of-another-line',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '004：10.6.2-R2-2026/7', 'SLB'],
     title: '负载均衡',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: '10.6.2-R2-2026/7', module: 'SLB', source: 'folders', confidence: 'low', verdict: 'unknown', brief: '发布火车与版本线不一致' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: '10.6.2-R2-2026/7', module: 'SLB', source: 'folders', confidence: 'low', verdict: 'refute', conflict_code: 'case-location.version_conflict', brief: '发布火车与版本线不一致' },
   },
   {
     id: 'nested-line-nodes-without-a-train',
     root: 'NSAE',
     ancestors: [P0, '010：9.8', 'SLB', '020：10.6'],
     title: '负载均衡',
-    expect: { product: NSAE, version: '9.8', line: '9.8', train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', brief: '目录里有几个版本线：9.8、10.6' },
+    expect: { product: NSAE, version: '9.8', line: '9.8', train: null, module: null, source: 'folders', confidence: 'low', verdict: 'refute', conflict_code: 'case-location.version_conflict', brief: '目录里有几个版本线：9.8、10.6' },
   },
   {
     id: 'version-label-above-the-convention',
     root: 'NSAE',
     ancestors: ['10.6', P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'],
     title: 'SSL',
-    expect: { ...LOCATED, version: '10.6', confidence: 'low', verdict: 'unknown', brief: '目录里的版本不一致：10.6、10.6.1' },
+    expect: { ...LOCATED, version: '10.6', confidence: 'low', verdict: 'refute', conflict_code: 'case-location.version_conflict', brief: '目录里的版本不一致：10.6、10.6.1' },
   },
   {
     id: 'document-folder-is-no-module',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'bug to case 61001'],
     title: '会话保持',
-    expect: { ...LOCATED, module: null, unclassified: ['61001'], from: { '?:61001': ['folders'] }, note: '不是模块名' },
+    expect: { ...LOCATED, module: null, defects: ['61001'], from: { 'bug:61001': ['folders'] }, note: '不是模块名' },
   },
   {
     id: 'document-folder-with-a-leading-id',
@@ -328,7 +329,7 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, 'Rel_NSAE_10_6_1_57 回归'],
     title: '回归',
-    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build_names: ['Rel_NSAE_10_6_1_57'] },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build_names: ['Rel_NSAE_10_6_1_57'] },
   },
   {
     id: 'older-line-build-name',
@@ -361,8 +362,8 @@ const ROWS: Row[] = [
       source: 'folders',
       confidence: 'high',
       verdict: 'support',
-      unclassified: ['90101', '33001'],
-      ranged: { requirements: ['33001'], defects: ['90101'] },
+      defects: ['90101'], unclassified: ['33001'],
+      ranged: { requirements: ['33001'], defects: [] },
     },
   },
   {
@@ -371,7 +372,7 @@ const ROWS: Row[] = [
     ancestors: FULL,
     title: '33001-SSL证书链 bug to case 74001',
     id_ranges: { story: { min: 10000, max: 49999 } },
-    expect: { ...LOCATED, unclassified: ['74001', '33001'], ranged: { requirements: ['33001'], defects: [] } },
+    expect: { ...LOCATED, defects: ['74001'], unclassified: ['33001'], ranged: { requirements: ['33001'], defects: [] } },
   },
   {
     id: 'inner-marker-wins',
@@ -436,8 +437,8 @@ const ROWS: Row[] = [
       module: 'SLB',
       source: 'folders',
       confidence: 'low',
-      verdict: 'refute',
-      conflicts: [{ field: 'line', declared: '9.8', tree: '10.6' }],
+      verdict: 'refute', conflict_code: 'case-location.version_conflict',
+      conflicts: [],
     },
   },
   {
@@ -454,8 +455,8 @@ const ROWS: Row[] = [
       module: 'SLB',
       source: 'folders',
       confidence: 'low',
-      verdict: 'refute',
-      conflicts: [{ field: 'line', declared: '10.6', tree: '9.8' }],
+      verdict: 'refute', conflict_code: 'case-location.version_conflict',
+      conflicts: [],
     },
   },
   {
@@ -599,7 +600,7 @@ describe('the attribution scheme on invented ancestor paths', () => {
       if (row.expect.from) assert.deepEqual(fromOf(answer), row.expect.from);
       if (row.expect.brief) assert.ok(judgment.brief.includes(row.expect.brief), `${row.id}: brief “${judgment.brief}” lacks “${row.expect.brief}”`);
       if (judgment.verdict === 'unknown') assert.equal(judgment.reason, 'missing_input');
-      if (judgment.verdict === 'refute') assert.equal(judgment.code, 'case-location.declaration_conflict');
+      if (judgment.verdict === 'refute') assert.equal(judgment.code, row.expect.conflict_code ?? 'case-location.declaration_conflict');
       if (judgment.verdict === 'support') assert.deepEqual([answer.confidence, answer.declared, judgment.brief], ['high', [], '']);
       assert.ok(judgment.statement.length > 0 && /\p{Script=Han}/u.test(judgment.statement));
     });
@@ -625,7 +626,7 @@ describe('the attribution scheme on invented ancestor paths', () => {
     assert.match(row('several-line-nodes').statement, /目录里有几个版本线节点（9\.8、10\.6）/);
     assert.match(row('train-of-another-line').statement, /发布火车 10\.6\.2-R2-2026\/7 的版本与版本线 10\.6\.1 不一致/);
     assert.match(row('folder-with-build-number').statement, /版本只是目录名里顺带提到的（10\.6\.1\.57）/);
-    assert.match(row('declared-line-node-on-a-contradicting-tree').statement, /目录树本身：目录里有几个版本线节点/);
+    assert.match(row('declared-line-node-on-a-contradicting-tree').statement, /目录版本层自相矛盾：目录里有几个版本线节点/);
     // The folders are the system pack's metadata of the read, not a cited fragment.
     for (const id of ['full-nsae', 'other-root', 'declared-line-conflict']) assert.match(row(id).statement, /目录是敏捷平台读取时列出的，取自系统包的元数据，没有引用片段/, id);
   });
@@ -635,18 +636,18 @@ describe('the attribution scheme on invented ancestor paths', () => {
       const { answer, judgment } = locateItem(inputOf(ROWS.find((r) => r.id === id)!, overrides));
       return summaryOf(answer, judgment);
     };
-    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；未分类编号 90101');
+    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 90101');
     assert.match(summary('title-only'), /^不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10\.6\.2\.31（标题，置信度低）/);
     assert.match(summary('declared-line-conflict'), /^与声明矛盾（声明的版本线 10\.7\.3 与目录的 10\.6\.1 矛盾）：产品线 apv（NSAE）/);
     assert.match(summary('other-root'), /^不确定（根“合成平台”不是产品名称）：产品 合成平台（产品线未定）；版本 10\.6\.1/);
     assert.equal(
       summary('several-line-nodes'),
-      '不确定（目录里有几个版本线：9.8、10.6）：产品线 apv（NSAE）；版本 9.8（目录，置信度低）；版本线 10.6；发布火车 10.6-主线-2026/01；模块 SLB',
+      '目录版本层自相矛盾（目录里有几个版本线：9.8、10.6）：产品线 apv（NSAE）；版本 9.8（目录，置信度低）；版本线 10.6；发布火车 10.6-主线-2026/01；模块 SLB',
     );
     assert.equal(summary('title-build-date-beside-a-title-version'), '不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10.6.2.31（标题，置信度低）；构建日期 20260315（标题，参考）');
     assert.equal(summary('older-line-build-name'), '产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37');
     assert.equal(summary('requirement-in-a-deeper-folder'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931（目录）');
-    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；未分类编号 74001、33001（声明的范围：需求）');
+    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 74001；未分类编号 33001（声明的范围：需求）');
   });
 });
 
@@ -656,6 +657,8 @@ describe('the associated ids in the conclusion', () => {
     product_line: 'apv',
     product_name: 'NSAE',
     version: '10.6.1',
+    version_values: [],
+    missing: [],
     build: null,
     patch: null,
     line: '10.6.1',
@@ -719,7 +722,7 @@ describe('the associated ids in the conclusion', () => {
 
 describe('metamorphic properties', () => {
   const comparable = (answer: LocateAnswer, hasRoot: boolean): Record<string, unknown> => {
-    const { product_line: _l, product_name: _n, notes: _o, ancestor_path, ...rest } = answer;
+    const { product_line: _l, product_name: _n, notes: _o, missing: _m, ancestor_path, ...rest } = answer;
     return { ...rest, ancestor_path: ancestor_path.slice(hasRoot ? 1 : 0) };
   };
   const plain = ROWS.filter((r) => r.declared?.product === undefined && r.id !== 'root-repeated-as-folder');
@@ -731,7 +734,10 @@ describe('metamorphic properties', () => {
         const after = locate(inputOf(row, { root }));
         assert.deepEqual(comparable(after, true), comparable(before, row.root !== null), `${row.id} under ${root}`);
         if (root !== '合成平台' && !row.unbound) assert.equal(after.product_line, 'apv', `${row.id} under ${root}`);
-        if (root === '合成平台') assert.deepEqual([after.product_line, after.product_name], [null, '合成平台']);
+        if (root === '合成平台') {
+          assert.deepEqual([after.product_line, after.product_name], [null, '合成平台']);
+          if (!row.unbound) assert.ok(after.missing.includes('作为产品线名称的根目录'), `${row.id} names the missing root`);
+        }
       }
     }
   });
@@ -741,7 +747,7 @@ describe('metamorphic properties', () => {
     assert.ok(versioned.length >= 30);
     for (const row of versioned) {
       const before = locate(inputOf(row));
-      for (const quote of ['9.9.9 迁移引用', 'SSL（11.0.1 引入）', '兼容 10.2.8.3 升级']) {
+      for (const quote of ['9.9.9 迁移引用', 'SSL（11.0.1 引入）', '兼容 10.8.8.3 升级']) {
         // At the end: nothing but the path and the notes change.
         const appended = locate(inputOf(row, { ancestors: [...row.ancestors, quote] }));
         const { ancestor_path: _a, notes: _n, ...rest } = appended;
@@ -749,7 +755,8 @@ describe('metamorphic properties', () => {
         assert.deepEqual(rest, expectedRest, `${row.id} + ${quote}`);
         // Anywhere below the folder that gives the version: the version, its source and its confidence stay.
         const labels = row.ancestors.filter((a) => a !== row.root);
-        const at = labels.findIndex((label) => label.normalize('NFKC').includes(before.version!));
+        const versionLabel = before.version_values.find(value => value.version === before.version);
+        const at = versionLabel ? versionLabel.level - 1 : labels.findIndex((label) => label.normalize('NFKC').includes(before.version!));
         assert.ok(at >= 0, row.id);
         for (let k = at + 1; k <= labels.length; k++) {
           const inserted = locate(inputOf(row, { ancestors: [...labels.slice(0, k), quote, ...labels.slice(k)] }));
@@ -759,16 +766,16 @@ describe('metamorphic properties', () => {
     }
   });
 
-  it('a version mentioned above the version level is a quote; a version label above it that disagrees leaves the answer unknown', () => {
+  it('a version mentioned above the version level is a quote; a version label above it that disagrees proves a conflict', () => {
     const row = ROWS[0];
     const mentioned = locateItem(inputOf(row, { ancestors: ['APV 9.9 系列', ...row.ancestors] }));
     assert.deepEqual([mentioned.answer.version, mentioned.answer.confidence, mentioned.judgment.verdict], ['10.6.1', 'high', 'support']);
     const labelled = locateItem(inputOf(row, { ancestors: ['010：9.9', ...row.ancestors] }));
-    assert.deepEqual([labelled.answer.version, labelled.answer.line, labelled.answer.confidence, labelled.judgment.verdict], ['9.9', '10.6.1', 'low', 'unknown']);
+    assert.deepEqual([labelled.answer.version, labelled.answer.line, labelled.answer.confidence, labelled.judgment.verdict], ['9.9', '10.6.1', 'low', 'refute']);
     const agreeing = locateItem(inputOf(row, { ancestors: ['061：10.6.1', ...row.ancestors] }));
     assert.deepEqual([agreeing.answer.version, agreeing.judgment.verdict], ['10.6.1', 'support']);
     // Without a version level the mention nearest the root is the reference version.
-    const nearest = locate(inputOf(row, { ancestors: [P0, 'APV 9.9 系列', '专项 10.5 回归'] }));
+    const nearest = locate(inputOf(row, { ancestors: [P0, 'APV 9.9 系列', '专项 10.7 回归'] }));
     assert.deepEqual([nearest.version, nearest.version_source, nearest.confidence], ['9.9', 'folders', 'low']);
   });
 

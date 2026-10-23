@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "c8738da323676085b636c4461b81399af11b4ea2ed21a32596c4ed5defb258a6",
-      "size": 2154
+      "sha256": "40cc0ff6940699956647a6083bec698325406a259a264d9c32b45aed89a757d1",
+      "size": 3736
     },
     {
       "path": "checks.json",
@@ -18,18 +18,33 @@
     },
     {
       "path": "functions/board.ts",
-      "sha256": "67381f3c454a6511f2b1f4dbb676efd2e89f2078d042fbd917419e59d749b49a",
-      "size": 8266
+      "sha256": "c53a171f622aa47725e326100180a6281ab78764c7ffeb5eb1232c2d22c6c52d",
+      "size": 8811
+    },
+    {
+      "path": "functions/coverage.ts",
+      "sha256": "55265c0ca0b59c7d3bbb899c6f43334bbce27670c0584eef145e21387e0e7dd0",
+      "size": 1928
     },
     {
       "path": "functions/project.ts",
-      "sha256": "5b68ff7a30ce83b53baf0e1326541ca3caca797cc4896513c749e2a12bd11530",
-      "size": 5492
+      "sha256": "cba882efd8e500ca48d6dbeb2c2302d5289f1bf401a62264332ffe0d096af657",
+      "size": 8406
     },
     {
       "path": "functions/subject.ts",
       "sha256": "a6d936d7bf272296fff4fdb10a114afb08fda4e9f1f1858b80a751718c62cf72",
       "size": 1414
+    },
+    {
+      "path": "functions/tag-table.ts",
+      "sha256": "94439ad3f9ac2397922999efd9d4548412f7d6c9ac455ff471da64a60425b507",
+      "size": 1033
+    },
+    {
+      "path": "functions/tags.ts",
+      "sha256": "185b8d3e5a217a4daee76707d75becadbd05df7003e1ae9af215ec6093e4433c",
+      "size": 3387
     },
     {
       "path": "functions/text.ts",
@@ -43,53 +58,53 @@
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "a9f2b09752498621acd2ad1e13b1c172d6f1cf543d12ec57fdc9851b42b9c6f6",
-      "size": 4721
+      "sha256": "bf039c5073b54c695049c1568ab7ea18e7c5558e6a0035274ca2d313300062a0",
+      "size": 5350
     },
     {
       "path": "functions/types.ts",
-      "sha256": "24d45186e9a00f67904c8eeebe71a4e0a124417cb086ae7df34f7925d58b86c6",
-      "size": 2708
+      "sha256": "1cf50aa8785d88ce15e01b71ee2c66507fb07e94e6885f1a3a29432860f413ca",
+      "size": 2972
     },
     {
       "path": "functions/views.ts",
-      "sha256": "deeed2b187f614b6cbc5cf213d2c1b851db945d4df23e5d82a6db24bf7ac8b6a",
-      "size": 4276
+      "sha256": "f784513d9abf97e16c6c895270fda2003ca1467c7bd439b0b6be814b48c5c0a1",
+      "size": 4642
     },
     {
       "path": "requirements.json",
-      "sha256": "6dd7a8dc824b2873b9ef117075cceed50ffcde758cbb6f4840dd5b05823b69c8",
-      "size": 2266
+      "sha256": "454f8bf10a3f0db50cd758fd2b15bce32025fbfda1909c91d8328abeb241e7fd",
+      "size": 2556
     },
     {
       "path": "samples/negative/counts-inconsistent.json",
-      "sha256": "06b509eb4dc346bedf1d084c788f84be0b6564f8aa96935d2597dcd743d34dc5",
-      "size": 1808
+      "sha256": "cc523477454fe71d14c44ca5cd4fac85111430eedcccad0c23373b0b567bcf07",
+      "size": 2024
     },
     {
       "path": "samples/negative/thresholds-exceeded.json",
-      "sha256": "d418b7840bb9f0c87563f9e303b2d19dc1561538cbfc65ad3f38d92e189fc99c",
-      "size": 2149
+      "sha256": "721f2e72052239af0d55f6e13786b583de547682cebfae667031efe9f9da812e",
+      "size": 2365
     },
     {
       "path": "samples/negative/total-undercount.json",
-      "sha256": "559fd5878e12798b3f413ae468c9e386a88bf729878e427c73895f141415fbad",
-      "size": 1790
+      "sha256": "6d6f1d0bf5c88ffc2d8442366b82c83a45ce32d8990c5da053ed8caa8612656d",
+      "size": 2006
     },
     {
       "path": "samples/positive/board-with-metrics.json",
-      "sha256": "28ac1f5c4f9221a1b6f8376080272aac38121ebb42275d35a95c57c174fb1803",
-      "size": 1785
+      "sha256": "f26f848c638cd4a5fbdea42def036a9a90e23228c6c458ea6646aa0915d119f4",
+      "size": 2001
     },
     {
       "path": "samples/positive/totals-consistent.json",
-      "sha256": "bc23555e9e074a6151247d3685640879fb23cb64b54dfcdbb5c6a2a3bfd144e7",
-      "size": 2561
+      "sha256": "7e516dfd2d872f7c1a9dd26749759400caa45f8da6349f401f9b90d78c561d38",
+      "size": 2777
     },
     {
       "path": "samples/positive/within-thresholds.json",
-      "sha256": "63c6180ddf98c45b1ef767313ff5b1a2a27399329971cdbba3515987c8fee876",
-      "size": 1748
+      "sha256": "ccecf0b300bef70ae50ae9fba9efd19880450bb5b1743efee8175d8aa38b4813",
+      "size": 1964
     },
     {
       "path": "slots.schema.json",
@@ -103,8 +118,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "708f32e07e1b3d893f1e8e4b8ab2986dd3f51f7553e31be25416c5980f515f8b",
-      "size": 1508
+      "sha256": "832fdcc30bedf4c09ea2e5175721f52edeeec67ded5b857bc4862ac50108416c",
+      "size": 1862
     }
   ]
 }

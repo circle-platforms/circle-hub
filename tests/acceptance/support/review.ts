@@ -200,3 +200,37 @@ export function sharedIds(cases: OracleCase[]): Set<string> {
   for (const c of cases) counts.set(c.nodeId, (counts.get(c.nodeId) ?? 0) + 1);
   return new Set([...counts].filter(([, n]) => n > 1).map(([id]) => id));
 }
+
+/** Read every plain-text page of a projected string through the public MCP continuation instructions. */
+export async function readProjectedText(client:McpClient,reference:string):Promise<{text:string;pages:string[]}> {
+  const pages:string[]=[],seen=new Set<string>();let cursor:string|undefined,original:string|undefined,joined='';
+  do{
+    const answer=await client.call('get_nodes',{reference,...(cursor===undefined?{}:{cursor})});
+    assert.equal(answer.isError,false,answer.text.slice(0,500));
+    assert.equal(typeof answer.out.content?.text,'string');
+    original??=answer.out.content!.text!;assert.equal(answer.out.content!.text,original);
+    pages.push(answer.text);
+    const lines=answer.text.split('\n'),head=lines.findIndex(line=>/^原文（.*：$/u.test(line));
+    assert.ok(head>=0,'the value is emitted as plain original text, not JSON');
+    const position=/从第 (\d+) 行(?:的第 (\d+) 个字符)?起：$/u.exec(lines[head]);
+    const row=position?Number(position[1])-1:0,offset=position?.[2]?Number(position[2])-1:0;
+    let start=0;for(let i=0;i<row;i++){start=original.indexOf('\n',start)+1;assert.ok(start>0);}
+    start+=offset;
+    let first=head+1;if(lines[first]?.startsWith('（接上页：'))first++;
+    let end=lines.findIndex((line,index)=>index>=first&&(/^部分：/u.test(line)||/^追踪[ ：]/u.test(line)));
+    if(end<0)end=lines.length;
+    const chunk=lines.slice(first,end).join('\n');
+    assert.ok(original.startsWith(chunk,start),'the displayed body preserves the projected string bytes');
+    const gap=original.slice(joined.length,start);
+    assert.ok(gap===''||gap==='\n','only a line boundary may separate consecutive page bodies');
+    joined+=gap+chunk;
+    const footer=lines.slice(end).join('\n');
+    const next=/下一页：get_nodes (\{[^\n]+?\})/u.exec(footer);
+    if(next){
+      const args=JSON.parse(next[1]);assert.equal(args.reference,reference);assert.equal(typeof args.cursor,'string');
+      assert.ok(!seen.has(args.cursor),'continuation makes progress');seen.add(args.cursor);cursor=args.cursor;
+    }else cursor=undefined;
+  }while(cursor!==undefined);
+  assert.equal(joined,original,'all projected bytes were read without a JSON transcription');
+  return {text:joined,pages};
+}

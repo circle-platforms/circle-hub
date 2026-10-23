@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checkOutcomes } from './check.ts';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 import { scopeOf } from './scope.ts';
 import { buildImpact, SOURCE } from './test-support.ts';
 import { parseView } from './view.ts';

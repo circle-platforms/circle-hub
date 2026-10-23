@@ -13,6 +13,7 @@ export {
   checkDraftShape,
   checkCommandsRefutation,
   checkGroundedReading,
+  checkQuoteSources,
   checkDuplicate,
   normalizeTag,
 } from './functions/checks.ts';
@@ -28,6 +29,7 @@ export const FUNCTIONS = {
   checkDraftShape: { module: 'functions/checks.ts', export: 'checkDraftShape' },
   checkCommandsRefutation: { module: 'functions/checks.ts', export: 'checkCommandsRefutation' },
   checkGroundedReading: { module: 'functions/checks.ts', export: 'checkGroundedReading' },
+  checkQuoteSources: { module: 'functions/checks.ts', export: 'checkQuoteSources' },
   checkDuplicate: { module: 'functions/checks.ts', export: 'checkDuplicate' },
 } as const;
 
