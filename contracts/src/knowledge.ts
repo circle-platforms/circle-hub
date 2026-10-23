@@ -8,7 +8,7 @@
 // moves are `root_pointer` records, builds, calibration sets, observations and contributions are `claim` records with the
 // schemas below. Digests of nodes and entries cover the normalised content only (K01 R[7], K02 R[4]); see nodeDigest and
 // entryDigest in hub/knowledge.
-import { KnowledgeContributionBody } from './contributions.ts';
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './contributions.ts';
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
@@ -381,5 +381,5 @@ export const schemas: Record<string, z.ZodType> = {
   'knowledge-build@1': KnowledgeBuildBody,
   'knowledge-calibration@1': KnowledgeCalibrationBody,
   'knowledge-observation@1': KnowledgeObservationBody,
-  'knowledge-contribution@1': KnowledgeContributionBody,
+  [KNOWLEDGE_CONTRIBUTION_SCHEMA]: KnowledgeContributionBody,
 };

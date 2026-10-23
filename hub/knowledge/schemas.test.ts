@@ -70,7 +70,7 @@ const EXAMPLES: Record<string, unknown> = {
   'knowledge-contribution@1': {
     layer:'contribution', product:'acme',root:H('3'),path:'/commands/net/ping',cited_fragment:H('f'),
     kind:'assertion',statement:'ping 发回显请求',source:{reference:`src:${H('1')}`,quote:'echo',fragment:H('2'),provenance:'observed',records:[H('3')],sources:[H('1')]},
-    applicability:null,basis_rank:'judgment',submitted_by:'usr_01jacd5z8q3w7v9h2k4m6n8p0t',session:null,submitted_at:'2026-10-23T08:00:00.000Z',run:'run_01arz3ndektsv4rrffq69g5fav',submission:H('5'),model:'synthetic@1',
+    applicability:null,basis_rank:'judgment',submitted_by:'usr_01jacd5z8q3w7v9h2k4m6n8p0t',session:null,submitted_at:'2026-10-23T08:00:00.000Z',model:'synthetic@1',
   },
 };
 

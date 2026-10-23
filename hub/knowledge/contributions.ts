@@ -1,6 +1,6 @@
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
-import { ContributionInput, KnowledgeContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
+import { ContributionInput, ContributionSource, KnowledgeContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { ProvenanceType } from '../../contracts/generated/vocabulary.ts';
@@ -168,8 +168,10 @@ export class ContributionLayer {
         records.push(record.digest);
       }
       const artifact = await this.#context.records.store.get<SourceArtifact['body']>(records[0]);
+      const provenance=ContributionSource.shape.provenance.safeParse(ref.scheme==='tree'?'projected':artifact?.body.provenance_type);
+      if(!provenance.success)return refuse('signature_required',SIGNATURE,'缺少可追溯 Hub 原件，当前条目标为 skipped；署名流程以后做');
       return { ...quoted, reference: resolved.value.reference, fragment: sha256Hex(resolved.value.text),
-        provenance: resolved.value.recordSource?.provenance ?? (ref.scheme === 'tree' ? 'projected' : artifact!.body.provenance_type),
+        provenance: provenance.data,
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };
     };
     const source = await quote(input.source);
@@ -194,10 +196,12 @@ export class ContributionLayer {
 
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
   async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
-    const key = digestOf({ ...prepared, ...origin });
+    const key = digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
+      source:{reference:prepared.source.reference,quote:prepared.source.quote},
+      ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
     if (old.items.length > 0) return old.items[0].digest;
-    const body = KnowledgeContributionBody.parse({ ...prepared, ...origin, submitted_at: this.#context.now().toISOString() });
+    const body = KnowledgeContributionBody.parse({ ...prepared, session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
     return (await this.#context.store.putClaim(SCHEMAS.contribution, 'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})}], tx)).digest;

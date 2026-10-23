@@ -1,7 +1,7 @@
 // K03/P10 document contributions are ordinary workflow artifacts, not Hub-local candidates.
 import { z } from 'zod';
 import { DocumentOutputKindSchema, TaskOutputKindSchema, RelationKindSchema, ProvenanceTypeSchema, BasisRankSchema, KnowledgeLayerSchema, ValidityStatusSchema } from '../generated/vocabulary.ts';
-import { Sha256, UserId, IsoTime, RunId } from './common.ts';
+import { Sha256, UserId, IsoTime } from './common.ts';
 import { ReferenceUri, TreePath } from './reference.ts';
 import { Applicability, ProductId } from './product.ts';
 
@@ -12,7 +12,7 @@ export const WorkflowOutputs=z.strictObject({tasks:z.array(TaskOutput).max(32)})
 });
 export const TaskOutputValue=z.strictObject({output:OutputKey,value:z.unknown()});
 export const ContributionQuote=z.strictObject({reference:ReferenceUri,quote:z.string().min(1).max(65536)});
-// Central relation shape for K3's read-side integration. It records a relation, never mutates either endpoint.
+// Input relation: both endpoints are verified before it can become a stored relation record.
 export const ContributionRelation=z.strictObject({kind:RelationKindSchema,other:ContributionQuote});
 export const ContributionInput=z.strictObject({
   kind:DocumentOutputKindSchema,statement:z.string().min(1).max(65536),
@@ -20,13 +20,18 @@ export const ContributionInput=z.strictObject({
 }).superRefine((v,ctx)=>{if((v.kind==='relation')!==(v.relation!==undefined))ctx.addIssue({code:'custom',path:['relation'],message:'only a relation output has a relation endpoint'});});
 export type ContributionInput=z.infer<typeof ContributionInput>;
 export const ContributionSource=ContributionQuote.extend({
-  fragment:Sha256,provenance:ProvenanceTypeSchema,records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
+  fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
 });
+// Central STORED relation shape for K3; this never mutates either endpoint.
+export const ContributionRelationRecord=z.strictObject({kind:RelationKindSchema,other:ContributionSource});
+export const KNOWLEDGE_CONTRIBUTION_SCHEMA='knowledge-contribution@1';
+/** Unsupported revisions fail closed in readers rather than falling through to administrator access. */
+export const isKnowledgeContributionSchema=(schema:string):boolean=>schema.startsWith(KNOWLEDGE_CONTRIBUTION_SCHEMA.split('@')[0]+'@');
 export const KnowledgeContributionBody=z.strictObject({
   layer:KnowledgeLayerSchema.extract(['contribution']),product:ProductId,root:Sha256,path:TreePath,
   cited_fragment:Sha256,kind:DocumentOutputKindSchema,statement:z.string().min(1),source:ContributionSource,
-  relation:z.strictObject({kind:RelationKindSchema,other:ContributionSource}).optional(),
-  submitted_by:UserId,session:z.string().nullable(),submitted_at:IsoTime,run:RunId,submission:Sha256,
+  relation:ContributionRelationRecord.optional(),
+  submitted_by:UserId,session:z.string().nullable(),submitted_at:IsoTime,
   model:z.string().describe('client-declared integration model/configuration, not an evidence grade'),
   basis_rank:BasisRankSchema,applicability:Applicability.nullable(),
 });

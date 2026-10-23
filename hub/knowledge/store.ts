@@ -2,7 +2,7 @@
 // (tree_root), current-root moves (root_pointer), builds, calibration sets and layers (claim), and its own actions (loads
 // of list sources, memoized producer calls, productions, plan rounds, judgments). Content-addressed reads are cached: what
 // is behind a node, entry or part digest never changes, and every read is re-verified against its digest.
-import { KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
 import { z } from 'zod';
 import {
   KnowledgeBuildBody,
@@ -39,7 +39,7 @@ export const SCHEMAS = {
   build: 'knowledge-build@1',
   calibration: 'knowledge-calibration@1',
   observation: 'knowledge-observation@1',
-  contribution: 'knowledge-contribution@1',
+  contribution: KNOWLEDGE_CONTRIBUTION_SCHEMA,
   action: RECORD_SCHEMAS.action,
 } as const;
 

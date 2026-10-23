@@ -46,6 +46,18 @@ test('contribution retries return the stored receipt without actions or effects,
   assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin)).length,4);
 });
 
+test('public contribution records omit private run links and identical content is shared across runs and models',async t=>{
+  const w=await setup(t);const first=await w.service.submitResult(w.admin,w.args(),call);
+  const run=await withReference(w,`src:${w.original}`);const second=await w.service.submitResult(w.admin,{...w.args(),run:run.run,model:'another-model'}, {...call,sessionId:'another-session'});
+  assert.deepEqual(second.result?.contributions?.stored.map(x=>x.record),first.result?.contributions?.stored.map(x=>x.record));
+  const entries=await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user);assert.equal(entries.length,4);
+  for(const entry of entries){
+    assert.ok(!('run'in entry.contribution));assert.ok(!('submission'in entry.contribution));
+    const record=await w.knowledge.layers.contributions.read(entry.record,w.user);assert.ok(record);
+    assert.ok(!('run'in (record.body as object)));assert.ok(!('submission'in (record.body as object)));
+  }
+});
+
 test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{
   const w=await setup(t,{acceptedRoot:true});const args=w.args();
   await w.kit.artifacts.revokeFindings(w.admin,w.original,'合成撤回');
