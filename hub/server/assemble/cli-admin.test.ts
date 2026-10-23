@@ -1577,3 +1577,12 @@ test('review 8: Basic targets refuse before file access and a static authorizati
     assert.equal(stub.requests.length, 1);
   } finally { await stub.close(); }
 });
+
+test('c3 Secrets documentation follows the supported irreversible key loss procedure',async()=>{
+ const text=await readFile(new URL('./README.md',import.meta.url),'utf8');
+ const procedure=text.slice(text.indexOf('- **Irrecoverable key loss**'),text.indexOf('- **Login state.**'));
+ const steps=['stop the service','circle-hub key init --set-aside-vault','circle-hub operator-token reissue','secret import','start the service'];
+ let previous=-1;for(const step of steps){const at=procedure.indexOf(step,previous+1);assert.ok(at>previous,step);previous=at;}
+ assert.match(procedure,/loaded service/);assert.match(procedure,/configured port/);assert.match(procedure,/present key/);assert.match(procedure,/Plain `key init` refuses a nonempty vault/);
+ assert.ok(!text.includes('the advice is always to restore'));
+});

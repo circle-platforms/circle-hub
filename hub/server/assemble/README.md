@@ -30,9 +30,9 @@ orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `c
 1. **Vault master key**: `requireVaultKey` reads it through the key provider the records were opened with
    (`hubKeyProvider` of hub/platform in a deployment) and checks it against the vault. A missing key, a locked keychain or a
    key that does not open the vault stops the process with `AssemblyError` and the next step. When the vault already holds
-   entries (listing names needs no key) the advice is always to restore the original keychain item and never to run
-   `circle-hub key init` (a new key cannot open them), whatever the key provider suggests; only an empty vault gets the
-   provider's advice (`key init` for a missing item). Nothing creates a key.
+   entries (listing names needs no key), prefer restoring the original keychain item: a new key cannot open old entries.
+   If that item cannot be recovered, follow the **Irrecoverable key loss** procedure in Secrets below using
+   `circle-hub key init --set-aside-vault`; plain `key init` is only for an empty vault. Startup never creates a key.
 2. sandbox-exec is probed; where it is missing a notice says pack functions cannot run (pack functions always run with
    `requireOsIsolation: true` in the deployed Hub).
 3. Core parsers (`createDefaultRegistry`), the pack registry (`createPackRegistry`, extraction under `<data dir>/packs`,
@@ -135,13 +135,14 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   credentials are stored. Resources are independent writes: each completed resource is reported immediately, so a later
   resource failure cannot hide an earlier write. Neither raw values, fragments nor digests of values appear in output.
 
-- **Irrecoverable key loss**: stop the service, preserve the old data-root `vault/` by moving it to
-  `set-aside/<time>-key-loss/`, run `circle-hub key init`, reissue the operator token with `circle-hub operator-token reissue`
-  if its item was lost too, reimport the named credentials with `secret import`, then start the service. A new master key
-  cannot open old entries. `key init` refuses while the vault is nonempty. `resource list` remains available without the
-  master key; commands needing secrets refuse before opening the environment file. Tests run this recovery with a
-  temporary file key on every platform and a fresh keychain provider per invocation on macOS, using only an explicitly
-  targeted temporary keychain file. They verify two successful logins, before loss and after reimport.
+- **Irrecoverable key loss**: stop the service, then run `circle-hub key init --set-aside-vault`.
+  It takes the platform lock, refuses a loaded service, a busy configured port or a present key, moves only `vault/`
+  to a unique `set-aside/<timestamp>-key-loss/vault`, recreates the empty vault with mode 0700 and initializes the key.
+  The database and objects stay in place. Run `circle-hub operator-token reissue` only if that item was lost too,
+  then `secret import` to reimport the named credentials, then start the service. A new key cannot open old entries.
+  Plain `key init` refuses a nonempty vault before touching the keychain. `resource list` remains available without
+  the master key; commands needing secrets refuse before opening the environment file. Synthetic tests use temporary
+  file keys and explicitly targeted temporary keychain files; they verify logins before loss and after reimport.
 - **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
   the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
   when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
