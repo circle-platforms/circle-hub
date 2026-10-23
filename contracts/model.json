@@ -4030,7 +4030,7 @@
    {
     "code": "SOURCE_INTEGRITY_UNPROVEN",
     "when": "已获读权但原件丢失或字节与存储摘要不符",
-    "fix": "请管理员从备份恢复原件并重验摘要，恢复后自动重读原引用"
+    "fix": "请管理员从备份恢复原件并重验摘要，恢复后按原引用重读"
    },
    {
     "code": "SOURCE_READ_FAILED",
