@@ -9,6 +9,7 @@
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
+import {referencesIn} from '../../contracts/src/variables.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -23,7 +24,7 @@ import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateRes
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
-import { RecordsError, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import { RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -49,8 +50,7 @@ export interface AdminCommandOptions {
 
 export const PACK_USAGE =
   'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
-export const RESOURCE_USAGE =
-  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
@@ -80,7 +80,7 @@ const ONE_COMMAND_TOKEN = `只给这一条命令一个令牌：${OPERATOR_TOKEN_
  * shown), so a stop or a cool-down it holds ends then and it logs in once; a usable token it holds stays in use until its
  * next login, which takes the new value. No restart.
  */
-const RUNNING_HUB_LOGIN = '正在运行的 Hub 下一次要用这个资源的凭据时会重读密钥库里的登录状态：它停下的登录或冷却随之解除，并用已存的凭据登录一次；它手里还有可用的令牌时照常用，到下一次登录才用新的值；不用重启 Hub';
+const RUNNING_HUB_LOGIN = '正在运行的 Hub 下一次读取会核对密钥版本及重置代数，旧令牌、停止和冷却不再沿用，用当前版本登录一次；不用重启 Hub';
 
 type Flags = Record<string, { type: 'string' | 'boolean'; multiple?: boolean }>;
 
@@ -457,7 +457,7 @@ async function resourceWarnings(session:Session, record:import('../../contracts/
   const described=await hub.connectors.admin.describe(by,record.id);
   for(const item of described?.credentials??[]) {
     const match=/^\$\{secret:([^}]+)\}$/.exec(item.entry);if(!match)continue;
-    if(!item.set)session.out(`密钥 ${match[1]} 还没有设置：原值不在密钥库里时，接着用 circle-hub secret set --name ${match[1]} 设置`);
+    if(!item.set)session.out(`密钥 ${match[1]} 还没有设置：用 circle-hub secret set --name ${match[1]} 设置`);
     else if(!item.registered)session.out(`密钥 ${match[1]} 的这一版未登记此使用者和地址：要重新输入一次值才会发往这里`);
   }
 }
@@ -594,7 +594,10 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext 或 --setting');
       const admin = await session.admin();
       const hub = await session.hub();
+      const previous=await hub.connectors.admin.describe(admin,positionals[0]);
+      const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
+      for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
       session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       await resourceWarnings(session,record);
       return 0;
@@ -604,11 +607,17 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       const by=await session.admin(), hub=await session.hub(false), kit=await session.records();
       const d=await hub.connectors.admin.describe(by,positionals[0]);if(!d)throw new CliError('资源不可用');
       session.out(`${d.id} ${d.name} ${d.system_pack}`);
-      const config=await kit.authorizations.resourceConfig(d.id);const bytes=config?.body.bound?await kit.objects.get(config.body.bound):null;
-      if(bytes) {const source=JSON.parse(Buffer.from(bytes).toString());const versions=await kit.variables.list(by);
-        for(const [key,value] of Object.entries(source.settings??{})) {const refs=JSON.stringify(value).matchAll(/\$\{var:([A-Z][A-Z0-9_]*)\}/g);const names=[...refs].map(m=>`${m[0]} 第 ${versions.find(v=>v.name===m[1])?.version??0} 版`);session.out(`设置 ${key}：${names.length?names.join('；'):values.values?JSON.stringify(value):'长度 '+Buffer.byteLength(JSON.stringify(value))}`);}
+      const config=await kit.authorizations.resourceConfig(d.id);let bound=config?.body.bound??null;
+      let cursor:string|null=null;
+      while(!bound){const page=await kit.authorizations.history({permission:'resource_config',subject:WHOLE_HUB,object:d.id,newestFirst:true,limit:500,cursor});bound=page.items.find(row=>!row.body.revoked&&row.body.bound)?.body.bound??null;if(bound||!page.next)break;cursor=page.next;}
+      const bytes=bound?await kit.objects.get(bound):null;if(!bytes)throw new CliError('资源定义原件缺失；请管理员从可信备份恢复后重做 resource show');
+      const source=parseStrictJson(Buffer.from(bytes).toString()) as {settings?:Record<string,unknown>};const versions=await kit.variables.list(by);
+      for(const [key,value] of Object.entries(source.settings??{})){
+        const refs=referencesIn(value).filter(ref=>ref.kind==='var');
+        const names=refs.map(ref=>{const version=versions.find(v=>v.kind==='var'&&v.name===ref.name);return '${var:'+ref.name+'} '+(!version?'还没有设置':version.decision.body.revoked?`已撤回（最后第 ${version.version} 版）`:`第 ${version.version} 版`);});
+        session.out(`设置 ${key}：${names.length?names.join('；'):values.values?JSON.stringify(value):'长度 '+Buffer.byteLength(JSON.stringify(value))}`);
       }
-      for(const c of d.credentials)session.out(`凭据项 ${c.name} ${c.entry} 第 ${c.version??0} 版 长度 ${c.length??0} 摘要规则 ${labelOf('digest_rule',c.digest)} ${c.set?'已设置':'未设置'} ${c.registered?'已登记':'未登记'}`);
+      for(const c of d.credentials){const version=c.revoked?`已撤回（最后第 ${c.version} 版）`:c.version?`第 ${c.version} 版`:'尚未登记命名版本';const stored=c.stored_digest?labelOf('digest_rule',c.stored_digest):'无当前登记';session.out(`凭据项 ${c.name} ${c.entry} ${version} 长度 ${c.length??'不适用'} 发送规则 ${labelOf('digest_rule',c.digest)} 存储规则 ${stored} ${c.set?'有条目':'无条目'} ${c.registered?'已登记使用者':'无当前使用者登记'}`);}
       return 0;
     }
     case 'read': {
@@ -679,16 +688,6 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
     default:
       throw new UsageError(`resource 的子命令：${RESOURCE_USAGE}`);
   }
-}
-
-// Temporary mirror of ResourceAdmin.setCredentials until connectors exports a reusable value check.
-// Keep this at the import boundary so a dry run and every resource are checked before the first write.
-const IMPORT_VALUE_MAX_CHARS = 4096;
-function importValueProblem(value: string): string | null {
-  if (!value.length) return '值是空的';
-  if (value.length > IMPORT_VALUE_MAX_CHARS) return `长度超过 ${IMPORT_VALUE_MAX_CHARS} 个字符`;
-  if (/[\u0000-\u001f\u007f]/.test(value)) return '含控制字符';
-  return null;
 }
 
 // ---------------------------------------------------------------- secret

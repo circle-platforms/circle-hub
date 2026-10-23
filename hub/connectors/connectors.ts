@@ -59,8 +59,8 @@ export interface ResourceAdmin {
   /** Admins get addresses and plaintext declarations; any other valid account the rows without them. */
   listResources(by: Principal): Promise<ResourceListing[]>;
   /**
-   * Admins only: one resource, enabled or not, with the name, vault entry and digest rule of every credential it declares
-   * and whether a value is set (never a value). Needs neither the system pack nor the vault key. Null for an id that is not
+   * Admins only: one resource, enabled or not, with each named reference, wire rule and current storage metadata
+   * and whether an entry is present (never a value). Needs neither the system pack nor the vault key. Null for an id that is not
    * a resource.
    */
   describe(by: Principal, id: string): Promise<ResourceDescription | null>;

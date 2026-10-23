@@ -26,13 +26,18 @@ export async function setSyntheticCredentials(records: RecordsKit, connectors: C
         throw new ConnectorError('RESOURCE_INVALID', '没有给合成凭据');
     for (const value of Object.values(values))
         connectors.redactor.add(value);
-    const consumers = (item: string) => ({ definition: id, item, sends_to: sha256Hex(canonicalBytes({ origins: resource.origins, allow_plaintext: [...resource.allow_plaintext].sort() })) });
+    const definitions:ResourceRecord[]=[];
+    for(const row of (await connectors.admin.listResources(by)).filter(r=>r.enabled)) {
+        const config=await records.authorizations.resourceConfig(row.id);
+        if(config?.body.bound){const bytes=await records.objects.get(config.body.bound);if(bytes)definitions.push(ResourceRecord.parse(JSON.parse(Buffer.from(bytes).toString())));}
+    }
+    const consumers=(name:string)=>definitions.flatMap(r=>Object.entries(r.credentials).filter(([,ref])=>secretNameOf(ref)===name).map(([item])=>({definition:r.id,item,sends_to:sha256Hex(canonicalBytes({origins:r.origins,allow_plaintext:[...r.allow_plaintext].sort()}))})));
     try {
         await records.variables.setSecrets(by, Object.entries(values).map(([item, value]) => {
             const name = secretNameOf(resource.credentials[item] ?? '');
             if (!name)
                 throw new ConnectorError('RESOURCE_INVALID', '合成凭据项没有命名引用');
-            return { name, value, digest_rule: resource.credential_digests[item], short: true, consumers: [consumers(item)] };
+            return { name, value, digest_rule: resource.credential_digests[item], short: true, consumers: consumers(name) };
         }), 'DEMO_SYNTHETIC_ROTATION');
     }
     catch (error) {

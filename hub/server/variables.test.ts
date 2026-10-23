@@ -135,3 +135,47 @@ test('batch pipe capacity respects each secret character limit instead of an acc
     assert.equal(values.length, 6);
     assert.ok(values.every(v => v === value));
 });
+
+test('executor definitions enroll named secrets through their exact configuration keys',async t=>{
+ const f=await setup(t);const id=newId('exe');const object=await f.kit.objects.put(canonicalBytes({schema:'executor@1',id,enabled:true,credential:'${secret:DEMO_AUTH}',endpoint:'https://service.example.invalid',ca:''}),'application/json');
+ await f.kit.authorizations.configureResource(f.admin,'executor.'+id,object.sha256,'DEMO_REFERENCE');
+ await namedSecretCommand(f.session,['set','--name','DEMO_AUTH','--reason','DEMO_ENROLLMENT']);
+ const metadata=(await f.kit.variables.list(f.admin)).find(v=>v.name==='DEMO_AUTH');assert.equal(metadata?.definition?.schema,'secret@1');
+ if(metadata?.definition?.schema==='secret@1')assert.equal(metadata.definition.consumers[0].definition,id);
+});
+
+test('a secret value exposed by a historical deployment definition still requires issuer rotation',async t=>{
+ const f=await setup(t);const d=await f.definition('DEMO_AUTH');
+ const exposed=await f.kit.objects.put(canonicalBytes({...d.body,settings:{note:f.value}}),'application/json');await f.kit.authorizations.configureResource(f.admin,d.id,exposed.sha256,'DEMO_EXPOSED');
+ const clean=await f.kit.objects.put(canonicalBytes(d.body),'application/json');await f.kit.authorizations.configureResource(f.admin,d.id,clean.sha256,'DEMO_REMOVED');
+ await assert.rejects(namedSecretCommand(f.session,['set','--name','DEMO_AUTH','--reason','DEMO_ENROLLMENT']),error=>error instanceof Error&&error.message.includes('先在签发方换掉')&&!error.message.includes(f.value));
+ assert.equal((await f.kit.variables.list(f.admin)).filter(v=>v.kind==='secret').length,0);
+});
+
+test('a build-looking string meeting the strict token rule needs an explicit not-secret confirmation',async t=>{
+ const f=await setup(t);const value='Rel_Demo_10_6_00';assert.equal(value.length,16);await writeFile(join(f.kit.dataDir,'demo-build.txt'),value+'\n');
+ const args=['set','DEMO_BUILD','--file','demo-build.txt','--text','--reason','DEMO_BUILD'];
+ await assert.rejects(variableCommand(f.session,args),/--not-secret/);assert.equal((await f.kit.variables.list(f.admin)).length,0);
+ await variableCommand(f.session,[...args,'--not-secret']);assert.equal(await f.kit.variables.valueAt('DEMO_BUILD',(await f.kit.variables.snapshot()).get('DEMO_BUILD')!),value);
+ assert.ok(!f.lines.join('\n').includes(value));
+});
+
+test('reversible encodings exposed in ordinary history also require issuer rotation',async t=>{
+ const f=await setup(t);await f.definition('DEMO_AUTH');
+ await f.kit.variables.setVariable(f.admin,'DEMO_EXPOSED',{note:Buffer.from(f.value).toString('base64')},'DEMO_EXPOSED',{notSecret:true});
+ await assert.rejects(namedSecretCommand(f.session,['set','--name','DEMO_AUTH','--reason','DEMO_ENROLLMENT']),/先在签发方换掉/);
+ assert.equal((await f.kit.variables.list(f.admin)).filter(v=>v.kind==='secret').length,0);
+});
+
+test('a plain-stored secret reason cannot reveal the derived credential sent by a declared digest consumer',async t=>{
+ const {createHash}=await import('node:crypto');const f=await setup(t);await f.definition('DEMO_AUTH','password','sha512_base64');const fragment=createHash('sha512').update(f.value).digest('base64').slice(8,16);
+ await assert.rejects(namedSecretCommand(f.session,['set','--name','DEMO_AUTH','--reason','DEMO_NOTE '+fragment]),/理由不能含密钥/);
+ assert.equal((await f.kit.variables.list(f.admin)).filter(v=>v.kind==='secret').length,0);
+});
+
+test('history distinguishes versions outside retention from an unexpectedly missing current vault entry',async t=>{
+ const f=await setup(t);await f.definition('DEMO_AUTH');const args=['set','--name','DEMO_AUTH','--reason','DEMO_ENROLLMENT'];for(let i=0;i<3;i++)await namedSecretCommand(f.session,args);
+ f.lines.length=0;await namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']);assert.ok(f.lines.some(line=>line.includes('保留范围')));assert.ok(!f.lines.some(line=>line.includes('登记了第 1 版，密钥库里没有')));
+ const version=(await f.kit.variables.history(f.admin,'secret','DEMO_AUTH'))[0];if(version.definition?.schema==='secret@1')await f.kit.vault.remove(version.definition.entry);
+ f.lines.length=0;await namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']);assert.ok(f.lines.some(line=>line.includes('登记了第 3 版，密钥库里没有')&&line.includes('secret set --name')));
+});

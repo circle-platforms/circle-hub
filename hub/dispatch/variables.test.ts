@@ -120,3 +120,11 @@ test('disabling an executor prevents new sessions until an administrator explici
  await c.registry.update(c.admin,c.executor.id,{...c.executor.source,enabled:true});
  assert.equal((await c.registry.material(c.executor.id,c.executor.definition)).value,'synthetic-secret');
 });
+
+for(const change of ['variable','definition'])test(`a late ${change} change immediately before intent still prevents every submission`,async t=>{
+ const c=await setup();t.after(()=>c.close());await c.kit.variables.setVariable(c.admin,'DEMO_TARGET',c.executor.definition.target,'DEMO_TARGET');
+ const source=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'${var:DEMO_TARGET}'});
+ const events=c.service.journal.events.bind(c.service.journal);let changed=false;
+ c.service.journal.events=async job=>{const rows=await events(job);if(!changed&&rows.some(e=>e.body.detail.phase==='device_probe')){changed=true;if(change==='variable')await c.kit.variables.setVariable(c.admin,'DEMO_TARGET','DEMO_LATE_TARGET','DEMO_LATE');else await c.registry.update(c.admin,c.executor.id,{...source.source,max_bytes:524288});}return rows;};
+ const result=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(changed,true);assert.equal(c.submitted.length,0);assert.equal(result.outcome,'not_dispatched');assert.ok(!(await events(result.job)).some(e=>e.body.detail.phase==='intent'));
+});

@@ -10,7 +10,8 @@ import { labelOf, isDigestRule, type DigestRule, type VariableKind, type Permiss
 import { readProfile } from '../connectors/api.ts';
 import type { PacksPort } from '../ports.ts';
 import { ExecutorDefinition } from '../dispatch/api.ts';
-import { canonicalize, digestOf, validateChangeReason, checkVaultKey, isSha256, parseStrictJson, scanForCredentials, VariableError, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
+import { canonicalize, digestOf, validateChangeReason, secretForms, isSha256, parseStrictJson, scanForCredentials, VariableError, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
+import { requireVaultKey } from './assemble/vault.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
 import { readSecret, readSecrets } from './assemble/secret-input.ts';
 import { CliError, UsageError } from './errors.ts';
@@ -104,8 +105,11 @@ export function consumersOf(definitions: readonly DeploymentDefinition[], name: 
     return out;
 }
 const publicConsumer = ({ definition, item, sends_to }: SecretConsumer) => ({ definition, item, sends_to });
-export async function unchangedDefinitions(kit: RecordsKit, definitions: readonly DeploymentDefinition[], tx: Transaction): Promise<void> { const current = await configurationRows(kit, tx); if (current.size !== definitions.length || definitions.some(def => current.get(def.key)?.digest !== def.decision))
-    throw new CliError('部署定义在核对期间已改变；请按当前定义重跑命令，没有写入决定'); }
+export async function unchangedDefinitions(kit: RecordsKit, definitions: readonly DeploymentDefinition[], tx: Transaction): Promise<void> {
+    const current = await configurationRows(kit, tx);
+    if (current.size !== definitions.length || definitions.some(def => current.get(def.key)?.digest !== def.decision))
+        throw new CliError('部署定义在核对期间已改变；请按当前定义重跑命令，没有写入决定');
+}
 function nameInput(input: unknown, index: number, kind: VariableKind): string {
     const parsed = VariableName.safeParse(input);
     if (!parsed.success)
@@ -119,38 +123,51 @@ function nameInput(input: unknown, index: number, kind: VariableKind): string {
 function parse(argv: readonly string[], options: Record<string, any>): {
     values: Record<string, any>;
     positionals: string[];
-} { try {
-    return parseArgs({ args: [...argv], options, allowPositionals: true, strict: true });
+} {
+    try {
+        return parseArgs({ args: [...argv], options, allowPositionals: true, strict: true });
+    }
+    catch {
+        throw new UsageError('参数写法无效；请核对旗标和值，敏感值只从标准输入读');
+    }
 }
-catch {
-    throw new UsageError('参数写法无效；请核对旗标和值，敏感值只从标准输入读');
-} }
-function reasonInput(value: unknown): string { if (typeof value !== 'string' || !value.trim() || [...value].length > 500 || scanForCredentials(Buffer.from(value)).findings.length)
-    throw new UsageError('理由必填、至多 500 字符且不能含凭据；请重写 --reason'); return value; }
+function reasonInput(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim() || [...value].length > 500 || scanForCredentials(Buffer.from(value)).findings.length)
+        throw new UsageError('理由必填、至多 500 字符且不能含凭据；请重写 --reason');
+    return value;
+}
 /** An exact JSON grammar supplies error positions without inspecting native human error strings. */
 export function parseVariableJson(text: string): unknown {
     let at = 0;
     const fail = (position = at): never => { position = Math.min(position, text.length); const before = text.slice(0, position), line = before.split('\n').length, column = position - (before.lastIndexOf('\n') + 1) + 1; throw new UsageError(`第 ${line} 行第 ${column} 列 JSON 不合式；请修正后重跑`); };
-    const space = () => { while (/[ \t\r\n]/.test(text[at] ?? '') && at < text.length)
-        at++; };
-    const string = (): string => { const start = at; if (text[at] !== '"')
-        return fail(); at++; while (at < text.length) {
-        const ch = text[at++];
-        if (ch === '"')
-            return JSON.parse(text.slice(start, at));
-        if (ch === '\\') {
-            const esc = text[at++];
-            if (esc === 'u') {
-                if (!/^[a-f0-9]{4}$/i.test(text.slice(at, at + 4)))
+    const space = () => {
+        while (/[ \t\r\n]/.test(text[at] ?? '') && at < text.length)
+            at++;
+    };
+    const string = (): string => {
+        const start = at;
+        if (text[at] !== '"')
+            return fail();
+        at++;
+        while (at < text.length) {
+            const ch = text[at++];
+            if (ch === '"')
+                return JSON.parse(text.slice(start, at));
+            if (ch === '\\') {
+                const esc = text[at++];
+                if (esc === 'u') {
+                    if (!/^[a-f0-9]{4}$/i.test(text.slice(at, at + 4)))
+                        return fail();
+                    at += 4;
+                }
+                else if (!esc || !'"\\/bfnrt'.includes(esc))
                     return fail();
-                at += 4;
             }
-            else if (!esc || !'"\\/bfnrt'.includes(esc))
+            else if (ch.charCodeAt(0) < 32)
                 return fail();
         }
-        else if (ch.charCodeAt(0) < 32)
-            return fail();
-    } return fail(); };
+        return fail();
+    };
     const value = (depth: number): void => {
         if (depth > 1024)
             return fail();
@@ -226,38 +243,81 @@ async function variableText(s: VariableCommandSession, file: unknown): Promise<s
 }
 function versionsLine(v: NamedVersion): string { return `${v.name}；${labelOf('variable_kind', v.kind)}；第 ${v.version} 版；${v.decision.body.revoked ? '已撤回' : '已设置'}；长度 ${v.definition?.schema === 'secret@1' ? v.definition.length : v.definition ? Buffer.byteLength(canonicalize(v.definition.value)) : 0}；决定人 ${v.decision.body.decided_by}；时刻 ${v.decision.body.decided_at}；理由 ${v.decision.body.note ?? ''}`; }
 function hiddenPointer(pointer: string, value: string): string { return pointer.split('/').map(part => value.length >= 8 && part.includes(value) ? '<字段>' : part).join('/'); }
-function findPlain(value: unknown, secret: string, path = ''): string | null { if (typeof value === 'string')
-    return value.includes(secret) ? path : null; if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-        const found = findPlain(value[i], secret, path + '/' + i);
-        if (found !== null)
-            return found;
-    }
-}
-else if (record(value))
-    for (const [key, child] of Object.entries(value)) {
-        const at = path + '/' + key.replaceAll('~', '~0').replaceAll('/', '~1');
-        if (key.includes(secret))
-            return hiddenPointer(at, secret);
-        const found = findPlain(child, secret, at);
-        if (found !== null)
-            return found;
-    } return null; }
-async function checkPlainExposure(kit: RecordsKit, by: Principal, definitions: readonly DeploymentDefinition[], input: readonly {
-    name: string;
-    value: string;
-}[]) { const current = await kit.variables.list(by); for (const candidate of input.filter(v => [...v.value].length >= 8)) {
-    for (const version of current.filter(v => v.kind === 'var'))
-        for (const row of await kit.variables.history(by, 'var', version.name)) {
-            if (row.definition?.schema === 'variable@1' && findPlain(row.definition.value, candidate.value) !== null)
-                throw new CliError(`这个值已经明文存在变量 ${version.name}：先在签发方换掉它`);
+function findPlain(value: unknown, secret: string, path = ''): string | null {
+    if (typeof value === 'string')
+        return value.includes(secret) ? path : null;
+    if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+            const found = findPlain(value[i], secret, path + '/' + i);
+            if (found !== null)
+                return found;
         }
-    for (const definition of definitions) {
-        const at = findPlain(definition.body, candidate.value);
-        if (at !== null)
-            throw new CliError(`这个值已经明文存在部署定义 ${definition.id}#${hiddenPointer(at, candidate.value)}：先在签发方换掉它`);
     }
-} }
+    else if (record(value))
+        for (const [key, child] of Object.entries(value)) {
+            const at = path + '/' + key.replaceAll('~', '~0').replaceAll('/', '~1');
+            if (key.includes(secret))
+                return hiddenPointer(at, secret);
+            const found = findPlain(child, secret, at);
+            if (found !== null)
+                return found;
+        }
+    return null;
+}
+async function checkPlainExposure(kit: RecordsKit, by: Principal, _definitions: readonly DeploymentDefinition[], input: readonly {
+    value: string;
+    derived?: boolean;
+}[]) {
+    const candidates = input.filter(v => [...v.value].length >= 8);
+    if (!candidates.length)
+        return;
+    const ordinary = [];
+    for (const version of (await kit.variables.list(by)).filter(v => v.kind === 'var'))
+        for (const row of await kit.variables.history(by, 'var', version.name))
+            if (row.definition?.schema === 'variable@1')
+                ordinary.push({ name: version.name, value: row.definition.value });
+    const definitions: Array<{
+        id: string;
+        decision: string;
+        body: unknown;
+    }> = [];
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    do {
+        const page = await kit.authorizations.history({ permission: CONFIG, subject: WHOLE_HUB, limit: 500, cursor });
+        for (const row of page.items) {
+            const kind = objectName(row.body.object);
+            if (!kind || row.body.revoked || !row.body.bound || seen.has(row.body.bound))
+                continue;
+            seen.add(row.body.bound);
+            const bytes = await kit.objects.get(row.body.bound);
+            if (!bytes)
+                throw new CliError('部署定义 ' + row.body.object + ' 的历史原件缺失；请管理员从可信备份恢复后重跑');
+            let body: unknown;
+            try {
+                body = parseStrictJson(Buffer.from(bytes).toString());
+            }
+            catch {
+                throw new CliError('部署定义历史原件不可核对；请管理员从可信备份恢复后重跑');
+            }
+            definitions.push({ id: kind === 'executor' ? row.body.object.slice(9) : row.body.object, decision: row.digest, body });
+        }
+        cursor = page.next;
+    } while (cursor);
+    for (const candidate of candidates)
+        for (const form of secretForms(candidate.value, { hashes: false })) {
+            const what = candidate.derived ? '按凭据规则计算的发送值' : '这个值';
+            const how = form === candidate.value ? '已经明文存在' : '的可还原写法已经存在';
+            for (const variable of ordinary)
+                if (findPlain(variable.value, form) !== null)
+                    throw new CliError(`${what}${how}变量 ${variable.name}：先在签发方换掉它`);
+            for (const definition of definitions) {
+                const at = findPlain(definition.body, form);
+                if (at !== null)
+                    throw new CliError(`${what}${how}部署定义 ${definition.id}（历史决定 rec:${definition.decision}）#${hiddenPointer(at, form)}：先在签发方换掉它`);
+            }
+        }
+}
 export async function variableCommand(s: VariableCommandSession, args: readonly string[]): Promise<number> {
     const [sub, ...rest] = args;
     const parsed = parse(rest, { file: { type: 'string' }, text: { type: 'boolean' }, 'not-secret': { type: 'boolean' }, reason: { type: 'string' }, history: { type: 'boolean' }, value: { type: 'boolean' }, run: { type: 'string' }, root: { type: 'string' } });
@@ -298,20 +358,27 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                 const resolved = substitute(definition.body, (kind, n) => kind === 'secret' ? '${secret:' + n + '}' : values.get(n));
                 const checked = definition.kind === 'resource' ? ResourceRecord.safeParse(resolved) : ExecutorDefinition.safeParse(resolved);
                 if (!checked.success)
-                    throw new CliError(`变量新值不合部署定义 ${definition.id} ${definition.references.filter(ref=>ref.kind==='var'&&ref.name===name).map(ref=>ref.at).join('、')} 的模式或大小上限；请按该定义期望改正后重跑`);
+                    throw new CliError(`变量新值不合部署定义 ${definition.id} ${definition.references.filter(ref => ref.kind === 'var' && ref.name === name).map(ref => ref.at).join('、')} 的模式或大小上限；请按该定义期望改正后重跑`);
             }
-            const result = await kit.variables.setVariable(by, name!, value, reason, { notSecret: v['not-secret'] === true, names, validate: async (tx) => { await unchangedDefinitions(kit, definitions, tx); for (const n of names.filter(n => n !== name)) {
-                    const page = await kit.store.find({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${n}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
-                    if (page.items[0]?.digest !== snapshot.get(n))
-                        throw new CliError('另一引用变量在核对期间改变；请重跑，没有写入决定');
-                } } });
+            const result = await kit.variables.setVariable(by, name!, value, reason, { notSecret: v['not-secret'] === true, names, validate: async (tx) => {
+                    await unchangedDefinitions(kit, definitions, tx);
+                    for (const n of names.filter(n => n !== name)) {
+                        const page = await kit.store.find({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${n}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
+                        if (page.items[0]?.digest !== snapshot.get(n))
+                            throw new CliError('另一引用变量在核对期间改变；请重跑，没有写入决定');
+                    }
+                } });
             s.out(result.created ? `已设置变量 ${name}；第 ${result.value.version} 版` : `${name} 和第 ${result.value.version} 版相同`);
             return 0;
         }
         if (sub === 'unset') {
             const definitions = await deploymentDefinitions(kit);
-            await kit.variables.unset(by, 'var', name!, reasonInput(v.reason), async (tx) => { await unchangedDefinitions(kit, definitions, tx); const used = definitions.filter(d => d.body.enabled !== false && d.references.some(r => r.kind === 'var' && r.name === name)); if (used.length)
-                throw new CliError('变量仍被启用定义引用：' + used.map(v => v.id).join('、') + '；请先 update 移除引用'); });
+            await kit.variables.unset(by, 'var', name!, reasonInput(v.reason), async (tx) => {
+                await unchangedDefinitions(kit, definitions, tx);
+                const used = definitions.filter(d => d.body.enabled !== false && d.references.some(r => r.kind === 'var' && r.name === name));
+                if (used.length)
+                    throw new CliError('变量仍被启用定义引用：' + used.map(v => v.id).join('、') + '；请先 update 移除引用');
+            });
             s.out(`已撤回变量 ${name}`);
             return 0;
         }
@@ -336,7 +403,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                     do {
                         const page: import('../records/api.ts').Page<import('../records/api.ts').StoredRecord<any>> = await kit.store.find({ key: index, value: v.run as string, kind: 'action', limit: 500, cursor });
                         for (const row of page.items)
-                            uses.push(...(Array.isArray(row.body.variables) ? row.body.variables : []), ...(Array.isArray(row.body.detail?.variables) ? row.body.detail.variables : []),...(Array.isArray(row.body.detail?.binding?.variables)?row.body.detail.binding.variables:[]));
+                            uses.push(...(Array.isArray(row.body.variables) ? row.body.variables : []), ...(Array.isArray(row.body.detail?.variables) ? row.body.detail.variables : []), ...(Array.isArray(row.body.detail?.binding?.variables) ? row.body.detail.binding.variables : []));
                         cursor = page.next;
                     } while (cursor);
                 }
@@ -404,8 +471,17 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                     if (item.definition?.schema === 'secret@1') {
                         const exists = await kit.vault.has(item.definition.entry);
                         s.out(`摘要规则 ${labelOf('digest_rule', item.definition.digest_rule)}；使用者 ${item.definition.consumers.map(c => c.definition + '/' + c.item).join('、')}`);
-                        if (!exists && !item.decision.body.revoked)
-                            s.out(`登记了第 ${item.version} 版，密钥库里没有它的条目；下一步 circle-hub secret set --name ${item.name}`);
+                        if (!exists && !item.decision.body.revoked) {
+                            const index = history.findIndex(row => row.decision.digest === item.decision.digest);
+                            const revokedSince = history.slice(0, index).some(row => row.decision.body.revoked);
+                            const retained = history.filter(row => !row.decision.body.revoked).slice(0, 2).some(row => row.decision.digest === item.decision.digest);
+                            if (revokedSince)
+                                s.out(`第 ${item.version} 版之后已有撤回决定；条目不在库中，历史登记保留`);
+                            else if (!retained)
+                                s.out(`第 ${item.version} 版已超出当前和上一版的保留范围；条目不在库中，历史登记保留`);
+                            else
+                                s.out(`登记了第 ${item.version} 版，密钥库里没有它的条目；下一步 circle-hub secret set --name ${item.name}`);
+                        }
                     }
                 }
             }
@@ -478,14 +554,27 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 const auth = profile.auth;
                 profileCache.set(used.definition + '/' + used.item, auth.kind === 'static_header' && auth.header.name.toLowerCase() === 'authorization' && auth.header.scheme === 'raw' && auth.credential === used.item && used.required === 'plain');
             }
-        const consumers = mappings.map(mapping => { const used = consumersOf(definitions, mapping.name); if (!used.length)
-            throw new CliError(`还没有部署定义引用这个名字：先在资源或执行器定义里写 \${secret:${mapping.name}}，再设置`); if (digests.get(mapping.name) === 'sha512_base64' && used.some(c => c.required === 'plain'))
-            throw new CliError('有使用者需要原值，不能只存摘要；请给那一项换一个名字'); if (mapping.basic && used.some(c => profileCache.get(c.definition + '/' + c.item) !== true))
-            throw new CliError('Basic 只用于原样存整个 Authorization 头的凭据项；请核对引用此名字的使用者'); s.out(`密钥 ${mapping.name} 的本版使用者：${used.map(c => c.definition + '/' + c.item).join('、')}`); return used.map(publicConsumer); });
+        const consumers = mappings.map(mapping => {
+            const used = consumersOf(definitions, mapping.name);
+            if (!used.length)
+                throw new CliError(`还没有部署定义引用这个名字：先在资源或执行器定义里写 \${secret:${mapping.name}}，再设置`);
+            if (digests.get(mapping.name) === 'sha512_base64' && used.some(c => c.required === 'plain'))
+                throw new CliError('有使用者需要原值，不能只存摘要；请给那一项换一个名字');
+            if (mapping.basic) {
+                const bad = used.find(c => profileCache.get(c.definition + '/' + c.item) !== true);
+                if (bad) {
+                    const definition = definitions.find(d => d.id === bad.definition)!;
+                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（系统包 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
+                }
+            }
+            s.out(`密钥 ${mapping.name} 的本版使用者：${used.map(c => c.definition + '/' + c.item).join('、')}`);
+            return used.map(publicConsumer);
+        });
         if (!v['dry-run'])
-            await checkVaultKey(kit.vault);
+            await requireVaultKey(kit, { command: true });
         let values: string[];
         let sourceSecrets: string[] = [];
+        const basicPasswords: string[] = [];
         if (sub === 'import') {
             const keys = [...new Set(mappings.flatMap(v => v.keys))];
             const env = await readNamedEnvironment(resolvePath(s.ctx.io.cwd, v['env-file'] as string), keys);
@@ -498,9 +587,15 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             if (bad)
                 throw new CliError('未写入任何密钥；请补齐点名键后先 --dry-run 核对');
             sourceSecrets = [...env.values()];
-            values = mappings.map(mapping => { if (!mapping.basic)
-                return env.get(mapping.keys[0])!; const user = env.get(mapping.keys[0])!; if (user.includes(':'))
-                throw new CliError('Basic 用户名含冒号；请改用可用的账号'); return 'Basic ' + Buffer.from(user + ':' + env.get(mapping.keys[1])!).toString('base64'); });
+            values = mappings.map(mapping => {
+                if (!mapping.basic)
+                    return env.get(mapping.keys[0])!;
+                const user = env.get(mapping.keys[0])!;
+                if (user.includes(':'))
+                    throw new CliError('Basic 用户名含冒号；请改用可用的账号');
+                basicPasswords.push(env.get(mapping.keys[1])!);
+                return 'Basic ' + Buffer.from(user + ':' + env.get(mapping.keys[1])!).toString('base64');
+            });
         }
         else {
             values = [];
@@ -511,12 +606,14 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             else
                 values = await readSecrets(mappings.map(v => v.name));
         }
-        validateChangeReason(reason, [...sourceSecrets, ...values, ...values.map((value, index) => digests.get(mappings[index].name) === 'sha512_base64' ? createHash('sha512').update(value).digest('base64') : value)]);
-        await checkPlainExposure(kit, by, definitions, mappings.map((v, i) => ({ name: v.name, value: values[i] })));
         const inputs: SecretWrite[] = mappings.map((mapping, index) => ({ name: mapping.name, value: values[index], consumers: consumers[index], digest_rule: digests.get(mapping.name), short: short.has(mapping.name) }));
+        for (const input of inputs)
+            validateSecretInput(input);
+        const derivedValues = mappings.flatMap((mapping, i) => digests.get(mapping.name) === 'sha512_base64' || consumersOf(definitions, mapping.name).some(c => c.required === 'sha512_base64') ? [createHash('sha512').update(values[i]).digest('base64')] : []);
+        validateChangeReason(reason, [...sourceSecrets, ...values, ...derivedValues]);
+        await checkPlainExposure(kit, by, definitions, [...values.map(value => ({ value })), ...basicPasswords.map(value => ({ value })), ...derivedValues.map(value => ({ value, derived: true }))]);
         if (v['dry-run']) {
             for (const input of inputs) {
-                validateSecretInput(input);
                 s.out(`${input.name}：核对完成，未写入`);
             }
             return 0;
@@ -538,10 +635,12 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
         throw error;
     }
 }
-function validateSecretInput(input: SecretWrite) { try {
-    validateSecret(input.value, input.short);
+function validateSecretInput(input: SecretWrite) {
+    try {
+        validateSecret(input.value, input.short);
+    }
+    catch {
+        throw new CliError(`密钥 ${input.name} 的文本不合一行长度规则；短值需 --short <名字>`);
+    }
 }
-catch {
-    throw new CliError('密钥文本不合一行长度规则；短值需 --short <名字>');
-} }
 import { validateSecret } from '../../contracts/src/variables.ts';

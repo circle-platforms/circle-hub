@@ -123,3 +123,14 @@ test('prepared batches join the caller transaction and rollback every decision t
  await assert.rejects(kit.store.withTransaction(async tx=>{await kit.variables.commitSecrets(admin,prepared,tx);throw new Error('synthetic rollback');}),/synthetic rollback/);
  assert.equal((await kit.variables.list(admin)).length,0);for(const item of prepared.items)assert.equal(await kit.vault.has(item.metadata.entry),true);
 });
+
+test('withdrawal never deletes a secret version committed after its revocation decision',async t=>{
+ const {kit,admin}=await setup(t);const use=consumer();await kit.variables.setSecrets(admin,[{name:'DEMO_AUTH',value:key(),consumers:[use]}],'DEMO_INITIAL');
+ const transaction=kit.store.withTransaction.bind(kit.store);let interposed=false;
+ kit.store.withTransaction=async(fn,outer)=>{const result=await transaction(fn,outer);const row=(result as {decision?:{body:{object:string;revoked:boolean}}})?.decision?.body;
+  if(!interposed&&row?.object==='secret:DEMO_AUTH'&&row.revoked){interposed=true;await kit.variables.setSecrets(admin,[{name:'DEMO_AUTH',value:'Demo!FutureKey42',consumers:[use]}],'DEMO_LATER');}
+  return result;
+ };
+ await kit.variables.unset(admin,'secret','DEMO_AUTH','DEMO_WITHDRAW');assert.equal(interposed,true);
+ const [latest]=await kit.variables.readSecrets([{name:'DEMO_AUTH',consumer:use}]);assert.equal(latest.value,'Demo!FutureKey42');assert.equal(latest.version,2);
+});

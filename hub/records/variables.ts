@@ -60,7 +60,8 @@ export interface VariablePorts {
     authorizations: Authorizations;
     now?: () => Date;
 }
-export function secretForms(value: string): string[] { return [...new Set([value, JSON.stringify(value).slice(1, -1), encodeURIComponent(value), Buffer.from(value).toString('base64'), createHash('sha256').update(value).digest('hex'), createHash('sha512').update(value).digest('hex')])]; }
+/** Reversible spellings are available separately for disclosure checks; reasons also exclude digest spellings. */
+export function secretForms(value:string,options:{hashes?:boolean}={}):string[]{const forms=[value,JSON.stringify(value).slice(1,-1),encodeURIComponent(value),Buffer.from(value).toString('base64')];if(options.hashes!==false)forms.push(createHash('sha256').update(value).digest('hex'),createHash('sha512').update(value).digest('hex'));return [...new Set(forms)];}
 export function validateChangeReason(reason: unknown, values: readonly string[] = []): string {
     if (typeof reason !== 'string' || !reason.trim() || [...reason].length > 500 || scanForCredentials(Buffer.from(reason)).findings.length)
         throw new VariableError('理由必填、至多 500 个字符且不能含凭据；请重写理由');
@@ -106,7 +107,7 @@ export class RecordVariables {
     async #version(kind: VariableKind, name: string, decision: AuthorizationRecord, history?: AuthorizationRecord[], known?: VariableRecord | SecretRecord | null): Promise<NamedVersion> { const rows = history ?? await this.#history(kind, name); const at = rows.findIndex(row => row.digest === decision.digest); if (at < 0)
         throw new IntegrityError('变量决定不在它的历史链里'); return { kind, name, version: rows.slice(at).filter(row => !row.body.revoked).length, decision, definition: known === undefined ? await this.#definition(decision, kind, name) : known }; }
     async #kindFree(name: string, kind: VariableKind, tx: Transaction) { if ((await this.#history(kind === 'var' ? 'secret' : 'var', name, tx)).length)
-        throw new VariableError('名字已经属于另一种；撤回也不改变名字的种类', name); }
+        throw new VariableError('名字已经属于另一种；撤回也不改变名字的种类，请换一个名字并更新引用定义后重做', name); }
     async setVariable(by: Principal, name: string, value: unknown, reason: string, options: VariableWriteOptions = {}): Promise<{
         value: NamedVersion;
         created: boolean;
@@ -184,12 +185,17 @@ export class RecordVariables {
         await this.assertAdmin(by);
         name = this.#name(name, kind);
         const note = validateChangeReason(reason);
+        let withdrawn:AuthorizationRecord[]=[];
         const result = await this.#p.store.withTransaction(async (tx) => { await this.lockNames([name], tx); await this.#kindFree(name, kind, tx); await validate?.(tx); const history = await this.#history(kind, name, tx); if (!history.length)
-            throw new VariableError('名字没有设置决定；请核对名字'); const decision = await this.#p.authorizations.configureResourceInTransaction(by, kind + ':' + name, null, note, tx, true); return this.#version(kind, name, decision, [decision, ...history]); });
-        if (kind === 'secret')
-            for (const entry of await this.#p.vault.list())
-                if (entry.startsWith('secret.' + name.toLowerCase() + '.'))
-                    await this.#p.vault.remove(entry);
+            throw new VariableError('名字没有设置决定；请核对名字'); withdrawn=history; const decision = await this.#p.authorizations.configureResourceInTransaction(by, kind + ':' + name, null, note, tx, true); return this.#version(kind, name, decision, [decision, ...history]); });
+        if(kind==='secret')try {
+            // Only decisions preceding this revocation authorize deletion. A later prepared or committed version survives.
+            for(const row of withdrawn.filter(row=>!row.body.revoked)) {
+                const metadata=await this.#definition(row,'secret',name);
+                if(metadata?.schema!=='secret@1')throw new IntegrityError('密钥历史定义不可核对');
+                await this.#p.vault.remove(metadata.entry);
+            }
+        }catch {throw new VariableError(`撤回决定 rec:${result.decision.digest} 已生效，历史原件或密钥条目清理未完成；管理员修复原件与密钥库后重跑 secret unset --name ${name}`,name);}
         return result;
     }
     async history(by: Principal, kind: VariableKind, name: string): Promise<NamedVersion[]> { await this.assertAdmin(by); name = this.#name(name, kind); const rows = await this.#history(kind, name); return Promise.all(rows.map(row => this.#version(kind, name, row, rows))); }
@@ -243,28 +249,30 @@ export class RecordVariables {
             for (const request of requests) {
                 const decision = current.get('secret:' + request.name);
                 if (!decision)
-                    throw this.#secretUnavailable(request.name);
+                    throw this.#secretUnavailable(request.name,'没有当前有效的密钥设置');
                 const version = await this.#version('secret', request.name, decision);
                 const metadata = version.definition as SecretRecord;
-                if (!metadata.consumers.some(c => canonicalize(c) === canonicalize(request.consumer)))
-                    throw this.#secretUnavailable(request.name);
+                if (!metadata.consumers.some(c => canonicalize(c) === canonicalize(request.consumer))) {
+                    const sameItem=metadata.consumers.some(c=>c.definition===request.consumer.definition&&c.item===request.consumer.item);
+                    throw this.#secretUnavailable(request.name,sameItem?`第 ${version.version} 版为 ${request.consumer.definition}/${request.consumer.item} 登记的发送地址与当前定义不等`:`第 ${version.version} 版未登记使用者 ${request.consumer.definition}/${request.consumer.item}`);
+                }
                 const value = await this.#p.vault.getText(metadata.entry);
                 if (value === null) {
                     missing = request.name;
                     break;
                 }
                 if ([...value].length !== metadata.length)
-                    throw this.#secretUnavailable(request.name);
+                    throw this.#secretUnavailable(request.name,`条目长度与第 ${version.version} 版的登记不等`);
                 out.push({ name: request.name, version: version.version, decision: decision.digest, metadata, value });
             }
             if (!missing)
                 return out;
             if (attempt)
-                throw this.#secretUnavailable(missing);
+                throw this.#secretUnavailable(missing,'当前登记条目在密钥库中不存在');
         }
         throw new VariableError('密钥读取未完成；请重新设置后重读');
     }
-    #secretUnavailable(name: string) { return new VariableError(`密钥 ${name} 未设置、条目不可用或这一版未登记此使用者及地址；请 circle-hub secret set --name ${name}`, name); }
+    #secretUnavailable(name:string,fact:string){return new VariableError(`密钥 ${name} ${fact}；请 circle-hub secret set --name ${name}`,name);}
     async recentSecrets(): Promise<SecretMaterial[]> { const out: SecretMaterial[] = []; let cursor: string | null = null; const grouped = new Map<string, AuthorizationRecord[]>(); do {
         const page: Page<AuthorizationRecord> = await this.#p.store.find<AuthorizationRecord['body']>({ key: 'authz.permission', value: CONFIG, kind: 'authorization', limit: 500, cursor, newestFirst: true });
         for (const row of page.items)

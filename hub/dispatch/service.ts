@@ -1,11 +1,11 @@
-import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
+import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
-import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, EffectOutcomeSchema, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, readDeclaredTime, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
-import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, containsSecret } from './executors.ts';
+import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, object, type Exchange } from './transport.ts';
 import type { BuildKnowledge } from './probes.ts';
@@ -27,10 +27,11 @@ interface RemoteLease { id: unknown; token: unknown; ttl: number; }
 const operationDefinition = (d:ExecutorDefinition) => ({target:d.target,endpoint:d.endpoint,ca:d.ca,resources:[...d.resources].sort(),manifest_sha256:d.manifest_sha256,actor_header:d.actor?.header.toLowerCase() ?? null,slot:d.proof.slot,payload_argument:d.payload_argument,submit:{tool:d.calls.submit.tool,arguments:d.calls.submit.arguments}});
 // Every future field stays fixed unless explicitly admitted as a read-only repair here.
 const fixedForReading = (d:ExecutorDefinition) => {
- const {status,result,reconciliation,premises,read_retry_when,allowed_tools,refused_tools,credential,limitations,side_effects,clock_skew_ms,receipt,...fixed}=d;
+ const {status,result,reconciliation,premises,read_retry_when,allowed_tools,refused_tools,credential,limitations,side_effects,clock_skew_ms,receipt,max_bytes,poll_ms,...fixed}=d;
  const {status:statusCall,result:resultCall,query,...calls}=fixed.calls;
  return {...fixed,calls};
 };
+const noDeviceEffect=(value:unknown)=>value===EffectOutcomeSchema.enum.target_rejected||value===EffectOutcomeSchema.enum.proven_not_executed;
 const same = (a: unknown, b: unknown) => a !== undefined && b !== undefined && canonicalize(a) === canonicalize(b);
 function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_checks']> {
   return events.filter(e=>e.body.detail.phase==='device_probe' || e.body.detail.phase==='precheck.failure' || e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase))).flatMap(e=>{
@@ -58,7 +59,7 @@ export class DispatchService {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
     const probeIntent=eventOf(events,'probe_intent');
-    const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || ['target_rejected','proven_not_executed'].includes(String(e.body.detail.outcome)) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
+    const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || noDeviceEffect(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
@@ -71,7 +72,7 @@ export class DispatchService {
     const gap=!riskDisposed&&lastCredential?.body.detail.phase==='session_unavailable'?lastCredential.body.detail:undefined;
     const failedChecks=precheckIssues(events);
     return { job,...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
-      outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && ['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
+      outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && noDeviceEffect(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
@@ -203,7 +204,7 @@ export class DispatchService {
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
-      if (!end || isFrozen(priorEvents) || !(['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
+      if (!end || isFrozen(priorEvents) || !(noDeviceEffect(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
@@ -227,7 +228,7 @@ export class DispatchService {
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
       if (!deviceIdentity) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
       const latest = await this.registry.get(executor);
-      if (!latest?.definition.enabled || latest.digest !== registered.digest || latest.resolved_digest !== registered.resolved_digest) throw new Error('执行器配置已变；未提交，请按当前配置重新核验');
+      if (!latest?.definition.enabled || latest.digest !== registered.digest || latest.resolved_digest !== registered.resolved_digest) throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
       await this.registry.admin(by);
       const ownerNow = await this.options.records.principals.get(input.user);
       if (!ownerNow || ownerNow.disabled) throw new Error('发起用户已经不可用；未提交');
@@ -260,6 +261,14 @@ export class DispatchService {
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
       if(!pulse.held())throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');
       await this.options.records.store.withTransaction(async tx => {
+        await lockExecutorConfiguration(this.options.records.store,tx,binding.executor,binding.resources,[d.target],[new URL(d.endpoint).origin]);
+        await this.options.records.variables.lockNames((binding.variables??[]).map(use=>use.name),tx);
+        const config=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|executor.${binding.executor}`,kind:'authorization',newestFirst:true,limit:1},tx);
+        if(config.items[0]?.body.revoked||config.items[0]?.body.bound!==registered.digest)throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
+        for(const use of new Map((binding.variables??[]).map(use=>[use.name,use])).values()){
+          const row=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${use.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
+          if(row.items[0]?.body.revoked||row.items[0]?.digest!==use.decision)throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
+        }
         const gate = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}`, tx);
         if (!gate.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = attempt === 1 ? await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx) : { created: true };
@@ -522,6 +531,9 @@ export class DispatchService {
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     const identities=[['executor',binding.executor],['target',definition.target],['origin',new URL(definition.endpoint).origin]].map(digestOfValue).sort();
     await this.options.records.store.withTransaction(async tx => {
+      await lockExecutorConfiguration(this.options.records.store,tx,binding.executor,binding.resources,[definition.target],[new URL(definition.endpoint).origin]);
+      const config=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|executor.${binding.executor}`,kind:'authorization',newestFirst:true,limit:1},tx);
+      if(config.items[0]?.body.revoked||config.items[0]?.body.bound!==(binding.executor_source_digest??binding.executor_digest))throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
       for(const identity of identities) {
         const previous=[...history].reverse().find(e=>e.body.detail.reserved_identity===identity);
         const claim=await this.journal.append(binding,'reservation','validate','completed',{binding,reserved_identity:identity,previous_reservation:previous?.digest??null},previous?[`rec:${previous.digest}`]:[],`dispatch.reserve.identity:${identity}:${previous?.digest??'first'}`,tx);

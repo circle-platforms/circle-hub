@@ -3,11 +3,9 @@
 // force by a resource_config authorization bound to that digest; every change is a new definition and a new decision, and a
 // disable is the revocation of the configuration. Only admins decide; only admins see addresses and plaintext declarations.
 // The definition binds one published system pack version and its content digest (B04 R[1]): `id` is resolved to the version
-// current when the admin decides, and a newer version takes effect only through an update. Credentials go into the vault
-// entries the definition names, each under the digest rule the definition records; a password is kept only as the digest
-// its system requires; several credentials are set in one call, then the session is forgotten once. An update drops the
-// stored values of credentials that are no longer declared or whose rule changed. `describe` gives admins one resource with
-// its credential names and rules (never a value).
+// current when the admin decides, and a newer version takes effect only through an update. Credentials use
+// named versions enrolled for this resource and destination. The definition records the wire rule; a named version records
+// its storage rule. Updates preserve shared material. Legacy owned entries migrate explicitly, and metadata never reads values.
 import { VariableName, referencesIn, secretNameOf } from '../../contracts/src/variables.ts';
 import { createHash } from 'node:crypto';
 import { EnvironmentSchema, type Environment, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
@@ -55,11 +53,13 @@ export interface AddResourceInput {
 
 export type UpdateResourceInput = Partial<Omit<AddResourceInput, 'note'>> & { note?: string | null };
 
-/** One credential a resource declares: its vault entry, the digest rule it is kept under, and whether a value is set (never the value). */
+/** One credential reference: required wire rule, actual named storage metadata and presence, never material. */
 export interface CredentialDescription {
   name: string;
   entry: string;
   digest: DigestRule;
+  stored_digest?: DigestRule;
+  revoked?: boolean;
   set: boolean;
   version?: number;
   length?: number;
@@ -92,7 +92,7 @@ export interface ResourceRegistryOptions {
   now: () => Date;
   log?: ConnectorLog;
   /**
-   * Called after a credential of a resource changed or its login was reset: the session is forgotten and its vault entry
+   * Called when an administrator resets login: the session is forgotten and its vault entry
    * removed, which another process (the running Hub) reads as the end of its stop. A removal that fails reaches the admin.
    */
   onCredentialChange?: (resource: string) => Promise<void>;
@@ -154,6 +154,7 @@ export class ResourceRegistry {
   readonly #o: ResourceRegistryOptions;
   #cache: { at: number; states: ResourceState[] } | null = null;
   #loading: Promise<ResourceState[]> | null = null;
+  #generation=0;
 
   constructor(options: ResourceRegistryOptions) {
     this.#o = options;
@@ -161,6 +162,8 @@ export class ResourceRegistry {
 
   invalidate(): void {
     this.#cache = null;
+    this.#loading=null;
+    this.#generation++;
   }
 
   /** The exact published version a reference names now (`id` resolves to the latest), with its digest and profile. */
@@ -201,9 +204,9 @@ export class ResourceRegistry {
   }
 
   /**
-   * A new definition for an enabled resource (same id, same vault entries for the credentials that stay). `system_pack`
-   * given as `id` binds the latest published version now; left out, the bound version stays. A credential that is no
-   * longer declared, or whose digest rule changed, loses its stored value (it is set again with setCredential).
+   * A new definition for an enabled resource, preserving unchanged named references. `system_pack`
+   * given as `id` binds the latest published version now; left out, the bound version stays. Shared named values are
+   * preserved when a declaration changes; legacy owned entries are retired only after the configuration commits.
    */
   async update(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord> {
     const admin = await this.#admin(by);
@@ -246,20 +249,30 @@ export class ResourceRegistry {
       const previous = (await this.#o.variables.list(by)).find(v => v.kind === 'secret' && v.name === name && v.definition !== null);
       expectedSecrets.set(name,previous?.decision.digest??null);
       let consumers = [resourceConsumer(record,item)];
+      let keptValue=value,keptRule=current.credential_digests[item];
       if (previous?.definition && previous.definition.schema === 'secret@1') {
         const metadata = previous.definition;
         const old = await this.#o.vault.getText(metadata.entry);
-        const incoming = current.credential_digests[item] === metadata.digest_rule ? value : metadata.digest_rule === 'sha512_base64' && current.credential_digests[item] === 'plain' ? storedCredential(value,'sha512_base64') : null;
-        if (old === null || incoming !== old) throw new ConnectorError('RESOURCE_INVALID','迁移的值与已有密钥不同或摘要规则不合：换一个名字');
+        if(old===null || [...old].length!==metadata.length)throw new ConnectorError('RESOURCE_INVALID','已有密钥条目不可用或长度不合登记：先 secret set 重新输入后迁移');
+        let incoming=value,existing=old;
+        if(current.credential_digests[item]==='sha512_base64'&&metadata.digest_rule==='plain'){
+          existing=storedCredential(old,'sha512_base64');keptValue=old;keptRule='plain';
+        } else if(current.credential_digests[item]==='plain'&&metadata.digest_rule==='sha512_base64')incoming=storedCredential(value,'sha512_base64');
+        if(incoming!==existing)throw new ConnectorError('RESOURCE_INVALID','迁移的值与已有密钥不同：换一个名字');
         consumers = [...metadata.consumers.filter(c => !(c.definition === id && c.item === item)),resourceConsumer(record,item)];
       }
-      writes.push({name,value,digest_rule:current.credential_digests[item],alreadyStored:true,short:true,consumers});
+      writes.push({name,value:keptValue,digest_rule:keptRule,alreadyStored:true,short:true,consumers});
     }
     if (new Set(writes.map(v=>v.name)).size !== writes.length) throw new ConnectorError('RESOURCE_INVALID','一次迁移的凭据项须使用不同名字');
     const prepared = writes.length ? await this.#o.variables.prepareSecrets(admin,writes,`从资源 ${id} 的凭据项迁移来`) : undefined;
     await this.#configure(admin, record, note ?? null, prepared,expectedSecrets);
-    for (const [name,entry] of Object.entries(current.credentials))
-      if (!secretNameOf(entry) && (record.credentials[name] !== entry || current.credential_digests[name] !== record.credential_digests[name])) await this.#o.vault.remove(entry);
+    try {
+      for (const [name,entry] of Object.entries(current.credentials))
+        if(entry===credentialEntry(id,name) && (record.credentials[name]!==entry || current.credential_digests[name]!==record.credential_digests[name]))await this.#o.vault.remove(entry);
+      // A failed post-commit deletion is retried by the same update, even after the definition already uses a name.
+      for(const item of Object.keys(changes.credentials??{}))if(secretNameOf(record.credentials[item]??''))await this.#o.vault.remove(credentialEntry(id,item));
+      for(const name of new Set(Object.values(record.credentials).map(secretNameOf).filter((v):v is string=>v!==null)))await this.#o.variables.cleanupSecret(name);
+    }catch(error){throw new ConnectorError('STORE_FAILED',`资源 ${id} 的新定义${writes.length?'与迁移密钥决定':''}已提交，旧条目清理未完成；管理员修复密钥库权限后重跑同一 resource update 清理，不重新输入值`,{cause:error});}
     this.#event('resource_updated', { resource: id, system_pack: record.system_pack });
     return record;
   }
@@ -319,12 +332,13 @@ export class ResourceRegistry {
     if (state === null) return null;
     const { resource } = state;
     const credentials: CredentialDescription[] = [];
+    const versions=await this.#o.variables.list(by);
     for (const name of Object.keys(resource.credentials).sort()) {
       const entry = resource.credentials[name];
       const ref = secretNameOf(entry);
-      const version = ref ? (await this.#o.variables.list(by)).find(v=>v.kind === 'secret' && v.name === ref) : undefined;
+      const version = ref ? versions.find(v=>v.kind === 'secret' && v.name === ref) : undefined;
       const metadata = version?.definition?.schema === 'secret@1' ? version.definition : null;
-      credentials.push({name,entry,digest:resource.credential_digests[name],set: metadata ? await this.#o.vault.has(metadata.entry) : ref ? false : await this.#o.vault.has(entry),...(metadata ? {version:version!.version,length:metadata.length,registered:metadata.consumers.some(c=>canonicalBytes(c).toString()===canonicalBytes(resourceConsumer(resource,name)).toString())} : {})});
+      credentials.push({name,entry,digest:resource.credential_digests[name],set: metadata ? await this.#o.vault.has(metadata.entry) : ref ? false : await this.#o.vault.has(entry),...(version?{version:version.version,revoked:version.decision.body.revoked}:{}),...(metadata ? {stored_digest:metadata.digest_rule,length:metadata.length,registered:metadata.consumers.some(c=>canonicalBytes(c).toString()===canonicalBytes(resourceConsumer(resource,name)).toString())} : {})});
     }
     return { ...listing(state, true), credentials };
   }
@@ -339,14 +353,15 @@ export class ResourceRegistry {
 
   /** Every resource, enabled or not, by name (no access check: for the connectors themselves). */
   async states(): Promise<ResourceState[]> {
-    const ttl = this.#o.cacheMs ?? 5_000;
-    const now = Date.now();
-    if (this.#cache !== null && now - this.#cache.at < ttl) return this.#cache.states;
-    this.#loading ??= this.#read().finally(() => {
-      this.#loading = null;
-    });
-    const states = await this.#loading;
-    this.#cache = { at: Date.now(), states };
+    const ttl=this.#o.cacheMs??5000,now=Date.now(),generation=this.#generation;
+    if(this.#cache!==null&&now-this.#cache.at<ttl)return this.#cache.states;
+    if(this.#loading===null){
+      const loading:Promise<ResourceState[]>=this.#read().finally(()=>{if(this.#loading===loading)this.#loading=null;});
+      this.#loading=loading;
+    }
+    const states=await this.#loading;
+    // An invalidated in-flight reader keeps its own snapshot, but never supplies or overwrites the new generation.
+    if(generation===this.#generation)this.#cache={at:Date.now(),states};
     return states;
   }
 

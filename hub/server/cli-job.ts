@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
-import {VariableInputError} from '../../contracts/src/variables.ts';
+import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
 import { sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { UsageError } from './errors.ts';
@@ -52,7 +52,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
     const entries=await registry.sources(by);
     for(const source of entries){
       try{const e=await registry.get(source.id);if(e)await executorLine(s,registry,by,e);}
-      catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；缺普通变量决定或取值不合定义：先 var set 后重做 executor list`);}
+      catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
     }
     s.out(`执行器 ${entries.length}`); return 0;
   }
