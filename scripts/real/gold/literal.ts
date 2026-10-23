@@ -116,7 +116,7 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   const parsed = parseMindMap(map);
   const raw = rawWalk((map as { root?: unknown }).root, parsed);
   // Preserve raw tag-array presence for recognition; validity is checked separately below.
-  const recognized: GoldMap = { nodes: parsed.nodes.map((node, i) => ({ ...node, resource: Array.isArray(raw[i].resource) ? (raw[i].resource as unknown[]).map(tag => typeof tag === 'string' ? tag : '') : [] })) };
+  const recognized: GoldMap = { nodes: parsed.nodes.map((node, i) => ({ ...node, text: typeof raw[i].text === 'string' ? raw[i].text as string : typeof raw[i].text === 'boolean' || typeof raw[i].text === 'number' && Number.isFinite(raw[i].text) ? String(raw[i].text) : '', resource: Array.isArray(raw[i].resource) ? (raw[i].resource as unknown[]).map(tag => typeof tag === 'string' ? tag : '') : [] })) };
   const cases = caseNodesOf(recognized, { caseRule: options.caseRule ?? 'marked' });
 
   const idsSeen = new Map<string, number>();
@@ -128,7 +128,6 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   for (const node of cases) {
     const id = node.id;
     const reading = readCase(recognized, node);
-    reading.title = typeof raw[node.index].text === 'string' ? raw[node.index].text as string : '';
     readings.set(`${node.index}`, reading);
     if (id === '' || (idsSeen.get(id) ?? 0) > 1) {
       noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0, reason: id === '' ? 'data.id 缺失' : 'data.id 重复' });
