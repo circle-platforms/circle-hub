@@ -553,6 +553,14 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   // The narrowed keys (only=…), normalized the same way as the bucket keys. Null: the view is complete (no narrowing).
   // A hand-built compact index may predate the field; undefined means un-narrowed.
   const only = compactIndex.only ?? null;
+  const missingKeys = compactIndex.missingKeys ?? [];
+  if (only !== null && (missingKeys.length > 0 || compactIndex.sourceTruncated === true)) {
+    const detail = [
+      ...(missingKeys.length > 0 ? [`源视图缺少请求的键：${missingKeys.join('、')}，请重新读取这些键`] : []),
+      ...(compactIndex.sourceTruncated === true ? ['收窄的源视图已截断，无法证明请求键的覆盖完整，请重新读取未截断视图'] : []),
+    ].join('；');
+    return [...outcomes, { verdict: 'unknown', reason: 'integrity_unproven', statement: `${detail}，无法核对重复`, grounds: [], tier: 'advisory', ...own, data: { missing_keys: missingKeys } }];
+  }
   const capped = new Set((compactIndex.cappedKeys ?? []).map(normalizeCommand));
   // Decidable: some key of the draft's command set sits in only AND is not cut. cut_keys is authoritative;
   // for older views only, a key at the per-key cap is possibly cut. An intersection entirely on such keys stays unknown.

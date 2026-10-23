@@ -172,10 +172,10 @@ describe('index metadata fields take precedence over URI and cap inference', () 
     assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'unknown');
   });
 
-  it('uses fields with no narrowing parameter in the URI, including an explicit empty only list', () => {
+  it('a truncated narrowed view stays unknown even with authoritative metadata', () => {
     const external = 'knowledge:index:p:b?kind=case&key=commands';
     const view = { ...SYNTHETIC_INDEX_VIEW, truncated: true, only: ['show health detail'], cut_keys: [] };
-    assert.equal(outcome(view, external).result.verdict, 'support');
+    assert.equal(outcome(view, external).result.verdict, 'unknown');
     assert.equal(outcome({ ...view, only: [] }, NARROWED).result.verdict, 'unknown');
   });
 
@@ -232,4 +232,27 @@ describe('index metadata fields take precedence over URI and cap inference', () 
     }
   });
 
+});
+
+
+describe('requested keys missing from narrowed views', () => {
+  const draft = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
+  const check = (view: unknown) => checkDuplicate(inputOf({ drafts: [draft], indexed_cases: buildCompactIndex(view, undefined, NARROWED) }))[0];
+  it('missing keys are unknown and name what must be read again', () => {
+    const result = check({ ...SYNTHETIC_INDEX_VIEW, keys: {}, entries: {}, only: ['show health detail'], cut_keys: [] });
+    assert.equal(result.verdict, 'unknown');
+    assert.equal(result.reason, 'integrity_unproven');
+    assert.match(result.statement, /缺少.*show health detail/);
+  });
+  it('explicit empty keys prove absence only when the narrowed view is complete', () => {
+    const view = { ...SYNTHETIC_INDEX_VIEW, keys: { 'show health detail': [] }, entries: {}, only: ['show health detail'], cut_keys: [] };
+    assert.equal(check(view).verdict, 'support');
+    assert.equal(check({ ...view, truncated: true }).verdict, 'unknown');
+  });
+  it('truncation stays unknown even when a visible candidate looks like a duplicate', () => {
+    const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: true });
+    const result = checkDuplicate(inputOf({ drafts: [{ ...draft, title: '健康检查详细信息查看' }], indexed_cases: compact }))[0];
+    assert.equal(result.verdict, 'unknown');
+    assert.match(result.statement, /截断/);
+  });
 });
