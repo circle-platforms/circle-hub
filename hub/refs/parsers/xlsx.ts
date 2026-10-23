@@ -494,10 +494,9 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   };
   let nulRemoved = 0;
   const xstring = (value: string): string => decodeXstring(value, (count) => { nulRemoved += count; }, message => { throw new ParseEncodingError(KEY, located(message), origin?.offset ?? null); });
-  if (!archive.has('[Content_Types].xml') || !archive.has('_rels/.rels'))
-    syntax('XLSX 缺少工作簿必需部件');
   const actualNames = new Map([...archive.keys()].map((name) => [asciiFold(name), name]));
   const actualPart = (name: string): string => actualNames.get(asciiFold(name)) ?? name;
+  if (!archive.has(actualPart('[Content_Types].xml')) || !archive.has(actualPart('_rels/.rels'))) syntax('XLSX 缺少工作簿必需部件');
   const cache = new Map<string, Element>();
   let nodeCount = 0;
   const part = (name: string): Element => {
@@ -614,7 +613,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     overrides.set(name, required(element, 'ContentType'));
   }
   const members = [...archive].map(([name, value]) => {
-    const contentType = name === '[Content_Types].xml' ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null;
+    const contentType = asciiFold(name) === asciiFold('[Content_Types].xml') ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null;
     charge(80 + jsonStringBytes(name) + (contentType === null ? 0 : jsonStringBytes(contentType)), '成员元数据');
     return { name, size: value.length, contentType };
   });
@@ -630,12 +629,12 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     external: boolean;
     resolved: string | null;
   }[]>();
-  for (const member of members.filter((member) => member.name.endsWith('.rels'))) {
+  for (const member of members.filter((member) => asciiFold(member.name).endsWith('.rels'))) {
     selectPart(member.name);
     const path = member.name;
     let source = '';
-    if (path !== '_rels/.rels') {
-      const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/.exec(path);
+    if (asciiFold(path) !== '_rels/.rels') {
+      const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/i.exec(path);
       if (!match)
         syntax('XLSX 关系部件路径无效');
       source = actualPart([match![1], match![2]].filter(Boolean).join('/'));

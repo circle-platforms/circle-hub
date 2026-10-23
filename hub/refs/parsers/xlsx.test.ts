@@ -488,3 +488,19 @@ test('workbook and shared-string errors select their own part instead of the las
     assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && e.offset === record.local && e.message.includes(`成员 ${options.ordinal}`));
   }
 });
+
+function variantRelationships(target: string, external: boolean): Buffer {
+  return workbook({ extra: [{ name: 'xl/worksheets/_RELS/sheet1.xml.RELS', text: `<Relationships xmlns="${PKG_REL}"><Relationship Id="link" Type="${DOC_REL}/hyperlink" Target="${target}"${external ? ' TargetMode="External"' : ''}/></Relationships>` }] });
+}
+test('case-equivalent relationship parts still disclose links and reject broken internal targets', () => {
+  const document = xlsxParser.parse(variantRelationships('http://192.0.2.1/never-follow', true));
+  assert.equal(document.summary().externalRelationships, 1);
+  assert.ok(document.model.relationships.some(r => r.external && r.id === 'link'));
+  assert.throws(() => xlsxParser.parse(variantRelationships('../drawings/absent.xml', false)), (e: unknown) => e instanceof ParseError && /关系.*不存在|断链/.test(e.message));
+});
+test('required OPC metadata parts are found by ASCII-equivalent identity', () => {
+  const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name: name === '[Content_Types].xml' ? '[CONTENT_TYPES].XML' : name === '_rels/.rels' ? '_RELS/.RELS' : name, bytes }));
+  const document = xlsxParser.parse(zip(members));
+  assert.equal(document.model.sheets.length, 1);
+  assert.equal(document.model.members.find(m => m.name === '[CONTENT_TYPES].XML')!.contentType, null);
+});

@@ -423,3 +423,7 @@ XLSX rejection locations are assigned before central/local member checks. Centra
 record's offset until a validated local header is known; archive-level checks clear member context. The archive retains
 private member-location metadata for part/schema failures. Sheet/row context is selected before interpreting its values;
 boolean checks name the actual attribute. No public filename or source value is needed to locate the failure.
+
+OPC member identity is ASCII case-insensitive throughout: required metadata, relationship suffix/directory recognition,
+source/target lookup and duplicate detection all use that equivalence. Original spellings remain in members and no
+relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.
