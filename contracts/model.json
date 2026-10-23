@@ -4188,6 +4188,21 @@
  },
  "vocabulary": [
   {
+   "axis": "effect_trigger",
+   "label": "触发方式",
+   "owner": "W03",
+   "values": [
+    {
+     "code": "runner_session",
+     "label": "由运行者会话经效果写入发起"
+    },
+    {
+     "code": "hub_template",
+     "label": "放行条件满足后由 Hub 按模板派发"
+    }
+   ]
+  },
+  {
    "axis": "write_interaction",
    "label": "交互方式",
    "owner": "D03",

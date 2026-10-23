@@ -467,6 +467,18 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     }
   }
 
+  if(requirements && checks)for(const [index,row] of (requirements.effects??[]).entries()) {
+    const names=new Set([...row.policy_checks,...('policy' in row.parameters?[row.parameters.check]:[])]);
+    for(const id of names) {
+      const check=checks.checks.find(check=>check.id===id);
+      if(!check || !check.table?.startsWith('policies/')) {
+        c.add(problem('effects.policy_binding','requirements.json',`效果 ${row.id} 的政策检查 ${id} 没有绑定 policies/ 下的表`,'在 checks.json 点名同一脚本和政策表，并提供正反例',{field:`/effects/${index}`}));continue;
+      }
+      if('policy' in row.parameters && id===row.parameters.check && check.table!==row.parameters.policy)c.add(problem('effects.policy_binding','requirements.json',`效果 ${row.id} 的参数政策表与检查 ${id} 用表不一致`,'指向编译时同一个检查与同一张表',{field:`/effects/${index}/parameters`}));
+      if(!samples.some(sample=>sample.sample.check===id && sample.polarity==='positive') || !samples.some(sample=>sample.sample.check===id && sample.polarity==='negative'))c.add(problem('effects.policy_samples','requirements.json',`效果 ${row.id} 的政策检查 ${id} 缺正例或反例`,'为该检查提供正反例并在发布时运行',{field:`/effects/${index}/policy_checks`}));
+    }
+  }
+
   // Functions: every reference names a module inside functions/ whose imports the sandbox admits, with that export.
   const entries: FunctionEntry[] = [];
   if (workflow) {
