@@ -128,6 +128,9 @@ export class DispatchService {
       try { answer = await session.call('submit', context); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
       const accepted = mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
+      if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
+        await this.unknown(binding, '回执请求身份与意图不符；须按原请求记录核对，不能重交', [answer.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
+      }
       if (!accepted) {
         await this.unknown(binding, '目标拒绝未给出可信阶段；不能据此证明未执行', [answer.source]); return await this.status(by, binding.job);
       }

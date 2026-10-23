@@ -22,7 +22,7 @@ export const ExecutorDefinition = z.strictObject({
   payload_argument: pointer.refine(p => p !== ''),
   calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call, status: call, result: call }),
   lease: z.strictObject({ id: pointer, token: pointer, ttl_ms: pointer, ttl_scale_ms: z.number().positive().default(1), acceptance: pointer, map: acceptance }),
-  receipt: z.strictObject({ acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
+  receipt: z.strictObject({ request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   conditions,

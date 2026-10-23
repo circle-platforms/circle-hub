@@ -22,12 +22,12 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   let failedRead = false; let stateReads = 0; let sawIntentAtSubmit = false;
   const calls: string[] = [];
   const submitted: Uint8Array[] = [];
-  let submittedSha = payload.body.sha256; let submittedIds: unknown = ['synthetic-case'];
+  let submittedRequest: unknown; let submittedSha = payload.body.sha256; let submittedIds: unknown = ['synthetic-case'];
   const replies = (name: string): Record<string, unknown> => {
     if (name === 'open_slot') return { ok: options.mode !== 'busy', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 300 };
     if (name === 'touch_slot') return { ok: options.mode !== 'heartbeat-failure', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 300 };
     if (name === 'inspect_slot') return { build: options.mode === 'build' ? 'wrong' : 'synthetic-build', seats: options.mode === 'seats' ? 0 : 2, reachable: true, topology: { synthetic: true } };
-    if (name === 'send_blob') return { ok: options.mode !== 'reject', key: 'synthetic-remote', digest: options.mode === 'receipt-sha' ? 'f'.repeat(64) : submittedSha, ids: options.mode === 'receipt-items' ? ['different'] : submittedIds };
+    if (name === 'send_blob') return { request: submittedRequest, ok: options.mode !== 'reject', key: 'synthetic-remote', digest: options.mode === 'receipt-sha' ? 'f'.repeat(64) : submittedSha, ids: options.mode === 'receipt-items' ? ['different'] : submittedIds };
     if (name === 'inspect_blob') return { state: options.mode === 'lost' ? 'vanished' : options.mode === 'unmapped' ? 'unmapped' : ++stateReads <= 2 ? 'working' : 'ended', exit: 0 };
     if (name === 'read_blob') return { key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
     return { ok: true };
@@ -37,6 +37,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     if (options.mode === 'fencing-result' && name === 'read_blob') await leases.forceRelease({ keys: definition('x').resources, by: admin.id, reason: '合成结果阶段强制释放' });
     if (!failedRead && ((options.mode === 'transient-status' && name === 'inspect_blob') || (options.mode === 'transient-result' && name === 'read_blob'))) { failedRead = true; res.destroy(); return {}; }
     if (name === 'send_blob') {
+      submittedRequest = _args.request;
       const bytes = Buffer.from(String(_args.blob), 'base64'); submitted.push(bytes); submittedSha = sha256Hex(bytes); submittedIds = _args.ids;
       if (_args.digest !== submittedSha) return { ok: false };
       sawIntentAtSubmit = (await kit.store.getByKey('action', `dispatch.bytes:${submittedSha}`)) !== null;
