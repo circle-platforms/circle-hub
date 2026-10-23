@@ -12,7 +12,6 @@ const MARK = '（按合成合约核对；不证明在真实设备上跑得通）
 function withSteps(steps: Array<{ object: string; method: string; params: Record<string, unknown> }>): ReturnType<typeof goodData> {
   const data = goodData();
   data.steps = steps;
-  data.plan_json = '';
   return data;
 }
 
@@ -104,7 +103,6 @@ describe('bed_addresses 检查', () => {
   it('反例：桶不是清单里的台架名', () => {
     const data = goodData();
     data.bucket = 'bed-z';
-    data.plan_json = '';
     const [outcome] = checkAddresses(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.bed_unknown']);
     assert.match(outcome.statement, /bed-a/);

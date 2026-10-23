@@ -49,8 +49,7 @@
             "text": "健康检查间隔设置成功"
           }
         }
-      ],
-      "plan_json": ""
+      ]
     },
     "contract": {
       "schema": "compile-contract@1",

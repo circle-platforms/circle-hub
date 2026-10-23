@@ -51,7 +51,6 @@ describe('contract_shape 检查', () => {
   it('反例：方法不在合约里', () => {
     const data = goodData();
     data.steps = [{ object: 'dut', method: 'reset', params: {} }, ...data.steps.slice(1)];
-    data.plan_json = '';
     const [outcome] = checkContractShape(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.method_unknown']);
     assert.match(outcome.statement, /reset.*不在合约里/);
@@ -61,7 +60,6 @@ describe('contract_shape 检查', () => {
   it('反例：禁用的（对象，方法）组合', () => {
     const data = goodData();
     data.steps = [{ object: 'dut', method: 'reboot', params: {} }, ...data.steps.slice(1)];
-    data.plan_json = '';
     const [outcome] = checkContractShape(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.method_forbidden']);
     assert.match(outcome.statement, /禁用的组合/);
@@ -73,7 +71,6 @@ describe('contract_shape 检查', () => {
       { object: 'dut', method: 'listen', params: { address: '192.0.2.10' } },
       { object: 'client', method: 'request', params: { target: '192.0.2.90', count: 3, retries: 2 } },
     ];
-    data.plan_json = '';
     const outcomes = checkContractShape(subjectOf(data));
     const codes = outcomes.map((o) => o.code).sort();
     assert.deepEqual(codes, ['case-compile.param_arity', 'case-compile.param_arity']);
@@ -84,7 +81,6 @@ describe('contract_shape 检查', () => {
   it('反例：参数类型不对', () => {
     const data = goodData();
     data.steps = [{ object: 'server', method: 'respond', params: { backend: '192.0.2.90', status: 'ok' } }];
-    data.plan_json = '';
     const [outcome] = checkContractShape(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.param_type']);
     assert.match(outcome.statement, /status 应为整数/);
@@ -93,23 +89,22 @@ describe('contract_shape 检查', () => {
   it('反例：参数取值越界', () => {
     const data = goodData();
     data.steps = [{ object: 'client', method: 'request', params: { target: '192.0.2.90', count: 5000 } }];
-    data.plan_json = '';
     const [outcome] = checkContractShape(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.param_range']);
     assert.match(outcome.statement, /不大于 1000/);
   });
 
   it('反例：槽位形状和未知块', () => {
-    const [shape] = checkContractShape(subjectOf({ bucket: 'bed-a', blocks: 'many', steps: [], expects: [], plan_json: 1 }));
+    const [shape] = checkContractShape(subjectOf({ bucket: 'bed-a', blocks: 'many', steps: [], expects: [] }));
     assert.equal(shape.code, 'case-compile.slots_invalid');
-    const [block] = checkContractShape(subjectOf({ bucket: 'bed-a', blocks: ['setup', 'warmup'], steps: [{ object: 'dut', method: 'save', params: {} }], expects: [], plan_json: '' }));
+    const [block] = checkContractShape(subjectOf({ bucket: 'bed-a', blocks: ['setup', 'warmup'], steps: [{ object: 'dut', method: 'save', params: {} }], expects: [] }));
     assert.equal(block.code, 'case-compile.block_unknown');
   });
 
   it('合约不是合成的时，结论只带“不证明在真实设备上跑得通”', () => {
     const doc = { ...(CONTRACT_DOC as Record<string, unknown>), synthetic: false };
     const contract = contractOf(doc);
-    const [outcome] = checkContractShape(subjectOf(goodData(contract), { contractDoc: doc }));
+    const [outcome] = checkContractShape(subjectOf(goodData(), { contractDoc: doc }));
     assert.equal(outcome.verdict, 'support');
     assert.ok(outcome.statement.endsWith('（不证明在真实设备上跑得通）'), outcome.statement);
     assert.ok(!outcome.statement.includes('按合成合约核对'));

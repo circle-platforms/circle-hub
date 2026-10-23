@@ -64,7 +64,7 @@
     {
       "key": "plan_deterministic",
       "name": "反复编译结果相同",
-      "description": "执行计划由确定性生成器从槽位出（JSON 形式）：Hub 从提交的槽位重新生成，与提交的执行计划逐字节比对，不一致记不通过",
+      "description": "执行计划由确定性生成器从槽位出（JSON 形式，exec-plan@1）：Hub 从提交的槽位生成规范文本，再用另一个读取函数解析回来逐项比对。一致记支持，结论写出计划文本的 sha256；生成或回读失败记未知（出件失败，不写成模型的错）",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",

@@ -3,14 +3,14 @@
 // submission is accepted with every check passing and the two markers on every conclusion; a forbidden (object,
 // method) pair and a hand-edited plan are refuted with their codes.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { createDefaultRegistry, parserKey, recognize } from '../../../hub/refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
-import { CONTRACT_DOC, MANIFEST_DOC, contractOf } from './functions/test-support.ts';
-import { generatePlanJson } from './functions/plan.ts';
+import { CONTRACT_DOC, MANIFEST_DOC } from './functions/test-support.ts';
 import { call, openHub, sha, type Hub } from './testing/hub.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
@@ -59,15 +59,10 @@ interface PlanData {
   blocks: string[];
   steps: Array<{ object: string; method: string; params: Record<string, unknown> }>;
   expects: Array<{ text: string; quote: { reference: string; text: string } }>;
-  plan_json: string;
 }
 
-function planOf(caseId: string, steps: PlanData['steps'], expects: PlanData['expects']): PlanData {
-  const contract = contractOf();
-  const slots = { bucket: 'bed-a', blocks: ['setup'], steps, expects, planJson: '' };
-  const planJson = generatePlanJson(caseId, slots, contract);
-  assert.ok(planJson !== null);
-  return { bucket: slots.bucket, blocks: slots.blocks, steps, expects, plan_json: planJson };
+function planOf(steps: PlanData['steps'], expects: PlanData['expects']): PlanData {
+  return { bucket: 'bed-a', blocks: ['setup'], steps, expects };
 }
 
 function submission(run: string, plans: Map<string, PlanData>) {
@@ -116,13 +111,13 @@ after(async () => {
 
 function goodPlans(): Map<string, PlanData> {
   const plans = new Map<string, PlanData>();
-  plans.set('doc-1:c-1', planOf('doc-1:c-1', [
+  plans.set('doc-1:c-1', planOf([
     { object: 'dut', method: 'listen', params: { address: '192.0.2.10', port: 8080 } },
     { object: 'dut', method: 'cli', params: { line: 'widget health interval 60' } },
     { object: 'client', method: 'request', params: { target: '192.0.2.90', count: 3 } },
     { object: 'server', method: 'respond', params: { backend: '192.0.2.90', status: 200 } },
   ], [{ text: '健康检查间隔设置成功', quote: { reference: leafReference('健康检查间隔设置成功'), text: '健康检查间隔设置成功' } }]));
-  plans.set('doc-1:c-2', planOf('doc-1:c-2', [
+  plans.set('doc-1:c-2', planOf([
     { object: 'dut', method: 'cli', params: { line: 'widget session persistence cookie' } },
   ], [{ text: '会话保持生效', quote: { reference: leafReference('会话保持生效'), text: '会话保持生效' } }]));
   return plans;
@@ -172,19 +167,25 @@ describe('a production run of case-compile', { skip }, () => {
       claims.some((claim) => claim.qualifier.nature === 'judgment'),
       'plan 要求是模型自己的判断（执行计划），五个事实要求项逐项核对它',
     );
-    const deterministic = packClaims.find((claim) => claim.statement.text.includes('确定性重读一致'));
+    const deterministic = packClaims.find((claim) => claim.statement.text.includes('确定性生成并回读一致'));
     assert.ok(deterministic, '确定性结论在');
+    const produced = deterministic.statement.data as { plan: string; sha256: string };
+    assert.equal(produced.sha256, createHash('sha256').update(produced.plan, 'utf8').digest('hex'), 'data 里的 sha256 就是计划文本的摘要');
+    assert.ok(deterministic.statement.text.includes(`sha256 ${produced.sha256}`), '结论文字写出 sha256');
+    const plan = JSON.parse(produced.plan) as { schema: string; case: string; steps: unknown[] };
+    assert.equal(plan.schema, 'exec-plan@1');
+    assert.equal(plan.case, 'doc-1:c-1');
+    assert.equal(plan.steps.length, 4);
     assert.equal(stored.latest?.result.acceptance, 'accepted');
   });
 
-  it('refutes a forbidden (object, method) pair and a hand-edited plan, with the markers', async () => {
+  it('refutes a forbidden (object, method) pair; the plan is still generated from the rest of the slots', async () => {
     const detail = await hub.service.startRunDetailed(hub.alice, start(), call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const run = detail.answer.run!;
     const plans = goodPlans();
     const bad = plans.get('doc-1:c-1')!;
     bad.steps = [{ object: 'dut', method: 'reboot', params: {} }, ...bad.steps.slice(1)];
-    bad.plan_json = bad.plan_json.replace('"port":8080', '"port":8081');
     const answer = await hub.service.submitResult(hub.alice, submission(run.run, plans), call());
     assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
     const result = ValidationResult.parse(answer.result);
@@ -193,11 +194,7 @@ describe('a production run of case-compile', { skip }, () => {
     assert.ok(forbidden, JSON.stringify(claims.map((claim) => claim.statement.text)));
     assert.match(forbidden.statement.text, /按合成合约核对/);
     assert.match(forbidden.statement.text, /不证明在真实设备上跑得通/);
-    const mismatch = claims.find((claim) => claim.statement.verdict === 'refute' && claim.statement.text.includes('plan_json'));
-    assert.ok(mismatch, '确定性重读不一致被反驳');
-    for (const claim of [forbidden, mismatch]) {
-      assert.equal(claim.qualifier.nature, 'fact');
-    }
+    assert.equal(forbidden.qualifier.nature, 'fact');
     assert.equal(result.acceptance, 'accepted', '校验照常完成并存下；不满足写在要求项状态上');
     const requirementOf = (key: string) => {
       for (const items of Object.values(result.partitions)) {
@@ -210,7 +207,7 @@ describe('a production run of case-compile', { skip }, () => {
       throw new Error(`requirement ${key} not found`);
     };
     assert.deepEqual([requirementOf('contract_methods').status, requirementOf('contract_methods').unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
-    assert.deepEqual([requirementOf('plan_deterministic').status, requirementOf('plan_deterministic').unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
+    assert.equal(requirementOf('plan_deterministic').status, 'satisfied', '其余槽位照学生成执行计划并回读一致');
   });
 
   it('refuses the run to a user the pack is not assigned to', async () => {

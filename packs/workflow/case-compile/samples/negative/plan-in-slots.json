@@ -1,8 +1,8 @@
 {
-  "id": "plan_tampered",
+  "id": "plan_in_slots",
   "source": "author",
   "check": "deterministic_plan",
-  "note": "合成反例：plan_json 被手写改动（端口 8080 改成 8081），与槽位生成的不一致",
+  "note": "合成反例：槽位里写了 plan_json——执行计划由 Hub 生成，模型只填槽",
   "subject": {
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
@@ -53,7 +53,7 @@
           }
         }
       ],
-      "plan_json": "{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8081}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}"
+      "plan_json": "{\"schema\":\"exec-plan@1\"}"
     },
     "contract": {
       "schema": "compile-contract@1",
@@ -254,7 +254,7 @@
   "expect": [
     {
       "verdict": "refute",
-      "code": "case-compile.plan_mismatch",
+      "code": "case-compile.plan_in_slots",
       "item": "doc-1:c-1",
       "tier": "blocking"
     }

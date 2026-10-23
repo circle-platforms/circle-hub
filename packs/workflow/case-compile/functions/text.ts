@@ -30,7 +30,7 @@ export interface Outcome {
   statement: string;
   grounds: string[];
   tier: 'blocking' | 'advisory';
-  reason?: 'missing_input' | 'integrity_unproven' | 'check_error';
+  reason?: 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed';
   item?: string;
   data?: { [key: string]: unknown };
 }

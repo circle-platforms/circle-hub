@@ -56,13 +56,13 @@
     },
     {
       "id": "deterministic_plan",
-      "title": "执行计划确定性重读一致",
+      "title": "执行计划确定性生成与回读一致",
       "function": { "module": "functions/checks.ts", "export": "checkDeterministic" },
       "applies": "item",
       "subject": { "module": "functions/subject.ts", "export": "planSubject" },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 plan_deterministic：执行计划由确定性生成器从槽位出，Hub 重新生成并逐字节比对；不一致说明计划不是由槽位确定性出的"
+      "basis": "要求项 plan_deterministic：执行计划由确定性生成器从槽位出，Hub 生成规范文本并用另一个读取函数回读比对；支持结论写出计划文本的 sha256，生成或回读失败记未知（出件失败）"
     }
   ]
 }
