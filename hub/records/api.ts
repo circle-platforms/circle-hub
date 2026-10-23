@@ -17,6 +17,9 @@ import type { HubConfig } from '../config/index.ts';
 export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
+export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
+export { createRecordStore, type StoreOptions } from './store.ts';
+export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
@@ -115,6 +118,8 @@ export interface RecordInput<B = unknown> {
   /** ISO 8601 UTC with milliseconds (`Date.prototype.toISOString`). Defaults to now; give it to make a put repeatable. */
   created_at?: string;
   index?: IndexEntry[];
+  /** Atomic first-writer key within this record kind. A duplicate returns the original verified record, unchanged. */
+  unique_key?: string;
 }
 
 /** A stored record (contracts RecordEnvelope). Its digest is verified every time it is read. */
@@ -158,6 +163,7 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
+  getByKey<B = unknown>(kind: RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;

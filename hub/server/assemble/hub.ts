@@ -7,6 +7,7 @@
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
+import { DispatchService } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -94,6 +95,7 @@ export interface AssembledHub {
   runs: RunsEngine;
   /** The lease service the engine uses (built over the same database unless the caller brought one). */
   leases: LeaseService;
+  dispatch: DispatchService | null;
   notes: CallNotes;
   /** What the operator should know about this assembly, in Chinese (no sandbox-exec, ...). */
   notices: string[];
@@ -168,7 +170,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // The lease service: the caller's own (tests may inject a clock), or one built over the same database — so `serve`
   // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
   // keep a read-only command from opening a pool it does not need.
-  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(new Database(createPool(config.database, 2)), now === undefined ? {} : { now: async () => now() });
+  const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
+  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
   const engine = createRunsService({
     records,
     workflows,
@@ -183,6 +186,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     adminLog: notes.engine,
   });
   const runs = withCallNotes(engine, notes);
+  const dispatch = leases ? new DispatchService({ records, leases, runs, workflows, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,
@@ -197,7 +201,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(now === undefined ? {} : { now }),
     products: packs,
   };
-  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, notes, notices };
+  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
 }
 
 /**

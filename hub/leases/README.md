@@ -30,3 +30,12 @@ A projection's `lease_requests` carry an operation: `acquire` (the default, the 
 
 租约动作的取值类型统一来自生成词表 `LeaseOp`；内部续租/释放共用路径使用其 `Extract` 子集，
 不另写租约操作轴。
+## Trusted holder snapshots
+
+`LeaseService.holderSnapshot(keys)` returns current rows with key, lease identity, fencing token, holder user/run, release state and expiry. It is read-only, deduplicates and sorts keys, and omits absent keys. Tokens are for trusted enforcement code only, never client or model output. Existing acquire, extend, release and force-release semantics are unchanged; callers still check expiry against their trusted clock and re-read at the effect boundary. A returned array is a snapshot, not a held database lock. Tests: `node --test --test-concurrency=1 hub/leases/*.test.ts`.
+
+Lease actions appended by this version store the RFC 8785 canonical body text used for their digest, with a UTF-8 byte size. A regression reads acquire/release actions back through the ordinary integrity-checked records API. Historical records and applied migrations are not rewritten, and integrity verification is not relaxed; the integrator audits any historical noncanonical lease rows separately.
+
+All new lease actions now go through `RecordStore.put` inside the lease transaction, including record byte limits, canonicalization and indexes. `ServiceOptions.records` accepts the deployment's configured store; otherwise a store over the same database uses the standard record limit. The public records factory `createRecordStore` supplies this boundary. A record-store refusal rolls back the lease row change. Action replay also uses integrity-checked record reads, including unindexed historical rows. This changes neither lease ownership nor fencing semantics.
+
+Snapshots reject fences outside JavaScript's safe integer range rather than round two distinct database tokens into the same value. The service signatures use the generated LeaseOp type. Additional regressions cover configured UTF-8 audit limits and rollback of an oversized Unicode force-release reason; ordinary ownership, expiry and fencing transitions remain unchanged.

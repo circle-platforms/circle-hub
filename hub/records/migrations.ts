@@ -149,9 +149,20 @@ CREATE TABLE leases (
 CREATE INDEX leases_prefix ON leases (key);
 `;
 
+const V3_RECORD_KEYS = `
+CREATE TABLE record_keys (
+  kind text NOT NULL,
+  key text NOT NULL CHECK (octet_length(key) BETWEEN 1 AND 1000),
+  digest text NOT NULL REFERENCES records(digest),
+  PRIMARY KEY (kind, key)
+);
+${APPEND_ONLY('record_keys')}
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'records', sql: V1_RECORDS },
   { version: 2, name: 'leases', sql: V2_LEASES },
+  { version: 3, name: 'record_keys', sql: V3_RECORD_KEYS },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -159,6 +170,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',
   record_index: 'SELECT, INSERT',
+  record_keys: 'SELECT, INSERT',
   objects: 'SELECT, INSERT',
   user_history: 'SELECT, INSERT',
   call_logs: 'SELECT, INSERT',
