@@ -407,7 +407,7 @@ test('only the installed script spelling can reach a skill send approval hook',a
 test('glob patterns cannot escape the workspace independently of their reported path',()=>{
   const f=skillsFixture();
   try{
-    for(const pattern of [join(f.dir,'outside','**/*'),'../../**/*.yml','~/private/**/*','{../outside,safe}/**/*','{safe,/outside}/**/*',String.raw`nested/\.\./\.\./outside/*`])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'deny',pattern);
+    for(const pattern of [join(f.dir,'outside','**/*'),'../../**/*.yml',['~','private','**','*'].join('/'),'{../outside,safe}/**/*','{safe,/outside}/**/*',String.raw`nested/\.\./\.\./outside/*`])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'deny',pattern);
     for(const pattern of ['**/*.ts','src/**/*.ts','test/**/*.ts','name..literal/*'])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'allow',pattern);
     assert.equal(f.decide(f.input('read_file',{path:'large_tool_results/example'},[join(f.workdir,'large_tool_results/example')])).decision,'allow','Circle-owned offload reads retain their existing semantics');
   }finally{f.close();}
@@ -513,4 +513,13 @@ test('writeHome without contextWindow writes settings.json exactly as before, an
   void big;
   const bigSettings = JSON.parse(readFileSync(join(dir, 'b', 'settings.json'), 'utf8'));
   assert.deepEqual(bigSettings.models, { 'scripted-model': { context_window: 1_000_000 } });
+});
+
+test('model calls cannot create links or rename directories through direct tools or shell commands', () => {
+  const f=skillsFixture();
+  try {
+    for(const tool of ['write_file','edit_file','move_file','rename','rename_directory','symlink','create_symlink','link','cp'])assert.equal(f.decide(f.input(tool,{path:f.workdir},[f.workdir])).decision,'deny',tool);
+    for(const command of ['ln -s outside slot','mv slot slot-before','cp -R outside slot',"node -e 'process.exit(0)'"])assert.equal(f.decide(f.input('execute',{command})).decision,'deny',command);
+    assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b`})).decision,'allow','installed scripts remain subject to the separate manifest static check');
+  }finally{f.close();}
 });
