@@ -78,6 +78,8 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
     total_keys: model.total_keys as number,
     total_entries: model.total_entries as number,
     truncated: model.truncated,
+    cut_keys: strings(model.cut_keys),
+    only: Array.isArray(model.only) ? strings(model.only) : null,
     skipped: model.skipped as number,
     notes: strings(model.notes),
     missing,

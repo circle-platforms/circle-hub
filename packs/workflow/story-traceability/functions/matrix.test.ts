@@ -24,9 +24,11 @@ test('one item per requested id including unread; exact story join excludes same
   const s = projected();
   assert.deepEqual(s.items.map((i: any) => [i.id, i.fields.cases.map((c: any) => c.case)]), [['21', ['c1', 'c2']], ['22', ['c2']], ['23', []]]);
   const outcomes = check({ subject: s }) as any[];
-  assert.deepEqual(outcomes.map(o => o.verdict), ['support', 'support', 'unknown']);
+  assert.deepEqual(outcomes.map(o => o.verdict), ['support', 'support', 'support']);
   assert.equal(outcomes[2].data.plm_returned, false);
-  assert.match(outcomes[2].statement, /请管理员运行知识同步，完成后重跑/);
+  assert.match(outcomes[2].statement, /完整需求号索引视图/);
+  assert.equal(outcomes[2].data.coverage.complete, true);
+  assert.ok(outcomes[2].grounds.includes(s.context.groups[0].view.source));
   assert.match(outcomes[2].statement, /10_6/);
   const [total] = counts({ subject: s }) as any[];
   assert.deepEqual([total.data.stories, total.data.traced, total.data.untraced, total.data.plm_unread], [3, 2, 1, 1]);
@@ -82,14 +84,18 @@ test('empty raw story arrays contradict a key mapping while omitted raw fields p
   assert.equal((check({ subject: s }) as any[])[0].verdict, 'refute');
 });
 
-test('truncation and unavailable sources are disclosed and corrupt inputs are refused', () => {
-  const i = input(); const view = i.inputs[1].model as any;
-  view.truncated = true; view.skipped = 1;
-  const s = projected(i);
-  assert.match((counts({ subject: s }) as any[])[0].statement, /来源部分可读/);
-  assert.match((check({ subject: s }) as any[])[0].statement, /来源部分可读/);
-  assert.ok((project({ inputs: [] }) as any).error);
-  assert.ok((project({ inputs: [i.inputs[0], i.inputs[0], i.inputs[1]], parameters: {} }) as any).items);
+test('partial views refuse projection and name the missing facts and recovery action', () => {
+  for (const patch of [{ truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { cut_keys: ['21'] }, { total_entries: 3 }]) {
+    const i = input(); Object.assign(i.inputs[1].model as any, patch);
+    const p = project(i) as any; assert.ok(p.error); assert.match(p.error.message, /缺少|不完整/); assert.match(p.error.fix, /知识同步/);
+    if ('notes' in patch) assert.match(p.error.message, /src:synthetic/);
+  }
+  const i = input(); const view = i.inputs[1].model as any; delete view.entries[Object.keys(view.entries)[0]];
+  assert.ok((project(i) as any).error);
+});
+test('corrupt and conflicting inputs remain refused', () => {
+  const i = input(); assert.ok((project({ inputs: [] }) as any).error);
+  assert.ok((project({ inputs: [i.inputs[0], i.inputs[0], i.inputs[1]] }) as any).items);
   const other = structuredClone(i.inputs[0]); (other.model as any).stories[0].status = 'different';
   assert.ok((project({ inputs: [...i.inputs, other] }) as any).error);
 });

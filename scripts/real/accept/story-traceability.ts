@@ -18,7 +18,7 @@ export default function scenario(gold: StoryGold): Scenario {
       const stories = [];
       for (let i = 0; i < ids.length; i += 50) stories.push({ external: `plm:stories:${ids.slice(i, i + 50).join('+')}` });
       return [{ tool: 'hub_start_run', input: { pack: 'story-traceability', inputs: { stories, cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=stories&fields=document,node,title` } } } }];
-    }, '已读取核验结果；未知条目按回执说明继续取证，需要同步时请管理员运行知识同步，完成后重跑。', 100),
+    }, '已读取完整视图覆盖内的核验事实，不推断未索引用例。', 100),
     check(turns): Check[] {
       const texts = resultTexts(turns);
       const text = texts.join('\n');
@@ -32,7 +32,7 @@ export default function scenario(gold: StoryGold): Scenario {
         const claim = text.split(/\r?\n/).find(l => l.includes(`需求 ${row.story}（状态：`)) ?? '';
         add(`${label} 条目存在`, lines.length > 0);
         if (row.cases.length === 0) {
-          add(`${label} 缺用例为未知并给出后续动作`, lines.some(l => l.includes('无已索引用例（未知）')) && claim.includes('请管理员运行知识同步，完成后重跑'));
+          add(`${label} 缺用例为覆盖范围内的确定事实`, lines.some(l => l.includes('无已索引用例（完整视图内）')) && claim.includes('完整需求号索引视图') && claim.includes(`没有条目携带需求号 ${row.story}`) && !claim.includes('下一步'));
         } else {
           const count = new RegExp(`需求 ${escape(row.story)}（[^\\n]*?）：([0-9]+) 个已索引用例追溯：`).exec(claim);
           const section = claim.split('已索引用例追溯：')[1]?.split(/；另有|；来源部分|；需求范围/)[0] ?? '';

@@ -52,6 +52,8 @@
             "truncated": false,
             "skipped": 0,
             "missing": 0,
+            "cut_keys": [],
+            "only": null,
             "total_keys": 1,
             "total_entries": 1,
             "listed_keys": 1,

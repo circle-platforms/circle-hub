@@ -19,12 +19,12 @@ describe('synthetic story production run', { skip }, () => {
     assert.deepEqual(result.answer.run?.items.map(i => i.id), ['21', '22']);
     assert.ok(result.production);
     assert.equal(result.production.result.acceptance, 'accepted');
-    assert.deepEqual(result.production.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
+    assert.deepEqual(result.production.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
     const count = result.production.result.cross_item.find(c => c.requirement === 'counts')!;
     assert.deepEqual([count.statement.data?.stories, count.statement.data?.traced, count.statement.data?.plm_unread], [2, 1, 1]);
     const unknown = result.production.result.partitions.delivered.find(i => i.item === '22')!;
-    assert.equal(unknown.requirements[0].claims[0].statement.verdict, 'unknown');
-    assert.match(unknown.requirements[0].claims[0].statement.text, /请管理员运行知识同步，完成后重跑/);
+    assert.equal(unknown.requirements[0].claims[0].statement.verdict, 'support');
+    assert.match(unknown.requirements[0].claims[0].statement.text, /完整需求号索引视图/);
   });
   test('build-derived scope reads details automatically and records its origin', async () => {
     const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;

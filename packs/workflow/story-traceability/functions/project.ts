@@ -19,6 +19,9 @@ export function projectItems(input: unknown): unknown {
   const read = readIndexView(caseInputs[0], 'cases', { kind: 'case', key: 'stories' });
   if (!read.ok) return fail(read.message, read.fix);
   const view = read.view;
+  const incomplete = view.truncated || view.skipped > 0 || view.missing > 0 || view.cut_keys.length > 0 || view.total_keys !== Object.keys(view.keys).length || view.total_entries !== Object.keys(view.entries).length || view.only !== null;
+  if (incomplete) return fail(`缺少知识根 ${view.root} 的完整需求号索引：截断 ${view.truncated}；未读来源 ${view.skipped}；缺正文 ${view.missing}；裁剪键 ${view.cut_keys.join('、') || '无'}；键 ${Object.keys(view.keys).length}/${view.total_keys}；条目 ${Object.keys(view.entries).length}/${view.total_entries}；来源说明：${view.notes.join('；') || '视图没有提供未读来源标识，需读取该根的来源清单定位'}${view.only ? '；视图仅限指定键' : ''}`, '请管理员按来源说明读取该知识根的来源清单，恢复缺失来源并运行知识同步；消除视图截断或裁剪，重新绑定完整 cases 视图后重跑');
+
   const rows = new Map<string, Row>();
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
   const scope = storyInputs.length > 0 ? '需求范围由用户提供' : '需求范围取自构建记录';
@@ -79,11 +82,11 @@ export function projectItems(input: unknown): unknown {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;
     return { id: row.id, label: shown(`需求 ${row.id}${row.title ? ` ${row.title}` : ''}`),
-      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（未知）'}；${scope}`),
+      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scope}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
-    total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
+    cut_keys: view.cut_keys, only: view.only, total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
   const result = { items, groups: [facts], warnings: read.warnings };
   if (utf8Length(JSON.stringify(result)) > 5 * 1024 * 1024) return fail('投影结果超过 5 MiB', '把需求编号列表分成更小的批次');
   return result;

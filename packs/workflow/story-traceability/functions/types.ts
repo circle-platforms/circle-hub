@@ -29,6 +29,8 @@ export type IndexViewData = {
   total_keys: number;
   total_entries: number;
   truncated: boolean;
+  cut_keys: string[];
+  only: string[] | null;
   /** Listed sources the producers could not use: an absent key is unknown, not proof of absence, when this is not zero. */
   skipped: number;
   notes: string[];

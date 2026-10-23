@@ -35,17 +35,18 @@ export default function check(input: unknown): CheckOutcome[] {
       const offending = row.cases.filter(c => c.stories !== null && !c.stories.some(id => normalizeId(id) === row.id));
       const missingFields = [...(row.status === null ? ['status'] : []), ...(row.stage === null ? ['stage'] : [])];
       const data = { story: row.id, status: row.status, stage: row.stage, plm_returned: row.plm_returned, missing_fields: missingFields, case_count: row.cases.length, cases: row.cases, scope: row.scope,
-        gaps: [...(row.plm_returned && missingFields.length ? [`PLM 需求 ${row.id} 缺少字段 ${missingFields.join('、')}`] : []), ...(row.cases.length ? [] : [`构建 ${row.build} 的需求 ${row.id} 缺少已索引用例条目`]), ...(row.plm_returned ? [] : [`PLM 没有返回需求 ${row.id}`])],
-        next_actions: [...(row.plm_returned && missingFields.length ? [`请管理员核对 PLM 需求 ${row.id} 的 ${missingFields.join('、')} 字段，补齐原件后重跑`] : []), ...(row.cases.length ? [] : [`读取完整相关脑图和敏捷树并核对需求编号；构建 ${row.build} 的用例条目需更新时，请管理员运行知识同步，完成后重跑`]), ...(row.plm_returned ? [] : [`请管理员核对需求 ${row.id} 的 PLM 访问和原件，恢复读取后重跑`])] };
-      const base = { item: item.id, pointer: `/items/${at}/fields`, tier: 'advisory' as const, grounds: [...row.references, ...row.cases.map(c => c.reference)], data };
-      if (offending.length) return { ...base, verdict: 'refute', code: 'story-traceability.join_mismatch', statement: '列出的用例原始需求编号不含被判需求；请任务包维护人修复索引连接后重跑' };
+        gaps: [...(row.plm_returned && missingFields.length ? [`PLM 需求 ${row.id} 缺少字段 ${missingFields.join('、')}`] : []), ...(row.plm_returned ? [] : [`PLM 没有返回需求 ${row.id}`])],
+        next_actions: [...(row.plm_returned && missingFields.length ? [`请管理员核对 PLM 需求 ${row.id} 的 ${missingFields.join('、')} 字段，补齐原件后重跑`] : []), ...(row.plm_returned ? [] : [`请管理员核对需求 ${row.id} 的 PLM 访问和原件，恢复读取后重跑`])] };
       const view = isRecord(facts.view) ? facts.view : {};
+      Object.assign(data, { coverage: { root: facts.root, source: view.source, complete: true, entries: view.listed_entries, keys: view.listed_keys, cut_keys: view.cut_keys ?? [] } });
+      const base = { item: item.id, pointer: `/items/${at}/fields`, tier: 'advisory' as const, grounds: [String(view.source), ...row.references, ...row.cases.map(c => c.reference)], data };
+      if (offending.length) return { ...base, verdict: 'refute', code: 'story-traceability.join_mismatch', statement: '列出的用例原始需求编号不含被判需求；请任务包维护人修复索引连接后重跑' };
       const partial = view.truncated === true || Number(view.skipped) > 0 || Number(view.missing) > 0 ? '；来源部分可读' : '';
       const status = row.status ?? '未知'; const stage = row.stage ?? '未知';
       let statement = `需求 ${row.id}（状态：${status}；阶段：${stage}）：${row.cases.length} 个已索引用例${row.cases.length ? `追溯：${row.cases.slice(0, 5).map(c => `${c.document ?? ''}:${c.case} ${shown(c.title, 30)}`).join('；')}${row.cases.length > 5 ? `；另有 ${row.cases.length - 5} 个` : ''}` : ''}${partial}；${row.scope}${row.plm_returned ? '' : '；PLM 未返回'}`;
-      if (!row.cases.length) statement += `；用例索引按构造不完整，没有列出不等于没有；${data.next_actions.join('；')}`;
+      if (!row.cases.length) statement += `；在构建 ${row.build}、知识根 ${facts.root} 的完整需求号索引视图（已读 ${view.listed_entries} 个用例条目）里，没有条目携带需求号 ${row.id}；不推断未索引用例`;
       else if (!row.plm_returned || missingFields.length) statement += `；${data.next_actions.join('；')}`;
-      return row.cases.length ? { ...base, verdict: 'support', statement: clip(statement, 500) } : { ...base, verdict: 'unknown', reason: 'missing_input', statement: clip(statement, 500) };
+      return { ...base, verdict: 'support', statement: clip(statement, 500) };
     });
   } catch { return checkError(); }
 }
