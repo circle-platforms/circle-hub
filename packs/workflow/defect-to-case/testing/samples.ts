@@ -222,7 +222,7 @@ export function samples(): Entry[] {
       'positive',
       'reading_grounded',
       'grounded_reading',
-      '期望结果阅读精炼且未引入来源未包含的数字或命令',
+      '期望文字为自身引文的逐字片段',
       defaultGoodSubject,
       [{ verdict: 'support', item: BUG_ID }],
     ),
@@ -230,9 +230,9 @@ export function samples(): Entry[] {
       'negative',
       'reading_unsupported_entity',
       'grounded_reading',
-      '期望结果阅读引入了来源引文未提及的数字实体',
+      '期望文字不是自身引文的逐字片段',
       defaultReadingBadSubject,
-      [{ verdict: 'refute', code: 'defect-to-case.unsupported_entity', item: BUG_ID, tier: 'advisory' }],
+      [{ verdict: 'refute', code: 'defect-to-case.expect_not_in_quote', item: BUG_ID, tier: 'blocking' }],
     ),
 
     // 6. duplicate_check
@@ -253,6 +253,7 @@ export function samples(): Entry[] {
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       },
       [{ verdict: 'support', item: BUG_ID }],
+      { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
     sample(
       'negative',
@@ -271,6 +272,7 @@ export function samples(): Entry[] {
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       },
       [{ verdict: 'refute', code: 'defect-to-case.duplicate_case', item: BUG_ID, tier: 'advisory' }],
+      { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
   ];
 }

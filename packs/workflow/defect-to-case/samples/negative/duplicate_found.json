@@ -2,7 +2,7 @@
   "id": "duplicate_found",
   "source": "author",
   "check": "duplicate_check",
-  "note": "起草用例与已有索引用例命令与标题相同；草稿的命令行先按目录解析出命令头，再按命令头集合查重",
+  "note": "起草用例与已有索引用例命令与标题相同",
   "subject": {
     "item": "74001",
     "drafts": [
@@ -70,14 +70,6 @@
       "notes": []
     }
   },
-  "expect": [
-    {
-      "verdict": "refute",
-      "code": "defect-to-case.duplicate_case",
-      "item": "74001",
-      "tier": "advisory"
-    }
-  ],
   "catalog": {
     "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "complete": true,
@@ -125,5 +117,13 @@
         "summary": "设置HTTP服务端口"
       }
     ]
-  }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.duplicate_case",
+      "item": "74001",
+      "tier": "advisory"
+    }
+  ]
 }

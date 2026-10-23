@@ -2,7 +2,7 @@
   "id": "reading_unsupported_entity",
   "source": "author",
   "check": "grounded_reading",
-  "note": "期望结果阅读引入了来源引文未提及的数字实体",
+  "note": "期望文字不是自身引文的逐字片段",
   "subject": {
     "item": "74001",
     "slots": {
@@ -43,9 +43,9 @@
   "expect": [
     {
       "verdict": "refute",
-      "code": "defect-to-case.unsupported_entity",
+      "code": "defect-to-case.expect_not_in_quote",
       "item": "74001",
-      "tier": "advisory"
+      "tier": "blocking"
     }
   ]
 }

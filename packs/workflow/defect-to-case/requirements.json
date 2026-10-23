@@ -50,7 +50,7 @@
     {
       "key": "grounded",
       "name": "期望结果依据",
-      "description": "每个期望结果带有逐字引文，引自缺陷修复说明（plm:bug 记录的 src: 或 rec: 引用）或锁定构建的手册段落（tree: 或 src: 引用）；引用未解析、缺少引文或引文不符为违规；期望结果文字可为引文的精简阅读，但不得包含引文未载的数字、命令或开关状态",
+      "description": "每个期望结果带有逐字引文，引自缺陷修复说明（plm:bug 记录的 src: 或 rec: 引用）或锁定构建的手册段落（tree: 或 src: 引用）；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段（只忽略空白差异），改写为阻断违规，退回修复，最多两轮",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -61,7 +61,7 @@
         { "code": "QUOTE_MISMATCH", "action": "repair", "max_rounds": 2 },
         { "code": "REFERENCE_UNRESOLVED", "action": "repair", "max_rounds": 2 },
         { "code": "defect-to-case.quote_missing", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.unsupported_entity", "action": "repair", "max_rounds": 2 }
+        { "code": "defect-to-case.expect_not_in_quote", "action": "repair", "max_rounds": 2 }
       ]
     },
     {

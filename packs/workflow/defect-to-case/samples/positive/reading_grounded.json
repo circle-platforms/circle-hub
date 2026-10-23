@@ -2,7 +2,7 @@
   "id": "reading_grounded",
   "source": "author",
   "check": "grounded_reading",
-  "note": "期望结果阅读精炼且未引入来源未包含的数字或命令",
+  "note": "期望文字为自身引文的逐字片段",
   "subject": {
     "item": "74001",
     "label": "SLB健康检查间隔无法保存",

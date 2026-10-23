@@ -150,7 +150,7 @@ describe('hand-built drafts and checks coverage', () => {
     };
     const out = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: badEntity.title, data: badEntity }] } }));
     assert.equal(out[0].verdict, 'refute');
-    assert.equal(out[0].code, CODES.UNSUPPORTED_ENTITY);
+    assert.equal(out[0].code, CODES.EXPECT_NOT_IN_QUOTE);
   });
 
   it('5. refuses wrong shape drafts', () => {

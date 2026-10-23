@@ -45,12 +45,12 @@
     },
     {
       "id": "grounded_reading",
-      "title": "期望结果精简阅读未包含未载实体",
+      "title": "期望结果文字逐字核对",
       "function": { "module": "functions/checks.ts", "export": "checkGroundedReading" },
       "applies": "item",
       "judges": "artifact_under_verification",
-      "tier": "advisory",
-      "basis": "要求项 grounded：期望结果可为引文的精简阅读，但不得包含引文未载的数字、命令或开关状态"
+      "tier": "blocking",
+      "basis": "要求项 grounded：期望文字必须是自身引文的非空逐字片段，只忽略空白差异，不许改写"
     },
     {
       "id": "duplicate_check",

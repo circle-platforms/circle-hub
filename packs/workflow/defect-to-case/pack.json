@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f3449a216da50fdf6a8bfeb1b81bb1d732c4e43c9b81bc8409d12335a2aaf4cd",
-      "size": 7404
+      "sha256": "aa0ba53a6fadef2eb601972ee5494742a943d095210eb6dae520e054a740fa14",
+      "size": 7410
     },
     {
       "path": "checks.json",
-      "sha256": "6aaa4dac3b11a79e9566f20a86b422373d3d6bbadbc814df07d25978614ab338",
-      "size": 3107
+      "sha256": "ec8b0d519e59719e060ac85e23a435689553bf2d771f6851213c4df6c532ffcd",
+      "size": 3083
     },
     {
       "path": "examples/start-run.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "244116c2145150c5732f4542d8f6c7521784e10634b2921e92f97fd8be262ee6",
-      "size": 25996
+      "sha256": "973f7691cd712048654da0a9e8d464a83f132d4968fa901f7f882190f7e0e223",
+      "size": 24837
     },
     {
       "path": "functions/compact-index.ts",
@@ -58,28 +58,28 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "4d87ac3c0f2ac4f339fb571facc2c50998b871d197de28099df10ec90589b7e3",
-      "size": 1392
+      "sha256": "0484fbf932f4b2acbf245ec75062d6b49d0cc945e7834f08b8b0639436f288f0",
+      "size": 1394
     },
     {
       "path": "requirements.json",
-      "sha256": "ed10a89b23a34fb09adeeb36ae1e9d0d24b4ddb5ad163ba18cf1a2b8be1e33db",
-      "size": 4415
+      "sha256": "7430fef68c3ea2a6383d272a0407b3248e559230824f5339ca195f24eea7eec2",
+      "size": 4449
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
-      "sha256": "31a4e332ab7f84c9800891d4f0c6d2f55ed4f86a56a84e0d11d45dbf0b7b1516",
-      "size": 1378
+      "sha256": "12224d9a6b431c1ca3315c04bc41691d737adb4bb6933626832a99536eec4a5f",
+      "size": 1533
     },
     {
       "path": "samples/negative/duplicate_found.json",
-      "sha256": "8d32043b83410aa317be7737fc919a35edc677c1610a9937b1b43a559785a9ff",
-      "size": 3362
+      "sha256": "fe12e48eb3173f806e932231059b0a9745191cf1933bc884da9dade9cf0d2f0d",
+      "size": 3281
     },
     {
       "path": "samples/negative/negative_accepted.json",
-      "sha256": "73e3955cd5e19e3b91a9a3d1b97aadc5eb905686f31bd69c91a3ce1e8a81e8ef",
-      "size": 2250
+      "sha256": "c812cd13203f3a68a71e5ddc80001155bac3a1597e4423ddd24dd3941dea7d45",
+      "size": 2405
     },
     {
       "path": "samples/negative/quotes_mismatch.json",
@@ -88,8 +88,8 @@
     },
     {
       "path": "samples/negative/reading_unsupported_entity.json",
-      "sha256": "1b7135f2eeb65d4a37ab4472b491c2c2278e2bc1de2d5d859f0bed4fb3feb9cc",
-      "size": 1353
+      "sha256": "03b709ed42b1dce4fe26bea2026a1006dfeba0d72622aae6b65f67c124e6dc65",
+      "size": 1336
     },
     {
       "path": "samples/negative/shape_invalid.json",
@@ -98,13 +98,13 @@
     },
     {
       "path": "samples/positive/commands_valid.json",
-      "sha256": "5d4fb5727eb42e2e971be807998ff9d8272d654c3cd4a3318335fc63c768225e",
-      "size": 1373
+      "sha256": "52f38519e9c366a8f6137a51ad9b58884d31a0603e053002f95a460c0c5a320b",
+      "size": 1528
     },
     {
       "path": "samples/positive/duplicate_none.json",
-      "sha256": "d428dc4024ca87c4db3745561c6b033a4ac66a7becae98fff7ce06826f317158",
-      "size": 3246
+      "sha256": "09825f49d5beda5722372ab782e1b4be618574348da0b109f43381981f69cb8e",
+      "size": 3165
     },
     {
       "path": "samples/positive/quotes_verbatim.json",
@@ -113,13 +113,13 @@
     },
     {
       "path": "samples/positive/reading_grounded.json",
-      "sha256": "d074d48af5fc8cf09b61e4b9e5edf074c880bdc352c180f9fb5001f7534ac78a",
-      "size": 1583
+      "sha256": "25fe2fe2d4d6f3e592c3e1f5514ee9780ee758dd2aaa85d72154eb288dadc73d",
+      "size": 1556
     },
     {
       "path": "samples/positive/refutation_valid.json",
-      "sha256": "ccbc78350284a4b7dc8a7be68b8501cf72b760326edab5f74b08707e39e417db",
-      "size": 2193
+      "sha256": "9ef6b8ece9ea066b1e17d021f7d5a149e61a4b9579bc7cff6a734067c9bc0418",
+      "size": 2348
     },
     {
       "path": "samples/positive/shape_clean.json",

@@ -264,7 +264,7 @@ describe('pack checks', () => {
       });
       const outcomes = checkGroundedReading(input);
       assert.equal(outcomes[0].verdict, 'refute');
-      assert.equal(outcomes[0].code, CODES.UNSUPPORTED_ENTITY);
+      assert.equal(outcomes[0].code, CODES.EXPECT_NOT_IN_QUOTE);
     });
   });
 

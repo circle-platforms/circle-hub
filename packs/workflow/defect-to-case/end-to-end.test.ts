@@ -167,6 +167,33 @@ describe('defect-to-case end to end run', { skip }, () => {
     assert.equal(skippedItem.reason, 'declared_skip');
   });
 
+  it('blocks a paraphrased expectation and consumes a repair round when it is resubmitted', async () => {
+    const started = await hub.service.startRun(hub.alice, {
+      pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
+      inputs: { defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+    }, call());
+    assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+    const run = started.run!;
+    const source = run.sources.find((s) => s.slot === 'defects')!;
+    const quote = { reference: `${source.reference}/json@1/p/html_fields/fix`, text: '健康检查间隔设置成功' };
+    const submit = (text: string) => hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: '合成回归', quotes: [quote], data: { title: '合成回归', priority: 2, negative: false, expects_refutation: false, steps: [{ command: 'widget health interval 60' }], expected: [{ text, quote }], tags: ['Functional'] } }] } }] }, call());
+    const first = await submit('健康检查间隔保存成功');
+    assert.equal(first.call_result, 'ok', JSON.stringify(first.errors));
+    const result = first.result as ValidationResult;
+    const error = result.errors.find((e) => e.code === 'defect-to-case.expect_not_in_quote');
+    assert.ok(error, JSON.stringify(result.errors));
+    assert.equal(error.rounds_left, 2);
+    assert.match(error.message, /修正/);
+    const item = Object.values(result.partitions).flat().find((i) => i.item === '74001')!;
+    assert.equal(item.requirements.find((r) => r.requirement === 'grounded')?.status, 'unsatisfied');
+    const repeated = await submit('健康检查间隔保存完毕');
+    assert.equal((repeated.result as ValidationResult).rounds.used, 1);
+    const repaired = await submit(quote.text);
+    assert.equal(repaired.acceptance, 'accepted', JSON.stringify(repaired.errors));
+    const healed = Object.values((repaired.result as ValidationResult).partitions).flat().find((i) => i.item === '74001')!;
+    assert.equal(healed.requirements.find((r) => r.requirement === 'grounded')?.status, 'satisfied');
+  });
+
   it('defect-to-case examples/submit-result.json is accepted by submitResult', async () => {
     const started = await hub.service.startRun(
       hub.alice,

@@ -380,101 +380,34 @@ export function checkCommandsRefutation(input: unknown): CheckOutcome[] {
   ];
 }
 
-const ON_OFF_TERMS = ['开启', '关闭', '使能', '禁用', '启用', '停用', '正常', '异常', 'on', 'off', 'enable', 'disable', 'enabled', 'disabled', 'up', 'down'];
+/** Fold whitespace as case-compile does; spelling, punctuation and case stay exact. */
+function foldQuoteText(text: string): string {
+  return text.replace(/[\p{White_Space}]+/gu, ' ').trim();
+}
 
-/** Check 3: grounded_reading - verifies expected text has quotation and introduces no unsupported entities */
+/** Every expected text must be a nonempty verbatim fragment of its own quotation. */
 export function checkGroundedReading(input: unknown): CheckOutcome[] {
   const record = isRecord(input) ? input : {};
   const subject = isRecord(record.subject) ? record.subject : record;
   const itemId = typeof subject.item === 'string' ? subject.item : undefined;
   const own = itemId !== undefined ? { item: itemId } : {};
-  const slots = subject.slots;
-
-  if (slots === null || slots === undefined) {
-    return [
-      {
-        verdict: 'support',
-        statement: '该缺陷已声明跳过，无需核对期望结果引文依据',
-        grounds: [],
-        tier: 'advisory',
-        ...own,
-      },
-    ];
-  }
-
-  const drafts = extractDrafts(slots);
-
+  if (subject.slots === null || subject.slots === undefined) return [{ verdict: 'support', statement: '该缺陷已声明跳过，无需核对期望结果引文依据', grounds: [], tier: 'blocking', ...own }];
   const outcomes: CheckOutcome[] = [];
-
-  for (let i = 0; i < drafts.length; i++) {
-    const draft = drafts[i];
-    const prefix = `第 ${i + 1} 个起草用例`;
-
-    for (let j = 0; j < draft.expected.length; j++) {
-      const exp = draft.expected[j];
+  for (const [i, draft] of extractDrafts(subject.slots).entries()) {
+    for (const [j, exp] of draft.expected.entries()) {
       const pointer = `/cases/${i}/expected/${j}/quote`;
-      const at = `${prefix}第 ${j + 1} 个期望结果`;
-
-      if (!exp.quote || !exp.quote.reference || !exp.quote.text || !exp.quote.text.trim()) {
-        outcomes.push({
-          verdict: 'refute',
-          code: CODES.QUOTE_MISSING,
-          statement: `${at}（${pointer}）缺少逐字引文（quote）：每个期望结果必须自带 quote，要求的形状为 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`,
-          grounds: [],
-          tier: 'blocking',
-          pointer,
-          ...own,
-        });
+      const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
+      if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
+        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${pointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer, ...own });
         continue;
       }
-
-      const quoteText = exp.quote.text;
-      const expectedText = exp.text;
-
-      // Extract numbers from expectedText that are not in quoteText
-      const expNumbers = expectedText.match(/\b\d+\b/g) ?? [];
-      const quoteNumbers = new Set(quoteText.match(/\b\d+\b/g) ?? []);
-      for (const num of expNumbers) {
-        if (!quoteNumbers.has(num)) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.UNSUPPORTED_ENTITY,
-            statement: `${at}文字中包含数字“${num}”，但所附引文中未包含此数字`,
-            grounds: [exp.quote.reference],
-            tier: 'advisory',
-            ...own,
-          });
-          break;
-        }
-      }
-
-      // Extract on/off state terms from expectedText that are not in quoteText
-      for (const term of ON_OFF_TERMS) {
-        if (expectedText.toLowerCase().includes(term) && !quoteText.toLowerCase().includes(term)) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.UNSUPPORTED_ENTITY,
-            statement: `${at}文字中包含状态词“${term}”，但所附引文中未包含该状态词`,
-            grounds: [exp.quote.reference],
-            tier: 'advisory',
-            ...own,
-          });
-          break;
-        }
+      const expected = foldQuoteText(exp.text);
+      if (expected === '' || !foldQuoteText(exp.quote.text).includes(expected)) {
+        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段（只忽略空白差异）；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/cases/${i}/expected/${j}/text`, ...own });
       }
     }
   }
-
-  if (outcomes.length > 0) return outcomes;
-  return [
-    {
-      verdict: 'support',
-      statement: '所有期望结果均具有对应引文依据，未引入无原文依据的数字、命令或开关状态',
-      grounds: [],
-      tier: 'advisory',
-      ...own,
-    },
-  ];
+  return outcomes.length ? outcomes : [{ verdict: 'support', statement: '所有期望结果文字均为各自引文的非空逐字片段（只忽略空白差异）', grounds: [], tier: 'blocking', ...own }];
 }
 
 /** Check 4: checkDuplicate - verifies drafts do not duplicate indexed cases */
