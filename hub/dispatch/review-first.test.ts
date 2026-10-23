@@ -183,3 +183,10 @@ test('R23 disposition answers cite the concrete question and automatic rereads a
   const answer=(await c.service.journal.events(first.job)).find(e=>e.body.detail.disposition==='keep_unknown')!;
   assert.ok(answer.body.inputs.includes(`rec:${question.digest}`));assert.ok((answer.body.detail.answers as string[]).includes(`rec:${question.digest}`));
 });
+
+test('R25 remote renewal failures do not borrow unrelated core lease conflict codes',async t=>{
+  const c=await setup({mode:'heartbeat-failure',ttl:60,delay:{inspect_slot:160}});t.after(()=>c.close());
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const failures=(await c.service.journal.events(state.job)).filter(e=>e.body.detail.phase==='heartbeat' && e.body.result==='error');
+  assert.ok(failures.length);assert.ok(failures.every(e=>e.body.error_code===null && e.body.codes.length===0));
+});

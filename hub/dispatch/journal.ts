@@ -26,11 +26,11 @@ export class Journal {
     }
     return blocked;
   }
-  async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction) {
+  async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction, errorCode:ActionBody['error_code']=null) {
     const time = this.now().toISOString();
     return this.records.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: time,
       body: { action, run: binding.input?.run ?? null, item: binding.input?.item ?? null, inputs, component: 'dispatch@1', lease: binding.fences?.length ? { lease: binding.fences[0].lease, fencing: binding.fences[0].fencing } : null, started_at: typeof detail.started_at === 'string' ? detail.started_at : time, ended_at: typeof detail.ended_at === 'string' ? detail.ended_at : time, result,
-        error_code: result === 'error' ? (phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE') : null, acceptance: phase==='intent' || phase === 'gate' && detail.allow_submit === true ? 'accepted' : null, codes: result === 'error' ? [phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE'] : [], detail: { job: binding.job, initiated_by: binding.initiated_by, acting_by: binding.acting_by ?? binding.initiated_by, phase, event: newId('evt'), ...detail } },
+        error_code: result==='error'?errorCode:null, acceptance: phase==='intent' || phase === 'gate' && detail.allow_submit === true ? 'accepted' : null, codes: result==='error' && errorCode?[errorCode]:[], detail: { job: binding.job, initiated_by: binding.initiated_by, acting_by: binding.acting_by ?? binding.initiated_by, phase, event: newId('evt'), ...detail } },
       index: [{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key },{key:'dispatch.executor',value:binding.executor},...(binding.scope?[{key:'dispatch.scope.target',value:sha256Hex(binding.scope.target)},{key:'dispatch.scope.origin',value:sha256Hex(binding.scope.origin)}]:[]), ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
         ...(binding.input ? [{ key: 'dispatch.lineage', value: binding.input.lineage }, ...(phase === 'intent' ? [{ key: 'dispatch.bytes', value: binding.input.sha256 }] : [])] : [])], ...(unique_key ? { unique_key } : {}) }, tx);
   }
