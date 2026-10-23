@@ -813,7 +813,7 @@ export class KnowledgeViews {
     LinksView.parse(view);
     const inputs=[`tree:${body.root}/`,`rec:${composition}`],origin={generated:{generator:COMPONENTS.views,inputs}},sources=new Set<string>();
     const sourceView=new CompositionView(this.#context.store,composition,body);
-    for(const source of await sourceView.sources()){const readable=await this.#context.records.artifacts.source(context.principal,source.sha256,{consumer:'function',record:source.artifact});if(readable?.bytes)sources.add(source.sha256);}
+    for(const source of await sourceView.sources())sources.add(source.sha256);
     const derivedCoverage=await this.#context.records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:[...sources]});
     const artifact=await this.#context.records.artifacts.ingest({bytes:canonicalBytes(view),mediaType:'application/json',origin,derivedCoverage,author:{user:null},provenanceType:'projected',visibility:{readers:[context.principal.id],admins:true,packs:[],shareable:false},name:'links-view.json'});
     if(artifact.body.read_tier!=='model_readable')return {ok:false,id:bare,reason:'链接视图含有未受理的凭据命中，需管理员处理后重读'};
