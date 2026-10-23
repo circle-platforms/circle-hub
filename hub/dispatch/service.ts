@@ -36,6 +36,30 @@ export class DispatchService {
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length,
       ...(unknown || missingReceipt ? { next_action: `请管理员取证后运行 circle-hub job dispose ${job} --reconcile <远端作业编号>；不能重交` } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
+  async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
+    await this.registry.admin(by);
+    const registered = await this.registry.get(executor);
+    if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
+    const d = registered.definition;
+    const booked = booking ? await this.options.runs.getRun(by, booking) : null;
+    if (booking && !booked) throw new Error('预订运行对你不可用');
+    const binding: JobBinding = { job: newJob(), executor, executor_digest: registered.digest, target_key: digestOfValue([...d.resources].sort()), input: null,
+      user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), target: d.target, seats: d.resources.length, manifest_sha256: d.manifest_sha256 } };
+    await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
+    const client = this.session(binding, d, await this.secret(executor));
+    let lease: RemoteLease | undefined; let stop = async () => {}; let verified = false;
+    try {
+      await client.connect(); lease = await this.acquire(binding, d, client, this.context(binding));
+      stop = this.heartbeat(binding, d, client, lease);
+      const response = await this.read(binding, client, 'precheck', { ...this.context(binding), lease_id: lease.id, lease_token: lease.token });
+      verified = this.conditions(d, response.value, this.context(binding));
+    } catch { verified = false; }
+    finally { await stop(); if (lease) await this.release(binding, client, lease); }
+    await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', readonly_verified: verified,
+      ...(verified ? {} : { next_action: '只读核对未满足；核对执行器条件、当前环境或预订构建后重跑 precheck' }) });
+    return this.status(by, binding.job);
+  }
+
   async dispatch(by: Principal, run: string, executor: string): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
@@ -93,7 +117,7 @@ export class DispatchService {
         return await this.status(by, binding.job);
       }
       await this.journal.append(binding, 'receipt', 'read', 'completed', { remote_id: remoteId, acceptance: 'accepted', outcome: 'issued' }, [answer.source]);
-      return await this.observe(by, binding, d, session, remoteId, fresh);
+      return await this.observe(by, binding, d, session, remoteId, fresh, stop);
     } catch (error) {
       if (intended) await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       else {
@@ -120,7 +144,7 @@ export class DispatchService {
     await client.connect();
     const remote = intent.body.detail.remote_lease as unknown as RemoteLease;
     const stop = this.heartbeat(binding, d, client, remote);
-    try { return await this.observe(by, binding, d, client, receipt.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[]); }
+    try { return await this.observe(by, binding, d, client, receipt.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
     catch { await this.unknown(binding, '状态或结果读取不完整；不能重交，请管理员对账'); return this.status(by, job); }
     finally { await stop(); }
   }
@@ -152,14 +176,15 @@ export class DispatchService {
       const context = { ...this.context(binding), remote_id: options.remote_id };
       const state = await this.read(binding, client, 'status', context, true);
       const result = await this.read(binding, client, 'result', context, true);
-      const time = Date.parse(String(at(result.value, d.result.submitted_at)));
+      const rawTime = at(result.value, d.result.submitted_at);
+      const time = d.result.submitted_at_scale_ms !== undefined && typeof rawTime === 'number' ? rawTime * d.result.submitted_at_scale_ms : Date.parse(String(rawTime));
       const window = intent.body.detail.window as { from: string; to: string };
       if (!d.status.map[String(at(state.value, d.status.pointer))] || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from) || time > Date.parse(window.to)) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
       await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: true, remote_id: options.remote_id, effect_mark: 'disposed', identity_matched: true, digest_matched: true, window_matched: true }, [state.source, result.source]);
       await this.journal.append(binding, 'receipt', 'read_back', 'completed', { remote_id: options.remote_id, reconciled: true, acceptance: 'accepted' }, [result.source]);
       const lease = intent.body.detail.remote_lease as unknown as RemoteLease;
       const stop = this.heartbeat(binding, d, client, lease);
-      try { return await this.observe(by, binding, d, client, options.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[]); }
+      try { return await this.observe(by, binding, d, client, options.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
       finally { await stop(); }
     } catch {
       await this.journal.append(binding, 'dispose', 'read_back', 'error', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: false, uncertain: true, missing_fact: '未取得与原派发身份、摘要和时间窗一致的记录', next_action: '管理员继续只读审计；保持未知，或显式确认风险后标记失败' });
@@ -197,7 +222,7 @@ export class DispatchService {
     if (!bytes) throw new Error('冻结的执行器定义缺失');
     const { ExecutorDefinition: schema } = await import('./definition.ts'); return schema.parse(JSON.parse(new TextDecoder().decode(bytes)));
   }
-  private context(binding: JobBinding): Record<string, unknown> { return { job: binding.job, target: binding.input?.target, build: binding.input?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.resources.length, manifest_sha256: binding.input?.manifest_sha256 }; }
+  private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? binding.resources.length, manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, binding.job, async (bytes, status, operation, complete = true) => {
       const source = await this.journal.raw(binding, bytes, operation, complete);
@@ -212,7 +237,7 @@ export class DispatchService {
   }
   private async acquire(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<RemoteLease> {
     const response = await client.call('acquire', context);
-    const lease = { id: at(response.value, d.lease.id), token: at(response.value, d.lease.token), ttl: Number(at(response.value, d.lease.ttl_ms)) };
+    const lease = { id: at(response.value, d.lease.id), token: at(response.value, d.lease.token), ttl: Number(at(response.value, d.lease.ttl_ms)) * d.lease.ttl_scale_ms };
     if (d.lease.map[String(at(response.value, d.lease.acceptance))] !== 'accepted' || lease.id === undefined || lease.token === undefined || !Number.isFinite(lease.ttl) || lease.ttl < 3) throw new Error('目标租约未取得，未提交');
     await this.journal.append(binding, 'acquire', 'read', 'completed', { remote_lease: lease }, [response.source]); return lease;
   }
@@ -233,7 +258,7 @@ export class DispatchService {
           if (d.lease.map[String(at(response.value, d.lease.acceptance))] !== 'accepted') throw new Error('目标租约中断');
           await this.journal.append(binding, 'heartbeat', 'read', 'completed', {}, [response.source]);
         } catch { interrupted = true; await this.journal.append(binding, 'heartbeat', 'read', 'error', { lease_interrupted: true, note: '目标租约中断，继续只读状态，不重新提交' }); }
-      })().finally(() => { flight = null; });
+      })().catch(() => { interrupted = true; }).finally(() => { flight = null; });
     }, Math.max(1, Math.floor(lease.ttl / 3)));
     return async () => { clearInterval(timer); if (flight) await flight; };
   }
@@ -245,7 +270,7 @@ export class DispatchService {
     await this.journal.append(binding, 'unknown', 'read_back', 'unknown', { uncertain: true, outcome: 'unknown', missing_fact: reason,
       request_kind: 'disposition', audience_role: 'admin', next_action: `管理员读取目标审计取得原作业身份后运行 circle-hub job dispose ${binding.job} --reconcile <远端作业编号>；不得重交` }, sources);
   }
-  private async observe(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[]): Promise<JobStatus> {
+  private async observe(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[], stopHeartbeat: () => Promise<void> = async () => {}): Promise<JobStatus> {
     const input = binding.input!; const events = await this.journal.events(binding.job); const intent = eventOf(events, 'intent')!;
     const remoteLease = intent.body.detail.remote_lease as unknown as RemoteLease;
     const context = { ...this.context(binding), remote_id: remoteId, lease_id: remoteLease.id, lease_token: remoteLease.token };
@@ -257,7 +282,10 @@ export class DispatchService {
       }
       const mapping = d.status.map[String(at(response.value, d.status.pointer))];
       if (!mapping || mapping.effect_outcome === 'unknown' || mapping.action_result === 'unknown') { await this.unknown(binding, '目标状态丢失或不认识；缺可信终态，下一步管理员对账', [response.source]); return this.status(by, binding.job); }
-      if (mapping.action_result === 'completed' || mapping.action_result === 'error' || mapping.effect_outcome === 'effective' || mapping.effect_outcome === 'read_back_consistent') break;
+      if (mapping.action_result === 'completed' || mapping.action_result === 'error' || mapping.effect_outcome === 'effective' || mapping.effect_outcome === 'read_back_consistent' || mapping.dynamic_terminal !== undefined) {
+        await this.journal.append(binding, 'terminal', 'read', 'completed', { reported_state: mapping, ...(d.status.exit_code ? { exit_code: at(response.value, d.status.exit_code) ?? null } : {}) }, [response.source]);
+        break;
+      }
       if (this.now().getTime() >= deadline) { await this.unknown(binding, '最长运行窗口已过且没有可信终态；下一步管理员对账'); return this.status(by, binding.job); }
       await this.sleep(d.poll_ms);
     }
@@ -266,12 +294,14 @@ export class DispatchService {
       await this.unknown(binding, '结果身份或摘要不符，整份不采信；请管理员对账', [response.source]); return this.status(by, binding.job);
     }
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
+    await stopHeartbeat();
+    const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);
     const projected = input.items.map(id => {
       const found = Array.isArray(rows) ? rows.filter(r => at(r, d.result.item_id) === id) : [];
       const reported = complete && found.length === 1 ? d.result.map[String(at(found[0], d.result.item_outcome))] ?? null : null;
       return { item: id, reported_terminal: reported, dynamic_terminal: 'no_verdict', missing_fact: reported === null ? '结果通道不完整或条目没有可解释的报告；请管理员只读补取原作业结果' : '结果按派发身份归属尚未认证；该值只转述目标报告', limits: ['目标对本次派发的报告', '未排除本地操作'] };
     });
-    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, lease_drift: drift, limits: ['目标对本次派发的报告', '未排除本地操作'] }), mediaType: 'application/json',
+    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, lease_drift: drift, lease_interrupted: leaseInterrupted, limits: ['目标对本次派发的报告', '未排除本地操作'] }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.length }, [response.source]);
     await this.release(binding, client, remoteLease);

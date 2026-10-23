@@ -3,7 +3,7 @@ import type { ActionKind, ActionResult } from '../../contracts/generated/vocabul
 import { newId, sha256Hex, canonicalBytes } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
 import type { VerifiedInput } from './proof.ts';
-export interface JobBinding { job: string; executor: string; executor_digest: string; target_key: string; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; }
+export interface JobBinding { job: string; executor: string; executor_digest: string; target_key: string; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
 export type Event = StoredRecord<ActionBody>;
 export class Journal {
   readonly records: RecordsKit;
@@ -15,7 +15,7 @@ export class Journal {
     const time = this.now().toISOString();
     return this.records.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: time,
       body: { action, run: binding.input?.run ?? null, item: binding.input?.item ?? null, inputs, component: 'dispatch@1', lease: binding.fences?.length ? { lease: binding.fences[0].lease, fencing: binding.fences[0].fencing } : null, started_at: time, ended_at: time, result,
-        error_code: null, acceptance: null, codes: [], detail: { job: binding.job, phase, event: newId('evt'), ...detail } },
+        error_code: result === 'error' ? (phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE') : null, acceptance: null, codes: result === 'error' ? [phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE'] : [], detail: { job: binding.job, phase, event: newId('evt'), ...detail } },
       index: [{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key }, ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
         ...(binding.input ? [{ key: 'dispatch.lineage', value: binding.input.lineage }] : [])], ...(unique_key ? { unique_key } : {}) }, tx);
   }
