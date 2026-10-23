@@ -234,3 +234,17 @@ test('closure null line is a definite empty candidate answer and can pass the fu
  writeFileSync(join(root,'tree.json'),JSON.stringify(input));writeFileSync(join(root,'out/runs/000001.json'),JSON.stringify(captures(raw)[0]));
  const screen:string[]=[];assert.equal(await main(['--tree',join(root,'tree.json'),'--out',join(root,'out')],{print:l=>screen.push(l)}),0);assert.ok(screen.includes('判定：通过'));
 });
+
+test('closure collect recovery into a fresh output reuses the same original batch client key', async t => {
+ const root=mkdtempSync(join(tmpdir(),'collect-key-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const treeFile=join(root,'tree.json'), token=join(root,'token'), builds=join(root,'builds.json');writeFileSync(treeFile,JSON.stringify(tree()));writeFileSync(token,'synthetic');writeFileSync(builds,JSON.stringify(emptyBuilds[0]));
+ const keys:string[]=[];const created=new Set<string>();let timedOut=false;
+ const fake=async (_options:unknown,calls:{tool:string;args:unknown}[]):Promise<ToolText[]>=>{
+  const call=calls[0];if(call.tool==='start_run'){const key=(call.args as {client_key:string}).client_key;keys.push(key);created.add(key);if(!timedOut){timedOut=true;throw new Error('synthetic lost receipt');}return[{isError:false,text:'',structured:{call_result:'ok',result:{reference:'rec:'+'f'.repeat(64)}}}];}
+  return[{isError:false,text:'',structured:{call_result:'ok',content:{text:JSON.stringify(result())}}}];
+ };
+ const args=(out:string)=>['--tree',treeFile,'--builds',builds,'--out',out,'--collect','--token-file',token];
+ assert.equal(await main(args(join(root,'first')),{call:fake,print:()=>{}}),2);
+ assert.equal(await main(args(join(root,'second')),{call:fake,print:()=>{}}),0);
+ assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);assert.equal(created.size,1);
+});

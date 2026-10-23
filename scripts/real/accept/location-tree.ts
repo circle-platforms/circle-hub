@@ -14,6 +14,7 @@ export const USAGE = `
 用法：--tree <树原件> --out <仓库外目录> [--builds <构建金标准> ...]
       [--facets <分面视图>] [--production <生产记录JSON> ...]
       [--collect --token-file <令牌文件> [--url <Hub MCP地址>] [--batch 40] [--timeout-ms <毫秒>]]
+client_key 只由原树字节摘要、包、产品和批次文档派生，与 --out 无关。幂等窗口内（默认24小时）以相同原树、原会话和 --batch 采集到新目录会复用原运行；超窗先由集成者查已有运行。
 不带 --collect 时只读 out/runs；需要重新比较时复制 runs 到新目录，既有明细不可覆盖。
 输入文件和输出目录均在 Git 之外。新文件 0600，目录 0700；屏幕只有计数、摘要和判定。
 
@@ -151,7 +152,7 @@ export function refusedDocuments(captures: Capture[], includeBatch = false): Map
   return refused;
 }
 
-export async function collectRuns(documents: string[], out: string, options: CallOptions, batch = 40, call: typeof callTools = callTools): Promise<void> {
+export async function collectRuns(documents: string[], out: string, options: CallOptions, batch = 40, call: typeof callTools = callTools, treeSha256: string): Promise<void> {
   mkdirSync(privatePath(out), { recursive: true, mode: 0o700 });
   const directory = privatePath(join(out, 'runs'));
   mkdirSync(directory, { mode: 0o700 }); // Exclusive reservation: a second collect cannot overwrite a prior capture.
@@ -167,7 +168,7 @@ export async function collectRuns(documents: string[], out: string, options: Cal
   };
   const run = async (docs: string[], retry: boolean): Promise<void> => {
     if (!docs.length) return;
-    const capture = await invoke('start_run', { client_key: 'location-tree-' + hash(JSON.stringify({ out: privatePath(out), session: options.session, documents: docs })).slice(0, 48), pack: 'case-location', product: 'apv', inputs: { documents: docs.map(document => ({ external: `agile:mindmap:${document}` })) } });
+    const capture = await invoke('start_run', { client_key: 'location-tree-' + hash(JSON.stringify({ tree_sha256: treeSha256, pack: 'case-location', product: 'apv', documents: docs })).slice(0, 48), pack: 'case-location', product: 'apv', inputs: { documents: docs.map(document => ({ external: `agile:mindmap:${document}` })) } });
     const answer = capture.response.structured;
     if (transportFailure(capture)) return;
     if (!capture.response.isError && object(answer) && answer.call_result === 'ok') {
@@ -296,7 +297,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
       summary.missing[category]++;
       if (category === 'start_uncertain') {
         const recovery = uncertain.get(expected.document)!;
-        const next_action = '原调用超时或断开，不能认定运行没有开始；使用保存的同一 client_key、原会话和相同请求重开本批，取回同一运行。若原 key 缺失或幂等窗口已过，先由集成者查已有运行，不能生成新 key 重试';
+        const next_action = '原调用超时或断开，不能认定运行没有开始；在幂等窗口内保持原树、原会话与 --batch，使用新 --out 运行 --collect，以派生保存的同一 client_key 和相同请求取回同一运行。若原 key 缺失或幂等窗口已过，先由集成者查已有运行，不能生成新 key 重试';
         details.missing.push({ document: expected.document, reason: '调用超时或连接中断，运行是否已开始待取回', next_action });
         details.not_run.push({ document: expected.document, fact: '原 start_run 是否已经持久化及其完整结果', next_action, recovery: { tool: 'start_run', args: recovery.args, session: recovery.session } });
         continue;
@@ -416,7 +417,7 @@ export async function main(argv: string[], deps: { call?: typeof callTools; prin
       if (!Number.isSafeInteger(batch) || batch < 1 || batch > 1000 || (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1))) throw new Error('参数无效');
       const ids = goldDocuments.map(d => d.document);
       stage = '--out/runs 新采集目录'; next = '使用全新的仓库外输出目录重跑采集，保留既有 runs 不覆盖';
-      await collectRuns(ids, out, { url: one('--url') ?? 'http://127.0.0.1:7420/mcp', token, session: 'location-tree', ...(timeoutMs === undefined ? {} : { timeoutMs }) }, batch, deps.call);
+      await collectRuns(ids, out, { url: one('--url') ?? 'http://127.0.0.1:7420/mcp', token, session: 'location-tree', ...(timeoutMs === undefined ? {} : { timeoutMs }) }, batch, deps.call, hash(treeBytes));
     }
     stage = '--out/runs 保存的调用输入'; next = '先由集成者运行 --collect 取得完整应答；回放时复制 runs 到新输出目录';
     const saved = readCaptures(out), report = compareLocationTree(tree, saved.captures, builds, facets, productions);
