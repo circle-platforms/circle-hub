@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for the existence check and the drift list; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -151,7 +151,7 @@ Producers (K02, K04, C07)
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
-  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (a warning names the missing fact and the next action, and no drift list is computed). Head groups hold
+  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (the producer warns about the missing input; the Hub marks literals unchecked with a source-recovery action and emits no drift facts). Head groups hold
   alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
   leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
   missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
@@ -472,11 +472,20 @@ catalog producer selector (`CatalogDeclaration.producer`), the entry-kind axis (
 
 ## Literal links (1.3.0)
 
-`product.json.links` declares `manual-literals`: `command_literals` targets `/commands`, uses `longest_prefix` and the
-`definition` entry kind, and applies only lower-casing and NUL removal. White-space tokenization is fixed. A middle node
-without that kind is not a target; the longest eligible prefix is the target and the remaining words keep their original
-spelling. A literal with no eligible prefix is drift, including its last reachable node; this is no judgment about a manual
-correction or a product defect. Production diagnostics and read-time views use the same evaluator and declaration snapshot.
+`product.json.links` freezes two rules in each composition. Both use `definition` targets in `/commands`,
+`source_producers` set to [`manual`] and `target_producers` set to [`command-tree`]: only `manual` emits relation sources, and only
+`command-tree` definitions establish eligible targets. Both normalize literal words and target path segments with
+`lowercase`, `strip_nul` and `nfc` (NFC). White-space tokenization is fixed.
+
+- `manual-literals` reads `command_literals` with `longest_prefix`: the longest eligible leading path is the target;
+  the remaining words are parameters retained as written. Intermediate nodes without an eligible definition do not count.
+- `manual-signatures` reads `signature_literals` via `alternatives_field` and `exact`: an exact primary definition wins;
+  otherwise each positive expanded alternative is checked exactly. Leading optional no-forms are not positive variants.
+
+A missing namespace or a namespace without any eligible target produces a rule diagnostic and unchecked candidate counts,
+with the missing source and reproduction action; it produces no drift facts. With usable targets, an unresolved literal is
+a drift fact in that composition, never a judgment about a manual correction or product defect. Production diagnostics and
+read-time views invoke the same evaluator and frozen declarations.
 
 All distinct literals are retained, including more than 100 in one block. The existing core statement/data byte limits still
 reject an oversized entry. View paging limits detail only, retaining complete totals. The minor release changes the product

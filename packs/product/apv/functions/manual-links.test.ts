@@ -94,3 +94,16 @@ test('an HTML tree source leaves manual literals unchecked in both production an
   const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
   assert.deepEqual(view.drift,[]);assert.equal(view.totals?.unchecked_literals,3);assert.equal(view.rule_diagnostics?.length,2);assert.equal(view.totals?.literals,3);
 });
+
+test('literal-link documentation names every declaration, normalizer and producer scope',()=>{
+  const text=readFileSync(new URL('../README.md',import.meta.url),'utf8'),section=text.split('## Literal links (1.3.0)')[1];assert.ok(section);
+  const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  for(const rule of product.links??[]){
+    for(const value of [rule.id,rule.field??rule.alternatives_field!,rule.match,rule.entry_kind!,...Object.keys(rule.normalize??{}),...(rule.source_producers??[]),...(rule.target_producers??[])])assert.ok(section.includes('`'+value+'`'),value);
+  }
+  for(const field of ['source_producers','target_producers'])assert.ok(section.includes('`'+field+'`'));
+});
+test('knowledge relation documentation has no stray escaped newline at a line end',()=>{
+  const text=readFileSync(new URL('../../../../hub/knowledge/README.md',import.meta.url),'utf8');
+  assert.ok(!text.split('\n').some(line=>line.endsWith(String.fromCharCode(92)+'n')));
+});
