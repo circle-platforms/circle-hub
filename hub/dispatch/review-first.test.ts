@@ -81,3 +81,9 @@ test('R07 an observation failure after a successful reconcile never falsifies th
   const match=events.findIndex(e=>e.body.detail.identity_matched===true);
   assert.ok(match>=0);assert.equal(events.slice(match+1).some(e=>e.body.detail.uncertain===true),false);
 });
+
+test('R08 the submit tool cannot be reused by any automatically polled role',async()=>{
+  const {definition}=await import('./testing/definition.ts');const {ExecutorDefinition}=await import('./definition.ts');
+  for(const role of ['status','heartbeat','precheck'] as const){const d=definition('http://127.0.0.1:1/');d.calls[role].tool=d.calls.submit.tool;assert.equal(ExecutorDefinition.safeParse(d).success,false);}
+  const d=definition('http://127.0.0.1:1/');assert.equal(ExecutorDefinition.safeParse({...d,precheck_reads:[{...d.calls.status,tool:d.calls.submit.tool}]}).success,false);
+});

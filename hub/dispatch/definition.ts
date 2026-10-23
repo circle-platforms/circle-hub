@@ -68,6 +68,7 @@ export const ExecutorDefinition = z.strictObject({
   }
   if (d.reconciliation && (!d.calls.query || !d.receipt.request_id || countBindings(d.calls.query.arguments,'request_id') !== 1)) ctx.addIssue({code:'custom',message:'查账必须绑定原请求身份并登记回执身份指针'});
   if (d.probes && ['command','seat_index','lease_id'].some(key=>countBindings(d.probes!.call.arguments,key)!==1))ctx.addIssue({code:'custom',message:'座位探测必须各绑定一次命令、座位序号和本次租约身份'});
+  if(Object.entries(d.calls).some(([role,c])=>role!=='submit' && c?.tool===d.calls.submit.tool) || d.precheck_reads.some(c=>c.tool===d.calls.submit.tool) || d.probes?.call.tool===d.calls.submit.tool)ctx.addIssue({code:'custom',message:'提交工具不能同时作为租约、读取或探测工具'});
   const payload = at(d.calls.submit.arguments, d.payload_argument);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || (payload as Record<string, unknown>).$value !== 'payload_base64' || countPayloadBindings(d.calls.submit.arguments) !== 1) ctx.addIssue({ code: 'custom', message: '提交内容参数必须且只能绑定一次已核验字节' });
   for (const [role, c] of Object.entries(d.calls)) if (role !== 'submit' && countPayloadBindings(c.arguments)) ctx.addIssue({ code: 'custom', message: '非提交角色不能携带工作内容字节' });
