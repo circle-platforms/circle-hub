@@ -41,15 +41,15 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
     const action = `${indexBindingFix(lock.build, Array.isArray(s.scope) ? s.scope.filter((v): v is string => typeof v === 'string') : [])}；绑定 case_index 后重跑文档 ${document}`;
     return [unknown(`文档 ${document} 缺少用例索引 case_index；下一步：${action}`, ['case_index'], { ...data, scope: 'document', next_action: action })];
   }
-  const indexIncomplete = coverage.truncated || coverage.skippedSources > 0 || coverage.cutKeys.includes(document) || coverage.unplacedRoot === null;
+  const indexIncomplete = coverage.truncated || coverage.skippedSources > 0 || coverage.cutKeys.includes(document);
   if (!coverage.documentIndexed && !indexIncomplete) {
     const action = '用收了这份文档的构建（文档所在版本线不晚于构建）重跑，或等知识同步收进它后重跑；若文档在产品线不分版本范围，先取得该范围的根，用 get_nodes 读取 tree:<不分版本根>/；入口尚未落地时明确报 kb-unversioned 能力缺口，不要反复尝试其他构建';
     return [refute('not_indexed', `文档 ${document} 不在完整用例索引里；根 ${String(coverage.root)}，构建 ${String(coverage.build)}。下一步：${action}`, { scope: 'document', next_action: action })];
   }
   const partial = indexIncomplete || coverage.unmatched.length > 0 || coverage.orphaned.length > 0;
   const gapData = { ...data, orphaned_keys: coverage.orphaned, unmatched_cases_count: coverage.unmatched.length, unmatched_cases: coverage.unmatched, skipped_sources: coverage.skippedSources, unplaced_root: coverage.unplacedRoot, unplaced_scope: 'root', truncated: coverage.truncated, cut_keys: coverage.cutKeys, notes: coverage.notes, next_action: retry };
-  const missing = [...(!coverage.documentIndexed ? ['case_index.document'] : []), ...(coverage.skippedSources > 0 ? ['case_index.sources'] : []), ...(coverage.truncated || coverage.cutKeys.includes(document) ? ['case_index.entries'] : []), ...(coverage.unplacedRoot === null ? ['case_index.unplaced_count'] : []), ...coverage.unmatched, ...coverage.orphaned.map(key => `case_index.orphaned:${key}`)];
-  const gap = `文档 ${document} 有 ${coverage.unmatched.length} 个用例没对上索引（键缺失或标题、上级标签不一致）；索引有 ${coverage.orphaned.length} 个已无当前用例的旧键（${coverage.orphaned.join("、")}）；根有 ${coverage.skippedSources} 份来源没读入，视图报告未归位条目 ${coverage.unplacedRoot ?? '计数不可读'} 个（全根计数，条目仍在索引内）${coverage.truncated ? '；视图截断' : ''}，所以可能还有命令没读到。下一步：${retry}`;
+  const missing = [...(!coverage.documentIndexed ? ['case_index.document'] : []), ...(coverage.skippedSources > 0 ? ['case_index.sources'] : []), ...(coverage.truncated || coverage.cutKeys.includes(document) ? ['case_index.entries'] : []), ...coverage.unmatched, ...coverage.orphaned.map(key => `case_index.orphaned:${key}`)];
+  const gap = `文档 ${document} 有 ${coverage.unmatched.length} 个用例没对上索引（键缺失或标题、上级标签不一致）；索引有 ${coverage.orphaned.length} 个已无当前用例的旧键（${coverage.orphaned.join("、")}）；根有 ${coverage.skippedSources} 份来源没读入，未归位说明按视图原文披露（条目仍在索引内）：${coverage.notes.join('；') || '无说明'}${coverage.truncated ? '；视图截断' : ''}，所以可能还有命令没读到。下一步：${retry}`;
   const outcomes: CheckOutcome[] = coverage.commands.map(row => {
     const details = { ...data, command: row.command, case_count: row.caseCount, categories: row.categories, skipped: row.skipped, missing: row.missing };
     const grounds = [...new Set([...base.grounds, ...viewGrounds, ...row.references])];

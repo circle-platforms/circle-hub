@@ -55,7 +55,7 @@ for (const [name, options] of [['missing sources', { skipped: 2 }], ['unmatched 
     assert.equal(outcomes[0]!.verdict, 'support'); const gap = outcomes.at(-1)!;
     assert.equal(gap.verdict, 'unknown'); assert.equal(gap.data?.scope, 'document'); assert.ok(gap.data?.next_action);
     assert.ok(!gap.statement.includes('覆盖完整'));
-    if ('skipped' in options) { assert.equal(gap.data?.skipped_sources, 2); assert.equal(gap.data?.unplaced_root, 3); }
+    if ('skipped' in options) { assert.equal(gap.data?.skipped_sources, 2); assert.equal(gap.data?.unplaced_root, null); assert.ok((gap.data?.notes as string[]).includes('未归位条目 3 个，标在根下')); }
     else assert.equal(gap.data?.unmatched_cases_count, 1);
   });
 test('incomplete evidence changes a potential shortfall into unknown instead of refuting', () => {

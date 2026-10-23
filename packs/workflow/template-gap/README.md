@@ -88,8 +88,9 @@ and never manufacture observed cases.
   shortfalls become missing-input unknowns. An additional document conclusion discloses unmatched count/ids, skipped
   sources, truncation and the view's unplaced count/notes, because more commands may be unread. It never says full coverage.
 
-The unplaced count is the current index-view notes' whole-root count, not this document's count. Unplaced entries are
-included in the index at the root; unplaced is not synonymous with a missing source. The exact view notes are preserved.
+Unplaced entries remain in the index. Notes are preserved verbatim for disclosure and never determine completeness.
+IndexView has no typed unplaced-entry count: unplacedRoot stays null instead of parsing prose. A typed whole-root count
+is a need from the contracts/knowledge owner; until then the raw notes carry that disclosure.
 A note that cannot be read as a count is disclosed as unavailable, not made zero.
 
 Every package-generated unknown carries missing facts, next_action and recovery: action, document/build (or failed check)

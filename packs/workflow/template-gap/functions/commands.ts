@@ -22,12 +22,6 @@ export function indexedCommands(index: CaseIndex | null, document: string): stri
   if (!index) return [];
   return [...new Set((Object.hasOwn(index.keys, document) ? index.keys[document]! : []).flatMap(d => index.entries[d]!.data.commands as string[]))].sort(compareText);
 }
-function unplacedCount(notes: string[]): number | null {
-  const descriptions = notes.filter(n => n.includes('未归位'));
-  if (!descriptions.length) return 0;
-  const parsed = /^未归位条目 ([0-9]+) 个，标在根下$/.exec(descriptions[0]!);
-  return descriptions.length === 1 && parsed && Number.isSafeInteger(Number(parsed[1])) ? Number(parsed[1]) : null;
-}
 export function commandCoverage(template: Template, document: string, cases: CaseCategory[], index: CaseIndex | null, skips: Skip[], uploaded = false, lock: { root?: unknown; build?: unknown } = {}, caseRule: 'marked' | 'tagged' = 'marked', nodes?: CaseRevisionNodes): CommandCoverage {
   const revision = (title: string, labels: string[]): string => JSON.stringify([title, ...labels]);
   const normal = (text: string): string => text;
@@ -70,5 +64,5 @@ export function commandCoverage(template: Template, document: string, cases: Cas
     });
     return { command, caseCount: chosen.length, categories: facts, missing: facts.filter(c => !c.present && !skipped.some(s => s.category === c.id)).map(c => c.id), skipped, references: [...new Set(chosen.flatMap(m => [...m.row.references]))].sort(compareText) };
   });
-  return { case_rule: caseRule, rule_mismatch: caseRule !== 'marked', bound: index !== null, uploaded, documentIndexed: index !== null && Object.hasOwn(index.keys, document), root: index?.build.root ?? (typeof lock.root === 'string' ? lock.root : null), build: index?.build.build ?? (typeof lock.build === 'string' ? lock.build : null), caseCount: cases.length, matchedCases: matched.length, unmatched: unmatched.sort(compareText), orphaned, commandlessCases: matched.filter(m => m.row.commands.size === 0).length, truncated: index?.truncated ?? false, skippedSources: index?.skipped ?? 0, cutKeys: index?.cut_keys ?? [], unplacedRoot: index ? unplacedCount(index.notes) : null, notes: index?.notes ?? [], commands };
+  return { case_rule: caseRule, rule_mismatch: caseRule !== 'marked', bound: index !== null, uploaded, documentIndexed: index !== null && Object.hasOwn(index.keys, document), root: index?.build.root ?? (typeof lock.root === 'string' ? lock.root : null), build: index?.build.build ?? (typeof lock.build === 'string' ? lock.build : null), caseCount: cases.length, matchedCases: matched.length, unmatched: unmatched.sort(compareText), orphaned, commandlessCases: matched.filter(m => m.row.commands.size === 0).length, truncated: index?.truncated ?? false, skippedSources: index?.skipped ?? 0, cutKeys: index?.cut_keys ?? [], unplacedRoot: null, notes: index?.notes ?? [], commands };
 }

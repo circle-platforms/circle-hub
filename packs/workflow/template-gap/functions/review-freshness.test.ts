@@ -34,3 +34,11 @@ test('missing index recovery names the locked build, exact scope and all revisio
   assert.ok(action.includes(`only=${document}`));
   assert.ok(action.includes('fields=document,node,commands,title,path_labels'));
 });
+test('unplaced note wording never determines index completeness', () => {
+  for (const note of ['未归位条目 3 个，标在根下，计入合计', '索引说明已改写']) {
+    const view = indexView(records.slice(0, 1)); view.notes = [note];
+    const outcomes = commandOutcomes(subject(view));
+    assert.deepEqual(outcomes.map(row => row.verdict), ['refute']);
+    assert.equal(outcomes[0]!.code, 'template-gap.command_shortfall');
+  }
+});
