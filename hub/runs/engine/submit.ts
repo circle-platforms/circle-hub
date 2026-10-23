@@ -90,7 +90,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
-    if (action.body.detail.hub_error === true) continue;
+    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing') continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -193,7 +193,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       acceptance: input.acceptance,
       result: input.actionResult, errorCode: input.errorCode,
       codes: input.codes,
-      detail: { submission: received.digest, session, model, repair: input.repair, result: input.result, ...(input.extra ?? {}) },
+      detail: { submission: received.digest, session, model, ...(input.extra?.refusal === 'session_missing' ? {} : {repair: input.repair}), result: input.result, ...(input.extra ?? {}) },
       submissionRecord: record.digest,
     });
 
@@ -229,13 +229,17 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
         message: error.message, fix: error.fix } });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
   }
+  const sessionMissing = session === null && workflow.requirements.some(t => t.independent_of !== undefined);
+  if (sessionMissing) {
+    outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
+  }
   const saved = await keepResult(base, outcome);
   await action({
     acceptance: saved.result.body.acceptance,
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
-    extra: { retry_attempts: saved.retryAttempts },
+    extra: { retry_attempts: saved.retryAttempts, ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
   return answerOf(saved.result.body);
 }

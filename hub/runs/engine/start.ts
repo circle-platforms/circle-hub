@@ -1,3 +1,4 @@
+import { authorOriginOf } from './lineage.ts';
 import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
 // project the items, bind the expected sources, offer carry-overs, freeze everything in a run record and, for a pack whose
@@ -458,6 +459,13 @@ async function startFresh(
   if (input.predecessor !== undefined) {
     predecessor = await runById(store, input.predecessor);
     if (predecessor === null || !canSeeRun(user, predecessor.body)) throw unavailable('/predecessor', `predecessor ${input.predecessor} is unknown or not visible to ${user.id}`);
+  }
+  if (workflow.requirements.some(t => t.independent_of !== undefined)) {
+    if (sessionOf(call) === null) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核运行缺少本会话的 id，运行没有开始', {path:'',fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），原样再开始'})]);
+    if (predecessor !== null) {
+      const author = await authorOriginOf(ctx, {...predecessor.body, pack: `${workflow.pack.id}@${workflow.pack.version}`, predecessor: predecessor.body.run, sources: []});
+      if (author?.missingSessions.length) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `被判工作的来源缺少会话 id：${author.missingSessions.join('；')}`, {path:'/predecessor',fix:'带上 Circle-Session-Id，以被判工作为前驱开新修订并重新提交，再对新修订开复核运行'})]);
+    }
   }
   const parameters = checkParameters(workflow, input.parameters ?? {});
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);

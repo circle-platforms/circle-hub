@@ -80,7 +80,7 @@ function modelWarrants(body: unknown, into: Set<string>): void {
  * Who produced the work a run judges (null when nothing is known: no predecessor, A04 R[5]). Conflicts are collected from
  * every submission of the author runs; completeness asks that the producers of their accepted results are all known.
  */
-export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promise<AuthorOrigin | null> {
+export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promise<(AuthorOrigin & { missingSessions: string[] }) | null> {
   if (run.predecessor === undefined) return null;
   const store = ctx.deps.records.store;
   const runs = new Map<string, RunRecord>();
@@ -88,6 +88,7 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
   const sessions = new Set<string>();
   const models = new Set<string>();
   let complete = true;
+  const missingSessions: string[] = [];
   for (const source of run.sources) {
     if (source.role !== 'artifact_under_verification') continue;
     let ref: Reference | null;
@@ -119,20 +120,20 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
   if (runs.size === 0 && models.size === 0) return null;
   if (runs.size === 0) complete = false;
   for (const r of runs.values()) {
-    if (r.session === undefined) complete = false;
+    if (r.session === undefined) { complete = false; missingSessions.push(`运行 ${r.run}`); }
     else sessions.add(r.session);
     for (const action of await actionsOf(store, r.run)) {
       const body = action.body;
       if (body.action !== 'validate' || !isObject(body.detail) || body.detail.production === true) continue;
       const accepted = body.acceptance === 'accepted';
       if (typeof body.detail.session === 'string') sessions.add(body.detail.session);
-      else if (accepted) complete = false;
+      else if (accepted) { complete = false; missingSessions.push(`已受理提交 ${String(body.detail.submission)}（运行 ${r.run}）`); }
       if (typeof body.detail.model === 'string') models.add(body.detail.model);
       else if (accepted) complete = false;
     }
   }
   if (models.size === 0) complete = false;
-  return { sessions, models, complete };
+  return { sessions, models, complete, missingSessions };
 }
 
 /** A Hub record bound as artifact under verification whose run lies outside the predecessor's lineage. */

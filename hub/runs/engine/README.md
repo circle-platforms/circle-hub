@@ -233,8 +233,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
   layer". With every requirement required (the case-review packs) both agree.
 - **Facts of skipped or uncovered items.** Only the requirements that accept judgments become incomplete for a skipped or
   uncovered item (at every layer they declare); fact requirements keep the Hub's own terminal, since the Hub computes them
-  whatever the model did. W07 R[2]-R[3] literally say every requirement of the item; the item still goes to `incomplete`.
-  Open question 3.
+  whatever the model did. The current W07 R[2]-R[3] distinguishes target facts from missing artifacts; only a required incomplete requirement forces the incomplete partition.
 - **Unknown outcomes** become claims with nature `unknown`, not `fact` (B01: an unknown verdict has no grounds to be a fact).
 - **Default run subject**: `{ items: [{ id, label, location, fields, slots }], cross_item }` — `slots` (the item's slot record
   or null, references canonical) and `cross_item` (the submitted entries, grounds canonical) are added to the documented
@@ -380,11 +379,10 @@ read; results, run records and production results over the record limit; queries
 
 ## Open questions
 
-1. Should `findings` of the draft review be `judgment` (see Deviations), so that a draft can be satisfied?
+1. Resolved by the draft pack: findings are judgments. Independent verification requires an observed session at both start and submission.
 2. Should a reuse whose cited content changed between offer and submit be a structure violation (as now) or make the item
    uncovered (W07 R[3])? Within one run it cannot happen (content-addressed), so only the interim matters.
-3. Should the fact requirements of a skipped or uncovered item also be incomplete, as W07 R[2]-R[3] literally say (see
-   Deviations)? The engine keeps the Hub's facts and makes only the judgment requirements incomplete.
+3. Resolved by W07 R[2]-R[3]: target facts retain Hub terminals; missing item-artifact facts and judgments are incomplete.
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
 
@@ -559,3 +557,9 @@ The following commits connect these exits to durable requests and automatic main
 W07 R[2]–R[3]: skipped/omitted handling changes only judgment requirements and facts that judge the missing
 item artifact. Target-only facts retain the Hub-computed pass/violation, including fact-only workflows.
 A required incomplete requirement still takes the item into the incomplete partition (V05 R[3]).
+
+Independent starts validate their own observed session before binding any input, including starts without a predecessor.
+The judged lineage lists historical starts and accepted submissions missing a session; new independent starts refuse
+until the author supplies a new revision with sessions. Missing-session submissions are kept and checked for all
+other problems but refused as a whole. Their action records `refusal: session_missing` without repair keys and
+never enter the distinct-submission repair ledger; the same bytes with a session are evaluated again.
