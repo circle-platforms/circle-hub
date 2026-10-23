@@ -376,3 +376,16 @@ describe('traceability scenario respond flow', () => {
     assert.deepEqual(reply1, [{ tool: 'hub_get_nodes', input: { reference: 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' } }]);
   });
 });
+
+  test('a gold with no closed status names rerunning trace.ts with --plm, not another build', () => {
+    const scenario = traceability({
+      product: 'apv',
+      build: 'Rel_APV_10_6_1_57',
+      defects: [{ bug: '7300', status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }] }],
+    });
+    const checks = scenario.check(turnsOf(['运行 run_9 完成。缺陷 1 个：已追溯 1 个，未追溯 0 个。未知 0 个。已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。']));
+    const positive = checks.find((c) => c.name === '已关闭且已追溯的缺陷至少 1 个');
+    assert.ok(positive !== undefined && !positive.ok);
+    assert.match(String(positive.actual), /重跑 trace\.ts，加 --plm --closed-statuses/);
+    assert.ok(!String(positive.actual).includes('导出其他构建'));
+  });

@@ -70,3 +70,26 @@ test('a defect named only as "bug to case N" in the tree document title is trace
   const viaFolder = traceGold({ html: html('910011'), maps: [{ document: 'doc-c', map }], tree: treeWithFolder });
   assert.equal(viaFolder.defects[0]?.cases.length, 1);
 });
+
+test('without --plm the closed counts are unread, printed as such, and the next action names the missing input', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-scan-noplm-'));
+  try {
+    for (const sub of ['fixed', 'cases']) mkdirSync(join(dir, sub));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify(map));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify(tree));
+    writeFileSync(join(dir, 'fixed/Bugs_Fixed_with_Synthetic_10_7_D.html'), html('910001'));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）/);
+    assert.ok(!/已关闭 0/.test(run.stdout), 'unread is never printed as 0');
+    assert.match(run.stdout, /没给 PLM 原件，已关闭数未知：按已追溯数建议 #1；导出 plm:bugs: 原件后加 --plm --closed-statuses 重扫/);
+    assert.doesNotMatch(run.stdout, /Synthetic|91000|合成/);
+    const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
+    assert.equal(report.builds[0].closed, null);
+    assert.equal(report.builds[0].closed_traced, null);
+    assert.equal(report.builds[0].status_unknown, null);
+    assert.equal(report.builds[0].traced, 1, 'the traced count is still real');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

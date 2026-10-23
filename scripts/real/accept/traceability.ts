@@ -197,7 +197,10 @@ export default function scenario(gold: TraceGold): Scenario {
       }
 
       const positive = gold.defects.filter((d) => d.closed === true && d.cases.length > 0).length;
-      checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : '0 个，正例没核到；导出其他构建并执行 trace-scan', ok: positive > 0 });
+      // Without closed statuses the missing fact is which defects are closed and the next action is re-reading PLM;
+      // only a gold that DID read statuses and found nothing points at other builds.
+      const hasClosedStatus = gold.defects.some((d) => d.closed !== undefined) || gold.closed_defects !== undefined;
+      checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : hasClosedStatus ? '0 个，正例没核到；导出其他构建并执行 trace-scan' : '未读：标准答案没有已关闭状态；重跑 trace.ts，加 --plm --closed-statuses', ok: positive > 0 });
       checks.push(lengthBounded(area, turns));
       return checks;
     },
