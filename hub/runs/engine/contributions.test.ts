@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND } from '../../../contracts/generated/vocabulary.ts';
+import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL } from '../../../contracts/generated/vocabulary.ts';
 import { SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { canonicalize, LimitError } from '../../records/api.ts';
 import { createDefaultRegistry } from '../../refs/api.ts';
@@ -223,6 +223,7 @@ test('all four document outputs enter only after requirements pass, remain outsi
   assert.match(toolText('submit_result',{...answer,trace:call.traceId}),/回注：提交 4 条，入层 4 条，未入层 0 条/);
   const rendered=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes});
   assert.match(rendered,/回注层/);assert.match(rendered,/提交人/);assert.match(rendered,/依据/);assert.match(rendered,new RegExp(receipt.stored[0].record));
+  assert.match(rendered.split('\n').find(line=>line.includes(`rec:${receipt.stored[0].record}`))!,/适用 未声明/);
   assert.deepEqual(entries.map(v=>v.contribution.kind),DOCUMENT_OUTPUT_KIND);
   for(const v of entries) {
     assert.equal(v.contribution.submitted_by,w.admin.id);assert.equal(v.contribution.session,'integration-session');
@@ -281,6 +282,25 @@ test('new root annotates changed fragments, while the contribution remains valid
   const changed=await w.knowledge.layers.contributions.list(next.root!,['/commands/system/show'],w.user);
   assert.equal(changed.length,4);assert.ok(changed.every(v=>v.status==='cited_fragment_changed'&&v.note?.includes('被引片段已变')));
   assert.ok((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).every(v=>v.status==='valid'));
+});
+
+test('a changed relation endpoint is reported even when its target node did not change',async t=>{
+  const w=await setup(t);await w.service.submitResult(w.admin,w.args(),call);
+  const b=build('Rel_ACME_1_2_16');w.external.set(b.sources.tree,{bytes:catalogXml({...BASE_CATALOG,net:[{...BASE_CATALOG.net[0],help:'never sends echo requests'},BASE_CATALOG.net[1]]}),mediaType:'application/xml'});
+  const next=await w.knowledge.produceTree({product:w.product,build:b});assert.ok(next.ok);
+  const entries=await w.knowledge.layers.contributions.list(next.root!,['/commands/system/show'],w.user);
+  const relation=entries.find(entry=>entry.contribution.kind==='relation')!;
+  assert.equal(relation.status,'cited_fragment_changed');assert.match(relation.note??'',/关系另一端/);
+  assert.ok(entries.filter(entry=>entry!==relation).every(entry=>entry.status==='valid'));
+});
+
+test('changed-fragment notes take their label from the generated vocabulary',async t=>{
+  const w=await setup(t);await w.service.submitResult(w.admin,w.args(),call);
+  const b=build('Rel_ACME_1_2_16');w.external.set(b.sources.tree,{bytes:catalogXml({...BASE_CATALOG,system:[BASE_CATALOG.system[0],{name:'show',params:[],help:'changed state'}]}),mediaType:'application/xml'});
+  const next=await w.knowledge.produceTree({product:w.product,build:b});assert.ok(next.ok);
+  const labels=VALIDITY_STATUS_LABEL as Record<string,string>;const old=labels.cited_fragment_changed;
+  try{labels.cited_fragment_changed='合成的新标签';const entries=await w.knowledge.layers.contributions.list(next.root!,['/commands/system/show'],w.user);assert.ok(entries.every(entry=>entry.note?.startsWith('合成的新标签')));}
+  finally{labels.cited_fragment_changed=old;}
 });
 
 test('declared task outputs stay out of an actual contribution run layer',async t=>{

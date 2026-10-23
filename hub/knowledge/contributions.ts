@@ -3,7 +3,7 @@
 import { ContributionInput, ContributionSource, KnowledgeContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
-import type { ProvenanceType } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../records/api.ts';
 import { digestOf, scanForCredentials, sha256Hex } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
@@ -250,6 +250,7 @@ export class ContributionLayer {
     }
     const out: KnowledgeContributionView[] = [];
     const digests = new Map<string, string | null>();
+    const endpoints=new Map<string,Promise<string|null>>();
     const readable = new Map<string, Promise<boolean>>();
     for (const record of records) {
       const body = KnowledgeStore.contributionOf(record);
@@ -259,9 +260,18 @@ export class ContributionLayer {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });
         digests.set(body.path, fragment === null ? null : sha256Hex(fragment.text));
       }
-      const changed = digests.get(body.path) !== body.cited_fragment;
+      let changed = digests.get(body.path) !== body.cited_fragment;
+      const changedEndpoints:string[]=[];
+      const cited:Array<[string,KnowledgeContributionBody['source']]>=[['主引文',body.source]];
+      if(body.relation!==undefined)cited.push(['关系另一端',body.relation.other]);
+      for(const [name,source] of cited){
+        const ref=parseReference(source.reference);if(ref.scheme!=='tree')continue;
+        const key=`${ref.path}@${ref.entry??''}`;
+        if(!endpoints.has(key))endpoints.set(key,(async()=>{const value=await this.#reading.treeReader().read(root,ref.path,ref.entry??null,{user:reader.id,role:reader.role});return value===null?null:sha256Hex(value.text);})());
+        if(await endpoints.get(key)!==source.fragment){changed=true;changedEndpoints.push(name);}
+      }
       out.push({ record: record.digest, contribution: body, status: changed ? 'cited_fragment_changed' : 'valid',
-        note: changed ? `被引片段已变（根 ${body.root.slice(0, 12)} → ${root.slice(0, 12)}）` : null });
+        note: changed ? `${labelOf('validity_status','cited_fragment_changed')}（根 ${body.root.slice(0, 12)} → ${root.slice(0, 12)}）${changedEndpoints.length===0?'':`；变化端点：${changedEndpoints.join('、')}`}` : null });
     }
     return out;
   }
