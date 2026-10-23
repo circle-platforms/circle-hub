@@ -14,7 +14,7 @@ const doc = (root: MindNode): MindTree => ({ root });
 interface Req {
   requirement: string;
   layers: Array<{ terminal: string; code?: string; tier?: string; attribution?: string }>;
-  claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string } }>;
+  claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string; source_role?: string } }>;
 }
 
 const req = (requirement: string, claims: Req['claims'], layer: Partial<Req['layers'][number]> = {}): Req => ({
@@ -26,7 +26,7 @@ const req = (requirement: string, claims: Req['claims'], layer: Partial<Req['lay
 const item = (id: string, ...requirements: Req[]): ItemLike => ({ item: `run:x:case:${id}`, requirements });
 const result = (delivered: ItemLike[], incomplete: ItemLike[] = []): ResultLike => ({ partitions: { delivered, rejected: [], quarantined: [], incomplete } });
 
-const refute = (code: string): Req['claims'][number] => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact' } });
+const refute = (code: string): Req['claims'][number] => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } });
 const judgment = (code: string): Req['claims'][number] => ({ statement: { code }, qualifier: { nature: 'judgment' } });
 
 const entry = (over: Partial<GoldEntry>): GoldEntry => ({ label: '缺陷', seen_by: 'judgment', kind: 'replace_expected', node: 'c1', note: '', ...over });
@@ -165,4 +165,22 @@ test('the screen lines carry no node ids, titles or texts; the detail file does'
   for (const secret of ['c1', 'u9', '标题甲', '标题乙', 'run:x']) assert.ok(!screen.includes(secret), `the screen leaks ${secret}`);
   const file = detail(scored);
   assert.ok(file.includes('c1') && file.includes('u9'), 'the detail file names the nodes');
+});
+
+
+test('catalog refutations of model command statements stay separate from subject marks', () => {
+  const commandClaim = { statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'artifact_under_verification' } };
+  const subjectClaim = { statement: { verdict: 'refute', code: 'core.catalog.value_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
+  const layer = { terminal: 'violation', attribution: 'author_input' };
+  const gold = [entry({ node: 'c1', seen_by: 'mechanical', kind: 'replace_command_word' })];
+  const onlyModel = score(gold, result([item('c1', req('catalog', [commandClaim], layer))]));
+  assert.equal(onlyModel.detections[0]!.mechanical, false);
+  assert.deepEqual(onlyModel.detections[0]!.seen.marks, []);
+  assert.deepEqual(onlyModel.detections[0]!.seen.modelStatementRefutes, ['core.catalog.not_member']);
+  const mixed = score(gold, result([item('c1', req('catalog', [commandClaim, subjectClaim,
+    { statement: { verdict: 'refute', code: 'synthetic.judgment' }, qualifier: { nature: 'judgment', source_role: 'subject' } },
+    { statement: { verdict: 'refute', code: 'synthetic.no_role' }, qualifier: { nature: 'fact' } },
+  ], layer))]));
+  assert.deepEqual(mixed.detections[0]!.seen.marks, ['core.catalog.value_out_of_range']);
+  assert.equal(mixed.detections[0]!.draft, false);
 });

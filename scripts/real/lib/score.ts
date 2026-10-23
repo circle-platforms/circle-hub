@@ -17,7 +17,7 @@ export interface ItemLike {
   requirements: Array<{
     requirement: string;
     layers: Array<{ terminal: string; code?: string; tier?: string; attribution?: string }>;
-    claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string } }>;
+    claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string; source_role?: string } }>;
   }>;
 }
 
@@ -33,6 +33,8 @@ export interface Seen {
   unattributedRefutes: string[];
   /** The literal static layer of this item is neither pass nor violation (e.g. declared skipped): counted apart. */
   literalUnscored: boolean;
+  /** Fact refutations judging a model statement, not the document: disclosed separately and never scored as marks. */
+  modelStatementRefutes: string[];
 }
 
 export interface Detection {
@@ -105,6 +107,7 @@ function seenOn(result: ResultLike): Map<string, Seen> {
     for (const item of items) {
       const marks: string[] = [];
       const unattributed: string[] = [];
+      const modelStatementRefutes: string[] = [];
       let literalUnscored = false;
       for (const r of item.requirements) {
         if (r.requirement !== 'literal' && r.requirement !== 'catalog') continue;
@@ -117,7 +120,12 @@ function seenOn(result: ResultLike): Map<string, Seen> {
         const attributed = staticLayer !== undefined && staticLayer.attribution !== undefined && staticLayer.attribution !== 'unattributed';
         for (const claim of r.claims) {
           const code = refuteCodeOf(claim);
-          if (code === null) continue;
+          if (code === null || claim.qualifier?.nature !== 'fact') continue;
+          if (claim.qualifier.source_role === 'artifact_under_verification') {
+            modelStatementRefutes.push(code);
+            continue;
+          }
+          if (claim.qualifier.source_role !== 'subject') continue;
           if (attributed) marks.push(code);
           else unattributed.push(code);
         }
@@ -125,7 +133,7 @@ function seenOn(result: ResultLike): Map<string, Seen> {
       const findings = item.requirements
         .filter((r) => r.requirement === 'findings')
         .flatMap((r) => r.claims.flatMap((c) => (c.qualifier?.nature === 'judgment' && typeof c.statement.code === 'string' ? [c.statement.code] : [])));
-      out.set(nodeOf(item.item), { reviewed: partition === 'delivered', marks, findings, unattributedRefutes: unattributed, literalUnscored });
+      out.set(nodeOf(item.item), { reviewed: partition === 'delivered', marks, findings, unattributedRefutes: unattributed, modelStatementRefutes, literalUnscored });
     }
   }
   return out;
@@ -190,7 +198,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       const confirmNodes = nodes.map((n) => verified.get(n)).filter((v): v is NonNullable<typeof v> => v !== undefined);
       const vNew = confirmNodes.some((v) => v.newFindings.length > 0) || verifyGapProbes.length > 0;
       const vConfirmed = confirmNodes.some((v) => v.confirmed);
-      const merged: Seen = { reviewed: anyReviewed, marks: [], findings, unattributedRefutes: [], literalUnscored: false };
+      const merged: Seen = { reviewed: anyReviewed, marks: [], findings, unattributedRefutes: [], modelStatementRefutes: [], literalUnscored: false };
       return {
         entry,
         seen: merged,
@@ -210,6 +218,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       marks: here.flatMap((s) => s.marks),
       findings: here.flatMap((s) => s.findings),
       unattributedRefutes: here.flatMap((s) => s.unattributedRefutes),
+      modelStatementRefutes: here.flatMap((s) => s.modelStatementRefutes),
       literalUnscored: here.some((s) => s.literalUnscored),
     };
     const mechanical = merged.marks.length > 0;
@@ -366,7 +375,7 @@ export function detail(s: Score): string {
     else if (d.entry.deletedCases !== undefined && d.entry.deletedCases.length > 0) where = `分组 ${d.entry.node}，删掉用例 ${d.entry.deletedCases.join('、')}`;
     else where = d.entry.node;
     lines.push(
-      `- ${d.detected ? '查出' : '漏掉'}：${d.entry.label}（${d.entry.kind}，${where}）；字面 ${d.seen.marks.join('、') || '没有'}；初评 ${d.seen.findings.join('、') || '没有'}${d.confirmed ? '（复核证实）' : ''}${d.verify ? '（复核发现）' : ''}${d.seen.reviewed ? '' : '；这个条目没有被评审到'}`,
+      `- ${d.detected ? '查出' : '漏掉'}：${d.entry.label}（${d.entry.kind}，${where}）；字面 ${d.seen.marks.join('、') || '没有'}；模型陈述的反驳 ${d.seen.modelStatementRefutes.join('、') || '没有'}；初评 ${d.seen.findings.join('、') || '没有'}${d.confirmed ? '（复核证实）' : ''}${d.verify ? '（复核发现）' : ''}${d.seen.reviewed ? '' : '；这个条目没有被评审到'}`,
     );
   }
   lines.push('', '未注入的用例上的字面标记：');

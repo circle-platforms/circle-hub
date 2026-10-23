@@ -85,7 +85,7 @@ const copyShaOf = (out: string): string => createHash('sha256').update(readFileS
 test('three valid rounds with the Hub finding everything: exit 0, scores written, screen clean', () => {
   const { out, source, plan: planPath } = fixtures(document(3), plan);
   const delivered = [
-    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'subject' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact' } }] }] },
+    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'subject' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] },
     { item: 'run:x:case:c2', requirements: [] },
     { item: 'run:x:case:c3', requirements: [] },
   ];
