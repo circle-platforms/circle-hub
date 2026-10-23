@@ -477,6 +477,7 @@ and parameter references rather than silently showing incomplete attributes; no 
 are invented. This is a format capability refusal, not a claim that such XML is invalid. External identifiers are never
 fetched, and doctype metadata discloses that policy. See [XML 1.0 section 5.1](https://www.w3.org/TR/REC-xml/#proc-types).
 
-Limit recovery is constructed by ParseLimitError from its typed limit/max, then passed intact by upload and input
+Limit recovery is constructed at the throw site (with typed limit/max defaults); HTML derived work, wrapper and
+merged-attribute budgets provide their own effective recovery, then passed intact by upload and input
 binding. It is not guessed from message text. Caller-declared/extension formats can refuse; a byte-sniffed format
 cannot by itself reject an upload. The upload-size gate still precedes parsing and keeps its own cap-specific fix.

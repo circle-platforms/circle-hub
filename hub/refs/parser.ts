@@ -107,7 +107,7 @@ export class ParseError extends Error {
 export class ParseLimitError extends ParseError {
   readonly limit: keyof ParseLimits;
   readonly max: number;
-  constructor(parser: string, limit: keyof ParseLimits, max: number, message: string, offset: number | null = null) {
+  constructor(parser: string, limit: keyof ParseLimits, max: number, message: string, offset: number | null = null, fix?: string) {
     const fixes: Record<keyof ParseLimits, string> = {
       maxBytes: `拆分文件，或上传不超过 ${max} 字节的较小文件`,
       maxDepth: `减少嵌套至 ${max} 层以内，或拆分文件后重新上传`,
@@ -115,7 +115,7 @@ export class ParseLimitError extends ParseError {
       maxAttributes: `减少单个标签的属性数至 ${max} 以内后重新上传`,
       maxSelectorChars: `缩短定位路径或拆分文件，使定位字符数不超过 ${max} 后重新上传`,
     };
-    super(parser, message, offset, null, fixes[limit]);
+    super(parser, message, offset, null, fix ?? fixes[limit]);
     this.name = 'ParseLimitError';
     this.limit = limit;
     this.max = max;

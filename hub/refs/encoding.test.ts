@@ -126,3 +126,8 @@ test('entity-free ELEMENT and NOTATION declarations are retained without fetchin
   assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE x [<!ELEMENT x %part;>]><x/>')), ParseForbiddenError);
   assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE x [<!ATTLIST x a CDATA "d">]><x/>')), (e: unknown) => e instanceof ParseForbiddenError && /显式属性/.test(e.fix));
 });
+
+test('derived HTML budgets describe formatting lists and merged attributes rather than raw node counts', () => {
+  assert.throws(() => htmlParser.parse(Buffer.from('<p>' + '<b>'.repeat(100) + '<i>x</i>'.repeat(100)), { maxNodes: 500 }), (e: unknown) => e instanceof Error && 'fix' in e && /格式标签.*嵌套|拆分/.test(String(e.fix)) && !/节点\/值数量/.test(String(e.fix)));
+  assert.throws(() => htmlParser.parse(Buffer.from('<body a=1 b=2><body c=3 d=4><body e=5 f=6>'), { maxAttributes: 4 }), (e: unknown) => e instanceof Error && /合并|累计/.test(e.message) && 'fix' in e && /合并|累计/.test(String(e.fix)) && /4/.test(String(e.fix)));
+});
