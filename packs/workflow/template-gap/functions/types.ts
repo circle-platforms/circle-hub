@@ -99,7 +99,7 @@ export type CaseRevisionNodes = { texts: string[]; parents: number[] };
 export type CommandFact = { command: string; caseCount: number; categories: (CategoryFact & { references: string[] })[]; missing: string[]; skipped: Skip[]; references: string[] };
 export type CommandCoverage = {
   case_rule: 'marked' | 'tagged'; rule_mismatch: boolean; bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
-  caseCount: number; matchedCases: number; unmatched: string[]; commandlessCases: number;
+  caseCount: number; matchedCases: number; unmatched: string[]; orphaned: string[]; commandlessCases: number;
   truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
   commands: CommandFact[];
 };

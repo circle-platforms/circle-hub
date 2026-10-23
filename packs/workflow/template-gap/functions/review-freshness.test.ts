@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import TABLE from '../tables/template-v3.json' with { type: 'json' };
+import { readTemplate } from './template.ts';
+import { commandCoverage } from './commands.ts';
+import { commandOutcomes } from './command-check.ts';
+import { indexView, LOCK } from '../testing/index.ts';
+const template = readTemplate(TABLE);
+assert.notEqual(typeof template, 'string');
+const document = '900001';
+const records = ['kept', 'deleted'].map(node => ({ document, node, title: node, path_labels: ['root'], commands: [`CLI/widget/${node}`] }));
+const cases = [{ id: `${document}:kept`, visit: 1, categories: [] }];
+const nodes = { texts: ['root', 'kept'], parents: [-1, 0] };
+const subject = (index: unknown) => ({ document, item: document, uploaded: false, case_rule: 'marked', cases, case_count: 1, nodes, index, scope: [document], lock: LOCK });
+test('deleted cases cannot contribute commands and stale rows require synchronization', () => {
+  const stale = indexView(records);
+  const coverage = commandCoverage(template as Exclude<typeof template, string>, document, cases, stale, [], false, LOCK, 'marked', nodes);
+  assert.deepEqual(coverage.commands.map(row => row.command), ['CLI/widget/kept']);
+  const outcomes = commandOutcomes(subject(stale));
+  assert.ok(outcomes.every(row => row.verdict !== 'refute'));
+  const gap = outcomes.find(row => row.data?.scope === 'document')!;
+  assert.equal(gap.verdict, 'unknown');
+  assert.deepEqual(gap.data?.orphaned_keys, ['deleted']);
+  assert.match(String(gap.data?.next_action), /知识同步.*重跑/);
+  const fresh = commandOutcomes(subject(indexView(records.slice(0, 1))));
+  assert.ok(fresh.every(row => row.verdict === 'refute'));
+  assert.ok(fresh.every(row => row.data?.command === 'CLI/widget/kept'));
+});
