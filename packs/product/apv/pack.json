@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "dddfdf01eef476c392e3be9f7d5001c19acae6cbc0396b3a14706118a2440558",
-      "size": 31214
+      "sha256": "dea23b1ff12c2009b191652a1cdfe488044b9d909fb65f698c254b6a0cf6d060",
+      "size": 33408
     },
     {
       "path": "functions/adoc/origins.ts",

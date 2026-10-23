@@ -209,17 +209,21 @@ function rowOf(cells: readonly string[]): string {
 }
 
 /**
- * The citation that covers a set of verified ranges: they must be of one file and leave no line between them, so the
- * cited range is exactly the lines that were read back. Null when there is nothing verified, or a gap.
+ * The citation that covers a set of verified ranges: they must be of one file, and every line between them must be one
+ * `bridge` accepts (a line that re-reads as blank), so the cited range holds the verified lines and nothing that says
+ * something else. Null when there is nothing verified, or a line between that cannot be bridged.
  */
-function mergedCitation(origins: readonly VerifiedRange[], digestOf: (file: string) => string): Citation | null {
+function mergedCitation(origins: readonly VerifiedRange[], digestOf: (file: string) => string, bridge?: (file: string, line: number) => boolean): Citation | null {
   if (origins.length === 0) return null;
   const file = origins[0]!.file;
   if (origins.some((origin) => origin.file !== file)) return null;
   const sorted = [...origins].sort((a, b) => a.from - b.from);
   let next = sorted[0]!.from;
   for (const origin of sorted) {
-    if (origin.from > next) return null;
+    if (origin.from > next) {
+      if (bridge === undefined) return null;
+      for (let line = next; line < origin.from; line++) if (!bridge(file, line)) return null;
+    }
     next = Math.max(next, origin.to + 1);
   }
   const from = sorted[0]!.from;
@@ -242,8 +246,10 @@ function cellOrigins(row: ReadonlyArray<{ origins: VerifiedRange[] }>): Verified
 interface Table {
   text: string;
   rowCites: RowCite[];
-  dropped: number[];
+  dropped: Array<{ index: number; reason: string }>;
   cite: Citation | null;
+  /** Why the table as a whole cites nothing, when it does not; '' when it cites. */
+  reason: string;
   misaligned: Array<{ row: number; cells: number; header: number }>;
 }
 
@@ -256,25 +262,38 @@ interface Table {
  * the source: the delimiter cites nothing, the empty header the table's own range. The byte ranges are computed exactly
  * as K1 computes them over this text, so the range in a fragment K1 makes finds the row it names.
  */
-function tableOf(block: Block, digestOf: (file: string) => string): Table {
-  const none: Table = { text: '', rowCites: [], dropped: [], cite: null, misaligned: [] };
-  if (block.rows === undefined) return { ...none, text: block.expanded, cite: mergedCitation(block.origins, digestOf) };
+function tableOf(block: Block, digestOf: (file: string) => string, blank: (file: string, line: number) => boolean): Table {
+  const none = (reason: string): Table => ({ text: '', rowCites: [], dropped: [], cite: null, reason, misaligned: [] });
+  if (block.rows === undefined) return { ...none(''), text: block.expanded, cite: mergedCitation(block.origins, digestOf, blank) };
   const verified: VerifiedRange[] = [];
-  const rows = [...block.rows.head, ...block.rows.body, ...block.rows.foot].map((row, index) => {
+  const engineRows = [...block.rows.head, ...block.rows.body, ...block.rows.foot];
+  const rows = engineRows.map((row, index) => {
     const origins = cellOrigins(row);
     for (const origin of origins) if (!verified.includes(origin)) verified.push(origin);
-    return { index, cells: row.map(cellText), cite: mergedCitation(origins, digestOf) };
+    return { index, cells: row.map(cellText), cite: mergedCitation(origins, digestOf, blank) };
   });
-  const cite = mergedCitation(verified, digestOf);
-  const dropped = rows.filter((row) => row.cite === null).map((row) => row.index);
+  const dropped = rows
+    .filter((row) => row.cite === null)
+    .map((row) => ({
+      index: row.index,
+      reason: cellOrigins(engineRows[row.index]!).length === 0 ? '没有已核对的单元格' : '自己的单元格之间隔着不是空行的行，给不出这一行的来源范围',
+    }));
   const header = block.rows.head.length > 0 ? rows[0]! : null;
   const cited = header !== null && header.cite !== null;
   const body = (header === null ? rows : rows.slice(1)).filter((row) => row.cite !== null);
-  if (!cited && body.length === 0) return { ...none, dropped };
+  // The table stands on its cited rows, not on one gap-free range over all of them: a blank line between two rows (or
+  // between two cells of a row written one cell per line) costs nothing. Only when no row is cited at all is the table
+  // itself uncited, and the reason says which of the two it is.
+  const merged = mergedCitation(verified, digestOf, blank);
+  const first = cited ? header! : body[0] ?? null;
+  const cite = merged ?? first?.cite ?? null;
+  if (!cited && body.length === 0) {
+    return { ...none(verified.length === 0 ? '表格的单元格都回核不到原文行' : '表格有已核对的单元格，但没有一行能给出自己的来源范围'), dropped };
+  }
   const cells = cited ? header!.cells.length : body[0]!.cells.length;
   const headerLine = cited ? rowOf(header!.cells) : rowOf(Array.from({ length: cells }, () => ''));
   const headerCite = cited ? header!.cite : cite;
-  if (headerCite === null) return { ...none, dropped };
+  if (headerCite === null) return { ...none('表格给不出表头行的来源范围'), dropped };
   const lines = [headerLine, rowOf(Array.from({ length: cells }, () => '---')), ...body.map((row) => rowOf(row.cells))];
   const cites: Array<Citation | null> = [headerCite, null, ...body.map((row) => row.cite)];
   const text = lines.join('\n');
@@ -298,7 +317,7 @@ function tableOf(block: Block, digestOf: (file: string) => string): Table {
   const misaligned: Array<{ row: number; cells: number; header: number }> = [];
   const reference = cited ? header : body[0]!;
   for (const row of rows) if (row !== reference && row.cells.length !== cells) misaligned.push({ row: row.index, cells: row.cells.length, header: cells });
-  return { text, rowCites, dropped, cite, misaligned };
+  return { text, rowCites, dropped, cite, reason: '', misaligned };
 }
 
 /**
@@ -381,6 +400,19 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     if (block.kind === 'section') headings.set(at, block);
   });
   const digestOf = (file: string): string => composition.files.find((one) => one.file === file)?.sha256 ?? '';
+  // Whether an original line re-reads as blank, from the expanded text and its line map. Built on first use: only a table
+  // whose verified cells are separated by other lines needs it, and a range is bridged only over lines that hold
+  // nothing, so the cited range never swallows a line that says something the entry does not.
+  let originalLines: Map<string, string> | null = null;
+  const blankLine = (file: string, line: number): boolean => {
+    if (originalLines === null) {
+      originalLines = new Map();
+      const lines = model.expanded_text.split('\n');
+      model.line_map.forEach((row, index) => originalLines?.set(`${row.file}\u0000${row.line}`, lines[index] ?? ''));
+    }
+    const text = originalLines.get(`${file}\u0000${line}`);
+    return text !== undefined && text.trim() === '';
+  };
   const citationOf = (origin: VerifiedRange): Citation => ({ file: origin.file, sha256: digestOf(origin.file), selector: origin.selector });
   const byNode = new Map<number, number>();
   // The encoded and the decoded heading path of every section, built once from the parent's, and the sibling keys that
@@ -495,7 +527,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       }
       continue;
     }
-    const table = block.rows === undefined ? null : tableOf(block, digestOf);
+    const table = block.rows === undefined ? null : tableOf(block, digestOf, blankLine);
     const text = table === null ? textOf(block) : table.text;
     // A container with no text of its own (a list, an example, an open or sidebar block) is not mapped: the engine gives
     // a block for each of its children, and each of those carries and cites its own text.
@@ -510,11 +542,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     }
     const cite = table === null ? (block.origins.length > 0 ? citationOf(block.origins[0]!) : null) : table.cite;
     if (cite === null) {
-      uncited.push(uncitedOf(model, block, table === null ? '' : '表格的单元格都回核不到原文行'));
+      uncited.push(uncitedOf(model, block, table === null ? '' : table.reason));
       continue;
     }
     for (const row of table?.dropped ?? []) {
-      uncited.push(uncitedOf(model, block, `表格的第 ${row + 1} 行（按引擎的行模型数）没有已核对的单元格，这一行没有进映射，也没有借用别的行的来源行`));
+      uncited.push(uncitedOf(model, block, `表格的第 ${row.index + 1} 行（按引擎的行模型数）${row.reason}，这一行没有进映射，也没有借用别的行的来源行`));
     }
     for (const row of table?.misaligned ?? []) {
       misaligned.push(`${placeOf(model, block)} 的表格第 ${row.row + 1} 行（按引擎的行模型数）有 ${row.cells} 格，表头有 ${row.header} 格`);

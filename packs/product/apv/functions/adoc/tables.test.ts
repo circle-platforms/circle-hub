@@ -196,3 +196,150 @@ test('a table whose rows the engine reads with unequal cell counts is mapped as 
   assert.ok(row !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
   assert.equal(row.fragments[0]!.selector, 'l/6', 'the row cites the source line it is written on');
 });
+
+test('a blank line among the rows costs nothing: the implicit header and blank lines between rows are mapped and cited', async () => {
+  // AsciiDoc's implicit header: the first row followed by a blank line is the head row.
+  const implicit = await mapAndPlace({
+    'book.adoc': [
+      '= Synthetic',                                 // 1
+      '',                                            // 2
+      '== 配置命令',                                  // 3
+      '',                                            // 4
+      '|===',                                        // 5
+      '| 命令 | 说明',                                // 6
+      '',                                            // 7
+      '| *demo pool add* _<name>_ | 添加成员',        // 8
+      '| *demo pool del* _<name>_ | 删除成员',        // 9
+      '|===',                                        // 10
+      '',                                            // 11
+    ].join('\n'),
+  });
+  assert.deepEqual(tableLines(implicit.mapped), [
+    '| 命令 | 说明 |',
+    '| --- | --- |',
+    '| **demo pool add** *<name>* | 添加成员 |',
+    '| **demo pool del** *<name>* | 删除成员 |',
+  ]);
+  assert.deepEqual(implicit.mapped.uncited, [], JSON.stringify(implicit.mapped.uncited));
+  assert.deepEqual(
+    implicit.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    [
+      ['demo pool add <name>', '/commands/demo/pool/add', 'l/8'],
+      ['demo pool del <name>', '/commands/demo/pool/del', 'l/9'],
+    ],
+  );
+
+  // A declared header and a blank line between two body rows.
+  const spaced = await mapAndPlace({
+    'book.adoc': [
+      '= Synthetic',                                 // 1
+      '',                                            // 2
+      '[cols="2,3",options="header"]',                // 3
+      '|===',                                        // 4
+      '| 命令 | 说明',                                // 5
+      '| *demo pool add* _<name>_ | 添加成员',        // 6
+      '',                                            // 7
+      '| *demo pool del* _<name>_ | 删除成员',        // 8
+      '|===',                                        // 9
+      '',                                            // 10
+    ].join('\n'),
+  });
+  assert.deepEqual(spaced.mapped.uncited, [], JSON.stringify(spaced.mapped.uncited));
+  assert.deepEqual(
+    spaced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    [
+      ['demo pool add <name>', 'l/6'],
+      ['demo pool del <name>', 'l/8'],
+    ],
+  );
+
+  // One cell per line with blank lines between them: a row's own cells are not contiguous, and the lines between are
+  // blank, so the row still cites the range that covers its cells.
+  const perLine = await mapAndPlace({
+    'book.adoc': [
+      '= Synthetic',                    // 1
+      '',                               // 2
+      '[cols="1,1"]',                   // 3
+      '|===',                            // 4
+      '| 命令',                           // 5
+      '',                               // 6
+      '| 说明',                           // 7
+      '',                               // 8
+      '| *demo pool add* _<name>_',     // 9
+      '',                               // 10
+      '| 添加成员',                       // 11
+      '|===',                            // 12
+      '',                               // 13
+    ].join('\n'),
+  });
+  assert.deepEqual(perLine.mapped.uncited, [], JSON.stringify(perLine.mapped.uncited));
+  // A blank line after the first row is AsciiDoc's implicit header, so the engine reads 命令/说明 as the head row.
+  assert.deepEqual(tableLines(perLine.mapped), [
+    '| 命令 | 说明 |',
+    '| --- | --- |',
+    '| **demo pool add** *<name>* | 添加成员 |',
+  ]);
+  const signature = perLine.entries.find((entry) => entry.data.form === 'signature');
+  assert.ok(signature !== undefined, JSON.stringify(perLine.entries.map((entry) => entry.statement)));
+  assert.equal(signature.fragments[0]!.selector, 'l/9-11', 'the row cites the lines its own cells were verified on');
+});
+
+test('a table that cannot be cited says which of the two it is, not one reason for both', async () => {
+  const files = {
+    'book.adoc': [
+      '= Synthetic',                                 // 1
+      '',                                            // 2
+      '== 配置命令',                                  // 3
+      '',                                            // 4
+      '[cols="2,3",options="header"]',                // 5
+      '|===',                                         // 6
+      '| 命令 | 说明',                                 // 7
+      '| *demo pool add* _<name>_ | 添加成员',         // 8
+      '| *demo pool del* _<name>_ | 删除成员',         // 9
+      '|===',                                         // 10
+      '',                                            // 11
+    ].join('\n'),
+  };
+  const out = await compile(files);
+  const table = out.model.blocks.find((block) => block.rows !== undefined);
+  assert.ok(table !== undefined && table.rows !== undefined);
+
+  // No cell verified at all.
+  const nothing = structuredClone(out.model);
+  const nothingTable = nothing.blocks.find((block) => block.rows !== undefined);
+  assert.ok(nothingTable !== undefined && nothingTable.rows !== undefined);
+  for (const part of ['head', 'body', 'foot'] as const) for (const row of nothingTable.rows[part]) for (const cell of row) cell.origins = [];
+  const first = toK1Model(nothing, out.composition, 'cli-apv');
+  assert.deepEqual(first.uncited.map((one) => [one.kind, one.file, one.line, one.reason]), [['table', 'book.adoc', 6, '表格的单元格都回核不到原文行']], JSON.stringify(first.uncited));
+
+  // Cells verified, but one row's own cells are separated by a line that holds something else: that row is reported
+  // with its own reason and the rest of the table is still mapped.
+  const gapped = structuredClone(out.model);
+  const gappedTable = gapped.blocks.find((block) => block.rows !== undefined);
+  assert.ok(gappedTable !== undefined && gappedTable.rows !== undefined);
+  const row = gappedTable.rows.body[1]!;
+  const move = (from: number, to: number) => {
+    for (const cell of row) {
+      for (const origin of cell.origins) {
+        origin.from = from;
+        origin.to = to;
+        origin.selector = `l/${from}`;
+        origin.verbatim = files['book.adoc']!.split('\n')[from - 1]!;
+      }
+    }
+  };
+  move(8, 8);
+  row[0]!.origins[0]!.from = 4;
+  row[0]!.origins[0]!.to = 4;
+  row[0]!.origins[0]!.selector = 'l/4';
+  row[0]!.origins[0]!.verbatim = '';
+  const second = toK1Model(gapped, out.composition, 'cli-apv');
+  assert.deepEqual(second.uncited.map((one) => [one.kind, one.line, one.reason]), [['table', 6, '表格的第 3 行（按引擎的行模型数）自己的单元格之间隔着不是空行的行，给不出这一行的来源范围，这一行没有进映射，也没有借用别的行的来源行']], JSON.stringify(second.uncited));
+  const produced = produceAdocEntries(second, { name: 'cli-apv', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(
+    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    [['demo pool add <name>', 'l/8']],
+    'the row that still cites its own line stays',
+  );
+});
