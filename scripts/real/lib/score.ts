@@ -75,12 +75,18 @@ export interface Score {
   recall: { mechanical: [number, number]; judgment: [number, number] };
   /** Marks of the Hub on cases no defect was injected into, split by code family. */
   structure: StructureCompare;
-  /** Marks with no independent answer (tag_variant, catalog): their total and the ones the baseline did not have. */
+  /** Marks with no independent answer yet (tag_variant, catalog): their total and the ones the baseline did not have.
+   * The missing fact is the independent case-to-command extraction; the next action is the gold-case-commands work
+   * item, whose answer plugs in here. Until then these are counted, never judged. */
   otherMarks: { total: number; fresh: number };
   /** Literal static-layer entries that are neither pass nor violation: counted apart, never scored. */
   literalUnscored: number;
   /** Cases without a unique data.id in the copy: counted apart, never scored. */
   noUniqueId: number;
+  /** Whether the structure comparison ran: it needs the copy's independent literal answer. When it did not, the
+   * missing fact is the copy file and the next action is scoring again with it (score-injection.ts --copy); the
+   * driver always passes it. */
+  structureCompared: boolean;
   /** Model findings on untouched cases. */
   extras: Extra[];
   /** Verify's own new findings on untouched cases. */
@@ -220,7 +226,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       verify: vNew,
       confirmed: vConfirmed,
       combined,
-      detected: entry.seen_by === 'mechanical' ? mechanical : combined || (options.verify === undefined ? draft : combined),
+      detected: entry.seen_by === 'mechanical' ? mechanical : combined,
     };
   });
 
@@ -267,7 +273,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     : [...verified].filter(([node, v]) => !touched.has(node) && v.newFindings.length > 0).map(([node]) => node);
   const noUniqueId = options.literal?.noUniqueId.length ?? 0;
 
-  return { detections, recall: { mechanical: recallOf('mechanical'), judgment: recallOf('judgment') }, structure, otherMarks, literalUnscored, noUniqueId, extras, verifyExtras };
+  return { detections, recall: { mechanical: recallOf('mechanical'), judgment: recallOf('judgment') }, structure, otherMarks, literalUnscored, noUniqueId, extras, verifyExtras, structureCompared: options.literal !== undefined };
 }
 
 export interface AggregateRun {
@@ -343,7 +349,9 @@ export function render(s: Score): string[] {
     `Hub 自己的字面检查看得见的缺陷：查出 ${pct(s.recall.mechanical)}`,
     `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
     '',
-    `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；不计分 ${s.literalUnscored + s.noUniqueId}`,
+    s.structureCompared
+      ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；不计分 ${s.literalUnscored + s.noUniqueId}`
+      : `未注入的用例上的字面标记：没有比对（缺副本的独立答案，补法：score-injection.ts 带 --copy 重新计分）`,
     `未注入的用例上模型的发现：初评 ${s.extras.length} 个用例（未改动评审里没有的 ${s.extras.filter((e) => !e.inBaseline).length}），复核新增 ${s.verifyExtras.length} 个用例`,
   ];
   return lines;
