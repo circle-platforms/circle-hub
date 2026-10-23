@@ -313,6 +313,12 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
   const caseRule = options.caseRule ?? 'marked';
 
   const locations = options.tree === undefined ? [] : locationsGold(options.tree).all ?? [];
+  // One lookup table per tree (the per-case linear find made the integrator's full scan quadratic).
+  const bugsByDocument = new Map<string, string[]>();
+  for (const location of locations) {
+    const bugs = bugIdsOf([location.title, ...location.ancestors].join(' '));
+    bugsByDocument.set(cleanDocId(location.document), bugs);
+  }
   const caseInputs: CaseInput[] = [];
   for (const item of options.maps) {
     try {
@@ -327,9 +333,8 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
             // ids.ts bugs of the document's title and folders — 'bug to case N' included, which the case-location
             // extractor files as unmarked).
             defects: (() => {
-              const treeDoc = locations.find((l) => cleanDocId(l.document) === cleanDocId(doc.document));
-              if (treeDoc === undefined) return c.defects;
-              return [...new Set([...c.defects, ...bugIdsOf([treeDoc.title, ...treeDoc.ancestors].join(' '))])];
+              const treeBugs = bugsByDocument.get(cleanDocId(doc.document));
+              return treeBugs === undefined ? c.defects : [...new Set([...c.defects, ...treeBugs])];
             })(),
           });
         }

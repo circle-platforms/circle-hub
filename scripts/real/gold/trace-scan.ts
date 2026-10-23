@@ -17,6 +17,10 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
   }
   try {
     const tree = JSON.parse(readFileSync(treePath!, 'utf8'));
+    // Parse the maps once for the whole scan and filter them per build: re-reading every map per build made the
+    // integrator's full scan (all builds, no --docs-dir) quadratic.
+    const allMaps = loadCaseMaps(casesDir!);
+    const mapsByDocument = new Map(allMaps.map((m) => [m.document, m]));
     const plmPaths: string[] = [];
     for (let i = 0; i < argv.length; i++) if (argv[i] === '--plm') {
       while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) plmPaths.push(...argv[++i].split(','));
@@ -28,7 +32,8 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const builds = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
       const build = file.replace(/^Bugs_Fixed_with_/i, '').replace(/\.html$/i, '');
       const allowed = docsDir ? parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8')) : undefined;
-      const gold = traceGold({ html: readFileSync(join(fixedDir!, file), 'utf8'), tree, maps: loadCaseMaps(casesDir!, allowed), plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+      const maps = allowed === undefined ? allMaps : allMaps.filter((m) => allowed.has(m.document) || allowed.has(`${m.document}.json`) || allowed.has(`agile:case:${m.document}`));
+      const gold = traceGold({ html: readFileSync(join(fixedDir!, file), 'utf8'), tree, maps, plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
       // Without --plm the closed counts were never read: they stay null (unread), never 0 (the owner's rule — an
       // unknown is transient and names the missing fact and the next action).
       const unread = plm === undefined;
