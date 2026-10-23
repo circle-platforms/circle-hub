@@ -5,11 +5,11 @@
 // - One unreleased build: no release date (released is null)
 // - One build of another version line: excluded when filtering by version line
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { type BuildCandidate, main, parseBuildCandidates } from './builds.ts';
+import { type BuildCandidate, main, parseBuildCandidates, privatePath } from './builds.ts';
 
 // Synthetic HTML listing page with:
 // 1. Rel_APV_10_6_1_57 (APV, released 2026-05-14, command tree)
@@ -132,12 +132,14 @@ describe('parseBuildCandidates', () => {
 describe('main CLI', () => {
   test('reads --page and writes --out JSON with exit code 0', async () => {
     const pagePath = writeTemp('test-listing.html', SYNTHETIC_LISTING_HTML);
-    const outPath = writeTemp('out.json', '');
+    const outPath = join(tmpDir!, 'out.json');
 
     const code = await main(['--page', pagePath, '--line', '10.6.1', '--out', outPath]);
     assert.equal(code, 0);
 
-    const written = JSON.parse(readFileSync(outPath, 'utf8')) as BuildCandidate[];
+    const written = JSON.parse(readFileSync(outPath, 'utf8')).candidates as BuildCandidate[];
+    assert.equal(statSync(outPath).mode & 0o777, 0o600);
+    assert.equal(await main(['--page', pagePath, '--line', '10.6.1', '--out', outPath]), 1);
     assert.equal(written.length, 3);
     assert.deepEqual(
       written.map((c) => c.name),
@@ -154,4 +156,29 @@ describe('main CLI', () => {
     const code = await main(['--page', 'nonexistent-page.html', '--line', '10.6.1', '--out', 'out.json']);
     assert.equal(code, 1);
   });
+});
+
+describe('multiple listing pages and private output', () => {
+  test('merges families before resolving cross-page alias chains and deduplicates names', async t => {
+    const first = 'Rel_APV_10_8_1_11 (build on 2026-08-01 10:00:00 ):\n<BLOCKQUOTE><A href="command_tree.xml">tree</A></BLOCKQUOTE>\nRel_NSAE_10_8_1_12 (build on unknown ): based on Rel_APV_10_8_1_11';
+    const second = 'Rel_NSAE_10_8_1_13 (build on 2026-08-02 10:00:00 ): based on Rel_NSAE_10_8_1_12\n' + first;
+    const page1 = writeTemp('family-one.html', first), page2 = writeTemp('family-two.html', second);
+    const out = join(tmpDir!, 'multi.json');
+    const screen: string[] = [];
+    t.mock.method(process.stdout, 'write', (text: string | Uint8Array) => { screen.push(String(text)); return true; });
+    assert.equal(await main(['--page', page1, '--page', page2, '--line', '10.8.1', '--out', out]), 0);
+    const gold = JSON.parse(readFileSync(out, 'utf8'));
+    assert.equal(gold.line, '10.8.1');
+    assert.equal(gold.candidates.length, 3);
+    assert.equal(gold.candidates.find((c: BuildCandidate) => c.name.endsWith('_13')).base, 'Rel_APV_10_8_1_11');
+    assert.match(screen.join(''), /候选 3 个，APV 1、NSAE 2、别名 2、没有制作时间 1/);
+    assert.ok(!screen.join('').includes('Rel_'));
+  });
+});
+
+test('rejects repository paths and symlinks back into a checkout', () => {
+  assert.throws(() => privatePath(new URL('./forbidden.json', import.meta.url).pathname));
+  const link = join(tmpDir!, 'repo-link');
+  symlinkSync(new URL('../../../', import.meta.url).pathname, link, 'dir');
+  assert.throws(() => privatePath(join(link, 'forbidden.json')));
 });
