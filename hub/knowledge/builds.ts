@@ -35,6 +35,8 @@ export interface MoveRootOptions {
   build?: string;
   /** The composition the pointer will name; when given it must be the cause's. */
   composition?: string;
+  /** The observation that a reconciliation made before choosing its target. */
+  expected_action?: string | null;
 }
 
 export type MoveRootResult =
@@ -255,11 +257,11 @@ export class Builds {
     const base = chain === null ? named.name : baseOf(chain.last);
     if (base !== production.detail.build.name) throw new KnowledgeError(`构建 ${named.name} 用的是 ${base} 的树，不用这个生产动作的树（${production.detail.build.name}）`);
     const current = await this.#context.records.pointers.get(name);
-    if (expected === root) return { moved: false, current, reason: '当前根已经是这个根' };
+    if(expected===root&&current?.target===root){const previous=await this.#store.pointerMove(current.action);if(previous?.composition===production.detail.composition)return {moved:false,current,reason:'当前根和组成已经相同'};}
     const records = this.#context.records;
     return records.store.withTransaction(async (tx) => {
       const moved = await records.pointers.move(
-        { name, expected, next: root, by: { id: by.id, name: by.name, role: by.role }, run: null, component: COMPONENTS.sync, note: `生产动作 rec:${cause}` },
+        { name, expected, next: root, refresh:expected===root, expected_action:options.expected_action!==undefined?options.expected_action:current?.action??null, by: { id: by.id, name: by.name, role: by.role }, run: null, component: COMPONENTS.sync, note: `生产动作 rec:${cause}` },
         tx,
       );
       if (!moved.moved) return { moved: false, current: moved.current, reason: '当前根已被移动过，比较并交换没有成功' };
@@ -292,12 +294,13 @@ export class Builds {
       const newest = await this.#newestOfLine(product, line);
       if (newest === null || newest.production === null) return { line, from, to: null, build: null, moved: false, reason: '这条版本线还没有根' };
       const to = newest.production.detail.root as string;
-      if (from === to) return { line, from, to, build: newest.build.name, moved: false, reason: '当前根已是最新构建的根' };
+      if(from===to&&pointer){const previous=await this.#store.pointerMove(pointer.action);if(previous?.composition===newest.production.detail.composition)return {line,from,to,build:newest.build.name,moved:false,reason:'当前根和组成已是最新'};}
       // The cause is the generate action that produced the root of the final base (B05 R[4]).
       const result = await this.moveRoot(product, line, from, to, newest.production.record.digest, {
         by,
         build: newest.build.name,
         composition: newest.production.detail.composition as string,
+        expected_action: pointer?.action ?? null,
       });
       if (result.moved) return { line, from, to, build: newest.build.name, moved: true, reason: `移到 ${newest.build.name} 的根` };
     }

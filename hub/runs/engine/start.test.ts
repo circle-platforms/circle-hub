@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { StartRunOutput } from '../../../contracts/src/tools.ts';
 import type { ActionBody } from '../../records/api.ts';
@@ -138,7 +139,7 @@ test('absent and forbidden look the same: an unknown pack and an unassigned pack
   const unknown = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
   const unassigned = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: { map: { reference: map } } }, h.call());
   assert.deepEqual(unknown, unassigned);
-  assert.deepEqual(unknown, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无；真实原因只在管理员日志里', path: '/pack' }] });
+  assert.deepEqual(unknown, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/pack' }] });
   valid(unknown);
   assert.equal(h.logs.length, before + 2);
   // a predecessor the caller may not see is unavailable too
@@ -171,7 +172,7 @@ test('inputs: required slots, unknown slots, accepted types, readable references
   const unparsed = await start({ map: { reference: garbage } });
   assert.deepEqual(unparsed.errors.map((e) => [e.code, e.path]), [['SOURCE_UNPARSEABLE', '/inputs/map']]);
   assert.match(unparsed.errors[0].message, /json@1.*不是有效的 JSON/);
-  assert.equal(unparsed.errors[0].fix, '上传能按声明格式解析的文件，或换用对应的解析器');
+  assert.equal(unparsed.errors[0].fix, PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix);
   // a slot that takes many sources binds each with the slot's role
   const one = await h.upload(h.alice, new TextEncoder().encode('# 历史清单一\n\n设置 2 区浇灌。\n'), 'text/markdown');
   const two = await h.upload(h.alice, new TextEncoder().encode('历史清单二：查看分区。\n'), 'text/plain');
@@ -290,4 +291,15 @@ test('a repeated client key inside its window returns the run even after the pac
   // other content under the key is still a mismatch; a fresh start needs the pack
   assert.deepEqual((await h.service.startRun(h.bob, { ...request, parameters: { strict: true } }, h.call())).errors.map((e) => e.code), ['IDEMPOTENCY_MISMATCH']);
   assert.deepEqual((await h.service.startRun(h.bob, { ...request, client_key: 'retry-2' }, h.call())).errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
+});
+
+test('the target composition and canonical build are passed to input and expected-source reads before the run is stored', {skip}, async()=>{
+  const read=h.external.read.bind(h.external),resolve=h.knowledge.rootOfBuild.bind(h.knowledge),contexts:Array<{composition?:string|null;build?:string}> = [];
+  let selected:string|null=null;
+  h.knowledge.rootOfBuild=async(product,name)=>{const root=await resolve(product,name);selected=root?.composition??null;return root;};
+  h.external.read=async(id,context)=>{contexts.push(context);return read(id,context);};
+  try{
+    const answer=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',inputs:{map:{external:'toy:mindmap:docq7'}}},h.call());
+    assert.equal(answer.call_result,'ok');assert.ok(selected);assert.ok(contexts.length>1);assert.ok(contexts.every(context=>context.composition===selected));assert.ok(contexts.every(context=>context.build===answer.run!.build));
+  }finally{h.external.read=read;h.knowledge.rootOfBuild=resolve;}
 });

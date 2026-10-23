@@ -20,6 +20,7 @@ import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
 import { catalogCanon, catalogData } from './produce.ts';
+import type { LinkReading } from './links.ts';
 import { Lru, type ProduceAction } from './store.ts';
 
 /** K02 F[6]: applicability the producer could not read from the source structure. */
@@ -84,7 +85,13 @@ export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Map<string, { products: Set<string>; at: number }>();
   readonly #views = new Lru<string, CompositionView>(8);
+  readonly #unplaced = new Lru<string,Map<string,ReadRow>>(8,64*1024*1024);
+  readonly #unplacedPending = new Map<string,Promise<Map<string,ReadRow>>>();
   readonly #catalogs = new Lru<string, CatalogView | null>(8);
+
+  #relations: LinkReading | null = null;
+
+  setRelations(relations:LinkReading):void { this.#relations=relations; }
 
   constructor(context: KnowledgeContext) {
     this.#context = context;
@@ -167,6 +174,17 @@ export class TreeReading {
     return view;
   }
 
+  async #unplacedIndex(composition:CompositionView):Promise<Map<string,ReadRow>> {
+    const cached=this.#unplaced.get(composition.record);if(cached)return cached;
+    let pending=this.#unplacedPending.get(composition.record);
+    if(!pending){pending=(async()=>{
+      const rows=new Map<string,ReadRow>();
+      for await(const row of composition.unplacedRows())rows.set(row.entry,{path:'/',entry:row.entry,kind:row.kind,producers:row.producers,fragments:row.fragments,basis:row.basis,decided_by:row.decided_by});
+      this.#unplaced.set(composition.record,rows,canonicalSize([...rows]));return rows;
+    })();this.#unplacedPending.set(composition.record,pending);}
+    try{return await pending;}finally{if(this.#unplacedPending.get(composition.record)===pending)this.#unplacedPending.delete(composition.record);}
+  }
+
   /**
    * The entries of a node with their content: from the composition's rows at the path when they carry it (parts), else from
    * the entry records. Sorted by kind, statement, digest.
@@ -200,6 +218,7 @@ export class TreeReading {
   async getNodes(query: NodesQuery, reader: Principal, budget?:number): Promise<NodesPage | null> {
     const root = query.root;
     if (typeof root !== 'string' || !SHA256.test(root)) return null;
+    if (query.composition!=null&&!SHA256.test(query.composition))return null;
     if (!(await this.mayReadRoot(reader, root))) return null;
     // The tool's default depth is 1 (contracts GetNodesInput).
     const depth = query.depth ?? 1;
@@ -229,19 +248,20 @@ export class TreeReading {
       }
       paths.push({ text: path, segments });
     }
-    const queryKey = createHash('sha256').update(JSON.stringify([root, paths.map((p) => p.text), depth])).digest('hex').slice(0, 16);
-    let offset = 0;
-    let entryOffset = 0;
-    if (query.cursor !== undefined && query.cursor !== null && query.cursor !== '') {
-      const decoded = decodeCursor(query.cursor);
-      if (decoded === null || decoded.q !== queryKey) return null;
-      offset = decoded.o;
-      entryOffset = decoded.e;
-    }
+    const decoded=query.cursor?decodeCursor(query.cursor):null;
+    if(query.cursor&&!decoded)return null;
+    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)return null;
+    const hint=query.composition!==undefined?query.composition:decoded?.c;
+    const relationComposition=hint===null?null:await this.#relations?.compositionFor(root,reader,hint)??null;
+    if(hint&&!relationComposition)return null;
+    const cursorComposition=relationComposition&&(relationComposition.body.links!==undefined||typeof hint==='string')?relationComposition.record:undefined;
+    const queryKey=createHash('sha256').update(JSON.stringify([root,paths.map(p=>p.text),depth,...(cursorComposition?[cursorComposition]:[])])).digest('hex').slice(0,16);
+    if(decoded&&decoded.q!==queryKey)return null;
+    const offset=decoded?.o??0,entryOffset=decoded?.e??0;
     if ((await this.#context.store.node(root)) === null) return null;
-    const composition = await this.compositionOf(root);
+    const composition = relationComposition ?? await this.compositionOf(root);
     const { pageNodes } = this.#context.limits;
-    const pageBytes=budget??this.#context.limits.pageBytes;
+    const pageBytes = budget ?? this.#context.limits.pageBytes;
 
     const missing: string[] = [];
     // Each node is emitted when it is first reached; the levels still to go when it was reached, at most.
@@ -326,8 +346,22 @@ export class TreeReading {
     if (walk.split !== null) notes.push(walk.split);
     if (missing.length > 0) notes.push(`这些路径在这个根里不存在：${cutText(missing.join('、'), 1000)}`);
     if (skippedCount > 0) notes.push(`一次最多读 ${MAX_NODE_PATHS} 个路径，其余 ${skippedCount} 个没有读：${skipped.join('、')}${skippedCount > skipped.length ? '…' : ''}`);
+    let relationRoom=Math.max(0,pageBytes-walk.bytes);
+    let relationNoteShown=false;
+    const relations=await this.#relations?.prepareBacklinks(root,reader,hint===null?null:relationComposition?.record,relationComposition);
+    if(relations)for(const node of page){
+      const backlinks=await relations(node.path);
+      if(backlinks&&!backlinks.configured){if(!relationNoteShown){notes.push(...backlinks.notes);relationNoteShown=true;}continue;}
+      if(backlinks){
+        let used=canonicalSize({...backlinks,entries:[]}),kept=0;
+        while(kept<backlinks.entries.length&&used+canonicalSize(backlinks.entries[kept])<=relationRoom)used+=canonicalSize(backlinks.entries[kept++]);
+        if(kept<backlinks.entries.length){backlinks.entries=backlinks.entries.slice(0,kept);backlinks.truncated=true;backlinks.notes.push('反向引用明细达到本页字节上限，合计不受影响；按组成读取反向视图继续翻页');}
+        relationRoom=Math.max(0,relationRoom-used);node.backlinks=backlinks;
+      }
+    }
+    for(const message of await relations?.pageNotes?.()??[])if(!notes.includes(message))notes.push(message);
     const note = notes.length === 0 ? undefined : notes.join('；');
-    const cursor = walk.next === null ? null : encodeCursor({ ...walk.next, q: queryKey });
+    const cursor = walk.next === null ? null : encodeCursor({ ...walk.next, q: queryKey, ...(cursorComposition?{c:cursorComposition}:{}) });
     const examined = walk.position;
     return {
       nodes: page,
@@ -396,10 +430,20 @@ export class TreeReading {
     const all = await this.compositionsOf(root);
     // A lock on another root's composition does not apply here: every composition of this root grounds the read.
     const locked = bound === null ? [] : all.filter((c) => c.record === bound);
-    const compositions = locked.length > 0 ? locked : all;
+    const compositions:CompositionView[]=[];
+    for(const composition of locked.length>0?locked:all)if(await this.mayReadProducts({id:reader.user},[composition.body.product]))compositions.push(composition);
+    if(compositions.length===0)return null;
     const canonical = pathOf(segments);
     const premises = compositions.map((c) => `rec:${c.record}`);
-    const rowsOf = await Promise.all(compositions.map((c) => c.rowsAt(canonical)));
+    const unplacedAtRoot=new Set<string>();
+    const rowsOf=await Promise.all(compositions.map(async composition=>{
+      const rows=new Map(await composition.rowsAt(canonical));
+      if(canonical==='/'&&entry!==null&&!found.node.entries.includes(entry)){
+        const row=(await this.#unplacedIndex(composition)).get(entry);
+        if(row){unplacedAtRoot.add(entry);rows.set(entry,row);}
+      }
+      return rows;
+    }));
     const groundsOf = (digests: readonly string[]): { grounds: string[]; tagged: Array<{ composition: string; build: string; grounds: string[] }> } => {
       const grounds: string[] = [];
       const tagged = compositions.map((c, i) => {
@@ -510,7 +554,7 @@ export class TreeReading {
     };
 
     if (entry !== null) {
-      if (!found.node.entries.includes(entry)) return null;
+      if(!found.node.entries.includes(entry)&&!unplacedAtRoot.has(entry))return null;
       const content = await this.#contentOf(rowsOf[0] ?? null, entry);
       if (content === null) return null;
       const { grounds, tagged } = groundsOf([entry]);
@@ -766,17 +810,17 @@ export class TreeReading {
 }
 
 /** A get_nodes cursor: the node to start at (`o`, in walk order), the entry of that node to start at (`e`) and the query it belongs to. */
-function encodeCursor(value: { o: number; e: number; q: string }): string {
+function encodeCursor(value: { o: number; e: number; q: string; c?: string }): string {
   return Buffer.from(JSON.stringify({ v: 2, ...value }), 'utf8').toString('base64url');
 }
 
-function decodeCursor(cursor: string): { o: number; e: number; q: string } | null {
+function decodeCursor(cursor: string): { o: number; e: number; q: string; c?: string } | null {
   if (typeof cursor !== 'string' || cursor.length > 200 || !/^[A-Za-z0-9_-]+$/.test(cursor)) return null;
   try {
-    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { v?: unknown; o?: unknown; e?: unknown; q?: unknown };
+    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { v?: unknown; o?: unknown; e?: unknown; q?: unknown; c?: unknown };
     const index = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
-    if (value.v !== 2 || !index(value.o) || !index(value.e) || typeof value.q !== 'string') return null;
-    return { o: value.o, e: value.e, q: value.q };
+    if (value.v !== 2 || !index(value.o) || !index(value.e) || typeof value.q !== 'string'||value.c!==undefined&&(typeof value.c!=='string'||!SHA256.test(value.c))) return null;
+    return { o: value.o, e: value.e, q: value.q, ...(typeof value.c==='string'?{c:value.c}:{}) };
   } catch {
     return null;
   }

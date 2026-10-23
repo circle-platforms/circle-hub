@@ -722,6 +722,93 @@ Milestone 2:
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
 
+
+## Composition-pinned literal relations (kb-links, first step)
+
+The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
+and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
+`nfc`, `nfkc` and `strip_nul`; NFC and NFKC are mutually exclusive. Omission means unchanged spelling. Tokenization is by
+white space, one word per path segment; canonical tree-path encoding preserves reserved characters. Unknown declaration keys,
+unknown modes/kinds, conflicting normalizers and duplicate ids refuse production before any source is read. Some cross-field
+conditions are runtime refinements in addition to the generated JSON Schemas.
+
+`exact` requires the complete literal path (and the kind when declared). `longest_prefix` picks the longest leading path
+whose node has the declared kind. Remaining words are returned as written, without interpreting their values. A mere middle
+node does not qualify. Drift groups retain the literal, its attempted path, last reachable path and source-entry references;
+unplaced occurrences use citable root tree references, resolved only against readable selected-composition rows;
+no diagnosis of correction versus defect is made. Production and reading invoke the same generic evaluator. No relation writes
+nodes, changes entry content, or adds a drift record.
+
+The snapshot is in the append-only `tree_root` composition, never the node digest. A new declaration may therefore produce
+the same tree under a new composition. A same-target pointer refresh is explicit, records another move and compares the
+observed pointer action as well as its target; a stale concurrent refresh writes nothing. Existing pointer callers still
+refuse an accidental same-target move. Legacy compositions are not rewritten: their view reports that the composition has
+no link declaration, with null totals and the next action of reproducing the line.
+
+External read: `knowledge:links:<product>:<line>?prefix=<source-path>&target=<target-path>&rule=<id>&limit=<1..200>`;
+all filters are optional. With no read lock it selects that line's current pointer composition. `composition=<digest>` and
+the cursor pin continuation; a cursor is bound to composition, filters and offset and is refused on a different query.
+A run uses its locked composition, never the latest production of the root. Each page carries complete `totals` (distinct
+source references, literal occurrences, links, drift groups and drift occurrences), `next`, and detail-only `truncated`.
+The same composition and request produce identical canonical bytes. Cache entries are keyed by composition and recheck
+permissions on every external read; output artifacts retain the existing derived-credential gate.
+
+### Minimal composition plumbing and K2 merge handoff
+
+`RootInfo.composition` already exists and is stored in the build target-basis claim's `statement.data.composition`.
+`start.ts` now passes it to `inputs.ts` and `projection.ts`, which forward optional `ExternalReadContext.composition`.
+This is needed BEFORE the run record exists. An explicit null means a run has no target root and lets the source view lock
+its own line pointer; an omitted value on an existing run is resolved from the stored target-basis claim.
+`server/tools.ts` forwards the stored composition through optional `NodesQuery.composition` for node reads of that run's
+root; explicit null on a legacy run prevents substituting a current declaration. No judgment, producer selection or workflow
+behavior is changed by this plumbing. K2's composition-lock repair touches these same files: align the optional field rather
+than letting either side reconstruct a newer composition. Node cursors also retain the selected composition across pointer
+refreshes. Node replies show only reverse references and one-line summaries, with the full total when rows are cut.
+
+### Local synthetic measurement
+
+`links-performance.test.ts`: 20,001 stored entries, including 20,000 literal-bearing notes, one definition, 100 note nodes,
+10,000 links and 10,000 drift occurrences in one drift group. On the local macOS temporary PostgreSQL run, a cold read took
+313.9 ms, a warm read 14.7 ms; a 10-detail page was 3,676 bytes. These are synthetic local timings, not deployment or real-source
+acceptance. Tests also cover exact and longest-prefix positives/negatives, grouped drift, source-prefix and target filters,
+unchanged bytes for an old composition after a same-root refresh, stale-pointer refusal, legacy snapshots and declaration
+rejection. Views can be bound as ordinary external inputs; review and version-difference pack consumption is the second step.
+
+Declared relation normalizers apply to both literal words and node segments. Equivalent target paths select the code-point-smallest eligible canonical path, independent of enumeration order. Drift is grouped by normalized words and retains every written spelling in spellings.
+Relation rules may restrict target_producers and source_producers to product-declared producer ids. Target kind and producer must match the same composition entry provenance; a definition emitted by the mentioning producer does not acquire another producer's authority. A malformed in-scope literal field is a positioned diagnostic, with no_check and an explicit producer-repair/reproduction action. It does not discard the production. Views retain diagnosed_entries in full totals and page diagnostic details with links and drift; counts cover only parseable literals.
+
+Named relation views use knowledge:links:<product>:<build>; the earlier version-line form remains a fallback for callers that omit the new context field. A run lock applies only to its named target; another build, even with equal node content, resolves its own composition. Explicit historical compositions are checked against the named build's recorded base relationships. Context build is the canonical target name forwarded beside composition before run persistence; a stored run remains authoritative over conflicting supplied context. The wiring touches start.ts, inputs.ts and projection.ts only to forward this existing selection. Other branches touch these same files; retain both optional fields when integrating. start_run coverage includes a workflow slot reading a real links view while a new same-root production appears between selection and binding.
+
+get_nodes prepares relations once per request and retains a compact per-composition target index (distinct count and first 20 sorted source references). The request-local promise remains reusable even when a shared cache rejects an oversized value. RelationReadError classifies missing records at the throw site with a generated reason and a concrete repair action; no message pattern determines refusal causes. Relation failures become one page-level note and do not discard independently readable nodes. On a synthetic 20,020-entry, 2,025-node deep root, this run measured first get_nodes 933.7 ms and warm 2.9 ms for 23 queried nodes. Timing is local synthetic evidence without a tight load-sensitive timing assertion.
+
+Backlinks exclude source entries hung at the target itself. Node text reserves room for its own entries and children first,
+then relation summaries. Every computed backlink block supplies `view_id`, an exact build-and-composition-pinned external
+id for reading the complete reverse view; a detail limit never changes the count.
+
+Production drift warnings preserve the exact group count. Their detail list fits 800 characters by retaining whole literals
+and appending ` 等` when more remain; a literal longer than the detail budget is deferred intact to the relation view.
+
+
+Alternative groups (integrator authorization, kb-links review finding 1) use `alternatives_field` instead of `field` in a
+link declaration, with `match: exact`. The data value is a list of `{primary: string, alternatives: nonempty string[]}`.
+The same target-kind and producer filters apply to both. An exact primary hit contributes one link and no alternative
+checks; otherwise each distinct expanded alternative contributes a link or drift. Neither a missing primary nor unused
+alternatives are counted separately. Malformed groups produce entry diagnostics. The producer and read-time view share
+`relationFacts`; declarations are frozen in the composition as before. These are source spellings, never build-dependent
+entry edits. Ordinary-field declarations and their counts keep their existing behavior.
+
+缺少目标目录或目录内没有符合声明种类、生产器的目标时，relationFacts 不判漂移：rule_diagnostics 每条声明一条，写出缺失目录和补齐有效来源后重新生产的动作。totals.unchecked_literals 单列未核对候选，仍计入 literals，绝不计入 drift；备选组在目录不可用时计入主干及展开项的去重候选。生产警告和读时结果共用这一判定，后续有效来源的生产会重新核对。
+
+关联记录完整性缺失按决定 36 处理：提示管理员从可信备份恢复与摘要匹配的缺失记录或原件，再重新核验组成；重建或重读不能证明缺失字节的完整性。计算错误交管理员或维护者修复后重新计算，运行时提示不点开发代理的名字。
+
+没有唯一当前组成的根（旧根或多条线的当前根）给出带命名构建、目标路径及 composition 的确定视图标识；在以另一个构建为目标的运行中，该标识独立绑定所指组成，不借用目标运行的版本线锁。
+
+反向视图与节点块使用同一目标局部排除条件：不列挂在目标自身的来源条目，正向视图仍保留这些链接。来源字段诊断和目标不可用说明归入节点页覆盖说明，一页只出现一次，不复制到每个目标块。
+
+根级条目若已挂在根节点，不读取未归位分块。未归位成员及其原文归位行按组成摘要缓存为有界索引（8 份、合计 64 MiB），并合并同份组成的并发首次加载；权限筛选仍在索引使用之前执行，摘要对应的行和根据不会因缓存改变。
+
+链接请求的未知声明、外来游标、非法范围和单条输出超限在抛出处标为 LinkRefusal；外部读取保留确定原因，返回去掉修订的请求 id。记录完整性仍用 RelationReadError，真正未预期的计算故障才报知识视图出错，不按消息文字猜分类。
+
 ## 有效条件状态（B01 R[2]）：解析时计算，矛盾只打标
 
 读知识树条目和解析记录引用时，有效条件状态按可机器检查的规则计算（`TreeReading.read`、`hub/refs/resolve.ts`），不由写入方声明。**几种条件同时成立时全部列出**（`validity.conditions`，各带来源），`status` 按固定次序取第一条：**规则已撤回 > 被引片段已变 > 出现矛盾主张**；后算的不覆盖先算的。
@@ -750,3 +837,6 @@ Milestone 2:
 回注去重在同一事务里按内容身份键排序取得 records 的业务锁，随后查询、追加与回执一起提交；跨运行、跨模型同时提交相同内容只保留首份归属。单条 append 也取同一锁；多条可信调用方先 lockIdentities，再逐条 append。不同内容键不共用全局锁。以后是否改用 hub-job-dispatch 的唯一业务键 37577e99 由集成者在合并后决定。
 
 K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交上下文中的会话标识，追加阶段重新扫描实际写入的会话标识，和模型声明一样拒收凭据命中。拒收前不追加公开回注，普通会话标识照常保留。
+
+
+合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。

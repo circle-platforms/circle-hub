@@ -147,4 +147,19 @@ npx tsc --noEmit
 
 The first test of `generator.test.ts` fails whenever a source or a registered shape changed without `npm run gen:contracts`: that is the drift check, not a flaky test. The tests cover: every axis generated with labels (`vocabulary.test.ts`); the generated files current and deterministic across fresh processes, a second in-process generation seeing changed sources, a root reached through a symbolic link, `--check` naming every drifting file, bad input reported (labels, name clashes with the barrel, a scheme without grammar, malformed format proposals), the lock and write failures with exit status 3 (`generator.test.ts`, on a temporary copy, including a type check of axes named `record` and `readonly`); the D06 annotation table and the conservative default (`annotations.test.ts`); valid and invalid references, URIs, grounds, external ids, input bindings, claims and value resolutions, submissions, validation results, envelopes, ids, runs and records, with a negative case per rule (`shapes.test.ts`); every tool's input and output, success and error answers, against zod and against `tools.json` through the SDK's Ajv validator, refinement-only cases named (`tool-shapes.test.ts`); the record schemas against the same validator, formats limited to 2020-12, compilation without warnings (`published.test.ts`); `tools.json` structure and the literal D06 annotations (`tools.test.ts`); protocol and core codes (`codes.test.ts`); the element viewer (`show-element.test.ts`). Synthetic examples live in `contracts/src/fixtures.ts` (test support, not part of the API).
 
+
+`LinkDeclaration` selects exactly one of `field` (a string or string-list data property) and `alternatives_field` (a list of
+strict `{primary: string, alternatives: nonempty string[]}` groups). Alternative groups require generated `link_match`
+`exact`: an eligible exact primary wins; only when absent are the expanded alternatives checked individually, against the
+same namespace, kind, normalization and producer restrictions. Counts describe the effective checked spellings, grouped
+by rule and normalized literal; identical spellings under different rules remain separate groups. Group structure is
+validated when the reader evaluates producer data; malformed data is an entry diagnostic, never a whole-production error.
+The declaration's cross-field requirements are runtime refinements, in addition to the generated schema properties.
+
+`links-view@1.rule_diagnostics` reports unavailable target namespaces once per rule, with a generated reason and concrete
+recovery action. Its `unchecked_literals` and the optional matching total count the unchecked candidate spellings, including
+both primary and expanded spellings of an unresolved alternative group (deduplicated per entry); they are part of `literals`
+and never part of drift counts. Rule diagnostics are separate from malformed source-entry diagnostics and carry no invented
+entry reference. Prefix/rule filters apply to the unchecked totals as they do to checked source occurrences.
+
 经集成者作为契约负责人授权，core.contribution.* 收录核心回注准入核对的十个码。codes.json 的历史 interpreter 字段在这里表示核心发出方 contribution，不表示新增已安装解释器；when/fix 只在核心登记。凭据拒绝沿用 CREDENTIAL_IN_UPLOAD。

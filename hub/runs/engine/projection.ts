@@ -154,6 +154,8 @@ export async function bindExpected(
   context: RunContext,
   runId: string,
   traceId: string,
+  composition?: string | null,
+  build?:string,
 ): Promise<ExpectedBinding> {
   const fn = workflow.workflow.expected_sources;
   const empty: ExpectedBinding = { sources: [], unavailable: [], warnings: [] };
@@ -189,7 +191,7 @@ export async function bindExpected(
         miss('no enabled resource reads this external object type');
         continue;
       }
-      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源' });
+      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源', ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
       if (!read.ok) {
         miss(read.reason);
         continue;

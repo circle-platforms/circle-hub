@@ -46,7 +46,9 @@ export class PgPointers implements Pointers {
     if (typeof name !== 'string' || !NAME.test(name)) throw new TypeError(`pointer names must match ${NAME}`);
     if (input.expected !== null && !isSha256(input.expected)) throw new TypeError('expected must be a lowercase hex SHA-256 or null');
     if (!isSha256(input.next)) throw new TypeError('next must be a lowercase hex SHA-256');
-    if (input.next === input.expected) throw new TypeError('next must differ from expected');
+    if(input.refresh!==undefined&&typeof input.refresh!=='boolean')throw new TypeError('refresh must be boolean');
+    if(input.expected_action!==undefined&&input.expected_action!==null&&!isSha256(input.expected_action))throw new TypeError('expected_action must be a digest or null');
+    if(input.next===input.expected){if(!input.refresh)throw new TypeError('next must differ from expected');if(typeof input.expected_action!=='string')throw new TypeError('same-target refresh requires expected_action');}
     const component = input.component ?? 'records.pointers@1';
     if (!Versioned.safeParse(component).success) throw new TypeError('component must be name@major (contracts Versioned)');
     const run = input.run ?? null;
@@ -63,6 +65,7 @@ export class PgPointers implements Pointers {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [POINTER_LOCK_SPACE, name], t);
       const current = await this.get(name, t);
       if ((current?.target ?? null) !== input.expected) return { moved: false, current };
+      if(input.expected_action!==undefined&&(current?.action??null)!==input.expected_action)return {moved:false,current};
       const endedAt = this.#now().toISOString();
       const body: ActionBody = {
         action: 'move_root',
@@ -83,6 +86,7 @@ export class PgPointers implements Pointers {
           next: input.next,
           version: (current?.version ?? 0) + 1,
           previous_action: current?.action ?? null,
+          ...(input.refresh?{refresh:true}:{}),
           by: by?.id ?? null,
           note,
         },

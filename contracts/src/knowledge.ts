@@ -12,7 +12,7 @@ import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './cont
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
-import { Applicability, BuildInfo, CatalogDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
+import { Applicability, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
 
 // ---------------------------------------------------------------- levels and bases
@@ -275,6 +275,7 @@ export const TreeRootBody = z.strictObject({
   skipped: z.array(SkippedSource).max(MAX_KEPT_PROBLEMS).optional().describe('listed sources the production could not use (first 200 kept)'),
   skipped_count: z.number().int().nonnegative().optional(),
   catalogs: z.array(RootCatalog),
+  links: z.array(LinkDeclaration).max(32).optional().describe('frozen relation declarations of this composition; absent on legacy records'),
   counts: z.strictObject({
     nodes: z.number().int().nonnegative(),
     entries: z.number().int().nonnegative(),

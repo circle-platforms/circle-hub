@@ -15,7 +15,7 @@
 //     with fields the entries carry only those data fields and an empty statement, so a big index fits the byte budget)
 // `<build>` is a build name of any name family; the reader resolves aliases and answers for the root the build uses.
 import { z } from 'zod';
-import { ChangeKindSchema, EntryKindSchema } from '../generated/vocabulary.ts';
+import { ChangeKindSchema, EntryKindSchema,ReasonSchema } from '../generated/vocabulary.ts';
 import { Sha256, Versioned } from './common.ts';
 import { TreePath, referenceUriOf } from './reference.ts';
 
@@ -138,7 +138,35 @@ export const IndexView = z.strictObject({
 });
 export type IndexView = z.infer<typeof IndexView>;
 
+// ---------------------------------------------------------------- literal relations pinned to a composition
+export const LinkOccurrence = z.strictObject({ reference: referenceUriOf('tree').refine(value=>/@[a-f0-9]{64}$/.test(value),'a citable tree entry reference is required'), path: TreePath, summary: z.string() });
+export const LinkEdge = LinkOccurrence.extend({ rule: z.string(), literal: z.string(), target: TreePath, remainder: z.array(z.string()) });
+export const LinkDrift = z.strictObject({ rule: z.string(), literal: z.string(), spellings:z.array(z.string()).optional(), attempted_path: TreePath.nullable(), stopped_at: TreePath, total: z.number().int().nonnegative(), occurrences: z.array(LinkOccurrence) });
+export const LinkDiagnostic=LinkOccurrence.extend({rule:z.string(),reason:ReasonSchema,message:z.string(),next_action:z.string()});
+export type LinkDiagnostic=z.infer<typeof LinkDiagnostic>;
+export const LinkRuleDiagnostic=z.strictObject({rule:z.string(),namespace:TreePath,reason:ReasonSchema,message:z.string(),next_action:z.string(),unchecked_literals:z.number().int().nonnegative()});
+export type LinkRuleDiagnostic=z.infer<typeof LinkRuleDiagnostic>;
+export const LinkTotals = z.strictObject({ entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative(),diagnosed_entries:z.number().int().nonnegative().optional(),unchecked_literals:z.number().int().nonnegative().optional() });
+export const Backlinks = z.strictObject({ view_id: z.string().optional().describe('Exact external view id for composition-pinned continuation'), composition: Sha256.nullable(), configured: z.boolean(), total: z.number().int().nonnegative().nullable(), entries: z.array(LinkOccurrence), truncated: z.boolean(), notes: z.array(z.string()) }).refine(value=>value.configured===(value.total!==null)&&(!value.configured||value.composition!==null),'computed backlinks require a pinned composition and total');
+export const LinksView = z.strictObject({
+  schema: z.literal('links-view@1'), product: z.string(), build: z.strictObject({build:z.string(),root:Sha256}), composition: Sha256,
+  configured: z.boolean(), prefix: TreePath, target: TreePath.nullable(), rule: z.string().nullable(),
+  links: z.array(LinkEdge), drift: z.array(LinkDrift), diagnostics:z.array(LinkDiagnostic).optional(), rule_diagnostics:z.array(LinkRuleDiagnostic).optional(), totals: LinkTotals.nullable(), next: z.string().nullable(), truncated: z.boolean(), notes: z.array(z.string()),
+}).superRefine((value,ctx)=>{
+  if(value.configured!==(value.totals!==null))ctx.addIssue({code:'custom',path:['totals'],message:'totals require a frozen declaration'});
+  if(!value.configured&&(value.links.length>0||value.drift.length>0||value.next!==null))ctx.addIssue({code:'custom',path:['configured'],message:'a missing declaration provides no computed detail'});
+  const occurrences=[...value.links,...value.drift.flatMap(group=>group.occurrences),...(value.diagnostics??[])];
+  for(const occurrence of occurrences)if(!occurrence.reference.startsWith(`tree:${value.build.root}${occurrence.path}@`))ctx.addIssue({code:'custom',path:['links'],message:'a source reference must belong to this root and path'});
+  if(value.totals&&(value.links.length>value.totals.links||value.drift.length>value.totals.drift_literals))ctx.addIssue({code:'custom',path:['totals'],message:'page details exceed totals'});
+});
+export type LinkOccurrence = z.infer<typeof LinkOccurrence>;
+export type LinkEdge = z.infer<typeof LinkEdge>;
+export type LinkDrift = z.infer<typeof LinkDrift>;
+export type LinksView = z.infer<typeof LinksView>;
+export type Backlinks = z.infer<typeof Backlinks>;
+
 export const schemas: Record<string, z.ZodType> = {
+  'links-view@1': LinksView,
   'impact-view@1': ImpactView,
   'facet-view@1': FacetView,
   'index-view@1': IndexView,

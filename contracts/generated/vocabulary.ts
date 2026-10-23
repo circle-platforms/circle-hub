@@ -67,6 +67,7 @@ export const AXES = {
   relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
   work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
+  link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -647,6 +648,15 @@ export function isWorkClass(value: unknown): value is WorkClass {
   return (WORK_CLASS as readonly unknown[]).includes(value);
 }
 
+/** 链接匹配方式 (K05) */
+export const LINK_MATCH = ['exact', 'longest_prefix'] as const;
+export type LinkMatch = (typeof LINK_MATCH)[number];
+export const LINK_MATCH_LABEL = { 'exact': '精确匹配', 'longest_prefix': '最长前缀匹配' } as const satisfies { readonly [K in LinkMatch]: string };
+export const LinkMatchSchema = z.enum(LINK_MATCH);
+export function isLinkMatch(value: unknown): value is LinkMatch {
+  return (LINK_MATCH as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -712,6 +722,7 @@ export interface AxisValues {
   relation_kind: RelationKind;
   exit_action: ExitAction;
   work_class: WorkClass;
+  link_match: LinkMatch;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -779,6 +790,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   relation_kind: RELATION_KIND_LABEL,
   exit_action: EXIT_ACTION_LABEL,
   work_class: WORK_CLASS_LABEL,
+  link_match: LINK_MATCH_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

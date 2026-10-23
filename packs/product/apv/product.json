@@ -11,6 +11,44 @@
     "max_reads": 300
   },
   "select_build": { "module": "functions/select.ts" },
+  "links": [
+    {
+      "id": "manual-literals",
+      "field": "command_literals",
+      "namespace": "/commands",
+      "match": "longest_prefix",
+      "entry_kind": "definition",
+      "normalize": {
+        "lowercase": true,
+        "strip_nul": true,
+        "nfc": true
+      },
+      "source_producers": [
+        "manual"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
+    },
+    {
+      "id": "manual-signatures",
+      "alternatives_field": "signature_literals",
+      "namespace": "/commands",
+      "match": "exact",
+      "entry_kind": "definition",
+      "normalize": {
+        "lowercase": true,
+        "strip_nul": true,
+        "nfc": true
+      },
+      "source_producers": [
+        "manual"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
+    }
+  ],
   "catalogs": [
     { "id": "commands@1", "entry_kind": "definition", "producer": "command-tree", "complete": true, "case_sensitive": false }
   ],

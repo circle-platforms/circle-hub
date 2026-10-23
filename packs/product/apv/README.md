@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.2.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for the existence check and the drift list; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -151,7 +151,7 @@ Producers (K02, K04, C07)
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
-  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (a warning names the missing fact and the next action, and no drift list is computed). Head groups hold
+  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (the producer warns about the missing input; the Hub marks literals unchecked with a source-recovery action and emits no drift facts). Head groups hold
   alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
   leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
   missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
@@ -181,19 +181,18 @@ Producers (K02, K04, C07)
   a row that states its own condition
   becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
-- Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
-  command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
-  written in `data.command_literals` (sorted, deduped, capped at 100 per block with `command_literals_cut`), never
-  resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
-  manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
-  read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
-  are listed in the production warnings as drift candidates. Signature literals are decided by the placement check
-  (never by the leading-run rule): a signature not placed at /commands lists its positive variants and its own raw
-  spelling, and a mention is drift exactly when the tree cannot resolve it by words or by expanding one {a|b} group
-  (a bare key of a variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the
-  tree).
-  The count covers every literal found (past the per-entry
-  cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
+- Literal relations (K05 R[2]): prose and code mentions are stored in `data.command_literals` and use the declared
+  longest-prefix rule. Signatures and multi-signature rows instead store `data.signature_literals`, groups of
+  `{primary, alternatives}`: the positive head and its expanded positive variants (never the leading optional no-form).
+  Both fields retain every deduplicated literal without the former 100-item cap. The Hub checks the exact primary against
+  command-tree definitions first; if present it links once and ignores alternatives, otherwise it checks every expanded
+  alternative exactly. Thus a parameter-value group after an existing head creates no false drift, while a missing
+  extending signature cannot borrow a shorter head. Entry data remains independent of the build's tree.
+  Only the manual producer supplies sources and only command-tree definitions supply targets; both sides use NFC,
+  lowercase and NUL removal. Production warnings and reading share the same composition-pinned generic evaluator.
+  Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
+  The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
+  mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
   table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
   row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
@@ -411,7 +410,7 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   case producer does not ask for it. The roots read asks for listing pages up to the round budget (about 17, cap 50), so
   a configured root listed after page 10 is titled when the budget reaches its page. Empty folders are `listed: false`
   and are not case documents. That behavior was already in `functions/agile.ts`. The saved 1.1.1 manifest did not match
-  those bytes, so this task signs the pack as 1.2.0 and does not change the read.
+  those bytes, so the integrated pack is signed as 1.3.0 and does not change the read.
 
 ## How to test
 
@@ -458,12 +457,9 @@ pack and reviews a mind map against the root it produced.
   root (the fixed-bug entries of a build, for example). The manual producer's markdown path no longer emits unplaced
   spans; no output of the manual producer waits for placement proposals in production: the markdown path places
   every block, and catalog spans never reach a production (the catalog JSON is reachable only through direct calls).
-  K04 R[6] proposals, once that channel exists, would only move section-node fragments to finer places (research 2
-  rule 6). A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
-  R[2]) is not implemented; until then the production warnings list the literals the tree cannot resolve, as drift
-  candidates. Follow-up task (registered by the integrator, not part of this one): the drift candidates become
-  queryable drift records (a view by root and command path, readable by review and regression-scope uses); whether a
-  drift is a manual erratum or a defect candidate is a judgment and stays with Circle or a human, never the Hub.
+  Read-time literal relations now use `product.json.links`, frozen in the selected composition. Production warnings and
+  the read-time view call the same generic evaluator. Drift remains a fact, not a manual-erratum or defect judgment.
+  Review and regression-scope consumption is the separately authorized second step.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still
@@ -485,3 +481,34 @@ pack and reviews a mind map against the root it produced.
 
 Done since the earlier round: the adapters to the product@1 shapes, the build-site external ids and source roles, the
 catalog producer selector (`CatalogDeclaration.producer`), the entry-kind axis (K02 R[3]).
+
+## Literal links (1.3.0)
+
+`product.json.links` freezes two rules in each composition. Both use `definition` targets in `/commands`,
+`source_producers` set to [`manual`] and `target_producers` set to [`command-tree`]: only `manual` emits relation sources, and only
+`command-tree` definitions establish eligible targets. Both normalize literal words and target path segments with
+`lowercase`, `strip_nul` and `nfc` (NFC). White-space tokenization is fixed.
+
+- `manual-literals` reads `command_literals` with `longest_prefix`: the longest eligible leading path is the target;
+  the remaining words are parameters retained as written. Intermediate nodes without an eligible definition do not count.
+- `manual-signatures` reads `signature_literals` via `alternatives_field` and `exact`: an exact primary definition wins;
+  otherwise each positive expanded alternative is checked exactly. Leading optional no-forms are not positive variants.
+
+A missing namespace or a namespace without any eligible target produces a rule diagnostic and unchecked candidate counts,
+with the missing source and reproduction action; it produces no drift facts. With usable targets, an unresolved literal is
+a drift fact in that composition, never a judgment about a manual correction or product defect. Production diagnostics and
+read-time views invoke the same evaluator and frozen declarations.
+
+All distinct literals are retained, including more than 100 in one block. The existing core statement/data byte limits still
+reject an oversized entry. View paging limits detail only, retaining complete totals. The minor release changes the product
+profile and producer bytes, so the pack is 1.3.0 and is re-signed, not published by this task.
+
+`functions/manual-links.test.ts` covers ordinary trailing values and all 150 missing literals of one paragraph against real
+synthetic production and the paged view. No live resource, client or model is used.
+
+
+The model-10/K1 merge retains explicit section paths, bounded condition parsing, complete signature cells, command-column
+classification and current-parameter/value-row state. K1's standalone drift accumulator and its 100-literal cap stay retired:
+signature groups use the declared exact primary/alternatives rule, other cells retain prose mentions, and Hub production and
+reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
+of depending on a truncated field or a producer-local warning.

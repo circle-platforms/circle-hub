@@ -954,7 +954,8 @@ function pathsCall(root: string, paths: readonly string[]): { call: string; coun
 function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   const page = nodePage(root, node.path);
   const own = new Clip(null, page);
-  const head = `- ${node.path}（${labelOf('node_level', node.level)}）${own.field(node.name, CLIP.name, '节点名称的超出部分')}：子节点 ${node.children.length} 个，条目 ${node.entries.length} 个；引用 ${node.reference}`;
+  const relationCount=node.backlinks?.configured?`；反向关联共 ${node.backlinks.total} 个条目`:'';
+  const head = `- ${node.path}（${labelOf('node_level', node.level)}）${own.field(node.name, CLIP.name, '节点名称的超出部分')}：子节点 ${node.children.length} 个，条目 ${node.entries.length} 个；引用 ${node.reference}${relationCount}`;
   const entries = node.entries.map((entry) => {
     const clip = new Clip(null, page);
     const statement = clip.field(entry.statement, CLIP.field, '条目陈述的超出部分', '读条目陈述全文：用 get_nodes 按那一行的引用读');
@@ -989,6 +990,17 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   for (const c of children.slice(0, keptChildren)) {
     lines.push(c.text);
     omitted.push(...c.omitted);
+  }
+  if(node.backlinks){
+    const related=node.backlinks.entries;let shown=0;
+    for(const link of related){
+      const clip=new Clip(null,page);
+      const line=`  关联引用 ${link.reference}；摘要 ${clip.field(link.summary.replace(/\s+/g,' '),CLIP.line,'关联摘要的超出部分')}`;
+      if(used+line.length+1>room)break;lines.push(line);used+=line.length+1;shown++;omitted.push(...clip.omitted);
+    }
+    for(const note of node.backlinks.notes){const line='  关联说明：'+plain(note);if(used+line.length+1<=room){lines.push(line);used+=line.length+1;}}
+    const total=node.backlinks.total;
+    if(total!==null&&shown<total)omitted.push({what:`反向关联条目 ${total-shown} 个`,more:`反向视图还有记录：${node.backlinks.view_id ?? "请用同一运行重新读取节点以取得视图标识"}，读取后沿视图游标翻页`});
   }
   if (keptEntries < entries.length) {
     const left = [...node.entries.map(e => e.reference), ...(node.contributions ?? []).map(e => `rec:${e.record}`)].slice(keptEntries);

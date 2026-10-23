@@ -93,6 +93,10 @@ export interface ExternalReadContext {
   run?: string | null;
   /** Free text for the admin log, for example "sync" or "expected source". */
   purpose: string;
+  /** Composition already selected by the caller; it is never replaced with a newer production. */
+  composition?: string | null;
+  /** Canonical name of the build selected by the run; absent on legacy callers. */
+  build?:string;
 }
 
 /** Names the engine looks for in the artifacts of a read: the response as received, the content to parse, and metadata about the object. */
@@ -222,6 +226,7 @@ export interface RootInfo {
 
 export interface NodesQuery {
   root: string;
+  composition?: string | null;
   /** Node paths as returned by earlier calls, `/` for the root. */
   paths: string[];
   /** Levels below each path. */
