@@ -102,8 +102,9 @@ export function projectDefects(input: unknown): ProjectionOutput {
     seenIds.add(id);
 
     const fixField = typeof model.fix_field === 'string' && model.fix_field.trim() !== '' ? model.fix_field : null;
-    if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: '缺少设置 settings.bug_fix_field：缺陷内容没有 fix_field', fix: '请集成者在 PLM 资源中配置 settings.bug_fix_field，并让 PLM 系统包在缺陷 content 回传 fix_field；自动重新读取缺陷后重试，不得猜字段名' }, warnings: [] };
+    if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: `缺陷 ${id} 缺少设置 settings.bug_fix_field：缺陷内容没有 fix_field`, fix: '请集成者在 PLM 资源中配置 settings.bug_fix_field，并让 PLM 系统包在缺陷 content 回传 fix_field；自动重新读取缺陷后重试，不得猜字段名' }, warnings: [] };
 
+    if (!isRecord(model.fields) || typeof model.fields[fixField] !== 'string' || (model.fields[fixField] as string).trim() === '') return { error: { code: `${PACK}.fix_text_missing`, message: `缺陷 ${id} 的修复说明字段 ${fixField} 不存在、不是文字或为空`, fix: '核对 PLM 资源 settings.bug_fix_field 并重新读取，或换有修复说明的缺陷；不进入运行或消耗修复轮' }, warnings: [] };
     if (manual === null) warnings.push({ code: `${PACK}.manual_missing`, item: id, message: `版本线 ${line ?? '未确定'} 没有绑定手册 manual:cli:${line ?? '<版本线>'}：本次期望结果只能引用缺陷 ${id} 的修复说明字段 ${fixField}；自动先核实该版本线的手册是否可读，存在时在 inputs.manual 绑定后重开运行，不存在则保留本条来源限制` });
     const title = typeof model.title === 'string' && model.title.trim() !== '' ? model.title.trim() : (b.meta && typeof b.meta.title === 'string' ? b.meta.title : `缺陷 ${id}`);
     const status = (isRecord(model.fields) && typeof model.fields.status === 'string' ? model.fields.status : (b.meta && typeof b.meta.status === 'string' ? b.meta.status : '未知'));
