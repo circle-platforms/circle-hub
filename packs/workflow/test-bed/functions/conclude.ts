@@ -1,3 +1,4 @@
+import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
 // conclude: the one computation the search/facts/acquire conclusions rest on, shared by the projection
 // (functions/project.ts) and the check (functions/check-bed.ts), so the check recomputes exactly what the projection
 // computed from the same frozen manifest and lease view. The lease context the workflow declares gives only keys and
@@ -8,7 +9,7 @@ import { bedFacts } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
-export type Action = 'search' | 'facts' | 'acquire' | 'extend' | 'release';
+export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'extend' | 'release'>;
 
 /** A need as the projection and the check see it (parameters normalized). */
 export interface BedNeed {

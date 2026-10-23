@@ -1,6 +1,8 @@
 // Checks of the docs package against the repository: see docs-rules.ts for what each rule means.
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, lstatSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -8,6 +10,8 @@ import { describe, it } from 'node:test';
 // mid-edit elsewhere in contracts/src cannot stop these checks.
 import { AXES } from '../../contracts/generated/vocabulary.ts';
 import {
+  trackedFileText,
+  buildNameProblems,
   decisionSourceProblems,
   isHistorical,
   linkProblems,
@@ -171,25 +175,186 @@ describe('recorded decisions name their source', () => {
   });
 });
 
-describe('no local paths in the files the docs package owns', () => {
-  it('reports home directories and paths below them, not tool locations', () => {
-    const home = '~' + '/Public/work';
-    const user = '/' + 'Users/someone/repo';
-    assert.equal(localPathProblems('x.md', `a ${home} b\nc ${user}`).length, 2);
-    assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…'), []);
+// Git's inventory covers code, tests, ops, dot-directories and extensionless text without scanning dependencies or build output.
+const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
+  .filter((path) => path && !path.startsWith('foundation/') && !path.startsWith('references/'))
+  .flatMap((path) => {
+    const text = trackedFileText(join(ROOT, path));
+    return text === null ? [] : [{ path, text }];
   });
 
-  const owned = [
-    ...walk('docs', (name) => name === 'vendor' || name === '_site' || name === '.bundle'),
-    ...readdirSync(ROOT).filter((name) => name.endsWith('.md')),
-    ...walk('.github', () => false),
-  ].filter((path) => /\.(md|ya?ml|ts|json|html|txt)$/.test(path));
-
-  it('covers the owned files', () => {
-    assert.ok(owned.includes('AGENTS.md') && owned.includes('docs/index.md') && owned.includes('.github/workflows/checks.yml'));
+describe('tracked blobs are never skipped because of NULs or symbolic links', () => {
+  it('checks NUL-bearing Markdown and UTF-16 ASCII shapes as text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-hygiene-nul-'));
+    try {
+      const path = join(dir, 'fixture.md');
+      const home = '/' + 'Users/operator/project';
+      const build = ['Rel', 'Synthetic', '10', '4', '2'].join('_');
+      writeFileSync(path, Buffer.from(home + '\n' + build, 'utf16le'));
+      const text = trackedFileText(path)!;
+      assert.equal(localPathProblems('fixture.md', text).length, 1);
+      assert.equal(buildNameProblems('fixture.md', text).length, 1);
+      assert.ok(!text.includes('\0'));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('none has a local path', () => {
-    assert.deepEqual(owned.flatMap((path) => localPathProblems(path, read(path))), []);
+  it('checks a dangling symlink target without following it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-hygiene-link-'));
+    try {
+      const path = join(dir, 'fixture.md');
+      const target = '/' + 'Users/operator/missing';
+      symlinkSync(target, path);
+      assert.equal(trackedFileText(path), target);
+      assert.equal(localPathProblems('fixture.md', trackedFileText(path)!).length, 1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('no machine paths in repository text', () => {
+  it('reports user homes, root and variable-data paths with their line numbers', () => {
+    const paths = ['/' + 'Users/operator/repo', '/' + 'home/operator/repo', '/' + 'root/work', '/' + 'var/private/work', 'file://' + '/' + 'Users/operator/repo', '~' + '/Public/work', 'C:' + String.fromCharCode(92) + 'Users' + String.fromCharCode(92) + 'operator'];
+    for (const file of ['docs/page.md', 'hub/example.ts', 'tests/example.test.ts', 'ops/example.sh']) {
+      const problems = localPathProblems(file, 'header\n' + paths.join('\n'));
+      assert.equal(problems.length, paths.length, file);
+      assert.ok(problems[0].startsWith(`${file}:2:`));
+    }
+  });
+
+  it('finds mounted homes, macOS private variable paths and escaped Windows homes', () => {
+    const slash = String.fromCharCode(92);
+    const paths = [
+      '/' + 'mnt/c/' + 'Users/operator/project', '/' + 'c/' + 'Users/operator/project',
+      '/' + 'System/Volumes/Data/' + 'Users/operator/project', '/' + 'mnt/' + 'home/operator/project',
+      '/' + 'private/' + 'var/folders/ab/synthetic/T/tmp',
+      ...['C:', 'c:'].flatMap(drive => [1, 2].map(n => drive + slash.repeat(n) + 'Users' + slash.repeat(n) + 'operator')),
+    ];
+    for (const path of paths) assert.equal(localPathProblems('hub/example.ts', path).length, 1, path);
+  });
+
+  it('recognizes Windows Users casing and forward slashes without case-folding POSIX paths', () => {
+    const slash = String.fromCharCode(92);
+    for (const path of ['c:' + slash + 'users' + slash + 'operator/project', 'C:' + slash + 'USERS' + slash + 'operator', 'C:' + '/' + 'users/operator/project', 'c:' + slash.repeat(2) + 'uSeRs' + slash.repeat(2) + 'operator']) {
+      assert.equal(localPathProblems('code/example.ts', path).length, 1, path);
+    }
+    assert.deepEqual(localPathProblems('docs/example.md', '/' + 'users/operator/project'), []);
+    assert.deepEqual(localPathProblems('docs/example.md', 'https://example.com/users/operator/project'), []);
+  });
+
+  it('ignores network URLs without hiding file URLs or an adjacent local path', () => {
+    for (const text of ['see https://example.com/home/docs/start', 'https://api.example.com/v1/Users/42/profile', '`https://example.com/home/docs`', '[page](https://example.com/home/docs)']) {
+      assert.deepEqual(localPathProblems('docs/example.md', text), [], text);
+    }
+    assert.equal(localPathProblems('docs/example.md', 'file://' + '/' + 'home/operator/x').length, 1);
+    assert.equal(localPathProblems('docs/example.md', 'https://example.com/home/docs ' + '/' + 'home/operator/x').length, 1);
+  });
+
+  it('rejects local homes hidden behind non-network and loopback URL forms', () => {
+    const home='/'+'Users/synthetic/project';
+    const probes=[
+      'http://127.0.0.1:7521/open?path='+home,
+      'pip install git+file://'+'/'+'home/synthetic/repo',
+      'txmt://open?url=file://'+home,
+      'open vscode://file'+home,
+      'at http://localhost:5173/@fs'+home,
+      'http://[::1]:7521'+home,
+      'https://example.com/open?path='+home,
+      'https://example.com/#'+home,
+      'https://example.com/@fs'+home,
+    ];
+    for(const value of probes)assert.equal(localPathProblems('docs/example.md',value).length,1,value);
+    for(const scheme of ['http','https','ftp','ftps'])assert.deepEqual(localPathProblems('docs/example.md',scheme+'://example.com'+'/'+'home/docs'),[]);
+  });
+
+  it('accepts network URL paths adjoining prose and punctuation without hiding adjacent machine paths', () => {
+    for(const value of ['参见https://example.com/home/docs/start','链接：https://api.example.com/v1/Users/42/profile','文档（https://example.com/home/docs）','URL:https://example.com/home/docs','|https://example.com/home/docs|','name,https://example.com/home/docs','**https://example.com/home/docs**'])assert.deepEqual(localPathProblems('docs/example.md',value),[],value);
+    for(const prefix of ['[x](https://example.com)','参见https://example.com，'])assert.equal(localPathProblems('docs/example.md',prefix+'/'+'home/synthetic/project').length,1,prefix);
+  });
+
+  it('requires a drive-letter boundary while keeping file URL and quoted Windows homes checked', () => {
+    for(const value of ["router.on('GET:/users/:id', h)",'method=GET path:/users/42 status=200','rsync -a backup:/users/shared/ .'])assert.deepEqual(localPathProblems('code/example.ts',value),[],value);
+    const slash=String.fromCharCode(92);
+    for(const value of ['file:///c:'+'/'+'users/synthetic','"C:'+slash+'users'+slash+'synthetic"'])assert.equal(localPathProblems('code/example.ts',value).length,1,value);
+  });
+
+  it('does not carry a URL exemption across following non-ASCII prose', () => {
+    for(const value of ['访问https://example.com/后在'+'/'+'home/synthetic/repo'+'下运行','打开http://192.0.2.1:8000/再看'+'/'+'Users/synthetic/project'])assert.equal(localPathProblems('docs/example.md',value).length,1,value);
+  });
+
+  it('detects Windows homes attached to compiler and archive switches', () => {
+    const slash=String.fromCharCode(92),home='C:'+slash+'Users'+slash+'synthetic'+slash;
+    for(const value of ['gcc -I'+home+'include a.c','7z x a.7z -o'+home+'out','cl /Fo'+home+'obj'+slash+' a.c'])assert.equal(localPathProblems('hub/example.test.ts',value).length,1,value);
+  });
+
+  it('keeps normalized local hosts out of network URL exemptions', () => {
+    const home='/'+'Users/synthetic/project';
+    for(const host of ['0.0.0.0:8000','127.1:8000','localhost.:8000','app.localhost:5173','[0:0:0:0:0:0:0:1]:8000','[::]:8000','[::ffff:127.0.0.1]:8000','reader@localhost:8000','[not-an-ip]:8000'])assert.equal(localPathProblems('docs/example.md','http://'+host+home).length,1,host);
+    for(const host of ['example.com','192.0.2.1:8000','[2001:db8::1]:8000'])assert.deepEqual(localPathProblems('docs/example.md','http://'+host+home),[],host);
+  });
+
+  it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
+    for (const [file, path] of [
+      ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
+      ['hub/platform/launchd.test.ts', '/' + 'Users/someone/repo'],
+      ['hub/platform/environment.test.ts', '/' + 'Users/x'],
+      ['contracts/src/tool-shapes.test.ts', '/' + 'Users/alice/review'],
+      ['hub/records/scan.test.ts', '/' + 'home/synthetic/project'],
+      ['hub/records/scan.test.ts', '/' + 'home/user'],
+      ['hub/config/config.test.ts', '/' + 'var/log/hub'],
+    ]) {
+      assert.deepEqual(localPathProblems(file, path), []);
+      assert.equal(localPathProblems('hub/other.test.ts', path).length, 1);
+      assert.equal(localPathProblems(file, path.replace(/(someone|alice|synthetic|user|hub|x)(?=\/|$)/, '$1-other')).length, 1);
+    }
+    assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…; ~/Library/LaunchAgents; /usr/bin/node; /srv/mirror; /old/root/backups; /moved/var/cache; replace(/~/g, token)'), []);
+  });
+
+  it('covers docs, root Markdown, CI, code and tests without reading the frozen archives', () => {
+    for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts']) {
+      assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
+    }
+    assert.ok(TRACKED_TEXT.every(({ path }) => !/^(foundation|references)\//.test(path)));
+  });
+
+  it('no tracked text has an unapproved machine path', () => {
+    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => localPathProblems(path, text)), []);
+  });
+});
+
+describe('no protected build names in repository text', () => {
+  it('reports both prefixes and every protected minor line with any name family', () => {
+    for (const prefix of ['Rel', 'Beta']) for (let minor = 0; minor <= 5; minor++) {
+      const name = [prefix, 'SampleFamily', '10', minor, '7', 'build'].join('_');
+      assert.deepEqual(buildNameProblems('ops/sample.txt', 'header\n' + name), [
+        `ops/sample.txt:2: protected build name ${JSON.stringify(name)}`,
+      ]);
+    }
+  });
+
+  it('reports protected build names in any case and without a patch suffix', () => {
+    for (const prefix of ['rel', 'REL', 'bEtA']) for (let minor = 0; minor <= 5; minor++) {
+      for (const parts of [[prefix, 'Synthetic', '10', String(minor)], [prefix, 'Synthetic', '10', String(minor), '2']]) {
+        const name = parts.join('_');
+        assert.equal(buildNameProblems('ops/sample.txt', name).length, 1, name);
+      }
+    }
+    for (const name of [['rel', 'Synthetic', '10', '6', '0'], ['BETA', 'Synthetic', '11', '5', '0'], ['rel', 'Synthetic', '10', '50']].map(p => p.join('_'))) {
+      assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
+    }
+  });
+
+  it('accepts other lines, dotted labels, placeholders and the frozen archives', () => {
+    for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.6.2', 'Rel_<family>_<line>_<build>' ]) {
+      assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
+    }
+    const protectedName = ['Rel', 'Sample', '10', '0', '0'].join('_');
+    for (const file of ['foundation/sample.txt', 'references/sample.txt']) {
+      assert.deepEqual(buildNameProblems(file, protectedName), []);
+      assert.deepEqual(localPathProblems(file, '/' + 'root/work'), []);
+    }
+    assert.equal(buildNameProblems('hub/sample.ts', protectedName).length, 1);
+  });
+
+  it('no tracked text outside the frozen archives has a protected build name', () => {
+    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => buildNameProblems(path, text)), []);
   });
 });

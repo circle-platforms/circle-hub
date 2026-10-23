@@ -3,6 +3,7 @@
   "origin": "决定：case-location 任务包按所有者的定位方案（架构简报第 6a 节第 3 项）和第二轮评审声明的码和取值",
   "description": "任务包函数给出的拒绝码、警告码、不通过码，以及结论里版本、构建日期和 patch 的来源与置信度的取值；函数代码里的标签与这里一致（pack.test.ts 核对）",
   "violations": [
+    { "code": "case-location.version_conflict", "when": "目录版本层里有几个互不一致的版本线，声明不消除这个冲突", "fix": "请整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明并标为声明" },
     {
       "code": "case-location.declaration_conflict",
       "when": "调用方声明的产品或版本线与目录树给出的矛盾（产品与目录树的根不是同一产品，或版本线与目录版本层的版本、版本线节点、发布火车对不上）",

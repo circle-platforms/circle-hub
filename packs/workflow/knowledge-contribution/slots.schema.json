@@ -1,0 +1,93 @@
+{
+  "schema": "slots@1",
+  "item": {
+    "contribution": {
+      "min": 1,
+      "max": 1,
+      "codes": [
+        {
+          "code": "classification",
+          "label": "分类"
+        },
+        {
+          "code": "placement_proposal",
+          "label": "归位提议"
+        },
+        {
+          "code": "assertion",
+          "label": "声明"
+        },
+        {
+          "code": "relation",
+          "label": "关系"
+        }
+      ],
+      "data": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root",
+          "path",
+          "source"
+        ],
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reference",
+              "quote"
+            ],
+            "properties": {
+              "reference": {
+                "type": "string"
+              },
+              "quote": {
+                "type": "string"
+              }
+            }
+          },
+          "relation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "other"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "same_subject",
+                  "contradicts"
+                ]
+              },
+              "other": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reference",
+                  "quote"
+                ],
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "run": {}
+}

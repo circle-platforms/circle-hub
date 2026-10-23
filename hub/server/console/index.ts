@@ -22,6 +22,7 @@ import {
   type PageContext,
   type PageResult,
 } from './pages.ts';
+import { resultPage, resultsPage } from './results.ts';
 import { LOGIN_COOKIE, SESSION_COOKIE, cookie, type ConsoleSession, type SessionStore } from './session.ts';
 
 export interface ConsoleOptions {
@@ -145,6 +146,7 @@ async function logout(request: IncomingMessage, response: ServerResponse, option
 type Route = (ctx: PageContext, rest: string[]) => Promise<PageResult>;
 
 const ROUTES: Record<string, Route> = {
+  results: (ctx, rest) => (rest.length === 0 ? resultsPage(ctx) : rest.length === 1 ? resultPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   runs: (ctx, rest) => (rest.length === 0 ? runsPage(ctx) : rest.length === 1 ? runPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);

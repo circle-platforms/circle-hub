@@ -3,7 +3,8 @@
 // fragment its reference resolves to; every command resolves against the locked catalogs or, taken verbatim from a bound
 // source, as a quotation of it (T04 R[5]). A value that does not resolve keeps the whole submission from being accepted
 // (T03 R[3]); a statement the catalog contradicts is not an unresolved value but a fact the checks judge.
-import type { Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
+import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
@@ -58,7 +59,7 @@ export function recordBytes(record: { kind: string; schema: string; provenance: 
 }
 
 /** The scope of a run for one reader. `consumer` decides what text a reader is given (functions for the boundary, model for previews). */
-export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: 'function' | 'model', attempts: Array<Record<string, unknown>> = []): Promise<RunScope> {
+export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: Extract<ProducerKind, 'function' | 'model'>, attempts: Array<Record<string, unknown>> = []): Promise<RunScope> {
   const { store, artifacts } = ctx.deps.records;
   const readScope = async <T>(reference: string, read: () => Promise<T>): Promise<T> => {
     try {
@@ -151,14 +152,14 @@ export interface ResolvedValue {
   source: string | null;
 }
 
-export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string };
+export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string; code?: ProtocolCode };
 
 export interface Resolver {
   /** Resolves inside the run scope; `scoped: false` only for the predecessor's statements a carry-over brings along. */
-  resolve(reference: string, options?: { scoped?: boolean }): Promise<ValueOutcome>;
+  resolve(reference: string, options?: { scoped?: boolean; grounds?: boolean }): Promise<ValueOutcome>;
 }
 
-function scopeProblem(ref: Reference, scope: RunScope): string | null {
+export function scopeProblem(ref: Reference, scope: RunScope): string | null {
   switch (ref.scheme) {
     case 'src':
       return scope.sources.has(ref.sha256) ? null : '引用的源文件没有绑定到本次运行';
@@ -171,7 +172,7 @@ function scopeProblem(ref: Reference, scope: RunScope): string | null {
   }
 }
 
-export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'function' | 'model', attempts: Array<Record<string, unknown>> = []): Resolver {
+export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Extract<ProducerKind, 'function' | 'model'>, attempts: Array<Record<string, unknown>> = []): Resolver {
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
@@ -180,19 +181,19 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
     parsers: ctx.parsers,
     sources: sourceReader(artifacts, consumer),
     trees: ctx.deps.knowledge.treeReader(),
-    records: recordReader(store),
+    records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
     consumer,
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  const run = async (reference: string, scoped: boolean): Promise<ValueOutcome> => {
+  const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
     try {
       ref = parseReference(reference);
       canonical = formatReference(ref);
     } catch (error) {
-      if (error instanceof ReferenceSyntaxError) return { ok: false, message: `引用格式不对：${error.message}` };
+      if (error instanceof ReferenceSyntaxError) return { ok: false, code:'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}` };
       throw error;
     }
     if (resolving.has(canonical)) {
@@ -202,7 +203,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
     try {
       if (scoped) {
         const problem = scopeProblem(ref, scope);
-        if (problem !== null) return { ok: false, message: problem };
+        if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       let result: Awaited<ReturnType<typeof resolveReference>>;
       try {
@@ -218,7 +219,8 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
         ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: `bound source ${canonical}: ${result.reason}` });
         if (consumer === 'function') throw new HubReadFailure(canonical, result.reason, attempts);
       }
-      if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
+      if (!result.resolved) return { ok: false, code:result.code, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
+      if (grounds && !result.groundable) return { ok: false, message: '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录' };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
         try {
@@ -238,9 +240,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
   return {
     resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
-      const key = `${scoped ? 's' : 'u'}\u0000${reference}`;
+      const key = `${scoped ? 's' : 'u'}${options.grounds ? 'g' : 't'}\u0000${reference}`;
       let found = cache.get(key);
-      if (!found) cache.set(key, (found = run(reference, scoped)));
+      if (!found) cache.set(key, (found = run(reference, scoped, options.grounds === true)));
       return found;
     },
   };
@@ -436,7 +438,7 @@ export async function resolveStatement(
     }
   }
   for (const [k, ground] of (claim.grounds ?? []).entries()) {
-    const r = await resolver.resolve(ground, { scoped });
+    const r = await resolver.resolve(ground, { scoped, grounds: true });
     if (r.ok) {
       take(`${at}/grounds/${k}`, ground, r.value, true);
       out.grounds.push(r.value.reference);
@@ -449,7 +451,7 @@ export async function resolveStatement(
   }
   const quoted: QuotePlace[] = [];
   for (const [k, quote] of (claim.quotes ?? []).entries()) {
-    const r = await resolver.resolve(quote.reference, { scoped });
+    const r = await resolver.resolve(quote.reference, { scoped, grounds: true });
     if (!r.ok) {
       const isCycle = r.message.startsWith('成环的引用：');
       fail('REFERENCE_UNRESOLVED', `${at}/quotes/${k}/reference`, `引文的引用解析不出：${r.message}`, undefined, isCycle ? r.message : undefined);
@@ -553,7 +555,7 @@ export async function resolveSubmission(
     const out: ClaimEvidence = { resolutions: [], roles: [], bound: [], grounds: [], canonical: { text: entry.statement } };
     const copy = structuredClone(entry);
     for (const [k, ground] of entry.grounds.entries()) {
-      const r = await resolver.resolve(ground);
+      const r = await resolver.resolve(ground, { grounds: true });
       if (r.ok) {
         out.resolutions.push({ pointer: `${at}/grounds/${k}`, text: ground, resolution: 'resolved', references: [r.value.reference] });
         out.bound.push(r.value.digest);

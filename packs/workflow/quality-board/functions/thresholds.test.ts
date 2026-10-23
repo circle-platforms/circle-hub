@@ -31,18 +31,18 @@ const byId = (outcomes: CheckOutcome[], id: string): CheckOutcome[] => outcomes.
 describe('boardOutcomes', () => {
   it('always supports with the metrics as claim data (advisory)', () => {
     const subject = subjectOf([
-      facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18),
+      facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23),
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2),
     ]);
     const outcomes = boardOutcomes(subject);
     assert.equal(outcomes.length, 1);
     const [outcome] = outcomes;
     assert.deepEqual([outcome.verdict, outcome.tier, outcome.item, outcome.pointer], ['support', 'advisory', '10.6.1/SSL', '/items/0/fields']);
-    assert.equal(outcome.statement, '用例 20 个；无期望结果 10.0%；含糊期望 0.0%；负面用例 10.0%');
+    assert.equal(outcome.statement, '用例 25 个；无期望结果 8.0%；含糊期望 0.0%；负面用例 8.0%');
     const data = outcome.data as { counts: { cases: number; missing: number }; ratios: { missing: { num: number; den: number } }; display: { missing: number } };
-    assert.deepEqual(data.counts, { cases: 20, missing: 2, vague: 0, negative: 2 });
-    assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });
-    assert.equal(data.display.missing, 0.1);
+    assert.deepEqual(data.counts, { cases: 25, missing: 2, vague: 0, negative: 2 });
+    assert.deepEqual(data.ratios.missing, { num: 2, den: 25 });
+    assert.equal(data.display.missing, 0.08);
     assert.deepEqual(outcome.grounds, [subject.items[0].location]);
   });
 
@@ -101,16 +101,16 @@ describe('thresholdOutcomes', () => {
       at.map((o) => o.verdict),
       ['support'],
     );
-    // 20 cases, 2 missing = 10.0% > 5.0%: a missing_expected violation.
-    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18)]));
+    // 25 cases, 2 missing = 8.0% > 5.0%: a missing_expected violation.
+    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23)]));
     assert.deepEqual(
       over.map((o) => [o.verdict, o.code ?? null]),
       [['refute', 'quality-board.missing_expected']],
     );
-    assert.match(over[0].statement, /10\.0%/);
+    assert.match(over[0].statement, /8\.0%/);
     assert.match(over[0].statement, /5\.0%/);
     const data = over[0].data as { metric: string; ratio: { num: number; den: number }; threshold: number };
-    assert.deepEqual([data.metric, data.ratio, data.threshold], ['missing', { num: 2, den: 20 }, 0.05]);
+    assert.deepEqual([data.metric, data.ratio, data.threshold], ['missing', { num: 2, den: 25 }, 0.05]);
   });
 
   it('the negative share below its minimum is a violation; exactly at it is not', () => {

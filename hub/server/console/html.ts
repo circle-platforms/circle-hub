@@ -108,7 +108,7 @@ export interface PageChrome {
 export function page(chrome: PageChrome, body: unknown): Html {
   const nav = chrome.user === null
     ? html``
-    : html`<nav>${link('/console/runs', '运行')} ${link('/console/knowledge', '知识')} ${link('/console/packs', '任务包')} ${chrome.user.admin ? link('/console/admin', '管理') : ''}</nav>
+    : html`<nav>${link('/console/runs', '运行')} ${link('/console/results', '结果')} ${link('/console/knowledge', '知识')} ${link('/console/packs', '任务包')} ${chrome.user.admin ? link('/console/admin', '管理') : ''}</nav>
 <span class="who">${chrome.user.name}（${chrome.user.role}）</span>
 <form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit">退出</button></form>`;
   return html`<!doctype html>

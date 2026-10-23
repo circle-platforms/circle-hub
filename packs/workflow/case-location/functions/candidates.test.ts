@@ -191,3 +191,61 @@ describe('candidatesOutcomes', () => {
     assert.match(written[0].statement, /写出的构建名 Rel_APV_10_6_1_58 是候选 Rel_NSAE_10_6_1_58 所依据的构建/);
   });
 });
+
+it('conflicting version levels list both lines separately with the conflict first', () => {
+  const outcomes = candidatesOutcomes(subjectOf([item('synthetic', '合成文档', ['060：10.6.1', '061：10.7.4'])]));
+  const candidates = outcomes.filter(outcome => outcome.data?.kind === 'candidates');
+  assert.deepEqual(candidates.map(outcome => outcome.data?.line), ['10.6.1', '10.7.4']);
+  for (const outcome of candidates) {
+    assert.match(outcome.statement, /^目录.*自相矛盾/);
+    assert.ok((outcome.data?.candidates as unknown[]).length > 0);
+  }
+});
+
+it('a written build of either conflicting line is not falsely called another line', () => {
+  const document = item('synthetic-conflict', 'Rel_APV_10_7_4_101', ['060：10.6.1', '061：10.7.4']);
+  const outcomes = candidatesOutcomes(subjectOf([document]));
+  assert.ok(!outcomes.some(outcome => outcome.code === 'case-location.build_other_line'));
+  for (const outcome of outcomes.filter(outcome => outcome.data?.kind === 'written_build')) {
+    assert.match(outcome.statement, /^目录.*自相矛盾/);
+    assert.equal(outcome.statement.includes('定位没有给出版本线'), false);
+    assert.match(outcome.statement, /10\.7\.4/);
+  }
+});
+
+it('a written build of a third line is that other line when the version level conflicts', () => {
+  const builds = [...BUILDS, build('Rel_APV_10_8_1_9', 'APV', '10.8.1', { built_at: '2026-08-01T00:00:00.000Z', released_at: '2026-08-02T00:00:00.000Z' })];
+  const outcomes = candidatesOutcomes(subjectOf([item('synthetic-third', 'Rel_APV_10_8_1_9 合成文档', ['060：10.6.1', '061：10.7.4'])], builds));
+  const written = outcomes.find(outcome => outcome.data?.kind === 'written_build');
+  assert.equal(written?.verdict, 'refute');
+  assert.equal(written?.code, 'case-location.build_other_line');
+  assert.match(written?.statement ?? '', /10\.8\.1/);
+  assert.match(written?.statement ?? '', /10\.6\.1/);
+  assert.match(written?.statement ?? '', /10\.7\.4/);
+  assert.equal((written?.statement ?? '').includes('定位没有给出版本线'), false);
+});
+
+it('conflicting lines that keep a trailing zero still list each line\'s builds', () => {
+  const builds = ['10.7.0', '10.8.0', '10.9.0'].map((line, index) => build(`Rel_APV_${line.replaceAll('.', '_')}_${index + 1}`, 'APV', line, { built_at: `2026-0${index + 1}-01T00:00:00.000Z` }));
+  const outcomes = candidatesOutcomes(subjectOf([item('synthetic-zero', builds[2].name, ['060：10.7.0', '061：10.8.0'])], builds));
+  const candidates = outcomes.filter((outcome) => outcome.data?.kind === 'candidates');
+  assert.deepEqual(candidates.map((outcome) => outcome.data?.line), ['10.7.0', '10.8.0']);
+  for (const outcome of candidates) {
+    assert.equal(outcome.verdict, 'support');
+    assert.ok((outcome.data?.candidates as unknown[]).length > 0);
+    assert.equal(outcome.statement.includes('没有已知构建'), false);
+    assert.match(outcome.statement, /^目录.*自相矛盾/);
+  }
+  const written = outcomes.find((outcome) => outcome.data?.kind === 'written_build');
+  assert.equal(written?.verdict, 'refute');
+  assert.equal(written?.code, 'case-location.build_other_line');
+});
+
+it('a version-only label uses that version as the candidate line', () => {
+  const builds = [build('Rel_NSAE_10_9_1_37', 'NSAE', '10.9.1', { built_at: '2026-09-01T00:00:00.000Z', released_at: '2026-09-02T00:00:00.000Z' })];
+  const outcomes = candidatesOutcomes(subjectOf([item('synthetic-label', '合成文档', ['10.9.1'])], builds));
+  const candidates = outcomes.find(outcome => outcome.data?.kind === 'candidates');
+  assert.equal(candidates?.verdict, 'support');
+  assert.equal(candidates?.data?.line, '10.9.1');
+  assert.equal((candidates?.statement ?? '').includes('没有版本层'), false);
+});

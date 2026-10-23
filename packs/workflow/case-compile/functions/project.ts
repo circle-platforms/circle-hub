@@ -1,12 +1,11 @@
-// The case-compile projection (pack function, ProjectionInput -> ProjectionOutput): read the reviewed case document
-// (kityminder@1), the compile contract (doc:doc:<name>, compile-contract@1) and the bed inventory (doc:doc:<name>,
-// test-bed-manifest@1); one item per case taken by the case-review rule (tags or marks, case_rule narrows to tags).
-// The raw contract and manifest documents, the frozen lease view and the extraction summary are frozen into the run
-// group so every check recomputes from them. An invalid contract or manifest refuses the whole call with every
-// problem and its pointer.
+// Project exactly one authored case and freeze the original runner contract, profile, manifest and lease view.
+// Every check recomputes from these inputs; malformed documents refuse the whole run with all problem pointers.
 import { isRecord, refusal, type PackWarning } from './text.ts';
-import { parseContract, type Contract } from './contract.ts';
-import { parseManifest, type ManifestBed } from './manifest.ts';
+import { parseRuntimeContract } from './runtime-contract.ts';
+import { parseProfile } from './profile.ts';
+import { parseManifest } from './manifest.ts';
+import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
+import { readWorkbookModel } from './xlsx-model.ts';
 import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
 
 interface Slot {
@@ -22,12 +21,6 @@ interface FrozenLeases {
   entries: Array<{ key: string; until: string; mine?: boolean }>;
 }
 
-interface Out {
-  items: Array<{ id: string; label: string; summary: string; location: { slot: string; source: string; parser: string; selector: string }; fields: Record<string, unknown> }>;
-  groups?: Array<Record<string, unknown>>;
-  warnings: PackWarning[];
-}
-
 const MAX_TITLE = 200;
 
 function slotOf(inputs: unknown[], name: string): Slot | undefined {
@@ -35,7 +28,7 @@ function slotOf(inputs: unknown[], name: string): Slot | undefined {
 }
 
 function problemWarnings(prefix: string, problems: Array<{ pointer: string; message: string; fix: string }>): PackWarning[] {
-  return problems.slice(0, 100).map((problem) => ({ code: prefix, message: `${problem.pointer === '' ? '整份' : problem.pointer}：${problem.message}（处理：${problem.fix}）` }));
+  return problems.map((problem) => ({ code: prefix, message: `${problem.pointer === '' ? '整份' : problem.pointer}：${problem.message}（处理：${problem.fix}）` }));
 }
 
 export function projectItems(input: unknown): unknown {
@@ -48,15 +41,15 @@ export function projectItems(input: unknown): unknown {
   if (subject.parser !== 'kityminder@1') return refusal('subject_not_mindmap', '用例文档不是 kityminder@1 解析的脑图', '绑定敏捷平台导出的 KityMinder 脑图');
   const contractSlot = slotOf(inputs, 'contract');
   if (contractSlot === undefined || contractSlot.model === null || contractSlot.model === undefined) {
-    return refusal('no_contract', '没有编译合约', '在 inputs.contract 里写命名文档 {"external": "doc:doc:compile-contract"}（管理员用 circle-hub doc put 发布）');
+    return refusal('no_contract', '没有运行器原格式合约', '在 inputs.contract 绑定管理员发布的原格式合约命名文档');
   }
-  const contractRead = parseContract(contractSlot.model);
+  const contractRead = parseRuntimeContract(contractSlot.model);
   if (!contractRead.ok) {
     const first = contractRead.problems[0];
     return refusal(
       'contract_invalid',
-      `编译合约有 ${contractRead.problems.length} 个问题，整份拒绝`,
-      first === undefined ? '按合约的形状（compile-contract@1）改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
+      `运行器合约有 ${contractRead.problems.length} 个问题，整份拒绝`,
+      first === undefined ? '按合约的运行器原格式改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.contract_problem', contractRead.problems),
     );
   }
@@ -74,12 +67,27 @@ export function projectItems(input: unknown): unknown {
       problemWarnings('case-compile.manifest_problem', manifestRead.problems),
     );
   }
+  const profileSlot = slotOf(inputs, 'profile');
+  if (!profileSlot || profileSlot.model == null) return refusal('no_profile', '没有运行环境配置', '在 inputs.profile 绑定发布的 runtime-profile@1 命名文档');
+  const profileRead = parseProfile(profileSlot.model, contractRead.contract, manifestRead.beds);
+  if (!profileRead.ok) return refusal('profile_invalid', `运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, `${profileRead.problems[0].pointer}：${profileRead.problems[0].fix}`, problemWarnings('case-compile.profile_problem', profileRead.problems));
   const parameters = isRecord(params.parameters) ? params.parameters : {};
   if (parameters.case_rule !== undefined && parameters.case_rule !== 'tagged' && parameters.case_rule !== 'marked') {
     return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）');
   }
+  const workbook = slotOf(inputs, 'workbook');
+  if (workbook) {
+    if (workbook.parser !== 'xlsx@1' || typeof workbook.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(workbook.sha256) || !readWorkbookModel(workbook.model)) return refusal('workbook_input', '工作簿不是完整的 xlsx@1 绑定原件', '上传原始 xlsx，按 upload_file 返回的 src: 引用绑定，不上传自行转换的 JSON');
+    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '单用例工作簿模型超过核验预算', '减少同一个用例内的非必要内容后重新生成，不能截断模型或拆掉要执行的行');
+    if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 plan_run', '从已满足提交及结果复制计划运行号，以其为 predecessor 开新运行并绑定原工作簿');
+  }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
   const extraction = extractCases(subject.model, rule);
+  if (extraction.impreciseAutoids.length) return refusal('autoid_imprecise', `文档有 ${extraction.impreciseAutoids.length} 个 autoid 数值超出安全范围，JSON 解析后无法保证原编号精度`, `把原文节点 ${extraction.impreciseAutoids[0].selector ?? extraction.impreciseAutoids[0].node} 的 autoid 以文本重新导出或重新上传；不能从已舍入数值猜原编号`, extraction.impreciseAutoids.map((value) => ({ code: 'case-compile.autoid_problem', message: `${value.pointer}（节点 ${value.selector ?? value.node}）：数值精度无法保证；从原件以文本重导出或请求核心无损数字解析，不复制当前数值` })));
+  if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
+  const selected = extraction.cases.filter((found) => found.autoid === parameters.autoid);
+  if (selected.length === 0) return refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
+  if (selected.length > 1) return refusal('autoid_ambiguous', '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
   const model = isRecord(subject.model) ? subject.model : {};
   const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, extraction.cases[0]?.id ?? null);
   const warnings: PackWarning[] = [];
@@ -88,7 +96,7 @@ export function projectItems(input: unknown): unknown {
   const context = isRecord(params.context) ? params.context : {};
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
-  const items = extraction.cases.map((found) => ({
+  const items = selected.map((found) => ({
     id: `${documentId}:${found.id}`,
     label: found.title.slice(0, MAX_TITLE),
     summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}`,
@@ -97,6 +105,8 @@ export function projectItems(input: unknown): unknown {
       title: found.title,
       tags: found.tags,
       priority: found.priority,
+      autoid: found.autoid,
+      auto: found.auto,
       negative: found.negative,
       steps: found.steps,
       expected: found.expected,
@@ -104,7 +114,7 @@ export function projectItems(input: unknown): unknown {
       marked_only: extraction.markedOnly,
     },
   }));
-  const message = `文档 ${documentId} 取出 ${items.length} 个用例（${extraction.ruleSummary}）。按合约和台架清单核对每个用例的执行计划：合约是合成的时结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”。`;
+  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.digest.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,
     groups: [
@@ -112,6 +122,10 @@ export function projectItems(input: unknown): unknown {
         kind: 'case-compile',
         contract: contractSlot.model,
         manifest: inventorySlot.model,
+        profile: profileSlot.model,
+        manifest_sha256: typeof inventorySlot.sha256 === 'string' ? inventorySlot.sha256 : '',
+        workbook: workbook ? { model: workbook.model, sha256: workbook.sha256, source: `src:${workbook.sha256}` } : null,
+        generation: { plan_run: parameters.plan_run ?? null, build: context.build ?? null, generator: WORKBOOK_FORMAT.generator },
         leases: { now: typeof frozenLeases.now === 'string' ? frozenLeases.now : new Date(0).toISOString(), entries: Array.isArray(frozenLeases.entries) ? frozenLeases.entries : [] },
         case_rule: rule,
         marked_only: extraction.markedOnly,

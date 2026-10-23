@@ -1,0 +1,284 @@
+{
+  "schema": "ist.excel.function-contract",
+  "complete": true,
+  "runtime": {
+    "minimum_version": "synthetic-runtime-v2",
+    "runner_source": "fixture/runtime.py",
+    "runner_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "found_times_supported": false
+  },
+  "source_hashes": {
+    "fixture/runtime.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "objects": [
+    {
+      "name": "widget-seat",
+      "status": "enabled"
+    },
+    {
+      "name": "widget-host",
+      "status": "enabled"
+    },
+    {
+      "name": "widget-check",
+      "status": "enabled"
+    },
+    {
+      "name": "widget-clock",
+      "status": "enabled"
+    },
+    {
+      "name": "widget-disabled",
+      "status": "disabled"
+    }
+  ],
+  "entries": [
+    {
+      "e": "widget-seat",
+      "f": "configure",
+      "python_symbol": "fixture.configure",
+      "signature": {
+        "parameters": [
+          {
+            "name": "line",
+            "kind": "positional_only",
+            "required": true,
+            "default": null
+          },
+          {
+            "name": "auth_token",
+            "kind": "positional_or_keyword",
+            "required": false,
+            "default": "<redacted>"
+          }
+        ],
+        "required": [
+          "line"
+        ],
+        "optional": [
+          "auth_token"
+        ],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-host",
+      "f": "shell",
+      "python_symbol": "fixture.shell",
+      "signature": {
+        "parameters": [
+          {
+            "name": "command",
+            "kind": "positional_or_keyword",
+            "required": true,
+            "default": null
+          }
+        ],
+        "required": [
+          "command"
+        ],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-check",
+      "f": "literal",
+      "python_symbol": "fixture.literal",
+      "signature": {
+        "parameters": [
+          {
+            "name": "expected",
+            "kind": "positional_or_keyword",
+            "required": true,
+            "default": null
+          }
+        ],
+        "required": [
+          "expected"
+        ],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-clock",
+      "f": "pause",
+      "python_symbol": "fixture.pause",
+      "signature": {
+        "parameters": [
+          {
+            "name": "seconds",
+            "kind": "positional_or_keyword",
+            "required": true,
+            "default": null
+          }
+        ],
+        "required": [
+          "seconds"
+        ],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-disabled",
+      "f": "cycle",
+      "python_symbol": "fixture.cycle",
+      "signature": {
+        "parameters": [],
+        "required": [],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "disabled",
+      "reason": "synthetic unavailable object",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-seat",
+      "f": "hidden",
+      "python_symbol": "fixture.hidden",
+      "signature": {
+        "parameters": [],
+        "required": [],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "internal",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    },
+    {
+      "e": "widget-seat",
+      "f": "candidate",
+      "python_symbol": "fixture.candidate",
+      "signature": {
+        "parameters": [],
+        "required": [],
+        "optional": [],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2",
+      "certification_candidate": true
+    },
+    {
+      "e": "widget-seat",
+      "f": "credential",
+      "python_symbol": "fixture.credential",
+      "signature": {
+        "parameters": [
+          {
+            "name": "password",
+            "kind": "positional_or_keyword",
+            "required": false,
+            "default": "<redacted>"
+          }
+        ],
+        "required": [],
+        "optional": [
+          "password"
+        ],
+        "text": "(fixture)"
+      },
+      "g_syntax": "synthetic argument description",
+      "h_semantics": "synthetic empty output",
+      "i_semantics": "synthetic empty input",
+      "dispatch": "direct_method_call",
+      "status": "enabled",
+      "reason": "",
+      "status_authority": "project_policy:excel-authoring-v1",
+      "source": {
+        "path": "fixture/runtime.py",
+        "line": 1
+      },
+      "minimum_runtime": "synthetic-runtime-v2"
+    }
+  ],
+  "execute_actions": [],
+  "atlas_snapshot": {
+    "fixture": true
+  },
+  "certification": {
+    "schema": "ist.excel.capability-certification-set",
+    "receipt_count": 0
+  },
+  "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+}

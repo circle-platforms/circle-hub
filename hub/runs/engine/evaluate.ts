@@ -3,17 +3,17 @@
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import { MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
+import { SubjectBlocked, MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
@@ -22,10 +22,10 @@ import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
-import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
+import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { identityOf, recordReader, sourceReader } from './readers.ts';
+import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -70,6 +70,8 @@ export interface EvaluationInput {
   traceId: string;
   /** Items whose own exact values did not resolve: no checks or conclusions for them (a not-accepted submission). */
   exclude?: ReadonlySet<string>;
+  /** Hub admission policy facts, kept on the declared item requirement rather than whole-submission errors. */
+  admission?: {requirement:string;outcomes:ReadonlyMap<string,CheckOutcome[]>};
 }
 
 export interface Evaluation {
@@ -189,7 +191,9 @@ function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
 }
 
 /** rule@version of a check: the core interpreter, or the pack function check of this pack version. */
+const ADMISSION_CHECK='@hub.contribution';
 function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
+  if(check.id===ADMISSION_CHECK)return 'knowledge.contribution@1';
   return check.interpreter ?? `${workflow.pack.id}.${check.id}@${workflow.pack.version}`;
 }
 
@@ -214,6 +218,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
+  if(input.admission!==undefined)checks.set(ADMISSION_CHECK,{id:ADMISSION_CHECK,title:'Hub 回注来源核验',applies:'item',judges:'artifact_under_verification',tier:'blocking',basis:'K03 R[4]-R[6]：回注根据与入层约束'});
   // Whole-refusal diagnostics must never check unresolved items, including fact checks and run-level subjects.
   // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
   const items = run.items.filter(it => !exclude.has(it.id));
@@ -270,43 +275,21 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: recordReader(ctx.deps.records.store),
+      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
       onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
     };
   } else {
-    // Hub standing obligation: Hub's own system read path
-    const systemSources: SourceReader = {
-      async read(sha256) {
-        const records = await ctx.deps.records.artifacts.records(sha256);
-        const first = records[0];
-        if (first !== undefined && first.body.read_tier === 'retain_only') {
-          return { bytes: null, mediaType: first.body.media_type, size: first.body.size, readTier: first.body.read_tier };
-        }
-        const bytes = await ctx.deps.records.artifacts.trustedBytes(sha256);
-        if (bytes === null) return null;
-        return {
-          bytes,
-          mediaType: first?.body.media_type ?? 'application/octet-stream',
-          size: bytes.byteLength,
-          readTier: first?.body.read_tier ?? 'function_bytes_only',
-        };
-      },
-    };
-    const systemRecords: RecordReader = {
-      async read(digest) {
-        const record = await ctx.deps.records.store.get(digest);
-        if (record === null) return null;
-        return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
-      },
-    };
+    // Standing obligations read as their configuring admin through the same effective-tier gate as ordinary runs.
+    const configurer = run.configurer ?? 'hub';
+    const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(configurer) : null;
     resolveCtx = {
-      reader: { user: 'hub', role: 'admin', run: run.run },
+      reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
-      sources: systemSources,
+      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: systemRecords,
+      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
       onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
@@ -394,40 +377,36 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
-  type GradedFragment = {text?: string; why: string; unread?: FragmentReadFailure};
+  let fragmentScope: ReturnType<typeof buildScope> | undefined;
+  type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure};
   const fragmentCache = new Map<string, Promise<GradedFragment>>();
   const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<GradedFragment> => {
     let pending = fragmentCache.get(reference);
     if (pending === undefined) {
-      pending = (async () => {
+      pending = (async (): Promise<GradedFragment> => {
         let ref: ReturnType<typeof parseReference>;
         try {
           ref = parseReference(reference);
         } catch {
-          return { why: 'unavailable' };
+          return { why: 'malformed' };
         }
         const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<GradedFragment> => {
           if (!r.resolved) {
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
-            // the read genuinely failed. For a reference that is not src or a locked tree, unresolved also lands here
-            // as unavailable: an honest unknown, never a refutation.
-            return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
+            // the read genuinely failed. Scope and groundability have their own grades and remedies.
+            return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
+          if (!r.groundable) return { why: 'not_groundable' };
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
-          if (r.text === null) return { why: 'unavailable' };
+          if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
         };
-        if (ref.scheme === 'src') {
-          // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
-          const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
-          if (!bound) return { why: 'not_bound' };
-        } else if (ref.scheme === 'tree') {
-          // A tree reference is bound exactly when its root is the root this run locked.
-          if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
-        }
-        // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
+        // Share the boundary's scope, including predecessor results and the ban on standalone entries.
+        const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function', retryAttempts));
+        if (ref.scheme === 'entry') return { why: 'entry_unaddressed' };
+        if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         let result: Awaited<ReturnType<typeof resolveReference>>;
         try {
           result = await retryRead(() => resolveReference(ref, resolveCtx), value => !value.resolved
@@ -457,7 +436,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
   };
   const warmed = new Map<string, string>();
-  const warmedWhy = new Map<string, string>();
+  const warmedWhy = new Map<string, FragmentRead>();
   const warmedUnread = new Map<string, FragmentReadFailure>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
@@ -540,6 +519,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     if (check.subject === undefined) return { subject: fallback() };
     try {
       const subject = await subjectFor({ packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export }, builderInput);
+      const blocked = SubjectBlocked.safeParse(subject);
+      if (blocked.success) {
+        const rows = blocked.data.blocked;
+        return { failure: { verdict: 'unknown', reason: 'awaiting_step', code: rows[0].code, pointer: rows[0].pointer, statement: `前置驳回：${rows.map(row => `${row.check}${row.pointer}（${row.code}）`).join('；')}。下一步：修正这些驳回后自动重核`, grounds: [], tier: check.tier ?? 'blocking', data: { blocked: rows } } };
+      }
       return { subject };
     } catch (error) {
       onError(error, `${check.id} subject`);
@@ -554,6 +538,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
   const missingItemArtifact = (id: string): boolean => submission !== null && handlingOf(id) !== 'handled';
   const artifactCheck = (check: CheckEntry): boolean => check.judges === 'artifact_under_verification';
+  const deniedArtifact=(check:CheckEntry,id:string):boolean=>input.admission?.outcomes.has(id)===true&&artifactCheck(check)&&(requirementsOf.get(check.id)??[]).every(t=>t.key===input.admission!.requirement);
   const allTexts = new Map<string, string>();
   for (const it of items) for (const [k, v] of evidenceOf(it.id).texts) allTexts.set(k, v);
 
@@ -562,7 +547,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     // A run check of item artifacts sees only submitted artifacts. A check of a run-level artifact (for example
     // a final claim) still needs every target's metadata to test coverage, but receives no absent slot property.
     const itemArtifactsOnly = artifactCheck(check) && (requirementsOf.get(check.id) ?? []).every(t => t.target === 'item');
-    const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)) : items;
+    const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)&&!deniedArtifact(check,it.id)) : items;
     if (itemArtifactsOnly && checkItems.length === 0) continue;
     const checkedIds = new Set(checkItems.map(it => it.id));
     const built = await buildSubject(runSubjects, check, { applies: 'run', items: checkItems.map(subjectItem), context }, () => ({
@@ -584,7 +569,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     runOutcomes.set(check.id, { own, loose });
   }
   const perItem = used.filter((c) => c.applies === 'item');
-  const eligible = (check: CheckEntry, id: string): boolean => !(artifactCheck(check) && missingItemArtifact(id))
+  const eligible = (check: CheckEntry, id: string): boolean => !deniedArtifact(check,id) && !(artifactCheck(check) && missingItemArtifact(id))
     && !(judgmentOnly(check) && (handlingOf(id) !== 'handled' || exclude.has(id) || submission === null));
   const builderInput = (it: ItemProjection) => {
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
@@ -635,13 +620,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }));
   } catch (error) { functionBatches.cancel(error); throw error; }
 
-  const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] =>
-    template.checks.flatMap((cid) => {
+  const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] => [
+    ...template.checks.flatMap((cid) => {
       const check = checks.get(cid);
       if (check === undefined || (artifactCheck(check) && missingItemArtifact(id))) return [];
       const list = check.applies === 'run' ? (runOutcomes.get(cid)?.own.get(id) ?? []) : (itemOutcomes.get(cid)?.get(id) ?? []);
       return list.map((outcome) => ({ outcome, check: cid, judges: check.judges }));
-    });
+    }),
+    ...(input.admission?.requirement===template.key ? (input.admission.outcomes.get(id)??[]).map(outcome=>({outcome,check:ADMISSION_CHECK,judges:'artifact_under_verification' as const})) : []),
+  ];
 
   // Pointers of check outcomes into the submission, for the errors (default subjects only).
   const submissionPointer = (id: string, check: CheckEntry, pointer: string | undefined): string | undefined => {
@@ -708,7 +695,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const raw = staticTerminal({
         producer: t.accepted_producer,
         hasProducer,
-        checks: t.checks.filter((id) => checks.has(id)).length,
+        checks: t.checks.filter((id) => checks.has(id)).length+(outcomes.some(o=>o.check===ADMISSION_CHECK)?1:0),
         outcomes,
         // A missing item artifact is a coverage gap even when its requirement accepts only facts. Pure target
         // checks keep their existing handling rules; production evaluation has no submitted artifact to omit.
@@ -777,7 +764,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         errors.push({
           code: r.outcome.outcome.code ?? 'check_error',
           message: r.outcome.outcome.statement,
-          fix: fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
+          fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,

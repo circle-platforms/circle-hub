@@ -37,21 +37,15 @@ for (const mode of ['recover', 'exhaust', 'size', 'retain', 'hub-retain', 'binar
     assert.ok(started.run, JSON.stringify(started.errors)); const run = started.run;
     const bound = run.sources.find(source => source.external?.startsWith('toy:story:'))!;
     assert.ok(bound); const sha = /^src:([0-9a-f]{64})/.exec(bound.reference)![1];
-    const original = h.kit.artifacts.source.bind(h.kit.artifacts); let reads = 0;
+    const original = h.kit.artifacts.source.bind(h.kit.artifacts); let reads = 0; let hubEvaluation = false;
     h.kit.artifacts.source = async (reader, digest, options) => {
       if (digest === sha) {
         reads++;
         if (mode === 'exhaust' || (mode === 'recover' && reads < 3)) throw new Error('SyntheticPrivateReadFailure');
       }
       const value = await original(reader, digest, options);
-      if (digest === sha && value && mode === 'retain') return { ...value, bytes: null, readTier: 'retain_only' };
+      if (digest === sha && value && (mode === 'retain' || mode === 'hub-retain' && hubEvaluation)) return { ...value, bytes: null, readTier: 'retain_only' };
       return value;
-    };
-    const records = h.kit.artifacts.records.bind(h.kit.artifacts);
-    h.kit.artifacts.records = async digest => {
-      const values = await records(digest);
-      if (digest === sha && mode === 'hub-retain') { reads++; return values.map(value => ({...value, body:{...value.body, read_tier:'retain_only' as const}})); }
-      return values;
     };
     const answer = await h.service.submitResult(h.alice, { run: run.run, model: 'synthetic-model',
       items: run.items.map(item => ({ item: item.id, handling: 'handled', slots: { findings: [] } })),
@@ -60,8 +54,8 @@ for (const mode of ['recover', 'exhaust', 'size', 'retain', 'hub-retain', 'binar
     const stored = (await h.service.getResult(h.alice, run.run))!;
     let checked = stored.result;
     if (mode === 'hub-retain') {
-      reads = 0; const { runner: _, ...hubRun } = (await h.service.getRun(h.alice, run.run))!.run;
-      checked = (await evaluate(createEngineContext({records:h.kit, workflows:h.workflows, packs:h.packs, knowledge:h.knowledge, external:h.external}), {run:{...hubRun, host:'hub'}, workflow:await h.workflows.byDigest(run.pack_digest).then(value=>value!), submission:null, submissionDigest:'a'.repeat(64), exact:null, carried:new Map(), roundsUsed:new Map(), origin:null, author:null, traceId:h.call().traceId})).result;
+      reads = 0; hubEvaluation = true; const { runner: _, ...hubRun } = (await h.service.getRun(h.alice, run.run))!.run;
+      checked = (await evaluate(createEngineContext({records:h.kit, workflows:h.workflows, packs:h.packs, knowledge:h.knowledge, external:h.external}), {run:{...hubRun, host:'hub', configurer:h.admin.id}, workflow:await h.workflows.byDigest(run.pack_digest).then(value=>value!), submission:null, submissionDigest:'a'.repeat(64), exact:null, carried:new Map(), roundsUsed:new Map(), origin:null, author:null, traceId:h.call().traceId})).result;
     }
     const claim = Object.values(checked.partitions).flat().flatMap(item => item.requirements).flatMap(requirement => requirement.claims).find(claim => claim.statement.data?.reasons)!;
     assert.ok(claim); assert.ok(!JSON.stringify(stored.result).includes('SyntheticPrivateReadFailure'));

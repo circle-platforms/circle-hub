@@ -1,11 +1,11 @@
 {
-  "id": "commands_out_of_range",
+  "id": "commands_out_of_range_negative",
   "source": "author",
   "check": "commands_catalog",
-  "note": "合成反例：参数超出目录签名的范围",
+  "note": "合成反例：commands-out-of-range",
   "subject": {
     "item": "doc-1:c-1",
-    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "phrases": [
       "widget health interval 500"
     ],

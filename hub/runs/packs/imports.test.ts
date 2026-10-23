@@ -168,3 +168,54 @@ test('the scan admits exactly the JSON imports the sandbox runs: static or dynam
   assert.deepEqual(results.filter((r) => r.scanAdmits !== r.sandboxAdmits), [], 'the scan and the sandbox disagree on a JSON import');
   assert.ok(results.some((r) => r.name === 'dynamic-with' && r.sandboxAdmits));
 });
+
+test('local tools admit all builtins and relative modules without requiring exported functions', async () => {
+  const { scanTools } = await import('./imports.ts');
+  const files = new Map([['tools/task.ts', encode("import { readFile } from 'node:fs/promises'; import '../functions/helper.ts'; void readFile;")], ['functions/helper.ts', encode("import { spawn } from 'node:child_process'; void spawn;")]]);
+  assert.deepEqual(await scanTools(files), []);
+  assert.deepEqual(await scanTools(new Map([['functions/unused.ts', encode("import 'zod';")]])), []);
+});
+
+test('local tools reject packages outside imports CommonJS computed loads and transforming syntax', async () => {
+  const { scanTools } = await import('./imports.ts');
+  for (const [source, rule] of [["import 'zod';", 'tools.import_package'], ["import '../../outside.ts';", 'tools.import_outside'], ["module.exports = 1;", 'tools.module_format'], ["const x = require('fs');", 'tools.module_format'], ["await import(process.argv[2]);", 'tools.import_computed'], ['export enum X { A }', 'tools.unsupported_syntax']]) {
+    const problems = await scanTools(new Map([['tools/task.ts', encode(source!)]]));
+    assert.ok(problems.some((p) => p.rule === rule), JSON.stringify(problems));
+    assert.ok(problems.every((p) => p.rule.startsWith('tools.') && p.file && p.fix));
+  }
+});
+
+test('local tools reject CommonJS even when mixed with ES module syntax or in mjs', async () => {
+  const { scanTools } = await import('./imports.ts');
+  for (const path of ['tools/task.ts', 'tools/task.mjs']) for (const text of ["export {}; require('fs');", 'export {}; module.exports = 1;', "export {}; exports['x'] = 1;"]) assert.ok((await scanTools(new Map([[path, encode(text)]]))).some((p) => p.rule === 'tools.unsupported_syntax'));
+  assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode('console.log(1);')]])), []);
+});
+
+test('local tools accept every Node builtin including prefix-only builtins', async () => {
+  const { scanTools } = await import('./imports.ts');
+  for (const name of builtinModules) assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode(`import '${specifierOf(name)}';`)]])), [], name);
+});
+
+test('local tools refuse CommonJS files and createRequire package loads', async () => {
+  const { scanTools } = await import('./imports.ts');
+  const fix = "删掉 createRequire，也不要 getBuiltinModule('module' 或 'node:module')；本地工具只用 import 导入包内文件或 Node 内置模块";
+  for (const path of ['tools/run.cjs', 'tools/run.cts']) {
+    const problems = await scanTools(new Map([[path, encode("require('zod');\n")]]));
+    assert.equal(problems.length, 1, JSON.stringify(problems));
+    assert.equal(problems[0]?.rule, 'tools.module_format');
+    assert.equal(problems[0]?.file, path);
+    assert.equal(problems[0]?.fix.includes('require'), true);
+  }
+  assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode("import { builtinModules } from 'node:module';\nvoid builtinModules;\n")]])), []);
+  for (const source of [
+    "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('zod');\n",
+    "import { createRequire } from 'module';\ncreateRequire(import.meta.url)('zod');\n",
+    "process.getBuiltinModule('node:module').createRequire(import.meta.url)('zod');\n",
+    "process.getBuiltinModule('module').createRequire(import.meta.url)('zod');\n",
+  ]) {
+    const problems = await scanTools(new Map([['tools/task.mjs', encode(source)]]));
+    const hit = problems.find((item) => item.rule === 'tools.import_computed');
+    assert.ok(hit, JSON.stringify(problems));
+    assert.equal(hit.fix, fix);
+  }
+});

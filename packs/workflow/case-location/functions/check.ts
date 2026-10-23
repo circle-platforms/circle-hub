@@ -1,6 +1,6 @@
 // The locate check (pack function, applies run): one outcome per item. Support when the tree gives the product line and a
 // consistent version level, its data the whole answer (every outcome becomes a fact claim); unknown (missing input) where the
-// scheme cannot answer, its data what is known; refute (case-location.declaration_conflict) when a declaration of the caller
+// scheme cannot answer, its data what is known; refute on a contradictory version level or when a declaration of the caller
 // contradicts the tree. Never a violation for an uncertain answer. The ground is the item's location (its mind-map node); the
 // folder facts are not in that node but in the system pack's metadata, copied into the item's fields, so each outcome also
 // points at those fields in the subject (`/items/<k>/fields`, the k-th item of the run record as well).

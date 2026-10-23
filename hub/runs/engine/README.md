@@ -388,6 +388,15 @@ read; results, run records and production results over the record limit; queries
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
 
+### Standing obligations and current read tiers
+
+A standing obligation reads source bytes as its configuring administrator through
+`artifacts.source(..., { consumer: 'function' })`, just as an ordinary run uses the effective-tier source reader.
+It never uses `trustedBytes` or the first original's historical tier for pack checks. A withdrawn acceptance or a new
+credential finding therefore withholds the bytes on re-evaluation and makes the dependent check unknown.
+`standing-sources.test.ts` exercises an original from an earlier scanner, its accepted current scan and withdrawal with
+real temporary records, including the bytes actually delivered to the sandboxed check.
+
 ## Concurrent submission subject construction
 
 Checks that use the same pure subject builder previously started another isolated process for each check, even when
@@ -514,3 +523,19 @@ for this deterministic state. Request dispatch and automatic re-evaluation still
 Startup-failure diagnostics retain the actual host errno/message for check and subject onError logging after retry
 exhaustion. Neither the submitted-result receipt nor persisted retry evidence carries those private causes; fixed
 check_error evidence and receipt idempotence are unchanged.
+
+部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。
+
+整份提交因其他条目被拒绝时，回注 not_stored 优先保留该条目自身的准入拒绝及 skipped/补件动作，不用一般重交文案覆盖它。
+
+## Integration with hub-redesign dd65afbc
+
+The generated FragmentRead grades and decision-37 quote normalization are retained. Permanent syntax, scope,
+groundability, selector and size defects refute with the mainline remedies; transient internal reads retain bounded
+retry and a Hub error receipt on exhaustion. Retained quotes also keep structured administrator-acceptance evidence.
+Exact resolution caches targets and grounds separately: recovery may therefore read the same reference once more for
+its other use, while each permanent absence is read only once per purpose. Standing obligations use the configurer's
+effective read permissions, not a trusted byte bypass. Unexpected function-read null-byte metadata still reaches refs for diagnostics; intentional model withholding stays neutral.
+K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
+contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
+retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.

@@ -5,6 +5,7 @@ export const PROTOCOL_CODES = {
   REFERENCE_UNRESOLVED: { when: '精确值解析不出（T03 整份不受理之一）', fix: '改用能解析的原文，或先调用 resolve_reference' },
   REFERENCE_AMBIGUOUS: { when: '精确值有歧义（T03 整份不受理之一）', fix: '从诊断给出的可能所指里选一个' },
   QUOTE_MISMATCH: { when: '原文与引用对不上（T03 整份不受理之一）', fix: '按原文逐字引用，或先调用 resolve_reference' },
+  SOURCE_UNPARSEABLE: { when: '所有候选解析器均拒收源文件', fix: '上传能按声明格式解析的文件，或换用对应的解析器' },
   SOURCE_UNAVAILABLE: { when: '缺失或无权，对读者一律显示“对你不可用”（D05）', fix: '无；真实原因只在管理员日志里' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
@@ -31,6 +32,16 @@ export const CORE_VIOLATION_CODES = {
   'core.pattern.no_match': { interpreter: 'pattern', when: '取值不符合声明的模式', fix: '按声明的写法重写' },
   'core.range.out_of_bounds': { interpreter: 'range', when: '数值、前缀或阈值检验不通过', fix: '让取值落在声明的界限内' },
   'core.coverage.shortfall': { interpreter: 'coverage', when: '覆盖到的集合没有包含表要求的全部成员', fix: '补上缺的成员，或写明跳过的理由' },
+  'core.contribution.product_unavailable': { interpreter: 'contribution', when: '缺少当前产品的有效读取权限', fix: '请管理员恢复产品读取权限后用新摘要申请核验；当前本条可标为 skipped，其余条目照常提交' },
+  'core.contribution.signature_required': { interpreter: 'contribution', when: '来源是会话声明、脱敏或缺少可追溯 Hub 原件，需要负责人署名', fix: '缺少负责人署名；本版保留在 Circle，本条标为 skipped（待负责人署名），其余条目照常提交' },
+  'core.contribution.personal_source': { interpreter: 'contribution', when: '所引个人来源不能放宽为产品可见', fix: '改引锁定根中的非个人 Hub 原件；本条先标为 skipped，其余条目照常提交' },
+  'core.contribution.source_unavailable': { interpreter: 'contribution', when: '所引原文当前不具备模型可读条件', fix: '请管理员核查并恢复原文读取条件后用新摘要重交；本条也可先标为 skipped' },
+  'core.contribution.lineage_unproven': { interpreter: 'contribution', when: '来源血缘成环、过长或缺少可追溯的 Hub 原件', fix: '补齐或修复生成记录的输入与原件引用后重新生成资料；本条先标为 skipped' },
+  'core.contribution.source_outside_root': { interpreter: 'contribution', when: '所引原文不属于本次锁定根的组成快照', fix: '缺少锁定根中的原文；本条标为 skipped（来源未入锁定根），其余条目照常提交；来源入根后重新开回注运行' },
+  'core.contribution.source_not_original': { interpreter: 'contribution', when: '所引节点只有子节点名单而没有可回注的原文片段', fix: '改引 get_nodes 返回的叶节点条目或锁定根中的原文引用；本条先标为 skipped' },
+  'core.contribution.record_not_original': { interpreter: 'contribution', when: '记录转述或已有回注不能作为新的回注原文根据', fix: '改引锁定根里 get_nodes 返回的原文 tree: 引用；本条先标为 skipped' },
+  'core.contribution.self_relation': { interpreter: 'contribution', when: '关系双方是同一片段或重叠引文而非两个独立端点', fix: '改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped' },
+  'core.contribution.composition_missing': { interpreter: 'contribution', when: '缺少与运行锁定产品和根一致的组成快照', fix: '恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped' },
 } as const;
 
 export type CoreViolationCode = keyof typeof CORE_VIOLATION_CODES;
@@ -49,4 +60,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 7;
+export const MODEL_VERSION = 9;

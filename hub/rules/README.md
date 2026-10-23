@@ -98,10 +98,11 @@ import only `hub/rules/api.ts`.
 - `coverage@1`: required members by value, by reference, by pack set name or selected from the subject; a declared skip
   counts only with a non-empty reason.
 - `membership@1` and `coverage@1` sets by reference: the bound fragment's text must be a JSON array of scalars.
-- `quote@1` uses `quoteMatches(fragmentText, quote)` from `text.ts`: every run of Unicode White_Space collapses to one space and
-  both ends are trimmed; case, punctuation, width and normalization form stay significant; an empty quote never matches. This
-  is the rule `hub/refs/quote.ts` chose; `quote-vectors.json` (27 vectors) pins it. Both implementations were checked against
-  the vectors by a scratch script outside the repository (0 disagreements); the packages do not import each other.
+- `quote@1` independently implements the decision-37 rule in `text.ts` with rules-local W/F data. A whitespace run adjacent to an
+  East_Asian_Width W/F code point disappears; other interior runs collapse to one space and both ends are trimmed.
+  Case, punctuation, character width and normalization form remain significant; empty quotations never match. The
+  29 shared vectors cross-check rules and refs independently and test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
+  representations retain their original whitespace normalization; this change affects quotation checking only.
 
 ### Catalog view (C07)
 
@@ -272,17 +273,18 @@ The interpreter asks the run's source view for the fragment a reference resolves
    parses it with the boundary's own parser (hub/refs: parser@version, selector, character range) over a source bound
    to the run — the same code path, never a second parser. One reference is parsed once per evaluation; the declared
    reads' size cap applies to a whole-source fragment, and a retain-only source gives no text (含凭据，原文不可读).
-   `src:` must name a run source; `tree:` must name the run's locked root. `rec:` and `entry:` follow the boundary's
-   visibility and resolver rules: a readable reference is checked, an unresolved one stays unknown. Resolutions are
-   graded by `Unresolved.code`, never by message wording: REFERENCE_UNRESOLVED on a bound source/tree means
-   no_fragment; SOURCE_UNAVAILABLE means unavailable. A resolved object without readable text is also unavailable.
+   `src:` must name a run source; `tree:` must name the run's locked root. `rec:` must be bound to the run (including predecessor results) and resolve to a groundable result or Hub action/effect (B01 R[4]). Standalone `entry:` references cannot be grounds (B01 R[5]). Out-of-scope references refute with QUOTE_MISMATCH; decision 36 defines separate correction grades for non-groundable records and standalone entries. Resolutions are
+   graded by `Unresolved.code`, never by message wording: REFERENCE_UNRESOLVED on a bound reference means
+   no_fragment; SOURCE_UNAVAILABLE means unavailable. A resolved retain-only object stays retain_only; an otherwise
+   readable object with no text has no_fragment.
 
 ### Graded outcomes
 
-- 引用的源文件不是这次运行的输入：驳回（模型可以改引用）。
+- 引用不在本运行范围内：驳回 QUOTE_MISMATCH，改引本运行绑定的输入。不能作根据、条目未写树地址及格式错误按决定 36 分别说明修正办法。
 - 源文件绑定了但选择器解析不出片段（片段不存在）：驳回。
 - 引文不逐字：驳回 QUOTE_MISMATCH。
-- 真读不到（源文件取不回、超过大小上限、只保留）：未知，说明照实写原因。
+- 不能作根据、缺树地址、引用写法不对、片段不存在或超过大小上限：分别按决定 36 的状态驳回，并给出修正办法。
+- 只保留：未知，缺管理员接受来源的事实，请请求管理员接受，接受后自动重评。真正暂时取不回：未知，请重读再评。
 
 ### Why packs no longer need to copy a quote into the top-level quotes array
 
@@ -331,3 +333,17 @@ inside unread_sources, with missing_fact/next_action. The public CheckOutcome.re
 Synchronous spawn throws and asynchronous startup error events preserve errno and the original message in private
 SandboxError.detail. The public SandboxError.message remains fixed, onAttempt keeps only bounded control metadata,
 and check outcomes retain only the existing public-detail allowlist; free-text startup causes reach administrator logs only.
+
+### Fragment read vocabulary
+
+`SourceView.why`, the engine's fragment cache and its warmed grades use the generated `FragmentRead` type from the
+model's T04 `fragment_read` axis. Resolution state, unknown reason and read tier keep their own meanings; none is used
+as a substitute for the fragment read state. Authority and the refined grades are recorded in [progress decision 36](../../docs/hub-r4-progress.md).
+
+The boundary applies B01 R[4] to quotation references and grounds, including cross-item grounds. Record targets and locations remain resolvable without being promoted to grounds. Its cache separates those uses.
+
+Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.
+
+Stale contract wording: QuoteTable in contracts/src/tables.ts and generated quote.v1.schema.json still describe every
+whitespace run as one space. The independent decision-37 implementations are authoritative for this owner-approved
+change; the integrator/rules contract owner must update the description and regenerate the schemas.

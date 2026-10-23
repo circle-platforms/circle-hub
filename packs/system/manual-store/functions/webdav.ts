@@ -5,7 +5,7 @@
 // followed (it is skipped and named in a warning). Reads, with <type> the pack's own prefix:
 // - <type>:file:<path>          one file by its path below the base (percent-encoded where needed)
 // - <type>:cli:<line>           the CLI manual of a version line: the subfolder of settings.cli_folder (default cli) whose
-//                               name ends in the line's numbers (rel_x_10_4_6 is line 10.4.6), file settings.cli_file
+//                               name ends in the line's numbers (rel_x_10_7_1 is line 10.7.1), file settings.cli_file
 // - <type>:app:<line>           the same for the application manual (settings.app_folder, settings.app_file)
 // - <type>:spec-search:<terms>  terms joined by +: settings.spec_folder (default spec) listed once, every file name scored by
 //                               the number of terms it contains, the best five with at least one term read; the derived
@@ -208,7 +208,7 @@ export function lineKey(text: string): string | null {
   return parts.join('.');
 }
 
-/** The version a folder name ends in: rel_x_10_4_6 and x-10.4.6 are 10.4.6; null when it ends in no version. */
+/** The version a folder name ends in: rel_x_10_7_1 and x-10.7.1 are 10.7.1; null when it ends in no version. */
 export function folderLine(name: string): string | null {
   const match = /(?:^|[^0-9A-Za-z])v?([0-9]{1,4}(?:[._][0-9]{1,4}){1,5})$/i.exec(name);
   return match === null ? null : lineKey(match[1]);

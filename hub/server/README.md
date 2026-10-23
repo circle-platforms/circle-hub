@@ -175,8 +175,8 @@ tests compare the two answers byte for byte apart from the trace.
 
 **Record visibility by reference (R02).** Records decides `source_artifact` records for everyone, admins included
 (`Artifacts.canRead`: a read with a person's own credential, `visibility.admins: false`, is theirs alone, B02 R[3]). A
-`claim` of the knowledge candidate layer (schema `knowledge-candidate@1`, named in hub/knowledge's README) is its owner's
-alone, admins included (R02, K03 R[4]). Admins read every other record. A user reads the `run`, `submission`,
+knowledge-contribution record passes product and original-source read checks before any administrator branch. All
+other claims are ordinary admin-only records; the Hub has no private candidate layer. Admins read remaining records. A user reads the `run`, `submission`,
 `validation_result` and `action` records of a run `RunsService.getRun` lets them read (the run kinds of the runs engine);
 the run is the body's `run`, or for a submission runs kept as JSON text because its arguments were not canonical JSON,
 `received.run`. Nothing else (never `call_log`, `authorization` or other claims).
@@ -230,6 +230,44 @@ links are fixed paths with encoded query parameters).
   (`PackCatalogPort`); admin (users, tokens without values, assignments and their decisions, resources with addresses,
   call logs with user/tool/run/time filters and admin notes). Non-admins get the neutral page for admin pages, and absent
   or forbidden runs and roots give the same 404 "对你不可用".
+
+- **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
+  newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
+  the page empty. A paginated scan is marked 部分; filtering a complete scan reports how many runs were examined and
+  listed without a partial marker. A complete empty match says 没有符合筛选的生产运行; a partial empty page states its examined range;
+  it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
+  record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
+  The authoritative run page uses that same production result as its partition list and displays the latest later accepted
+  result separately as 模型评论（判断）; its counts are labelled 判断，未采用, with per-item judgment claims, the original model handling declarations and cross-item claims. Commentary never reuses the adopted/open/request group titles. The results page identifies that commentary record when present.
+  If the production record is absent, both pages name the missing start_run result explicitly, distinguish any accepted
+  commentary, show the run start time, and ask the reader to refresh the same page first: run storage may precede production-result storage. Only if the refreshed page still lacks the result does it suggest a new run with the same inputs and a new client_key; replaying the old key
+  would return the old run. Neither page starts or repairs a run. It shows partition counts via
+  `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
+  status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
+  both layers and the satisfaction reason even though the task brief requested static terminals only. The table also
+  preserves each item's partition and its code or reason: V05 and display rule 6 require this additional column even
+  though the task brief omitted it. `terminal` uses the generated union of static and dynamic terminals and matches
+  either layer; `offset` pages 500 filtered
+  items at a time. Counts are computed before filtering or paging. Bookkeeping delivery is not an overall pass;
+  unknown terminals keep their own symbol and colour, with the stored claims' missing evidence and next actions shown
+  as recorded. This page does not initiate work or generate missing content. The run link opens the authoritative view.
+  Only the runner and admins can read results; a missing, hidden, malformed or non-production run gives the same neutral
+  404. All existing authentication, Host/Origin checks, read-only methods, CSP and escaping apply unchanged.
+
+- **Integrator probe**: `node scripts/real/console-page.ts --token-file <file> --path <console path> [--url <Hub origin>]`
+  signs in through the CSRF form, reads one page and signs out in a `finally` block. It only accepts a loopback HTTP
+  origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
+  script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
+  values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
+  remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/imagesrcset/action/formaction/poster/data,
+  ping/background/cite/manifest/icon, CSS url(), @import and image-set() image strings in styles, SVG presentation url() attributes, meta refresh targets (bare or URL= targets after a semicolon, comma or whitespace),
+  and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address (including slash/backslash spellings) count. SVG set/animate targeting URL attributes also inspect to/from/by and each semicolon-separated values entry; numeric attributes remain plain values. This includes srcset
+  and ping candidates. Displayed text, comments, CSS content/type strings and raw-text bodies such as textarea and script are not resource references. HTML and nested srcdoc are scanned with scripting both enabled and disabled; the larger resource count is reported, so noscript raw-text parsing cannot hide a reference. The CSP field reports header presence, as required by the task, and does not validate directive values. Page content,
+  paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
+  makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
+  and real-data checks belong to the integrator.
+
+The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
 
 ## CLI
 
@@ -316,8 +354,8 @@ hub/platform's peer map). When the owner and the runtime role are the same, it m
 8. A `release.json` that exists but is not a release record refuses to start (a broken release must not look healthy).
 9. The tools read the arguments from the server's own parse of the body, never the SDK's validated copy, so the call log,
    the schema check and the runs service see the same object.
-10. The candidate layer is recognised by its schema id `knowledge-candidate@1` (named in hub/knowledge's README) rather
-    than by importing hub/knowledge, so that loading the server does not load the knowledge package.
+10. Contribution schema identifiers come from contracts. Every revision passes the product/source gate; an unsupported
+    revision fails closed rather than falling through to generic administrator access.
 11. **The server pages content by cursor.** Every text gets `paging: true`; a page cursor is bound to the canonical
     reference the content names and checked once the reference resolves (so a reference that does not resolve answers
     as it would without a cursor). The ranges and text@1 lines of a text without paging stay valid references.
@@ -381,7 +419,7 @@ an empty cursor read as none (reference and subtree); a stored-result lookup tha
 stands, no record named, the reason in the admin note); a production run's text (counts, per-requirement counts,
 problems, the whole result readable by reference), a production result the text cannot lay out (the minimal text, the
 reason in the admin note, the call logged as answered) and the evidence gaps of the engine's detail; a server without
-`runsDetail`; records by reference (admins and `admins: false`, the `received` submission shape, the candidate layer);
+`runsDetail`; records by reference (admins and `admins: false`, the `received` submission shape, the contribution layer);
 a refused batch with a duplicate id and a cancellation (nothing ingested, one line per request); notes cut in a
 surrogate pair or quoting NUL, and a note records refuse. `text.test.ts` and `budget.test.ts`: the texts of 5 to 3,000
 items through the real text functions (budget, facts first, the note, cursors, ranges, example calls), empty partitions,
@@ -458,9 +496,8 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
   Principal), so that `token revoke` could ask before revoking the operator token itself instead of saying so after
   (decision 17).
 - **knowledge**: (1) `builds` and `diffRoots` take no principal, so the server checks the reader's lines first; a
-  principal-aware variant (like `getNodes`) would keep the check in one place. (2) The server keeps `knowledge-candidate@1`
-  claims private to their owner, admins included, by that schema id (your README's request); tell the server if it
-  changes, or export it from a module that does not load the whole package.
+  principal-aware variant (like `getNodes`) would keep the check in one place. Contribution readers use the schema id
+  exported by contracts and filter through the knowledge layer.
 - **platform**: confirm the owner role of `serve --migrate-only`: the server uses the operating-system account's own role
   and grants `CIRCLE_HUB_DATABASE_USER`.
 - **records/contracts**: a protocol code for an upload over the size limit (already requested by records); the server
@@ -468,3 +505,13 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 - **owner**: confirm decision 4 (content is plain text only, no second block with the JSON of the answer) against the MCP
   specification's backwards-compatibility SHOULD; if clients that ignore structuredContent must be served, a size-capped
   JSON block can be added back. Measured on the real Circle client: only the text reaches the model.
+
+## 包内本地工具的原字节下载
+
+`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和下架状态；版本必须带 tools/。无权、不存在、下架、没有工具、清单外路径、穿越路径和编码斜杠的回答字节相同。真实原因只写在管理员日志：版本不存在、未分配、已下架、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和下架，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
+
+发送前重新核对摘要和大小，存储被改动时不给文件字节并记管理员日志；调用日志只留包号、引用及路径的摘要与长度，不留令牌、文件内容或原路径。下发不改写、不重新打包；客户端运行结果仅为“客户端预览”，Hub 沙箱中的重算核验算数。Circle 没有为此新增界面。
+
+客户端用 `circle-hub local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <回环地址>]` 安装。令牌仅从标准输入读取，不接受令牌参数或环境令牌，不打开数据库或钥匙串；默认地址取 CIRCLE_HUB_PORT，只允许回环地址，不跟随重定向。下载用 `node:http` 直连这个回环地址，不走环境变量里的代理。先钉住规范清单的包号，再按清单下载全部原文件并重算大小、摘要及响应完整性头；同级私有临时目录全部通过后才改名，任一失败清理临时产物。SIGINT 和 SIGTERM 会删掉这份临时目录。上次安装留下的锁目录，以及所属进程已经不在的临时目录，由下一次安装清掉；所属进程还在的临时目录留着。已有目标相同时答“已安装”，不同时拒绝，不覆盖。改名撞上已有目录时，按那份目录再核对一次。连不上 Hub、令牌无效、版本不可用、完整性不符和本地写失败，各有自己的下一步，不都说成 pack.json。
+
+`circle-hub local-tools verify <目录> --digest <包号>` 必须带包号。先比目录里 pack.json 的 SHA-256 和这个包号，不等就失败；再按 pack.json 重算每个文件，指出第一处不符的路径并列出多出的文件。只读，不联网，拒绝链接。清单里某个文件的摘要或大小不符时，报的是这个文件的路径。它也能核对集成者手工安装的完整清单目录。同步修改清单和文件会得到另一个包号，用发布时的包号核，这一份过不了。输出只含包号、版本、文件数、字节数及不符路径，不含文件正文或令牌。没有运行任何下载代码。
