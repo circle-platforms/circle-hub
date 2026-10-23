@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "70e83e8b81773a7ee0e4f858c72d6ddaebcf2ae4a2d1d9a6e722a48a902b0901",
-      "size": 3644
+      "sha256": "b34bdc5c796075b2ceb1ce5b55740879fef76d28af6242f3c9556138ac57d555",
+      "size": 3769
     },
     {
       "path": "checks.json",
@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "f6c3595ffd35b8e97b44eac7491e556101f1b93926e4c0bc824d83f0e1f4033d",
-      "size": 3333
+      "sha256": "00bf42a9ac7f1d9b84a89ba478c62e415f3c115bfb94c5849ad084a3f94f6a71",
+      "size": 3593
     },
     {
       "path": "functions/cases.ts",

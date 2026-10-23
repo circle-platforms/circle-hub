@@ -6,7 +6,7 @@
 2. 用 get_nodes 读本次绑定的来源。合约已按完整原文重算身份，并与 profile 的期望值核对；不能换成另一份旧副本。对象、方法、参数原名照合约，只用启用且本轮允许的组合；内部条目、认证候选、默认值脱敏的参数不可用。不复制默认值，不通过计划申请认证或扩大授权。
 3. 在条目的 plan 槽中填写 claim.data：
    - bucket：profile 选定的台架名；blocks：只能 `[]`。
-   - steps：`[{object, method, args, keywords}]`。args 是显式文字列表，keywords 是签名参数名到文字的映射；无参数分别写 `[]`、`{}`。仅位置参数只能写进 args，必填齐全，不多写关键字。steps 禁止 literal_assertion：断言写进 expects，带引文和 after；工作簿断言行只能由任务 2 的生成器从 expects 产生，紧跟 after 指向的命令步骤。
+   - steps：`[{object, method, args, keywords}]`。args 是显式文字列表，keywords 是签名参数名到文字的映射；没有位置参数或没有关键字时分别写 `[]`、`{}`，但每一步至少有一个显式值；两者不能同时为空，空 G 会变成文字 None。仅位置参数只能写进 args，必填齐全，不多写关键字。steps 禁止 literal_assertion：断言写进 expects，带引文和 after；工作簿断言行只能由任务 2 的生成器从 expects 产生，紧跟 after 指向的命令步骤。
    - expects：至少一条 `[{text, quote:{reference,text}, after}]`。quote 是用例、手册或修复说明的逐字原文；after 是它判断的设备命令行或主机 shell 步骤号，从 1 开始，不能指向等待或断言步骤。
    - replacements：`[{case,bed}]`，没有替换写 `[]`。地址一一对应；steps 和 expects.text 都写替换后的最终文字。quote.text 保留原文，期望必须是按替换表处理后引文的逐字片段。Hub 只重算核对，不改写步骤。
 4. 所有值是单行，首尾无空白，不以 `=` 开头，没有 `{}` 或 `{0}`。设备命令通过锁定构建的命令目录和设备拒绝表；主机 shell 通过主机拒绝表。每个字面地址在台架上；设备命令只许本座位设备接口地址、本血缘已分配地址和服务器地址。

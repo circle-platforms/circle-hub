@@ -6,6 +6,8 @@ export interface BindProblem { code: string; pointer: string; message: string }
 export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string): { values: BoundValue[]; problems: BindProblem[] } {
   const values: BoundValue[] = []; const problems: BindProblem[] = [];
   const issue = (code: string, pointer: string, message: string) => problems.push({ code, pointer, message });
+  const supplied = step.args.length + Object.keys(step.keywords).length;
+  if (supplied === 0) issue('param_arity', at, '运行器把空 G 当作一个位置参数 None，至少写一个显式值；无参数调用在该格式下不能表达');
   const positional = method.parameters.filter((p) => p.kind === 'positional_only' || p.kind === 'positional_or_keyword');
   const variadic = method.parameters.find((p) => p.kind === 'var_positional');
   for (const [i, value] of step.args.entries()) {
@@ -22,7 +24,7 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
     else values.push({ name, value, pointer });
   }
   for (const param of method.parameters) {
-    if (param.required && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
+    if (supplied > 0 && param.required && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) if (typeof v.value !== 'string' || v.value.trim() !== v.value || /[\r\n\v\f\u0085\u2028\u2029]/.test(v.value) || /\{(?:0)?\}/.test(v.value) || v.value.startsWith('=')) issue('param_value', v.pointer, '参数值必须是单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');

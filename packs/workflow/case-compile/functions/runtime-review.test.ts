@@ -79,3 +79,7 @@ test('review 13 a profile determines exactly one fully specified literal asserti
   const more = structuredClone(CONTRACT_DOC); const literal = more.entries.find((v) => v.e === 'widget-check' && v.f === 'literal')!; literal.signature.parameters.push({ name: 'other', kind: 'positional_or_keyword', required: true, default: null }); literal.signature.required.push('other'); const signed = signRuntime(more);
   assert.equal(parseProfile(profileDocument(signed), contractOf(signed), bedsOf()).ok, false);
 });
+test('review 14 an optional-only signature still cannot encode a zero-value G cell', () => {
+  const method = contractOf().enabled.find((v) => v.object === 'widget-host' && v.method === 'shell')!; const optional = { ...method, parameters: method.parameters.map((v) => ({ ...v, required: false })) };
+  const result = bindArguments(optional, { object: optional.object, method: optional.method, args: [], keywords: {} }, '/step'); assert.ok(result.problems.some((v) => v.code === 'param_arity' && v.message.includes('None')));
+});
