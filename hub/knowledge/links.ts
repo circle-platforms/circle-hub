@@ -5,7 +5,7 @@ import type { Backlinks, LinkEdge, LinkDrift, LinksView,LinkDiagnostic,LinkRuleD
 import { RunRecord } from '../../contracts/src/run.ts';
 import { RunId, Sha256 } from '../../contracts/src/common.ts';
 import { canonicalBytes, canonicalize, sha256Hex, type Principal } from '../records/api.ts';
-import { pathOf, pathSegments, treeReference } from '../refs/api.ts';
+import { pathOf, pathSegments, treeReference,ReferenceSyntaxError } from '../refs/api.ts';
 import { CompositionView } from './composition.ts';
 import { compareText, cutText, type EntryContent } from './digest.ts';
 import type { KnowledgeContext } from './context.ts';
@@ -24,6 +24,8 @@ export function relationNode(entries:readonly {kind:string;producers:readonly st
 type UncheckedLiteral=Backlinks['entries'][number]&{rule:string;literals:number};
 export interface RelationFacts { links: LinkEdge[]; drift: LinkDrift[]; entries: number; literals: number;diagnostics:LinkDiagnostic[];rule_diagnostics:LinkRuleDiagnostic[];unchecked:UncheckedLiteral[] }
 export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string }
+/** A known request refusal, distinct from unavailable immutable records or computation failures. */
+export class LinkRefusal extends Error {}
 export class RelationReadError extends Error {
   readonly reason:Reason;
   readonly nextAction:string;
@@ -140,12 +142,12 @@ export class LinkReading {
     return user.role==='admin'||(await this.#context.packs.readableProducts(reader)).has(product);
   }
   async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string}>{
-    if(!RunId.safeParse(run).success)throw new Error('运行编号写法不对');
+    if(!RunId.safeParse(run).success)throw new LinkRefusal('运行编号写法不对');
     // Record ids are storage ids; the run writer publishes its logical ids through this index.
     const page=await this.#context.records.store.find({key:'runs.id',value:run,kind:'run',limit:1});
     const record=page.items[0];if(!record)return {found:false,root:null,composition:null};
     const user=await this.#context.records.principals.get(reader.id),parsed=RunRecord.safeParse(record.body);
-    if(record.schema!=='run@1'||!parsed.success||parsed.data.run!==run||!user||user.disabled||user.role!=='admin'&&parsed.data.runner!==user.id&&parsed.data.configurer!==user.id)throw new Error('运行记录不存在或不可读');
+    if(record.schema!=='run@1'||!parsed.success||parsed.data.run!==run||!user||user.disabled||user.role!=='admin'&&parsed.data.runner!==user.id&&parsed.data.configurer!==user.id)throw new LinkRefusal('运行记录不存在或不可读');
     const body=parsed.data,candidates=body.target_basis.flatMap(claim=>{
       const data=claim.statement.data;
       return data?.field==='build'&&data.root===body.root&&Sha256.safeParse(data.composition).success&&claim.validity.bound.includes(String(data.composition))?[String(data.composition)]:[];
@@ -178,10 +180,10 @@ export class LinkReading {
   }
   async page(composition:CompositionView,request:LinkRequest={}):Promise<LinksView>{
     const prefix=request.prefix??'/',target=request.target??null,rule=request.rule??null;
-    pathSegments(prefix);if(target!==null)pathSegments(target);
+    try{pathSegments(prefix);if(target!==null)pathSegments(target);}catch(error){if(error instanceof ReferenceSyntaxError)throw new LinkRefusal(error.message);throw error;}
     const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:request.build??composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
     if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取']};
-    if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new Error('这份组成没有请求的链接声明，请按声明编号重读');
+    if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new LinkRefusal('这份组成没有请求的链接声明，请按声明编号重读');
     const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target&&edge.path!==edge.target)&&(rule===null||edge.rule===rule));
     const drift=facts.drift.filter(g=>(target===null||g.attempted_path===target)&&(rule===null||g.rule===rule)).map(g=>({...g,occurrences:g.occurrences.filter(o=>beneath(o.path,prefix))})).filter(g=>g.occurrences.length).map(g=>({...g,total:g.occurrences.length}));
     const diagnostics=facts.diagnostics.filter(diagnostic=>beneath(diagnostic.path,prefix)&&(rule===null||diagnostic.rule===rule));
@@ -190,11 +192,11 @@ export class LinkReading {
     const references=new Set([...links.map(l=>l.reference),...drift.flatMap(g=>g.occurrences.map(o=>o.reference)),...diagnostics.map(d=>d.reference),...unchecked.map(item=>item.reference)]);
     const totals={entries:references.size,literals:links.length+drift.reduce((n,g)=>n+g.total,0)+uncheckedCount,...(uncheckedCount?{unchecked_literals:uncheckedCount}:{}),links:links.length,drift_literals:drift.length,drift_occurrences:drift.reduce((n,g)=>n+g.total,0),...(diagnostics.length?{diagnosed_entries:new Set(diagnostics.map(d=>d.reference)).size}:{})};
     const key=sha256Hex(canonicalBytes([composition.record,prefix,target,rule,...(request.build?[request.build]:[])])),limit=request.limit??100;
-    if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error('链接视图每页要取 1 到 200 项');
+    if(!Number.isInteger(limit)||limit<1||limit>200)throw new LinkRefusal('链接视图每页要取 1 到 200 项');
     let offset=0;
-    if(request.cursor){try{const c=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(c.q!==key||!Number.isSafeInteger(c.o)||c.o<0)throw new Error();offset=c.o;}catch{throw new Error('链接视图游标不属于这份组成和请求，请重读首页');}}
+    if(request.cursor){try{const c=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(c.q!==key||!Number.isSafeInteger(c.o)||c.o<0)throw new LinkRefusal();offset=c.o;}catch{throw new LinkRefusal('链接视图游标不属于这份组成和请求，请重读首页');}}
     const flat=[...links.map(edge=>({edge,group:null,occurrence:null,diagnostic:null})),...drift.flatMap(group=>group.occurrences.map(occurrence=>({edge:null,group,occurrence,diagnostic:null}))),...diagnostics.map(diagnostic=>({edge:null,group:null,occurrence:null,diagnostic}))];
-    if(offset>0&&offset>=flat.length)throw new Error('链接视图游标超出这份组成的结果');
+    if(offset>0&&offset>=flat.length)throw new LinkRefusal('链接视图游标超出这份组成的结果');
     const output:LinksView={...common,configured:true,links:[],drift:[],totals,next:null,truncated:offset>0,notes:diagnostics.length?["有 "+diagnostics.length+" 条字面字段不合形状；关联计数只覆盖可解析字面，请修正生产器并重新生产后重读"]:[],...(diagnostics.length?{diagnostics:[]}:{} ),...(ruleDiagnostics.length?{rule_diagnostics:ruleDiagnostics}:{})};
     const picked=new Map<string,LinkDrift>();let at=offset;
     for(;at<flat.length&&at-offset<limit;at++){
@@ -203,7 +205,7 @@ export class LinkReading {
       else if(item.edge)output.links.push(item.edge);
       else if(item.group&&item.occurrence){const key=canonicalize([item.group.rule,item.group.literal]),g=picked.get(key)??{...item.group,occurrences:[]};g.occurrences.push(item.occurrence);picked.set(key,g);output.drift=[...picked.values()];}
       if(canonicalBytes(output).byteLength>this.#context.limits.maxViewBytes-4096){
-        if(at===offset)throw new Error('单条链接视图记录超过字节上限，请提高读取上限后重读');
+        if(at===offset)throw new LinkRefusal('单条链接视图记录超过当前服务字节上限；需维护者补充分段读取能力后，再核验这份组成');
         if(item.diagnostic)output.diagnostics!.pop();else if(item.edge)output.links.pop();else if(item.group){const g=picked.get(canonicalize([item.group.rule,item.group.literal]))!;g.occurrences.pop();output.drift=[...picked.values()].filter(g=>g.occurrences.length);}
         break;
       }

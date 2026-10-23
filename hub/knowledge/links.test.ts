@@ -358,3 +358,18 @@ test('root entry reads skip unrelated unplaced parts and reuse a composition mem
   const first=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(first);assert.ok(reads>0);
   reads=0;const again=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(again);assert.deepEqual(again,first);assert.equal(reads,0);
 });
+
+test('link request refusals keep their reason and bare id while genuine failures remain view errors',async t=>{
+  const f=await fixture(t),first=(await f.json(await f.read('limit=1'))).view;assert.ok(first.next);
+  const reader=createKnowledgeReader(f.w.knowledge);
+  for(const query of ['rule=absent','prefix=%2Fnotes%2Ftwo&cursor='+first.next,'limit=0']){
+    const bare='knowledge:links:widget:10.6.1?'+query;
+    const result=await reader.read(bare+'@'+f.first.composition,{principal:f.w.admin,run:null,purpose:'synthetic'});
+    assert.ok(!result.ok);assert.equal(result.id,bare);assert.doesNotMatch(result.reason,/知识视图出错|^Error:/);
+  }
+  const small=await fixture(t,[rule],{maxViewBytes:4350}),bare='knowledge:links:widget:10.6.1';
+  const tooLarge=await createKnowledgeReader(small.w.knowledge).read(bare+'@'+small.first.composition,{principal:small.w.admin,run:null,purpose:'synthetic'});
+  assert.ok(!tooLarge.ok);assert.equal(tooLarge.id,bare);assert.match(tooLarge.reason,/字节上限/);assert.doesNotMatch(tooLarge.reason,/知识视图出错|^Error:/);
+  t.mock.method(LinkReading.prototype,'page',async()=>{throw new Error('synthetic unexpected page failure');});
+  const failed=await reader.read(bare+'@'+f.first.composition,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(!failed.ok);assert.match(failed.reason,/知识视图出错/);
+});
