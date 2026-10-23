@@ -214,6 +214,10 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
 
 ## Decisions and deviations from the brief
 
+The original XLSX registration changed `hub/refs/resolve.test.ts` outside this task's allowed paths: two intentionally
+fixtures now use xlsx@999 for the unregistered parser, because xlsx@1 is registered. This necessary test
+update is retained and disclosed to the integrator as a scope deviation; this review batch does not edit that file.
+
 1. `Parser.parse` is synchronous for the core parsers. A pack-provided parser run in the sandbox would need an
    asynchronous adapter; none exists in milestone 1.
 2. `ParseError.code` is `SUBMISSION_SCHEMA_VIOLATION`, the closest registered code (start_run refuses an input that does

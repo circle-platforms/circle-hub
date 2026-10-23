@@ -378,3 +378,10 @@ test('canonical XLSX selectors prefer escaped names and fall back for ambiguous 
   const sameSheets = parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="同名" sheetId="1" r:id="sheet"/><sheet name="同名" sheetId="2" r:id="second"/></sheets></workbook>`, relations: `<Relationship Id="second" Type="${DOC_REL}/worksheet" Target="worksheets/second.xml"/>`, extra: [{ name: 'xl/worksheets/second.xml', text: `<worksheet xmlns="${MAIN}"><sheetData><row><c><v>2</v></c></row></sheetData></worksheet>` }] });
   assert.equal(sameSheets.locate('c/同名/A1'), null); assert.ok(sameSheets.locate('i/0/0/0')); assert.equal(sameSheets.locate('i/1/0/0')?.text, '2');
 });
+
+test('refs records the retained resolve test scope deviation', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /resolve\.test\.ts[^\n]*outside[^\n]*allowed paths/);
+  assert.match(readme, /xlsx@999[^\n]*unregistered/);
+});
