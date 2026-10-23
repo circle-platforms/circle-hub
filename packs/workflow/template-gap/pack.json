@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -43,8 +43,8 @@
     },
     {
       "path": "examples/synthetic-gap.result.json",
-      "sha256": "0a9675c33be3bdbc90618eed2436ae7ad872e74d61387f1d1b65f6a990e6f9cb",
-      "size": 16912
+      "sha256": "8ea63bb01089ed5fb2b55c2fa096dd94b28fe16af18c2b25f2115353c86e7d17",
+      "size": 16936
     },
     {
       "path": "functions/cases.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/command-check.ts",
-      "sha256": "879013a07277f6c125e798d8e8933c92aa697a23f61b84c31235e7f5443404b1",
-      "size": 9777
+      "sha256": "432e479ba0980571f4943988cdafff7c0e0608f311c9b1bd4831b2c9429600e3",
+      "size": 9950
     },
     {
       "path": "functions/command-subject.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "4cd7d82e960e9b63fc782ca6d58bcd9688d9c98c23f3c11c0d172f81ab594b09",
-      "size": 6293
+      "sha256": "ad248c33c25dac05573c7b0cb0f8ab6e0ec8b1b1acad463e0308f4887cffc2c0",
+      "size": 5974
     },
     {
       "path": "functions/common.ts",
@@ -73,13 +73,13 @@
     },
     {
       "path": "functions/index.ts",
-      "sha256": "47730fed88c8769f51e5c395b220229f2cab80e60d80d5ff5f6222e521759c7d",
-      "size": 5765
+      "sha256": "3514531853633d907be6cccecb409a77d1335b75e83998f7f3ad2f3f57ad52ed",
+      "size": 5951
     },
     {
       "path": "functions/project.ts",
-      "sha256": "0facb7ea1cfacf1a80c76f4caee9b4fd2e915894cd2a176b870fda9eed723698",
-      "size": 22981
+      "sha256": "298c80edfa79237a22cb763744eb23eb8c83a4a7c42c5ab12c61092b2cccf010",
+      "size": 23229
     },
     {
       "path": "functions/subject.ts",
@@ -103,8 +103,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "36f20def3012da24a74998b4445c7c5e46c0967ec6012d8342e22a6cf0befbbb",
-      "size": 5498
+      "sha256": "a6f92d7a7520f34a6625327b7fe9ab574ac109352d4a1a323138d43df66d0a6d",
+      "size": 5518
     },
     {
       "path": "requirements.json",

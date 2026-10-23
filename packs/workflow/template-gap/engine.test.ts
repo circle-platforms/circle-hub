@@ -54,12 +54,12 @@ describe('publication', { skip }, () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.1.0', 'workflow', false]);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.1.1', 'workflow', false]);
     assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [13, 13, []]);
     assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const [summary] = await store.summaries(bed.runner);
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.1.0', 'workflow', ['Synthetic Template', 'MEADOW']]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.1.1', 'workflow', ['Synthetic Template', 'MEADOW']]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
     assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'fact', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual(await store.summaries(bed.stranger), []);
