@@ -443,7 +443,7 @@ Upload checks the declared format before ingesting bytes. A definite parser refu
 parser id, rule/reason and the generated fix; it creates no upload receipt. No candidate parser still permits an opaque
 upload, while input binding refuses that media type explicitly. Successful fallback is still accepted. Input binding
 uses the same last refusal with the input path. Unexpected parser failures stay internal errors. Raw source text and
-underlying library details are not included; XML exposes a rule classification and keeps library text in detail only.
+underlying library details are not included; XML assigns a fixed syntax rejection at its library adapter and keeps native prose in detail only; it does not infer reasons from message patterns.
 
 ## Declared encodings (decision 37)
 
@@ -459,3 +459,5 @@ Scope disclosure for decision 37: the owner explicitly authorized rules/text.ts,
 fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. The first
 runtime refs import violated `rules -> refs(types)` and is now removed. This review adds rules-local W/F data; no
 production quotation implementation imports the other. Shared vectors are the independent agreement check.
+
+HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.

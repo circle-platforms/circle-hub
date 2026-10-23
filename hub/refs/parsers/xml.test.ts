@@ -237,3 +237,9 @@ describe('xml@1 on hostile and unusual input', () => {
     assert.equal(doc.locate('x/r/j[20001]'), null);
   });
 });
+
+it('native XML syntax failures have a source-assigned public reason without classifying error prose', () => {
+  for (const text of ['<private-synthetic><other></private-synthetic>', '<a>\u0001</a>']) {
+    assert.throws(() => xmlParser.parse(utf8(text)), (error: unknown) => error instanceof ParseSyntaxError && error.message === 'XML 格式不对：不符合 XML 语法' && typeof error.detail === 'string');
+  }
+});

@@ -165,7 +165,8 @@ function metaCharset(bytes: Uint8Array): string | null {
 function decode(bytes: Uint8Array, mediaType: string | undefined): { text: string; charset: string; offsets: ByteOffsets | null } {
   const marker = bomCharset(bytes);
   if (marker) return decodeEncoding(KEY, bytes, marker);
-  let label = mediaTypeCharset(mediaType) ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
+  const parameter = mediaTypeCharset(mediaType);
+  let label = parameter ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
   if (label.startsWith('utf-16')) label = 'utf-8';
   if (isUtf8Label(label)) {
     const decoded = decodeUtf8(KEY, bytes);
@@ -181,7 +182,7 @@ function decode(bytes: Uint8Array, mediaType: string | undefined): { text: strin
   try {
     decoder = new TextDecoder(label);
   } catch {
-    throw new ParseEncodingError(KEY, `不支持的字符编码：${label}`);
+    throw new ParseEncodingError(KEY, parameter === null ? 'HTML <meta> 声明了不支持的字符编码' : 'HTML 媒体类型 charset 声明了不支持的字符编码', null, label);
   }
   // Other legacy encodings decode, but without byte ranges.
   return { text: decoder.decode(bytes), charset: decoder.encoding, offsets: null };

@@ -431,7 +431,8 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
       pending.problems.push(`起始标签写法不规范（${message}）`);
       return;
     }
-    throw new ParseSyntaxError(KEY, `XML 格式不对：${/unclosed tag|unexpected close tag/.test(message) ? '起止标签不匹配' : /entity/.test(message) ? '实体引用无效' : /namespace|prefix/.test(message) ? '命名空间声明无效' : /character/.test(message) ? '包含 XML 不允许的字符' : '不符合 XML 语法'}`, here(), error.message);
+    // Saxes exposes no stable reason code: assign syntax at this adapter boundary, never infer a rule from prose.
+    throw new ParseSyntaxError(KEY, 'XML 格式不对：不符合 XML 语法', here(), error.message);
   });
   try {
     parser.write(text).close();
