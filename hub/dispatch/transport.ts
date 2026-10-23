@@ -16,6 +16,7 @@ export class RpcClient {
   readonly #job: string;
   readonly #save: SaveResponse;
   readonly #now: () => Date;
+  serverVersion: string | null = null;
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
@@ -44,6 +45,7 @@ export class RpcClient {
   async connect(): Promise<void> {
     const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } });
     if (typeof init.value.protocolVersion !== 'string' || !SUPPORTED_PROTOCOL_VERSIONS.includes(init.value.protocolVersion)) throw new Error('目标协议版本不可用');
+    this.serverVersion = object(init.value.serverInfo) && typeof init.value.serverInfo.version === 'string' ? init.value.serverInfo.version : null;
     this.#protocol = init.value.protocolVersion;
     await this.rpc('notifications/initialized', {}, true);
     const seen = new Set<string>(); let cursor: string | undefined;
@@ -69,7 +71,7 @@ export class RpcClient {
   private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
     if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
     const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false, timeout, operation);
-    return { ...response, value: toolContent(response.value) };
+    return { ...response, value: toolContent(response.value, operation === 'submit' || operation === 'query') };
   }
   private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
     const id = ++this.#id;

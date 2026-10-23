@@ -15,8 +15,8 @@ export function rpcResponse(text: string, id?: number): Record<string, unknown> 
   if (replies.length !== 1 || replies[0].error !== undefined || !isObject(replies[0].result)) throw new Error('目标 JSON-RPC 回答无效或不唯一；原文先保存');
   return replies[0].result;
 }
-export function toolContent(result: Record<string, unknown>): unknown {
-  if (result.isError === true) throw new Error('目标工具报告错误；回答已保存');
+export function toolContent(result: Record<string, unknown>, allowError = false): unknown {
+  if (result.isError === true && !allowError) throw new Error('目标工具报告错误；回答已保存');
   if (Object.hasOwn(result, 'structuredContent')) {
     if (!isObject(result.structuredContent)) throw new Error('目标结构化回答不是对象；回答已保存');
     return result.structuredContent;

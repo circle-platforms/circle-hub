@@ -29,7 +29,7 @@ test('precheck exports only to scratch files, dispatch prints a result reference
   for (const name of files) { assert.equal((await stat(join(saved, name))).mode & 0o777, 0o600); assert.ok(!(await readFile(join(saved, name), 'utf8')).includes('synthetic-secret')); }
   assert.equal(await jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]), 0);
   assert.ok(s.lines.some(l => /src:[a-f0-9]{64}/.test(l)));
-  const body = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}`);
+  const body = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
   assert.equal(await jobCommand(s, ['status', body!.body.detail.job]), 0);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
   assert.doesNotMatch(s.lines.join('\n'), /synthetic-secret|synthetic-bed|synthetic-case|synthetic-build|127\.0\.0\.1/);

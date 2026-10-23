@@ -6,12 +6,14 @@ import { ActionResultSchema, AcceptanceSchema, EffectOutcomeSchema, DynamicTermi
 const valueRef = z.strictObject({ $value: z.string().min(1).max(100) });
 const pointer = z.string().max(500).refine(p => p === '' || /^\/(?:[^~]|~[01])*$/.test(p));
 const call = z.strictObject({ tool: z.string().min(1).max(128), arguments: z.record(z.string(), z.unknown()), timeout_ms: z.number().int().min(1).max(600000).default(30000) });
+const certificate = z.strictObject({ version: z.string().min(1).max(200), evidence: z.array(z.string().regex(/^src:[a-f0-9]{64}$/)).min(1).max(20) });
 const acceptance = z.record(z.string(), AcceptanceSchema);
 const state = z.strictObject({ action_result: ActionResultSchema.optional(), acceptance: AcceptanceSchema.optional(), effect_outcome: EffectOutcomeSchema.optional(), dynamic_terminal: DynamicTerminalSchema.optional() }).refine(s => Object.keys(s).length > 0);
 const conditions = z.array(z.strictObject({ pointer, equals: z.unknown().optional(), at_least: z.union([z.number(), valueRef]).optional(), sha256: z.union([z.string().regex(/^[a-f0-9]{64}$/), valueRef]).optional() }).refine(c => Number(Object.hasOwn(c, 'equals')) + Number(c.at_least !== undefined) + Number(c.sha256 !== undefined) === 1)).max(100).default([]);
 export const ExecutorDefinition = z.strictObject({
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
+  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),
   precheck_context: z.record(z.string(), z.unknown()).default({}),
@@ -22,7 +24,7 @@ export const ExecutorDefinition = z.strictObject({
   payload_argument: pointer.refine(p => p !== ''),
   calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call, status: call, result: call }),
   lease: z.strictObject({ id: pointer, token: pointer, ttl_ms: pointer, ttl_scale_ms: z.number().positive().default(1), acceptance: pointer, map: acceptance }),
-  receipt: z.strictObject({ request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
+  receipt: z.strictObject({ stage: pointer.optional(), reached_device: pointer.optional(), stages: z.record(z.string(), EffectOutcomeSchema).default({}), request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   conditions,
