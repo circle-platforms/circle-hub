@@ -44,13 +44,13 @@ function summaryOf(answer: Answer): string {
 function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) => string, options: FakeOptions = {}) {
   const dir = dirs[dirs.length - 1]!; const work = join(dir, 'work'); scenario.prepare?.(work);
   const calls: { tool: string; input: Record<string, unknown> }[][] = []; const infos: CopyInfo[] = []; const accepted = new Map<string, CopyInfo>(); const full = new Map<string, string>();
-  let results: Turn['toolResults'] = []; let seq = 0; let run = 0;
+  let results: Turn['toolResults'] = []; let seq = 0; let run = 0; let rawSummaryReads = 0;
   const trace = () => (++seq).toString(16).padStart(32, '0');
   for (let index = 0; index < 1000; index++) {
     const reply = scenario.respond(turn(index, results)) as any[];
-    if (reply.length === 1 && reply[0]?.text === '检查完成。') return { calls, done: reply[0].text as string, names: infos.map(info => info.name), infos, checks: scenario.check([]) };
+    if (reply.length === 1 && reply[0]?.text === '检查完成。') return { calls, rawSummaryReads, done: reply[0].text as string, names: infos.map(info => info.name), infos, checks: scenario.check([]) };
     const tools = reply.filter(call => typeof call.tool === 'string') as { tool: string; input: Record<string, unknown> }[];
-    if (!tools.length) return { calls, done: String(reply[0]?.text ?? ''), names: infos.map(info => info.name), infos, checks: scenario.check([]) };
+    if (!tools.length) return { calls, rawSummaryReads, done: String(reply[0]?.text ?? ''), names: infos.map(info => info.name), infos, checks: scenario.check([]) };
     calls.push(tools); results = [];
     for (const call of tools) {
       const token = trace(); let text: string; let isError = false;
@@ -81,8 +81,9 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
       } else {
         assert.equal(call.tool, 'hub_get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
         if (summary === undefined) { isError = true; text = toolText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
-        else text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(summary) } }), { paging: true });
+        else text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: summary } }), { paging: true });
       }
+      if (call.tool === 'hub_get_nodes' && !isError && text.split('\n').some(line=>line.startsWith('用例 '))) rawSummaryReads++;
       results.push({ id: `tool-${seq}`, text, isError });
     }
     if (tools.every(call => call.tool === 'hub_upload_file')) results.reverse();
@@ -115,7 +116,7 @@ test('truncationReference and summaryOfGetNodes', () => {
   assert.equal(truncationReference(`用例 2 个…（共 480 个字符，全文 ${ref}）`), ref);
   assert.equal(truncationReference('用例 2 个；24 个模板类别都已覆盖'), null);
   const summary = '用例 2 个；24 个模板类别都已覆盖';
-  const text = `内容 ${ref}/summary：模型可读\n原文（1 行）：\n${JSON.stringify(summary)}\n追踪 synthetic`;
+  const text = `内容 ${ref}/summary：模型可读\n原文（1 行）：\n${summary}\n追踪 synthetic`;
   assert.equal(summaryOfGetNodes(text, `${ref}/summary`), summary);
   assert.equal(summaryOfGetNodes(JSON.stringify(text), `${ref}/summary`), summary);
   assert.equal(summaryOfGetNodes('别的形状'), null);
@@ -262,7 +263,7 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   let index = 3; let reads = 0;
   while (reply[0]?.tool === 'hub_get_nodes') {
     const reference = String(reply[0].input.reference); reads++;
-    reply = scenario.respond(turn(index++, [{ id: 'full', text: `内容 ${reference}：模型可读\n本页字符 0-${full.get(reference)!.length}\n${JSON.stringify(full.get(reference))}\n追踪 ${index}`, isError: false }])) as any[];
+    reply = scenario.respond(turn(index++, [{ id: 'full', text: `内容 ${reference}：模型可读\n本页字符 0-${full.get(reference)!.length}\n${full.get(reference)}\n追踪 ${index}`, isError: false }])) as any[];
   }
   assert.equal(reads, 4);
   assert.equal(scenario.check([]).find(check => check.name.endsWith('原件用例数'))?.ok, true);
@@ -450,4 +451,9 @@ test('closure every anonymous unknown count names its own executable next action
   const text=scenario.sections?.flatMap(s=>s.lines).join('\n') ?? '';
   if('badUpload' in options)assert.match(text,/上传被拒[\s\S]*下一步[\s\S]*上传应答/);
  }
+});
+
+test('closure honest three-phase driver exercises raw summary string records', () => {
+ const {gold}=goldOf();const run=drive(build(gold));assert.ok(run.checks.every(check=>check.ok));
+ assert.ok(run.rawSummaryReads>0,'at least one complete summary uses the real raw-string record layout');
 });
