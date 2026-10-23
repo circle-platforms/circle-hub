@@ -612,3 +612,8 @@ Maintenance polls their effective read permission/tier; after acceptance it reva
 session and appends a new result/answer. Same-observer lookup returns the newest receipt, and by-submission result lookup
 also returns the newest result. No old result is backfilled. Actual credential echo originals remain excluded from
 acceptance; the next step is a redacted source/new revision. Non-source requests keep their explicit human next action.
+
+Console product/diff arrays use snapshot-bound cursors (500 builds or 1000 paths per page), with explicit per-page and
+whole-list counts. Changed snapshots refuse stale cursors rather than silently skipping. Run call logs pass the existing
+stored cursor through `call_cursor`. Historical transitional layers show “出口未写” without backfilling an actor or due date;
+new exits and every retained gap remain visible as escaped read-only text.

@@ -1,3 +1,4 @@
+import { digestOf } from '../../records/api.ts';
 // The console pages (read-only): runs, one run, knowledge, task packs and admin data. Every enumeration value is shown
 // through labelOf, every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent and forbidden are the same
 // neutral page. The run page is the authoritative view (display rule 17): the partition list in the three groups of display
@@ -81,9 +82,10 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   }
   const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label><button type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p>${link('/console/runs', '下一页', { pack, cursor: listing.next })}</p>`;
+  const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   return {
     status: 200,
-    body: page(ctx.chrome('运行'), html`${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}`),
+    body: page(ctx.chrome('运行'), html`${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
   };
 }
 
@@ -116,7 +118,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
     for (const [index, r] of item.requirements.entries()) {
       const layers = LAYER.map((layer) => {
         const found: LayerResult | undefined = r.layers.find((l) => l.layer === layer);
-        return found === undefined ? html`${labelOf('layer', layer)}：${NOT_APPLICABLE}` : terminalHtml(found, terminalText(found));
+        return found === undefined ? html`${labelOf('layer', layer)}：${NOT_APPLICABLE}` : html`${terminalHtml(found, terminalText(found))}${found.reason?html`<div>${found.missing??'缺失事实未写'}；${found.exit?`${found.exit.due} 前，${'user'in found.exit.audience?found.exit.audience.user:labelOf('execution_host','hub')}：${labelOf('exit_action',found.exit.action)}`:'出口未写'}</div>`:''}${found.gaps?.map(g=>html`<div>未决未知：${g.missing}；${g.exit.due} 前：${labelOf('exit_action',g.exit.action)}</div>`)??''}`;
       });
       rows.push([
         ...(index === 0 ? head : ['', '', '', '']),
@@ -147,7 +149,7 @@ function partitionGroups(result: ValidationResult, run: RunRecord): Html {
     const parts = members.map((p) => section(`${labelOf('partition', p)}（${result.partitions[p].length}）`, itemTable(result.partitions[p], names)));
     groups.push(section(`${GROUP_TITLE[group]}（${members.map((p) => labelOf('partition', p)).join('、')}，${total}）`, html`${parts}`));
   }
-  groups.push(section('需要你决定的请求', html`<p class="empty">没有待你决定的请求</p>`));
+
   return html`${groups}`;
 }
 
@@ -279,7 +281,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     ]);
   }
   const submissions = table(['提交记录', '收到时间', axisLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
-  const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false });
+  const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
   const items = table(
     ['条目', '名称', '位置', '指纹', '可沿用'],
     run.items.map((item) => [code(item.id), item.label, code(item.location), item.digest ? code(item.digest) : '', item.reuse ? code(item.reuse) : '']),
@@ -303,7 +305,7 @@ ${section('分区清单', results)}
 ${commentary}
 ${section('未回答的请求', table(['请求','种类','受众','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
 ${section('提交与回执', submissions)}
-${section('调用日志', callTable(calls.items, ctx.admin, await names(ctx, calls.items)))}`,
+${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}`,
     ),
   };
 }
@@ -420,13 +422,31 @@ ${table(['版本线', '名称族', '构建', '已发布', '已产出根', '当�
   };
 }
 
+function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
+  const hash=digestOf({scope,values});
+  const cursor=param(ctx,key);
+  let start=0;
+  if(cursor!==undefined){
+    if(cursor.length>128)return null;
+    const decoded=Buffer.from(cursor,'base64url').toString('utf8');
+    const match=/^([0-9a-f]{64}):([0-9]+)$/.exec(decoded);
+    if(!match||match[1]!==hash||Buffer.from(decoded).toString('base64url')!==cursor)return null;
+    start=Number(match[2]);
+    if(!Number.isSafeInteger(start)||start<0||start>values.length||start%size!==0)return null;
+  }
+  return {items:values.slice(start,start+size),start,next:start+size<values.length?Buffer.from(`${hash}:${start+size}`).toString('base64url'):null};
+}
+function invalidArrayCursor(ctx:PageContext):PageResult{return{status:400,body:page(ctx.chrome('分页参数无效'),html`<p>列表已变化或游标无效，请从第一页重新打开。</p>`) };}
+
 export async function productPage(ctx: PageContext): Promise<PageResult> {
   const id = param(ctx, 'id');
   const versionLine = param(ctx, 'line');
   const line = id === undefined ? null : await productReadable(ctx, id);
   if (line === null) return neutralPage(ctx);
   const builds = await ctx.deps.knowledge.builds(line.id, versionLine === undefined ? undefined : { line: versionLine });
-  const shown = builds.slice(0, 500);
+  const listing=pagedArray(ctx,builds,500,'cursor',`builds:${line.id}:${versionLine??''}`);
+  if(listing===null)return invalidArrayCursor(ctx);
+  const shown = listing.items;
   const rows = shown.map((b) => [
     b.name,
     b.family,
@@ -437,7 +457,7 @@ export async function productPage(ctx: PageContext): Promise<PageResult> {
     b.released_at ?? '未发布',
     b.root === null ? '—' : link('/console/knowledge/root', b.root.slice(0, 16), { root: b.root }),
   ]);
-  const more = builds.length > shown.length ? html`<p>只列出前 ${shown.length} 个，共 ${builds.length} 个</p>` : html``;
+  const more = html`<p>分页：本页 ${shown.length?listing.start+1:0} 至 ${listing.start+shown.length}，共 ${builds.length} 个${listing.next?html`；${link('/console/knowledge/product','下一页',{id:line.id,line:versionLine,cursor:listing.next})}`:''}</p>`;
   return {
     status: 200,
     body: page(
@@ -505,16 +525,24 @@ export async function diffPage(ctx: PageContext): Promise<PageResult> {
   if (!(await rootReadable(ctx, from)) || !(await rootReadable(ctx, to))) return neutralPage(ctx);
   const diff = await ctx.deps.knowledge.diffRoots(from, to);
   if (diff === null) return neutralPage(ctx);
-  const listOf = (paths: readonly string[], root: string) =>
-    table(['路径'], paths.slice(0, 1000).map((p) => [link('/console/knowledge/tree', p, { root, path: p })]), '没有');
+  const lists=[['added',diff.added,to],['removed',diff.removed,from],['modified',diff.modified,to]] as const;
+  const pages=lists.map(([key,paths])=>pagedArray(ctx,paths,1000,`${key}_cursor`,`${from}:${to}:${key}`));
+  if(pages.some(p=>p===null))return invalidArrayCursor(ctx);
+  const listOf = (index:number) => {
+    const [key,paths,root]=lists[index], listing=pages[index]!;
+    const parameters:Record<string,string>={from,to};
+    for(const [name] of lists){const value=param(ctx,`${name}_cursor`);if(value!==undefined)parameters[`${name}_cursor`]=value;}
+    if(listing.next)parameters[`${key}_cursor`]=listing.next;
+    return html`${table(['路径'],listing.items.map(p=>[link('/console/knowledge/tree',p,{root,path:p})]),'没有')}<p>分页：本页 ${listing.items.length} 条，共 ${paths.length} 条${listing.next?html`；${link('/console/knowledge/diff','下一页',parameters)}`:''}</p>`;
+  };
   return {
     status: 200,
     body: page(
       ctx.chrome('版本比较'),
       html`<p>从 ${code(from)} 到 ${code(to)}</p>
-${section(`只在新根里（${diff.added.length}）`, listOf(diff.added, to))}
-${section(`只在旧根里（${diff.removed.length}）`, listOf(diff.removed, from))}
-${section(`内容变了（${diff.modified.length}）`, listOf(diff.modified, to))}`,
+${section(`只在新根里（${diff.added.length}）`, listOf(0))}
+${section(`只在旧根里（${diff.removed.length}）`, listOf(1))}
+${section(`内容变了（${diff.modified.length}）`, listOf(2))}`,
     ),
   };
 }
