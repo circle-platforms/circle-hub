@@ -417,3 +417,17 @@ it('final answer capacity limits disclose pasted table and character counts with
 it('the initial reviewer final step also marks capacity-limited tables as partial',()=>{
   const skill=readFileSync(new URL('../../case-review/SKILL.md',import.meta.url),'utf8').split('## 7. 报告')[1].split('## 参数')[0];assert.match(skill,/部分/);assert.match(skill,/review_counts\.characters/);
 });
+
+it('requires established model independence and refuses absent unknown negative or foreign warrants',()=>{
+  for(const independence of [undefined,'unknown','not_independent','judge_not_author','synthetic-new-code']){
+    const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+    const warrant=(result.partitions as any).delivered[0].requirements[0].claims[0].warrant;
+    if(independence===undefined)delete warrant.independence;else warrant.independence=independence;
+    assert.equal(run([{result}]).error?.code,'case-review-report.block_unsettled',String(independence));
+  }
+  for(const independence of ['human_non_author','model_family_declared']){
+    const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+    (result.partitions as any).delivered[0].requirements[0].claims[0].warrant.independence=independence;
+    assert.ok(run([{result}]).items);
+  }
+});

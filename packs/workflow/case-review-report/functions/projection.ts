@@ -7,6 +7,7 @@
 // The run item is the overall: the worst verdict of the blocks (FAIL > PARTIAL > PASS), the level of the block that gave
 // the worst verdict; a missing final names the block and the required next action. The report exposes the blocks'
 // findings as a deterministic table; final prose only declares the computed verdict and level.
+import type { Independence } from '../../../../contracts/generated/vocabulary.ts';
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord } from './common.ts';
 import {reviewTables,type TableModel} from './tables.ts';
@@ -18,6 +19,11 @@ export const VERIFY_PACK = 'case-review-verify';
 export const MAX_BLOCKS = 50;
 export const MAX_ITEMS = 500;
 export const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+// A model review requires an established human or declared independent model family.
+const ESTABLISHED = { human_non_author: true, model_family_declared: true, judge_not_author: false, not_independent: false, unknown: false } as const satisfies Record<Independence, boolean>;
+function established(value: unknown): boolean {
+  return typeof value === 'string' && Object.hasOwn(ESTABLISHED, value) && ESTABLISHED[value as Independence];
+}
 
 const VERDICT_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalCodes.map((code,index)=>[code.code,index]));
 const LEVEL_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalRanks.map((rank,index)=>[rank.code,index]));
@@ -122,7 +128,7 @@ function unsettled(result: Record<string, unknown>, block: number): ReturnType<t
   }
   for (const claim of claims) {
     if (!isRecord(claim.qualifier) || claim.qualifier.nature !== 'judgment' || !isRecord(claim.warrant) || claim.warrant.producer !== 'model') continue;
-    if (claim.warrant.independence === undefined || claim.warrant.independence === 'unknown' || claim.warrant.independence === 'not_independent') return failure('block_unsettled', `第 ${block} 块条目 ${String(claim.item ?? '跨条目')} 的复核独立性未成立`, next);
+    if (!established(claim.warrant.independence)) return failure('block_unsettled', `第 ${block} 块条目 ${String(claim.item ?? '跨条目')} 的复核独立性未成立`, next);
   }
   return null;
 }

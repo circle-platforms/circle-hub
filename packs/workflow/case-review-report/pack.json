@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "kind": "workflow",
   "title": "评审终稿",
   "description": "按已受理复核记录与目标原文确定性排出测试子项对照表，核对简短终稿的整体结论和等级",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "b2ae6a9b3f8d36f4621f23471a0393e51dab6c38dcbe09e2cf488d377fdda15e",
-      "size": 22063
+      "sha256": "8df457bbe32b8e0e16205d8c25ad6a85dc08d310cb223af72937d689597db66f",
+      "size": 22488
     },
     {
       "path": "functions/tables.ts",
