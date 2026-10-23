@@ -526,7 +526,7 @@ export interface Authorizations {
   grantPublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
   revokePublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Resource configuration (deployment instance, environment class, source-to-tree mapping, freeze release), bound to a content digest. */
-  configureResource(by: Principal, resourceId: string, bound: string, note?: string | null): Promise<AuthorizationRecord>;
+  configureResource(by: Principal, resourceId: string, bound: string, note?: string | null, tx?: Transaction): Promise<AuthorizationRecord>;
   /** Latest active configuration of a resource, or null. */
   resourceConfig(resourceId: string): Promise<AuthorizationRecord | null>;
   /** Latest active decisions in one verified query; missing/revoked/expired entries are absent. */

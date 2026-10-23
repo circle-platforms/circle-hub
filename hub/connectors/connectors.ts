@@ -109,6 +109,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const loginOptions = { cooldownMs: 30 * 60_000, expiryMarginMs: 60_000, ...options.login };
 
   const registry = new ResourceRegistry({
+    store: records.store,
     objects: records.objects,
     authorizations: records.authorizations,
     principals: records.principals,
@@ -233,14 +234,18 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   }
 
   /** Enabled resources whose system pack declares the external type, with the read that serves it. */
-  async function resolve(type: string): Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]> {
+  async function resolve(type: string,context?:ExternalReadContext): Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]> {
     const out: { runtime: ResourceRuntime; read: ReadDeclaration }[] = [];
     for (const state of await registry.states()) {
       if (!state.enabled) continue;
       let loaded;
       try {
         loaded = await loadBound(state);
-      } catch {
+      } catch(error) {
+        const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+        const reason=redactor.text(`资源 ${state.resource.id} 的绑定不可读：${failed.code}：${failed.message}；缺少原包的核验结果，请管理员恢复原包或重新配置`);
+        event('resource_binding_failed',{resource:state.resource.id,code:failed.code,reason});
+        context?.adminNote?.(reason);
         continue;
       }
       const read = loaded.profile.reads.find((r) => r.external === type);
@@ -274,11 +279,11 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   }
 
   const reader: ExternalReaderPort = {
-    async accepts(id: string): Promise<boolean> {
+    async accepts(id: string,context?:ExternalReadContext): Promise<boolean> {
       try {
         const type = typeof id === 'string' ? externalRoutingType(id) : null;
         if (type === null) return false;
-        return (await resolve(type)).length > 0;
+        return (await resolve(type,context)).length > 0;
       } catch (error) {
         event('accepts_failed', { reason: asConnectorError(error, 'RESOURCE_UNAVAILABLE').message });
         return false;
@@ -295,7 +300,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         }
         const subject = typeof id === 'string' ? parseExternal(id) : null;
         if (subject === null) return { ok: false, id: shown, reason: `${redactor.text(shown)} 不是外部对象标识` };
-        const candidates = await resolve(`${subject.system}:${subject.type}`);
+        const candidates = await resolve(`${subject.system}:${subject.type}`,context);
         if (candidates.length !== 1) {
           const reason =
             candidates.length === 0
@@ -315,12 +320,28 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
   };
 
+  async function resourceList(by:Principal):Promise<ResourceListing[]> {
+    const rows=await registry.list(by);
+    const user=await records.principals.get(by.id);
+    if(user?.role!=='admin' || user.disabled)return rows;
+    for(const row of rows) {
+      const state=await registry.get(row.id);
+      if(!state)continue;
+      try {await loadBound(state);}
+      catch(error) {
+        const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+        row.binding_error={code:failed.code,message:redactor.text(failed.message),fix:'缺少绑定原包的核验结果；请管理员恢复原包或重新配置该资源'};
+      }
+    }
+    return rows;
+  }
+
   const catalog: ResourceCatalogPort = {
     async list(user: Principal): Promise<ResourceListing[]> {
       try {
         const viewer = typeof user?.id === 'string' ? await records.principals.get(user.id) : null;
         if (viewer === null || viewer.disabled || viewer.role !== 'admin') return [];
-        return await registry.list(viewer);
+        return await resourceList(viewer);
       } catch {
         return [];
       }
@@ -335,7 +356,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       engine.clearCache();
       return record;
     },
-    listResources: (by) => registry.list(by),
+    listResources: (by) => resourceList(by),
     describe: (by, id) => registry.describe(by, id),
     setCredential: (by, id, name, value) => registry.setCredential(by, id, name, value),
     setCredentials: (by, id, values) => registry.setCredentials(by, id, values),

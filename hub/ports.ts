@@ -89,6 +89,8 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  /** Private diagnostics for the calling service; never part of read content. */
+  adminNote?:(reason:string)=>void;
   /** Whose credential and visibility the read uses: the user of a run, or an admin for a standing sync. */
   principal: Principal;
   run?: string | null;
@@ -124,7 +126,7 @@ export type ExternalRead =
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
-  accepts(id: string): Promise<boolean>;
+  accepts(id: string, context?:ExternalReadContext): Promise<boolean>;
   read(id: string, context: ExternalReadContext): Promise<ExternalRead>;
 }
 
@@ -199,6 +201,8 @@ export interface PackCatalogPort {
 }
 
 export interface ResourceListing {
+  /** A broken bound profile, admins only; absence is never silently treated as disabled. */
+  binding_error?:{code:string;message:string;fix:string};
   id: string;
   system_pack: string;
   name: string;

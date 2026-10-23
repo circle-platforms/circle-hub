@@ -158,11 +158,11 @@ export async function bindInputs(
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;
     }
-    if (!(await ctx.deps.external.accepts(id))) {
+    if (!(await ctx.deps.external.accepts(id,{principal:user,run:runId,purpose:`运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`)}))) {
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
     if (!read.ok) {
       if (read.inputError !== undefined) {
         schemaError(path, read.inputError.message, read.inputError.fix);

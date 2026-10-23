@@ -191,7 +191,7 @@ export async function bindExpected(
         miss('no enabled resource reads this external object type');
         continue;
       }
-      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源', ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源',adminNote:detail=>ctx.log({traceId,run:runId,what:`expected source ${wanted.external}`,detail}), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
       if (!read.ok) {
         if(read.retry) {
           const message=`缺少期望来源 ${wanted.external} 的读取结果；下一次时间 ${read.retry.at}，按原对象重读后重新开始运行`;

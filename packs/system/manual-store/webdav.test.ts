@@ -185,8 +185,10 @@ describe('reads through the connectors', () => {
       return text('not found', 'text/plain', 404);
     });
     // One enabled resource per external type: the second store is enabled only for its own test.
+    await kit.connectors.admin.disable(kit.admin, main);
     mixed = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'manual-store', name: '链接混杂的手册库', environment: 'test', origins: { 'manual-store': odd.origin } })).id;
     await kit.connectors.admin.disable(kit.admin, mixed);
+    await kit.connectors.admin.enable(kit.admin, main);
   });
   after(async () => {
     await odd?.close();
