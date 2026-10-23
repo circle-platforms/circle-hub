@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -43,8 +43,8 @@
     },
     {
       "path": "examples/synthetic-gap.result.json",
-      "sha256": "8ea63bb01089ed5fb2b55c2fa096dd94b28fe16af18c2b25f2115353c86e7d17",
-      "size": 16936
+      "sha256": "b7d6a22f2b2567689546ccf35a7dd4a4f5c4f9f7111aee1a8d33ded09bd7b370",
+      "size": 16997
     },
     {
       "path": "functions/cases.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/command-check.ts",
-      "sha256": "432e479ba0980571f4943988cdafff7c0e0608f311c9b1bd4831b2c9429600e3",
-      "size": 9950
+      "sha256": "96b351aff56c120fb6697fcb569922d3739cf12b4de543be9a5c976ee2e8ac29",
+      "size": 9928
     },
     {
       "path": "functions/command-subject.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "ad248c33c25dac05573c7b0cb0f8ab6e0ec8b1b1acad463e0308f4887cffc2c0",
-      "size": 5974
+      "sha256": "5b4606be0b6460474d1e3b50b35af084ecd956677dd8e441b4f347f172d7191e",
+      "size": 6298
     },
     {
       "path": "functions/common.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "298c80edfa79237a22cb763744eb23eb8c83a4a7c42c5ab12c61092b2cccf010",
-      "size": 23229
+      "sha256": "b2c3ee8010e70e7cfd5c92949a6827fa325271b26dc13acc135d4e9ccab9a952",
+      "size": 23564
     },
     {
       "path": "functions/subject.ts",
@@ -103,8 +103,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a6f92d7a7520f34a6625327b7fe9ab574ac109352d4a1a323138d43df66d0a6d",
-      "size": 5518
+      "sha256": "0f134a4ad5d58c0e8381085741b9fcf3d240010d5d56e808cabcd69bf81c84d9",
+      "size": 5569
     },
     {
       "path": "requirements.json",

@@ -1,4 +1,4 @@
-# template-gap 1.1.1: document categories and command coverage
+# template-gap 1.1.2: document categories and command coverage
 
 This workflow is a production run: both requirements are facts, computed and stored at start_run. It fills no item
 slot, generates no cases and calls no model. The documents are the judged subject. Both checks are static,
@@ -20,8 +20,8 @@ Model elements: W01/W02, C04/C05, K02, T01/T02; decision 35 item 19.
 
 The index is frozen in context.groups with its source receipt. Command paths are opaque values already parsed by the
 product producer. This workflow does not scan titles, steps or expected results to infer commands. The current upstream
-producer extracts commands from titles and ancestors; hub-view-scope may extend that to steps/expected results without
-changing this consumer.
+producer extracts commands from titles and ancestors. Extending the scanned texts requires the per-case revision
+contract below before this consumer can accept the expanded index safely.
 
 ## The unchanged 24-category requirement
 
@@ -222,6 +222,13 @@ Unresolved core requests remain handoffs; this package does not claim to have im
   StartRunOutput remains needed so clients need not recover that reference from prose.
 
 ## Needs from other packages
+
+- **knowledge index / producer and integrator**: before hub-view-scope item 3 expands command scanning to steps/expected
+  results, declare a per-case revision covering every exact text the producer scans (for example declared pre-order
+  subtree text or a digest under a declared rule). The index must carry it, this consumer must freeze and compare it,
+  and a step edit after sync must become unmatched in a regression test. Title/ancestor equality alone is insufficient.
+  Until that contract and the matching consumer change merge together, the new scan scope is not admissible here;
+  this is an integration dependency, not an assertion that step revisions are already checked.
 
 - **server / assembly** (implemented): text context includes StartRunDetail.runRecord and toolText receives that context
   (3086bf44); item links are available in start_run text. Publishing still uses a staged pack copy because README/api/tests

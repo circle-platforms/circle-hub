@@ -447,6 +447,8 @@
           "upload-81aa5650aa4a:z04xch3i7ck8"
         ],
         "orphaned": [],
+        "pending_commands": [],
+        "pending_skips": [],
         "commandlessCases": 0,
         "truncated": false,
         "skippedSources": 0,

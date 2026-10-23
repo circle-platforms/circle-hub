@@ -6,7 +6,7 @@
 // Refusals of the whole call: an input that is not a parsed mind map, a document listed twice, a skip the pack cannot apply
 // (the caller's own parameter, never dropped silently), a document with no case, documents whose root nodes cannot be told
 // apart, and a result above the output limit.
-import { caseCategories, caseRevisionNodes, commandCoverage, indexedCommands } from './commands.ts';
+import { caseCategories, caseRevisionNodes, commandCoverage } from './commands.ts';
 import type { CaseIndex } from './index.ts';
 import { compareText, readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
@@ -14,7 +14,7 @@ import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
 import { categoryFacts, MAX_EVIDENCE, readTemplate, type Template } from './template.ts';
 import { clip, collapseWhitespace, isBlank, isWhiteSpace, textOf, utf8Length } from './text.ts';
-import type { DocumentFields, DocumentItem, ItemLocation, PackFailure, ProjectionOutcome, Skip } from './types.ts';
+import type { CommandCoverage, DocumentFields, DocumentItem, ItemLocation, PackFailure, ProjectionOutcome, Skip } from './types.ts';
 
 /** The input slot of workflow.json. */
 export const SUBJECT_SLOT = 'documents';
@@ -91,7 +91,7 @@ function skipTarget(value: string, bySha: ReadonlyMap<string, string>): string {
  * document of this run, each (document, category) at most once. A skip the pack cannot apply refuses the run with a fix
  * rather than being dropped, so the caller learns that the declaration did not take effect.
  */
-function readSkips(raw: unknown, template: Template, documents: readonly Document[], admitted: ReadonlyMap<string, import('./types.ts').CommandCoverage>): SkipEntry[] | PackFailure {
+function readSkips(raw: unknown, template: Template, documents: readonly Document[], admitted: ReadonlyMap<string, CommandCoverage>): SkipEntry[] | PackFailure {
   if (raw === undefined) return [];
   const ids = documents.map((document) => document.id);
   const listed = `${ids.slice(0, CASE_LIMITS.maxNamed).join('、')}${ids.length > CASE_LIMITS.maxNamed ? ` 等 ${ids.length} 份` : ''}`;

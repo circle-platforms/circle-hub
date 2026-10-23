@@ -6,7 +6,7 @@
 - 架构 6a 第 2 条：模板里有一组类别是按每个 CLI 命令说的（增删改查、最大配置下的 show、no 与 clear、操作日志、审计日志），就是 `packs/workflow/template-gap/tables/template-v3.json` 里 group 为 `command` 的 9 个类别。6b：去掉一个类别的全部用例就缺、加一个就有、和用例的顺序无关。
 - 命令从哪来：知识树里的用例条目（K02）已经带着按代码解析出的命令。产品包的用例生产器 `packs/product/apv/functions/cases.ts` 给每个用例写 `data.document`、`data.node`、`data.commands`（标题和上级节点里的命令短语，对这个构建的命令目录解析出的路径）；条目键和 case-review 的条目编号是同一条规则（`cases-nodes.ts` 的 `caseKeys`）。T01 R[0] 要求只有一份实现，所以本包不自己解析命令，读这份索引。`gold-template-gap.md` 第 71 行把这件记成“要先有产品包的命令抽取”，现在已经有了。
 - 读法照 defect-to-case：它把 `knowledge:index:…` 绑成输入槽，投影把视图收进 groups（`packs/workflow/defect-to-case/functions/projection.ts`，`subjects.ts` 的 `duplicateSubject`）。索引视图的形状和完整性字段见 `contracts/src/views.ts` 的 `IndexView`（`truncated`、`cut_keys`、`skipped`）。
-- 现在用例的命令只从标题和上级节点解析。从步骤行和期望行也解析，是 hub-view-scope 第 3 条；那件合并以后这里不用改，覆盖会变全。
+- 现在用例的命令只从标题和上级节点解析。从步骤行和期望行也解析，是 hub-view-scope 第 3 条；在那件合入之前，索引须提供覆盖生产器所有扫描文字的逐用例修订事实；本包须同步冻结并核验该事实，增加“同步后仅改步骤即未匹配”的测试，不能只凭标题和祖先标签接收扩展索引。该跨包合并依赖见包 README。
 - 模型元素：W01、W02、C04、C05、K02、T01。`node tools/show-element.ts W02 C05 K02 T01`。模型文字不用改；架构 6a、6b 的说法由集成者在合并时对齐。
 
 - 分支和工作树：`template-gap-categories`，目录 `circle-hub-template-gap-categories`。现在就能从 hub-redesign 开出：在做的分支都没有改这个包，gold-template-gap 只改 `scripts/real/**`。views-and-notes 改了 `contracts/src/views.ts`，它合并以后若 index-view@1 的形状有变，合成索引跟着改。

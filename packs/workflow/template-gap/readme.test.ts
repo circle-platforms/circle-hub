@@ -21,3 +21,9 @@ test('README describes exact header comparison and the matched current command u
   assert.match(text, /Node texts are compared exactly as read/);
   assert.match(text, /For each command named by a matched current case/);
 });
+test('extending producer scan inputs requires a complete per-case revision contract first', () => {
+  const text = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  assert.doesNotMatch(text, /steps\/expected results without\s+changing this consumer/);
+  assert.match(text, /per-case revision/);
+  assert.match(text, /step edit.*unmatched/);
+});
