@@ -1,7 +1,7 @@
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
-import { chmod, mkdir, readFile, rename } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
@@ -10,7 +10,7 @@ import { agentFor, createContext, identityOf, keychainFor, keychainNamesFor, pla
 import { deploy, deployLogPath, progressPath, progressText, protectedBackups, readDeployments, readProgress, rollback } from './deploy.ts';
 import { assertHubEnvironment, assertKnownHubVariables, PLATFORM_VARIABLES, variable } from './environment.ts';
 import { messageOf, PlatformError } from './errors.ts';
-import { isMissingOrEmpty, timestampName, uniqueChild, withLock } from './files.ts';
+import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
 import { VAULT_KEY_ITEM } from './keychain-items.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
@@ -18,7 +18,7 @@ import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './lay
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
 import { rehearse } from './rehearse.ts';
 import { readCurrentRelease, type ReleaseRef } from './release.ts';
-import { restoreBackup } from './restore.ts';
+import { restoreBackup, setAsideVault as archiveVault } from './restore.ts';
 import { inspectRole, roleFixHint } from './roles.ts';
 import {
   environmentText,
@@ -210,14 +210,8 @@ const key: Handler = async (args, context, io) => {
         if ((await agentFor(context, settings).status()).loaded) throw new KeyInitRefusal('service_loaded');
         if (await portAnswers(settings.port)) throw new KeyInitRefusal('port_busy');
         if ((await store.status()).present) throw new KeyInitRefusal('key_present');
-        if (!(await isMissingOrEmpty(context.layout.vault))) {
-          await mkdir(context.layout.setAside,{recursive:true,mode:0o700});
-          const target=await uniqueChild(context.layout.setAside,timestampName(context.now())+'-key-loss');
-          await mkdir(target,{mode:0o700});
-          await rename(context.layout.vault,join(target,'vault'));
-          io.stdout(`密钥库已移到 ${join(target,'vault')}，原文件保留`);
-        }
-        await mkdir(context.layout.vault,{recursive:true,mode:0o700});await chmod(context.layout.vault,0o700);
+        const moved=await archiveVault(context.layout,context.now());
+        if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
       }
       await store.init();
       io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);

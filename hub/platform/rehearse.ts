@@ -6,7 +6,7 @@
 // The root also holds read-only extracted pack trees, as the server's registry leaves them: they must stay out of the
 // backup and come through the destroy and the restore untouched. It never touches the real data root.
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { access, chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
@@ -17,7 +17,7 @@ import { exists, listFiles, removeTree, removeWithin, sha256File, sha256Text } f
 import { ensureLayout, layoutAt, SOCKET_PATH_LIMIT, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { runCommand, type CommandRunner } from './process.ts';
-import { restoreBackup } from './restore.ts';
+import { restoreBackup, setAsideVault } from './restore.ts';
 import { comparePrivileges, grantTables, rolePrivileges, roleProblems, tamperingStatements, unrefusedStatements, unrefusedText } from './roles.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
 import { compareSummaries, summarizeTables, withSession, type SqlSession } from './sql.ts';
@@ -318,11 +318,7 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     if (available) {
       for (const store of stores) if ((await store.status()).present) keyLoss.remaining++;
       if (keyLoss.remaining > 0) keyDifferences.push('丢失后仍找到钥匙串项');
-      keyLoss.setAsideFiles = (await listFiles(layout.vault)).length;
-      const aside = join(root, 'set-aside', `${now().getTime()}-key-loss`);
-      await mkdir(aside, { recursive: true, mode: 0o700 });
-      await rename(layout.vault, join(aside, 'vault'));
-      await mkdir(layout.vault, { mode: 0o700 });
+      keyLoss.setAsideFiles = (await setAsideVault(layout,now())).files;
       await stores[0].init();
     }
     const differences = [

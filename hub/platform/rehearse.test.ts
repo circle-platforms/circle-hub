@@ -122,3 +122,17 @@ test('missing security explicitly skips key loss without weakening backup verifi
     assert.equal(report.ok, true); assert.equal(report.keyLoss.skipped, true); assert.match(report.keyLoss.reason ?? '', /跳过，不算通过/);
   } finally { await removeDir(parent); }
 });
+
+test('c3 vault set aside preserves only sealed files with unique archives and an empty private vault',async()=>{
+ const {setAsideVault}=await import('./restore.ts');const {ensureLayout}=await import('./layout.ts');const {readFile,readdir,chmod}=await import('node:fs/promises');
+ const root=await tempDir();try{
+  const layout=layoutAt(root);await ensureLayout(layout);await writeFile(join(layout.db,'sentinel'),'db');await writeFile(join(layout.objects,'sentinel'),'objects');
+  const now=new Date('2026-10-24T00:00:00Z');const paths:string[]=[];
+  for(const text of ['sealed-first','sealed-second']){
+   await writeFile(join(layout.vault,'sealed'),text);await chmod(layout.vault,0o755);
+   const moved=await setAsideVault(layout,now);assert.equal(moved.files,1);assert.ok(moved.path);paths.push(moved.path!);
+   assert.equal(await readFile(join(moved.path!,'sealed'),'utf8'),text);assert.deepEqual(await readdir(layout.vault),[]);assert.equal((await lstat(layout.vault)).mode&0o777,0o700);
+  }
+  assert.notEqual(paths[0],paths[1]);assert.equal(await readFile(join(layout.db,'sentinel'),'utf8'),'db');assert.equal(await readFile(join(layout.objects,'sentinel'),'utf8'),'objects');
+ }finally{await removeDir(root);}
+});
