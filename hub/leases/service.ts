@@ -33,6 +33,17 @@ export type ChangeOutcome =
   | { ok: true; lease: string; until: string; token: number }
   | { ok: false; code: 'LEASE_UNAVAILABLE' | 'LEASE_EXPIRED' | 'LEASE_TTL' | 'LEASE_NO_ROW'; message: string };
 
+/** Read-only current row for trusted callers enforcing fences. Never sent to a model or client. */
+export interface HolderSnapshot {
+  key: string;
+  lease: string;
+  fencing: number;
+  user: string;
+  run: string;
+  released: boolean;
+  expires_at: string;
+}
+
 export interface ServiceOptions {
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
   now?: () => Promise<Date>;
@@ -164,6 +175,11 @@ export class LeaseService {
       [[...keys].sort()],
     );
     return rows.rows.map((row) => ({ key: row.key, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() }));
+  }
+
+  async holderSnapshot(keys: readonly string[]): Promise<HolderSnapshot[]> {
+    const rows = await this.#db.query<Row>('SELECT key, lease_id, token, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1) ORDER BY key', [[...new Set(keys)].sort()]);
+    return rows.rows.map(row => ({ key: row.key, lease: row.lease_id, fencing: Number(row.token), user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() }));
   }
 
   /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */

@@ -27,3 +27,7 @@ A projection's `lease_requests` carry an operation: `acquire` (the default, the 
 ## How it is tested
 
 `service.test.ts` runs on a temporary PostgreSQL (`hub/testing/postgres.ts`): 50 rounds of two connections acquiring one key (exactly one winner each round), all-or-nothing on a busy second key, prefix and TTL refusal touching nothing, take-over of an expired row (token increments, new lease identity), re-acquire of a released row, extend within and beyond the cumulative cap (holder, stranger, expired), view at several clock moments, force release with a reason, orphan reclaim, state across a new service object, and the action-record replay (the live rows equal the replayed state).
+
+## Trusted holder snapshots
+
+`LeaseService.holderSnapshot(keys)` returns current rows with key, lease identity, fencing token, holder user/run, release state and expiry. It is read-only, deduplicates and sorts keys, and omits absent keys. Tokens are for trusted enforcement code only, never client or model output. Existing acquire, extend, release and force-release semantics are unchanged; callers still check expiry against their trusted clock and re-read at the effect boundary. A returned array is a snapshot, not a held database lock. Tests: `node --test --test-concurrency=1 hub/leases/*.test.ts`.
