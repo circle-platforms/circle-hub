@@ -3,9 +3,11 @@
 //   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
 //   - a signature hangs at its command node only when the command exists in the build's command tree (`/commands` nodes
 //     are built by the command-tree producer alone); without a tree the literal decides, unchecked;
-//   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists;
-//     a row with several commands hangs at their nearest common ancestor when that is at least one word deeper than
-//     /commands (a common ancestor of /commands itself is not a placement); every other row stays at its section node;
+//   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists
+//     and every command of a multi-command row exists (then the row hangs at their nearest common ancestor when that
+//     is at least one word deeper than /commands — /commands itself is not a placement); rows without a signature
+//     (parameter rows, value rows whose bold word is one bare word) form the table's remainder, which follows the
+//     current command or hangs at the section node;
 //   - the blocks after an anchor, up to the next anchor or heading, describe that command and follow its placement;
 //   - every other block hangs at its section node under the manual namespace `/manual/<手册>/<章节路径>` (the preamble at
 //     the namespace root); no manual paragraph is left at the tree root.
@@ -576,8 +578,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (unique.length > MAX_LITERALS) entry.data.command_literals_cut = true;
   };
   /**
-   * A behaviour entry. `data` has the same shape whatever the tree says (K01 R[1]): `words` whenever the block follows
-   * an anchor, `section` always; the tree only chooses the path. Applicability comes from the entry's own text alone
+   * A behaviour entry. `data` is placement-independent and heading-independent (K01 R[1], K02 F[1]): only `form` and
+   * `words` (whenever the block follows an anchor); the section chain is provenance and lives in the fragment
+   * selectors and the section-node paths, never in the digest. Applicability comes from the entry's own text alone
    * (K02 F[6]): no condition is inherited from a heading, a sibling block or another row.
    */
   const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[]; noLiterals?: boolean }): ProducedEntry => {

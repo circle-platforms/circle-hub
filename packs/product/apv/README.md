@@ -167,9 +167,12 @@ Producers (K02, K04, C07)
   every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
   itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
   section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
-  signature or a list of signatures joined by bare connectives; a bold span inside prose is a mention, recorded in
-  `command_literals` only. The header and the rows without a signature (parameter rows) make one remainder text entry,
-  which follows the current command, or stays at the section node. Grid, multiline and simple tables are not split
+  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／); a bold span inside
+  prose is a mention, recorded in `command_literals` only. A cell holding one bare bold word is a value, a parameter
+  name or a term, never a signature (unless the table header names commands): such rows keep the table's remainder
+  and the word is recorded in `command_literals` only. The header and the rows without a signature make one remainder
+  text entry, which follows the current command, or stays at the section node; a row that states its own condition
+  becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
   command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
@@ -177,7 +180,10 @@ Producers (K02, K04, C07)
   resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
   manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
   read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
-  are listed in the production warnings as drift candidates: the count covers every literal found (past the per-entry
+  are listed in the production warnings as drift candidates. Signature literals are decided by the placement check
+  (never by the leading-run rule): a signature not placed at /commands lists exactly its positive variants (a bare
+  key of a variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the tree).
+  The count covers every literal found (past the per-entry
   cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
   table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
@@ -341,8 +347,10 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
-  section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to the
-  adoc task (K4), which can plan for it from this note.
+  section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to
+  the adoc task (K4). K4's page says the placement code applies unchanged with text@1 l/<a>-<b> fragments, so the
+  split must take the fragment parser key and the section-selector decoding from the input model there (markdown@1
+  stays the default here); this note points the integrator at that item.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
@@ -432,8 +440,10 @@ pack and reviews a mind map against the root it produced.
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
   root (the fixed-bug entries of a build, for example). The manual producer's markdown path no longer emits unplaced
-  spans; what still waits for the bot's verified placement proposals (K04 R[6]) is the transitional catalog JSON's
-  output. A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
+  spans; no output of the manual producer waits for placement proposals in production: the markdown path places
+  every block, and catalog spans never reach a production (the catalog JSON is reachable only through direct calls).
+  K04 R[6] proposals, once that channel exists, would only move section-node fragments to finer places (research 2
+  rule 6). A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
   R[2]) is not implemented; until then the production warnings list the literals the tree cannot resolve, as drift
   candidates. Follow-up task (registered by the integrator, not part of this one): the drift candidates become
   queryable drift records (a view by root and command path, readable by review and regression-scope uses); whether a
