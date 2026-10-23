@@ -107,7 +107,7 @@ export interface LiteralAnswer {
   /** The scored cases, each with the structure codes it should be flagged with (unique, sorted). */
   cases: LiteralCaseAnswer[];
   /** Cases without a unique data.id (empty or shared with another node): counted apart, never scored. */
-  noUniqueId: { id: string; count: number }[];
+  noUniqueId: { id: string; count: number; reason: string }[];
 }
 
 /** The independent literal answer of one document. */
@@ -120,14 +120,14 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   for (const node of parsed.nodes) idsSeen.set(node.id, (idsSeen.get(node.id) ?? 0) + 1);
 
   const answers = new Map<string, string[]>();
-  const noUnique: Array<{ id: string; count: number }> = [];
+  const noUnique: LiteralAnswer['noUniqueId'] = [];
   const readings = new Map<string, CaseReading>();
   for (const node of cases) {
     const id = node.id;
     const reading = readCase(parsed, node);
     readings.set(`${node.index}`, reading);
     if (id === '' || (idsSeen.get(id) ?? 0) > 1) {
-      noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0 });
+      noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0, reason: id === '' ? 'data.id 缺失' : 'data.id 重复' });
       continue;
     }
     const record = raw[node.index]!;

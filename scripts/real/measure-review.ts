@@ -139,7 +139,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   const scores = valid.map((r) => r.score!).filter((s): s is Score => s !== undefined);
   const sum = (pick: (s: Score) => number): number => scores.reduce((n, s) => n + pick(s), 0);
   lines.push(
-    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh)}）；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}`,
+    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh)}）；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
   );
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
@@ -228,7 +228,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   const totals = aggregate(gold, rounds.filter((r) => r.draftValid && (options.verify === undefined ? true : r.verifyValid)).map((r): AggregateRun => {
     const detail = JSON.parse(readFileSync(join(options.out, `r${r.n}`, 'draft.run.json'), 'utf8')) as RunLike;
     return { result: detail.latest!.result as unknown as ResultLike, valid: true, ...(r.verifyValid && existsSync(join(options.out, `r${r.n}`, 'verify.run.json')) ? { verify: (JSON.parse(readFileSync(join(options.out, `r${r.n}`, 'verify.run.json'), 'utf8')) as RunLike).latest!.result as unknown as ResultLike } : {}) };
-  }));
+  }), answer);
   const touched = new Set(gold.flatMap((g) => [g.node, ...(g.copy === undefined ? [] : [g.copy]), ...(g.deletedCases ?? [])]));
   const untouched = answer.cases.filter((c) => !touched.has(c.id)).length;
   const lines = summaryLines({ copySha, goldSha: createHash('sha256').update(goldBytes).digest('hex'), manualSha: manual?.sha256 ?? null, cases: caseCount, injected: gold.length, repeat: options.repeat, hasVerify: options.verify !== undefined, rounds, totals, untouched });

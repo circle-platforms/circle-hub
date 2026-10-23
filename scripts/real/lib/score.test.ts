@@ -184,3 +184,33 @@ test('catalog refutations of model command statements stay separate from subject
   assert.deepEqual(mixed.detections[0]!.seen.marks, ['core.catalog.value_out_of_range']);
   assert.equal(mixed.detections[0]!.draft, false);
 });
+
+test('missing and duplicate raw node ids are excluded despite Hub positional and suffixed identities', () => {
+  const tree = doc(group('r', '合成文档', group('g', '合成分组',
+    kase('same', '第一份', '期望甲'), kase('same', '第二份', '期望乙'),
+    { data: { text: '缺少编号', priority: 2, resource: ['configuration'] }, children: [leaf('missing-e', '期望丙')] },
+    kase('healthy', '健康用例', '期望丁'),
+  )));
+  const answer = literalGold(tree);
+  const judged = result(['same#1', 'same#2', '@6'].map(id => item(id,
+    req('literal', [refute(id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key')], { terminal: 'violation', attribution: 'author_input' }),
+    req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'author_input' }),
+    req('findings', [judgment('synthetic.finding')]),
+  )).concat(item('healthy', req('literal', [], { terminal: 'pass' }))));
+  const scored = score([], judged, { literal: answer });
+  assert.equal(scored.noUniqueId, 3);
+  assert.deepEqual(scored.structure, { supported: [], falsePositives: [], missed: [] });
+  assert.equal(scored.otherMarks.total, 0);
+  assert.deepEqual(scored.extras, []);
+  assert.match(render(scored).join('\n'), /data.id 缺失或重复/);
+  assert.match(detail(scored), /same.*data.id 重复/);
+  assert.match(detail(scored), /@6.*data.id 缺失/);
+});
+
+test('unidentifiable injected nodes are excluded from recall and repeated aggregate denominators', () => {
+  const answer = literalGold(doc(group('r', '合成文档', group('g', '合成分组', kase('same', '甲', '期望甲'), kase('same', '乙', '期望乙')))));
+  const gold = [entry({ node: 'same', kind: 'delete_expected', seen_by: 'mechanical' })];
+  const judged = result([item('same#1', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' }))]);
+  assert.deepEqual(score(gold, judged, { literal: answer }).recall.mechanical, [0, 0]);
+  assert.equal(aggregate(gold, [{ result: judged, valid: true }], answer).kinds[0]!.injected, 0);
+});

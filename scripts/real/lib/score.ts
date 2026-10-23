@@ -85,6 +85,8 @@ export interface Score {
   literalUnscored: number;
   /** Cases without a unique data.id in the copy: counted apart, never scored. */
   noUniqueId: number;
+  /** The original nodes excluded because data.id does not identify a case uniquely. */
+  noUniqueCases: LiteralAnswer['noUniqueId'];
   /** Whether the structure comparison ran: it needs the copy's independent literal answer. When it did not, the
    * missing fact is the copy file and the next action is scoring again with it (score-injection.ts --copy); the
    * driver always passes it. */
@@ -175,8 +177,15 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     }
   }
   const seen = seenOn(result);
+  const eligible = options.literal === undefined ? undefined : new Set(options.literal.cases.map(c => c.id));
+  // Hub gives missing/duplicate ids positional or suffixed identities. Only exact unique raw ids are scoreable;
+  // do not guess fallback identities, which may collide with real ids in the same document.
+  if (eligible !== undefined) for (const node of seen.keys()) if (!eligible.has(node)) seen.delete(node);
   const before = options.baseline === undefined ? new Map<string, Seen>() : seenOn(options.baseline);
   const verified = options.verify === undefined ? new Map<string, { newFindings: string[]; confirmed: boolean; refuted: boolean }>() : verifyOn(options.verify);
+  if (eligible !== undefined) for (const node of verified.keys()) if (!eligible.has(node)) verified.delete(node);
+  const unscoreableIds = new Set(options.literal?.noUniqueId.map(c => c.id) ?? []);
+  const scoreableGold = gold.filter(e => e.deletedCases !== undefined || eligible?.has(e.node) || !unscoreableIds.has(e.node));
   const touched = new Set(
     gold.flatMap((g) => [g.node, ...(g.copy === undefined ? [] : [g.copy]), ...(g.deletedCases ?? [])]),
   );
@@ -187,7 +196,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   // A verify run's negative-gap or coverage-gap probe anywhere also finds a deleted negative group.
   const verifyGapProbes = options.verify === undefined ? [] : [...verified.values()].flatMap((v) => v.newFindings.filter((p) => p === 'negative_gap' || p === 'coverage_gap'));
 
-  const detections = gold.map((entry): Detection => {
+  const detections = scoreableGold.map((entry): Detection => {
     const at = (n: string): Seen | undefined => seen.get(n);
     if (entry.deletedCases !== undefined && entry.deletedCases.length > 0) {
       const nodes = [entry.node, ...entry.deletedCases];
@@ -282,7 +291,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     : [...verified].filter(([node, v]) => !touched.has(node) && v.newFindings.length > 0).map(([node]) => node);
   const noUniqueId = options.literal?.noUniqueId.length ?? 0;
 
-  return { detections, recall: { mechanical: recallOf('mechanical'), judgment: recallOf('judgment') }, structure, otherMarks, literalUnscored, noUniqueId, extras, verifyExtras, structureCompared: options.literal !== undefined };
+  return { detections, recall: { mechanical: recallOf('mechanical'), judgment: recallOf('judgment') }, structure, otherMarks, literalUnscored, noUniqueId, noUniqueCases: options.literal?.noUniqueId ?? [], extras, verifyExtras, structureCompared: options.literal !== undefined };
 }
 
 export interface AggregateRun {
@@ -325,11 +334,13 @@ export const KIND_TITLES: Readonly<Record<string, string>> = {
 
 /** Sums several runs by injection kind (task step 3): each kind's injections × valid runs, and how many the Hub's
  * literal check, the draft, the verify run and the two together found. */
-export function aggregate(gold: readonly GoldEntry[], runs: readonly AggregateRun[]): Aggregate {
+export function aggregate(gold: readonly GoldEntry[], runs: readonly AggregateRun[], literal?: LiteralAnswer): Aggregate {
   const valid = runs.filter((r) => r.valid);
-  const scores = valid.map((r) => score(gold, r.result, { verify: r.verify }));
+  const scores = valid.map((r) => score(gold, r.result, { verify: r.verify, literal }));
+  const eligible = new Set(literal?.cases.map(c => c.id) ?? []);
+  const excluded = new Set(literal?.noUniqueId.map(c => c.id) ?? []);
   const kinds: KindAggregate[] = [...new Set(gold.map((g) => g.kind))].map((kind) => {
-    const entries = gold.filter((g) => g.kind === kind);
+    const entries = gold.filter((g) => g.kind === kind && (g.deletedCases !== undefined || eligible.has(g.node) || !excluded.has(g.node)));
     const count = (channel: 'mechanical' | 'draft' | 'verify' | 'combined'): number =>
       scores.reduce((sum, s) => sum + s.detections.filter((d) => d.entry.kind === kind && d[channel]).length, 0);
     return {
@@ -359,7 +370,7 @@ export function render(s: Score): string[] {
     `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
     '',
     s.structureCompared
-      ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；不计分 ${s.literalUnscored + s.noUniqueId}`
+      ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；不计分 ${s.literalUnscored + s.noUniqueId}（data.id 缺失或重复 ${s.noUniqueId} 个）`
       : `未注入的用例上的字面标记：没有比对（缺副本的独立答案，补法：score-injection.ts 带 --copy 重新计分）`,
     `未注入的用例上模型的发现：初评 ${s.extras.length} 个用例（未改动评审里没有的 ${s.extras.filter((e) => !e.inBaseline).length}），复核新增 ${s.verifyExtras.length} 个用例`,
   ];
@@ -378,6 +389,8 @@ export function detail(s: Score): string {
       `- ${d.detected ? '查出' : '漏掉'}：${d.entry.label}（${d.entry.kind}，${where}）；字面 ${d.seen.marks.join('、') || '没有'}；模型陈述的反驳 ${d.seen.modelStatementRefutes.join('、') || '没有'}；初评 ${d.seen.findings.join('、') || '没有'}${d.confirmed ? '（复核证实）' : ''}${d.verify ? '（复核发现）' : ''}${d.seen.reviewed ? '' : '；这个条目没有被评审到'}`,
     );
   }
+  lines.push('', '不计分的原始用例（node_ids 检查也可能产生 required_empty 或 duplicate_key，不作为误报）：');
+  for (const c of s.noUniqueCases) lines.push(`- ${c.id}：${c.reason}；不计分，请先修正原件编号后重新度量`);
   lines.push('', '未注入的用例上的字面标记：');
   for (const m of s.structure.supported) lines.push(`- 支持：${m.node} ${m.code}`);
   for (const m of s.structure.falsePositives) lines.push(`- 误报：${m.node} ${m.code}`);

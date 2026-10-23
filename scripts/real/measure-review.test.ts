@@ -182,3 +182,19 @@ test('judgeRun refuses the wrong pack, several accepted runs and the wrong item 
   assert.equal(items.ok, false);
   assert.equal(items.reason, '条目数不对');
 });
+
+test('node-id refutations on fallback identities are disclosed without failing the measurement', () => {
+  const tree: MindTree = { root: group('r', '合成文档', group('g', '合成分组',
+    kase('same', '第一份', '合成期望甲'), kase('same', '第二份', '合成期望乙'),
+    { data: { text: '缺少编号', priority: 2, resource: ['configuration'] }, children: [leaf('missing-e', '合成期望丙')] },
+    kase('healthy', '健康用例', '合成期望丁'),
+  )) };
+  const { out, source, plan: planPath } = fixtures(tree, []);
+  const delivered = ['same#1', 'same#2', '@6'].map(id => ({ item: `doc:${id}`, requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }));
+  delivered.push({ item: 'doc:healthy', requirements: [] });
+  const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 4, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
+  const lines: string[] = [];
+  assert.equal(measureReview({ ...options(out), source, plan: planPath }, drivers, line => lines.push(line)), 0);
+  assert.ok(lines.some(l => l.includes('误报 0、漏标 0') && l.includes('data.id 缺失或重复 3 个')));
+  assert.ok(!lines.join('\n').includes('same#'));
+});
