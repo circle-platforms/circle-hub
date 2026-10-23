@@ -85,7 +85,7 @@ test('empty raw story arrays contradict a key mapping while omitted raw fields p
 });
 
 test('partial views refuse projection and name the missing facts and recovery action', () => {
-  for (const patch of [{ truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { cut_keys: ['21'] }, { total_entries: 3 }]) {
+  for (const patch of [{ total_keys: 4, truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { only: ['21'] }, { total_entries: 3 }]) {
     const i = input(); Object.assign(i.inputs[1].model as any, patch);
     const p = project(i) as any; assert.ok(p.error); assert.match(p.error.message, /缺少|不完整/); assert.match(p.error.fix, /知识同步/);
     if ('notes' in patch) assert.match(p.error.message, /src:synthetic/);
@@ -176,4 +176,69 @@ test('build ids compare after normalization and refusal names an empty array rat
   assert.match(empty.error.message, /构建记录 7.*数组为空/); assert.doesNotMatch(empty.error.message, /没有需求字段|缺少指定构建记录/);
   const missing = project({ inputs: [...cases, build], parameters: { build_id: '8' } }) as any;
   assert.match(missing.error.message, /未包含.*8/); assert.doesNotMatch(missing.error.message, /没有需求字段/);
+});
+
+test('every projection refusal conforms to projection-output and retains its own cause', async () => {
+  const { ProjectionOutput } = await import('../../../../contracts/src/pack.ts');
+  const invalid = project({ inputs: [] }) as any;
+  assert.equal(ProjectionOutput.safeParse(invalid).success, true);
+  assert.deepEqual(invalid.warnings, []);
+  const conflicting = input(['21']);
+  const source = conflicting.inputs[0];
+  const second = structuredClone(source); (second.model as any).stories[0].status = 'different';
+  const refusal = project({ inputs: [...conflicting.inputs, second] }) as any;
+  assert.match(refusal.error.message, /同一需求的 PLM 原件内容冲突/);
+  assert.match(refusal.error.fix, /一致原件/);
+});
+
+for (const patch of [{ cut_keys: ['99'], truncated: true }, { cut_keys: ['00021'], truncated: true }, { only: ['00021'], truncated: true }, { total_keys: 99, truncated: true }]) test(`listed matches remain determinate despite ${JSON.stringify(patch)}`, () => {
+  const i = input(['21']); Object.assign(i.inputs[1].model as object, patch);
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.match(outcome.statement, /至少 2 个已索引条目/);
+  assert.equal(outcome.data.coverage.complete, false);
+});
+test('complete key and entry listings prove an absent id even when an unrelated key was cut', () => {
+  const i = input(['23']); Object.assign(i.inputs[1].model as object, { cut_keys: ['99'], truncated: true });
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.equal(outcome.data.case_count, 0);
+  assert.match(outcome.statement, /没有条目携带需求号 23/);
+});
+test('only the undetermined ids refuse and the fix acknowledges normalized-only matching needs', () => {
+  const i = input(['21', '23']); Object.assign(i.inputs[1].model as object, { total_keys: 99, truncated: true });
+  const refusal = project(i) as any;
+  assert.match(refusal.error.message, /需求 23.*完整/); assert.doesNotMatch(refusal.error.message, /需求 21/);
+  assert.match(refusal.error.fix, /only=/); assert.match(refusal.error.fix, /规范化/);
+  assert.doesNotMatch(refusal.error.fix, /消除视图截断/);
+});
+test('listed digest links without bodies are positive index facts, not an absence claim', () => {
+  const i = input(['21']); const view = i.inputs[1].model as any; view.entries = {};
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.equal(outcome.data.indexed_match_count, 2);
+  assert.match(outcome.statement, /至少 2 个已索引条目/);
+  assert.doesNotMatch(outcome.statement, /没有条目携带/);
+});
+
+test('non-scalar PLM fields are determinate observations counted apart from explicit null', () => {
+  const i = input(['21', '22']);
+  i.inputs[0].model = { stories: [{ id: '21', status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: '22', status: null, stage: null }], unread: [] };
+  const s = projected(i); const outcomes = check({ subject: s }) as any[];
+  assert.deepEqual(outcomes[0].data.fields_nonscalar, ['status', 'stage']);
+  assert.equal(outcomes[0].verdict, 'support'); assert.match(outcomes[0].statement, /不是单个值/);
+  const [total] = counts({ subject: s }) as any[];
+  assert.deepEqual([total.data.status_nonscalar, total.data.stage_nonscalar, total.data.status_absent], [1, 1, 0]);
+  assert.deepEqual(total.data.statuses, [{ status: null, count: 1 }]);
+  assert.match(total.statement, /PLM 返回的状态不是单个值的有 1 个，没有按状态计数/);
+  const long = projected(i); long.items[1].fields.status = 'synthetic'.repeat(1000);
+  const [summary] = counts({ subject: long }) as any[];
+  assert.match(summary.statement.slice(0, 500), /状态不是单个值的有 1 个/);
+  assert.match(summary.statement.slice(0, 500), /阶段不是单个值的有 1 个/);
+});
+
+test('build-derived details retain non-scalar markers from the system projection', () => {
+  const cases = input().inputs.filter(source => source.slot === 'cases');
+  const build = boundView('build', { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: ['21'] }] }, 'plm:builds:5');
+  const s = projected({ inputs: [...cases, build], parameters: { build_id: '7' } });
+  const sources = { ['src:' + 'c'.repeat(64)]: JSON.stringify({ stories: [{ id: '21', status: null, stage: null, fields_absent: [], fields_nonscalar: ['status'] }], unread: [] }) };
+  const [total] = counts({ subject: s, sources }) as any[];
+  assert.equal(total.data.status_nonscalar, 1); assert.deepEqual(total.data.statuses, []);
 });

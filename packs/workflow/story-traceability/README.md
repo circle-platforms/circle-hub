@@ -1,12 +1,12 @@
 # 需求追溯矩阵
 
-独立工作流包 story-traceability 1.0.2。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。只有视图未截断、没有未读来源、缺正文或裁剪键且计数完整时才投影；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
+独立工作流包 story-traceability 1.0.5。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
 
 可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
 ## 决定与限制
 
-完整视图中的连接与无连接都交付支持事实，并给出知识根、视图引用、条目数与键数；无连接不是全局无用例。部分视图在投影拒绝，错误保留来源说明、缺失计数与裁剪键，要求管理员按根的来源清单恢复来源、知识同步并重新绑定完整视图。Hub 不自动同步、不重试、不调用模型，也不声称已经自动衔接外部动作。
+完整视图中的连接与无连接都交付支持事实，并给出知识根、视图引用、条目数与键数；无连接不是全局无用例。部分视图中的已知连接仍可交付，拒绝仅点名无法判断的编号。错误保留来源说明，并说明 only= 原文匹配的限制和可执行的补充动作，不要求靠同步消除固定上限。Hub 不自动同步、不重试、不调用模型，也不声称已经自动衔接外部动作。
 
 
 视图瘦身后没有原始 stories 字段，按知识索引键作为连接证据；字段存在但不含需求号（包括空数组）则反驳。引用保留 PLM JSON 位置及用例树引用。统计按 PLM 原样状态分组，返回但字段缺失用 fields_absent 记录，status 缺失单独计数、不作为未知状态；显式 null 与数字、布尔、字符串均原样保留。应答未包含的编号请用户确认，不推断需求不存在。原始构建列表按原件保留，只有 PLM 配置投影给出的范围可用。每运行最多 8000 条和 5 MiB 投影预算，超限明确分批。
@@ -44,3 +44,38 @@
 核心依赖（集成者确认）：需要给不绑定产品线的工作流提供按名字查构建别名的只读接口，证明对应的构建和知识根。当前核心拒绝这类工作流的 product/build 参数，无法取得可用的 context.builds；接口完成后，本包再改成按别名核对。在此之前不同名称必须拒绝，不能临时按字符串形状、名称族替换或调用方提供的别名表认定相同。
 
 每个观察范围条目的 selected_build 保留选中记录的规范化编号、原始 name、原始标量字段、JSON 引用以及 cases 的构建名和根；逐条事实 data 同样保留，陈述前缀写明 PLM 构建记录编号、name 节选和完整引用，避免被尾部裁剪吞掉身份。只用 cases.build 填行标题不足以证明 PLM 构建身份，此前的缺口已拒绝。
+
+Closure review 1: projection refusals carry warnings: [] as projection-output@1 requires. Known input refusals are typed at their throw sites with their own corrective action; unexpected exceptions are pack defects, never guessed from message text. Production-start coverage verifies the original pack code, message and fix survive the engine boundary. Version 1.0.2 is re-signed.
+
+## Closure review 2: per-requested-id coverage
+
+A listed key supplies a determinate positive index fact even if cut or missing entry bodies. indexed_match_count counts
+unique digest links; case_count remains readable bodies. Partial/cut/only views say at least N indexed entries and never
+claim an absent story from an empty returned subset. Only requested ids without links need the complete global key and
+entry listing, no skipped source, no missing bodies and no only filter to establish absence. Unrelated cuts do not refuse
+a run whose requested facts are already determined. A refusal lists only undetermined ids. Counts cover those requested
+identities; partial detail is stated as a lower bound rather than an impossible instruction to remove a fixed core cap.
+
+### Needs from core and the traceability pack
+
+Core index only= currently compares raw spellings before normalization; an empty filtered view cannot rule out aliases
+such as 00021 versus 21. Core needs normalized-id filtering plus explicit scope-completeness and excluded-entry counts.
+Until then, narrowing by a verified raw key can recover a positive match; a narrowed miss is not proof of absence. The
+refusal explicitly hands this missing capability to the core maintainer rather than asking a sync to remove hard limits.
+The sibling workflow traceability must adopt the same bounded absence/positive-lower-bound decision; its check.ts still
+uses missing_input for absent ids and is outside this task's edits. No package/runtime import crosses that boundary.
+Version 1.0.3 is re-signed with these per-id semantics.
+
+Closure review 3: adopted the shared raw-id extraction fix from gold-trace 36455d4 and removed the stand-in allocation entirely. Label numbers and dates no longer compete for a global or local numeric pool. The independent oracle still imports no Hub or pack runtime. Notes-only maps are classified by NoCaseNodesError at the throw site, never by matching exception messages.
+
+## Non-scalar PLM observations
+
+Scalar status and stage retain their values; fields_absent, fields_nonscalar and an explicit null are separate facts.
+A non-scalar field has a null placeholder plus its name in fields_nonscalar; its original JSON remains in the PLM original
+response. It is excluded from scalar state groups, never inferred as a lifecycle state and never counted in the null group.
+status_nonscalar and stage_nonscalar are top-level summary counts, not new vocabulary values. Counts are written before
+the possibly long status list, in both summary data and the statement: PLM 返回的状态不是单个值的有 k 个，没有按状态计数.
+A long-state regression checks that the non-scalar counts remain in the first 500 characters. The independent raw-input
+gold and its checker use the same rule; a missing counter or an invented null group fails verification. Version 1.0.4.
+
+Merged artifact 1.0.5 combines plm-fields selected-build identity verification with story-trace closure fixes; it is signed separately from the standalone story-trace 1.0.4 artifact.

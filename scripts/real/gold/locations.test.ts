@@ -395,3 +395,15 @@ describe('locations gold generator', () => {
     }
   });
 });
+
+describe('leading-zero associated identifiers', () => {
+  it('preserves nonzero identifiers for normalized joins and rejects all-zero runs', async () => {
+    const { joinGold } = await import('./join.ts');
+    const ids = extractAssociatedIds('需求 00910002；缺陷 00910001；缺陷 000000；需求 000000', []);
+    assert.deepEqual(ids.bugs, ['00910001']);
+    assert.deepEqual(ids.stories, ['00910002']);
+    const joined = joinGold([{ bug: '910001', status: 'fixed', module: '', system: 'plm' }], [{ document: 'synthetic-doc', id: 'synthetic-case', title: '合成用例', defects: ids.bugs }], { plm: [{ id: '00910001', status: 'closed' }] });
+    assert.equal(joined.closed_traced, 1);
+    assert.deepEqual(extractAssociatedIds('000000 合成标题', ['缺陷 00000', '需求 00']).associatedIds, []);
+  });
+});
