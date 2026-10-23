@@ -1,7 +1,7 @@
 // Compact index representation and building for defect-to-case deduplication.
 export const MAX_COMPACT_OUTPUT_BYTES = 4 * 1024 * 1024; // 4 MiB limit
 export const MAX_COMPACT_TITLE_LENGTH = 80;
-/** The core's per-key cap: a key listing exactly this many entries may have been cut (the note is the only signal). */
+/** Legacy fallback: without cut_keys, a key listing this many entries may have been cut. */
 export const MAX_INDEX_PER_KEY = 2000;
 
 export interface CompactCaseItem {
@@ -22,9 +22,9 @@ export interface CompactCaseIndex {
   unplaced: number;
   /** Entries whose data carried no commands field (their command set is unknown, not empty). */
   unplacedCommands: number;
-  /** The keys the source view was narrowed to (only=… of the bound URI), null when not narrowed. */
+  /** The source view's only field, or the bound URI for legacy views; null when not narrowed. */
   only: string[] | null;
-  /** Keys that listed exactly the per-key cap and may have been cut short by the core. */
+  /** The source view's cut_keys, or keys at the per-key cap for legacy views. */
   cappedKeys: string[];
   notes: string[];
 }
@@ -59,7 +59,7 @@ export function commandSetKey(commands: Iterable<string>): string {
 
 /** The only=… values of a bound index URI, by the core's own rule: comma-separated, each percent-decoded, a trailing
  * revision (@<64 hex>, or two joined by ..) stripped first. Null when the URI carries no only parameter (not narrowed).
- * The view's own output has no machine-readable only field (README Needs); the bound URI is the source. */
+ * Used only when the source view has no machine-readable only field. */
 export function onlyOfExternal(external: string | undefined | null): string[] | null {
   if (typeof external !== 'string' || external === '') return null;
   const atQuery = external.indexOf('?');
@@ -95,7 +95,15 @@ export function buildCompactIndex(
   }
 
   const model = isRecord(indexModel) ? indexModel : {};
-  const only = onlyOfExternal(external);
+  const hasOnly = Object.hasOwn(model, 'only');
+  const hasCutKeys = Object.hasOwn(model, 'cut_keys');
+  const fieldKeys = (value: unknown): string[] | null =>
+    Array.isArray(value) && value.every((key): key is string => typeof key === 'string') ? [...value] : null;
+  const onlyField = fieldKeys(model.only);
+  const cutField = fieldKeys(model.cut_keys);
+  const invalidMetadata = (hasOnly && onlyField === null) || (hasCutKeys && cutField === null);
+  // A present field is authoritative, including an empty array. Malformed fields cannot fall back to the URI.
+  const only = hasOnly ? onlyField ?? [] : onlyOfExternal(external);
   const sourceTruncated = model.truncated === true;
   const sourceSkipped = typeof model.skipped === 'number' ? model.skipped : 0;
 
@@ -105,10 +113,9 @@ export function buildCompactIndex(
       ? model.entries
       : [];
 
-  // A key that lists exactly the per-key cap may have been cut (the core notes it in prose only): treat it as possibly
-  // truncated. The compact item counts per key cannot show this (they sit under the byte budget), so read the source keys.
-  const cappedKeys: string[] = [];
-  if (isRecord(model.keys)) {
+  // Infer possibly-cut keys only for older views that omit cut_keys.
+  const cappedKeys: string[] = hasCutKeys ? cutField ?? [] : [];
+  if (!hasCutKeys && isRecord(model.keys)) {
     for (const [key, digests] of Object.entries(model.keys)) {
       if (Array.isArray(digests) && digests.length >= MAX_INDEX_PER_KEY) cappedKeys.push(key);
     }
@@ -225,11 +232,16 @@ export function buildCompactIndex(
   let dropped = total - keptCount;
   // With narrowing (only=…), the listed keys' completeness is what the check needs; a truncated source beyond them
   // does not block the decidable drafts. Without narrowing, the old rule stands: the whole view must be complete.
-  let complete = only !== null
+  let complete = !invalidMetadata && (only !== null
     ? dropped === 0 && sourceSkipped === 0
-    : dropped === 0 && !sourceTruncated && sourceSkipped === 0;
+    : dropped === 0 && !sourceTruncated && sourceSkipped === 0);
 
   const notes: string[] = [];
+  if (!hasOnly || !hasCutKeys) {
+    const missing = [!hasOnly ? 'only' : '', !hasCutKeys ? 'cut_keys' : ''].filter(Boolean);
+    notes.push(`源视图缺少 ${missing.join('、')} 字段，按 URI 和上限推断（仅缺失字段）`);
+  }
+  if (invalidMetadata) notes.push('源视图的 only 或 cut_keys 字段形状无效，无法证明索引完整');
   if (unplacedCommands > 0) {
     notes.push(`有 ${unplacedCommands} 个用例没有带 commands 字段，命令集合未知，无法参与去重`);
   }
@@ -243,7 +255,9 @@ export function buildCompactIndex(
     notes.push(`用例索引缺少 ${sourceSkipped} 份列出的文档`);
   }
   if (cappedKeys.length > 0) {
-    notes.push(`${cappedKeys.length} 个键的条目正好列到每键上限 ${MAX_INDEX_PER_KEY} 个，可能被截断`);
+    notes.push(hasCutKeys
+      ? `源视图 cut_keys 标明 ${cappedKeys.length} 个键的条目被每键上限截断`
+      : `${cappedKeys.length} 个键的条目正好列到每键上限 ${MAX_INDEX_PER_KEY} 个，可能被截断`);
   }
   if (sourceTruncated) {
     notes.push('源用例索引已被截断');
