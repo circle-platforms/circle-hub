@@ -858,3 +858,9 @@ Needs: merge hub-variables step two before merging this first step. Before deplo
 keep the existing option/parameter path; after deployment use that implementation's
 resolved variable snapshot for both kinds of production and record its variables in
 the composition (decision 44). No variable subsystem or deployment migration is added here.
+
+`KnowledgePort.unversionedRoot?(product)` returns the current product-wide root and
+composition. An older port without this method means no product-wide root. `RootInfo.build`
+is nullable; build-specific `currentRoot` and `rootOfBuild` retain non-null build results.
+Reading by digest uses the same product permission checks, the product-wide pointer
+for currentness, and displays build provenance as “未声明”. The console labels it “构建未声明”.

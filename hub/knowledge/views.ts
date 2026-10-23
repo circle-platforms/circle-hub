@@ -815,7 +815,7 @@ export class KnowledgeViews {
     const frozenSelector=!!context.run&&selectedBuild!==undefined&&fold(request.build)===fold(selectedBuild)&&lockedBody?.product===handle.product.id;
     let named=frozenSelector?{...lockedBody!.build,name:selectedBuild!}:await this.#builds.named(handle.product.id,request.build);
     const history=async()=>this.#context.store.buildsOf(handle.product.id);
-    if(named===null){const saved=(await history()).find(row=>fold(row.body.build.name)===fold(request.build));named=saved?.body.build??null;}
+    if(named===null){const saved=(await history()).find(row=>fold(row.body.build?.name)===fold(request.build));named=saved?.body.build??null;}
     const target=!!context.run&&named!==null&&selectedBuild!==undefined&&fold(named.name)===fold(selectedBuild)&&selectedProduct===handle.product.id;
     const useRunLock=named===null||target;
     if(storedRun&&useRunLock&&context.composition&&context.composition!==storedComposition)return {ok:false,id:bare,reason:'读取上下文的组成与已存运行锁定的组成不同；按运行记录的组成重读'};
@@ -833,10 +833,10 @@ export class KnowledgeViews {
     const body=await this.#context.store.composition(composition);
     if(!body||body.product!==handle.product.id)return {ok:false,id:bare,reason:'组成不属于请求的产品，改用该产品的组成'};
     if(useRunLock&&context.run&&lockedRoot!==null&&body.root!==lockedRoot)return {ok:false,id:bare,reason:'组成的根与运行锁定的根不同；按运行锁定组成重读'};
-    if(named===null&&body.version.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
+    if(named===null&&body.version?.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
     if(named!==null&&!target){
-      const base=fold(body.build.name),graph=new Map<string,Set<string>>();
-      for(const row of await history()){const key=fold(row.body.build.name),values=graph.get(key)??new Set<string>();values.add(fold(row.body.build.base));graph.set(key,values);}
+      const base=fold(body.build?.name ?? ''),graph=new Map<string,Set<string>>();
+      for(const row of await history()){const key=fold(row.body.build?.name),values=graph.get(key)??new Set<string>();values.add(fold(row.body.build.base));graph.set(key,values);}
       const seen=new Set<string>(),belongs=(name:string):boolean=>{const key=fold(name);if(key===base)return true;if(seen.has(key))return false;seen.add(key);return [...(graph.get(key)??[])].some(belongs);};
       if(!belongs(named.name))return {ok:false,id:bare,reason:'组成不属于这个命名构建或它已记录的基础构建；核对 composition 后重读'};
     }

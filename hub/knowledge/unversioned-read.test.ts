@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { makeUnversionedWorld, startPostgres } from './test-support.ts';
+let pg: Awaited<ReturnType<typeof startPostgres>>;
+before(async () => {pg = await startPostgres();});
+after(() => pg?.stop());
+test('product-wide roots use product permissions, their own pointer and undeclared build provenance', async t => {
+  const w = await makeUnversionedWorld(pg); t.after(() => w.close());
+  const info = await w.knowledge.unversionedRoot?.('acme'); assert.ok(info);
+  assert.equal(info.build,null);
+  assert.equal(await w.knowledge.unversionedRoot?.('absent'),null);
+  const page = await w.knowledge.getNodes({root:info.root,paths:['/docs']},w.user);
+  assert.ok(page);
+  assert.equal(await w.knowledge.getNodes({root:info.root,paths:['/docs']},w.outsider),null);
+  assert.equal(await w.knowledge.getNodes({root:'f'.repeat(64),paths:['/docs']},w.outsider),null);
+  const provenance = await w.knowledge.provenanceOf(`tree:${info.root}/docs`,w.user);
+  assert.ok(provenance?.length); assert.equal(provenance[0].build,'未声明');
+  const reader = w.knowledge.treeReader();
+  const entry = await reader.read(info.root,'/docs',null,{user:w.user.id,role:w.user.role});
+  assert.ok(entry); assert.match(JSON.stringify(entry),/未声明/);
+});

@@ -163,17 +163,18 @@ export class Builds {
       root: production.detail.root as string,
       composition: production.detail.composition as string,
       product,
-      build: { ...withoutLists(production.detail.build!), root: production.detail.root },
+      build: production.detail.build === null ? null : { ...withoutLists(production.detail.build), root: production.detail.root },
       produced_at: production.record.body.ended_at,
     };
   }
 
   /** The root a build name of any family resolves to. */
-  async rootOfBuild(product: string, name: string): Promise<RootInfo | null> {
+  async rootOfBuild(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null> {
     const build = await this.resolve(product, name);
     if (build === null) return null;
     const production = await this.#store.latestProduction(product, baseOf(build));
-    return production === null ? null : this.rootInfoOf(production, product);
+    const info = production === null ? null : this.rootInfoOf(production, product);
+    return info?.build ? { ...info, build: info.build } : null;
   }
 
   /** Every composition of a root digest (equal content from different builds or products shares one root). */
@@ -194,7 +195,10 @@ export class Builds {
   }
 
   /** The root the current-root pointer of a product line names. */
-  async currentRoot(product: string, line: string): Promise<RootInfo | null> {
+  async currentRoot(product: string, line: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
+  async currentRoot(product: string, line: null): Promise<RootInfo | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo | null> {
     let name: string;
     try {
       name = pointerName(product, line);
@@ -209,7 +213,7 @@ export class Builds {
       const production = productions.find((p) => p.detail.composition === move.composition) ?? productions[productions.length - 1];
       if (production !== undefined) return this.rootInfoOf(production, product);
     }
-    const productions = (await this.#store.productionsOfRoot(pointer.target)).filter((p) => p.detail.product === product && p.detail.build?.line === line);
+    const productions = (await this.#store.productionsOfRoot(pointer.target)).filter((p) => p.detail.product === product && (p.detail.build?.line ?? null) === line);
     const latest = productions[productions.length - 1];
     return latest === undefined ? null : this.rootInfoOf(latest, product);
   }

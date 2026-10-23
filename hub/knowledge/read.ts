@@ -450,7 +450,7 @@ export class TreeReading {
         const own: string[] = [];
         for (const digest of digests) for (const fragment of rowsOf[i].get(digest)?.fragments ?? []) if (!own.includes(fragment)) own.push(fragment);
         for (const fragment of own) if (!grounds.includes(fragment)) grounds.push(fragment);
-        return { composition: c.record, build: c.body.build.name, grounds: own };
+        return { composition: c.record, build: c.body.build?.name ?? UNDECLARED, grounds: own };
       });
       return { grounds, tagged };
     };
@@ -469,7 +469,7 @@ export class TreeReading {
       : await (async () => {
           const body = all[0]?.body;
           if (body === undefined) return null;
-          const pointer = await this.#context.records.pointers.get(pointerName(body.product, body.version.line));
+          const pointer = await this.#context.records.pointers.get(pointerName(body.product, body.version?.line ?? null));
           return pointer?.target ?? null;
         })();
     // Pack lookups of one read are cached (a withdrawn version is asked once, not once per row).
@@ -792,7 +792,7 @@ export class TreeReading {
           root: parsed.root,
           composition: view.record,
           product: production.detail.product,
-          build: production.detail.build.name,
+          build: production.detail.build?.name ?? UNDECLARED,
           path,
           entry: row.entry,
           kind: row.kind,

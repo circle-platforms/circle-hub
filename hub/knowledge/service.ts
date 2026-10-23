@@ -164,7 +164,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
         questions.push({ key: `${row.entry}:${depth}`, text: masked, section: '', fragment: row.fragments[0], segments: at, children, expected: depth < segments.length ? segments[depth] : null });
       }
     }
-    const samples = await placer.sample(questions, { product: composition.body.product, build: composition.body.build.name });
+    const samples = await placer.sample(questions, { product: composition.body.product, build: composition.body.build?.name ?? '未声明' });
     if (samples.length === 0) return { record: null, samples: 0, state: await calibration.state(kind, model) };
     const record = await calibration.append({ kind, model, origin: 'projected', samples, decided_by: null, root: input.root, note: `由 ${rows.length} 个代码挂树的片段遮去命令字面后生成` });
     return { record, samples: samples.length, state: await calibration.state(kind, model) };
@@ -194,6 +194,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       );
     },
     resolveBuild: (product, name) => builds.resolve(product, name),
+    unversionedRoot: product => builds.currentRoot(product, null),
     currentRoot: (product, line) => builds.currentRoot(product, line),
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),

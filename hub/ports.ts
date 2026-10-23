@@ -220,7 +220,7 @@ export interface RootInfo {
   /** Digest of the tree_root record that composed it (the build it was produced for and what every entry rests on). */
   composition: string;
   product: string;
-  build: KnownBuild;
+  build: KnownBuild | null;
   produced_at: string;
 }
 
@@ -268,14 +268,16 @@ export interface EntryDiff {
 }
 
 export interface KnowledgePort {
+  /** Current product-wide root; absent on older ports. */
+  unversionedRoot?(product: string): Promise<RootInfo | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */
   resolveBuild(product: string, name: string): Promise<KnownBuild | null>;
   /** The root of the newest produced build of a version line. */
-  currentRoot(product: string, line: string): Promise<RootInfo | null>;
+  currentRoot(product: string, line: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
   /** The root a build name of any family resolves to. This is what a run locks. */
-  rootOfBuild(product: string, name: string): Promise<RootInfo | null>;
+  rootOfBuild(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
   /** Every composition record of a root digest (equal content from different builds shares one root). */
   rootInfo(root: string): Promise<RootInfo[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
