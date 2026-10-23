@@ -1,83 +1,93 @@
-// Tests of the metamorphic scenario (task gold-template-gap step 4): synthetic two-document gold, synthetic tool
-// results, the three phases walked to the end; every reply's call count within `batch`; refused starts recorded as
-// unknown; a request with no tool results after the start neither restarts nor advances.
+// Synthetic independent category declarations, formatted through the real Hub text renderer.
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { afterEach, test } from 'node:test';
+import { StartRunInput, StartRunOutput, UploadFileOutput, GetNodesOutput } from '../../../contracts/src/tools.ts';
+import { toolText } from '../../../hub/server/text.ts';
 import type { Turn } from '../scripted-model.ts';
+import { caseNodesOf, parseMindMap } from '../gold/cases.ts';
 import { parseItemLine, parseSummary, sha256Of, summaryOfGetNodes, truncationReference, uploadIdOf, default as build } from './template-gap-metamorphic-circle.ts';
-import { readCategories } from '../gold/gap-metamorphic.ts';
+import { readCategories, type MindTree } from '../gold/gap-metamorphic.ts';
 
 const CATEGORIES = readCategories(JSON.parse(readFileSync(join(import.meta.dirname, '../../../packs/workflow/template-gap/tables/template-v3.json'), 'utf8')));
-
-const leaf = (id: string, text: string): unknown => ({ data: { id, text }, children: [] });
-const kase = (id: string, text: string, expected: string, tag = 'configuration'): unknown => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
-const group = (id: string, text: string, ...children: unknown[]): unknown => ({ data: { id, text }, children });
-const docOf = (...cases: unknown[]): { root: unknown } => ({ root: group('r', '文档', group('g', '组', ...cases)) });
-
-const turn = (index: number, toolResults: Array<{ id: string; text: string; isError: boolean }> = []): Turn => ({ index, system: null, messages: [], tools: [], toolResults });
-
+const leaf = (id: string, text: string): any => ({ data: { id, text }, children: [] });
+const kase = (id: string, text: string, expected: string, tag = 'Configuration'): any => ({ data: { id, text, resource: [tag], priority: 2, __present: [tag.toLowerCase()] }, children: [leaf(`${id}e`, expected)] });
+const group = (id: string, text: string, ...children: any[]): any => ({ data: { id, text }, children });
+const declaredGroup = (id: string, present: string[], ...children: any[]): any => ({ data: { id, text: '合成分组', __present: present }, children });
+const docOf = (...cases: any[]): { root: any } => ({ root: group('r', '合成文档', group('g', '合成分组', ...cases)) });
+const turn = (index: number, toolResults: Turn['toolResults'] = []): Turn => ({ index, system: null, messages: [], tools: [], toolResults });
 const dirs: string[] = [];
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
-
-const goldOf = (): { gold: unknown; dir: string } => {
-  const dir = mkdtempSync(join(tmpdir(), 'gap-scenario-'));
-  dirs.push(dir);
-  // Document A: two cases, one carries the Functional tag; document B: one case with the Stress tag.
-  writeFileSync(join(dir, 'a.json'), JSON.stringify(docOf(kase('a1', '甲', '成功', 'Functional'), kase('a2', '乙', '成功'))));
-  writeFileSync(join(dir, 'b.json'), JSON.stringify(docOf(kase('b1', '乙', '成功', 'Stress'))));
+afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+function goldOf(): { gold: any; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'gap-scenario-')); dirs.push(dir);
+  writeFileSync(join(dir, 'a.json'), JSON.stringify({ root: group('ra', '合成文档甲', declaredGroup('ga1', ['security'], kase('a1', '合成甲一', '成功', 'Functional')), kase('a2', '合成甲二', '成功', 'Configuration')) }));
+  writeFileSync(join(dir, 'b.json'), JSON.stringify({ root: group('rb', '合成文档乙', declaredGroup('gb1', ['database'], kase('b1', '合成乙一', '成功', 'Stress')), kase('b2', '合成乙二', '成功', 'Configuration')) }));
   return { gold: { documents: [{ file: join(dir, 'a.json') }, { file: join(dir, 'b.json') }], maxCases: 80, batch: 2 }, dir };
-};
-
-/** Drives the scenario with a fake Hub: uploads answer src:<sha of the bytes in workdir>, runs answer item rows. */
-const drive = (scenario: ReturnType<typeof build>, answers: (file: string) => string): { calls: Array<Array<{ tool: string; input: Record<string, unknown> }>>; done: string; names: string[] } => {
-  scenario.prepare?.(join(dirs[dirs.length - 1]!, 'work'));
-  const calls: Array<Array<{ tool: string; input: Record<string, unknown> }>> = [];
-  const shaToName = new Map<string, string>();
-  let index = 0;
-  for (let guard = 0; guard < 500; guard += 1) {
-    const reply = scenario.respond(turn(index, lastResults)) as Array<{ tool?: string; input?: Record<string, unknown>; text?: string }>;
-    if (reply.length === 1 && reply[0]?.text === '检查完成。') {
-      return { calls, done: String(reply[0].text), names: [...shaToName.values()] };
-    }
-    const tools = reply.filter((r) => r.tool !== undefined) as Array<{ tool: string; input: Record<string, unknown> }>;
-    if (reply.every((r) => r.tool !== undefined) && reply.length === 0) return { calls, done: '', names: [] };
-    calls.push(tools);
-    // Produce the results of these calls.
-    const results: Array<{ id: string; text: string; isError: boolean }> = [];
-    if (tools.every((t) => t.tool === 'hub_upload_file')) {
-      for (const t of tools) {
-        const name = String(t.input.file_path);
-        const bytes = readFileSync(join(dirs[dirs.length - 1]!, 'work', name), 'utf8');
-        const sha = sha256Of(bytes);
-        shaToName.set(sha, name);
-        results.push({ id: `u${shaToName.size}`, text: `已上传 src:${sha}`, isError: false });
+}
+interface CopyInfo { name: string; tree: MindTree; sha: string; document: number; kind: string; category?: string; ordinal?: number }
+interface Answer { count: number; missing: Set<string> }
+interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean }
+function truth(tree: MindTree): Answer {
+  const map = parseMindMap(tree); const raw: any[] = []; const walk = (node: any) => { raw.push(node); (node.children ?? []).forEach(walk); }; walk(tree.root);
+  const cases = caseNodesOf(map); const present = new Set<string>();
+  for (const node of cases) for (let at: number | null = node.index; at !== null; at = map.nodes[at]!.parent) for (const id of raw[at]?.data?.__present ?? []) present.add(id);
+  return { count: cases.length, missing: new Set(CATEGORIES.map(c => c.id).filter(id => !present.has(id))) };
+}
+function summaryOf(answer: Answer): string {
+  const missing = CATEGORIES.filter(c => answer.missing.has(c.id));
+  const compose = (named: boolean) => `用例 ${answer.count} 个；${missing.length ? `缺 ${missing.length} 个模板类别${named ? '' : '（只列编号）'}：${missing.map(c => named ? `${c.label}（${c.id}）` : c.id).join('、')}` : '24 个模板类别都已覆盖'}；模板类别出现 ${24 - missing.length}/24 个；用例规则：标签或标记；其中 0 个只靠标记识别（没有标签）`;
+  const named = compose(true); return named.length <= 480 ? named : compose(false);
+}
+function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) => string, options: FakeOptions = {}) {
+  const dir = dirs[dirs.length - 1]!; const work = join(dir, 'work'); scenario.prepare?.(work);
+  const calls: { tool: string; input: Record<string, unknown> }[][] = []; const infos: CopyInfo[] = []; const accepted = new Map<string, CopyInfo>(); const full = new Map<string, string>();
+  let results: Turn['toolResults'] = []; let seq = 0; let run = 0;
+  const trace = () => (++seq).toString(16).padStart(32, '0');
+  for (let index = 0; index < 1000; index++) {
+    const reply = scenario.respond(turn(index, results)) as any[];
+    if (reply.length === 1 && reply[0]?.text === '检查完成。') return { calls, done: reply[0].text as string, names: infos.map(info => info.name), infos, checks: scenario.check([]) };
+    const tools = reply.filter(call => typeof call.tool === 'string') as { tool: string; input: Record<string, unknown> }[];
+    if (!tools.length) return { calls, done: String(reply[0]?.text ?? ''), names: infos.map(info => info.name), infos, checks: scenario.check([]) };
+    calls.push(tools); results = [];
+    for (const call of tools) {
+      const token = trace(); let text: string; let isError = false;
+      if (call.tool === 'hub_upload_file') {
+        const name = String(call.input.file_path); assert.equal(isAbsolute(name), false); assert.equal(call.input.media_type, 'application/json');
+        const bytes = readFileSync(join(work, name)); const sha = sha256Of(bytes); const tree = JSON.parse(bytes.toString()) as MindTree;
+        const match = /^gap-doc([0-9]+)-([abdef])(?:-(.*))?$/.exec(String(tree.root.data.id)); const single = /^gap-doc([0-9]+)-c([0-9]+)$/.exec(String(tree.root.data.id));
+        assert.ok(match || single, 'synthetic copy identity');
+        const info: CopyInfo = { name, tree, sha, document: Number((match ?? single)![1]) - 1, kind: single ? 'c' : match![2]!, ...(single ? { ordinal: Number(single[2]) - 1 } : match?.[3] ? { category: match[3] } : {}) }; infos.push(info);
+        const reported = options.badUpload ? 'f'.repeat(64) : sha; accepted.set(reported, info);
+        const value = UploadFileOutput.parse({ call_result: 'ok', trace: token, errors: [], acceptance: 'accepted', reference: `src:${reported}`, sha256: reported, size: bytes.length, media_type: 'application/json', structure: { parser: 'kityminder@1', summary: { nodes: parseMindMap(tree).nodes.length } } });
+        text = toolText('upload_file', value);
+      } else if (call.tool === 'hub_start_run') {
+        const parsed = StartRunInput.safeParse(call.input); const docs = parsed.success ? (parsed.data.inputs.documents as { reference: string }[]) : [];
+        const copies = docs.map(doc => accepted.get(doc.reference?.slice(4)));
+        if (!parsed.success || options.refuseStart || copies.some(copy => !copy) || new Set(copies.map(copy => copy?.tree.root.data.id)).size !== copies.length) {
+          isError = true; text = toolText('start_run', { call_result: 'error', trace: token, errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成拒绝', fix: '核对输入' }] });
+        } else {
+          const record = `rec:${sha256Of(`synthetic-run-${++run}`)}`;
+          const items = copies.filter((copy): copy is CopyInfo => !!copy).reverse().map((info, at) => {
+            let answer = truth(info.tree); if (options.hide) answer.missing.add(options.hide); if (options.mutate) answer = options.mutate(info, answer);
+            const summary = answerText?.(info.name) ?? summaryOf(answer); full.set(`${record}#/items/${at}/summary`, summary);
+            return { id: uploadIdOf(info.sha), label: String(info.tree.root.data.text), summary, location: `src:${info.sha}`, fields: {} };
+          });
+          const value = StartRunOutput.parse({ call_result: 'ok', trace: token, errors: [], run: { run: `run_${run.toString(36).padStart(26, '0')}`, pack: 'template-gap@1.0.0', pack_digest: sha256Of('synthetic-pack'), target_basis: [], sources: [], requirements: [], items: options.dropRows ? [] : items, instructions: '合成规程', instructions_digest: sha256Of('synthetic-instructions'), started_at: '2026-01-01T00:00:00.000Z' }, result: { reference: `rec:${sha256Of(`synthetic-result-${run}`)}`, counts: { delivered: items.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } });
+          text = toolText('start_run', value, { paging: true, record });
+        }
+      } else {
+        assert.equal(call.tool, 'hub_get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
+        if (summary === undefined) { isError = true; text = toolText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
+        else text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(summary) } }), { paging: true });
       }
-    } else if (tools.length === 1 && tools[0]!.tool === 'hub_get_nodes') {
-      const reference = String((tools[0]!.input as { reference: string }).reference);
-      const full = fullTextOf.get(reference) ?? '内容 ' + reference + '：用例 1 个；缺 2 个模板类别：k-security、k-localization';
-      results.push({ id: 'gn', text: JSON.stringify(full), isError: false });
-    } else if (tools.length === 1 && tools[0]!.tool === 'hub_start_run') {
-      const shas = ((tools[0]!.input.inputs as { documents: Array<{ reference: string }> }).documents).map((d) => { assert.deepEqual(Object.keys(d), ['reference']); return d.reference.slice(4); });
-      const rows = shas.map((sha) => `- upload-${sha.slice(0, 12)} | 文档 | ${answers(shaToName.get(sha) ?? '?')} | 位置 /`);
-      results.push({ id: 'run', text: `运行 run_x 完成：\n${rows.join('\n')}`, isError: false });
+      results.push({ id: `tool-${seq}`, text, isError });
     }
-    lastResults = results;
-    index += 1;
-    if (results.length === 0) return { calls, done: '', names: [] };
+    if (tools.every(call => call.tool === 'hub_upload_file')) results.reverse();
   }
-  return { calls, done: '未走完', names: [...shaToName.values()] };
-};
-let lastResults: Array<{ id: string; text: string; isError: boolean }> = [];
-const fullTextOf = new Map<string, string>([
-  ['rec:full-x/summary', '内容 rec:full-x/summary：用例 1 个；缺 2 个模板类别：k-security、k-localization'],
-  ['rec:full-y/summary', '内容 rec:full-y/summary：用例 1 个；缺 1 个模板类别：k-security'],
-  ['rec:full-c1/summary', '内容 rec:full-c1/summary：用例 2 个；缺 1 个模板类别：k-security'],
-]);
+  throw new Error('synthetic scenario did not finish');
+}
 
 test('parseItemLine splits on the last non-position part; a title may contain the separator', () => {
   const plain = parseItemLine('upload-0123456789ab | 甲用例 | 位置 /组 | 用例 1 个；缺 2 个模板类别（只列编号）：functional、negative');
@@ -111,33 +121,16 @@ test('truncationReference and summaryOfGetNodes', () => {
 });
 
 test('the scenario walks the three phases with batch-bounded replies', () => {
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  // The fake Hub answers by upload id: every copy of these synthetic documents shows the same two missing ids
-  // (functional and negative absent everywhere except where a tag says otherwise — kept simple: all copies miss
-  // the same two keyword categories, so every intersection matches).
-  const { calls, done } = drive(scenario, () => '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary');
-  assert.ok(calls.length > 4, `phases made ${calls.length} replies`);
-  for (const reply of calls) assert.ok(reply.length <= 2, `a reply carried ${reply.length} calls`);
-  assert.ok(calls.some((r) => r.every((c) => c.tool === 'hub_upload_file')), 'uploads happened');
-  assert.ok(calls.some((r) => r.some((c) => c.tool === 'hub_start_run')), 'runs happened');
-  assert.ok(done.includes('检查完成'), `the last reply closes: ${done}`);
+  const { gold } = goldOf(); gold.batch = 4; const scenario = build(gold); const result = drive(scenario);
+  assert.equal(result.done, '检查完成。'); assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
+  for (const batch of result.calls) assert.ok(batch.length <= gold.batch);
+  const counts = Object.fromEntries(['a','b','c','d','e','f'].map(kind => [kind, result.infos.filter(info => info.kind === kind).length]));
+  assert.deepEqual(counts, { a: 2, b: 2, c: 4, d: 6, e: 6, f: 4 });
 });
-
 test('a refused start records the batch as unknown, and the scenario still finishes', () => {
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  scenario.prepare?.(join(dirs[dirs.length - 1]!, 'work'));
-  // First reply: uploads. Feed a refusal for the first run instead of item rows.
-  const first = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
-  assert.ok(first.every((c) => c.tool === 'hub_upload_file'));
-  const upResults = first.map((c, i) => {
-    const bytes = readFileSync(join(dirs[dirs.length - 1]!, 'work', String(c.input.file_path)), 'utf8');
-    return { id: `u${i}`, text: `已上传 src:${sha256Of(bytes)}`, isError: false };
-  });
-  void upResults;
-  // Enough for the structural assertions here: the driver keeps going after refusals in drive().
-  assert.ok(first.length <= 2);
+  const { gold } = goldOf(); const scenario = build(gold); const result = drive(scenario, undefined, { refuseStart: true });
+  assert.equal(result.done, '检查完成。'); assert.equal(result.checks.find(check => check.name === '副本回答完整')?.ok, false);
+  assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('开始运行被拒'))));
 });
 
 test('a request with no tool results after the start neither restarts nor advances', () => {
@@ -158,18 +151,10 @@ test('a request with no tool results after the start neither restarts nor advanc
   assert.equal(still.length, 1 && still[0]?.text !== undefined ? 1 : 0);
 });
 
-test('check() flags a wrong upload sha and a missed order-independence', () => {
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  const { calls } = drive(scenario, () => '用例 1 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-y/summary');
-  void calls;
-  // The driven scenario's answers all agree; check() must pass the intersection-based checks. A full negative case
-  // needs a lying Hub, which drive() cannot express per copy; the structural negatives are covered by the parser
-  // tests above and the unit tests of gap-metamorphic.
-  const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
-  assert.ok(checks.length >= 11, `${checks.length} checks`);
-  assert.ok(checks.some((c) => c.name === '上传字节' && c.ok));
-  assert.ok(checks.some((c) => c.name === '对话没有被压缩' && c.ok));
+test('check() flags a missed order-independence against a passing honest baseline', () => {
+  const { gold } = goldOf(); const result = drive(build(gold), undefined, { mutate: (info, answer) => { if (info.kind === 'b') answer.missing.add('security'); return answer; } });
+  assert.equal(result.checks.find(check => check.name === '换序')?.ok, false);
+  assert.equal(result.checks.find(check => check.name === '上传字节')?.ok, true);
 });
 
 test('uploadIdOf derives the item id from the sha', () => {
@@ -192,68 +177,34 @@ test('gap-metamorphic.ts and the scenario import nothing from hub/ or packs/; th
   }
 });
 
-// Five lying Hubs (task page: each wrong answer caught by its own check, end to end). The honest answer every copy
-// gets unless a lie names its file; the lies key by upload file name, which the driver knows.
-const HONEST = '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary';
-const checksDrive = (lie: (file: string) => string | undefined): Array<{ name: string; ok: boolean; actual: string }> => {
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  drive(scenario, (file) => lie(file) ?? HONEST);
-  return scenario.check([{ index: 0, toolResults: [], tools: [] }]).map((c) => ({ name: c.name, ok: c.ok, actual: String(c.actual) }));
-};
-
+function lying(options: FakeOptions, target: string) {
+  const { gold } = goldOf(); const honest = drive(build(gold)); assert.ok(honest.checks.every(check => check.ok));
+  const wrong = drive(build(gold), undefined, options);
+  assert.equal(wrong.checks.find(check => check.name === target)?.ok, false);
+  return wrong;
+}
 test('a lying Hub: b loses one category the original names (order independence caught)', () => {
-  const checks = checksDrive((file) => (file === 'd0-b.json' ? '用例 1 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-y/summary' : undefined));
-  const b = checks.find((c) => c.name === '换序');
-  assert.ok(b !== undefined && !b.ok, JSON.stringify(b));
+  lying({ mutate: (info, answer) => { if (info.kind === 'b') answer.missing.add('security'); return answer; } }, '换序');
 });
-
 test('a lying Hub: a single-case copy drops the type-label category its own tag must show', () => {
-  const checks = checksDrive((file) => (file === 'd0-c0.json' ? '用例 1 个；缺 2 个模板类别（只列编号）：functional、k-security；全文 rec:full-y/summary' : undefined));
-  const type = checks.find((c) => c.name === '类型名标签');
-  assert.ok(type !== undefined && !type.ok, JSON.stringify(type));
+  const result = lying({ hide: 'functional' }, '类型名标签');
+  assert.deepEqual(result.checks.filter(check => !check.ok).map(check => check.name), ['类型名标签']);
 });
-
-test('a lying Hub: the original\'s case count is one short', () => {
-  const checks = checksDrive((file) => (file === 'd0-a.json' || file === 'd1-a.json' ? '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary' : undefined));
-  const original = checks.find((c) => c.name === '原件用例数');
-  assert.ok(original !== undefined && !original.ok, JSON.stringify(original));
+test('a lying Hub: the original case count is one short', () => {
+  lying({ mutate: (info, answer) => ({ ...answer, count: ['a','b'].includes(info.kind) ? answer.count - 1 : answer.count }) }, '原件用例数');
 });
-
+test('a lying Hub: a single-case answer loses a category declared by its ancestor', () => {
+  lying({ mutate: (info, answer) => { if (info.document === 0 && info.kind === 'c' && info.ordinal === 0) answer.missing.add('security'); return answer; } }, '拆分');
+});
 test('a lying Hub: after the join the target category is still missing', () => {
-  // Every honest copy already misses k-security and k-localization; a joined copy that still names the target is
-  // wrong. Which file is an f copy is decided at run time, so the lie names any file ending in '-j-'.
-  const checks = checksDrive((file) => (/j-/.test(file) ? '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary' : undefined));
-  const join = checks.find((c) => c.name === '加回和加入');
-  assert.ok(join !== undefined && !join.ok, JSON.stringify(join));
+  lying({ mutate: (info, answer) => { if (info.kind === 'f') answer.missing.add(info.category!); return answer; } }, '加回和加入');
 });
-
-test('a lying Hub: an upload\'s src does not match the bytes written', () => {
-  // The driver answers every upload with a foreign sha: the sha check must fail.
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  scenario.prepare?.(join(dirs[dirs.length - 1]!, 'work'));
-  const first = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
-  const upResults = first.map((c, i) => ({ id: `u${i}`, text: `已上传 src:${'f'.repeat(64)}`, isError: false }));
-  const second = scenario.respond(turn(1, upResults)) as Array<{ tool: string; input: Record<string, unknown> }>;
-  void second;
-  const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
-  const upload = checks.find((c) => c.name === '上传字节');
-  assert.ok(upload !== undefined && !upload.ok, JSON.stringify(upload));
-});
-
-test('a finding names the case and the run when a single-case answer cannot be had', () => {
-  // c-0-1's run answers two cases: the pack cannot categorize that case, and every dependent copy stops with the
-  // finding, never an unknown.
-  const { gold } = goldOf();
-  const scenario = build(gold as never);
-  drive(scenario, (file) => (file === 'd0-c1.json' ? '用例 2 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-c1/summary' : HONEST));
-  scenario.check([{ index: 0, toolResults: [], tools: [] }]);
-  const sections = scenario.sections ?? [];
-  const finding = sections.flatMap((s) => s.lines).find((l) => l.includes('包分不出类别'));
-  assert.ok(finding !== undefined && finding.includes('a2') && finding.includes('c-0-1'), String(finding));
-  const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
-  assert.ok(checks.every((c) => c.name !== '单用例副本答案未知' ? true : false));
+test('a lying Hub: an upload source does not match the bytes written', () => { lying({ badUpload: true }, '上传字节'); });
+test('a finding names an anonymous case and run when a single-case answer cannot be had', () => {
+  const { gold } = goldOf(); const scenario = build(gold);
+  const result = drive(scenario, undefined, { mutate: (info, answer) => ({ ...answer, count: info.document === 0 && info.kind === 'c' && info.ordinal === 1 ? 9 : answer.count }) });
+  assert.equal(result.checks.find(check => check.name === '单用例副本用例数')?.ok, false);
+  assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('包分不出类别'))));
 });
 
 test('review 1: start_run uses the actual strict reference binding contract', async () => {
@@ -303,7 +254,7 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   assert.equal(start[0].tool, 'hub_start_run');
   const rows = shas.map((sha, i) => {
     const reference = `rec:${'a'.repeat(64)}#/items/${i}`;
-    full.set(`${reference}/summary`, `用例 ${i < 2 ? 2 : 1} 个；24 个模板类别都已覆盖`);
+    full.set(`${reference}/summary`, `用例 ${2} 个；24 个模板类别都已覆盖`);
     return `- upload-${sha.slice(0, 12)} | 合成 | 用例 99 个；缺…（共 480 个字符，全文 ${reference}） | 位置 /`;
   });
   let reply = scenario.respond(turn(2, [{ id: 'run', text: rows.join('\n'), isError: false }])) as any[];
