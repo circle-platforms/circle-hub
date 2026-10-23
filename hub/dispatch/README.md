@@ -204,3 +204,9 @@ protocol_versions 声明不替代认证。否定结论同时重核查询会话�
 复核确认：`credential` 的名字属于原作业的固定字段，不在兼容只读修补范围内。恢复和对账仍可取得这个固定名字的当前密钥版本；修改源定义为另一个名字只记录漂移并拒绝采用该修补，不能替换已发出作业的钥匙名字。状态、结果和认证的兼容只读修补沿用集成者确认的 D02 R[6] 口径，只用原作业固定的变量决定解析。
 
 期望值引用不得进入任何 `$value` 路径段，包括嵌套对象；登记、更新、离线解析和已有定义的 `var set` 都先核对源引用位置。字面的管理员调用绑定仍可登记，变量不能决定其绑定键名；旧的不合格源定义须先通过 executor update 修正。
+
+## D03/P11 contract assembly
+
+`executor@1`, its source-definition validator and `write-declaration@1` now live in contracts/resources. The dispatch module retains runtime binding helpers and ordinary-variable resolution only. Credential references and all existing expected-value positions move with the schema; write declarations and environment never accept ordinary variables. A submit declaration uses generated interaction, effect, retry and signing axes. It names a target-key binding, reversibility, audience, read-back tool/pointer, refusal pointers, optional before-state read and Hub-record behavior. Executors admit job effects only, with no external audience and with durable Hub records. Before-state calls cannot use the submit tool.
+
+A historical definition without a write declaration retains the existing job/service-on-behalf semantics and its previously supported retry class; executor list explicitly reports 写声明未写. Environment is not guessed: an absent environment prevents dispatch until an administrator updates it. Ordered multi-step writes are outside this round. The request-record integration remains pending hub-unknown-exits; existing action details do not stand for a sent durable request.

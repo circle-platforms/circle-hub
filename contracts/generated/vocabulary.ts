@@ -3,6 +3,7 @@
 import { z } from 'zod';
 
 export const AXES = {
+  write_interaction: { label: '交互方式', owner: 'D03', values: [{ code: 'submit_then_read', label: '提交一次，再读状态和结果' }] },
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
   basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
   provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }] },
@@ -73,6 +74,15 @@ export const AXES = {
 } as const;
 
 export type AxisName = keyof typeof AXES;
+
+/** 交互方式 (D03) */
+export const WRITE_INTERACTION = ['submit_then_read'] as const;
+export type WriteInteraction = (typeof WRITE_INTERACTION)[number];
+export const WRITE_INTERACTION_LABEL = { 'submit_then_read': '提交一次，再读状态和结果' } as const satisfies { readonly [K in WriteInteraction]: string };
+export const WriteInteractionSchema = z.enum(WRITE_INTERACTION);
+export function isWriteInteraction(value: unknown): value is WriteInteraction {
+  return (WRITE_INTERACTION as readonly unknown[]).includes(value);
+}
 
 /** 性质 (B01) */
 export const NATURE = ['fact', 'judgment', 'unknown'] as const;
@@ -678,6 +688,7 @@ export function isDigestRule(value: unknown): value is DigestRule {
 }
 
 export interface AxisValues {
+  write_interaction: WriteInteraction;
   nature: Nature;
   basis_rank: BasisRank;
   provenance_type: ProvenanceType;
@@ -748,6 +759,7 @@ export interface AxisValues {
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
+  write_interaction: WRITE_INTERACTION_LABEL,
   nature: NATURE_LABEL,
   basis_rank: BASIS_RANK_LABEL,
   provenance_type: PROVENANCE_TYPE_LABEL,

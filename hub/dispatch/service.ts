@@ -277,7 +277,7 @@ export class DispatchService {
         requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
         await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
       }
-      const intentSemantics:{effect_class:EffectClass;retry_safety:RetrySafety;signing:Signing}={effect_class:'job',retry_safety:d.retry_safety,signing:'service_on_behalf'};
+      const intentSemantics:{effect_class:EffectClass;retry_safety:RetrySafety;signing:Signing}={effect_class:d.calls.submit.write?.effect_class??'job',retry_safety:d.calls.submit.write?.retry_safety??d.retry_safety,signing:d.calls.submit.write?.signing??'service_on_behalf'};
       const precheckSources=[...new Set((await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase)) || e.body.detail.phase==='device_probe').flatMap(e=>e.body.inputs))];
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
       if(!pulse.held())throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');

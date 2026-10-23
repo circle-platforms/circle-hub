@@ -2750,6 +2750,7 @@
     "目标一侧原来叫“回执”的改称“提交响应”和“目标的应答”，把“回执”留给 Hub 对一次提交或请求的应答（VOC:19，决定表第 11 行，10-21 已定）"
    ],
    "changes10": [
+    "交互方式 write_interaction 本轮登记 submit_then_read（提交一次，再读状态和结果），写声明只用生成词表（来源：D03 F[0]；d03-p11-boundary 第 1 条；所有者 2026-10-24 授权新增该轴）",
     "保留逐类重试规则，读作有界重试；写入丢回复的未知自动核对并转带期限处置，时间窗去重的本轮偏离单独披露（来源：进度页决定 35 上机第 7 问（拒绝时写明阶段和是否已上机）；任务页 gateway-request-ids 第 4、10 条；任务页 d03-p11-boundary 第 1 条（拒绝阶段的指针）；未知普查第 4.2 节第 22 条（幂等的读不重试）；任务页 hub-read-absence 第 4 条；所有者 2026-10-23 的规矩（未知只作过渡状态）；任务页 hub-unknown-model 第 4 条；未知普查第 3 节第 1 条；所有者 2026-10-23 的规矩；任务页 hub-unknown-model 第 4 条；dispatch-gateway 的 hub/dispatch/README.md（受理后的读失败只重读原作业，不重交）；进度页决定 35 第 25 项（所有者 10-23 晚改定：不加工具）；hub-unknown-model 第 4 条；gateway-request-ids 的集成者模型分工；d03-p11-boundary 第 5 条）"
    ]
   },
@@ -4186,6 +4187,17 @@
   ]
  },
  "vocabulary": [
+  {
+   "axis": "write_interaction",
+   "label": "交互方式",
+   "owner": "D03",
+   "values": [
+    {
+     "code": "submit_then_read",
+     "label": "提交一次，再读状态和结果"
+    }
+   ]
+  },
   {
    "axis": "nature",
    "label": "性质",
