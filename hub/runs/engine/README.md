@@ -684,3 +684,13 @@ unfinished jobs while the lock is held; a competing reservation rechecks fences 
 The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
 Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
 older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.
+
+## Unknown exits
+
+New transitional layer results bind every missing fact to a named, finite exit before partition validation.
+`EXIT_BY_REASON` exhausts the generated cause vocabulary; a pack cannot choose another account through its exit.
+Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
+The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
+Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
+Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
+The following commits connect these exits to durable requests and automatic maintenance.
