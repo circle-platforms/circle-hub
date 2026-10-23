@@ -592,3 +592,9 @@ closing records; command-only assemblies do not start maintenance. An expired ru
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
+
+Unexpected evaluation failures now append a validation action with null acceptance, a stable check-error code and a
+retry instruction; internal exception details go only to administrator notes. getRun distinguishes “未校验（中断）”
+from refusal, including submissions left with no action. Startup/minute maintenance revalidates orphan submissions
+using the session actually recorded by the interrupted call, never the run's start session. Three failed attempts
+lead to a finite named administrator repair request; missing historical session facts likewise go to a named request.

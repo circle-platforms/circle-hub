@@ -159,7 +159,17 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
     ctx.log({ traceId: call.traceId, run: named, what: 'submit_result', detail: named === null ? 'no run id in the arguments' : `run ${named} is unknown or not visible to ${user.id}` });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
-  return ctx.lock(`submit:${stored.body.run}`, () => submitLocked(ctx, user, args, call, stored));
+  return ctx.lock(`submit:${stored.body.run}`, async () => {
+    try{return await submitLocked(ctx,user,args,call,stored);}
+    catch(error){
+      const at=ctx.now().toISOString();
+      ctx.log({traceId:call.traceId,run:stored.body.run,what:'submit_result interrupted',detail:describe(error)});
+      const received=receivedDigest(args);
+      const record=await submissionByDigest(ctx.deps.records.store,stored.body.run,received.digest);
+      if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
+      return {call_result:'error',acceptance:'not_accepted',errors:[{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带同一会话原样重交，不需要修改提交'}]};
+    }
+  });
 }
 
 async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>): Promise<SubmitAnswer> {

@@ -1,3 +1,5 @@
+import { submitResult } from './submit.ts';
+import { isObject, receivedDigest } from './util.ts';
 import { randomBytes } from 'node:crypto';
 // Startup and periodic deterministic maintenance. It writes new records; no historical run/result is changed.
 import { digestOf, type Page, type StoredRecord } from '../../records/api.ts';
@@ -5,14 +7,14 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { latestAccepted, listRunRecords, putAction, putResult } from './store.ts';
+import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
 import { putRequest, recordResultRequests } from './requests.ts';
 
 export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items)await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));
+    for(const run of page.items){await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
 }
@@ -36,4 +38,26 @@ async function expireRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promi
   await recordResultRequests(ctx,run,result);
   const saved=await putResult(ctx.deps.records.store,result,now.toISOString());
   await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:[`rec:${stored.digest}`],startedAt:now.toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:['not_covered'],detail:{deadline:true,submission,result:saved.digest,repair:[]}});
+}
+
+async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
+  const run=stored.body;
+  const account=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');
+  if(!account||account.disabled)return;
+  for(const submission of await submissionsOf(ctx.deps.records.store,run.run)){
+    const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
+    if(action&&action.body.detail.hub_error!==true)continue;
+    const detail=action?.body.detail;
+    const independent=run.requirements.some(r=>r.accepted_producer==='independent_judgment');
+    const historicalSession=detail&&typeof detail.session==='string'?detail.session:null;
+    const failures=(await actionsOf(ctx.deps.records.store,run.run)).filter(a=>a.body.detail.hub_error===true&&a.body.detail.submission===(isObject(submission.body)?receivedDigest(submission.body).digest:null)).length;
+    if(isVerbatimObject(submission)||!isObject(submission.body)||independent&&historicalSession===null||failures>=3){
+      const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+      if(!admin)throw new Error('中断重验缺少具名管理员');
+      const missing=independent&&historicalSession===null?`提交记录 ${submission.digest} 当时没有记录会话 id`:`提交记录 ${submission.digest} 的核验仍未完成`;
+      await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing,source:submission.digest,code:'check_error',next_action:independent&&historicalSession===null?'请原提交者带 Circle-Session-Id 原样 submit_result；不能补造历史会话':'管理员修复核验故障后，请原提交者带原会话原样 submit_result'});
+      continue;
+    }
+    await submitResult(ctx,{id:account.id,name:account.name,role:account.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:historicalSession});
+  }
 }
