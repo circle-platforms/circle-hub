@@ -139,7 +139,7 @@ test('absent and forbidden look the same: an unknown pack and an unassigned pack
   const unknown = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
   const unassigned = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: { map: { reference: map } } }, h.call());
   assert.deepEqual(unknown, unassigned);
-  assert.deepEqual(unknown, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无；真实原因只在管理员日志里', path: '/pack' }] });
+  assert.deepEqual(unknown, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/pack' }] });
   valid(unknown);
   assert.equal(h.logs.length, before + 2);
   // a predecessor the caller may not see is unavailable too
