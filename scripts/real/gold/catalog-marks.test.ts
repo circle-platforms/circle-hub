@@ -119,3 +119,44 @@ test('injected cases are excluded and repeated citations are compared as occurre
   assert.equal(report.supported.length, 1); assert.equal(report.missed.length, 1);
 });
 
+import { createHash } from 'node:crypto';
+const table = JSON.parse(readFileSync(new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url), 'utf8'));
+const bytes = Buffer.from(JSON.stringify(submission));
+const sourceBytes = Buffer.from(JSON.stringify(source));
+const receiptRun = () => {
+  const value = run() as unknown as { run: Record<string, unknown>; latest: { result: Record<string, unknown> } };
+  value.run.root = 'a'.repeat(64);
+  value.run.sources = [{ role: 'subject', reference: `src:${createHash('sha256').update(sourceBytes).digest('hex')}` }];
+  Object.assign(value.latest.result, { run: 'run_synthetic', acceptance: 'accepted', submission: createHash('sha256').update(bytes).digest('hex') });
+  return value;
+};
+
+test('only a byte-identical latest accepted submission can supply the independent population', async () => {
+  const { catalogMarks } = await import('./catalog-marks.ts');
+  const value = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table });
+  assert.equal(value.summary.supported, 1); assert.equal(value.requests.length, 0);
+  const changed = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: Buffer.concat([bytes, Buffer.from('\n')]), table });
+  assert.ok(changed.requests.some(r => r.input === 'submission' && r.fact.includes('字节摘要')));
+  assert.equal(changed.expected.length, 0);
+});
+test('missing original bytes or the latest accepted digest creates an actionable positioned design gap', async () => {
+  const { catalogMarks } = await import('./catalog-marks.ts');
+  const missing = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), table });
+  assert.ok(missing.requests.some(r => r.next_action.includes('circle-hub original export') && r.next_action.includes('--submission')));
+  const value = receiptRun(); delete value.latest.result.submission;
+  const gap = catalogMarks({ treeXml: tree, sourceBytes, run: value, submissionBytes: bytes, table });
+  assert.ok(gap.requests.some(r => r.pointer === '/latest/result/submission'));
+});
+test('scope drift refuses adjudication and states that only resolved is implemented', async () => {
+  const { catalogMarks } = await import('./catalog-marks.ts');
+  const changed = catalogMarks({ treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table: { ...table, scope: 'all' } });
+  assert.equal(changed.expected.length, 0);
+  assert.ok(changed.requests.some(r => r.pointer === '/scope' && r.fact.includes('resolved')));
+});
+test('source identity, malformed submissions and missing case evidence are never accepted as zero errors', async () => {
+  const { catalogMarks } = await import('./catalog-marks.ts');
+  const badSource = catalogMarks({ treeXml: tree, sourceBytes: Buffer.from(JSON.stringify({ ...source, unused: true })), run: receiptRun(), submissionBytes: bytes, table });
+  assert.ok(badSource.requests.some(r => r.input === 'source'));
+  const value = receiptRun(); value.latest.result.submission = createHash('sha256').update('{broken').digest('hex');
+  assert.ok(catalogMarks({ treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
+});

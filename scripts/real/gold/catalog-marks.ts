@@ -5,6 +5,7 @@
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
 import { SaxesParser } from 'saxes';
 import { isIP } from 'node:net';
+import { createHash } from 'node:crypto';
 import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import type { CoreViolationCode } from '../../../contracts/generated/protocol.ts';
 
@@ -302,3 +303,64 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
   return report;
 }
 
+export interface CatalogReport extends CatalogComparison {
+  inputs: { tree_sha256: string; source_sha256: string; submission_sha256: string | null; expected_submission_sha256: string | null; locked_root: string | null };
+}
+export interface CatalogInputs {
+  treeXml: string; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
+  table: unknown; excludeNodes?: readonly string[];
+}
+const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+const parseJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, ''));
+
+/** Versioned declaration drift is a gap, never silently interpreted as the current resolved table. */
+export function tableRequests(value: unknown): EvidenceRequest[] {
+  const problems: EvidenceRequest[] = [];
+  const gap = (pointer: string, fact: string): void => { problems.push(request({ input: 'table', pointer }, fact, '请集成者确认锁定版本的 cited_commands 表；只实现了 scope=resolved 和当前匹配声明，补充新规则与样例后才能重跑')); };
+  if (!object(value)) { gap('/', '可读的 cited_commands 目录表'); return problems; }
+  if (value.scope !== 'resolved') gap('/scope', '只实现了 scope=resolved；实际声明为 ' + String(value.scope));
+  if (value.schema !== 'catalog@1') gap('/schema', '只实现了 catalog@1');
+  if (value.catalog !== 'commands@1') gap('/catalog', '只实现了 commands@1 命令目录');
+  if (JSON.stringify(value.commands) !== JSON.stringify(['$.phrases']) || value.claims !== undefined) gap('/commands', '只核对 $.phrases，不能核对模型的存在性陈述');
+  if (!object(value.match) || value.match.unicode !== 'nfkc' || value.match.case !== 'insensitive' || value.match.whitespace !== 'collapse') gap('/match', '只实现了 NFKC、大小写不敏感和空白折叠');
+  const negative = object(value.negative) ? value.negative : {};
+  if (negative.flag !== '/negative' || [RANGE, TYPE, ARITY].some(code => !array(negative.expect).includes(code)) || array(negative.expect).length !== 3) gap('/negative', '反向用例预期反驳的标志与三个参数错误码');
+  return problems;
+}
+
+/** Receipt checks precede every adjudication. Original bytes are hashed before parsing, never reserialized. */
+export function catalogMarks(input: CatalogInputs): CatalogReport {
+  const empty: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
+  const run = object(input.run) ? input.run : {}, record = object(run.run) ? run.run : {}, latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
+  const wanted = typeof result.submission === 'string' && /^[0-9a-f]{64}$/.test(result.submission) ? result.submission : null;
+  const inputs = { tree_sha256: sha256(input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : sha256(input.submissionBytes), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
+  const requests = tableRequests(input.table);
+  const add = (where: string, pointer: string, fact: string, next_action: string): void => { requests.push(request({ input: where, pointer }, fact, next_action)); };
+  const exportSubmission = wanted === null ? '先补取 run show 最新受理提交的原件字节摘要，再由集成者按该摘要执行 circle-hub original export <摘要> --out <仓库外新提交原件.json>，通过 --submission 传入；不能使用记录封套摘要替代' : `由集成者执行 circle-hub original export ${wanted} --out <仓库外新提交原件.json>，再用 --submission <该文件> 重跑；保留原字节，不格式化`;
+  if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的原件字节 sha256', exportSubmission);
+  if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整原始字节', exportSubmission);
+  else if (wanted !== null && inputs.submission_sha256 !== wanted) add('submission', '/', '提交原件字节摘要与最新受理提交不一致', exportSubmission);
+  if (result.acceptance !== 'accepted') add('run', '/latest/result/acceptance', '最新已受理的评审结果', '请集成者重导出本次 circle-hub run show <运行> --json 的最新受理结果');
+  if (typeof record.run !== 'string' || result.run !== record.run) add('run', '/latest/result/run', '提交、最新受理结果和运行的同一身份', '重新导出同一次运行的 run show 与提交原件后重跑');
+  if (typeof record.root !== 'string' || !/^[0-9a-f]{64}$/.test(record.root)) add('run', '/run/root', '本次运行锁定的知识树根', '重导出完整 run show，并由集成者从这个锁定根导出 --tree 命令树原件');
+  const bound = array(record.sources).some(source => object(source) && source.role === 'subject' && typeof source.reference === 'string' && (source.reference === `src:${inputs.source_sha256}` || source.reference.startsWith(`src:${inputs.source_sha256}/`)));
+  if (!bound) add('source', '/', '脑图原件与运行 subject 的字节摘要绑定', '按 run show 的 subject src 摘要由集成者执行 circle-hub original export 导出原件，再用 --source 重跑');
+  let submission: unknown, source: unknown;
+  try { source = parseJson(input.sourceBytes); } catch { add('source', '/', '可按 UTF-8 JSON 解析的脑图原件', '请集成者补取原件的编码声明或重新导出正确字节；不要用替换字符继续核对'); }
+  if (input.submissionBytes !== undefined && wanted !== null && inputs.submission_sha256 === wanted) {
+    try { submission = parseJson(input.submissionBytes); } catch { add('submission', '/', '可按 UTF-8 JSON 解析的提交正文', exportSubmission); }
+    if (!object(submission) || submission.run !== record.run || !Array.isArray(submission.items)) add('submission', '/run', '属于本次运行的完整提交正文（含 items）', exportSubmission);
+  }
+  const parameters = object(record.parameters) ? record.parameters : {};
+  const rule = parameters.case_rule;
+  if (rule !== undefined && rule !== 'marked' && rule !== 'tagged') add('run', '/run/parameters/case_rule', '识别用例的版本化规则', '请集成者确认 case_rule 的声明和锁定版本后补充金标准，不默认套用 marked');
+  // Carry-over brings another submission's slot values; one current body cannot prove their exact cited commands.
+  if (object(submission)) array(submission.items).forEach((entry, index) => { if (object(entry) && entry.reuse !== undefined) add('submission', `/items/${index}/reuse`, '沿用条目的原始发现和命令引用', '按沿用的记录引用补取前序受理提交及摘要绑定，再补充本次独立核对输入；不能借 Hub 的反驳还原'); });
+  let compared = empty;
+  if (!requests.length) {
+    try { compared = compareCatalogMarks({ treeXml: input.treeXml, source, submission, run, excludeNodes: input.excludeNodes, caseRule: rule === 'tagged' ? 'tagged' : 'marked' }); }
+    catch { add('source/tree', '/', '可完整解析的命令树和脑图结构', '请集成者核对这两份原件的编码、完整性和结构，重新导出后重跑；不能把解析失败当零标记'); }
+  }
+  const allRequests = [...requests, ...compared.requests];
+  return { ...compared, requests: allRequests, summary: { ...compared.summary, design_gaps: allRequests.length }, inputs };
+}
