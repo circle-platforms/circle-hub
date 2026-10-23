@@ -24,6 +24,8 @@ async function service(s: JobCommandSession, requireKey = true): Promise<Dispatc
 }
 function output(s: JobCommandSession, state: JobStatus): void {
   s.out(`阶段 ${state.phase}；码 ${state.outcome}（${labelOf('effect_outcome', state.outcome)}）；作业摘要 ${state.job}；冻结 ${Number(state.frozen)}；动作 ${state.events}`);
+  if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
+  if(state.disposition)s.out(`处置：${labelOf('disposition',state.disposition)}；决定人 ${state.decided_by ?? '未记录'}；时间 ${state.decided_at ?? '未记录'}`);
   if (state.reason) s.out(`说明：${state.reason}`);
   if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
   if (state.result) s.out(`结果引用 ${state.result}`);

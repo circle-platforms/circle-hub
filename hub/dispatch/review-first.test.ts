@@ -87,3 +87,10 @@ test('R08 the submit tool cannot be reused by any automatically polled role',asy
   for(const role of ['status','heartbeat','precheck'] as const){const d=definition('http://127.0.0.1:1/');d.calls[role].tool=d.calls.submit.tool;assert.equal(ExecutorDefinition.safeParse(d).success,false);}
   const d=definition('http://127.0.0.1:1/');assert.equal(ExecutorDefinition.safeParse({...d,precheck_reads:[{...d.calls.status,tool:d.calls.submit.tool}]}).success,false);
 });
+
+test('R09 a risk disposition is visible and does not pretend the original effect was resent',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const state=await c.service.dispose(c.admin,first.job,{choice:'mark_failed',reason:'synthetic risk decision',acceptPossibleDuplicateEffects:true});
+  assert.equal(state.outcome,'unknown');assert.ok(state.marks?.includes('disposed'));assert.equal(state.disposition,'mark_failed');assert.equal(state.decided_by,c.admin.id);assert.ok(state.missing_fact && state.next_action);
+  const decision=(await c.service.journal.events(first.job)).find(e=>e.body.detail.risk_confirmed===true)!;assert.equal(decision.body.detail.possible_duplicate,undefined);
+});
