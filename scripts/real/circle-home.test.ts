@@ -263,3 +263,52 @@ test('skills screen lists owner followups without exposing the Jev model value o
     assert.ok(!/synthetic-token|qwen-secret|qwen\.example/.test(shown));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+function skillsFixture() {
+  const dir = scratch(), home = join(dir, 'home');
+  const written = writeHome({ home, profile: 'skills', hubUrl: 'https://hub.example.invalid/mcp' }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+  const root = join(home, 'skills', 'x'); mkdirSync(join(root, 'tools'), { recursive: true });
+  writeFileSync(join(root, 'SKILL.md'), '# Synthetic skill\n'); const script = join(root, 'tools', 't.ts'); writeFileSync(script, '// synthetic\n');
+  const hook = join(home, written.files.find(f => f.startsWith('hooks/'))!);
+  const input = (tool_name = 'execute', tool_input: Record<string, unknown> = { command: `node ${script} --a b` }, paths: unknown = []) => ({ event: 'before_tool', cwd: written.workdir, tool_name, tool_input, paths });
+  const raw = (stdin: string) => { const child = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
+  return { dir, home, root, script, workdir: written.workdir, hook, input, decide: (value: unknown) => raw(JSON.stringify(value)), raw, close: () => rmSync(dir, { recursive: true, force: true }) };
+}
+test('skills guard allows six Hub tools todos and skill but denies write tools and malformed input', () => {
+  const f = skillsFixture();
+  try {
+    for (const tool of [...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), 'write_todos', 'skill']) assert.equal(f.decide(f.input(tool, {})).decision, 'allow', tool);
+    for (const tool of ['write_file', 'edit_file', 'bash', 'hub_other']) assert.equal(f.decide(f.input(tool, {})).decision, 'deny', tool);
+    for (const input of [null, [], {}, { tool_name: 'skill' }, f.input('execute', { command: 1 }), { ...f.input('skill', {}), tool_input: [] }]) assert.equal(f.decide(input).decision, 'deny');
+    assert.equal(f.raw('not json').decision, 'deny');
+    const config = JSON.parse(readFileSync(join(f.home, 'hooks.json'), 'utf8')); assert.equal(config.hooks.before_tool.length, 1);
+  } finally { f.close(); }
+});
+test('readonly file tools require every path inside the configured workspace', async () => {
+  const { symlinkSync } = await import('node:fs'); const f = skillsFixture();
+  try {
+    const inside = join(f.workdir, 'inside.txt'); writeFileSync(inside, 'synthetic'); const outside = join(f.dir, 'outside.txt'); writeFileSync(outside, 'synthetic');
+    symlinkSync(outside, join(f.workdir, 'escape.txt'));
+    for (const tool of ['read_file', 'ls', 'glob', 'grep']) {
+      assert.equal(f.decide(f.input(tool, {}, [inside])).decision, 'allow');
+      for (const paths of [[], [outside], [inside, outside], [join(f.workdir, 'escape.txt')], [1], ['']]) assert.equal(f.decide(f.input(tool, {}, paths)).decision, 'deny', tool);
+    }
+  } finally { f.close(); }
+});
+test('execute permits only a Node TypeScript script below skills and the declared argument grammar', () => {
+  const f = skillsFixture();
+  try {
+    for (const command of [`node ${f.script} --a b`, `node '${f.script}' --a 'a value' --b=two`, `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'END'\n%HUB_TOKEN%\nEND\n`]) assert.equal(f.decide(f.input('execute', { command, background: true, timeout: 10 })).decision, 'allow', command);
+    for (const suffix of ['; echo bad', '&& echo bad', '| cat', '`echo bad`', '$(echo bad)', '> out', '2>out', '\necho bad']) {
+      const result = f.decide(f.input('execute', { command: `node ${f.script} ${suffix}` })); assert.equal(result.decision, 'deny', suffix); assert.match(result.reason, /这个目录只放行技能目录里的脚本/);
+    }
+    for (const command of [`node -e 'x'`, `node --input-type=module ${f.script}`, `node ${f.script} <<EOF\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'EOF'\nnot-a-placeholder\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN% extra\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN%\nEOF\necho bad`, `node ${join(f.home, 'outside.ts')}`, `node ${f.root}/tools/../tools/t.ts`, `node tools/t.ts`, `node ${f.script}.mjs`, `node ${f.script} "double quoted"`, `node ${f.script} 'unclosed`, `node ${f.script} 'one'two`]) assert.equal(f.decide(f.input('execute', { command })).decision, 'deny', command);
+  } finally { f.close(); }
+});
+test('canonical script containment rejects symlinks to scripts outside skills', async () => {
+  const { symlinkSync } = await import('node:fs'); const f = skillsFixture();
+  try {
+    const outside = join(f.dir, 'outside.ts'); writeFileSync(outside, '// synthetic'); const link = join(f.root, 'tools', 'linked.ts'); symlinkSync(outside, link);
+    assert.equal(f.decide(f.input('execute', { command: `node ${link}` })).decision, 'deny');
+  } finally { f.close(); }
+});

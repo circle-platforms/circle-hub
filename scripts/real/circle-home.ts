@@ -118,6 +118,77 @@ const decision = allowed.has(tool)
 process.stdout.write(JSON.stringify(decision));
 `;
 
+/** Emitted as a self-contained Node module; it has no dependency on this checkout. */
+async function skillsGuard(home: string, workspace: string, allowed: string[]): Promise<void> {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const deny = () => ({ decision: 'deny', reason: '这个目录只放行技能目录里的脚本' });
+  const allow = () => ({ decision: 'allow', reason: '本目录允许的工具' });
+  const under = (file: string, root: string) => { const relative = path.relative(root, file); return relative === '' || relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative); };
+  const exists = (file: string) => { try { fs.lstatSync(file); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; } };
+  const canonical = (file: string): string => {
+    const tail: string[] = []; let parent = path.resolve(file);
+    while (!exists(parent)) { const next = path.dirname(parent); if (next === parent) throw new Error('path unavailable'); tail.unshift(path.basename(parent)); parent = next; }
+    return path.resolve(fs.realpathSync(parent), ...tail);
+  };
+  const scriptOf = (command: string, root: string): string | null => {
+    let line = command;
+    if (command.includes('\n')) {
+      const lines = command.split('\n'); if (lines.at(-1) === '') lines.pop();
+      const head = /^(.*?)\s+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(lines.shift() ?? '');
+      if (!head || lines.pop() !== head[2] || lines.some(row => !/^%[A-Z][A-Z0-9_]*%$/.test(row))) return null;
+      line = head[1];
+    }
+    if (/[;&|`<>\r\n]/.test(line) || line.includes('$(')) return null;
+    const words: string[] = []; let index = 0;
+    while (index < line.length) {
+      while (/[ \t]/.test(line[index] ?? '') && index < line.length) index++;
+      if (index === line.length) break;
+      const rest = line.slice(index); const match = /^(?:([A-Za-z0-9_./:%=@,+-]+)|'([^'\r\n]*)')/.exec(rest);
+      if (!match || words.length === 0 && match[0] !== 'node') return null;
+      words.push(match[1] ?? match[2]); index += match[0].length;
+      if (index < line.length && !/[ \t]/.test(line[index])) return null;
+    }
+    const script = words[1];
+    if (words[0] !== 'node' || !script || !path.isAbsolute(script) || script.split(/[\\/]/).includes('..') || script.includes('%') || !script.endsWith('.ts')) return null;
+    const lexical = path.resolve(script); if (!under(lexical, path.resolve(home, 'skills')) && !under(lexical, root)) return null;
+    const physical = canonical(lexical); if (!under(physical, root)) return null;
+    return physical;
+  };
+  const skillDirectory = (script: string, root: string): string => {
+    let dir = path.dirname(script);
+    while (dir !== root) {
+      if (exists(path.join(dir, 'SKILL.md'))) return dir;
+      const parent = path.dirname(dir); if (parent === root) return dir;
+      dir = parent;
+    }
+    return root;
+  };
+  let raw = ''; process.stdin.setEncoding('utf8'); for await (const chunk of process.stdin) raw += chunk;
+  let result = deny();
+  try {
+    const input: unknown = JSON.parse(raw);
+    if (!object(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !object(input.tool_input)) throw new Error('invalid input');
+    if (allowed.includes(input.tool_name)) result = allow();
+    else if (['read_file', 'ls', 'glob', 'grep'].includes(input.tool_name)) {
+      const root = canonical(workspace);
+      if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid cwd');
+      if (Array.isArray(input.paths) && input.paths.length && input.paths.every(file => typeof file === 'string' && file.length > 0 && under(canonical(path.resolve(input.cwd as string, file)), root))) result = allow();
+    } else if (input.tool_name === 'execute') {
+      if (typeof input.tool_input.command !== 'string' || typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid execute');
+      const root = path.join(canonical(home), 'skills'); if (canonical(root) !== root) throw new Error('skills root changed');
+      const script = scriptOf(input.tool_input.command, root);
+      if (script) {
+        // Until delegation is installed, an existing skill hook fails closed.
+        const file = path.join(skillDirectory(script, root), 'hooks.json');
+        result = exists(file) ? deny() : allow();
+      }
+    }
+  } catch { result = deny(); }
+  process.stdout.write(JSON.stringify(result));
+}
+
 function writePrivate(path: string, content: string): void {
   writeFileSync(path, content, { mode: 0o600 });
   chmodSync(path, 0o600);
@@ -138,8 +209,9 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     chmodSync(dir, 0o700);
   }
-  const hook = join(home, 'hooks', 'hub-only.mjs');
-  writePrivate(hook, HOOK);
+  const hookName = profile === 'skills' ? 'skills-only.mjs' : 'hub-only.mjs';
+  const hook = join(home, 'hooks', hookName);
+  writePrivate(hook, profile === 'review' ? HOOK : `${skillsGuard.toString()}\nawait skillsGuard(${JSON.stringify(home)}, ${JSON.stringify(workdir)}, ${JSON.stringify([...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED, 'skill'])});\n`);
   writePrivate(
     join(home, 'settings.json'),
     `${JSON.stringify(
@@ -164,9 +236,9 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
   writePrivate(
     join(home, 'hooks.json'),
-    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: 'hub tools only', command: `node ${JSON.stringify(hook)}`, timeout_ms: 10000 }] } }, null, 2)}\n`,
+    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'skills' ? 'skills tools only' : 'hub tools only', command: `node ${JSON.stringify(hook)}`, timeout_ms: profile === 'skills' ? 600000 : 10000 }] } }, null, 2)}\n`,
   );
-  return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', 'hooks/hub-only.mjs'], workdir };
+  return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
 }
 
 export function parseArgs(argv: string[]): Options & { envFile: string; provider: 'glm' | 'qwen' } {
