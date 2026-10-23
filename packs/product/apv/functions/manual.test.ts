@@ -173,7 +173,7 @@ describe('entries from the converted manual', () => {
       words: ['demo', 'route', 'static'],
       form: 'signature',
       signature: '[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]',
-      command_literals: ['demo route static', 'no demo route static'],
+      command_literals: ['demo route static'],
       params: [
         { name: 'network', required: true },
         { name: 'netmask|prefix', required: true },
