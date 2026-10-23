@@ -353,3 +353,11 @@ test('missing locked-root argument type declarations refuses before spending a s
   assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree},driver,()=>{}),1);
   assert.equal(calls,0);
 });
+
+test('catalog gaps remain unverified on screen and name the evidence follow up', t => {
+  const f=catalogFixture(t,{provideSubmission:false}), screen:string[]=[];
+  assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes},f.driver,line=>screen.push(line)),1);
+  assert.ok(screen.some(line=>/没有误报和漏标 没判（设计缺口/.test(line)));
+  assert.ok(screen.some(line=>line.includes('r1/catalog/evidence-requests.json') && line.includes('follow_up')));
+  assert.ok(screen.some(line=>line.includes('未独立核对 1')));
+});

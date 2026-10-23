@@ -185,12 +185,15 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   const sum = (pick: (s: Score) => number): number => scores.reduce((n, s) => n + pick(s), 0);
   const catalogs = valid.flatMap(round => round.catalog ? [round.catalog] : []);
   const catSum = (pick: (report: CatalogReport) => number): number => catalogs.reduce((n, report) => n + pick(report), 0);
+  const verifiedCatalogCount = (fresh: boolean): number => valid.reduce((n, round) => n + (round.catalog && !round.catalog.requests.length && round.score ? (fresh ? round.score.otherMarks.catalog.fresh : round.score.otherMarks.catalog.total) : 0), 0);
+  const gaps = catSum(r => r.requests.length);
+  for (const round of valid) if (round.catalog?.requests.length) lines.push('下一步：按 r' + round.n + '/catalog/evidence-requests.json 的 follow_up 补证后重跑独立核对');
   const catalogText = options.catalogProvided
     ? `目录独立核对：一致 ${catSum(r => r.supported.length)}，Hub 漏了 ${catSum(r => r.missed.length)}，Hub 多了 ${catSum(r => r.extra.length)}；反向预期 ${catSum(r => r.negative_expected.length)}；设计缺口 ${catSum(r => r.requests.length)}`
     : `目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；缺 --tree，下一步补锁定根的命令树原件后重跑`;
 
   lines.push(
-    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.total) : 0)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.fresh) : 0)}）；${catalogText}；各次相同 ${options.totals.structureStable === null ? '没跑（有效运行少于 2 次，补足有效运行后比较）' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
+    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total) - (options.catalogProvided ? verifiedCatalogCount(false) : 0)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh) - (options.catalogProvided ? verifiedCatalogCount(true) : 0)}）；${catalogText}；各次相同 ${options.totals.structureStable === null ? '没跑（有效运行少于 2 次，补足有效运行后比较）' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
   );
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
@@ -198,7 +201,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   const mechanicalAllFound = scores.every(s => s.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0) && (!options.catalogProvided || catalogs.length === valid.length && catalogs.every(r => !r.requests.length && !r.missed.length && !r.extra.length));
   lines.push(
-    `通过：Hub 看得见的注入缺陷全部查出 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
+    `通过：Hub 看得见的注入缺陷全部查出 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : gaps > 0 ? '没判（设计缺口 ' + gaps + '）' : structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
   );
   if (options.repeat < 3) lines.push('不构成统计：重复次数少于 3');
   return lines;
