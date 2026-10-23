@@ -152,3 +152,17 @@ test('R19 an administrator choice is a validation rather than a fictitious readb
   const choice=(await c.service.journal.events(first.job)).find(e=>e.body.detail.disposition==='keep_unknown')!;
   assert.equal(choice.body.action,'validate');
 });
+
+test('R22 an existing receipt cannot be reconciled to another remote job with equal bytes',async t=>{
+  const c=await setup({mode:'lost',alter:(name,v)=>name==='read_blob'?{...v,key:'different-remote'}:v});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.frozen,true);assert.match(first.next_action!,/synthetic-remote/);
+  await assert.rejects(c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'different-remote'}),/原|回执/);
+  assert.equal(c.calls.filter(n=>n==='read_blob').length,0);
+});
+
+test('R22 recovered target evidence is not fabricated as an original receipt',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const state=await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'});
+  assert.equal(state.outcome,'effective');const events=await c.service.journal.events(first.job);
+  assert.equal(events.filter(e=>e.body.detail.phase==='receipt').length,0);assert.ok(events.some(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted'));
+});

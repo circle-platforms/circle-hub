@@ -57,3 +57,6 @@ export function isFrozen(events: readonly Event[]): boolean {
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
 export const digestOfValue = (value: unknown) => sha256Hex(canonicalBytes(value));
+
+/** A recovered observation supplies identity without inventing a historical receipt. */
+export function receiptOf(events:readonly Event[]):Event|undefined {return eventOf(events,'receipt') ?? [...events].reverse().find(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted' && e.body.detail.remote_id!==undefined);}

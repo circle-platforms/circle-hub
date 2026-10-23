@@ -4,7 +4,7 @@ import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, readDeclaredTime, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { ExecutorRegistry } from './executors.ts';
-import { Journal, digestOfValue, eventOf, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
+import { Journal, digestOfValue, eventOf, receiptOf, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, object, type Exchange } from './transport.ts';
 import type { BuildKnowledge } from './probes.ts';
 import { canRetryRead } from './read-policy.ts';
@@ -38,9 +38,9 @@ export class DispatchService {
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
-    const missingReceipt = !events.some(e => e.body.detail.done === true && (['target_rejected','proven_not_executed'].includes(String(e.body.detail.outcome)) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!eventOf(events, 'intent') && !eventOf(events, 'receipt') && !events.some(e => e.body.detail.unfreeze === true);
+    const missingReceipt = !events.some(e => e.body.detail.done === true && (['target_rejected','proven_not_executed'].includes(String(e.body.detail.outcome)) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!eventOf(events, 'intent') && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
-    const intent = eventOf(events, 'intent'); const receipt = eventOf(events, 'receipt');
+    const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
     const decision=eventOf(events,'dispose');const choice=decision?.body.detail.disposition;
     const riskDisposed=choice==='mark_failed' && decision?.body.detail.risk_confirmed===true;
@@ -49,7 +49,7 @@ export class DispatchService {
     return { job,marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && ['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(missingFact ? { missing_fact: missingFact } : {}),
-      ...(riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: `请管理员取证后运行 circle-hub job dispose ${job} --reconcile <远端作业编号>；不能重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
+      ...(riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
     await this.registry.admin(by);const current=await this.registry.get(executor);
@@ -210,7 +210,7 @@ export class DispatchService {
     } catch (error) {
       if (intended || eventOf(await this.journal.events(binding.job), 'intent')) {
         if((!submitInvoked || error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError) && remote) {await this.notSent(binding,session,remote,stop,'当前进程证明未调用提交或未写出请求字节',error instanceof SubmissionNotSentError?[error.source]:[]);return this.status(by,binding.job);}
-        if (eventOf(await this.journal.events(binding.job), 'receipt')) await this.pendingRead(binding);
+        if (receiptOf(await this.journal.events(binding.job))) await this.pendingRead(binding);
         else if (d.reconciliation && d.calls.query) return await this.reconcileRequest(by,binding,d,session,stop);
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       }
@@ -225,7 +225,7 @@ export class DispatchService {
     await this.registry.admin(by);
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
     if (isDone(events) && !isFrozen(events)) return this.status(by, job);
-    const intent = eventOf(events, 'intent'); const receipt = eventOf(events, 'receipt');
+    const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     if (!intent) {
       const gate = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: false }, [], `dispatch.gate:${job}`);
       if (!gate.created && gate.body.detail.allow_submit === true) { await this.unknown(binding, '派发可能正在进行；没有完整回执，不能重交'); return this.status(by, job); }
@@ -263,13 +263,16 @@ export class DispatchService {
       await this.journal.append(binding, 'dispose', 'validate', 'completed', { disposition: options.choice, reason, decided_by: by.id, decided_at: this.now().toISOString(),
         risk_confirmed: confirmed, confirmed_by: confirmed ? by.id : null, confirmed_at: confirmed ? this.now().toISOString() : null,
         confirmation: confirmed ? '接受可能重复执行的副作用' : null, unfreeze: confirmed, done: confirmed,
-        original_outcome: eventOf(events, 'receipt') && !isFrozen(events) ? 'issued' : 'unknown', effect_mark: 'disposed', ...(confirmed ? {} : { next_action: '仍冻结；需要管理员对账或显式确认接受可能重复执行的副作用' }) });
+        original_outcome: receiptOf(events) && !isFrozen(events) ? 'issued' : 'unknown', effect_mark: 'disposed', ...(confirmed ? {} : { next_action: '仍冻结；需要管理员对账或显式确认接受可能重复执行的副作用' }) });
       return this.status(by, job);
     }
-    if (options.choice !== 'reconcile' || options.remote_id === undefined) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
+    const known=receiptOf(events)?.body.detail.remote_id;
+    const remoteId=options.remote_id ?? known;
+    if(known!==undefined && options.remote_id!==undefined && !same(known,remoteId))throw new Error('已有原回执，不得改绑为其他远端编号；请按原作业对账');
+    if (options.choice !== 'reconcile' || remoteId === undefined) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
     const d = await this.readingDefinition(binding); const client = this.session(binding, d, await this.secret(binding.executor));
     const originalLease=intent.body.detail.remote_lease as unknown as RemoteLease;
-    const context={...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,remote_id:options.remote_id,lease_id:originalLease.id,lease_token:originalLease.token};
+    const context={...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,remote_id:remoteId,lease_id:originalLease.id,lease_token:originalLease.token};
     let state!:Exchange;let result!:Exchange;let readable=false;
     try {
       await client.connect();
@@ -277,15 +280,15 @@ export class DispatchService {
       const rawTime = at(result.value, d.result.submitted_at);
       const time = readDeclaredTime(rawTime,d.result.submitted_at_scale_ms);
       const window = intent.body.detail.window as { from: string; to: string };
-      if (!mapped(d.status.map, at(state.value, d.status.pointer)) || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from)-d.clock_skew_ms || time > Date.parse(window.to)+d.clock_skew_ms) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
+      if (!mapped(d.status.map, at(state.value, d.status.pointer)) || !same(at(result.value, d.result.id), remoteId) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from)-d.clock_skew_ms || time > Date.parse(window.to)+d.clock_skew_ms) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
     }catch {
       await this.journal.append(binding,'reconcile_pending','read_back','error',{unfreeze:false,missing_fact:readable?'已读到原件，但身份、摘要或投递时间不符':'未取得完整可用的对账回答，不等于目标没有记录',next_action:`修复只读连接或映射后重跑 circle-hub job dispose ${job} --reconcile <原远端编号>`});
       throw new Error(readable?'对账身份、摘要或时间不符，仍冻结':'对账读取尚未成功；修复读取后重试本次对账，仍冻结');
     }
-    await this.journal.append(binding,'dispose','validate','completed',{disposition:'reconcile',decided_by:by.id,decided_at:this.now().toISOString(),unfreeze:true,remote_id:options.remote_id,effect_mark:'disposed',identity_matched:true,digest_matched:true,window_matched:true},[state.source,result.source]);
-    await this.journal.append(binding,'receipt','read_back','completed',{remote_id:options.remote_id,reconciled:true,acceptance:'accepted'},[result.source]);
+    await this.journal.append(binding,'dispose','validate','completed',{disposition:'reconcile',decided_by:by.id,decided_at:this.now().toISOString(),unfreeze:true,remote_id:remoteId,effect_mark:'disposed',identity_matched:true,digest_matched:true,window_matched:true},[state.source,result.source]);
+    await this.journal.append(binding,'reconciled','read_back','completed',{remote_id:remoteId,reconciled:true,acceptance:'accepted'},[result.source]);
     const stop=this.heartbeat(binding,d,client,originalLease).stop;
-    try{return await this.observe(by,binding,d,client,options.remote_id,intent.body.detail.fences as unknown as HolderSnapshot[],stop);}
+    try{return await this.observe(by,binding,d,client,remoteId,intent.body.detail.fences as unknown as HolderSnapshot[],stop);}
     catch{await this.pendingRead(binding);return this.status(by,job);}
     finally{await stop();}
   }
@@ -329,8 +332,9 @@ export class DispatchService {
     const value = response.value; const found = at(value,r.found);
     const reported = mapped(r.map,at(value,r.state));
     const identity = at(value,r.request_id) === context.request_id && at(value,r.sha256) === binding.input!.sha256;
-    if (found === true && identity && reported === 'issued' && this.opaque(at(value,r.id))) {
-      await this.journal.append(binding,'receipt','read_back','completed',{remote_id:at(value,r.id),acceptance:'accepted',outcome:'issued',unfreeze:true,reconciled:true},[response.source]);
+    const knownIdentity=receiptOf(await this.journal.events(binding.job));
+    if (found === true && identity && reported === 'issued' && this.opaque(at(value,r.id)) && (!knownIdentity || same(knownIdentity.body.detail.remote_id,at(value,r.id)))) {
+      await this.journal.append(binding,'reconciled','read_back','completed',{remote_id:at(value,r.id),acceptance:'accepted',outcome:'issued',unfreeze:true,reconciled:true},[response.source]);
       await this.checkContinuity(binding,d,client,lease);
       try { return await this.observe(by,binding,d,client,at(value,r.id),intent.body.detail.fences as unknown as HolderSnapshot[],stop); }
       catch { await this.pendingRead(binding); return this.status(by,binding.job); }
@@ -467,7 +471,7 @@ export class DispatchService {
     if (mapped(d.lease.map, at(response.value, d.lease.acceptance)) !== 'accepted' || !this.opaque(lease.id) || !this.opaque(lease.token) || !Number.isFinite(lease.ttl) || lease.ttl < 3) throw new Error('目标租约未取得，未提交');
     await this.journal.append(binding, 'acquire', 'read', 'completed', { remote_lease: lease }, [response.source]);this.#leaseClocks.set(lease,{...started,ttl:lease.ttl}); return lease;
   }
-  private opaque(value: unknown): boolean { return (typeof value === 'string' && value.length > 0 && value.length <= 4096 && !value.includes('[已隐藏]')) || (typeof value === 'number' && Number.isSafeInteger(value)); }
+  private opaque(value: unknown): boolean { return (typeof value === 'string' && !/[\x00-\x1f\x7f-\x9f]/.test(value) && value.length > 0 && value.length <= 4096 && !value.includes('[已隐藏]')) || (typeof value === 'number' && Number.isSafeInteger(value)); }
   private async assessConditions(binding:JobBinding,conditions:ExecutorDefinition['conditions'],response:Exchange,context:Record<string,unknown>,phase:string):Promise<boolean> {
     const checks=conditions.map(c=>{
       const operator=Object.hasOwn(c,'equals')?'equals':c.at_least!==undefined?'at_least':'sha256';
@@ -537,8 +541,11 @@ export class DispatchService {
     catch { await this.journal.append(binding, 'release', 'read', 'error', { next_action: '目标租约释放未核实；请管理员只读核对，不能重交' }); }
   }
   private async unknown(binding: JobBinding, reason: string, sources: string[] = [], observation: Record<string, unknown> = {}): Promise<void> {
+    const identity=receiptOf(await this.journal.events(binding.job));
+    const value=identity?.body.detail.remote_id;
+    const command=this.opaque(value)?`circle-hub job dispose ${binding.job} --reconcile='${String(value).replaceAll("'","'\"'\"'")}'${typeof value==='number'?' --numeric-id':''}`:`circle-hub job dispose ${binding.job} --reconcile <原远端编号>`;
     await this.journal.append(binding, 'unknown', 'validate', 'unknown', { ...observation, uncertain: true, outcome: 'unknown', missing_fact: reason,
-      request_kind: 'disposition', audience_role: 'admin', next_action: typeof observation.next_action==='string' ? observation.next_action : `管理员读取目标审计取得原作业身份后运行 circle-hub job dispose ${binding.job} --reconcile <远端作业编号>；不得重交` }, sources);
+      request_kind: 'disposition', audience_role: 'admin', next_action: typeof observation.next_action==='string' ? observation.next_action : identity?`管理员按已存原作业编号运行 ${command}；不得重交`:`管理员从原请求记录或审计取得编号后运行 ${command}；不得重交` }, sources);
   }
   private async observe(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[], stopHeartbeat: () => Promise<void> = async () => {}): Promise<JobStatus> {
     const input = binding.input!; const events = await this.journal.events(binding.job); const intent = eventOf(events, 'intent')!;
