@@ -504,3 +504,23 @@ test('required OPC metadata parts are found by ASCII-equivalent identity', () =>
   assert.equal(document.model.sheets.length, 1);
   assert.equal(document.model.members.find(m => m.name === '[CONTENT_TYPES].XML')!.contentType, null);
 });
+
+test('package relationship failures select the declaring relationship member', () => {
+  for (const duplicate of [false, true]) {
+    const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: bytes.toString() }));
+    members[1]!.text = `<Relationships xmlns="${PKG_REL}">${duplicate ? `<Relationship Id="a" Type="${DOC_REL}/officeDocument" Target="xl/workbook.xml"/><Relationship Id="b" Type="${DOC_REL}/officeDocument" Target="xl/workbook.xml"/>` : ''}</Relationships>`;
+    members.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', text: `<Relationships xmlns="${PKG_REL}"/>` });
+    const bytes = zip(members); const record = centralRecords(bytes)[1]!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /唯一的工作簿/.test(e.message) && e.message.includes('成员 2') && e.offset === record.local);
+  }
+  const bytes = workbook({ shared: `<sst xmlns="${MAIN}"/>`, relations: `<Relationship Id="second" Type="${DOC_REL}/sharedStrings" Target="sharedStrings.xml"/>` });
+  const record = centralRecords(bytes)[3]!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /共享字符串部件关系不唯一/.test(e.message) && e.message.includes('成员 4') && e.offset === record.local);
+});
+
+test('sheet metadata budget failures do not inherit the last worksheet row', () => {
+  const name = '\\'.repeat(XLSX_MODEL_BYTE_LIMIT / 2);
+  const bytes = workbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${name}" sheetId="1" r:id="sheet"/></sheets></workbook>`, sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="9"/></sheetData></worksheet>` });
+  const record = centralRecords(bytes)[2]!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /工作表结构/.test(e.message) && !/行 9/.test(e.message) && e.message.includes('成员 3') && e.offset === record.local);
+});

@@ -629,6 +629,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     external: boolean;
     resolved: string | null;
   }[]>();
+  const relationshipParts = new Map<string, string>();
   for (const member of members.filter((member) => asciiFold(member.name).endsWith('.rels'))) {
     selectPart(member.name);
     const path = member.name;
@@ -662,8 +663,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       list.push({ id, type, target, external, resolved });
     }
     related.set(source, list);
+    relationshipParts.set(source, member.name);
   }
   const ofType = (type: string, value: string): boolean => DOCUMENT_REL.some((prefix) => type === `${prefix}/${value}`);
+  selectPart(actualPart('_rels/.rels'));
   const books = (related.get('') ?? []).filter((r) => !r.external && ofType(r.type, 'officeDocument'));
   if (books.length !== 1)
     syntax('XLSX 缺少唯一的工作簿部件关系');
@@ -673,8 +676,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     syntax('XLSX 工作簿部件 XML 无效');
   const bookRelations = related.get(bookPart) ?? [];
   const strings = bookRelations.filter((r) => !r.external && ofType(r.type, 'sharedStrings'));
-  if (strings.length > 1)
+  if (strings.length > 1) {
+    selectPart(relationshipParts.get(bookPart)!);
     syntax('XLSX 共享字符串部件关系不唯一');
+  }
   const richText = (element: Element): string => element.children.map((child) => typeof child === 'string' ? '' : child.uri !== element.uri ? '' : child.name === 't' ? xstring(textOf(child)) : child.name === 'r' ? children(child, 't').map((text) => xstring(textOf(text))).join('') : '').join('');
   let sharedStrings: string[] = [];
   if (strings.length) {
@@ -748,6 +753,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       const customHeight = bool(attribute(row, 'customHeight'), '行 customHeight 标记');
       rows.push({ number, hidden: bool(attribute(row, 'hidden'), '行隐藏标记（hidden）') || (customHeight && ht !== null && ht.trim() !== '' && Number(ht) === 0), ht, customHeight, cells });
     }
+    selectPart(bookPart); rowNumber = null; rowDeclaration = null;
     charge(256 + [relationship.id, relationship.type, name, state, sheetPart].reduce((sum, text) => sum + jsonStringBytes(text), 0), '工作表结构');
     sheets.push({ relationshipId: relationship.id, relationshipType: relationship.type, name, state, part: sheetPart, rows, lastRow });
   }
