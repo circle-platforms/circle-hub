@@ -11,7 +11,7 @@ import { FacetView, ImpactView, IndexView } from '../../contracts/src/views.ts';
 import { KnowledgeBuildBody, TreeRootBody } from '../../contracts/src/knowledge.ts';
 import type { BuildInfo, KnownBuild } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
-import type { ActionBody, Principal } from '../records/api.ts';
+import type { ActionBody, DerivedCoverageInput, IngestInput, Principal, SourceArtifact } from '../records/api.ts';
 import { createDefaultRegistry } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
@@ -689,4 +689,59 @@ test('the view budget also charges credential-bearing index keys once and keeps 
   const value=IndexView.parse(JSON.parse(Buffer.from(bytes.bytes).toString()));
   assert.deepEqual(Object.keys(value.entries).sort(),expected);
   assert.ok(value.notes.some(n=>n.includes(`${200-expected.length} 个条目因整份扫描的命中上限没有留下`)));
+});
+
+// Inject two single-hit undercounts only into the public per-part estimate. The real private ingest
+// scanner and coverage assessment still run, so this exercises an actual truncated
+// stored answer and the single safe retry, rather than fabricating an ingest receipt.
+test('a truncated whole-answer scan retries once without hit entries and distinguishes fallback omissions', async t => {
+  const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]);
+  const ids:string[]=[];
+  for (let d=0;d<2;d++) {
+    const id=`store:mindmap:fallback-${d}`;
+    const text=mindMap({id:`fallback-${d}`,module:'safe-module'},Array.from({length:26},(_,i)=>({id:`case-${d}-${i}`,text:`[cmd: system reboot] password = FtpFallback${d}7349\npassword = FtpFallback${d}8357`,expected:['ok']})));
+    w.external.set(id,{bytes:text,mediaType:JSON_TYPE}); ids.push(id);
+    const source=await w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:JSON_TYPE,origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+    assert.equal(source.body.scan.truncated,false);
+    await w.kit.artifacts.acceptFindings(w.admin,source.body.sha256,'合成数据的虚构写法');
+  }
+  const produced=await w.knowledge.produceTree({product:w.product,build:build(A,ids)});
+  assert.equal(produced.ok,true,produced.reason ?? '');
+  const prepare=w.kit.artifacts.prepareDerived.bind(w.kit.artifacts);
+  let undercounted=0;
+  t.mock.method(w.kit.artifacts,'prepareDerived',async (input:DerivedCoverageInput)=>{
+    const handle=await prepare(input),assess=handle.assess.bind(handle);
+    handle.assess=bytes=>{
+      const result=assess(bytes);
+      const part=JSON.parse(Buffer.from(bytes).toString());
+      if (undercounted < 2 && part.entry && result.scan.findings.length === 2) {
+        undercounted++;
+        return {...result,scan:{...result.scan,findings:result.scan.findings.slice(1)}};
+      }
+      return result;
+    };
+    return handle;
+  });
+  const ingest=w.kit.artifacts.ingest.bind(w.kit.artifacts),answers:SourceArtifact[]=[];
+  t.mock.method(w.kit.artifacts,'ingest',async (input:IngestInput)=>{
+    const artifact=await ingest(input);
+    if (input.name==='index-view.json') answers.push(artifact);
+    return artifact;
+  });
+  const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);
+  assert.ok(result.ok,result.ok ? '' : result.reason);
+  assert.equal(undercounted,2);
+  assert.equal(answers.length,2,'one initial ingest and exactly one fallback');
+  assert.equal(answers[0].body.scan.truncated,true);
+  assert.equal(answers[0].body.read_tier,'retain_only');
+  assert.equal(answers[1].body.scan.truncated,false);
+  assert.equal(answers[1].body.read_tier,'model_readable');
+  assert.equal(result.artifacts[0].artifact.digest,answers[1].digest);
+  const source=await w.kit.artifacts.source(w.user,answers[1].body.sha256); assert.ok(source?.bytes);
+  const view=IndexView.parse(JSON.parse(Buffer.from(source.bytes).toString()));
+  assert.deepEqual(view.entries,{}); assert.deepEqual(view.keys,{});
+  assert.equal(view.truncated,true);
+  assert.ok(view.notes.some(note=>note.startsWith('有 1 个条目因整份扫描的命中上限没有留下')));
+  assert.ok(view.notes.some(note=>note==='有 51 个条目原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉'));
+  assert.ok(!view.notes.some(note=>/52 个条目因整份扫描/.test(note)));
 });
