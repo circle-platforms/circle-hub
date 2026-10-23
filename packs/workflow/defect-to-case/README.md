@@ -6,12 +6,12 @@
 
 | 文件 | 内容与职责 |
 | --- | --- |
-| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）与 `indexed_cases`（期望角色，必填，绑定 `knowledge:index:<product>:<build>?kind=case&key=commands&fields=document,node,title`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
+| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative`）及 `manual`（期望角色，必填，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
 | `requirements.json` | 声明五项要求项：`cases`（用例起草，判定，条目级）、`shape`（用例结构，事实，条目级）、`commands`（命令与参数，事实，条目级）、`grounded`（期望结果依据，事实，条目级）、`not_duplicate`（用例去重，事实，条目级），以及各代码的修复重试规则（最多 2 轮） |
 | `checks.json` | 声明七项检查：`draft_shape`（结构合规）、`commands_catalog`（目录解析与参数校验）、`commands_refutation`（反向用例预期反驳校验）、`grounded_quotes`（逐字引文核对）、`grounded_sources`（来源范围核验）、`grounded_reading`（期望文字逐字核对）、`duplicate_check`（已索引用例去重检查） |
 | `slots.schema.json` | 声明条目插槽 `cases`：包含起草用例的结构模式（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与逐字引文、标签） |
 | `SKILL.md` | 中文起草指引（< 8000 字符）：任务目标、证据读取顺序、用例起草结构、边界校验与修复规则、提交格式 |
-| `functions/` | 投影函数 `projection.ts`、期望来源函数 `expected.ts`、被判对象构建器 `subjects.ts`、纯检查函数 `checks.ts` 及类型定义 `types.ts` |
+| `functions/` | 投影函数 `projection.ts`、不再自动绑定手册的期望来源函数 `expected.ts`、被判对象构建器 `subjects.ts`、纯检查函数 `checks.ts` 及类型定义 `types.ts` |
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 14 个样例（`pack-sample@1`，positive 与 negative 各 7 个），覆盖所有 7 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
@@ -21,7 +21,7 @@
 
 ## 版本说明
 
-- **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。
+- **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。引文来源受配置修复字段和必填同版本线手册限制；样例采用 PLM 真实字段结构；公开标题规范化规则，查重要求项只承诺实际执行的标题比较。
 
 - **1.5.1**：收窄索引缺少请求键或源视图截断时，查重记未知并列出重读要求；区分缺失键和明确的空键列表。
 - **1.5.0**：
@@ -113,3 +113,9 @@ PLM 部署设置为 `settings.bug_fix_field`，系统包须在缺陷 `content.fi
 ## 查重标题规范化
 
 查重标题规范化依次执行：NFKC、小写、把空白折成一个空格、去两端空白。空白按 JavaScript 的 `\s` 定义；连续的空白不删除，而是替换成一个普通空格，不去掉标题中的标点。例：`  ＷＩＤＧＥＴ\tＡ  ` 变为 `widget a`。独立金标准按这段规则自行实现，不读取本包计算的结果。
+
+## 查重要求项的范围
+
+not_duplicate 的已实现判据是：相同的规范化命令头集合、相同的正反向标记、规范化标题相同，三项同时成立才报告重复。不会因为期望结果相同就报告重复，也不会因为期望结果不同就忽略同标题的重复；不承诺比较索引未给出的期望文字。重复为提示档，未见重复但索引不完整时按现有规则披露完整性缺口。
+
+待集成者排期：若要支持“期望结果相同”的独立分支，产品包须先在用例索引提供期望原文及其来源，再扩展本包并做独立核对。这是产品包和工作流的后续变更，本次未实现。

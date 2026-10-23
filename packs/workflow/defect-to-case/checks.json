@@ -77,7 +77,7 @@
       "catalog": "commands@1",
       "judges": "artifact_under_verification",
       "tier": "advisory",
-      "basis": "要求项 not_duplicate：起草用例不与已索引的用例重复；未发现重复但在索引存在跳过文档时为未知（完整性未证明）"
+      "basis": "要求项 not_duplicate：起草用例与已索引用例的规范化命令头集合、正反向标记及规范化标题都相同时为重复；未发现重复但在索引存在跳过文档时为未知（完整性未证明）"
     }
   ]
 }

@@ -8,13 +8,13 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "57dc7131e2ebf78b7672a26bcc8216cbf3ee2d2d8420d5cd9ecc1b3d59458bde",
-      "size": 7910
+      "sha256": "725b00918cae25e2e033cf4cb090868e19436960d9241cc74f94633da6ab1626",
+      "size": 7940
     },
     {
       "path": "checks.json",
-      "sha256": "96328c095112fb7e14c5979140f6e3364e70c8802f45c11935d238eae9d21c4d",
-      "size": 3669
+      "sha256": "4e1eb3d304d34b15b6362281300dab09c5a1b6dbd60a50320abc05bbb76d7e57",
+      "size": 3741
     },
     {
       "path": "examples/start-run.json",
@@ -63,8 +63,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "92dcdd653b9324e3cf8bd2b81a587a7e2a0964c34cadddd42c9242e09a9396ad",
-      "size": 4694
+      "sha256": "0719dbd88c24df8fe15b7d3920e3f210b4d40123b1b13821fa89fd6a035e0ddc",
+      "size": 4664
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
