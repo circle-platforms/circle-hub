@@ -645,6 +645,8 @@ export interface CallLogInput {
   durationMs: number;
   /** The real reason behind a neutral answer such as SOURCE_UNAVAILABLE. Kept outside the record; shown to admins only. */
   adminNote?: string | null;
+  /** Full private reasons, individually stored outside the public record and JSONL. */
+  adminReasons?:readonly string[];
 }
 
 /** Body of a `call_log@1` record: one MCP call (B08). The admin note is not part of it. */
@@ -671,6 +673,8 @@ export interface CallLogLine extends CallLogEntry {
   digest: string;
   /** The real reason behind a neutral answer; present for admins (and in the file and in append's result) only. */
   admin_note?: string | null;
+  /** Full reasons returned only by administrator queries; absent from JSONL and ordinary reader queries. */
+  admin_reasons?:string[];
 }
 
 export interface CallLogQuery extends PageQuery {

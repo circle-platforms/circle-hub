@@ -71,6 +71,14 @@ function previewOf(value: string | null | undefined): string | null {
   return scanForCredentials(Buffer.from(value, 'utf8')).findings.length > 0 ? null : value;
 }
 
+/** Log reasons are not source artifacts: credential matches and uninspectable text never become log text. */
+function privateReasonOf(text:string):string {
+  const scan=scanForCredentials(Buffer.from(text,'utf8'));
+  if(scan.findings.length>0)return '该条理由触发凭据扫描，原文未写日志；请管理员在原系统或受限原件中重现并私审';
+  if(!scan.inspected || scan.truncated)return '该条理由未通过日志可记录性检查，原文未写日志；请管理员在原系统重现并核对';
+  return text;
+}
+
 function errno(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
@@ -125,11 +133,16 @@ export class PgCallLog implements CallLog {
     if (typeof input.durationMs !== 'number' || !Number.isFinite(input.durationMs) || input.durationMs < 0 || input.durationMs > 2_147_483_647) {
       throw new TypeError('durationMs must be a non-negative number of milliseconds below 2^31');
     }
-    const adminNote = input.adminNote ?? null;
+    let adminNote = input.adminNote ?? null;
     if (adminNote !== null && (typeof adminNote !== 'string' || adminNote.length === 0 || adminNote.length > 2000 || !adminNote.isWellFormed() || adminNote.includes('\0'))) {
       throw new TypeError('adminNote is 1 to 2000 characters of well-formed text');
     }
     const at = normalizeTime(input.at ?? this.#now(), 'at');
+    const receivedReasons=input.adminReasons??[];
+    const reasons=Array.isArray(receivedReasons)?[...receivedReasons]:receivedReasons;
+    if(!Array.isArray(reasons) || reasons.some(reason=>typeof reason!=='string' || !reason.length || !reason.isWellFormed() || reason.includes('\0')))throw new TypeError('adminReasons are nonempty well-formed private reasons without NUL');
+    const safeReasons=reasons.map(privateReasonOf);
+    if(adminNote!==null)adminNote=safeReasons.some((reason,index)=>reason!==reasons[index])?'完整理由触发日志保护，敏感原文未保留；见逐条安全说明':privateReasonOf(adminNote);
     const args = argumentDigest(input.arguments);
     const entry: CallLogEntry = {
       at,
@@ -159,6 +172,9 @@ export class PgCallLog implements CallLog {
           [stored.digest, at, entry.trace_id, entry.span_id, entry.user, entry.session, entry.tool, entry.run, entry.args_digest, entry.args_size, entry.args_preview, entry.call_result, entry.acceptance, entry.error_code, entry.duration_ms],
           tx,
         );
+      }
+      if(stored.created && safeReasons.length) {
+        await this.#db.query('INSERT INTO call_reasons (digest,ordinal,note,at) SELECT $1,(ordinality-1)::integer,note,$3::timestamptz FROM unnest($2::text[]) WITH ORDINALITY AS reasons(note,ordinality)',[stored.digest,safeReasons,at],tx);
       }
       if (adminNote !== null) {
         await this.#db.query('INSERT INTO call_notes (digest, note, at) VALUES ($1, $2, $3) ON CONFLICT (digest) DO NOTHING', [stored.digest, adminNote, at], tx);
@@ -208,7 +224,7 @@ export class PgCallLog implements CallLog {
     const notes = admin ? 'LEFT JOIN call_notes n ON n.digest = c.digest' : '';
     const rows = (
       await this.#db.query(
-        `SELECT c.*${admin ? ', n.note AS admin_note' : ''} FROM call_logs c ${notes}
+        `SELECT c.*${admin ? `, n.note AS admin_note, (SELECT json_agg(r.note ORDER BY r.ordinal) FROM call_reasons r WHERE r.digest=c.digest) AS admin_reasons` : ''} FROM call_logs c ${notes}
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
           ORDER BY c.seq ${descending ? 'DESC' : 'ASC'} LIMIT $${values.length}`,
         values,
@@ -216,6 +232,7 @@ export class PgCallLog implements CallLog {
     ).rows;
     const items = rows.slice(0, limit).map((row) => {
       const line = lineOf(row);
+      if(admin && Array.isArray(row.admin_reasons) && row.admin_reasons.length)line.admin_reasons=row.admin_reasons;
       if (admin) line.admin_note = row.admin_note === null || row.admin_note === undefined ? null : String(row.admin_note);
       return line;
     });

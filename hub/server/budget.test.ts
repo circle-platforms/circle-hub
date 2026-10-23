@@ -222,3 +222,9 @@ test('property: whatever the blocks, the text is within the budget, lines are ne
     }
   }
 });
+
+test('the pathological budget fallback retains a concrete way to read what was omitted',()=>{
+ const blocks=Array.from({length:20},(_,i)=>({priority:i,head:['header'+i+'字'.repeat(30)],entries:['字'.repeat(200)],unit:'条目'+i,measure:'个' as const}));
+ const result=fit(blocks,{budget:160,fallback:'按原结果引用调用 get_nodes 逐页读取'});
+ assert.ok(result.text.length<=160);assert.match(result.text,/有些内容没有显示/);assert.match(result.text,/读其余部分：按原结果引用调用 get_nodes 逐页读取/);
+});

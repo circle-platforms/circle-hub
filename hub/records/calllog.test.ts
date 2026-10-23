@@ -10,7 +10,7 @@ import type { TestRecordsKit } from '../testing/records.ts';
 import type { CallLogInput, CallLogLine, Principal } from './api.ts';
 import { argumentDigest } from './calllog.ts';
 import { canonicalize } from './canonical.ts';
-import { digestOf, recordDigest } from './digest.ts';
+import { digestOf, recordDigest, sha256Hex } from './digest.ts';
 import { IntegrityError, RecordsError } from './errors.ts';
 import { newId } from './ids.ts';
 
@@ -284,4 +284,29 @@ test('inputs are validated; odd session headers are kept only as a digest; any a
   assert.equal(argumentDigest(undefined).digest, digestOf(null));
   assert.match(argumentDigest({ big: 1n }).digest, /^[0-9a-f]{64}$/);
   assert.equal(argumentDigest({ lone: String.fromCharCode(0xd800) }).size > 0, true);
+});
+
+test('full administrator reasons are separate immutable rows outside records and JSONL',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,alice}=await people(kit);
+ const reasons=['第一条合成原因'+ '甲'.repeat(2500)+'FIRST-TAIL','第二条合成原因'+ '乙'.repeat(2500)+'SECOND-TAIL'];
+ const input={at:'2026-10-21T08:00:01.000Z',sessionId:null,runId:null,traceId:trace(71),spanId:span(71),userId:alice.id,tool:'get_nodes',arguments:{},callResult:'error' as const,errorCode:'SOURCE_RETRYABLE',durationMs:1,adminNote:'合成摘要',adminReasons:reasons};
+ const line=await kit.callLog.append(input);await kit.callLog.append(input);
+ const adminLine=(await kit.callLog.query(admin,{userId:alice.id})).items.find(row=>row.digest===line.digest)!;
+ assert.deepEqual(adminLine.admin_reasons,reasons);
+ const stored=(await query(kit,'SELECT ordinal, note FROM call_reasons ORDER BY ordinal')).rows;assert.deepEqual(stored,reasons.map((note,ordinal)=>({ordinal,note})));
+ const own=(await kit.callLog.query(alice,{})).items.find(row=>row.digest===line.digest)!;assert.equal('admin_reasons' in own,false);
+ const bytes=await readFile(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'),'utf8');assert.ok(!bytes.includes('FIRST-TAIL')&&!bytes.includes('SECOND-TAIL'));assert.ok(!bytes.includes('admin_reasons'));
+ await rm(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'));await kit.callLog.repairFiles({from:'2026-10-21T00:00:00.000Z',to:'2026-10-22T00:00:00.000Z'});
+ const repaired=await readFile(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'),'utf8');assert.ok(!repaired.includes('FIRST-TAIL')&&!repaired.includes('admin_reasons'));
+ assert.ok(!JSON.stringify((await kit.store.get(line.digest))!.body).includes('合成原因'));
+ await assert.rejects(query(kit,"UPDATE call_reasons SET note='changed'"));await assert.rejects(query(kit,'DELETE FROM call_reasons'));
+});
+test('administrator reasons never turn credential matches into stored text or fingerprints',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,alice}=await people(kit);
+ const secret='LogSyntheticCredential987654',reason='password = '+secret;
+ const line=await kit.callLog.append({traceId:trace(72),spanId:span(72),userId:alice.id,sessionId:null,runId:null,tool:'get_nodes',arguments:{},callResult:'error',durationMs:1,adminNote:reason,adminReasons:['可记录的合成原因',reason]});
+ const visible=(await kit.callLog.query(admin,{userId:alice.id})).items.find(item=>item.digest===line.digest)!;
+ assert.equal(visible.admin_reasons![0],'可记录的合成原因');assert.match(visible.admin_reasons![1],/触发凭据扫描/);
+ for(const table of ['records','call_logs','call_notes','call_reasons']){const text=JSON.stringify((await query(kit,`SELECT * FROM ${table}`)).rows);assert.ok(!text.includes(secret));assert.ok(!text.includes(sha256Hex(secret)));}
+ const files=await readdir(join(kit.dataDir,'logs'));for(const name of files)assert.ok(!(await readFile(join(kit.dataDir,'logs',name),'utf8')).includes(secret));
 });

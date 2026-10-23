@@ -449,19 +449,16 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     await client.close();
   });
 
-  test('submit_result: when the stored result cannot be looked up or is not found the receipt stands, no record is named and the admin note says why', async () => {
+  test('submit_result: bounded result lookup recovers its reference or reports an actionable record gap without changing the receipt', async () => {
     const user = await person();
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
-    const run = ((await startRun(client, reference)).structuredContent.run as { run: string }).run;
+    const summary=(await startRun(client,reference)).structuredContent.run as {run:string;items:Array<{id:string}>};
+    const run=summary.run;
     const submission = (n: number) => ({
       run,
       model: 'scripted-model@test',
-      items: [
-        { item: 'doc-1:n1', handling: 'handled', slots: { findings: [{ text: `第 ${n} 次提交的发现` }] } },
-        { item: 'doc-1:n2', handling: 'handled', slots: { findings: [] } },
-        { item: 'doc-1:n3', handling: 'handled', slots: { findings: [] } },
-      ],
+      items: summary.items.map((item,i)=>({item:item.id,handling:'handled',slots:{findings:i===0?[{text:`第 ${n} 次提交的发现`}]:[]}})),
     });
     const lastNote = async () => (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, tool: 'submit_result', limit: 1 })).items[0].admin_note;
     server.fakes.runs.script.failNext('getResult', new Error('合成的查找失败'));
@@ -469,13 +466,19 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(failed.isError, false, failed.content[0].text);
     assert.equal(failed.structuredContent.acceptance, 'accepted', 'the answer stands');
     assert.ok(failed.structuredContent.result, 'with its result');
-    assert.doesNotMatch(failed.content[0].text ?? '', /存下的结果|rec:[0-9a-f]{64}/, 'no record is named when it could not be looked up');
-    assert.match(await lastNote() ?? '', /^the stored result of submission [0-9a-f]{64} was not found: Error: 合成的查找失败$/);
+    assert.match(failed.content[0].text ?? '', /存下的结果 rec:[0-9a-f]{64}/, 'the second lookup recovers the stored record');
+    assert.match(await lastNote() ?? '', /defect.result_lookup_miss.*attempt 1/);
     server.fakes.runs.script.answerNext('getResult', null);
     const missing = await client.call('submit_result', submission(2));
     assert.equal(missing.structuredContent.acceptance, 'accepted');
-    assert.doesNotMatch(missing.content[0].text ?? '', /存下的结果|rec:[0-9a-f]{64}/);
+    assert.match(missing.content[0].text ?? '', /存下的结果 rec:[0-9a-f]{64}/);
+    server.fakes.runs.script.answerNext('getResult',null);server.fakes.runs.script.answerNext('getResult',null);
+    const exhausted=await client.call('submit_result',submission(3));assert.equal(exhausted.structuredContent.acceptance,'accepted');
+    assert.match(exhausted.content[0].text??'',/缺少.*结果.*记录引用/);assert.match(exhausted.content[0].text??'',/console\/runs\//);
+    assert.ok((exhausted.structuredContent.errors as Array<{code:string}>).some(error=>error.code==='SOURCE_RETRYABLE'));
     const found = await client.call('submit_result', submission(3));
+    assert.deepEqual(found.structuredContent.result,exhausted.structuredContent.result);
+    assert.deepEqual(found.structuredContent.counts,exhausted.structuredContent.counts);
     assert.match(found.content[0].text ?? '', /存下的结果 rec:[0-9a-f]{64}（/, 'with the lookup working the record is named');
     await client.close();
   });
@@ -933,6 +936,19 @@ describe('batches and notes', () => {
     assert.ok(start, 'the start_run line is written');
     assert.match(start.admin_note ?? '', /read failed atoffset 7/);
     await client.close();
+  });
+
+  test('each administrator reason survives the summary cap and stays out of the model answer',async()=>{
+    const user=await person();const client=await connect(user);
+    const original=server.deps.knowledge.getNodes.bind(server.deps.knowledge);
+    let calls=0;
+    server.deps.knowledge.getNodes=async()=>{calls++;throw new Error('TAIL-'+calls+'原因'+calls+'甲'.repeat(1600));};
+    try {
+      const answer=await client.call('get_nodes',{root:ROOT_1});assert.equal(firstError(answer).code,'SOURCE_RETRYABLE');assert.equal(calls,3);
+      assert.ok(!(answer.content[0].text??'').includes('TAIL-'));
+      const line=(await server.records.callLog.query(server.admin.principal,{userId:user.user.id,tool:'get_nodes',limit:1})).items[0];
+      assert.ok(line.admin_note!.length<=2000);assert.ok(line.admin_reasons?.some(reason=>reason.includes('TAIL-3')&&reason.length>1000));assert.ok(!line.admin_note!.includes('TAIL-3'));
+    } finally {server.deps.knowledge.getNodes=original;await client.close();}
   });
 
   test('when records refuse a note anyway, the line is written without it and the operator log says so', async () => {

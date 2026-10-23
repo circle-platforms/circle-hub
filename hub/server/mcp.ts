@@ -127,6 +127,7 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
     errorCode,
     durationMs: Math.max(0, performance.now() - state.started),
     adminNote: note.length === 0 ? null : note,
+    adminReasons:[...state.notes],
   };
   try {
     await options.deps.records.callLog.append(input);
@@ -235,8 +236,8 @@ async function answer(
   );
   const noteOn = (state: CallState) => (reason: string) => {
     if (typeof reason !== 'string' || reason.length === 0) return;
-    const clipped = clipNote(reason, 1000);
-    if (clipped.length > 0) state.notes.push(clipped);
+    const clean=reason.replaceAll('\0','').toWellFormed();
+    if(clean.length>0)state.notes.push(clean);
   };
   /** Anything but an McpError becomes an internal error: its message is for the admin note, never for the caller. */
   const guarded = async <T>(state: CallState, run: () => Promise<T>): Promise<T> => {

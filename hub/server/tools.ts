@@ -371,7 +371,7 @@ const resolveTool: Handler = async (deps, call, args) => {
 const submitResult: Handler = async (deps, call, args) => {
   const run = args.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
-  const answer = (await deps.runs.submitResult(call.principal, args, call.context)) as Answer;
+  const answer = { ...((await deps.runs.submitResult(call.principal, args, call.context)) as Answer) };
   return { answer, text: { record: await storedResult(deps, call, answer) } };
 };
 
@@ -379,14 +379,19 @@ const submitResult: Handler = async (deps, call, args) => {
 async function storedResult(deps: ServerDeps, call: ToolCall, answer: Answer): Promise<string | null> {
   const result = answer.result as { run?: unknown; submission?: unknown } | undefined;
   if (deps.runsDetail === undefined || typeof result?.run !== 'string' || typeof result.submission !== 'string') return null;
-  try {
-    const stored = await deps.runsDetail.getResult(call.principal, result.run, result.submission);
-    return stored === null ? null : recordReference(stored.record);
-  } catch (error) {
-    // The answer stands; only the way to its record is missing (the text then names the console).
-    call.context.adminNote(`the stored result of submission ${result.submission} was not found: ${describeError(error)}`);
-    return null;
+  for(let attempt=1;attempt<=2;attempt++) {
+    try {
+      const stored=await deps.runsDetail.getResult(call.principal,result.run,result.submission);
+      if(stored!==null)return recordReference(stored.record);
+      call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission} has no returned result record`);
+    } catch(error) {
+      call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission}: ${describeError(error)}`);
+    }
+    if(attempt===1)await new Promise(resolve=>setTimeout(resolve,50));
   }
+  const next=new Date((deps.now?.()??new Date()).getTime()+1000).toISOString();
+  if(Array.isArray(answer.errors))answer.errors=[...answer.errors,{code:'SOURCE_RETRYABLE',message:`缺少已存结果的记录引用（提交 ${result.submission}）；两次查询均未取到，下一次重读时间 ${next}`,fix:`到控制台 /console/runs/${result.run} 按提交 ${result.submission} 查看结果；仍缺时请管理员核对结果记录与索引，恢复后重交同一提交读取当前结果`,path:'/result'}];
+  return null;
 }
 
 const READ_FIX = '读引用和读子树分两次调用；翻下一页只给 reference 和 cursor';
