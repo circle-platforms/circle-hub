@@ -93,3 +93,10 @@ test('DOTTEDIP reads real help attributes and rejects invalid plain IPv4 values'
   for(const value of ['192.0.2.1','hostname'])assert.equal(judge('DOTTEDIP',value,'','IPv4 address or host name').verdict,'unknown');
   assert.equal(judge('DOTTEDIP','999.1.1.1','','IPv4 address').category,'type');
 });
+test('overload traversal preserves the precise missing fact and its follow-up',()=>{
+  for(const [outcome,fact] of [[judge('DEPLOYMENT','x'),'declared_argument_type_rule'],[judge('STRING','x','limit="4"'),'argument_limit_rule'],[judge('STRING','x','length="bad"'),'argument_length_rule'],[judge('DOTTEDIP','192.0.2.1','','address or host name'),'DOTTEDIP_alternative_domain']] as const){
+    assert.equal(outcome.gap?.fact,fact);assert.equal(outcome.reason,'no_check');assert.equal(outcome.gap?.owner,'Claude');
+  }
+  const domains=commandDomains(xml('<arg name="" type="STRING"/><arg name="" type="CUSTOM"/>'));
+  assert.equal(judgeCommand({head:'widget set',parameters:['ok','x']},domains).gap?.fact,'declared_argument_type_rule');
+});

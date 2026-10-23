@@ -125,7 +125,7 @@ export function judgeCommand(command: SplitCommand, domains: Domains): DomainRes
       const found: DomainResult[] = args[i].optional ? [...visit(i + 1, j)] : [];
       if (j < command.parameters.length) {
         const here = cap ? unknown('expanded_overload_domain') : checkArg(args[i], command.parameters[j]);
-        for (const tail of visit(i + 1, j + 1)) found.push(here.verdict === REFUTE ? here : tail.verdict === REFUTE ? tail : here.verdict === UNKNOWN || tail.verdict === UNKNOWN ? unknown() : tail);
+        for (const tail of visit(i + 1, j + 1)) found.push(here.verdict === REFUTE ? here : tail.verdict === REFUTE ? tail : here.verdict === UNKNOWN ? here : tail);
       }
       // Keep one representative of each classification; optional branches cannot cause exponential work.
       const compact = [...new Map(found.map(v => [v.category, v])).values()]; memo.set(key, compact); return compact;
