@@ -147,11 +147,10 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
     answers.set(id, [...codes]);
   }
 
-  // duplicate_key: under one path (the same parent), everything compared — title, steps, expected, preconditions.
-  const byParent = new Map<number, GoldNode[]>();
+  // duplicate_key: the folded ancestor label path, not the parent node identity, everything compared — title, steps, expected, preconditions.
+  const byParent = new Map<string, GoldNode[]>();
   for (const node of cases) {
-    const parent = node.parent;
-    if (parent === null) continue;
+    const parent = JSON.stringify(node.ancestors.map(duplicateFold));
     const list = byParent.get(parent) ?? [];
     list.push(node);
     byParent.set(parent, list);

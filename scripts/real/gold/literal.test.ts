@@ -149,3 +149,8 @@ test('raw decimal and string priorities are malformed rather than missing and ke
   assert.deepEqual(answerOf(tree, 'raw-priority-5'), [CODE_REQUIRED_EMPTY]);
   assert.deepEqual(answerOf(tree, 'raw-priority-6'), [CODE_REQUIRED_EMPTY]);
 });
+
+test('review 7: same folded ancestor labels mean the same duplicate path even across distinct group nodes', () => {
+  const map = doc(group('r', '合成文档', group('g1', 'ＳＡＭＥ  PATH', kase('a', 'same case', 'same expected')), group('g2', 'same path', kase('b', 'same case', 'same expected'))));
+  assert.ok(answerOf(map, 'a').includes(CODE_DUPLICATE_KEY)); assert.ok(answerOf(map, 'b').includes(CODE_DUPLICATE_KEY));
+});
