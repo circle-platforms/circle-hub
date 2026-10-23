@@ -18,6 +18,8 @@ export interface Scenario {
   limits?: string[];
   /** Extra sections for the report, if any (not counted in pass/fail). */
   sections?: ReportSection[];
+  /** Anonymous count lines safe for the terminal; absent keeps existing scenarios unchanged. */
+  countLines?: string[];
 }
 
 export interface LoggedTurn {
