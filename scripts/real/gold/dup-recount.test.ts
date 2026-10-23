@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { recountDuplicates, renderRecount } from './dup-recount.ts';
+import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import { recountDuplicates, renderRecount, main } from './dup-recount.ts';
 const xml='<commands><menu name="widget"><item name="a"/><item name="b"/></menu></commands>';
 const draft={items:[{item:'i',slots:{cases:[{data:{title:'Ａ   CASE',negative:false,steps:[{command:'widget a\nwidget b'}]}}]}}]};
 const entry=(digest:string,doc:string,title='a case',negative=false)=>({entry:digest.repeat(64),kind:'case',statement:'',reference:`tree:${'a'.repeat(64)}/commands/widget/a@${digest.repeat(64)}`,data:{document:doc,node:'n',title,negative,commands:['/commands/widget/a','widget b']}});
@@ -42,4 +45,14 @@ for(const mode of ['pending','unknown_claim'])test(`a decided draft differs from
 test('a missing duplicate requirement is a Hub mismatch when the independent inputs are complete',()=>{
   const report=recountDuplicates([view({})],draft,xml,{});
   assert.equal(report.different,1);assert.equal(report.unknown,0);assert.equal(report.details[0].gap,undefined);
+});
+
+test('recount diagnostics identify the mixed view without printing original identities',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-index-diagnostic-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  let errors='';t.mock.method(process.stderr,'write',(value:any)=>{errors+=String(value);return true;});
+  const one=view({}),two={...view({}),product:'PRIVATE_PRODUCT'};
+  for(const [name,value] of Object.entries({one,two,draft,result:hub()}))writeFileSync(join(dir,name),JSON.stringify(value));
+  writeFileSync(join(dir,'commands'),xml);
+  assert.equal(main(['--index',join(dir,'one'),'--index',join(dir,'two'),'--drafts',join(dir,'draft'),'--commands',join(dir,'commands'),'--result',join(dir,'result')]),2);
+  assert.match(errors,/index view 2: mixed identity/);assert.doesNotMatch(errors,/PRIVATE_PRODUCT/);
 });

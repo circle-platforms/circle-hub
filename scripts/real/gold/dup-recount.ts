@@ -14,12 +14,12 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
   if (views.length === 0) throw new Error('missing index');
   const entries = new Map<string, any>();
   let identity: string | undefined;
-  for (const v of views) {
+  for (const [viewPosition,v] of views.entries()) {
     if (!object(v) || v.schema !== 'index-view@1' || v.kind !== 'case' || v.key !== 'commands' || !object(v.build) || typeof v.product !== 'string' || v.product.trim() === '' || typeof v.build.build !== 'string' || v.build.build.trim() === '' || !/^[a-f0-9]{64}$/.test(v.build.root ?? '') || !object(v.keys) || !object(v.entries)
       || typeof v.truncated !== 'boolean' || !Number.isInteger(v.skipped) || v.skipped < 0 || !Number.isInteger(v.total_keys) || !Number.isInteger(v.total_entries) || v.total_keys < 0 || v.total_entries < Object.keys(v.entries).length
       || (v.only !== undefined && (!Array.isArray(v.only) || v.only.some((x: unknown)=>typeof x !== 'string'))) || (v.cut_keys !== undefined && (!Array.isArray(v.cut_keys) || v.cut_keys.some((x: unknown)=>typeof x !== 'string')))) throw new Error('invalid index');
     const own = JSON.stringify([v.product,v.build.build,v.build.root]);
-    if (identity !== undefined && identity !== own) throw new Error('mixed index identity'); identity = own;
+    if (identity !== undefined && identity !== own) throw new Error(`mixed index identity at view ${viewPosition+1}`); identity = own;
     for (const refs of Object.values(v.keys)) if (!Array.isArray(refs) || refs.some(d=>!Object.hasOwn(v.entries,d))) throw new Error('incomplete index bytes');
     for (const [digest,e] of Object.entries(v.entries)) {
       if (!/^[a-f0-9]{64}$/.test(digest) || !object(e) || e.kind !== 'case' || e.entry !== digest || !object(e.data) || !Array.isArray(e.data.commands) || e.data.commands.some((c:unknown)=>typeof c !== 'string') || typeof e.data.document !== 'string' || typeof e.data.node !== 'string' || typeof e.data.title !== 'string' || typeof e.data.negative !== 'boolean') throw new Error('invalid case entry');
@@ -70,6 +70,17 @@ export function main(argv=process.argv.slice(2)):number{
   const get=(name:string)=>{const i=argv.indexOf('--'+name);return i<0?undefined:argv[i+1];};
   const indexes=argv.flatMap((v,i)=>v==='--index'&&argv[i+1]?[argv[i+1]]:[]);
   if(!indexes.length||!get('drafts')||!get('commands')||!get('result')){process.stderr.write('用法：--index <文件> [--index …] --drafts <文件> --commands <文件> --result <文件>\n');return 2;}
-  try {const report=recountDuplicates(indexes.map(p=>JSON.parse(readFileSync(p,'utf8'))),JSON.parse(readFileSync(get('drafts')!,'utf8')),decodeCommandXml(readFileSync(get('commands')!)),JSON.parse(readFileSync(get('result')!,'utf8')));process.stdout.write(renderRecount(report)+'\n');return report.passed?0:1;}catch{process.stderr.write('查重输入：不通过\n');return 1;}
+  let field='--index';
+  try{
+    const views=indexes.map((path,position)=>{field=`--index 文件 ${position+1}`;return JSON.parse(readFileSync(path,'utf8'));});
+    field='--drafts';const drafts=JSON.parse(readFileSync(get('drafts')!,'utf8'));
+    field='--commands';const xml=decodeCommandXml(readFileSync(get('commands')!));
+    field='--result';const result=JSON.parse(readFileSync(get('result')!,'utf8'));
+    field='--index';const report=recountDuplicates(views,drafts,xml,result);process.stdout.write(renderRecount(report)+'\n');return report.passed?0:1;
+  }catch(error){
+    const mixed=error instanceof Error?/^mixed index identity at view (\d+)$/.exec(error.message):null;
+    process.stderr.write(`查重输入不通过：${mixed?`index view ${mixed[1]}: mixed identity`:`${field} 读取、解析或完整性失败`}\n`);return 2;
+  }
+
 }
 if(import.meta.main)process.exitCode=main();

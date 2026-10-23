@@ -21,8 +21,8 @@ import {
 
 import { VERDICT } from '../../../contracts/generated/vocabulary.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
-import { quotesReport, type QuoteInputs } from '../gold/quotes.ts';
-import { domainReport, decodeCommandXml } from '../gold/command-domains.ts';
+import { quotesReport, sha256, type QuoteInputs } from '../gold/quotes.ts';
+import { domainReport, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
 
 export interface DraftCase {
   title: string;
@@ -284,7 +284,8 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`引文：${independent.shapes.length===0 && independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
   lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
   const questions = evidenceQuestions(comparison);
-  if (questions.length) lines.push(`设计缺口 ${questions.length} 项；补证动作：请求集成者 Claude 按位置补齐事实后重算；不作为已完成的未知`);
+  if(questions.length)lines.push(`待补证 ${questions.length} 项；可补输入 --commands、--sources、--run、--manual、--fix-field`);
+  for(const question of questions)lines.push(`缺事实 ${question.missing_fact}；下一步 ${question.next_action}；责任人 ${question.owner}`);
   return lines.join('\n');
 }
 
@@ -346,20 +347,33 @@ export function main(argv: string[]): number {
   if (commandsPath) {
     try {
       commandTreeXml = decodeCommandXml(readFileSync(resolve(commandsPath)));
+      commandDomains(commandTreeXml);
     } catch (error) {
-      process.stderr.write('输入读取：不通过\n');
-      return 1;
+      process.stderr.write('输入不通过：--commands 读取或解码失败\n');
+      return 2;
     }
   }
+  let activeInput='--gold';
   try {
     const gold = JSON.parse(readFileSync(resolve(goldPath), 'utf8')) as unknown;
+    activeInput='--drafts';
     const submission = JSON.parse(readFileSync(resolve(draftsPath), 'utf8')) as unknown;
+    activeInput='--result';
     const result = JSON.parse(readFileSync(resolve(resultPath), 'utf8')) as unknown;
     const sources = new Map<string, Uint8Array>();
-    if (value('sources')) for (const name of readdirSync(value('sources')!)) if (/^[a-f0-9]{64}$/.test(name)) sources.set(name, readFileSync(join(value('sources')!, name)));
-    const run = value('run') ? JSON.parse(readFileSync(value('run')!, 'utf8')) : undefined;
-    const manual = value('manual') ? [readFileSync(value('manual')!)] : undefined;
+    activeInput='--sources';
+    if(value('sources')){
+      const names=readdirSync(value('sources')!).filter(name=>/^[a-f0-9]{64}$/.test(name)).sort();
+      for(const [position,name] of names.entries()){
+        activeInput=`--sources 文件 ${position+1}`;const bytes=readFileSync(join(value('sources')!,name));
+        if(sha256(bytes)!==name)throw new Error('source integrity mismatch');sources.set(name,bytes);
+      }
+    }
+    activeInput='--run';const run=value('run')?JSON.parse(readFileSync(value('run')!,'utf8')):undefined;
+    activeInput='--manual';const manual=value('manual')?[readFileSync(value('manual')!)]:undefined;
+    activeInput='比较输入';
     const comparison = computeComparison(gold, submission, result, { commandTreeXml, sources, run, manual, fixField: value('fix-field') });
+    activeInput='--details';
     if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison).map(q => ({ ...q, action_status: 'requested' })) });
     process.stdout.write(`${renderComparison(comparison)}\n`);
     const parameters=comparison.parameters,quotes=comparison.quoteOracle;
@@ -368,8 +382,9 @@ export function main(argv: string[]): number {
       &&quotes.details.every(quote=>quote.category==='fix'||quote.category==='manual')&&evidenceQuestions(comparison).length===0;
     return passed?0:1;
   } catch (error) {
-    process.stderr.write('输入或明细写入：不通过\n');
-    return 1;
+    const cause=error instanceof Error&&error.message==='source integrity mismatch'?'source integrity mismatch':'读取、解析或写入失败';
+    process.stderr.write(`输入不通过：${cause}；${activeInput}\n`);
+    return 2;
   }
 }
 

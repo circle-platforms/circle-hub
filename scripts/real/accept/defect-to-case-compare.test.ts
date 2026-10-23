@@ -2,7 +2,7 @@
 // Hub's claims (never recomputed), and the duplicate-set comparison in both directions and the equal case.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -294,4 +294,13 @@ test('CLI exit codes follow known command disagreements and successful compariso
     const args=['gold','drafts','result','commands','manual','run'].flatMap(name=>['--'+name,join(dir,name)]);
     assert.equal(main(args),expected);
   }
+});
+test('CLI diagnostics identify input flags and digest failures without exposing paths or bytes',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-diagnostic-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  let errors='';t.mock.method(process.stderr,'write',(value:any)=>{errors+=String(value);return true;});t.mock.method(process.stdout,'write',()=>true);
+  const args=['--gold',join(dir,'PRIVATE_ABSENT'),'--drafts',join(dir,'drafts'),'--result',join(dir,'result')];
+  assert.equal(main(args),2);assert.match(errors,/--gold/);assert.doesNotMatch(errors,/PRIVATE_ABSENT/);
+  writeFileSync(args[1],JSON.stringify(docGold));writeFileSync(args[3],JSON.stringify(submissionOf(draft('PRIVATE_TITLE','widget set 5'))));writeFileSync(args[5],JSON.stringify(resultWith([])));
+  const sourceDir=join(dir,'sources');mkdirSync(sourceDir);writeFileSync(join(sourceDir,'a'.repeat(64)),'PRIVATE_TAMPERED_BYTES');errors='';
+  assert.equal(main([...args,'--sources',sourceDir]),2);assert.match(errors,/source integrity mismatch.*--sources.*1/);assert.doesNotMatch(errors,/PRIVATE/);
 });
