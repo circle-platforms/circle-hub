@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.8.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.8.1', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/sweep.ts') && files.includes('functions/diff.ts') && files.includes('samples/negative/command-removed.json') && files.includes('examples/sweep.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -135,4 +135,9 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
 import { test } from 'node:test';
 test('unplaced followup is bounded and never demands enumeration to the facet total', () => {
   assert.match(text('SKILL.md'), /最多展示一页/); assert.match(text('SKILL.md'), /下一页引用或游标/); assert.ok(!text('SKILL.md').includes('列出的去重数量必须与披露计数一致'));
+});
+
+test('skill distinguishes exact unplaced counts from skipped-source lower bounds',()=>{
+ const skill=text('SKILL.md').split('6. 客户端必须')[1]!;
+ assert.match(skill,/truncated=false 且 skipped=0/);assert.match(skill,/skipped>0/);assert.match(skill,/至少 N 个用例没有解析出命令/);assert.match(skill,/另有 K 份来源未读，其中的用例不知道/);assert.match(skill,/N=0 也不能/);assert.match(skill,/重新生产根/);assert.match(skill,/自动重读/);
 });
