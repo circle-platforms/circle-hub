@@ -420,7 +420,9 @@ pack and reviews a mind map against the root it produced.
   spans; what still waits for the bot's verified placement proposals (K04 R[6]) is the transitional catalog JSON's
   output. A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
   R[2]) is not implemented; until then the production warnings list the literals the tree cannot resolve, as drift
-  candidates.
+  candidates. Follow-up task (registered by the integrator, not part of this one): the drift candidates become
+  queryable drift records (a view by root and command path, readable by review and regression-scope uses); whether a
+  drift is a manual erratum or a defect candidate is a judgment and stays with Circle or a human, never the Hub.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still
