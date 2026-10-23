@@ -18,10 +18,10 @@ import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { describe, fixOf } from './errors.ts';
-import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
+import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { identityOf, recordReader, sourceReader } from './readers.ts';
+import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -366,6 +366,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
+  let fragmentScope: ReturnType<typeof buildScope> | undefined;
   const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
   const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
     let pending = fragmentCache.get(reference);
@@ -385,20 +386,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             // as unavailable: an honest unknown, never a refutation.
             return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
           }
+          if (!r.groundable) return { why: 'not_bound' };
           if (r.readTier === 'retain_only') return { why: 'retain_only' };
           if (r.text === null) return { why: 'unavailable' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
         };
-        if (ref.scheme === 'src') {
-          // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
-          const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
-          if (!bound) return { why: 'not_bound' };
-        } else if (ref.scheme === 'tree') {
-          // A tree reference is bound exactly when its root is the root this run locked.
-          if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
-        }
-        // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
+        // Share the boundary's scope, including predecessor results and the ban on standalone entries.
+        const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function'));
+        if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         return finish(await resolveReference(ref, resolveCtx));
       })();
       fragmentCache.set(reference, pending);

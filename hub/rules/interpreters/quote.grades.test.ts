@@ -1,5 +1,5 @@
 // quote@1 with the graded source view: the interpreter asks for a fragment by reference and the view answers with why
-// the text is missing — not bound to this run (the model can fix the reference: refute), no such fragment in a bound
+// the text is missing — not bound to this run (unknown), no such fragment in a bound
 // source (the model can fix the selector or the quote: refute), or genuinely unreadable (retain-only, over the size
 // cap, the source cannot be fetched: unknown, honestly). The run's own lazy fallback (evaluate.ts) supplies the same
 // grading for references that appear only inside slot data, parsed by the boundary's own parser.
@@ -39,10 +39,11 @@ describe('quote@1 over the graded source view', () => {
     assert.equal(bad[0].code, 'QUOTE_MISMATCH');
   });
 
-  it('a reference whose source is not an input of this run is refuted, with the reason the model can act on', () => {
+  it('a reference whose source is not an input of this run stays unknown', () => {
     const view = graded({}, () => 'not_bound');
     const out = run(view, { q: [{ t: '片段', r: FRAGMENT }] });
-    assert.equal(out[0].verdict, 'refute');
+    assert.equal(out[0].verdict, 'unknown');
+    assert.equal(out[0].reason, 'missing_input');
     assert.match(out[0].statement, /不是这次运行的输入/);
   });
 

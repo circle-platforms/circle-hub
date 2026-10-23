@@ -145,7 +145,7 @@ export interface Resolver {
   resolve(reference: string, options?: { scoped?: boolean }): Promise<ValueOutcome>;
 }
 
-function scopeProblem(ref: Reference, scope: RunScope): string | null {
+export function scopeProblem(ref: Reference, scope: RunScope): string | null {
   switch (ref.scheme) {
     case 'src':
       return scope.sources.has(ref.sha256) ? null : '引用的源文件没有绑定到本次运行';

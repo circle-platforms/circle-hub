@@ -28,10 +28,9 @@ export const quoteInterpreter = defineInterpreter({
         const ref = reference.value;
         const fragment = request.sources?.text(ref);
         if (fragment === undefined) {
-          // The graded view says why: not an input (the model can fix the reference) and no such fragment (fix the
-          // selector or the quote) are refutations; only genuinely unreadable sources stay unknown, honestly.
+          // Out-of-scope references supply no evidence. A missing fragment in a bound source can refute the quote.
           const why = request.sources?.why?.(ref);
-          if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          if (why === 'not_bound') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件不是这次运行的输入`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'retain_only') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件含凭据，原文不可读`, { pointer, grounds: [ref] }));
           else if (why === 'too_large') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段超过大小上限`, { pointer, grounds: [ref] }));
