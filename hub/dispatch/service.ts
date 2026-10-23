@@ -573,7 +573,7 @@ export class DispatchService {
     });
   }
   private async probeSeats(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string,unknown>): Promise<boolean> {
-    if (!d.probes) return true;
+    if (!d.probes) return false;
     const { assessProbes } = await import('./probes.ts');
     return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep);
   }

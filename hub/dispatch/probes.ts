@@ -21,6 +21,9 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   const source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});
   if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new Error('绑定清单字节不可读；请恢复清单后重跑预检');
   const manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));
+  const devices=spec.devices!==undefined?at(manifest,spec.devices):undefined;
+  const selected=spec.seats.map(seat=>at(manifest,seat.manifest.device));
+  if(!Array.isArray(devices) || !devices.length || devices.length!==selected.length || new Set(selected).size!==devices.length || devices.some(device=>!selected.includes(device)))throw new Error('缺少覆盖清单全部设备的一一对应探测座位；管理员核对设备集合指针和每台设备的探测声明');
   if(typeof context.build!=='string')throw new Error('缺少锁定构建；请给预订运行或登记预检构建');
   const names=new Set([context.build]);
   if(knowledge) {

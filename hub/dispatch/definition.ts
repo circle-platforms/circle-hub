@@ -23,7 +23,7 @@ function oneNamedGroup(pattern: string): boolean {
   return groups === 1;
 }
 const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:z.string().min(1).max(2000).refine(oneNamedGroup)});
-const probes = z.strictObject({command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
+const probes = z.strictObject({devices:pointer.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
   const match = new RegExp(p.command_pattern);
   if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
   for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
@@ -140,6 +140,9 @@ export function registrationMissing(d: ExecutorDefinition): string[] {
   if (!d.proof.warrant_id) missing.push('proof.warrant_id');
   if (!d.manifest_sha256) missing.push('manifest_sha256');
   if (!d.resources.length) missing.push('resources');
+  if(d.resources.length && !d.probes)missing.push('probes');
+  if(d.probes && d.probes.devices===undefined)missing.push('probes.devices');
+  if(!d.refused_tools.length)missing.push('refused_tools');
   if (!d.conditions.length) missing.push('conditions');
   for (const [index, step] of d.precheck_reads.entries()) if (!step.conditions.length) missing.push(`precheck_reads/${index}/conditions`);
   return missing;

@@ -37,3 +37,24 @@ test('PI04 a probe with a lost response remains frozen even before an unknown ex
   c.service.journal.events=async job=>job===state.job?events.filter(e=>!['unknown','complete'].includes(String(e.body.detail.phase))):read(job);
   assert.equal((await c.service.status(c.admin,state.job)).frozen,true);
 });
+
+test('PI05 a build-only definition without per-seat probes or a denied-tool declaration cannot dispatch',async t=>{
+  const {setup}=await import('./testing/context.ts');const {registrationMissing}=await import('./definition.ts');
+  for(const missing of ['probes','refused_tools'] as const) {
+    const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);
+    if(missing==='probes')delete d.probes;else d.refused_tools=[];
+    d.conditions=[{pointer:'/build',equals:{$value:'build'}}];
+    await c.registry.update(c.admin,c.executor.id,d);
+    assert.ok(registrationMissing(d).includes(missing));
+    await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/登记缺事实/);
+    assert.equal(c.calls.includes('send_blob'),false);
+    await c.close();
+  }
+});
+
+test('PI05 every manifest device must have a distinct probe seat before submission',async t=>{
+  const {setup}=await import('./testing/context.ts');const c=await setup();t.after(()=>c.close());
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,probes:{...c.executor.definition.probes!,seats:[c.executor.definition.probes!.seats[0]]}});
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
+});

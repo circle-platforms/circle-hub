@@ -9,6 +9,7 @@ import { ExecutorRegistry } from '../executors.ts';
 import { DispatchService } from '../service.ts';
 import { definition } from './definition.ts';
 import { startEndpoint } from './server.ts';
+import {probes} from './probes.ts';
 
 let cluster:Promise<TemporaryPostgres>|undefined;
 after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
@@ -25,7 +26,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const owner = await kit.principals.createUser(admin, '合成运行者');
   const run = newId('run'); const plan = newId('run');
   const payload = await kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic verified bytes'), mediaType: 'application/octet-stream', origin: { upload: { session: 'synthetic' } }, author: { user: owner.id }, provenanceType: 'declared', visibility: { readers: [owner.id], admins: true, packs: [], shareable: false } });
-  const manifest = await kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', resources: definition('x').resources }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: owner.id }, provenanceType: 'declared', visibility: { readers: [owner.id], admins: true, packs: [], shareable: false } });
+  const manifest = await kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', resources: definition('x').resources,devices:[1,2].map(n=>({interfaces:[{address:`192.0.2.${n}/24`}]})) }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: owner.id }, provenanceType: 'declared', visibility: { readers: [owner.id], admins: true, packs: [], shareable: false } });
   let failedRead = false; let stateReads = 0; let sawIntentAtSubmit = false;
   const calls: string[] = [];
   const submitted: Uint8Array[] = [];
@@ -39,9 +40,10 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     if (name === 'read_blob') return { request: submittedRequest, key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
     return { ok: true };
   };
-  endpoint = await startEndpoint([...definition('x').allowed_tools, 'synthetic_admin_reset', ...(options.extraTools ?? [])], async (name, _args, res) => {
+  endpoint = await startEndpoint([...definition('x').allowed_tools, 'inspect_bound_seat', ...(options.extraTools ?? [])], async (name, _args, res) => {
     calls.push(name);
     if(options.delay?.[name])await new Promise(resolve=>setTimeout(resolve,options.delay![name]));
+    if(name==='inspect_bound_seat'){const value={output:_args.command==='inspect version'?'version: synthetic-build':`address: 192.0.2.${Number(_args.seat)+1}/24`};return options.alter?.(name,value)??value;}
     if (options.mode === 'fencing-result' && name === 'read_blob') await leases.forceRelease({ keys: definition('x').resources, by: admin.id, reason: '合成结果阶段强制释放' });
     if (!failedRead && ((options.mode === 'transient-status' && name === 'inspect_blob') || (options.mode === 'transient-result' && name === 'read_blob'))) { failedRead = true; res.destroy(); return {}; }
     if (name === 'send_blob') {
@@ -57,7 +59,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     return options.alter?.(name, replies(name)) ?? replies(name);
   });
   const registry = new ExecutorRegistry(kit);
-  const d = { ...definition(endpoint.endpoint), manifest_sha256: manifest.body.sha256, submit_timeout_ms: options.timeout ?? 300000 };
+  const d = { ...definition(endpoint.endpoint),allowed_tools:[...definition(endpoint.endpoint).allowed_tools,'inspect_bound_seat'],refused_tools:['synthetic_admin_reset'],probes:{...probes,call:{...probes.call,tool:'inspect_bound_seat'}}, manifest_sha256: manifest.body.sha256, submit_timeout_ms: options.timeout ?? 300000 };
   const executor = await registry.add(admin, d, 'synthetic-secret');
   const claim = { requirement: 'workbook_verified', statement: { verdict: 'support', text: '合成核验', data: { plan_run: plan, sha256: payload.body.sha256, autoids: ['synthetic-case'], bed: { id: 'synthetic-bed', manifest_sha256: options.mode === 'manifest' ? 'f'.repeat(64) : manifest.body.sha256 }, build: 'synthetic-build', generator: 'synthetic-workflow@1.0.0' } }, qualifier: { nature: 'fact' }, warrant: { producer: 'function', id: 'synthetic.verify@1' }, validity: { status: 'valid' } };
   const detail = { run: { run, predecessor: plan, pack: options.mode === 'wrong-package' ? 'other-workflow@1.0.0' : 'synthetic-workflow@1.0.0', pack_digest: sha256Hex('synthetic-pack'), runner: owner.id, items: [{ id: 'synthetic-item' }], sources: [{ reference: `src:${payload.body.sha256}`, slot: 'synthetic-artifact', role: 'artifact_under_verification' }, { reference: `src:${manifest.body.sha256}`, slot: 'synthetic-manifest', role: 'expected' }], requirements: [], started_at: now().toISOString() }, submissions: [], latest: { record: sha256Hex('synthetic-validation'), result: { run, acceptance: 'accepted', errors: [], partitions: { delivered: [{ item: 'synthetic-item', requirements: [{ requirement: 'workbook_verified', status: options.mode === 'requirement' ? 'pending' : 'satisfied', claims: [claim] }] }], rejected: [], incomplete: [], quarantined: [] }, cross_item: [] } } } as unknown as RunDetail;
