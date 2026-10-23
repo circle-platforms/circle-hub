@@ -12,29 +12,29 @@ import {
   type CompileContract, type RawBedManifest, type Submission, type RunShowExport, type StepVerdict,
 } from './compile-check.ts';
 
-const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`../../../packs/workflow/case-compile/examples/${name}.json`,import.meta.url),'utf8'));
+export const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`../../../packs/workflow/case-compile/examples/${name}.json`,import.meta.url),'utf8'));
 const contract = example('compile-contract') as CompileContract;
 const bed = example('bed-topology') as RawBedManifest;
 const commandTreeXml = `<commands><scope><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="seconds" type="U16" limit="[1 - 120]"/></arguments></item></menu><menu name="session"><item name="persistence"><arguments><arg name="mode" type="STRING" limit="{cookie|source}"/></arguments></item></menu></menu></scope></commands>`;
 const expectedPlans = ["{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8080}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}", "{\"bed\":\"bed-a\",\"blocks\":[],\"case\":\"doc-1:c-2\",\"expects\":[{\"source\":\"src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0\",\"text\":\"会话保持生效\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"cli\",\"n\":1,\"object\":\"dut\",\"params\":{\"line\":\"widget session persistence cookie\"}}]}"];
 const commandCatalog = {complete:true,case_sensitive:false};
 const checkCompleteCommand = (catalog: Parameters<typeof checkCatalogCommand>[0], line: string) => checkCatalogCommand(catalog,line,commandCatalog);
-const digest = (v: unknown) => createHash('sha256').update(canonicalJson(v)).digest('hex');
-function fixture() {
+export const digest = (v: unknown) => createHash('sha256').update(canonicalJson(v)).digest('hex');
+export function fixture() {
   const raw = example('submit-result') as Submission & {synthetic?: boolean; note?: string};
   delete raw.synthetic; delete raw.note;
   const sources = new Map(raw.items.flatMap(i => i.slots!.plan![0].data.expects.map(e => [e.quote.reference,e.quote.text] as const)));
   const run: RunShowExport = {run:{run:raw.run,started_at:'2026-10-23T00:00:00Z',lease_context:[],items:raw.items.map(i => ({id:i.item}))},latest:{result:{run:raw.run,submission:digest(raw),partitions:{delivered:raw.items.map((i,n) => ({item:i.item,requirements:[
     'contract_methods','bed_addresses','commands_known','expected_grounded','plan_deterministic',
-  ].map(requirement => ({requirement,layers:[{layer:'static',terminal:'pass'}],claims:requirement === 'plan_deterministic' ? [{statement:{text:'按合成合约核对；不证明在真实设备上跑得通',verdict:'support',data:{
+  ].map(requirement => ({requirement,layers:[{layer:'static',terminal:'pass'}],status:'satisfied' as const,claims:requirement === 'plan_deterministic' ? [{statement:{text:'按合成合约核对；不证明在真实设备上跑得通',verdict:'support',data:{
     // Frozen pre-1.1.0 plan bytes, not produced by the generator under test.
     plan:expectedPlans[n],
     sha256:createHash('sha256').update(String(expectedPlans[n])).digest('hex'),
   }}}] : []}))}))}}}};
   return {submission:raw,run,contract:structuredClone(contract),bed:structuredClone(bed),commandTreeXml,commandCatalog,sources};
 }
-const data = (f: ReturnType<typeof fixture>) => f.submission.items[0].slots!.plan![0].data;
-const rebind = (f: ReturnType<typeof fixture>) => { f.run.latest!.result!.submission = digest(f.submission); };
+export const data = (f: ReturnType<typeof fixture>) => f.submission.items[0].slots!.plan![0].data;
+export const rebind = (f: ReturnType<typeof fixture>) => { f.run.latest!.result!.submission = digest(f.submission); };
 const has = (f: ReturnType<typeof fixture>, type: StepVerdict['checkType'], verdict: StepVerdict['verdict']) => compileCheck(f).stepVerdicts.some(v => v.checkType === type && v.verdict === verdict);
 
 test('public examples pass independent checks including the published plan bytes and digest', () => {
@@ -128,9 +128,9 @@ test('canonical plan uses default strings, sorted keys/blocks and stable bytes',
   assert.equal(canonicalJson({'2':2,'10':10,z:1,a:2}),'{"10":10,"2":2,"a":2,"z":1}');
 });
 test('tampered plan text and digest each fail independently', () => {
-  for (const key of ['plan','sha256']) { const f = fixture(); f.run.latest!.result!.partitions.delivered[0].requirements[4].claims[0].statement.data![key] = 'tampered'; assert.ok(has(f,'plan','fail')); }
+  for (const key of ['plan','sha256']) { const f = fixture(); f.run.latest!.result!.partitions.delivered![0].requirements[4].claims[0].statement.data![key] = 'tampered'; assert.ok(has(f,'plan','fail')); }
 });
-test('absent plan receipt is unknown', () => { const f = fixture(); f.run.latest!.result!.partitions.delivered[0].requirements[4].claims = []; assert.ok(has(f,'plan','unknown')); });
+test('absent plan receipt is unknown', () => { const f = fixture(); f.run.latest!.result!.partitions.delivered![0].requirements[4].claims = []; assert.ok(has(f,'plan','unknown')); });
 test('changed slots cannot reuse a previous plan conclusion', () => { const f = fixture(); data(f).steps[0].params.port = 8081; rebind(f); assert.ok(has(f,'plan','fail')); });
 test('submission digest and run id bind the exported result', () => {
   const f = fixture(); f.run.latest!.result!.submission = '0'.repeat(64); assert.equal(compileCheck(f).comparison.equal,false);
@@ -140,8 +140,8 @@ test('duplicate/omitted items, requirements or extra result items cannot pass', 
   for (const mutate of [
     (f: ReturnType<typeof fixture>) => f.submission.items.push(f.submission.items[0]),
     (f: ReturnType<typeof fixture>) => f.submission.items.pop(),
-    (f: ReturnType<typeof fixture>) => f.run.latest!.result!.partitions.delivered.push(f.run.latest!.result!.partitions.delivered[0]),
-    (f: ReturnType<typeof fixture>) => f.run.latest!.result!.partitions.delivered[0].requirements.pop(),
+    (f: ReturnType<typeof fixture>) => f.run.latest!.result!.partitions.delivered!.push(f.run.latest!.result!.partitions.delivered![0]),
+    (f: ReturnType<typeof fixture>) => f.run.latest!.result!.partitions.delivered![0].requirements.pop(),
   ]) { const f = fixture(); mutate(f); assert.equal(compileCheck(f).allPassed,false); }
 });
 test('negative Hub terminals compare independently, without accepting prose', () => {
@@ -186,8 +186,9 @@ test('CLI reads run/submission documents and returns a nonzero status for missin
 });
 test('a correctly located negative Hub outcome agrees while the plan remains invalid', () => {
   const f = fixture(); data(f).steps[0].params.address = '192.0.2.250'; rebind(f);
-  const reqs = f.run.latest!.result!.partitions.delivered[0].requirements;
+  const reqs = f.run.latest!.result!.partitions.delivered![0].requirements;
   reqs[1].layers[0].terminal = 'violation';
+  reqs[1].status = 'unsatisfied';
   reqs[1].claims = [{pointer:'/steps/0/params/address',statement:{text:note(),verdict:'refute'}}];
   const plan = expectedPlans[0].replace('192.0.2.10','192.0.2.250');
   reqs[4].claims[0].statement.data = {plan,sha256:createHash('sha256').update(plan).digest('hex')};
@@ -221,7 +222,7 @@ test('canonical keys use default JavaScript UTF-16 sorting and retain Chinese st
   assert.equal(canonicalJson({'\uE000':'中文','𐀀':1}),'{"𐀀":1,"\uE000":"中文"}');
 });
 test('an unknown Hub conclusion carrying a fake plan cannot masquerade as support', () => {
-  const f = fixture(); f.run.latest!.result!.partitions.delivered[0].requirements[4].claims[0].statement.verdict = 'unknown';
+  const f = fixture(); f.run.latest!.result!.partitions.delivered![0].requirements[4].claims[0].statement.verdict = 'unknown';
   assert.ok(has(f,'plan','unknown'));
 });
 test('command parameter text is trimmed and empty text is skipped', () => {
@@ -262,14 +263,15 @@ test('public product declarations supply commands@1 metadata without importing f
 // Pointer comparisons use synthetic exports, public subject ordering and independently chosen failures.
 function pointerFixture() {
   const f = fixture();
-  for (const row of f.run.latest!.result!.partitions.delivered) {
-    row.requirements[4].layers[0].terminal = 'unchecked'; row.requirements[4].claims = [];
+  for (const row of f.run.latest!.result!.partitions.delivered!) {
+    row.requirements[4].layers[0].terminal = 'unchecked'; row.requirements[4].layers[0].reason = '缺少计划回执'; row.requirements[4].status = 'pending'; row.requirements[4].claims = [];
   }
   return f;
 }
 function refutes(f: ReturnType<typeof fixture>, requirement: number, pointers: string[]) {
-  const r = f.run.latest!.result!.partitions.delivered[0].requirements[requirement];
+  const r = f.run.latest!.result!.partitions.delivered![0].requirements[requirement]!;
   r.layers[0].terminal = 'violation';
+  r.status = 'unsatisfied';
   r.claims = pointers.map(pointer => ({pointer,statement:{text:'合成驳回',verdict:'refute'}}));
   rebind(f);
 }
@@ -324,14 +326,14 @@ test('block, bucket, model-written plan and whole-plan pointers normalize to the
   const plan = pointerFixture(); (data(plan) as unknown as Record<string,unknown>).plan_json = '{}';
   refutes(plan,4,['/data/plan_json']); assert.equal(compileCheck(plan).comparison.equal,true);
   const shape = pointerFixture(); (data(shape) as unknown as Record<string,unknown>).steps = null;
-  const rows = shape.run.latest!.result!.partitions.delivered[0].requirements;
-  for (const r of rows.slice(1)) r.layers[0].terminal = 'unchecked';
+  const rows = shape.run.latest!.result!.partitions.delivered![0].requirements;
+  for (const r of rows.slice(1)) { r.layers[0].terminal = 'unchecked'; r.layers[0].reason = '形状不可读'; r.status = 'pending'; }
   refutes(shape,0,['/data/steps']); assert.equal(compileCheck(shape).comparison.equal,true);
 });
 test('unknown conclusions do not compare their positions', () => {
   const f = pointerFixture(); delete f.run.run.lease_context; data(f).steps[2].params.target = '192.0.2.250';
-  const r = f.run.latest!.result!.partitions.delivered[0].requirements[1];
-  r.layers[0].terminal = 'unchecked'; r.claims = [{pointer:'/data/steps/999',statement:{text:'未知',verdict:'unknown'}}]; rebind(f);
+  const r = f.run.latest!.result!.partitions.delivered![0].requirements[1];
+  r.layers[0].terminal = 'unchecked'; r.layers[0].reason = '缺少冻结的租约视图'; r.status = 'pending'; r.claims = [{pointer:'/data/steps/999',statement:{text:'未知',verdict:'unknown'}}]; rebind(f);
   assert.equal(compileCheck(f).comparison.equal,true);
 });
 test('expectation and backend violations use the public 1.2.0 codes', () => {
@@ -342,6 +344,6 @@ test('expectation and backend violations use the public 1.2.0 codes', () => {
 test('an unknown interpreter check does not compare positions inside an otherwise refuted requirement', () => {
   const f = pointerFixture(); data(f).expects[0].text = 'invented expectation'; data(f).expects[0].quote.text = 'invented quote';
   refutes(f,3,['/data/expects/0']);
-  f.run.latest!.result!.partitions.delivered[0].requirements[3].claims.push({pointer:'/quotes/999/text',statement:{text:'未知',verdict:'unknown'}});
+  f.run.latest!.result!.partitions.delivered![0].requirements[3].claims.push({pointer:'/quotes/999/text',statement:{text:'未知',verdict:'unknown'}});
   assert.equal(compileCheck(f).comparison.equal,true);
 });

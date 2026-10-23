@@ -147,13 +147,17 @@ export interface Submission {
   items: Array<{item: string; handling: string; slots?: {plan?: Array<{text: string; quotes?: Array<{reference: string; text: string}>; data: PlanData}>}}>;
 }
 export interface HubClaim { pointer?: string; statement: {text: string; verdict?: string; data?: Obj; code?: string} }
+/** A requirement row of the result: the status (satisfied/unsatisfied/pending) beside the layer terminals, and the
+ * incomplete terminal's reason (case-compile 1.3.0: repair_exhausted when the model's fix rounds are used up). */
 export interface HubRequirement {
-  requirement: string; layers: Array<{layer: string; terminal: string}>; claims: HubClaim[];
+  requirement: string; layers: Array<{layer: string; terminal: string; reason?: string}>; status: 'satisfied' | 'unsatisfied' | 'pending'; claims: HubClaim[];
 }
+/** The partition names of validation@1: delivered, rejected, quarantined, incomplete (unfinished in exports). */
+export type PartitionName = 'delivered' | 'rejected' | 'quarantined' | 'incomplete' | 'unfinished';
 export interface RunShowExport {
   run: {run: string; started_at: string; items: Array<{id: string}>;
     lease_context?: Array<{key: string; until: string; mine: boolean}>};
-  latest?: {submission?: unknown; result?: {run: string; submission: string; partitions: Record<string, Array<{item: string; requirements: HubRequirement[]}>>}} | null;
+  latest?: {submission?: unknown; result?: {run: string; submission: string; partitions: Partial<Record<PartitionName, Array<{item: string; requirements: HubRequirement[]}>>>}} | null;
 }
 export type CheckType = 'contract' | 'address' | 'command' | 'quotation' | 'plan';
 export interface StepVerdict extends Answer { item: string; stepIndex: number; checkType: CheckType; pointer: string; check?: 'function' | 'catalog' | 'quote' }
@@ -622,13 +626,25 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
     // Public Hub results expose requirement terminals, not one positive claim per step.
     // Compare at that actual granularity; independent per-parameter outcomes remain above.
     const rows = resultItems.filter(i => i.item === entry.item);
+    // Delivered is not passed: with refutes and rounds left the item stays delivered, its requirement unsatisfied
+    // (case-compile 1.3.0). The partition never decides the comparison; the one partition rule is checked below.
+    const partitionOf = Object.entries(result?.partitions ?? {}).find(([, items]) => items.some(i => i.item === entry.item))?.[0];
+    const anyIncomplete = rows.some(i => i.requirements.some(r => r.layers.some(l => l.terminal === 'incomplete')));
+    const unfinished = partitionOf === 'unfinished' || partitionOf === 'incomplete';
+    if (unfinished !== anyIncomplete) differences.push(`${entry.item}：分区 ${partitionOf ?? '缺失'}与要求项${anyIncomplete ? '有不完成（应进未完成）' : '都已完成（不应在未完成）'}`);
     for (const type of Object.keys(requirementOf) as CheckType[]) {
       const key = requirementOf[type];
       const reqs = rows.flatMap(i => i.requirements).filter(r => r.requirement === key);
       const layers = reqs.flatMap(r => r.layers).filter(l => l.layer === 'static');
       const gold = aggregate(stepVerdicts.filter(v => v.item === entry.item && v.checkType === type));
-      const actual = layers.length !== 1 ? undefined : layers[0].terminal === 'pass' ? 'pass' : layers[0].terminal === 'violation' ? 'fail' : layers[0].terminal === 'unchecked' ? 'unknown' : undefined;
-      if (reqs.length !== 1 || actual !== gold) differences.push(`${entry.item}/${key}：Hub ${actual ?? '缺失或非事实终态'}，独立答案 ${gold}`);
+      const expectedStatus = gold === 'pass' ? 'satisfied' : gold === 'fail' ? 'unsatisfied' : 'pending';
+      const rawTerminal = layers.length !== 1 ? undefined : layers[0].terminal;
+      const exhausted = rawTerminal === 'incomplete' && layers[0].reason === 'repair_exhausted';
+      // Repair rounds used up (1.3.0): the static layer ends incomplete and the item leaves delivered — a model-failure
+      // the independent answer counts as fail, like a violation. Any other incomplete stays the difference it is.
+      const actual = exhausted ? 'fail' : rawTerminal === 'pass' ? 'pass' : rawTerminal === 'violation' ? 'fail' : rawTerminal === 'unchecked' ? 'unknown' : undefined;
+      if (reqs.length !== 1 || actual !== gold) differences.push(`${entry.item}/${key}：Hub ${actual ?? '缺失或非事实终态'}${rawTerminal === 'incomplete' ? `（incomplete：${layers[0].reason ?? '无理由'}）` : ''}，独立答案 ${gold}`);
+      for (const r of reqs) if (r.status !== undefined && r.status !== expectedStatus) differences.push(`${entry.item}/${key}：Hub 状态 ${r.status}，独立答案 ${expectedStatus}`);
       if (actual === 'fail' && gold === 'fail') {
         const maps = !shape && !cp ? pointerMaps(data,contract) : {phrases:[],quotes:[]};
         const local = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && v.verdict === 'fail');
