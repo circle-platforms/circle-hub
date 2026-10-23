@@ -6,6 +6,9 @@ export const SECRET_NAME_SEGMENTS = ['KEY', 'PASS', 'PWD', 'PIN', 'OTP', 'AUTH',
 export const SECRET_NAME_PARTS = ['PASSWORD', 'PASSWD', 'SECRET', 'TOKEN', 'CREDENTIAL', 'PRIVATE', 'API_KEY'] as const;
 export function secretLikeName(name: string): boolean { return name.split('_').some(part => (SECRET_NAME_SEGMENTS as readonly string[]).includes(part)) || SECRET_NAME_PARTS.some(part => name.includes(part)); }
 export const VariableName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/, '名字须以大写字母开头，只含大写字母、数字和下划线，至多 64 个字符').refine(name => !name.startsWith('CIRCLE_HUB_') && !name.startsWith('CIRCLE_SERVER_'), '名字不能使用进程配置保留前缀或退役前缀');
+/** The legacy vault-entry syntax remains separate, solely for historical definitions. */
+export const SecretReference = z.string().regex(/^\$\{secret:[A-Z][A-Z0-9_]{0,63}\}$/, '凭据写成 ${secret:名字}').refine(value => VariableName.safeParse(value.slice(9,-1)).success, '凭据引用的名字不合规则');
+export function secretNameOf(value: string): string | null { const parsed = SecretReference.safeParse(value); return parsed.success ? value.slice(value.indexOf(':') + 1, -1) : null; }
 export const OrdinaryVariableName = VariableName.refine(name => !secretLikeName(name), '名字像密钥；请用 circle-hub secret set --name <名字>');
 export interface ValueReference {
     at: string;
@@ -104,7 +107,7 @@ export const SecretConsumer = z.strictObject({ definition: z.union([idOf('res'),
 export type SecretConsumer = z.infer<typeof SecretConsumer>;
 export const SecretRecord = z.strictObject({ schema: z.literal('secret@1'), name: VariableName, entry: z.string().regex(/^secret\.[a-z][a-z0-9_]{0,63}\.[a-f0-9]{24}$/), digest_rule: DigestRuleSchema, length: z.number().int().min(1).max(4096), consumers: z.array(SecretConsumer).min(1) });
 export type SecretRecord = z.infer<typeof SecretRecord>;
-export const VariableUse = z.strictObject({ at: z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && value.indexOf('#', split + 1) < 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer'), name: VariableName, decision: Sha256 });
+export const VariableUse = z.strictObject({ at: z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer'), name: VariableName, decision: Sha256 });
 export type VariableUse = z.infer<typeof VariableUse>;
 export const VariableDeclaration = z.strictObject({ name: OrdinaryVariableName, description: z.string().min(1).max(2000), schema: z.record(z.string(), z.unknown()), default: VariableValue });
 export type VariableDeclaration = z.infer<typeof VariableDeclaration>;

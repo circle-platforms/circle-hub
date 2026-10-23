@@ -440,11 +440,25 @@ function pairs(values: readonly string[] | undefined, flag: string): [string, st
   });
 }
 
-function settingValue(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
+function settingValue(text: string): string {
+  if (/^\s*[\[{]/.test(text)) throw new UsageError('数组或对象请用 --setting-json');
+  return text;
+}
+function resourceSettings(values: {setting?:string[];'setting-json'?:string[];'setting-var'?:string[]}) {
+  const out:Record<string,unknown>={};
+  const add=(key:string,value:unknown)=>{if(Object.hasOwn(out,key))throw new UsageError('设置键重复；逐项核对');out[key]=value;};
+  for(const [key,value] of pairs(values.setting,'--setting'))add(key,settingValue(value));
+  for(const [key,value] of pairs(values['setting-json'],'--setting-json')) {try {add(key,JSON.parse(value));}catch(error){if(error instanceof UsageError)throw error;throw new UsageError('设置 JSON 无效；核对 --setting-json，不回显原文');}}
+  for(const [key,value] of pairs(values['setting-var'],'--setting-var')) {if(!/^[A-Z][A-Z0-9_]{0,63}$/.test(value))throw new UsageError('设置的变量名字不合规则');add(key,'${var:'+value+'}');}
+  return out;
+}
+async function resourceWarnings(session:Session, record:import('../../contracts/src/resources.ts').ResourceRecord) {
+  const hub=await session.hub(false); const by=await session.admin();
+  const described=await hub.connectors.admin.describe(by,record.id);
+  for(const item of described?.credentials??[]) {
+    const match=/^\$\{secret:([^}]+)\}$/.exec(item.entry);if(!match)continue;
+    if(!item.set)session.out(`密钥 ${match[1]} 还没有设置：原值不在密钥库里时，接着用 circle-hub secret set --name ${match[1]} 设置`);
+    else if(!item.registered)session.out(`密钥 ${match[1]} 的这一版未登记此使用者和地址：要重新输入一次值才会发往这里`);
   }
 }
 
@@ -474,6 +488,10 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
           origin: { type: 'string', multiple: true },
           'allow-plaintext': { type: 'string', multiple: true },
           setting: { type: 'string', multiple: true },
+          'setting-json': {type:'string',multiple:true},
+          'setting-var': {type:'string',multiple:true},
+          'unset-setting': {type:'string',multiple:true},
+          credential: {type:'string',multiple:true},
         },
         1,
       );
@@ -500,11 +518,12 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         if (origin.protocol !== 'http:') throw new UsageError(`--allow-plaintext ${role}：只有 http 地址才需要允许明文`);
         plaintext.add(origin.origin);
       }
-      const settings: Record<string, unknown> = {};
-      for (const [key, value] of pairs(values.setting, '--setting')) settings[key] = settingValue(value);
+      const settings = resourceSettings(values);
+      if(values['unset-setting']?.length)throw new UsageError('--unset-setting 只用于 update');
       const admin = await session.admin();
       const hub = await session.hub();
       const input: AddResourceInput = {
+        credentials:Object.fromEntries(pairs(values.credential,'--credential')),
         system_pack: positionals[0],
         name: values.name,
         environment: environment as Environment,
@@ -514,10 +533,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       };
       const record = await decided(() => hub.connectors.admin.addResource(admin, input));
       session.out(`已添加资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
-      const credentials = Object.keys(record.credentials);
-      if (credentials.length > 0) {
-        session.out(`凭据项 ${credentials.join('、')}：用 circle-hub secret set ${record.id} <凭据项> 设置（值从标准输入读）`);
-      }
+      await resourceWarnings(session,record);
       return 0;
     }
     case 'update': {
@@ -530,6 +546,10 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
           origin: { type: 'string', multiple: true },
           'allow-plaintext': { type: 'string', multiple: true },
           setting: { type: 'string', multiple: true },
+          'setting-json': {type:'string',multiple:true},
+          'setting-var': {type:'string',multiple:true},
+          'unset-setting': {type:'string',multiple:true},
+          credential: {type:'string',multiple:true},
         },
         1,
       );
@@ -567,17 +587,28 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         }
         changes.allow_plaintext = [...plaintext];
       }
-      if (values.setting !== undefined) {
-        const settings: Record<string, unknown> = {};
-        for (const [key, value] of pairs(values.setting, '--setting')) settings[key] = settingValue(value);
-        changes.settings = settings;
-      }
+      const settings=resourceSettings(values);
+      if(Object.keys(settings).length)changes.settings=settings;
+      if(values['unset-setting'])changes.unset_settings=values['unset-setting'];
+      if(values.credential)changes.credentials=Object.fromEntries(pairs(values.credential,'--credential'));
       if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext 或 --setting');
       const admin = await session.admin();
       const hub = await session.hub();
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
       session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
-      if (changes.system_pack !== undefined) session.out('凭据项如果有改动，用 circle-hub secret set 重新设置；正在运行的 Hub 在几秒内（资源列表缓存）读到新的定义');
+      await resourceWarnings(session,record);
+      return 0;
+    }
+    case 'show': {
+      const {positionals,values}=parse(rest,{values:{type:'boolean'}},1);
+      const by=await session.admin(), hub=await session.hub(false), kit=await session.records();
+      const d=await hub.connectors.admin.describe(by,positionals[0]);if(!d)throw new CliError('资源不可用');
+      session.out(`${d.id} ${d.name} ${d.system_pack}`);
+      const config=await kit.authorizations.resourceConfig(d.id);const bytes=config?.body.bound?await kit.objects.get(config.body.bound):null;
+      if(bytes) {const source=JSON.parse(Buffer.from(bytes).toString());const versions=await kit.variables.list(by);
+        for(const [key,value] of Object.entries(source.settings??{})) {const refs=JSON.stringify(value).matchAll(/\$\{var:([A-Z][A-Z0-9_]*)\}/g);const names=[...refs].map(m=>`${m[0]} 第 ${versions.find(v=>v.name===m[1])?.version??0} 版`);session.out(`设置 ${key}：${names.length?names.join('；'):values.values?JSON.stringify(value):'长度 '+Buffer.byteLength(JSON.stringify(value))}`);}
+      }
+      for(const c of d.credentials)session.out(`凭据项 ${c.name} ${c.entry} 第 ${c.version??0} 版 长度 ${c.length??0} 摘要规则 ${labelOf('digest_rule',c.digest)} ${c.set?'已设置':'未设置'} ${c.registered?'已登记':'未登记'}`);
       return 0;
     }
     case 'read': {

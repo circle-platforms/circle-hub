@@ -127,14 +127,8 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   Plain `key init` refuses a nonempty vault before touching the keychain. `resource list` remains available without
   the master key; commands needing secrets refuse before opening the environment file. Synthetic tests use temporary
   file keys and explicitly targeted temporary keychain files; they verify logins before loss and after reimport.
-- **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
-  the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
-  when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
-  logs in once with the stored credential; a usable token it holds stays in use until its next login, which takes the new
-  value. No restart; both commands say so. `resource list`'s login column is labelled as the vault's state
-  (`密钥库里的登录状态：…`), read fresh by the command; it needs the vault key, which the listing reads once (without it the
-  column says why for every resource and the listing still exits 0).
-- **Changing a resource** (`resource update <resource> [--system-pack <pack>] [--name] [--environment] [--origin role=url]… [--allow-plaintext role]… [--setting k=v]…`): an item that is given replaces the whole item (all origins, all plaintext declarations, all settings); `--system-pack manual-store` rebinds the resource to the latest published version of that system pack (a published version never takes effect on its own: reads check the digest the definition binds). Credentials are not touched; set again those the new version declares.
+- **Login state.** Named secret decisions participate in the session binding. `secret set --name <NAME>` changes the binding, so the next read logs in with the new version without a restart. `resource reset-login <res>` changes the shared credential-version stop epoch and removes that resource's session; all consumers of those versions can make another attempt. In-flight operations finish using the versions they captured.
+- **Changing a resource:** `--credential <item>=<NAME>` sets an explicit reference, migrating a legacy entry atomically with the new definition. A destination change requires a new enrollment through `secret set`. Settings update by key: `--setting k=text` always stores text, `--setting-json k=JSON` parses JSON, `--setting-var k=NAME` creates a whole-value reference, and `--unset-setting k` removes a key. `resource show <res>` is metadata only; `--values` explicitly prints literal settings. Origins and plaintext declarations still replace their complete maps/lists. Pack versions take effect only through an update.
 - **Read-only connector smoke**: `resource read <resource> <read-name> <key>` needs the operator's admin token and
   vault key because the read saves originals and its manifest. It calls `executeRead` with purpose `管理员冒烟读取`.
   Output contains only the bound system pack/read name, completion or failure code, each artifact's declared name,

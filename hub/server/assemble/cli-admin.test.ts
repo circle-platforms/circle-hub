@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../connectors/testing/credentials.ts';
 // The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
 // (the token stored, never printed; a token it cannot store is revoked or said to be live), the operator token from
 // CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
@@ -1531,7 +1532,7 @@ test('review 5: dry-run and real import validate every value before the first wr
     await withKit(admin, async kit => {
       const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: line => admin.deployment.printed.push(line) });
       const by = (await kit.principals.findByName('根管理员'))!;
-      await assert.rejects(hub.connectors.admin.setCredentials(by, second, { password: value }));
+      await assert.rejects(setSyntheticCredentials(kit, hub.connectors, by, second, { password: value }));
     });
   }
   const valid = 'V'.repeat(4096); secrets.add(valid);

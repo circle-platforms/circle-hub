@@ -11,6 +11,7 @@
 // units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import { SecretReference, VariableUse } from './variables.ts';
 import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
@@ -650,7 +651,7 @@ export const ResourceRecord = z
     environment: EnvironmentSchema,
     origins: z.record(RoleName, BaseUrl).describe('base URL of each role of the system pack'),
     allow_plaintext: z.array(z.string().max(300)).max(16).describe('origins (scheme://host[:port]) whose plain HTTP may carry credentials'),
-    credentials: z.record(CredentialName, VaultEntryName).describe('vault entry of each credential the system pack declares'),
+    credentials: z.record(CredentialName, z.union([VaultEntryName, SecretReference])).describe('named secret reference of each credential; legacy vault entry names are decoded only for history'),
     credential_digests: z.record(CredentialName, DigestRuleSchema).describe('the digest rule each credential is kept under in the vault'),
     settings: z.record(z.string(), z.unknown()).describe('non-secret deployment values handed to the read functions as input.settings'),
     limits: ResourceLimits.optional(),
@@ -852,6 +853,7 @@ export const ReadManifest = z.strictObject({
     z.strictObject({ name: z.string(), record: Sha256, sha256: Sha256, media_type: z.string(), size: z.number().int().nonnegative() }),
   ),
   coverage: Coverage,
+  variables: z.array(VariableUse).optional().describe('exact named deployment decisions used by this read'),
   reason: z.string().max(2000).nullable().describe('why the read failed, for the admin log'),
   warnings: z.array(z.string().max(500)).max(50),
 });

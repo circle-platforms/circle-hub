@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 // Production connector planner, sandbox and storage over temporary loopback services, with synthetic responses only.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -29,14 +30,14 @@ before(async () => {
     }
     return plmReply(r, (token) => agile.tokens.has(token), () => writes++);
   });
-  const { id } = await kit.connectors.admin.addResource(kit.admin, {
+  const { id } = await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, {
     system_pack: 'plm', name: '合成字段核对服务', environment: 'test',
     origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin],
     settings: { bug_fix_field: 'repair_notes', build_story_field: 'synthetic_links' },
   });
   resourceId = id;
-  await kit.connectors.admin.setCredential(kit.admin, id, 'username', AGILE_ACCOUNT.username);
-  await kit.connectors.admin.setCredential(kit.admin, id, 'password', AGILE_ACCOUNT.password);
+  await setSyntheticCredential(kit.records, kit.connectors, kit.admin, id, 'username', AGILE_ACCOUNT.username);
+  await setSyntheticCredential(kit.records, kit.connectors, kit.admin, id, 'password', AGILE_ACCOUNT.password);
 });
 after(async () => { await plm?.close(); await agile?.close(); await kit?.close(); await postgres?.stop(); });
 async function read(key: string, type = 'builds') {

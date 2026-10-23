@@ -90,14 +90,14 @@ projection (`project`); `max_requests` (default 50, at most 1000) and `max_bytes
    `{read: {object: system:type:key, resource}}`, provenance type `observed`, capture time. An answer over a cap is an
    error and is never stored truncated. An answer that carries a value the Hub sent as a credential (in its bytes, in its
    text decoded by its charset, or that text without NUL; the forms as given, URI-encoded, JSON-escaped and Base64) is
-   stored at read tier `retain_only` and logged as `secret_echoed` (route and status only): a debug page that lists the
+   stored at read tier `retain_only` and logged as `secret_echoed` (private source-record reference only): a debug page that lists the
    request's `Authorization` header, for example. An admin acceptance of scan findings does not lift that tier.
 5. **Interpreting.** 3xx, 401, 403, 404/410, other statuses, invalid JSON, envelope codes. Refusals (route, origin,
    plaintext), login failures, a second "expired", limits and storage failures stop the read; other failures are handed to
    the planner as `ok: false` responses (a dead link in a walk, for example). **Read tier (B02 R[4]):** an answer stored at
    `retain_only` (a credential-scan hit no acceptance covers, or an echo as above) reaches no function: its view keeps
-   status, media type, size, digest and ETag but has no `json`, `text` or `model`, `ok: false` and the code
-   `SOURCE_CREDENTIAL` (or the transport code when the answer was an error), with a message naming the digest and why. As
+   status, media type, size and ETag but has no `json`, `text` or `model`, `ok: false` and the code
+   `SOURCE_CREDENTIAL` (or the transport code when the answer was an error). Echoed credentials make the original administrator-only; the manifest request has null digest and artifact, and the function sees no received-byte digest. Other scan hits retain their existing digest diagnostics. As
    the original it fails the read before any projection runs; elsewhere it lowers the coverage.
 6. **Nested reads.** A planner may ask for other external objects (`reads`); they are read through the resource that
    declares them, at most one level deep, and served from a cache per (resource, configuration decision, pack digest,
@@ -133,83 +133,13 @@ pattern a real system pack follows: `meta` is `{title, folders, found}`.
 
 ## Login (D01 R[9])
 
-- Credentials live in the vault entries the resource names (`connector.<resource>.<name>`), each under the digest rule the
-  definition records; a credential with the rule `sha512_base64` is kept only as Base64(SHA-512(UTF-8 value)), computed when
-  the admin sets it.
-- The session (token, expiry, confirmation, stop and cool-down) is kept in memory and sealed in
-  `connector.<resource>.session`, so a restart reuses the token and keeps a stop. It is bound to what it depends on: the
-  origins, plaintext declarations, system pack version and digest, credentials and their rules; a session stored under
-  another binding is not used, so a token never goes to new origins and a stop never carries over to another configuration.
-  One `LoginManager` (or `StaticCredential`) serves a resource while its binding stays the same.
-- **Between processes.** The running Hub, the CLI and any other process over the same vault share the session entry.
-  Every write stores a new random `generation` with the state. A process reads the entry again (after its own queued vault
-  operations) before it refuses a read on a stop or a cool-down, before it logs in (no token, a known expiry, an "expired"
-  answer), before it records a stop, a failed login or a token's confirmation, in `status()` (so `loginStatus`) and, for a
-  static credential, before every request. When another process removed the entry (the CLI's `secret set` and `resource
-  reset-login` remove it) or stored a generation this one did not write, the state a restart would load replaces the one in
-  memory: a stop ends, a token another process obtained is used instead of a login of its own, and a stop another process
-  recorded is kept instead of a second attempt with a refused password or static value. Nothing else changes the state in
-  memory: not time, not a re-read of an unchanged entry, not an entry of another binding, one that does not parse or a
-  vault read that fails, and not a read that a reset made here overtook (the reset wins); this process's own writes (even
-  one that reported a failure but landed) are never taken for another's. Entries written before generations or marks
-  existed are read as before (they are known by the digest of their text). A request that has a usable token reads nothing
-  more from the vault (a static credential's value and the session entry are read for every request).
-- **A login in flight is visible to the other processes.** The moment a process decides to log in it writes a mark in the
-  entry (and drops the token being replaced): the time by which the login's answer is due, the login timeout plus 5 s.
-  When the login gets its request slot (a slot within the resource's limits) after a wait of a second or more, the mark is
-  written again from then. Another process that needs a login while the mark stands (no usable token, or an "expired"
-  answer) does not send the same credentials: it logs `login_waiting` and reads the entry again every 100 ms until the
-  entry changes (the other process's token is used, its stop or cool-down is kept, a reset lets it decide again) or the
-  mark's time is up (that process is gone; it then logs in once itself). Callers of one process share one wait, which
-  holds no request slot. The login's result replaces the mark; a login that is not sent (a credential missing, a refusal
-  before any I/O) removes it. A login whose decision a reset or another process's change overtakes before it is sent is
-  not sent (LOGIN_FAILED with `dropped` and `sent: false`; the next read decides again). A mark further away than any login
-  can take (305 s) is not a login in flight.
-- A login happens when there is no token, when the token's known expiry is less than a minute away (see Deviations), or
-  after an explicit "expired" answer (HTTP 401, an envelope `expired` code, or the expired code on a route without a
-  declared envelope) to a request that carried a **confirmed** token; then the request is sent once more. A token is
-  unconfirmed from the login that produced it until a request carrying it, by any caller, gets an answer that is not
-  "expired" (2xx, or 4xx other than 401); an "expired" answer to an unconfirmed token is a refusal. Concurrent callers share
-  one login: once the entry has been read again, the decision starts the login at once, so a slow vault write cannot let a
-  second one through.
-- An expiry the login answer states is used only when it lies beyond the margin when stated; one that is already due (a
-  lifetime under a minute, a skewed clock, a misdeclared unit giving a date in the past) is unknown, logged as
-  `login_expiry_unusable`, and renewal waits for an "expired" answer.
-- **A failed login is never retried.** When the source answered (an envelope code, an HTTP status, no JSON, no usable token),
-  when the outcome is unknown (a timeout, a connection lost after the request left) or when a fresh token is refused, logins
-  **stop**: LOGIN_FAILED, `login_stopped`, `loginStatus().stopped`, and every read that needs the token fails without
-  sending anything, however long it waits. A stop ends when an admin sets a credential, calls `resetLogin` (one attempt
-  then, with the stored credential) or changes what the binding covers, in this process or in another one (the CLI): a
-  running Hub ends the stop it holds at its next read that needs the credential, or when its status is shown. Nothing a
-  process does on its own ends a stop it has read (a confirmation reads the entry first and is not stored over a stop);
-  only a write another process had decided before the stop reached the vault can replace it (see Limits).
-- Only a login that provably never reached the source (connection refused, no route or name, connect timeout, TLS handshake
-  failure: `detail.delivered === false`) starts a timed cool-down (default 30 minutes, kept in the vault), after which one
-  attempt is made again: the source judged nothing. A reset, here or in another process, ends it at once.
-- **What a failed login is recorded over.** When its answer arrives the entry is read again and the stored credentials are
-  compared with the ones the login used; the decision comes after the last of those reads, so nothing that happens during
-  them is missed. A reset made while the login was out (here, or a removal by another process) or a credential that is no
-  longer the value the login used (the CLI set a new password; the values are compared because a removal is not visible
-  when the entry was absent already) wins: nothing is recorded (`login_failed` with `dropped`) and the next read makes the
-  attempt. Otherwise the failure is recorded over what the entry holds now: another process's usable token is used
-  (`login_failed` with `other_token`), another process's stop stands, and anything else gets the stop, another process's
-  cool-down included (a stop wins over a cool-down, so the refused password is not sent again when that cool-down ends); a
-  login that never reached the source cools down instead. A successful login in flight across a reset or an adopted change
-  keeps no result either.
-- **Static credentials** (`static_header`) stop the same way: a 401 or an envelope `expired` code to a request carrying the
-  value gives CREDENTIAL_REFUSED and the value is not sent again, by this process or another one (each reads the session
-  entry before every request; requests already in flight still carry it), until an admin sets it or calls `resetLogin`
-  (here or from the CLI). A value is accepted once a request carrying it was answered otherwise (in this process); until
-  then, and again for a value set since (here or by the CLI), one request at a time carries it, so a wrong value is
-  refused once, not once per request in flight. A refusal that arrives after the credential was set again or reset
-  meanwhile (here or in another process; decided after the last read) fails that request without a stop. A 403 is not a
-  refusal of the credential (RFC 9110: understood but not sufficient for that object); it stays SOURCE_FORBIDDEN for that
-  request.
-- The login exchange is never stored and never logged: log events say `login_attempt`, `login_ok` (with the expiry),
-  `login_failed` (with the envelope code, whether the request was delivered, and `stopped`, `cooldown_until`, `dropped` or
-  `other_token`), `login_stopped`, `login_waiting` (another process's login in flight, with the time its mark ends),
-  `login_reset`, `credential_refused`, `login_expiry_unusable`, `session_store_failed` (a vault read or write of the
-  session entry failed) and `session_reset_failed` (an admin's reset could not remove it).
+Credentials are complete `${secret:NAME}` references. At each read the registry loads the current resource decision and the current named secret decisions as one credential batch, checks the exact consumer/item/destination enrollment, and captures material for the operation. A legacy `connector.<resource>.<item>` credential refuses before any request, with the migration command in the administrator log. Missing or revoked names likewise refuse with `secret set --name <NAME>`.
+
+The sealed `connector.<resource>.session` binds origins, plaintext declarations, pack, credential rules, secret decisions and a reset epoch. A rotation invalidates old sessions at the next read without a restart. Current and previous secret values prime the redactor at server startup and on reads; actual digests, headers and both Basic components are registered before sending. In-flight reads retain their captured versions.
+
+A credential-version gate uses a sorted set of decision digests, a vault entry and a transaction-scoped advisory lock. Network I/O never holds that database transaction. Resources and processes sharing those versions serialize login decisions and static-credential requests; ordinary requests with an acquired token retain their declared concurrency. One refused login or static credential stops all of them before another request. An abandoned in-flight claim freezes rather than automatically reusing credentials. `resource reset-login` changes the shared epoch and clears the resource session. A new secret decision has a new gate.
+
+A usable confirmed token is reused. An explicit expiry can renew once; a token refused immediately after login stops. Login failures and unknown delivered outcomes never retry. A provably undelivered login retains its existing cooldown. `LoginManager` and `StaticCredential` keep their per-resource generation and in-flight checks as an additional guard within the captured version.
 
 ## Resources (D01 R[6], D07, B04)
 
@@ -225,23 +155,13 @@ enabling grants the last definition again. Only admins decide (the account is re
 - **Exact pack binding (B04 R[1]).** `addResource` resolves `system_pack: 'id'` to the version published now and records
   that version and its digest; reads use exactly that content (another digest under that version is not used:
   PACK_UNAVAILABLE). A newer version takes effect only through `updateResource` (`system_pack: 'id'` binds the latest then).
-- **Updates.** A credential no longer declared, or whose digest rule changed, loses its stored value (`credential_dropped`)
-  and is set again with `setCredential`; the session is rebound (see Login); cached nested reads are cleared.
-- `resetLogin(by, id)` (admins) ends a stop or cool-down without changing the credential; `setCredential` ends it too. From
-  any process both forget the session and remove its vault entry, which a running Hub reads as the end of its stop (see
-  Login). A removal that fails is STORE_FAILED for the admin, with the system error code and never a path (the stop in that
-  process's memory ends all the same; the vault still holds it, so a running Hub elsewhere keeps it): the reset is run
-  again.
-- `setCredentials(by, id, {name: value, …})` (admins) sets several credentials of one resource in one call: every name and
-  value is checked before any is stored, the values are stored in the order of the definition, and the session is
-  forgotten once, after the last. A login that takes a user name and a password needs both changed before a running Hub
-  ends its stop: set one at a time (`setCredential` twice), a read between the calls logs in with the new user name and
-  the old password, a refused attempt against the new account. When a value cannot be stored after others were, the call
-  is STORE_FAILED naming what was stored, and the session is kept (no login with half of the new values).
-  `setCredential(by, id, name, value)` is `setCredentials` with one value.
+- **Updates:** named material is never deleted when a consumer or digest rule changes; another consumer may need it. Legacy entries removed from a definition are deleted after the new decision commits. Migration cannot change destinations in the same operation and commits secret decisions with the resource definition in one transaction.
+- `resetLogin(by,id)` resets the shared credential-version stop and the per-resource session; failure to remove a session is reported to the administrator without a path.
+- The retired `setCredential(s)` API is removed. Synthetic fixtures use `testing/credentials.ts`, which explicitly creates names and writes them through records' named-secret API. Production callers configure references first, then use the administrator named-secret commands.
+- Settings allow only whole-value ordinary-variable references. Configuration takes sorted name locks, checks the referenced current decisions again inside the configuration transaction, and bounds resolved settings at 64 KiB. Origins and other fields cannot reference variables. Updates merge settings by key; removals are explicit. Each read carries its caller's ordinary-variable snapshot into nested reads. Manifests and nested-cache keys include configuration, variable and secret decisions; `variables` records each use.
 - `describe(by, id)` (admins): one resource, enabled or not, read anew: the admins' listing row and, for every credential the
   definition declares (sorted by name), its name, vault entry, digest rule and whether a value is set (presence only;
-  never a value, a length or a digest). It needs neither the system pack nor the vault key. Null for an id that is not a
+  never a value or its digest; version, length and enrollment are metadata). It needs neither the system pack nor the vault key. Null for an id that is not a
   resource. This is what the CLI's `secret set` needs to check a credential and name its rule before asking for a value.
 - `listResources` gives admins origins and plaintext declarations and other accounts the rows without them; the catalog port
   gives admins the same listing and everyone else an empty list.
@@ -285,6 +205,8 @@ bytes), synthetic system packs written to a temp directory (`writePack`, `agileS
 a captured log, an adjustable clock). All content is invented; addresses are loopback or 192.0.2.0/24.
 
 ## Decisions
+
+The named-variable sections above supersede older review notes below that mention retired credential setters, entry removal on rotation, or per-resource-only stops. Those notes describe the earlier implementation.
 
 1. **Original before interpretation.** The `received` hook of `HttpSource.request` stores the complete answer before status,
    envelope or JSON are looked at; the planner and the projection only ever see stored answers (tested by wrapping the
@@ -383,15 +305,7 @@ a captured log, an adjustable clock). All content is invented; addresses are loo
   process obtained or confirmed, and the next login then follows an "expired" answer to a confirmed token.
 - A mark whose process died stands until its time is up: reads of other processes that need a login wait that long (at
   most the login timeout plus 5 s; 35 s with the default timeout), then log in once.
-- Credentials set one at a time (`setCredential` per call, which is what the CLI's `secret set` does today): a read between
-  the calls logs in with half of the new values (one refused attempt, then a stop that the second call ends). Use
-  `setCredentials`; until the CLI takes several names (Needs → server), set the two values of one login with the resource
-  disabled: `resource disable`, wait 5 s (a running Hub's resource list cache), `secret set` each credential, `resource
-  enable`.
-- A running Hub that holds a usable token keeps using it after the CLI reset the login or set a new credential (the source
-  still accepts the token); the new credential is used at its next login. Only a stop or a cool-down is ended by the reset.
-- A stop whose own write failed while the entry was absent can be ended only in that process (an admin call through it) or
-  by a restart: a removal elsewhere changes nothing that process can see.
+- Setting related names separately can expose a mixed pair. Use one `secret set --name <A> --name <B>` batch; credential decisions then change atomically.
 - A read in flight across an update that changes the binding keeps the runtime it started with; when that old session is
   stopped and an admin resets the login meanwhile, that read may make its one attempt with the old configuration (the next
   read uses the new one).

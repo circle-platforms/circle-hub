@@ -144,6 +144,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
   });
+  if(options.requireVaultKey !== false)await connectors.primeSecrets();
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
