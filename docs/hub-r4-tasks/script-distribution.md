@@ -20,7 +20,7 @@
 
 - 分支和工作树：`local-tools`，目录 `circle-hub-local-tools`，从 hub-redesign 开，第一步现在就能开始；第二步等 kb-candidates 和 views-and-notes 合并以后，集成者通知。
 - 可以改的路径：
-  - 第一步：`hub/server/local-tools.ts`（新，下载出口）、`hub/server/cli-local-tools.ts`（新，安装和核对命令）和它们的测试；`hub/server/app.ts` 路由里加一处；`hub/server/cli.ts` 的内置命令表（`BUILT_IN`、`BUILT_IN_HANDLERS`）和用法加 `local-tools`；`hub/runs/packs/validate.ts`、`hub/runs/packs/imports.ts` 里 `tools/` 的发布检查和测试；`hub/server/README.md`、`hub/runs/packs/README.md` 末尾各加一节（console-results 也在改 server 的 README，合并排在它后面）。
+  - 第一步：`hub/server/local-tools.ts`（新，下载出口）、`hub/server/cli-local-tools.ts`（新，安装和核对命令）和它们的测试；`hub/server/app.ts` 路由里加一处；`hub/server/cli.ts` 的内置命令表（`BUILT_IN`、`BUILT_IN_HANDLERS`）和用法加 `local-tools`；`hub/runs/packs/validate.ts`、`hub/runs/packs/imports.ts` 里 `tools/` 的发布检查和测试；`hub/server/README.md`、`hub/runs/packs/README.md` 末尾各加一节（console-results 也在改 server 的 README，合并排在它后面）。core-fixes 也改 `cli.ts` 的同几行（在 `BUILT_IN` 旁边加 `RESERVED_COMMAND_DESCRIPTIONS`，改写用法），review-output 带着它：集成者先合并 core-fixes，local-tools 再在合并后的主线上对齐 `cli.ts`。
   - 第二步：`contracts/src/run.ts` 的 `PackSummary`（跑 `npm run gen:contracts`，生成物一起交）；`hub/runs/packs/ports.ts` 的 `packSummary`；`hub/server/text.ts` 里 list_task_packs 和 start_run 的那两段。
   - 不改：`packs/**`（case-compile 改用这个命令由改它的分支做）、`contracts/model.json`、`hub/server/tools.ts`、`hub/server/fakes.ts`（console-results 在改，测试里自己搭桩）、`hub/server/cli-admin.ts`（hub-job-dispatch 和 plan-evidence 在改）。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；`git commit -s`）。所有者的规矩：
@@ -52,9 +52,9 @@
    - 先取清单，它的 SHA-256 必须等于 `--digest`（包号从控制台的任务包页，或运行摘要的 `pack_digest` 抄）；再逐个取清单里的文件，大小和 SHA-256 都要对上。
    - 先写进同级的临时目录，全部对上才改名成 `<目录>/<包>@<版本>/`，清单字节存成里面的 `pack.json`；有一个不对就整份删掉，什么也不留。
    - 目标已存在：内容和清单一致，答“已安装”，退出码 0；不一致就拒绝，不覆盖。
-   - `circle-hub local-tools verify <目录>`：按目录里的 `pack.json` 重算清单的包号和每个文件的 SHA-256，列出多出来的文件；只读，不联网。集成者这一轮手工放的那一份也用它核。
+   - `circle-hub local-tools verify <目录> --digest <包号>`：`--digest` 必填。先比目录里 `pack.json` 的 SHA-256 和 `--digest`，不等就失败；再按 `pack.json` 重算每个文件的 SHA-256，列出多出来的文件；只读，不联网。只按目录自己的 pack.json 重算的话，连 pack.json 带文件一起改过的一份也能过，所以要和 Hub 发布的包号比。集成者这一轮手工放的那一份也用它核，hub-device-run 第 11 条也靠它。
    - 输出只有包号、版本、文件数、字节数和第一处不符的路径，从不打印令牌和文件内容。
-   - 测试（对第 2 条的测试服务器跑）：正确安装；`--digest` 不对，什么也不写；服务器给的某个文件被改，整份不留；目标已存在且相同，答“已安装”；存在但不同，拒绝；非回环地址被拒；令牌不出现在标准输出和标准错误里；`verify` 查出改过的一个字节和多出来的文件。
+   - 测试（对第 2 条的测试服务器跑）：正确安装；`--digest` 不对，什么也不写；服务器给的某个文件被改，整份不留；目标已存在且相同，答“已安装”；存在但不同，拒绝；非回环地址被拒；令牌不出现在标准输出和标准错误里；`verify` 查出改过的一个字节和多出来的文件；pack.json 和文件一起改过、彼此对得上的一份，`verify --digest` 也查得出；不给 `--digest` 被拒。
 
 4. **README**：两个包的 README 末尾写这一节：下发是什么、不是什么。它不是 MCP 工具，Circle 里没有它的界面；装在客户端的工具跑出来的只作预览，Hub 的重算算数（T01 R[0]）。
 

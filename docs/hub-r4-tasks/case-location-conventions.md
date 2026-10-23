@@ -17,8 +17,10 @@
 - “PLM 里没有”：`hub-read-absence.md` 第 1 条把“系统 S 里没有 X（读于 T）”记成确定的观察，绑进运行，检查能读到。那一件合并以前核对不了，所以分两步。
 - 模型元素：W01、W02、V01、V03、A01（声明照旧是声明）、A06（未知只作过渡）。`node tools/show-element.ts W02 V01 V03 A01 A06`。模型文字不用改。
 
-- 分支和工作树：`case-location-conventions`，目录 `circle-hub-case-location-conventions`，从 core-fixes 开出（core-fixes 改了这个包的 pack.json、params.ts、README 和测试，并把包升到 1.3.1；它再有提交时合进来，合并时排在它后面）。第二步等 hub-read-absence 合并。
-- 可以改的路径：`packs/workflow/case-location/**`：functions、checks.json、requirements.json、tables/codes.json、samples、testing/examples.json、SKILL.md、README.md、pack.json、pack-files.ts 和测试。
+- 分支和工作树：`case-location-conventions`，目录 `circle-hub-case-location-conventions`，从 core-fixes 开出（core-fixes 改了这个包的 pack.json、params.ts、README 和测试，现在是 1.3.2；它再有提交时合进来，合并时排在它后面；这一件的目标版本 1.4.0 照旧）。第二步等 hub-read-absence 合并。
+- 可以改的路径：
+  - `packs/workflow/case-location/**`：functions、checks.json、requirements.json、tables/codes.json、samples、testing/examples.json、SKILL.md、README.md、pack.json、pack-files.ts 和测试；
+  - 前导零那一节要的：`packs/product/apv/functions/ids.ts`、`ids.test.ts` 和 APV 的 `pack.json`。K1、kb-links、kb-adoc 也重签 APV 的 pack.json，以合并后的为准，最后重签。
   - 不碰 `scripts/real/**`。gold-location 正在改独立答案（`scripts/real/accept/case-location.ts`、`location-tree.ts`），`scripts/real/gold/locations.ts` 在 gold-trace 上也在改。两边都合并以后，集成者照这五条对齐独立答案。
   - hub-pack-findings 第 6 条也改这个包（`expected.ts`、`project.ts`）。集成者让两件先后做：本页先合并，那一件从合并后的 hub-redesign 开出。
   - case-review 和 case-review-verify 也把 “bug to case” 后面的编号读成未标明。那两个包改不改，由集成者另排，不在这一件里。
