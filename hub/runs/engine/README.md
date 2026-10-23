@@ -387,3 +387,7 @@ read; results, run records and production results over the record limit; queries
    Deviations)? The engine keeps the Hub's facts and makes only the judgment requirements incomplete.
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
+
+### 生产投影的确定说明
+
+只有显式标记 nature=fact、verdict=support 的组会升格，且每条 grounds 都按本次运行的读取范围核验。说明对象只接收 nature、verdict、message、grounds 和可选 data；considered、details、view 等附加元数据必须显式放在 data 内，不静默丢弃额外键。message 和 grounds 分别进入主张文字和根据，data 原样进入 statement.data。pointer 保留 /groups/<序号> 以回读冻结输出；投影输出不合格的拒绝不伪造调用参数 path，而在消息和包维护人的修正动作中说明位置与规则。

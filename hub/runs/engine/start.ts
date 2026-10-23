@@ -638,7 +638,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
   });
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
-  const noteSchema = z.object({
+  const noteSchema = z.strictObject({
     nature: NatureSchema.extract(['fact']), verdict: VerdictSchema.extract(['support']),
     message: z.string().refine(value => value.trim().length > 0), grounds: z.array(Ground).min(1), data: z.record(z.string(), z.unknown()).optional(),
   });
@@ -648,7 +648,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
   for (const {group, i} of notes) {
     const at = pointerOf('groups', i);
     const note = noteSchema.safeParse(group);
-    if (!note.success) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包的确定说明 ${at} 不合格：需要 message 和非空 grounds`, {fix:'请任务包维护人修正投影函数的事实说明后重开运行'})]);
+    if (!note.success) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包的确定说明 ${at} 不合格：需要 message 和非空 grounds；仅允许 nature、verdict、message、grounds、data，其余字段必须放入 data`, {fix:'请任务包维护人补齐 message 和非空 grounds，将其他说明字段显式放入 data 后重开运行'})]);
     const grounds: string[] = [];
     const roles: Array<SourceRole | null> = [];
     for (const reference of note.data.grounds) {

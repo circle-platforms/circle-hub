@@ -23,12 +23,12 @@ before(async()=>{
 after(async()=>{await h?.close();if(directory)await rm(directory,{recursive:true,force:true});await postgres?.stop();});
 let next=0;
 
-async function pack(options:{override?:Record<string,unknown>;unmarked?:boolean;empty?:boolean;judgment?:boolean}={}){
+async function pack(options:{override?:Record<string,unknown>;unmarked?:boolean;empty?:boolean;judgment?:boolean;metadataOnly?:boolean}={}){
   const spec=locatePack();spec.id=`synthetic-notes-${++next}`;
   spec.files['functions/project.ts']=`export default function(input:any) {
     const source=input.inputs.find((s:any)=>s.slot==='map');
     const n=source.model.cases.filter((c:any)=>c.commands.length===0).length;
-    const note={nature:'fact',verdict:'support',message:'有 '+n+' 个用例解析不出命令',grounds:['src:'+source.sha256+'/json@1/p/cases'],data:{empty:n},...${JSON.stringify(options.override??{})}};
+    const note={nature:'fact',verdict:'support',message:'有 '+n+' 个用例解析不出命令',grounds:['src:'+source.sha256+'/json@1/p/cases'],${options.metadataOnly?"considered:n,details:['合成细节'],":"data:{empty:n},"}...${JSON.stringify(options.override??{})}};
     return {items:${options.empty?'[]':"source.model.cases.map((c:any,i:number)=>({id:c.id,label:c.id,location:{parser:'json@1',selector:'p/cases/'+i},fields:{document:'synthetic',path:['root'],expected:['state']}}))"},
       groups:[${options.unmarked?"{message:'未标记的投影说明'},{nature:'unknown',verdict:'unknown',message:'不能直接当事实的说明'}":'note'}],warnings:[{code:'${spec.id}.hint',message:'可能有遗漏的普通 warning'}]};
   }`;
@@ -94,4 +94,15 @@ for(const mode of ['shape','ground'])test(`projection ${mode} errors never inven
   const id=await pack({override});const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
   assert.equal(detail.answer.call_result,'error');assert.equal(detail.answer.errors[0].path,undefined);
   assert.match(detail.answer.errors[0].message,/groups\/0/);assert.ok(detail.answer.errors[0].fix);
+});
+
+test('projection note metadata must be explicitly carried in data rather than silently discarded',{skip},async()=>{
+  const id=await pack({metadataOnly:true});const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
+  assert.equal(detail.answer.call_result,'error');assert.match(detail.answer.errors[0].message,/data/);assert.match(detail.answer.errors[0].fix!,/data/);
+});
+
+test('explicit projection note data preserves all declared metadata',{skip},async()=>{
+  const metadata={empty:2,considered:3,details:['合成细节'],view:'synthetic-view'};
+  const id=await pack({override:{data:metadata}});const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
+  assert.equal(detail.answer.call_result,'ok');assert.deepEqual(noteOf(detail.production!.result)!.statement.data,metadata);
 });
