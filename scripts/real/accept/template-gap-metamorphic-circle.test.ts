@@ -291,3 +291,26 @@ test('review 5: clip references exclude the closing full-width parenthesis', () 
   const reference = `rec:${'a'.repeat(64)}#/items/12`;
   assert.equal(truncationReference(`用例 1 个；缺 21 个模板类别：功能…（共 480 个字符，全文 ${reference}）`), reference);
 });
+
+test('review 6: every clipped answer is consumed before the next full-summary read', () => {
+  const { gold, dir } = goldOf(); (gold as { batch: number }).batch = 4;
+  const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
+  const uploads = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
+  const shas = uploads.map(call => sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path)))));
+  const full = new Map<string, string>();
+  const start = scenario.respond(turn(1, shas.map((sha, i) => ({ id: `u${i}`, text: `已上传 src:${sha}`, isError: false })))) as any[];
+  assert.equal(start[0].tool, 'hub_start_run');
+  const rows = shas.map((sha, i) => {
+    const reference = `rec:${'a'.repeat(64)}#/items/${i}`;
+    full.set(`${reference}/summary`, `用例 ${i < 2 ? 2 : 1} 个；24 个模板类别都已覆盖`);
+    return `- upload-${sha.slice(0, 12)} | 合成 | 用例 99 个；缺…（共 480 个字符，全文 ${reference}） | 位置 /`;
+  });
+  let reply = scenario.respond(turn(2, [{ id: 'run', text: rows.join('\n'), isError: false }])) as any[];
+  let index = 3; let reads = 0;
+  while (reply[0]?.tool === 'hub_get_nodes') {
+    const reference = String(reply[0].input.reference); reads++;
+    reply = scenario.respond(turn(index++, [{ id: 'full', text: `内容 ${reference}：模型可读\n本页字符 0-${full.get(reference)!.length}\n${JSON.stringify(full.get(reference))}\n追踪 ${index}`, isError: false }])) as any[];
+  }
+  assert.equal(reads, 4);
+  assert.equal(scenario.check([]).find(check => check.name === '原件用例数')?.ok, true);
+});

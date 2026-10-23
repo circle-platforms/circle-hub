@@ -227,10 +227,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
             if (!unknown.has(key)) unknown.set(key, '条目数与这一批的份数不符');
             continue;
           }
-          const parsed = parseSummary(summary, categories);
-          answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary });
           const reference = truncationReference(summary);
           if (reference !== null) truncated.set(key, reference);
+          else { const parsed = parseSummary(summary, categories); answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
         }
       }
       openRun = null;
@@ -250,28 +249,26 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       lastUploaded = [];
     }
+    if (pendingGetNodes !== null && turn.toolResults.length > 0) {
+      const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '');
+      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
+      else {
+        const parsed = parseSummary(full, categories);
+        answerOf.set(pendingGetNodes.key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: full });
+      }
+      pendingGetNodes = null;
+    }
     // Truncated summaries: read the full text first (one hub_get_nodes per reply keeps the flow simple).
     const [truncatedKey, reference] = [...truncated.entries()][0] ?? [];
     if (truncatedKey !== undefined && reference !== undefined) {
       truncated.delete(truncatedKey);
-      const answer = answerOf.get(truncatedKey);
-      if (answer !== undefined) {
+      {
         pendingGetNodes = { key: truncatedKey };
         // The clip names the full text's reference; the summary is read at that reference's /summary (a reference
         // that already ends in /summary is used as it is).
         const normalized = reference.endsWith('/summary') ? reference : `${reference}/summary`;
         return [{ tool: 'hub_get_nodes', input: { reference: normalized } }];
       }
-    }
-    if (pendingGetNodes !== null && turn.toolResults.length > 0) {
-      const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '');
-      const answer = answerOf.get(pendingGetNodes.key);
-      if (answer === undefined || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
-      else {
-        const parsed = parseSummary(full, categories);
-        answerOf.set(pendingGetNodes.key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: full });
-      }
-      pendingGetNodes = null;
     }
     // Advance: upload the next batch, start the next run, or close the phase.
     if (lastUploaded.length === 0 && openRun === null && pendingGetNodes === null) {
