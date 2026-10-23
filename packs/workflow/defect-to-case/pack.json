@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "71923dcc7edbf21332890aafc136adb6b00e5fe8b734557a28032b9fb62d3406",
-      "size": 8211
+      "sha256": "2effcfdd44db8be9bddf45b07c230a5fbc11a908c7524feac5e0b4ccfbe4dcdb",
+      "size": 8660
     },
     {
       "path": "checks.json",
@@ -63,8 +63,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "0719dbd88c24df8fe15b7d3920e3f210b4d40123b1b13821fa89fd6a035e0ddc",
-      "size": 4664
+      "sha256": "cbfd89c74e338bc99f72e2db2bb41b246e8f5c5759ee29341e833bb7c0a3053f",
+      "size": 5405
     },
     {
       "path": "samples/negative/commands_out_of_range.json",

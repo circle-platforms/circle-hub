@@ -28,3 +28,18 @@ test('normalized equal titles are duplicates even when expectations differ', () 
   const result = check('  合成\tＷＩＤＧＥＴ\u00A0标题 ', '另一段期望');
   assert.equal(result[0].verdict, 'refute'); assert.equal(result[0].code, 'defect-to-case.duplicate_case');
 });
+
+test('the requirement names command heads and every incompleteness class rather than promising success from skipped alone', () => {
+  const requirements = JSON.parse(readFileSync(new URL('./requirements.json', import.meta.url), 'utf8'));
+  const description = requirements.requirements.find((r: { key: string }) => r.key === 'not_duplicate').description;
+  for (const phrase of ['命令头', '最长', '缺键', '截断', '条目不带命令', '解析不出']) assert.ok(description.includes(phrase), phrase);
+  assert.ok(!description.includes('未发现重复时若索引未跳过文档则通过'));
+});
+test('different parameter values with the same head set, negative flag and title still meet the implemented criterion', () => {
+  for (const value of [30, 60]) {
+    const view = structuredClone(SYNTHETIC_INDEX_VIEW);
+    const candidate = Object.values(view.entries)[0]; candidate.data.commands = ['widget health interval'];
+    const draft = makeGoodDraft(); draft.title = candidate.data.title as string; draft.steps = [{ command: `widget health interval ${value}` }];
+    assert.equal(checkDuplicate({ subject: { item: 'synthetic', drafts: [draft], indexed_cases: view }, catalog: SYNTHETIC_CATALOG })[0].verdict, 'refute');
+  }
+});

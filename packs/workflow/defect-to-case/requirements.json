@@ -8,7 +8,9 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "judgment",
       "checks": [],
       "error_handling": []
@@ -20,12 +22,24 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["draft_shape"],
+      "checks": [
+        "draft_shape"
+      ],
       "error_handling": [
-        { "code": "defect-to-case.shape_invalid", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.duplicate_draft", "action": "repair", "max_rounds": 2 }
+        {
+          "code": "defect-to-case.shape_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.duplicate_draft",
+          "action": "repair",
+          "max_rounds": 2
+        }
       ]
     },
     {
@@ -35,16 +49,45 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["commands_catalog", "commands_refutation"],
+      "checks": [
+        "commands_catalog",
+        "commands_refutation"
+      ],
       "error_handling": [
-        { "code": "core.catalog.not_member", "action": "repair", "max_rounds": 2 },
-        { "code": "core.catalog.param_out_of_range", "action": "repair", "max_rounds": 2 },
-        { "code": "core.catalog.param_type_mismatch", "action": "repair", "max_rounds": 2 },
-        { "code": "core.catalog.arity_mismatch", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.negative_accepted", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.unexpected_refutation", "action": "repair", "max_rounds": 2 }
+        {
+          "code": "core.catalog.not_member",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_out_of_range",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.arity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.negative_accepted",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.unexpected_refutation",
+          "action": "repair",
+          "max_rounds": 2
+        }
       ]
     },
     {
@@ -54,27 +97,57 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["grounded_quotes", "grounded_sources", "grounded_reading"],
+      "checks": [
+        "grounded_quotes",
+        "grounded_sources",
+        "grounded_reading"
+      ],
       "error_handling": [
-        { "code": "QUOTE_MISMATCH", "action": "repair", "max_rounds": 2 },
-        { "code": "REFERENCE_UNRESOLVED", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.quote_source_forbidden", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.quote_missing", "action": "repair", "max_rounds": 2 },
-        { "code": "defect-to-case.expect_not_in_quote", "action": "repair", "max_rounds": 2 }
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "REFERENCE_UNRESOLVED",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.quote_source_forbidden",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.expect_not_in_quote",
+          "action": "repair",
+          "max_rounds": 2
+        }
       ]
     },
     {
       "key": "not_duplicate",
       "name": "用例去重",
-      "description": "对比已索引的用例清单（knowledge:index:<product>:<build>?kind=case&key=commands），若起草用例与已索引用例执行相同的一组规范化命令、具有相同的正反向标记，且规范化标题相同，则判定为重复；重复为提示档违规，标明已有用例（文档、节点、标题）及树引用；未发现重复时若索引未跳过文档则通过，若索引存在跳过文档则为未知（完整性未证明）",
+      "description": "每条草稿命令行按锁定构建目录取最长匹配前缀作为命令头；命令头集合与已索引用例的命令集合相同、正反向标记相同且规范化标题相同即为重复（提示档），不比较参数值或期望文字。未发现重复时，只有覆盖和完整性均已证明才支持；索引没有覆盖草稿的命令头、视图截断或缺键、键受每键上限影响、条目不带命令、命令头解析不出或有来源未读时记未知，写明缺少的事实和须重读或修正的输入",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["duplicate_check"],
+      "checks": [
+        "duplicate_check"
+      ],
       "error_handling": []
     }
   ]
