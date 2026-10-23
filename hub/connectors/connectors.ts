@@ -162,7 +162,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       const value=m.metadata.digest_rule===rule?m.value:storedCredential(m.value,rule);
       redactor.addSent(value);values.set(original.credentials[item]+'#'+item,value);
     }
-    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(m=>m.decision)):null;
+    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(m=>m.decision),materials.map(m=>m.name),original.id):null;
     const epoch=await gate?.epoch() ?? '';
     const dependencies=[...resolved.uses.map(u=>u.decision),...materials.map(m=>m.decision)];
     const vault=new Proxy(records.vault,{get(target,key){if(key==='getText')return async (entry:string)=>values.has(entry)?values.get(entry)!:target.getText(entry);const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
@@ -388,8 +388,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     resetLogin: async (by,id,note)=>{
       const actual=await records.principals.get(by.id);if(!actual||actual.disabled||actual.role!=='admin')throw new ConnectorError('ACCESS_DENIED');
       registry.invalidate();const state=await registry.get(id);
-      if(state) { const defs=await records.variables.list(by);const decisions=Object.values(state.resource.credentials).map(secretNameOf).map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
-      if(decisions.length)await new CredentialStop(records.store,records.vault,decisions).reset(); }
+      if(state) { const defs=await records.variables.list(by);const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);const decisions=names.map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
+      if(decisions.length)await new CredentialStop(records.store,records.vault,decisions,names,id).reset(); }
       await registry.resetLogin(by,id,note);
     },
   };

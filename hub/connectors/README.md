@@ -498,3 +498,5 @@ External-id size advice in core is deliberately generic (缩短读取键后重�
 Counted identity refusals carry a typed inputError only for an active Hub reader. The engine exposes this deterministic
 caller-input fact only after workflow access checks, using its existing input-schema code and a shortening instruction.
 Other read failures stay neutral; neither the supplied key nor resource existence/permission is disclosed by this field.
+
+Shared-stop repair messages retain the actual secret names and the resource id supplied by the caller. Both stop paths emit the named `secret set --name …` and complete `resource reset-login <resource>` actions; the stop key still depends only on the shared decision digests.
