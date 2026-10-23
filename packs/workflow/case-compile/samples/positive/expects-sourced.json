@@ -2,7 +2,7 @@
   "id": "expects_sourced",
   "source": "author",
   "check": "expected_sources",
-  "note": "合成正例：每个期望结果都带逐字来源",
+  "note": "合成正例：每个期望结果都带逐字来源且文字出自引文",
   "subject": {
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
@@ -241,6 +241,12 @@
               "ip": "192.0.2.90",
               "proto": "tcp",
               "port": 80
+            },
+            {
+              "host": "client0",
+              "ip": "192.0.2.80",
+              "proto": "tcp",
+              "port": 9000
             }
           ],
           "reserved": []

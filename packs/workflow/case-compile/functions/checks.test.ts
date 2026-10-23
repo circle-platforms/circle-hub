@@ -37,10 +37,30 @@ function group(): Record<string, unknown> {
 }
 
 describe('期望结果的来源', () => {
-  it('正例：每个期望结果都带逐字来源', () => {
+  it('正例：每个期望结果都带逐字来源，且文字出自引文', () => {
     const [outcome] = checkExpectedSources(subjectOf(goodData()));
     assert.equal(outcome.verdict, 'support');
-    assert.match(outcome.statement, /1 个期望结果都带有逐字来源/);
+    assert.match(outcome.statement, /1 个期望结果都带有逐字来源且文字出自引文/);
+    assert.ok(outcome.statement.endsWith(MARK));
+  });
+
+  it('正例：期望文字比引文短时算片段；空白折叠后相同也算', () => {
+    const data = goodData();
+    data.expects = [
+      { text: '设置成功', quote: { reference: QUOTE.reference, text: '健康检查间隔设置成功' } },
+      { text: '健康检查间隔 设置成功', quote: { reference: QUOTE.reference, text: '健康检查间隔\n设置成功' } },
+    ];
+    const [outcome] = checkExpectedSources(subjectOf(data));
+    assert.equal(outcome.verdict, 'support', outcome.statement);
+  });
+
+  it('反例：期望文字不是它的引文的片段（引文是真的，文字是模型写的）', () => {
+    const data = goodData();
+    data.expects = [{ text: '健康检查立即生效', quote: QUOTE }];
+    const [outcome] = checkExpectedSources(subjectOf(data));
+    assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.expect_not_in_quote']);
+    assert.match(outcome.statement, /第 1 个期望结果「健康检查立即生效」不是它的引文/);
+    assert.equal(outcome.pointer, '/data/expects/0');
     assert.ok(outcome.statement.endsWith(MARK));
   });
 
@@ -53,6 +73,7 @@ describe('期望结果的来源', () => {
     const [outcome] = checkExpectedSources(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.expect_without_source']);
     assert.match(outcome.statement, /第 2 个期望结果「会话保持生效」没有逐字来源/);
+    assert.equal(outcome.pointer, '/data/expects/1');
     assert.ok(outcome.statement.endsWith(MARK));
   });
 
@@ -61,6 +82,7 @@ describe('期望结果的来源', () => {
     data.expects = [];
     const [outcome] = checkExpectedSources(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.expect_without_source']);
+    assert.equal(outcome.pointer, '/data/expects');
   });
 });
 
@@ -143,6 +165,7 @@ describe('确定性', () => {
     const [outcome] = checkDeterministic(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.reason], ['unknown', 'output_failed']);
     assert.ok(!('code' in outcome) || outcome.code === undefined, '出件失败不是模型的违规');
+    assert.equal(outcome.pointer, '/data');
     assert.match(outcome.statement, /出件失败/);
     assert.ok(outcome.statement.endsWith(MARK));
   });
@@ -151,6 +174,7 @@ describe('确定性', () => {
     const data = { ...goodData(), plan_json: '{"schema":"exec-plan@1"}' };
     const [outcome] = checkDeterministic(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.plan_in_slots']);
+    assert.equal(outcome.pointer, '/data/plan_json');
     assert.ok(outcome.statement.endsWith(MARK));
   });
 });

@@ -32,6 +32,8 @@ export interface Outcome {
   tier: 'blocking' | 'advisory';
   reason?: 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed';
   item?: string;
+  /** Where the judged content sits in the subject (the /data/... forms of this pack, or the interpreter's own). */
+  pointer?: string;
   data?: { [key: string]: unknown };
 }
 
