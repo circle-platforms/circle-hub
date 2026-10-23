@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "kind": "workflow",
   "title": "用例定位",
   "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，给出定位到的版本线在两个名称族的构建候选（别名解析到它所依据的构建）并核对目录和标题里写出的构建名，以及标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "b09216db2e1349934c916372d3757acaaef0a3c57ef701963b68c7e51a3cb23f",
-      "size": 3318
+      "sha256": "95187b8e6f2b515c4f8137e5651f2467967d844661eb68415e69d8a92f0f4675",
+      "size": 3878
     },
     {
       "path": "checks.json",
@@ -18,33 +18,33 @@
     },
     {
       "path": "functions/candidates.ts",
-      "sha256": "6358bc63669b8d8131ab006a034a44cefb928c0465f78686f85989dc98777cd0",
-      "size": 9787
+      "sha256": "e5b3e17cf540e64c3118e27e8ba65c293eb00847a6924ddc354d3859424cc3e2",
+      "size": 10598
     },
     {
       "path": "functions/check.ts",
-      "sha256": "487160d89817c9a796368abe607c4e14cbcfa498a494850a901a90ac00577a1a",
-      "size": 3214
+      "sha256": "fd519f9d37012fb3a406d9327364f3c315da53acf3eae2477da0a3814814fa32",
+      "size": 3213
     },
     {
       "path": "functions/convention.ts",
-      "sha256": "014228fc70fac3538d7918fba014a46b531c1ca418e1defd8322f3c490e3a9f7",
-      "size": 12226
+      "sha256": "07df2510238c7dd7f9d10b8f4fe39c5ce7f482b5948db631b7a2d4feb7463cf9",
+      "size": 12797
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "95a4c9a99304bdee27426b6fea0f1563a29eb414aeaf3809698bf00d07292c68",
-      "size": 4165
+      "sha256": "12cecfe8de72b1f0856a1f82f9247241ccf03cf713ff01356e806b2b7469400c",
+      "size": 4697
     },
     {
       "path": "functions/ids.ts",
-      "sha256": "9f5af4255de2eb24901f96a850b51f950ea77fbdb58eb4248827ed2254e764bf",
-      "size": 8106
+      "sha256": "8ef220227315880023dd242a88985f09aebd0edee26ba2ef50eb5c0ec7dc4867",
+      "size": 10707
     },
     {
       "path": "functions/locate.ts",
-      "sha256": "224f7cc646935e903d5e8e985f0f442be72f36a1a6cccca991626f1690ef232b",
-      "size": 31191
+      "sha256": "f926d0a896e333c2199d079db961844398394aa944b499c9f09a9719dca7d279",
+      "size": 34572
     },
     {
       "path": "functions/params.ts",
@@ -68,13 +68,18 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "c5decfa3a28f25d5dfa6e87e7a2b5325470e5d3de38cc275cd7996be5efa997d",
-      "size": 7090
+      "sha256": "46cd82360769323464cf4bd7f60cc96fbeeb66e0da507d2f9b7c0a4c06494c9b",
+      "size": 7404
     },
     {
       "path": "requirements.json",
-      "sha256": "75181210433719009d9853a65f02da9f932fd1acf891ce5597867f34f0f4c6eb",
-      "size": 1597
+      "sha256": "18122078c640f1836deabbb47451d713523a2c32ec3d9e3afc344476fe42281e",
+      "size": 1753
+    },
+    {
+      "path": "samples/negative/build-name-folder.json",
+      "sha256": "bce9d17a378eb2ebc7c0719f675a5fa403038654946aac7abfa222fc350d940f",
+      "size": 1019
     },
     {
       "path": "samples/negative/candidates-other-line-and-unknown.json",
@@ -93,8 +98,13 @@
     },
     {
       "path": "samples/negative/trees-that-are-no-facts.json",
-      "sha256": "fa9b1bc369a3f4d139989fa60e9b0f467e3007cc24dde8d558d036729981d668",
-      "size": 4315
+      "sha256": "0025f33c95b001cb95cee1bde2095b666ed2636304299e1b8d213bdd15e22fca",
+      "size": 4358
+    },
+    {
+      "path": "samples/positive/build-name-folder.json",
+      "sha256": "80c9fa76c57302bc6a574de920758b872295f4f27d0bffdffd8bc9895975b91a",
+      "size": 946
     },
     {
       "path": "samples/positive/candidates-known.json",
@@ -118,8 +128,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "a134b0c3266d16279348e181b2ed7d54b29cf027803a27c06a63259ee4a88379",
-      "size": 4971
+      "sha256": "a0f9bbcbc245dde3ea69ec5f8e84dd7aca1dcd10e63f6577754a0d8d4d00cfa4",
+      "size": 5248
     },
     {
       "path": "workflow.json",

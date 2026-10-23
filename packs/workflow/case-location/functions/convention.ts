@@ -12,7 +12,7 @@ export const LABELS = {
   confidence: { high: '高', low: '低', none: '无' },
 } as const;
 
-/** The only refutation of the pack: a caller's declaration that contradicts the tree. */
+/** A caller's declaration that contradicts the tree. */
 export const CONFLICT_CODE = `${PACK}.declaration_conflict`;
 
 /** Longest label read; real folder labels are far shorter. */

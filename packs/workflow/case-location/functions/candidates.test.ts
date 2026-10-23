@@ -201,3 +201,12 @@ it('conflicting version levels list both lines separately with the conflict firs
     assert.ok((outcome.data?.candidates as unknown[]).length > 0);
   }
 });
+
+it('a written build of either conflicting line is not falsely called another line', () => {
+  const document = item('synthetic-conflict', 'Rel_APV_10_7_4_101', ['060：10.6.1', '061：10.7.4']);
+  const outcomes = candidatesOutcomes(subjectOf([document]));
+  assert.ok(!outcomes.some(outcome => outcome.code === 'case-location.build_other_line'));
+  for (const outcome of outcomes.filter(outcome => outcome.data?.kind === 'written_build')) {
+    assert.match(outcome.statement, /^目录.*自相矛盾/);
+  }
+});

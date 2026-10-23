@@ -67,7 +67,7 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
     return {
       verdict: 'unknown',
       reason: 'missing_input',
-      statement: '定位没有给出版本线（目录树没有版本层，或版本层自相矛盾），定不出构建候选',
+      statement: '定位没有给出版本线（目录树没有版本层），定不出构建候选',
       grounds,
       tier: TIER,
       item,
@@ -181,7 +181,11 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
           out.push({ ...outcome, statement: `目录版本层自相矛盾，分别列出候选；${outcome.statement}` });
         }
       } else out.push(candidatesOutcome(id, grounds, pointer, answer.line, builds));
-      for (const name of answer.build_names) out.push(writtenOutcome(id, grounds, pointer, name, answer.line, builds, candidates));
+      const writtenCandidates = lines.length > 1 ? orderCandidates(builds.filter(build => lines.includes(build.line)).map(candidateOf)) : candidates;
+      for (const name of answer.build_names) {
+        const outcome = writtenOutcome(id, grounds, pointer, name, lines.length > 1 ? null : answer.line, builds, writtenCandidates);
+        out.push(lines.length > 1 ? { ...outcome, statement: `目录版本层自相矛盾；${outcome.statement.replace('定位到的版本线', '冲突版本线之一')}` } : outcome);
+      }
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });
     }

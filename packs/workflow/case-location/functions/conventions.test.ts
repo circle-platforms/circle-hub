@@ -61,3 +61,9 @@ test('zero-padded identifiers use normalized identity and original display text'
   assert.deepEqual(answer.id_sources[0].spellings, ['001234']);
   assert.match(judgment.statement, /缺陷 001234/);
 });
+
+test('a declaration matching a conflicting value remains visible even when the note list is full', () => {
+  const ancestors = [...Array.from({ length: 20 }, (_, index) => `build20261399 合成目录${index}`), '060：10.6.1', '061：10.7.1'];
+  const result = locateItem({ ...context, ancestors, declared: { line: '10.6.1' } });
+  assert.match(result.judgment.statement, /调用方声明的版本线 10\.6\.1 与 10\.6\.1 一致/);
+});

@@ -49,7 +49,7 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
       for (const id of ids) bind(`plm:${kind}:${id}`, kind === 'bug' && titleBugs.has(id) ? `条目 ${item.id} 的标题里“bug to case”后面的编号 ${displayId(answer, id, kind)}，按缺陷号读` : `条目 ${item.id} 的${whereOf(answer.id_sources, id, kind)}里标明的${KIND[kind]} ${displayId(answer, id, kind)}`);
     }
     for (const [kind, ids] of [['story', answer.ranged.requirements], ['bug', answer.ranged.defects]] as const) {
-      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${id} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);
+      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${displayId(answer, id, null)} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);
     }
     for (const id of answer.unclassified) {
       if (!answer.ranged.requirements.includes(id) && !answer.ranged.defects.includes(id) && !unread.includes(id)) {

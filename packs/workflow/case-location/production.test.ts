@@ -29,7 +29,7 @@ const ALL = { documents: Object.keys(DOCUMENTS).map(external) };
 /** The answers, written from the owner's scheme before the run. */
 const EXPECTED: Record<string, { verdict: string; product: [string | null, string | null]; version: string | null; source: string; confidence: string; line: string | null; train: string | null; module: string | null; build_names: string[]; requirements: string[]; defects: string[]; unclassified: string[] }> = {
   '24001': { verdict: 'support', product: ['apv', 'NSAE'], version: '10.6.1', source: 'folders', confidence: 'high', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SSL', build_names: [], requirements: ['20931'], defects: [], unclassified: [] },
-  '24002': { verdict: 'unknown', product: ['apv', 'APV'], version: null, source: 'none', confidence: 'none', line: null, train: null, module: null, build_names: [], requirements: [], defects: [], unclassified: ['90220'] },
+  '24002': { verdict: 'unknown', product: ['apv', 'APV'], version: null, source: 'none', confidence: 'none', line: null, train: null, module: null, build_names: [], requirements: [], defects: ['90220'], unclassified: [] },
   '24003': { verdict: 'unknown', product: ['apv', 'NSAE'], version: '10.6.2.31', source: 'title', confidence: 'low', line: null, train: null, module: null, build_names: [], requirements: [], defects: [], unclassified: [] },
   '24004': { verdict: 'unknown', product: [null, '合成平台'], version: '10.6.1', source: 'folders', confidence: 'high', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SLB', build_names: [], requirements: [], defects: ['61001'], unclassified: [] },
 };
@@ -108,17 +108,16 @@ describe('a production run of case-location', { skip }, () => {
     );
     assert.equal(run.items[0].summary, '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931');
     assert.match(run.items[1].summary!, /^不确定（没有版本层）：产品线 apv（APV）；版本未知/);
-    // The PLM records a word names in a title are bound as expected sources; the unmarked 90220 is read neither as a story
-    // nor as a bug, so no false evidence gap and no unrelated record.
+    // Marker words and the bug-to-case convention bind expected sources without guessing a second kind.
     assert.deepEqual(
       run.sources.filter((s) => s.role === 'expected').map((s) => s.external),
-      ['plm:story:20931@1', 'plm:bug:61001@1'],
+      ['plm:story:20931@1', 'plm:bug:90220@1', 'plm:bug:61001@1'],
     );
     assert.deepEqual(
       run.sources.filter((s) => s.role === 'subject').map((s) => s.external),
       ['agile:mindmap:24001@1', 'agile:mindmap:24002@1', 'agile:mindmap:24003@1', 'agile:mindmap:24004@1'],
     );
-    assert.ok(!hub.external.reads.some((id) => id.endsWith(':90220')), hub.external.reads.join(', '));
+    assert.equal(hub.external.reads.filter(id => id.endsWith(':90220')).length, 1);
     assert.deepEqual(detail.unavailable, []);
 
     const production = detail.production!;
@@ -142,7 +141,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.3.2', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.4.0', independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
@@ -179,7 +178,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.3.2', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.4.0', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
@@ -241,7 +240,7 @@ describe('a production run of case-location', { skip }, () => {
     const claim = located(result, '24005').item.requirements[0].claims[0];
     assert.deepEqual([claim.statement.verdict, claim.qualifier.nature], ['support', 'fact']);
     assert.match(claim.statement.text, /未分类编号 33001（声明的范围：需求）/);
-    assert.deepEqual(answerOf(result, '24002').ranged, { requirements: [], defects: ['90220'] });
+    assert.deepEqual(answerOf(result, '24002').ranged, { requirements: [], defects: [] });
   });
 
   it('locates every case of a document with granularity case', async () => {

@@ -2,7 +2,7 @@
 // name equal to a name of the run's product line belongs to that line; anything else is reported as the tree names it, with
 // no line). The version comes from the version level of the folders: the convention's line and release-train nodes
 // (`NNN：<line>` / `NNN：<line>-<train>`) and labels that are only a version; the one nearest the root wins, and the level
-// must name one version line, else the answer is unknown with both values kept. A version only mentioned among other words
+// must name one version line, else the answer reports a definite conflict with every value kept. A version only mentioned among other words
 // of a folder, or only in the title, is a reference version (confidence low, unknown); no version is version unknown, not an
 // error. Build dates and patches count at the version level only. Module by the convention; build names as written, never
 // derived; linked ids from the title, the folders below the version level and, for a case, the map. The caller's
@@ -398,7 +398,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     conflicts,
     notes,
   };
-  return { answer, judgment: judgmentOf(answer, [...productDoubts, ...versionDoubts], root !== null || ancestors.length > 0) };
+  return { answer, judgment: judgmentOf(answer, [...productDoubts, ...versionDoubts], root !== null || ancestors.length > 0, declared.line) };
 }
 
 function rejected(rejects: ReturnType<typeof schemeScan>['rejects'], where: string, notes: Notes): void {
@@ -412,11 +412,12 @@ export function locate(input: LocateInput): LocateAnswer {
   return locateItem(input).answer;
 }
 
-function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: boolean): Judgment {
+function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: boolean, declaredLine: string | null): Judgment {
   const basis = fromTree ? `（${FOLDERS_BASIS}）` : '';
   if (unique(answer.version_values.map(v => lineOf(v.version))).length > 1) {
     const why = doubts.find(d => d.text.includes('版本层自相矛盾'));
-    const declaration = answer.notes.filter(n => n.startsWith('调用方声明的版本线')).join('；');
+    const matching = declaredLine === null ? [] : answer.version_values.filter(value => versionsAgree(declaredLine, value.version)).map(value => value.version);
+    const declaration = declaredLine === null ? '' : `调用方声明的版本线 ${declaredLine} ${matching.length ? `与 ${unique(matching).join('、')} 一致` : '与版本层的每个值都不一致'}，声明不消除目录版本层的冲突`;
     return { verdict: 'refute', code: 'case-location.version_conflict', statement: `目录版本层自相矛盾：${why?.text ?? answer.version_values.map(v => v.version).join('、')}。${declaration}${declaration ? '；' : ''}下一步由整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明（标为声明）。已知${basis}：${described(answer)}`, brief: why?.brief ?? '版本层自相矛盾' };
   }
   if (answer.conflicts.length > 0) {
