@@ -99,6 +99,7 @@ export function readCatalog(xml: string, argumentTypes: readonly DeclaredArgumen
     const path = `${parent?.path ?? ''}/${tag.name}[${ordinal}]`;
     const attrs = tag.attributes as Record<string, string>;
     const frame: Frame = { tag: tag.name, path, counts: new Map(), words: parent?.words ?? [], command: parent?.command, signature: parent?.signature, arg: parent?.arg };
+    if (tag.name === 'menu' && !(attrs.name ?? '').trim()) catalog.requests.push(request(position(path), '未命名菜单及其子命令的路径规则', '请集成者在 case-review README 声明未命名菜单的处理规则，补充金标准实现与样例后重跑'));
     if (tag.name === 'menu') frame.words = [...frame.words, ...(attrs.name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean)];
     if (tag.name === 'item') {
       if (parent?.command) catalog.requests.push(request(position(path), '嵌套 item 的命令路径规则', '请集成者提供该 XML 结构的路径规则或导出规范树后重跑'));
@@ -174,6 +175,8 @@ function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest
   const length = constraint(raw.length, raw.at, 'length', true);
   if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者提供此位置 limit 的正式含义；不把数值约束直接当地址字符串长度'));
   if (limit.value.values && type !== 'STRING' && type !== 'XSTRING') requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '枚举与数值或地址类型的覆盖规则', '请集成者声明枚举是替换类型还是与类型相交，并补正反样例后重跑'));
+  if (raw.length !== undefined && type !== 'STRING' && type !== 'XSTRING') requests.push(request({...raw.at,pointer:raw.at.pointer+'/@length'}, '非字符串类型 length 的适用规则', '请集成者声明此类型的长度语义，补充金标准实现和样例后重跑'));
+  if ((type === 'U16' || type === 'U32') && ((limit.value.high !== undefined && limit.value.high < 0) || (limit.value.low !== undefined && limit.value.low > (type === 'U16' ? 65535 : 4294967295)))) requests.push(request({...raw.at,pointer:raw.at.pointer+'/@limit'}, '与整数类型范围不相交的 limit 的处理规则', '请集成者声明不相交约束的处理规则，补充金标准实现和样例后重跑'));
   return { value: { raw, type, ambiguities: [], limit: limit.value, length: length.value }, requests: [...requests, ...limit.requests, ...length.requests] };
 }
 function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
@@ -203,7 +206,7 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   const headWords = tokens ?? normalized.split(/\s+/);
   const matches = catalog.commands.filter(c => c.words.every((word, i) => headWords[i] !== undefined && fold(word) === fold(headWords[i]))).sort((a, b) => b.words.length - a.words.length);
   const command = matches[0]; if (!command) return { in_scope: false, code: null, requests: [] };
-  const localRequests = catalog.requests.filter(r => r.pointer.startsWith(command.at.pointer + '/') || r.pointer === command.at.pointer);
+  const localRequests = catalog.requests.filter(r => r.pointer.startsWith(command.at.pointer + '/') || r.pointer === command.at.pointer || command.at.pointer.startsWith(r.pointer + '/'));
   if (localRequests.length) return { in_scope: true, code: null, requests: localRequests };
   if (tokens === null) return { in_scope: true, code: null, requests: [request(command.at, '命令行的引号或转义切分规则', '请集成者核对该用例原件中的完整命令行和转义方式，补齐后重跑')] };
   const args = tokens.slice(command.words.length);

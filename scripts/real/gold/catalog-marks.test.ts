@@ -357,3 +357,16 @@ test('closure B3 union expansion keeps at most 32 alternatives per argument list
  const answer=judgeCommand(catalog,'demo acl mesh '+words.join(' '));assert.equal(answer.code,null);assert.deepEqual(answer.requests,[]);
  words[4]='host.example';assert.equal(judgeCommand(catalog,'demo acl mesh '+words.join(' ')).code,'core.catalog.param_type_mismatch');
 });
+
+for(const [attribute,type,value,position] of [
+ ['length="3"','U16','1234','/@length'],['length="[1 - 2]"','U32','123','/@length'],
+ ['length="9"','DOTTEDIP','192.0.2.100','/@length'],['length="9"','IPADDR','192.0.2.100','/@length'],
+ ['length="9"','IPMASK','24','/@length'],['limit="[70000 - 80000]"','U16','100','/@limit'],
+] as const) test(`closure B4 unresolved typed constraint ${type} ${attribute}`,()=>{
+ const result=judgeCommand(readCatalog(`<catalog><item name="sample"><arguments><arg type="${type}" ${attribute}/></arguments></item></catalog>`),'sample '+value);
+ assert.equal(result.code,null);assert.ok(result.requests.some(r=>r.pointer.endsWith(position)));assert.ok(result.requests.every(r=>r.line!>0));
+});
+test('closure B4 unnamed menu descendants require a positioned path rule',()=>{
+ const result=judgeCommand(readCatalog('<catalog><menu name=""><item name="ghost"><arguments><arg type="U16" limit="[1 - 5]"/></arguments></item></menu></catalog>'),'ghost 9');
+ assert.equal(result.code,null);assert.ok(result.requests.some(r=>r.pointer==='/catalog[1]/menu[1]'));
+});
