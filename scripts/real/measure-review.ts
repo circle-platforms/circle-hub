@@ -40,13 +40,13 @@ export const realDrivers: Drivers = {
     return { code: run.status ?? 1, calls: existsSync(join(out, `${name}.calls.jsonl`)) ? readFileSync(join(out, `${name}.calls.jsonl`), 'utf8') : '' };
   },
   show: (run) => {
-    const shown = spawnSync('node', ['bin/circle-hub', 'run', 'show', run, '--json'], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env });
+    const shown = spawnSync('node', ['bin/circle-hub', 'run', 'show', run, '--json'], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env, maxBuffer: 64 * 1024 * 1024 });
     return { code: shown.status ?? 1, json: shown.stdout };
   },
 };
 
 /** The fixed invalid reasons (task step 4): nothing else may be said on the screen. */
-export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对';
+export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对' | '取不到运行';
 
 interface RunLike {
   run: { run: string; pack: string; predecessor?: string; items: Array<{ item: string }>; sources: Array<{ role?: string; reference?: string }> };
@@ -108,8 +108,9 @@ export function judgeRun(
   try {
     detail = JSON.parse(shown) as RunLike;
   } catch {
-    return { ok: false, reason: '没有受理', run };
+    return { ok: false, reason: '取不到运行', run };
   }
+  if (!detail?.run || typeof detail.run.pack !== 'string') return { ok: false, reason: '取不到运行', run };
   if (!detail.run?.pack?.startsWith(expect.packPrefix)) return { ok: false, reason: '任务包不对', run, detail };
   if (detail.latest == null || detail.latest.result?.acceptance !== 'accepted') return { ok: false, reason: '没有受理', run, detail };
   if (expect.predecessor !== undefined && detail.run.predecessor !== expect.predecessor) return { ok: false, reason: '前驱不对', run, detail };
@@ -197,7 +198,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const draftPrompt = options.draft.prompt.replaceAll('{copy}', join(options.out, 'mutated.json'));
     const draft = drivers.review(options.draft, draftPrompt, dir, 'draft');
-    const draftJudged = judgeRun(draft.calls, draft.code === 0 && draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    writeFileSync(join(dir, 'draft.client-status.json'), JSON.stringify({ code: draft.code }), { mode: 0o600 });
+    const draftJudged = judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
     let round: RoundOutcome;
     if (draftJudged.ok) {
       writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
@@ -207,6 +209,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       } else {
         const verifyPrompt = options.verify.prompt.replaceAll('{copy}', join(options.out, 'mutated.json')).replaceAll('{draft_run}', draftJudged.run);
         const verifyRun = drivers.review(options.verify, verifyPrompt, dir, 'verify');
+        writeFileSync(join(dir, 'verify.client-status.json'), JSON.stringify({ code: verifyRun.code }), { mode: 0o600 });
         const verifyJudged = judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
         if (verifyJudged.ok) {
           writeFileSync(join(dir, 'verify.run.json'), JSON.stringify(verifyJudged.detail, null, 2));

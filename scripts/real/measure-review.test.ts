@@ -225,3 +225,12 @@ test('review 5: refused runs do not shadow the one accepted run in a repaired se
   assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, driver, () => {}), 0);
   assert.equal(judgeRun(calls, detail(), { packPrefix: 'case-review@' }).ok, true);
 });
+
+test('review 6: accepted evidence survives a nonzero client exit and failed retrieval has its own reason', () => {
+  const f = fixtures(document(1), []), calls = callLine('rn_timeout', 'accepted');
+  const driver: Drivers = { review: () => ({ code: 1, calls }), show: () => ({ code: 0, json: runDetail({ run: 'rn_timeout', items: 1, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: [{ item: 'doc:c1', requirements: [] }] }) }) };
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, driver, () => {}), 0);
+  const g = fixtures(document(1), []), lines: string[] = [];
+  assert.equal(measureReview({ ...options(g.out), source: g.source, plan: g.plan }, { ...driver, show: () => ({ code: 1, json: '' }) }, s => lines.push(s)), 1);
+  assert.ok(lines.some(l => l.includes('取不到运行'))); assert.ok(!lines.some(l => l.includes('任务包不对')));
+});
