@@ -268,7 +268,7 @@ describe('pages', () => {
     // Display rule 13: the three groups derived from the partition list.
     const adopted = page.body.indexOf('已采用的成果（已交付');
     const open = page.body.indexOf('仍需处理的事项（已拒收、已隔离、未完成');
-    const requests = page.body.indexOf('需要你决定的请求');
+    const requests = page.body.indexOf('未回答的请求');
     assert.ok(adopted > 0 && open > adopted && requests > open, 'adopted, still to handle, requests');
     // Display rule 3: the submission as received, marked unverified, next to its receipt.
     assert.ok(page.body.includes('提交内容（未经平台验证）'));

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { PARTITION, REASON, STATIC_TERMINAL, type Partition, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Partitions, partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import { PartitionInvariantError, assertCovering, partitionItems, type PartitionInput } from './partitions.ts';
-import { dynamicLayer } from './terminals.ts';
+import { dynamicLayer, bindRecovery } from './terminals.ts';
 
 /** Deterministic generator (mulberry32), so a failing case is reproducible from its seed. */
 function seeded(seed: number) {
@@ -27,7 +27,7 @@ function layer(terminal: (typeof STATIC_TERMINAL)[number], reason: Reason): Laye
 }
 
 function requirementResult(key: string, layers: LayerResult[]): RequirementResult {
-  return { requirement: key, layers, status: 'pending', claims: [] };
+  return { requirement: key, layers:layers.map(l=>bindRecovery(l,{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:key})), status: 'pending', claims: [] };
 }
 
 function input(item: string, requirements: RequirementResult[], extra: Partial<PartitionInput> = {}): PartitionInput {
