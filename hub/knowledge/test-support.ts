@@ -351,12 +351,21 @@ export class FakePacks implements PacksPort {
   readonly handles = new Map<string, ProductHandle>();
   /** user id -> product line ids readable through an assigned pack. */
   readonly readers = new Map<string, Set<string>>();
+  /** Withdrawn id@version strings (test-only): pack() answers null for them (a withdrawn publication). */
+  readonly withdrawn = new Set<string>();
 
   add(handle: ProductHandle): void {
     this.handles.set(handle.product.id, handle);
   }
 
+  /** Test-only: withdraw a version the way an owner's delisting does; pack() then answers null. */
+  withdraw(id: string, version: string): boolean {
+    this.withdrawn.add(`${id}@${version}`);
+    return true;
+  }
+
   async pack(ref: string): Promise<PackHandle | null> {
+    if (this.withdrawn.has(ref)) return null;
     for (const handle of this.handles.values()) if (ref === handle.id || ref === `${handle.id}@${handle.version}`) return handle;
     return null;
   }
