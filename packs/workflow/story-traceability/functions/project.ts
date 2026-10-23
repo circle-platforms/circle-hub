@@ -58,14 +58,16 @@ export function projectItems(input: unknown): unknown {
     if (buildInputs.length !== 1 || typeof params.build_id !== 'string') return fail('缺少需求编号', '请给出需求编号；可选绑定 PLM 构建列表并明确 build_id');
     const source = buildInputs[0];
     if (!source.external?.startsWith('plm:builds:')) return fail('构建槽不是 PLM 构建列表', '绑定 plm:builds:<产品编号>');
-    if (!validId(params.build_id)) return fail('构建编号无效', '明确给出 build_id 正整数编号');
+    const buildId = normalizeId(params.build_id.trim());
+    if (!validId(buildId)) return fail('构建编号无效', '明确给出 build_id 正整数编号');
     const model = isRecord(source.model) ? source.model : {};
-    const builds = Array.isArray(model.builds) ? model.builds : [];
-    const at = builds.findIndex(b => isRecord(b) && String(b.id) === params.build_id);
+    if (!Array.isArray(model.builds)) return fail('PLM 构建列表没有 builds 数组', '重新绑定有效的 PLM 构建列表原件，或向用户索取需求编号');
+    const builds = model.builds;
+    const at = builds.findIndex(b => isRecord(b) && normalizeId(String(b.id).trim()) === buildId);
     const build = builds[at];
-    if (!isRecord(build) || !Array.isArray(build.stories) || build.stories.length === 0) {
-      return fail(`构建记录里没有需求字段，请给出需求编号；${isRecord(build) && typeof build.scope_note === 'string' ? build.scope_note : '缺少指定构建记录'}`, '向用户索取需求编号；请管理员核实 PLM 资源 settings.build_story_field 和构建记录原件');
-    }
+    if (!isRecord(build)) return fail(`PLM 构建列表未包含规范化编号 ${buildId}`, '请用户确认构建编号，或直接提供需求编号');
+    if (!Array.isArray(build.stories)) return fail(`构建记录 ${buildId} 未提供可用的需求编号数组；${typeof build.scope_note === 'string' ? build.scope_note : '当前投影未说明原始字段名或配置'}`, '请管理员核对 settings.build_story_field 和构建记录原件，或向用户索取需求编号');
+    if (build.stories.length === 0) return fail(`构建记录 ${buildId} 的需求编号数组为空`, '请用户提供要核对的需求编号，或请管理员确认该构建的需求范围；不把空数组解释成字段缺失');
     for (const id of build.stories) add(String(id), null, source, `p/builds/${at}`);
   }
   if (rows.size === 0 || rows.size > 8000) return fail('需求范围为空或超过 8000 条', '提供非空需求编号列表；超限则分批运行');

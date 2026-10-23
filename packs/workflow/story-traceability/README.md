@@ -33,3 +33,5 @@
 复核 6：只有在成功应答的 unread 中列出的编号才计没返回；不可读或未绑定的详情批次单列 plm_unavailable，不能伪称已收到应答。构建路径已自动尝试详情读取，失败记录由客户端与管理员核对；验收拒绝详情来源未读到的运行。
 
 复核 7：范围依据只用 provenance_type 代码，expected_sources 只比较 observed，不依赖显示文案。包内标签快照由 testing/generate-vocabulary.ts 从 contracts/generated 生成，--check 和回归测试校验未漂移；不手写词表、不改全局生成器。buildsProject 的旧 scope_note 字段在这里不再驱动逻辑，其清理由 plm-fields 分支处理，避免修改同一函数。
+
+复核 8（本分支部分）：build_id 与应答记录编号都去首尾空白和前导零再比较；缺构建记录、没有可用数组和空数组分别拒绝。投影未提供原始字段名时不猜字段名。buildsProject 的需求数组元素规范化留给 plm-fields，本分支未修改该函数。
