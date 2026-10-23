@@ -451,3 +451,14 @@ test('reason selectors remain typed causes rather than installed-interpreter cod
   const result=await accepted(requirements(value=>{value.requirements[0].error_handling.unshift({reason:'timeout',action:'repair',max_rounds:2});}));
   assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
 });
+
+test('publication rejects static facts without checks and dynamic facts without an observation',async()=>{
+  for(const target of ['item','run']){
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['static'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/checks'});
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/observation'});
+  }
+});
+
+test('publication accepts explicitly observed dynamic facts without requiring a static check',async()=>{
+  for(const target of ['item','run'])await accepted(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],observation:'synthetic.observe@1',error_handling:[]});}));
+});

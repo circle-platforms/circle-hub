@@ -213,8 +213,8 @@ new result `skip_reason` field when the consumer projects it, rather than being 
 
 `PublishableRequirementsFile` is the strict new-publication guard: a static fact layer has a check, and a dynamic fact
 layer names its P07 `observation` contract. Judgment-capable requirements are not forced to install a fact check. The base
-`RequirementsFile` remains the frozen legacy-file reader; publication consumers must use the strict guard, as
-hub-unknown-exits is tasked to wire it. These guards do not claim that a referenced observation has actually happened.
+`RequirementsFile` remains the frozen legacy-file reader. `hub/runs/packs/validate.ts` now uses the strict guard
+at publication, preserving per-field checks/observation refusal paths; `load.ts` keeps the historical reader. These guards do not claim that a referenced observation has actually happened.
 
 `CheckEntry.limits` has the sandbox's camel-case work controls (timeoutMs, memoryMb, outputBytes, logBytes, inputBytes).
 Bounds are refused, not silently clamped; omission inherits service defaults. A source-only cross-check test anchors the

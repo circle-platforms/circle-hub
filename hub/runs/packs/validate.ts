@@ -10,7 +10,7 @@ import {
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
-  RequirementsFile,
+  PublishableRequirementsFile,
   SlotsFile,
   WorkflowFile,
   type CheckEntry,
@@ -241,7 +241,7 @@ function judgmentRequirement(r: { accepted_producer: string }): boolean {
 async function validateWorkflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<{ declarations: WorkflowDeclarations; samples: LoadedSample[] } | null> {
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
-  const requirements = c.parse('requirements.shape', 'requirements.json', RequirementsFile, 'requirements@1');
+  const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);
