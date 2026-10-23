@@ -66,7 +66,8 @@ export function parseGroups(text: string): Map<string, string> {
   const groups = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
     const match = /^\s*[-*] ([^|]+)\s*\|(?:[^|]*\|)?\s*(用例[^|\n]*)/.exec(line);
-    if (match) groups.set(match[1].trim(), match[2]);
+    // Both sides trimmed: the Hub separates columns with ' | ', and the summary must not keep the space before it.
+    if (match) groups.set(match[1].trim(), match[2].trim());
   }
   return groups;
 }
@@ -156,7 +157,7 @@ export default function scenario(gold: BoardGold): Scenario {
         if (gold.types && group.coverage) {
           const untagged = /未打标签 (\d+) 个/.exec(summary);
           const missing = /没有用例带这些类型的标签：([^；\n]+)/.exec(summary);
-          const reportedMissing = missing?.[1] === '无' ? [] : missing?.[1].split('、').sort();
+          const reportedMissing = missing?.[1] === undefined ? undefined : missing[1].trim() === '无' ? [] : missing[1].split('、').map((type) => type.trim()).filter((type) => type !== '').sort();
           ok = ok && untagged !== null && Number(untagged[1]) === group.coverage.untagged && JSON.stringify(reportedMissing) === JSON.stringify([...group.coverage.missing].sort()) && !summary.includes('部分');
         }
         checks.push({ area, name: `#${index + 1} 分组指标一致`, expected: `${group.cases} 个；${group.missing}、${group.vague}、${group.negative}`, actual: ok ? '一致' : '缺组或计数、比例不一致', ok });

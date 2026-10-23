@@ -295,3 +295,23 @@ test('a gold with placement but no types still binds both facets and placement (
   assert.ok(start !== undefined);
   assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets', 'placement'], 'quality-board 1.1.0 requires the placement slot');
 });
+
+test('a correct one-group board with the location column passes the scenario group check end to end (closure item 9)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({
+    product: 'apv',
+    build: 'Rel_APV_10_6_1_57',
+    types: true,
+    unplaced: 1,
+    totals: { cases: 20, missing: 1, vague: 1, negative: 1 },
+    groups: [{ label: '10.6/SSL', cases: 20, missing: 1, vague: 1, negative: 1, coverage: { present: [], missing: ['兼容性测试', '压力测试'], untagged: 3 } }],
+  });
+  const checks = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）；未打标签 3 个；没有用例带这些类型的标签：压力测试、兼容性测试 | 位置 src:aaaa/json@1/p/rows',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。1 个用例没有解析出命令。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n')));
+  const group = checks.find((c) => c.name === '#1 分组指标一致');
+  assert.ok(group !== undefined, JSON.stringify(checks.map((c) => c.name)));
+  assert.ok(group.ok, JSON.stringify(group));
+});
