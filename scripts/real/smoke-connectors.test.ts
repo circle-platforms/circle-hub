@@ -127,3 +127,15 @@ test('closure GBK-only originals cannot pass a canary check against mojibake', a
  assert.match(checked.result.reason,/原件不是 UTF-8，没有与编码无关的文字可核对；下一步选择 UTF-8 文本读取/);
  assert.ok(!checked.output.includes(chinese));
 });
+
+test('c3 multibyte high bytes cannot be trimmed into fabricated ASCII canaries',async()=>{
+ for(const markup of [(b:Buffer)=>Buffer.concat([Buffer.from('<p>'),b,Buffer.from('</p>')]),(b:Buffer)=>Buffer.concat([Buffer.from('<menu name='),b,Buffer.from('/>')])]){
+  const value=Buffer.concat([Buffer.from([0xa0,0x41]),Buffer.from('BCDEFGHIJKLM')]);const body=markup(value);
+  for(const encoding of ['gbk','gb18030','big5']) {
+   const leaked=new TextDecoder(encoding,{fatal:true}).decode(body);const checked=await inspectSynthetic(body,{stderr:leaked});
+   assert.equal(checked.result.ok,false,encoding);assert.equal(checked.result.candidates,0,encoding);
+  }
+ }
+ const mixed=Buffer.concat([Buffer.from('<h1>synthetic-ascii-canary</h1><p>'),Buffer.from([0xa0,0x41]),Buffer.from('</p>')]);
+ const checked=await inspectSynthetic(mixed);assert.equal(checked.result.ok,true);assert.match(checked.output,/非 UTF-8.*仅核对 ASCII/);
+});

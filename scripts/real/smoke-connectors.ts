@@ -102,6 +102,7 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
   catch { throw new SmokeInputError('--logs 需要现有的普通 hub.out.log 和 hub.err.log 文件；下一步提供正确的服务日志目录'); }
   const results: SmokeResult[] = [];
   for (const request of requests) {
+    let asciiOnly = false;
     const result: SmokeResult = { system: '系统包未取得', read: request.read, completed: false, code: null, cliExit: null, artifacts: 0, candidates: 0, reason: '', bytes: 0, commandLines: 0, serviceLines: 0, hits: { command: 0, service: 0 }, ok: false };
     const reasons = new Set<string>(); const fail = (reason: string) => reasons.add(reason);
     let scratch: string | undefined;
@@ -143,7 +144,7 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
         catch {
           // Latin-1 is a one-byte view used only to find ASCII canaries, never a charset guess.
-          strictUtf8=false; text=bytes.toString('latin1');
+          strictUtf8=false; asciiOnly=true; text=bytes.toString('latin1').replace(/[\u0080-\u00ff]/g,'�');
         }
         const eligible=responseStrings(text,request.key).filter(value=>strictUtf8 || /^[\x00-\x7f]+$/.test(value));
         if(!strictUtf8 && !eligible.length){exported=false;fail('原件不是 UTF-8，没有与编码无关的文字可核对；下一步选择 UTF-8 文本读取');continue;}
@@ -162,7 +163,7 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
     }
     result.reason = [...reasons].join('；');
     const state = result.completed ? '读取完成' : result.code ? `失败（${result.code}）` : '未取得可核对读取结果';
-    print(`${result.system}/${result.read}：${state}，CLI 退出 ${result.cliExit ?? '未执行'}，产物 ${result.artifacts} 个共 ${result.bytes} 字节，命令输出 ${result.commandLines} 行、服务日志 ${result.serviceLines} 行，候选文字 ${result.candidates} 条，命中 ${result.hits.command + result.hits.service}（命令输出 ${result.hits.command}、服务日志 ${result.hits.service}）：${result.ok ? '通过' : '不通过'}${result.reason ? `；原因：${result.reason}` : ''}`);
+    print(`${result.system}/${result.read}：${state}，CLI 退出 ${result.cliExit ?? '未执行'}，产物 ${result.artifacts} 个共 ${result.bytes} 字节，命令输出 ${result.commandLines} 行、服务日志 ${result.serviceLines} 行，候选文字 ${result.candidates} 条，命中 ${result.hits.command + result.hits.service}（命令输出 ${result.hits.command}、服务日志 ${result.hits.service}）：${result.ok ? '通过' : '不通过'}${asciiOnly ? '；非 UTF-8 原件仅核对 ASCII 候选文字，其他文字未核对' : ''}${result.reason ? `；原因：${result.reason}` : ''}`);
     results.push(result);
   }
   return results;
