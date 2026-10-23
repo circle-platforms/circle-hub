@@ -736,12 +736,14 @@ export class FakeRuns implements RunsService {
   /** Handled items are delivered (an `unknown: true` slot leaves the static layer unchecked), skipped and uncovered ones incomplete. */
   #partition(run: RunRecord, submission: z.infer<typeof Submission>): Partitions {
     const parts = Object.fromEntries(PARTITION.map((p) => [p, [] as unknown[]])) as Record<string, unknown[]>;
+    const due = new Date(this.#now().getTime() + 72 * 60 * 60 * 1000).toISOString();
+    const exit = { action: 'request' as const, request_kind: 'repair' as const, audience: { user: (run.runner ?? run.configurer)! }, due };
     for (const item of run.items) {
       const entry = submission.items.find((i) => i.item === item.id);
       const common = { item: item.id, label: item.label, location: item.location };
       if (entry === undefined || entry.handling === 'skipped') {
         const reason = entry === undefined ? 'not_covered' : 'declared_skip';
-        const requirements: RequirementResult[] = run.requirements.map((r) => ({ requirement: r.key, layers: [{ layer: 'static', terminal: 'incomplete', reason }], status: 'pending', claims: [] }));
+        const requirements: RequirementResult[] = run.requirements.map((r) => ({ requirement: r.key, layers: [{ layer: 'static', terminal: 'incomplete', reason, missing: `合成条目 ${item.id} 的提交产物；下一步：补交后重核`, exit }], status: 'pending', claims: [] }));
         parts.incomplete.push({ ...common, reason, requirements });
         continue;
       }
@@ -760,7 +762,7 @@ export class FakeRuns implements RunsService {
         }));
       const requirements: RequirementResult[] = [
         slots.unknown === true
-          ? { requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check' }], status: 'pending', claims: [] }
+          ? { requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check', missing: '合成结构检查的判定结果；下一步：补齐检查后重跑', exit }], status: 'pending', claims: [] }
           : { requirement: 'structure', layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [] },
         { requirement: 'findings', layers: [{ layer: 'static', terminal: 'judgment' }], status: 'satisfied', claims },
       ];
