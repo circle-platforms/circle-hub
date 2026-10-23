@@ -169,14 +169,53 @@ export function decisionSourceProblems(markdown: string): string[] {
   return entries.filter((e) => !e.includes('来源：')).map((e) => `decision ${/^(\d+)/.exec(e)?.[1]} names no source (来源：…)`);
 }
 
-// Built from pieces so that this file does not match itself.
-const LOCAL_PATH = new RegExp(['/' + 'Users/[^/\\s`)]+', '/' + 'home/[^/\\s`)]+', '~' + '/(?=[A-Za-z0-9])', '[A-Z]:\\\\' + 'Users\\\\'].join('|'), 'g');
+// Build sensitive shapes from pieces so the checker does not match its own source.
+const LOCAL_PATH = new RegExp('(?:(?<=file://)|(?<![A-Za-z0-9_./\\\\-]))(?:' + [
+  '/' + 'Users/[^/\\s`"\'<>),;:]+',
+  '/' + 'home/[^/\\s`"\'<>),;:]+',
+  '/' + 'root/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+',
+  '/' + 'var/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+',
+  '~' + '/(?=[A-Za-z0-9])',
+  '[A-Z]:\\\\' + 'Users\\\\',
+].join('|') + ')', 'g');
 
-/** Paths that show the layout of someone's machine: home directories and paths below them. */
+// Exact synthetic home roots are permitted only in the named test files. No directory-wide exemptions.
+const SYNTHETIC_PATHS: Readonly<Record<string, readonly string[]>> = {
+  'hub/platform/layout.test.ts': ['/' + 'Users/someone', '/' + 'Users/x'],
+  'hub/platform/launchd.test.ts': ['/' + 'Users/someone'],
+  'hub/platform/environment.test.ts': ['/' + 'Users/x'],
+  'contracts/src/tool-shapes.test.ts': ['/' + 'Users/alice'],
+  'hub/records/scan.test.ts': ['/' + 'home/synthetic', '/' + 'home/user'],
+  'hub/config/config.test.ts': ['/' + 'var/log/hub'],
+};
+
+function archived(file: string): boolean {
+  return file.startsWith('foundation/') || file.startsWith('references/');
+}
+
+/** Machine paths anywhere in tracked text, with explicit file-scoped synthetic fixtures. */
 export function localPathProblems(file: string, text: string): string[] {
+  if (archived(file)) return [];
   const problems: string[] = [];
   text.split('\n').forEach((line, index) => {
-    for (const m of line.matchAll(LOCAL_PATH)) problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
+    for (const m of line.matchAll(LOCAL_PATH)) {
+      // ~/Library is an OS layout template, not a personal absolute path.
+      if (m[0] === '~/' && /^~\/Library(?:[\/\s`"',;)]|$)/.test(line.slice(m.index))) continue;
+      if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0])) continue;
+      problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
+    }
+  });
+  return problems;
+}
+
+const BUILD_NAME = new RegExp('(?:Rel' + '|Beta)_[A-Za-z][A-Za-z0-9_-]*_10_[0-5]_[A-Za-z0-9_.-]*', 'g');
+
+/** Build names from protected version lines belong in deployment data, not repository content. */
+export function buildNameProblems(file: string, text: string): string[] {
+  if (archived(file)) return [];
+  const problems: string[] = [];
+  text.split('\n').forEach((line, index) => {
+    for (const m of line.matchAll(BUILD_NAME)) problems.push(`${file}:${index + 1}: protected build name ${JSON.stringify(m[0])}`);
   });
   return problems;
 }

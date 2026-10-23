@@ -1,6 +1,7 @@
 // Checks of the docs package against the repository: see docs-rules.ts for what each rule means.
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, lstatSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -8,6 +9,7 @@ import { describe, it } from 'node:test';
 // mid-edit elsewhere in contracts/src cannot stop these checks.
 import { AXES } from '../../contracts/generated/vocabulary.ts';
 import {
+  buildNameProblems,
   decisionSourceProblems,
   isHistorical,
   linkProblems,
@@ -171,25 +173,76 @@ describe('recorded decisions name their source', () => {
   });
 });
 
-describe('no local paths in the files the docs package owns', () => {
-  it('reports home directories and paths below them, not tool locations', () => {
-    const home = '~' + '/Public/work';
-    const user = '/' + 'Users/someone/repo';
-    assert.equal(localPathProblems('x.md', `a ${home} b\nc ${user}`).length, 2);
-    assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…'), []);
+// Git's inventory covers code, tests, ops, dot-directories and extensionless text without scanning dependencies or build output.
+const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
+  .filter((path) => path && !path.startsWith('foundation/') && !path.startsWith('references/'))
+  .filter((path) => existsSync(join(ROOT, path)) && lstatSync(join(ROOT, path)).isFile())
+  .map((path) => ({ path, bytes: readFileSync(join(ROOT, path)) }))
+  .filter(({ bytes }) => !bytes.includes(0))
+  .map(({ path, bytes }) => ({ path, text: bytes.toString('utf8') }));
+
+describe('no machine paths in repository text', () => {
+  it('reports user homes, root and variable-data paths with their line numbers', () => {
+    const paths = ['/' + 'Users/operator/repo', '/' + 'home/operator/repo', '/' + 'root/work', '/' + 'var/private/work', 'file://' + '/' + 'Users/operator/repo', '~' + '/Public/work', 'C:' + String.fromCharCode(92) + 'Users' + String.fromCharCode(92) + 'operator'];
+    for (const file of ['docs/page.md', 'hub/example.ts', 'tests/example.test.ts', 'ops/example.sh']) {
+      const problems = localPathProblems(file, 'header\n' + paths.join('\n'));
+      assert.equal(problems.length, paths.length, file);
+      assert.ok(problems[0].startsWith(`${file}:2:`));
+    }
   });
 
-  const owned = [
-    ...walk('docs', (name) => name === 'vendor' || name === '_site' || name === '.bundle'),
-    ...readdirSync(ROOT).filter((name) => name.endsWith('.md')),
-    ...walk('.github', () => false),
-  ].filter((path) => /\.(md|ya?ml|ts|json|html|txt)$/.test(path));
-
-  it('covers the owned files', () => {
-    assert.ok(owned.includes('AGENTS.md') && owned.includes('docs/index.md') && owned.includes('.github/workflows/checks.yml'));
+  it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
+    for (const [file, path] of [
+      ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
+      ['hub/platform/launchd.test.ts', '/' + 'Users/someone/repo'],
+      ['hub/platform/environment.test.ts', '/' + 'Users/x'],
+      ['contracts/src/tool-shapes.test.ts', '/' + 'Users/alice/review'],
+      ['hub/records/scan.test.ts', '/' + 'home/synthetic/project'],
+      ['hub/records/scan.test.ts', '/' + 'home/user'],
+      ['hub/config/config.test.ts', '/' + 'var/log/hub'],
+    ]) {
+      assert.deepEqual(localPathProblems(file, path), []);
+      assert.equal(localPathProblems('hub/other.test.ts', path).length, 1);
+      assert.equal(localPathProblems(file, path.replace(/(someone|alice|synthetic|user|hub|x)(?=\/|$)/, '$1-other')).length, 1);
+    }
+    assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…; ~/Library/LaunchAgents; /usr/bin/node; /srv/mirror; /old/root/backups; /moved/var/cache; replace(/~/g, token)'), []);
   });
 
-  it('none has a local path', () => {
-    assert.deepEqual(owned.flatMap((path) => localPathProblems(path, read(path))), []);
+  it('covers docs, root Markdown, CI, code, tests and ops without reading the frozen archives', () => {
+    for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts', 'ops/knowledge-sync/run_release_all.sh']) {
+      assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
+    }
+    assert.ok(TRACKED_TEXT.every(({ path }) => !/^(foundation|references)\//.test(path)));
+  });
+
+  it('no tracked text has an unapproved machine path', () => {
+    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => localPathProblems(path, text)), []);
+  });
+});
+
+describe('no protected build names in repository text', () => {
+  it('reports both prefixes and every protected minor line with any name family', () => {
+    for (const prefix of ['Rel', 'Beta']) for (let minor = 0; minor <= 5; minor++) {
+      const name = [prefix, 'SampleFamily', '10', minor, '7', 'build'].join('_');
+      assert.deepEqual(buildNameProblems('ops/sample.txt', 'header\n' + name), [
+        `ops/sample.txt:2: protected build name ${JSON.stringify(name)}`,
+      ]);
+    }
+  });
+
+  it('accepts other lines, dotted labels, placeholders and the frozen archives', () => {
+    for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.4.2', 'Rel_<family>_<line>_<build>' ]) {
+      assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
+    }
+    const protectedName = ['Rel', 'Sample', '10', '0', '0'].join('_');
+    for (const file of ['foundation/sample.txt', 'references/sample.txt']) {
+      assert.deepEqual(buildNameProblems(file, protectedName), []);
+      assert.deepEqual(localPathProblems(file, '/' + 'root/work'), []);
+    }
+    assert.equal(buildNameProblems('hub/sample.ts', protectedName).length, 1);
+  });
+
+  it('no tracked text outside the frozen archives has a protected build name', () => {
+    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => buildNameProblems(path, text)), []);
   });
 });
