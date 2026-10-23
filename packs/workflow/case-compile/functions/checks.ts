@@ -36,7 +36,10 @@ export function checkContractShape(input: unknown): Outcome[] {
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
+      if (method.parameters.some((param) => param.name === v.name && param.redacted)) continue;
       const role = allowed.parameters[v.name];
+      if (!Object.hasOwn(allowed.parameters, v.name)) { out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色；先在运行环境配置里给它定角色，再按角色筛查`, v.pointer)); continue; }
+      if (role === 'wait' && (!/^[0-9]+$/.test(v.value) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
       if (role === 'device_cli' && deniedCommand(v.value, s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
       if (role === 'host_shell' && deniedCommand(v.value, s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }

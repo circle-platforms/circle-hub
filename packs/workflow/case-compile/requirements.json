@@ -84,6 +84,16 @@
           "code": "case-compile.assertion_in_steps",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_unassigned",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.wait_value",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },

@@ -94,5 +94,6 @@
       "dd",
       "rm -rf /"
     ]
-  }
+  },
+  "max_wait_seconds": 300
 }

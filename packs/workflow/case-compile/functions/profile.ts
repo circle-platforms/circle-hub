@@ -6,6 +6,7 @@ import type { ManifestBed } from './manifest.ts';
 export interface AllowedCall { object: string; method: string; parameters: Record<string, string> }
 export interface RuntimeProfile {
   synthetic: boolean;
+  max_wait_seconds: number | null;
   runtimeVersion: string;
   digest: string;
   bed: string;
@@ -84,7 +85,9 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     }
     allowed.push({ object: String(raw.object), method: String(raw.method), parameters });
   }
+  const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
+  if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   const denied = isRecord(value.denied) ? value.denied : {};
   for (const key of ['device', 'host']) if (!Array.isArray(denied[key]) || (denied[key] as unknown[]).some((v) => !oneLine(v))) issue(`/denied/${key}`, '拒绝表必须是单行非空文字列表（没有条目写 []）');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
 }

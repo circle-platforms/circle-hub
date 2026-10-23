@@ -92,6 +92,16 @@
       "code": "case-compile.assertion_in_steps",
       "when": "steps 里直接填写了 literal_assertion 调用，绕过唯一的溯源期望入口",
       "fix": "断言写进 expects，带引文和 after"
+    },
+    {
+      "code": "case-compile.param_unassigned",
+      "when": "提供的参数没有配置角色",
+      "fix": "先在运行环境配置里给该参数定角色，再按角色核对，不推断其用途"
+    },
+    {
+      "code": "case-compile.wait_value",
+      "when": "等待不是配置秒数上限内的正整数",
+      "fix": "写 ASCII 正整数秒数，且不超过配置 max_wait_seconds"
     }
   ],
   "refusals": [
