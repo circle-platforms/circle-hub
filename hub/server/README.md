@@ -233,7 +233,8 @@ links are fixed paths with encoded query parameters).
 
 - **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
   newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
-  the page empty. A filtered or paginated scan is marked 部分, and an empty page says how many runs it examined;
+  the page empty. A paginated scan is marked 部分; filtering a complete scan reports how many runs were examined and
+  listed without a partial marker. A complete empty match says 没有符合筛选的生产运行; a partial empty page states its examined range;
   it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
   record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
   The authoritative run page uses that same production result as its partition list and displays the latest later accepted

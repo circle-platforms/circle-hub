@@ -15,11 +15,11 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const build = param(ctx, 'build');
   const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: 50, cursor: param(ctx, 'cursor') ?? null });
   const runs = listing.items.filter((run) => production(run) && (build === undefined || run.build === build));
-  const partial=listing.next !== null || runs.length !== listing.items.length || param(ctx,'cursor') !== undefined;
-  const empty=partial ? `这一页的 ${listing.items.length} 个运行里没有符合筛选的生产运行` : '没有运行';
+  const partial=listing.next !== null || param(ctx,'cursor') !== undefined;
+  const empty=partial ? `这一页的 ${listing.items.length} 个运行里没有符合筛选的生产运行` : '没有符合筛选的生产运行';
   const filter = html`<form class="filters" method="get" action="/console/results"><label>任务包 <input name="pack" value="${pack ?? ''}"></label><label>构建 <input name="build" value="${build ?? ''}"></label><button type="submit">筛选</button></form>`;
   const next = listing.next === null ? '' : html`<p>${link('/console/results', '下一页', { pack, build, cursor: listing.next })}</p>`;
-  return { status: 200, body: page(ctx.chrome('结果'), html`${filter}${partial ? html`<p class="notice">部分：本页检查了 ${listing.items.length} 个运行，列出 ${runs.length} 个符合筛选的生产运行${listing.next !== null ? '；继续查看下一页' : ''}</p>` : ''}${table(
+  return { status: 200, body: page(ctx.chrome('结果'), html`${filter}${partial || runs.length !== listing.items.length ? html`<p class="notice">${partial?'部分：':''}本页检查了 ${listing.items.length} 个运行，列出 ${runs.length} 个符合筛选的生产运行${listing.next !== null ? '；继续查看下一页' : ''}</p>` : ''}${table(
     ['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '条目'],
     runs.map((run) => [link(`/console/results/${run.run}`, run.run), run.pack, [run.product, run.version, run.build].filter(Boolean).join(' / '), run.started_at, run.items.length]),
     empty,

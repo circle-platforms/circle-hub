@@ -165,10 +165,17 @@ test('a filtered empty list page retains the service cursor', async () => {
   assert.match(page.body, /部分/);assert.match(page.body,/这一页的 1 个运行里没有符合筛选的生产运行/);
   assert.doesNotMatch(page.body,/>没有运行</);assert.match(page.body, /下一页/); assert.match(page.body, /cursor=synthetic-cursor/);
   server.fakes.runs.script.answerNext('listRuns',{items:[],next:null});
-  assert.match((await send('/console/results',cookie)).body,/>没有运行</);
+  assert.match((await send('/console/results',cookie)).body,/>没有符合筛选的生产运行</);
   server.fakes.runs.script.answerNext('listRuns',{items:[],next:null});
   const last=await send('/console/results?cursor=synthetic-cursor',cookie);
   assert.match(last.body,/部分/);assert.doesNotMatch(last.body,/>没有运行</);
+  const another=await start(user),review=await start(user,'review');
+  const complete=await send('/console/results',cookie);
+  assert.match(complete.body,/本页检查了 3 个运行，列出 2 个符合筛选的生产运行/);assert.doesNotMatch(complete.body,/部分|下一页/);
+  assert.ok(complete.body.includes(id));assert.ok(complete.body.includes(another));assert.ok(!complete.body.includes(review));
+  const noMatch=await send('/console/results?build=absent',cookie);
+  assert.match(noMatch.body,/没有符合筛选的生产运行/);assert.match(noMatch.body,/本页检查了 3 个运行，列出 0 个/);assert.doesNotMatch(noMatch.body,/部分|下一页/);
+
 });
 
 
