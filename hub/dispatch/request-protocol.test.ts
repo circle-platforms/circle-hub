@@ -35,18 +35,8 @@ test('certified pre-device refusals permit a new numbered attempt but device-rea
 });
 
 test('a lost reply is reconciled by request without resubmission or requiring negative certification', async t => {
-  let c: Awaited<ReturnType<typeof setup>>;
-  c = await setup({ mode: 'disconnect', extraTools: ['lookup_blob'], alter: (name, value) => {
-    if (name !== 'lookup_blob') return value;
-    const sent = c.endpoint.calls.find(e => e.params.name === 'send_blob')!.params.arguments as Record<string, unknown>;
-    return { found: true, state: 'started', request: sent.request, digest: c.payload.body.sha256, key: 'synthetic-remote', touched: true };
-  } }); t.after(() => c.close());
-  const { DispatchService } = await import('./service.ts');
-  c.service = new DispatchService({ ...c.service.options, sleep: async ms => { c.clock.ms += ms; } });
-  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition,
-    allowed_tools: [...c.executor.definition.allowed_tools, 'lookup_blob'],
-    calls: { ...c.executor.definition.calls, query: { tool: 'lookup_blob', arguments: { request: { $value: 'request_id' } } } },
-    reconciliation: { found: '/found', state: '/state', request_id: '/request', sha256: '/digest', id: '/key', stage: '/phase', reached_device: '/touched', gateway_time: '/clock', gc_before: '/floor', time_scale_ms: 1000, map: { started: 'issued', stopped: 'proven_not_executed', refused: 'target_rejected' } } });
+  const {setupJournal}=await import('./testing/journal.ts');
+  const c=await setupJournal({lost:true,uncertified:true});t.after(()=>c.close());
   const result = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(result.outcome, 'effective'); assert.equal(result.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
@@ -87,5 +77,5 @@ test('a recognized pending request is polled automatically without another submi
   const {setupJournal}=await import('./testing/journal.ts');const c=await setupJournal({lost:true,pendingReads:1});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
-  assert.equal(c.calls.filter(n=>n==='lookup_blob').length,2);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.equal(c.calls.filter(n=>n==='lookup_blob').length,3);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
