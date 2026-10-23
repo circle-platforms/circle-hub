@@ -22,9 +22,10 @@ test('two families and an alias compare every displayed field', () => {
   assert.ok(result.every(c => c.ok), JSON.stringify(result));
 });
 test('candidate gold is mandatory', () => {
-  const result = scenario({ document: gold.document, line: gold.line }).check(turns('运行 run_synthetic'));
-  assert.ok(result.some(c => !c.ok && c.name.includes('候选')));
+  const rows = scenario({ document: gold.document, line: gold.line }).check(turns('运行 run_synthetic'));
+  assert.ok(rows.some(row => !row.ok && row.name.includes('候选')));
 });
+
 for (const [name, transform] of [
   ['missing claim', () => ''],
   ['another document', (text: string) => text.replace(gold.document, '930202')],
