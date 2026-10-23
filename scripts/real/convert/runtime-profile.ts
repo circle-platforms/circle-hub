@@ -1,3 +1,4 @@
+import DISPATCH from '../../../packs/workflow/case-compile/tables/dispatch-roles.json' with { type: 'json' };
 import FORMAT from '../../../packs/workflow/case-compile/tables/runtime-profile-format.json' with { type: 'json' };
 import { parseManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
 import { parseProfile } from '../../../packs/workflow/case-compile/functions/profile.ts';
@@ -7,6 +8,19 @@ const pair = (v: { object: unknown; method: unknown }) => JSON.stringify([v.obje
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 interface Unopened { object: string; method: string; parameters: Array<{ name: string; missing: string; reason: string; next: string }> }
 type Method = RuntimeContract['enabled'][number];
+const pointerPart = (value: string) => value.replaceAll('~', '~0').replaceAll('/', '~1');
+function dispatchPolicy(method: Method) {
+  const policy = DISPATCH.dispatches.find(row => row.dispatch === method.dispatch);
+  requireFact(policy, '派发方式缺少包格式表声明；集成者核对合约与 case-compile 版本后重跑');
+  return policy;
+}
+function methodReview(method: Method) {
+  const policy = dispatchPolicy(method);
+  return policy.requires_method_review || method.parameters.length === 0 ? {
+    missing: policy.missing ?? '零参数方法内部动作没有被参数角色和拒绝表核验',
+    next: policy.next ?? `集成者逐个只读审阅后在 allowed 项显式写 ${FORMAT.method_review_field}:true 决定开；否则列 unopened，重新发布后新开运行`,
+  } : null;
+}
 function unsupplied(method: Method, value: Record<string, unknown>): Set<string> {
   const names = value.unsupplied ?? [];
   requireFact(Array.isArray(names) && names.every(name => typeof name === 'string') && new Set(names).size === names.length, 'unsupplied 必须是无重复参数名列表；逐项声明永不传入的可选参数');
@@ -29,25 +43,35 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
     requireFact(!given.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method)), '必需脱敏参数或仅有脱敏参数的组合不能开放；集成者核对认证接入并保持未开');
     if (!unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) unopened.push({ object: method.object, method: method.method, parameters: method.parameters.filter(p => p.redacted).map(p => ({ name: p.name, missing: '合约未提供可核验的凭据参数', reason: '脱敏凭据不能经工作簿传入', next: '集成者只读核对认证接入并另开合约任务，当前保持未开' })) });
   }
+  for (const method of wanted.enabled) {
+    const policy = dispatchPolicy(method);
+    if (policy.roles.length || blockedCredentials(method)) continue;
+    const index = given.findIndex(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method));
+    requireFact(index < 0, `/allowed/${index} 没有可核验的派发角色；${policy.missing}；${policy.next}`);
+    if (!unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) {
+      const gap = { missing: policy.missing!, reason: policy.missing!, next: policy.next! };
+      unopened.push({ object: method.object, method: method.method, parameters: method.parameters.map(p => ({ name: p.name, ...gap })), ...(!method.parameters.length ? gap : {}) });
+    }
+  }
   const pending: Array<{ pointer: string; missing: string; next: string }> = [];
   const add = (pointer: string, missing: string, next: string) => pending.push({ pointer, missing, next });
-  const allowed = wanted.enabled.filter((method, index) => {
-    if (unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) return false;
-    if (method.parameters.length === 0 && !given.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) {
-      add(`/decisions/${index}`, '零参数方法缺少明确的开放决定', '集成者只读核对方法语义和效果后显式列入 allowed 或 unopened；没有命令文本可筛查，不能自动开放'); return false;
-    }
-    return true;
-  }).map((method, i) => {
+  const allowed = wanted.enabled.filter(method => !unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))).map((method, i) => {
     const found = given.find((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method));
     const roles = record(found) && record(found.parameters) ? found.parameters : {};
     const omitted = unsupplied(method, record(found) ? found : {});
+    const policy = dispatchPolicy(method);
     const parameters = Object.fromEntries(method.parameters.filter(p => !p.redacted && !omitted.has(p.name)).map((parameter) => {
       const role = roles[parameter.name];
-      if (typeof role === 'string' && FORMAT.parameter_roles.includes(role) && !parameter.redacted) return [parameter.name, role];
-      add(`/allowed/${i}/parameters/${parameter.name}`, '签名不能证明参数角色', '集成者核对参数语义后填写包表中的角色；不能归入角色则移到 unopened 并另开包检查任务');
+      const pointer = `/allowed/${i}/parameters/${pointerPart(parameter.name)}`;
+      if (role !== undefined) requireFact(typeof role === 'string' && policy.roles.some(candidate => candidate === role), `${pointer} 的角色不在该派发方式的包格式表中；集成者按 dispatch-roles.json 改正或列为 unopened 后重跑`);
+      if (typeof role === 'string') return [parameter.name, role];
+      add(pointer, '签名不能证明参数角色', '集成者核对参数语义后填写包表中的角色；不能归入角色则移到 unopened 并另开包检查任务');
       return [parameter.name, null];
     }));
-    return { object: method.object, method: method.method, parameters, ...(omitted.size ? { unsupplied: [...omitted] } : {}) };
+    const review = methodReview(method);
+    const reviewed = record(found) && found[FORMAT.method_review_field] === true;
+    if (review && !reviewed) add(`/allowed/${i}/${FORMAT.method_review_field}`, review.missing, review.next);
+    return { object: method.object, method: method.method, parameters, ...(omitted.size ? { unsupplied: [...omitted] } : {}), ...(reviewed ? { [FORMAT.method_review_field]: true } : {}) };
   });
   // Never silently discard an explicit operator decision, including disabled or extra combinations.
   const enabled = new Set(wanted.enabled.map(pair)); const seen = new Set<string>();
@@ -67,12 +91,18 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
 export function checkCoverage(profile: unknown, contract: RuntimeContract): void {
   requireFact(record(profile) && Array.isArray(profile.allowed) && Array.isArray(profile.unopened), '缺少 allowed 或 unopened；逐项登记全部启用组合');
   const enabled = new Map(contract.enabled.map((v) => [pair(v), v])); const seen = new Set<string>();
-  for (const [list, values] of [['allowed', profile.allowed], ['unopened', profile.unopened]] as const) for (const value of values) {
+  for (const [list, values] of [['allowed', profile.allowed], ['unopened', profile.unopened]] as const) for (const [index, value] of values.entries()) {
     requireFact(record(value) && typeof value.object === 'string' && typeof value.method === 'string', '组合缺少 object 或 method；按合约改正');
     const key = pair({ object: value.object, method: value.method }); const method = enabled.get(key);
     requireFact(method && !seen.has(key), '组合不是启用子集或重复出现；逐项核对 allowed 和 unopened'); seen.add(key);
     if (list === 'allowed') {
       requireFact(!blockedCredentials(method), '必需脱敏参数或仅有脱敏参数的组合不能开放；集成者核对认证接入并列为未开');
+      const policy = dispatchPolicy(method);
+      const pointer = `/allowed/${index}`;
+      requireFact(policy.roles.length > 0, `${pointer} 的派发方式当前没有可核验角色；${policy.missing}；${policy.next}`);
+      const review = methodReview(method);
+      if (review) requireFact(value[FORMAT.method_review_field] === true, `${pointer}/${FORMAT.method_review_field} 缺少明确开通决定；${review.missing}；${review.next}`);
+      if (record(value.parameters)) for (const [name, role] of Object.entries(value.parameters)) requireFact(typeof role === 'string' && policy.roles.some(candidate => candidate === role), `${pointer}/parameters/${pointerPart(name)} 的角色不在该派发方式的包格式表中；集成者按 dispatch-roles.json 改正或保持未开后重跑 --check`);
       const omitted = unsupplied(method, value);
       requireFact(record(value.parameters) && method.parameters.every(p => p.redacted && !p.required ? !Object.hasOwn(value.parameters as object, p.name) : omitted.has(p.name) || Object.hasOwn(value.parameters as object, p.name) && typeof (value.parameters as Record<string, unknown>)[p.name] === 'string' && FORMAT.parameter_roles.includes((value.parameters as Record<string, string>)[p.name]!)), '启用组合仍有可传参数无角色；定角色、显式列入 unsupplied 或列为未开');
     } else {

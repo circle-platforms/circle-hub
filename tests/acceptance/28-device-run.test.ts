@@ -1,5 +1,6 @@
 // All endpoints, documents, models and workbook bytes in this suite are synthetic.
 import assert from 'node:assert/strict';
+import CASE_COMPILE_PACK from '../../packs/workflow/case-compile/pack.json' with { type: 'json' };
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
@@ -25,7 +26,7 @@ import type { StartRunOutput, SubmitResultOutput } from '../../contracts/src/too
 import type { z } from 'zod';
 
 const CONTRACT_DOC = signRuntime({ ...BASE_CONTRACT, entries: [...BASE_CONTRACT.entries, entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }])] });
-const PROFILE_DOC = { ...BASE_PROFILE, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' } }] };
+const PROFILE_DOC = { ...BASE_PROFILE, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
 const ids = ['990000000000000041', '990000000000000042'];
 const line = 'widget health interval pool-a 60';
@@ -143,7 +144,7 @@ before(async () => {
     return {};
   });
   const raw = definition(endpoint.endpoint);
-  const configured = ExecutorDefinition.parse({ ...raw, target: 'bed-a', manifest_sha256: sha256Hex(bytes(MANIFEST_DOC)), resources: MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`), precheck_context: { build: bed.site.RELEASED }, proof: { ...raw.proof, package: 'case-compile', slot: 'workbook', warrant_id: 'case-compile.workbook_verified@2.1.0' } });
+  const configured = ExecutorDefinition.parse({ ...raw, target: 'bed-a', manifest_sha256: sha256Hex(bytes(MANIFEST_DOC)), resources: MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`), precheck_context: { build: bed.site.RELEASED }, proof: { ...raw.proof, package: 'case-compile', slot: 'workbook', warrant_id: `case-compile.workbook_verified@${CASE_COMPILE_PACK.version}` } });
   executor = (await dispatch().registry.add(bed.hub.admin.principal, configured, 'synthetic-dispatch-key')).id;
 });
 after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
