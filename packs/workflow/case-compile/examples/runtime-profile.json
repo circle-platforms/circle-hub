@@ -94,5 +94,7 @@
       "dd",
       "rm -rf /"
     ]
-  }
+  },
+  "device_count": 2,
+  "fold_newlines": []
 }

@@ -30,7 +30,7 @@ export function commandSubject(input: unknown): unknown {
     const allowed = allowedCall(profile.profile, step.object, step.method);
     const method = contract.contract.enabled.find((v) => v.object === step.object && v.method === step.method);
     if (!allowed || !method) continue;
-    for (const v of bindArguments(method, step, '').values) if (allowed.parameters[v.name] === 'device_cli') phrases.push(v.value);
+    for (const v of bindArguments(method, step, '').values) if (allowed.parameters[v.name] === 'device_cli' && typeof v.value === 'string') phrases.push(v.value);
   }
   return { item: subject.item, location: subject.location, phrases, negative: false };
 }

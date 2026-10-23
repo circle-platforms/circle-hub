@@ -1,6 +1,7 @@
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
-export interface PlanStep { object: string; method: string; args: string[]; keywords: Record<string, string> }
+export type KeywordValue = string | number;
+export interface PlanStep { object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
 export interface PlanExpect { text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
 export interface PlanSlots { bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
@@ -23,8 +24,8 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     keys(raw, ['object', 'method', 'args', 'keywords'], at);
     for (const field of ['object', 'method']) if (typeof raw[field] !== 'string' || !raw[field]) issue(`${at}/${field}`, '缺少对象或方法原名');
     if (!Array.isArray(raw.args) || raw.args.some((v) => typeof v !== 'string')) issue(`${at}/args`, 'args 必须是文字列表，没有位置参数写 []');
-    if (!isRecord(raw.keywords) || Object.values(raw.keywords).some((v) => typeof v !== 'string')) issue(`${at}/keywords`, 'keywords 必须是参数名到文字的映射，没有关键字写 {}');
-    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({ object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, string> });
+    if (!isRecord(raw.keywords) || Object.values(raw.keywords).some((v) => typeof v !== 'string' && !(typeof v === 'number' && Number.isSafeInteger(v) && v >= 0))) issue(`${at}/keywords`, 'keywords 必须是参数名到文字或安全非负整数的映射，没有关键字写 {}');
+    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({ object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
   }
   const expects: PlanExpect[] = [];
   if (!Array.isArray(value.expects)) issue('/expects', 'expects 必须是数组');

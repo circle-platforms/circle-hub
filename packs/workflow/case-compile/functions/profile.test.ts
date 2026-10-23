@@ -27,3 +27,11 @@ test('a signature name matching an object prototype member retains its declared 
   const profile = profileDocument(signed); profile.allowed[0].parameters = JSON.parse('{"__proto__":"device_cli"}');
   const result = parseProfile(profile, parsed.contract, bedsOf()); assert.ok(result.ok); if (result.ok) assert.equal(Object.getOwnPropertyDescriptor(result.profile.allowed[0].parameters, '__proto__')?.value, 'device_cli');
 });
+test('device count is an explicit precheck fact and folded methods must be allowed', () => {
+  const raw = profileDocument(); raw.device_count = 0;
+  assert.equal(parseProfile(raw, contract, bedsOf()).ok, false);
+  raw.device_count = 2; raw.fold_newlines = [{ object: 'widget-seat', method: 'configure' }];
+  assert.equal(parseProfile(raw, contract, bedsOf()).ok, true);
+  raw.fold_newlines.push({ object: 'widget-seat', method: 'missing' });
+  assert.equal(parseProfile(raw, contract, bedsOf()).ok, false);
+});

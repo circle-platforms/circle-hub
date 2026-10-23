@@ -9,6 +9,8 @@ export interface RuntimeProfile {
   runtimeVersion: string;
   digest: string;
   bed: string;
+  device_count: number;
+  fold_newlines: Array<{ object: string; method: string }>;
   workbook: { sheet: string; header: string[]; identity_marker: string; range_name: string; closing_row: string[]; autoid_pattern: string };
   seats: Array<{ object: string; device: string; ordinal: number }>;
   hosts: Array<{ object: string; method: string; device: string }>;
@@ -27,6 +29,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
   if (runtime.contract_sha256 !== contract.digest) issue('/runtime/contract_sha256', '期望合约摘要与重算身份不符');
+  if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少从只读预检取得的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的台架不在清单里');
   const workbook = isRecord(value.workbook) ? value.workbook : {};
@@ -84,7 +87,15 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     }
     allowed.push({ object: String(raw.object), method: String(raw.method), parameters });
   }
+  const fold_newlines: RuntimeProfile['fold_newlines'] = [];
+  if (value.fold_newlines !== undefined && !Array.isArray(value.fold_newlines)) issue('/fold_newlines', '折叠换行名单必须是对象和方法组合列表');
+  const folded = new Set<string>();
+  for (const [i, raw] of (Array.isArray(value.fold_newlines) ? value.fold_newlines : []).entries()) {
+    if (!isRecord(raw) || typeof raw.object !== 'string' || typeof raw.method !== 'string' || !allowed.some((v) => v.object === raw.object && v.method === raw.method)) { issue(`/fold_newlines/${i}`, '折叠换行名单必须是本轮允许的组合'); continue; }
+    const key = JSON.stringify([raw.object, raw.method]); if (folded.has(key)) issue(`/fold_newlines/${i}`, '折叠换行组合重复'); folded.add(key);
+    fold_newlines.push({ object: raw.object, method: raw.method });
+  }
   const denied = isRecord(value.denied) ? value.denied : {};
   for (const key of ['device', 'host']) if (!Array.isArray(denied[key]) || (denied[key] as unknown[]).some((v) => !oneLine(v))) issue(`/denied/${key}`, '拒绝表必须是单行非空文字列表（没有条目写 []）');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
 }

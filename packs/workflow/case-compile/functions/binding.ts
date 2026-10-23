@@ -1,7 +1,7 @@
 // Bind explicit text values to the original Python signature without expanding defaults or evaluating expressions.
 import type { RuntimeEntry } from './runtime-contract.ts';
-import type { PlanStep } from './slots.ts';
-export interface BoundValue { name: string; value: string; pointer: string }
+import type { PlanStep, KeywordValue } from './slots.ts';
+export interface BoundValue { name: string; value: KeywordValue; pointer: string }
 export interface BindProblem { code: string; pointer: string; message: string }
 export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string): { values: BoundValue[]; problems: BindProblem[] } {
   const values: BoundValue[] = []; const problems: BindProblem[] = [];
@@ -25,6 +25,9 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
     if (param.required && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
-  for (const v of values) if (typeof v.value !== 'string' || v.value.trim() !== v.value || /[\r\n\v\f\u0085\u2028\u2029]/.test(v.value) || /\{(?:0)?\}/.test(v.value) || v.value.startsWith('=')) issue('param_value', v.pointer, '参数值必须是单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+  for (const v of values) {
+    if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
+    else if (typeof v.value !== 'string' || v.value.trim() !== v.value || /[\r\n\v\f\u0085\u2028\u2029]/.test(v.value) || /\{(?:0)?\}/.test(v.value) || v.value.startsWith('=')) issue('param_value', v.pointer, '参数值必须是单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+  }
   return { values, problems };
 }

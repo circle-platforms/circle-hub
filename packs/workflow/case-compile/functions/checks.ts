@@ -37,8 +37,9 @@ export function checkContractShape(input: unknown): Outcome[] {
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
       const role = allowed.parameters[v.name];
-      if (role === 'device_cli' && deniedCommand(v.value, s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
-      if (role === 'host_shell' && deniedCommand(v.value, s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
+      if ((role === 'device_cli' || role === 'host_shell') && typeof v.value !== 'string') { out.push(refute(s, 'param_value', '命令角色的值必须是单行文字', v.pointer)); continue; }
+      if (role === 'device_cli' && deniedCommand(String(v.value), s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
+      if (role === 'host_shell' && deniedCommand(String(v.value), s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
   }
   return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约与本轮允许集合，签名和值均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
@@ -72,7 +73,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     const values = [...step.args.map((value, k) => ({ value, pointer: `/data/steps/${i}/args/${k}` })), ...Object.entries(step.keywords).map(([name, value]) => ({ value, pointer: `/data/steps/${i}/keywords/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` }))];
     for (const v of values) {
       const parameter = bound.find((b) => b.pointer === v.pointer);
-      examine(v.value, v.pointer, parameter && allowed?.parameters[parameter.name] === 'device_cli' ? seat?.device ?? null : null);
+      examine(String(v.value), v.pointer, parameter && allowed?.parameters[parameter.name] === 'device_cli' ? seat?.device ?? null : null);
     }
   }
   slots.expects.forEach((v, i) => examine(v.text, `/data/expects/${i}/text`, null));
