@@ -5,9 +5,9 @@
 // action record (B05, action kind `lease`) in the same transaction. Keys are sorted before they are touched, so two
 // acquires of the same key set in opposite orders cannot deadlock. The vocabulary stays neutral: keys are strings
 // under a prefix; this module names no device, bench or product.
-import { recordDigest } from '../records/digest.ts';
 import { isId, newId } from '../records/ids.ts';
-import { canonicalize, type ActionBody } from '../records/api.ts';
+import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord } from '../records/api.ts';
+import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
@@ -47,6 +47,8 @@ export interface HolderSnapshot {
 export interface ServiceOptions {
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
   now?: () => Promise<Date>;
+  /** The configured records store, sharing the lease transaction; defaults to the standard record limit. */
+  records?: RecordStore;
 }
 
 const KEY = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
@@ -76,9 +78,11 @@ interface Row {
 export class LeaseService {
   readonly #db: Database;
   readonly #now: () => Promise<Date>;
+  readonly #records: RecordStore;
 
   constructor(db: Database, options: ServiceOptions = {}) {
     this.#db = db;
+    this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
     this.#now = options.now ?? (async () => (await db.query<{ now: Date }>('SELECT now()::timestamptz AS now')).rows[0]!.now);
   }
 
@@ -224,18 +228,19 @@ export class LeaseService {
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */
   async actionLog(prefix: string): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.#db.query<{ body: string }>(
-      `SELECT body FROM records WHERE kind = 'action' AND schema = 'action@1' AND ((body)::jsonb -> 'detail' ->> 'op') IS NOT NULL ORDER BY seq`,
-      [],
-    );
     const out: Array<Record<string, unknown>> = [];
-    for (const row of rows.rows) {
-      const body = JSON.parse(row.body) as { action?: string; detail?: Record<string, unknown> };
-      if (body.action !== 'lease') continue;
-      const keys = (body.detail?.keys as string[] | undefined) ?? [];
-      if (!keys.some((key) => key.startsWith(prefix))) continue;
-      out.push({ op: body.detail?.op, keys, lease: body.detail?.lease, until: body.detail?.until, token: body.detail?.token, reason: (body.detail?.reason as string | undefined) ?? null });
-    }
+    let cursor: string | null = null;
+    do {
+      const page: Page<StoredRecord<ActionBody>> = await this.#records.list<ActionBody>({ kind: 'action', limit: 500, ...(cursor ? { cursor } : {}) });
+      for (const record of page.items) {
+        const body = record.body;
+        if (body.action !== 'lease') continue;
+        const keys = (body.detail?.keys as string[] | undefined) ?? [];
+        if (!keys.some(key => key.startsWith(prefix))) continue;
+        out.push({ op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
+      }
+      cursor = page.next;
+    } while (cursor);
     return out;
   }
 
@@ -335,12 +340,7 @@ export class LeaseService {
       codes: [],
       detail: { ...(detail as unknown as Record<string, unknown>), ...extra },
     };
-    const digest = recordDigest({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body });
-    const bodyText = canonicalize(body);
-    await this.#db.query(
-      `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size) VALUES ($1, $2, 'action', $3, 'observed', $4, $5, $6)`,
-      [newId('rcd'), digest, RECORD_SCHEMAS.action, startedAt, bodyText, Buffer.byteLength(bodyText, 'utf8')],
-      tx,
-    );
+    await this.#records.put<ActionBody>({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body,
+      index: [{ key: 'action.kind', value: 'lease' }, { key: 'action.run', value: holder.run }, { key: 'lease.id', value: lease }] }, tx);
   }
 }

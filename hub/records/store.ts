@@ -228,3 +228,6 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
 function validateUniqueKey(key: string): void {
   if (typeof key !== 'string' || key.length === 0 || !isIndexValue(key)) throw new TypeError('unique key must be 1..1000 UTF-8 bytes, well formed, without NUL');
 }
+
+/** Public factory for a store sharing a caller-owned database/transaction boundary. */
+export function createRecordStore(db: Database, options: StoreOptions): RecordStore { return new PgRecordStore(db, options); }
