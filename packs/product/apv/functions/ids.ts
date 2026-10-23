@@ -14,7 +14,7 @@ const MAX_TITLE = 4096;
 const MARKERS =
   /(?<![A-Za-z])(?:(bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)|(stor(?:y|ies)|需求单?)|(plm))/gi;
 const GLUE = /^[\s_\-–—:#.]*/;
-const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{1})/i;
+const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{2})/i;
 const REGRESSION = /^(?:回归测试|回归|[一二三四五六七八九十0-9]{1,2}轮回归(?:测试)?|test)(?![A-Za-z])/i;
 
 /** A digit run at `at` that can be an id: bounded length, not part of a version, date or glued word. */
@@ -36,7 +36,8 @@ function idAt(text: string, at: number, min: number, max: number): { id: string;
   // option28, 3a: short numbers glued to a word are not ids; long ones are (bug to case 123456showtech).
   if (short && /[A-Za-z]/.test(next)) return null;
   if (id.length === 8 && validDate(Number(id.slice(0, 4)), Number(id.slice(4, 6)), Number(id.slice(6, 8)))) return null;
-  return { id: normalizeId(id), end };
+  const normalized = normalizeId(id);
+  return normalized === null ? null : { id: normalized, end };
 }
 
 /** Ids from `at` on: one, then more after separators. */
@@ -103,14 +104,14 @@ export function idsFromTitle(title: string): TitleIds {
       const start = (match.index ?? 0) + match[0].length;
       const glue = GLUE.exec(text.slice(start, start + 16));
       const target = match[1] !== undefined ? out.bugs : match[2] !== undefined ? out.stories : out.plm;
-      for (const found of idList(text, start + (glue ? glue[0].length : 0), 1, 9)) {
+      for (const found of idList(text, start + (glue ? glue[0].length : 0), 2, 9)) {
         const { id } = found; target.push(id); classified.add(id);
         const raw = frame.spelling(found.start, found.end);
         const kind = match[1] !== undefined ? 'bug' : match[2] !== undefined ? 'story' : 'plm';
         rawIds.push({ kind, id, raw });
       }
     }
-    const bare = idList(text, leadingStart(text), 4, 7);
+    const bare = idList(text, leadingStart(text), 5, 7);
     // A leading four-digit year (2025 ...) is not an id, and neither is anything listed after it.
     if (!(bare.length > 0 && bare[0].end - bare[0].start === 4 && Number(bare[0].id) >= 1900 && Number(bare[0].id) <= 2099)) {
       for (const found of bare) if (!classified.has(found.id)) {
@@ -142,9 +143,10 @@ export default function ids(input: unknown): TitleIds {
   );
 }
 
-/** Canonical decimal identity; the original spelling is retained separately for display and quotations. */
-export function normalizeId(raw: string): string {
-  return raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+/** Canonical nonzero decimal identity; all-zero text is not an identifier. Original spelling is retained separately. */
+export function normalizeId(raw: string): string | null {
+  const digits = raw.normalize('NFKC');
+  return /^0+$/.test(digits) ? null : digits.replace(/^0+(?=\d)/, '');
 }
 
 /** Matching text with source offsets, so compatibility normalization never rewrites a displayed identifier. */

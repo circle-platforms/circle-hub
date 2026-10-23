@@ -43,14 +43,14 @@ describe('ids in document titles', () => {
   });
 
   it('returns unmarked leading ids as unclassified', () => {
-    assert.deepEqual(of('7401-日志导出支持压缩'), { ...none, unclassified: ['7401'] });
+    assert.deepEqual(of('7401-日志导出支持压缩'), none);
     assert.deepEqual(of('回归 - 161090 会话表'), { ...none, unclassified: ['161090'] });
     assert.deepEqual(of('二轮回归-161040-支持批量导入'), { ...none, unclassified: ['161040'] });
-    assert.deepEqual(of('回归测试-7402 161041-日志分级'), { ...none, unclassified: ['7402', '161041'] });
+    assert.deepEqual(of('回归测试-7402 161041-日志分级'), none);
     assert.deepEqual(of('[回归]161042 161043 - 支持新调度'), { ...none, unclassified: ['161042', '161043'] });
     assert.deepEqual(of('161044 161045支持多个端口'), { ...none, unclassified: ['161044', '161045'] });
     assert.deepEqual(of('Test-161046-cookie flags'), { ...none, unclassified: ['161046'] });
-    assert.deepEqual(of('[7403] 端口复用'), { ...none, unclassified: ['7403'] });
+    assert.deepEqual(of('[7403] 端口复用'), none);
     assert.deepEqual(of('161047回归测试'), { ...none, unclassified: ['161047'] });
   });
 
@@ -107,7 +107,7 @@ describe('ids on bad input', () => {
 });
 
 it('normalizes zero-padded identities and preserves original spellings', () => {
-  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+  for (const raw of ['0123', '001234', '００１２３４']) {
     const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
     const found = idsFromTitle(`bug ${raw}`);
     assert.deepEqual(found.bugs, [id]);
@@ -119,4 +119,22 @@ it('keeps every raw spelling when a normalized identity repeats', () => {
   const found = idsFromTitle('bug 0123 and 123 and 00123');
   assert.deepEqual(found.bugs, ['123']);
   assert.deepEqual(found.spellings?.map(entry => entry.raw), ['0123', '123', '00123']);
+});
+
+it('rejects single marked digits and all-zero strings before normalization', () => {
+  for (const title of ['bug 1', 'bug 0', '缺陷 00', '需求 00', 'PLM0', 'bug to case 00',
+    '0', '00', '00000', '000000', 'bug 000000000', '缺陷 ００']) {
+    const found = idsFromTitle(title);
+    assert.deepEqual([...found.stories, ...found.bugs, ...found.plm, ...found.unclassified], [], title);
+  }
+});
+it('applies written digit lengths before stripping only nonzero leading zeros', () => {
+  for (const [title, expected] of [
+    ['bug 01', ['1']], ['bug 000000001', ['1']], ['bug 0000000001', []],
+    ['0123 合成文档', []], ['00123 合成文档', ['123']],
+    ['001234 合成文档', ['1234']], ['00000001 合成文档', []],
+  ] as const) {
+    const found = idsFromTitle(title);
+    assert.deepEqual([...found.stories, ...found.bugs, ...found.plm, ...found.unclassified], expected, title);
+  }
 });

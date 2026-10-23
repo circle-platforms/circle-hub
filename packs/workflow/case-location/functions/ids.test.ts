@@ -67,6 +67,7 @@ describe('ids in titles', () => {
       'option28 参数',
       'debug 61001',
       'history 61001',
+      'bug 1',
       '需求 1234567890',
       'SSL 证书 3a',
       '',
@@ -102,7 +103,7 @@ describe('ids in titles', () => {
 it('PLM remains unmarked', () => { assert.deepEqual(ids('PLM90101-导出'), ['?:90101']); });
 
 it('normalizes identifier identity while retaining every original zero-padded spelling', () => {
-  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+  for (const raw of ['0123', '001234', '００１２３４']) {
     const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
     const found = extractIds(`bug ${raw}`);
     assert.equal(found.length, 1); assert.equal(found[0].id, id);
@@ -115,7 +116,25 @@ it('normalizes identifier identity while retaining every original zero-padded sp
 
 it('uses the same decimal identity rule as the product pack', async () => {
   const product = await import('../../../product/apv/functions/ids.ts');
-  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+  for (const raw of ['0123', '001234', '００１２３４']) {
     assert.deepEqual(extractIds(`bug ${raw}`).map(found => found.id), product.idsFromTitle(`bug ${raw}`).bugs);
+  }
+});
+
+it('rejects single marked digits and all-zero strings before normalization', () => {
+  for (const title of ['bug 1', 'bug 0', '缺陷 00', '需求 00', 'PLM0', 'bug to case 00',
+    '0', '00', '00000', '000000', 'bug 000000000', '缺陷 ００']) {
+    const found = extractIds(title);
+    assert.deepEqual(found.map(entry => entry.id), [], title);
+  }
+});
+it('applies written digit lengths before stripping only nonzero leading zeros', () => {
+  for (const [title, expected] of [
+    ['bug 01', ['1']], ['bug 000000001', ['1']], ['bug 0000000001', []],
+    ['0123 合成文档', []], ['00123 合成文档', ['123']],
+    ['001234 合成文档', ['1234']], ['00000001 合成文档', []],
+  ] as const) {
+    const found = extractIds(title);
+    assert.deepEqual(found.map(entry => entry.id), expected, title);
   }
 });

@@ -22,7 +22,7 @@ const MARKER = /(?<![a-z0-9])(?:(bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5
 /** A second word right after the first ("bug to case-需求20931"): the one next to the number wins. */
 const INNER = /(?:(需求单?)|(缺陷)|(stor(?:y|ies))|(bugs?))(?![a-z])/uy;
 const GLUE = /[\s#:\-_~.—–]*/uy;
-const LIST = /(?:\s*(?:[&、,，+;；]|and\b|和|及|与)\s*#?|\s+)(?=[0-9]{1})/iuy;
+const LIST = /(?:\s*(?:[&、,，+;；]|and\b|和|及|与)\s*#?|\s+)(?=[0-9]{2})/iuy;
 const LEAD_SKIP = /[\s\-–—_:.、]+/uy;
 const LEAD_BRACKET = /(?:\[[^\]0-9]{0,20}\]|【[^】0-9]{0,20}】|\([^)0-9]{0,20}\)|（[^）0-9]{0,20}）)/uy;
 const LEAD_WORD = /(?:regression|二轮回归测试|三轮回归测试|二轮回归|三轮回归|回归测试|回归|test|测试)(?![a-z])/iuy;
@@ -58,7 +58,8 @@ function idAt(text: string, at: number, min: number, max: number, bare: boolean)
   if (id.length === 8 && validDate(Number(id.slice(0, 4)), Number(id.slice(4, 6)), Number(id.slice(6, 8)))) return null; // 20260531
   if (/^\s*[年月日号]/u.test(text.slice(end, end + 3))) return null; // 2026年
   if (bare && /^\s*:/.test(text.slice(end, end + 3))) return null; // 1001：网络
-  return { id: normalizeId(id), end };
+  const normalized = normalizeId(id);
+  return normalized === null ? null : { id: normalized, end };
 }
 
 /** Ids from `at` on: one, then more after list separators; stops at the first number that cannot be an id. */
@@ -110,7 +111,7 @@ export function markedIds(text: string, fromBugToCase?: (id: string) => void): F
       position += inner[0].length;
       position += (sticky(GLUE, lower, position) ?? '').length;
     }
-    const { ids, end, starts, ends } = idList(lower, position, 1, 9);
+    const { ids, end, starts, ends } = idList(lower, position, 2, 9);
     for (const [index, id] of ids.entries()) {
       const raw = frame.spelling(starts[index], ends[index]);
       out.push(raw === id ? { kind, id } : { kind, id, spellings: [raw] });
@@ -178,9 +179,10 @@ export function bugToCaseIds(text: string): string[] {
   return ids;
 }
 
-/** Canonical decimal identity; the original spelling is retained separately for display and quotations. */
-export function normalizeId(raw: string): string {
-  return raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+/** Canonical nonzero decimal identity; all-zero text is not an identifier. Original spelling is retained separately. */
+export function normalizeId(raw: string): string | null {
+  const digits = raw.normalize('NFKC');
+  return /^0+$/.test(digits) ? null : digits.replace(/^0+(?=\d)/, '');
 }
 
 /** Matching text with source offsets, so compatibility normalization never rewrites a displayed identifier. */

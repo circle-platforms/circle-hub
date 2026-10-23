@@ -299,7 +299,7 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 4. “bug to case”一族编号按缺陷读，PLM 仍未分类，挨着编号的类型词优先。绑定理由写明约定；PLM 存在核验留待第二步。
 5. 版本层以下目录编号关联下面每份文档，文档粒度和用例粒度相同。
 
-编号身份按 NFKC 后的十进制数字去零（全零为 0），显式标记后支持一位编号。原文未变时 id 本身是原文；有变化时，case-location 的 id_sources[].spellings 和 APV ids 的 spellings 保存原文（含全角数字）。陈述与绑定理由用原文，类型仍是身份的一部分。两个包各自实现同一规则，不跨包运行时导入。
+编号先按写出来的位数核对长度：带标记 2 到 9 位，不带标记 5 到 7 位。全零串不是编号；非零编号按 NFKC 后的十进制数字去掉前导零。原文未变时 id 本身是原文；有变化时，case-location 的 id_sources[].spellings 和 APV ids 的 spellings 保存原文（含全角数字）。陈述与绑定理由用原文，类型仍是身份的一部分。两个包各自实现同一规则，不跨包运行时导入。
 
 构建候选按冲突的每条版本线分别列出，先报告目录冲突。声明不消除版本层冲突：报告声明与哪些目录值一致，码优先用 version_conflict，不再另报版本声明冲突。第二步的 PLM 有/没有观察尚未实现，第一步不将绑定成功当作存在证明。
 
