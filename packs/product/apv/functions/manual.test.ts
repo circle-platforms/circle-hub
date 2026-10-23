@@ -463,6 +463,36 @@ describe('placement against the build’s command tree', () => {
     assert.ok(without.entries.every((entry) => entry.path?.startsWith('/commands/')), 'without a tree the literal decides (unchecked)');
   });
 
+
+  it('a bold single-word cell is a value, parameter or term, not a row signature (findings 4, 8, 13 of the second review)', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="state" help_string="s"><arguments></arguments></item>' +
+      '<item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const withEnable = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="state" help_string="s"><arguments></arguments></item></menu></menu><item name="enable" help_string="e"><arguments></arguments></item></scope></commands>')).catalog;
+    const catalog = commandCatalog(xml(tree)).catalog;
+    // A value table under demo pool state: the rows stay in the table entry at their command; no definitions of enable/disable.
+    const values = produceManualEntries(markdown('**demo pool state** *\\<value\\>*\n\n| 取值 | 说明 |\n|---|---|\n| **enable** | 启用成员池 |\n| **disable** | 停用成员池 |\n'), null, { catalog });
+    assert.ok(values.entries.every((entry) => entry.data.form !== 'signature' || entry.path === '/commands/demo/pool/state'), JSON.stringify(values.entries.map((e) => [e.data.form, e.path])));
+    assert.ok(values.entries.some((entry) => String(entry.statement).includes('启用成员池') && entry.path === '/commands/demo/pool/state'), 'the rows stay with their command');
+    // Even when the tree HAS a top-level enable: the value row never becomes a definition at /commands/enable.
+    const withEnableTree = produceManualEntries(markdown('**demo pool state** *\\<value\\>*\n\n| 取值 | 说明 |\n|---|---|\n| **enable** | 启用成员池 |\n'), null, { catalog: withEnable });
+    assert.ok(!withEnableTree.entries.some((entry) => entry.path === '/commands/enable'), JSON.stringify(withEnableTree.entries.map((e) => [e.data.form, e.path])));
+    // A bold parameter table under demo pool add: the rows stay in the remainder at the command.
+    const params = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| **name** | 成员名 |\n| **weight** | 权重 |\n'), null, { catalog });
+    assert.deepEqual(params.entries.map((e) => [e.data.form, e.path]), [
+      ['signature', '/commands/demo/pool/add'],
+      ['text', '/commands/demo/pool/add'],
+    ], 'the parameter rows stay in the table remainder at their command');
+    assert.ok(params.entries.some((entry) => String(entry.statement).includes('成员名') && entry.path === '/commands/demo/pool/add'), 'the parameter rows stay with their command');
+    assert.ok(params.entries.some((entry) => ((entry.data.command_literals ?? []) as string[]).includes('name')), 'the words are recorded as literals');
+    // A glossary row outside any command stays in the table entry at its section.
+    const glossary = produceManualEntries(markdown('# 术语\n\n| 术语 | 说明 |\n|---|---|\n| **VIP** | 虚拟服务地址 |\n'), null, { catalog });
+    assert.ok(glossary.entries.every((entry) => entry.data.form !== 'signature'), JSON.stringify(glossary.entries.map((e) => [e.data.form, e.path])));
+    // A header that names commands (命令) keeps single-word command rows as signatures.
+    const commandHeader = produceManualEntries(markdown('## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **enable** | 进入特权级 |\n'), null, { catalog });
+    assert.ok(commandHeader.entries.some((entry) => entry.data.form === 'signature' && entry.statement.startsWith('enable')), JSON.stringify(commandHeader.entries.map((e) => [e.data.form, e.path])));
+  });
+
   it('hangs a variant signature at the common node of its variants when every variant exists', () => {
     const tree =
       '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +

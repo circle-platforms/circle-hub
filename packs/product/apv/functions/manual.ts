@@ -556,11 +556,20 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   });
 
   /**
+   * Whether an anchor parsed from a table cell is a row signature, decided from the manual alone (K02 R[3]): a
+   * definition comes only from a signature, and a bare single bold word is a value, a parameter name or a term, not a
+   * command. A cell counts when its head has two or more words, or carries parameter or group syntax; a header that
+   * names commands (命令/Command) keeps even one-word rows as signatures.
+   */
+  const isRowSignature = (anchor: Anchor, headerNamesCommands: boolean): boolean =>
+    headerNamesCommands || anchor.words.length >= 2 || anchor.params.length > 0 || anchor.variants !== null;
+
+  /**
    * The signatures of one table cell: the whole cell is one signature, or a list of signatures joined by bare
    * connectives (与/和/及/或、顿号、逗号、斜线). A bold span inside prose is not a signature (a mention: it is recorded
    * in command_literals only).
    */
-  const cellAnchors = (cell: string): Anchor[] => {
+  const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
     if (!cell.includes('**')) return [];
     const parts = cell.split(new RegExp(`(${CJK.source}+)`, 'u'));
     const out: Anchor[] = [];
@@ -573,20 +582,22 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       if (piece === '') continue;
       const anchor = parseAnchor(piece, heads);
       if (anchor === null) return [];
+      if (!isRowSignature(anchor, headerNamesCommands)) return [];
       out.push(anchor);
     }
     return out;
   };
 
   /** The rows of a pipe table, or null when the block is not one (grid, multiline and simple tables are not split). */
+  const splitRowOf = (line: string): string[] | null => {
+    let body = line.trim();
+    if (!body.includes('|')) return null;
+    if (body.startsWith('|')) body = body.slice(1);
+    if (body.endsWith('|')) body = body.slice(0, -1);
+    return body.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
+  };
   const pipeRows = (text: string): { lines: string[]; rows: Array<{ line: number; cells: string[] }> } | null => {
-    const splitRow = (line: string): string[] | null => {
-      let body = line.trim();
-      if (!body.includes('|')) return null;
-      if (body.startsWith('|')) body = body.slice(1);
-      if (body.endsWith('|')) body = body.slice(0, -1);
-      return body.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
-    };
+    const splitRow = splitRowOf;
     const lines = text.split('\n');
     if (lines.length < 3 || splitRow(lines[0]) === null) return null;
     const delimiter = splitRow(lines[1]);
@@ -642,12 +653,24 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       const table = pipeRows(block.text);
       if (table !== null) {
         const ranges = lineRanges(block.text);
+        const header = splitRowOf(table.lines[0] ?? '');
+        const headerNamesCommands = header !== null && header.some((cell) => /^(命令|command)$/i.test(cell.trim()));
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
+        const valueLiterals = new Set<string>();
         let signatureRows = 0;
         for (const row of table.rows) {
-          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell).map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
+          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, headerNamesCommands).map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
+            // A bare bold word in a cell is a value, parameter name or term: the row stays in the remainder and the
+            // word is a command literal only (a mention, research 2 rule 4), never a signature.
+            if (row.cells.some((cell) => cell.includes('**'))) {
+              for (const cell of row.cells) {
+                for (const word of cell.replaceAll('**', ' ').split(/\s+/u)) {
+                  if (word !== '' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(word)) valueLiterals.add(word.toLowerCase());
+                }
+              }
+            }
             remainder.push(row.line);
             continue;
           }
@@ -673,6 +696,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           }
           split.push(textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment] }));
         }
+        for (const literal of valueLiterals) allLiterals.add(literal);
         if (signatureRows > 0) {
           entries.push(...split);
           if (remainder.length > 0) {
