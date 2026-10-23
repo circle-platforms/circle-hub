@@ -17,7 +17,7 @@ export async function main(args: string[], io: Io = { cwd:process.cwd(),stdin:pr
     need(positionals.length===0&&values.hub&&values.out,'缺少 --hub 或 --out；按 SKILL.md 填完整命令');
     const judging=action!=='lock'&&action!=='submit'; need(judging?!!values.model:values.model===undefined,'ask/calibrate/place 必须给确切 --model；lock/submit 不给 --model');
     const model=judging?checkModel(values.model,false):'';secureUrl(values.hub);if(judging)secureUrl(values['base-url']??'https://api.typesafe.ai',model);
-    const keys=await readKeys(io.stdin,judging);const guard=secretGuard([keys.hub,...(judging?[keys.jev]:[])]);const store=await LocalStore.open(values.out,io.cwd,guard);const hub=new Hub(values.hub,keys.hub,guard);
+    const keys=await readKeys(io.stdin,judging);const guard=secretGuard([keys.hub,...(judging?[keys.jev]:[])]);guard(values);const store=await LocalStore.open(values.out,io.cwd,guard);const hub=new Hub(values.hub,keys.hub,guard);
     const send=(values.send??[]).flatMap(v=>v.split(','));const allowed=allowedKinds(send);
     const judge=judging?new Judge(model,()=>keys.jev,values['base-url'],store,send,{...(values['timeout-ms']?{timeoutMs:Number(values['timeout-ms'])}:{})}):null;activeJudge=judge;await judge?.load();
     if(action==='ask'){

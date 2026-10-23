@@ -23,3 +23,8 @@ test('reuse identity records token estimates and batch planning match the pure r
 test('ask planning splits sendable question groups by token budget and preserves their exact state',async()=>{
  const {questionWork}=await import('../tools/jev/lib/judge.ts');const question={type:'choice',instructions:'Classify `p`',criteria:Object.fromEntries(Array.from({length:60},(_,i)=>['option-'+i,'合成说明'.repeat(30)]))};const raw={schema:'jev-ask@1',questions:Object.fromEntries(Array.from({length:10},(_,i)=>['q'+i,question]))};const pieces=[{id:'p',reference:'synthetic-ref',kind:'definition',text:'synthetic manual',sha256:'a'.repeat(64),bytes:16}];const plan=questionWork(raw,pieces,model);assert.ok(plan.length>1);assert.equal(plan.reduce((n,b)=>n+Object.keys(b.questions).length,0),10);assert.ok(plan.every(b=>b.state.p==='synthetic manual'));
 });
+
+test('every question primitive applies the declared external instruction and criterion limits',async()=>{
+ const {questionWork}=await import('../tools/jev/lib/judge.ts');const pieces=[{id:'p',reference:'synthetic-ref',kind:'definition',text:'synthetic',sha256:'a'.repeat(64),bytes:9}];
+ for(const question of [{type:'noul',instructions:'Judge `p`',criteria:{true:'x'.repeat(161)}},{type:'score',instructions:'Judge `p`',criteria:['x'.repeat(161),'normal']},{type:'choice',instructions:'x'.repeat(2001),criteria:{one:'normal'}}])assert.throws(()=>questionWork({schema:'jev-ask@1',questions:{q:question}},pieces,model));
+});

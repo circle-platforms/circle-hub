@@ -46,3 +46,9 @@ test('environment credentials are ignored even when a complete valid invocation 
  const dir=await scratch(t);const item=entry('definition','synthetic environment-boundary manual',40,'/manual');const hub=await fakeHub([node('/manual',[item])]);const jev=await fakeJev();t.after(()=>hub.close());t.after(()=>jev.close());await writeFile(join(dir,'ask.json'),JSON.stringify(input([item])));
  const {fileURLToPath}=await import('node:url');const result=await new Promise<number|null>((done,reject)=>{const child=spawn(process.execPath,[fileURLToPath(new URL('../tools/jev/jev.ts',import.meta.url)),'ask','--hub',hub.url,'--model',MODEL,'--base-url',jev.url,'--input','ask.json','--out','result'],{cwd:dir,env:{PATH:process.env.PATH,JEV_API_KEY:JEV_KEY,HUB_TOKEN:HUB_KEY}});child.stdout.resume();child.stderr.resume();child.on('error',reject);child.on('exit',done);child.stdin.end();});assert.equal(result,1);assert.equal(hub.requests.length,0);assert.equal(jev.requests.length,0);
 });
+
+test('credentials embedded in otherwise allowed URLs or output paths are refused before any request or write',async t=>{
+ const dir=await scratch(t);const hub=await fakeHub([]);const jev=await fakeJev();t.after(()=>hub.close());t.after(()=>jev.close());
+ for(const [hubUrl,out]of [[hub.url+'/'+JEV_KEY,'result'],[hub.url,HUB_KEY]]){const result=await run(dir,['ask','--hub',hubUrl!,'--model',MODEL,'--base-url',jev.url,'--input','ask.json','--out',out!]);assert.equal(result.code,1);assert.ok(!JSON.stringify(result).includes(JEV_KEY));assert.ok(!JSON.stringify(result).includes(HUB_KEY));}
+ assert.equal(hub.requests.length,0);assert.equal(jev.requests.length,0);assert.deepEqual(await readdir(dir),[]);
+});

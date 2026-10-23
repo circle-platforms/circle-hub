@@ -123,8 +123,8 @@
     },
     {
       "path": "tools/jev/jev.ts",
-      "sha256": "484b25fa47e0440457dd7d58db6e4ed1592fd37100486f3086528f68f0dae364",
-      "size": 5235
+      "sha256": "f95b0b3e3dd39024f667e4f0910a159d76adb62472e89d7b04ad2823e69f1c22",
+      "size": 5249
     },
     {
       "path": "tools/jev/lib/api.ts",
@@ -168,8 +168,8 @@
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "810e4ce5a17a28deee26aa9cbf2540de1e9dbcdc18ac8702903eabb2053a0b01",
-      "size": 8964
+      "sha256": "a52fc2f5820105d37bb32bff873333856290b16f8c09862afae9bdc667b41ab0",
+      "size": 9324
     },
     {
       "path": "tools/jev/lib/local.ts",

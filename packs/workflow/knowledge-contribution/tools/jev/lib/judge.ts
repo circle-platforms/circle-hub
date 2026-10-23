@@ -2,8 +2,14 @@ import { HttpJev, type HttpJevOptions } from './http.ts';
 import { checkRequest, checkQuestion, isQuestionId } from './validate.ts';
 import { estimateTokens } from './tokens.ts';
 import { judgmentRecord, inputDigest, reuseKey, type JevJudgmentRecord, type JevQuestion, type JevRequest } from './api.ts';
+import { EGRESS } from './pieces.ts';
 import { need, record, sha, Refusal, type LocalStore } from './local.ts';
 import type { Piece } from './hub.ts';
+function egressQuestion(question:JevQuestion):void {
+  need(Array.from(question.instructions).length<=EGRESS.max_instructions_chars,'instructions 超过外发长度上限；缩短问题，不能夹带受限正文');
+  const descriptions=question.type==='score'?question.criteria:Object.values(question.criteria??{});
+  need(descriptions.every(value=>value===null||typeof value==='string'&&Array.from(value).length<=EGRESS.max_description_chars),'选项或等级说明超过外发长度上限；缩短说明后重跑');
+}
 export interface Work { state: Record<string, string>; questions: Record<string, JevQuestion>; pieces: Piece[] }
 export class Judge {
   stopped:string|null=null;
@@ -23,6 +29,7 @@ export class Judge {
   async ask(work: Work): Promise<{ answers: Record<string, JevJudgmentRecord>; failed: string[] }> {
     for (const piece of work.pieces) this.activePieces.set(piece.id, { reference: piece.reference, kind: piece.kind });
     const request: JevRequest = { model: this.model, state: work.state, questions: work.questions }; this.store.guard(request);
+    for(const question of Object.values(work.questions))egressQuestion(question);
     const checked = checkRequest(request, { pinnedModel: this.model, maxRequestBytes: 16 * 1024 * 1024 });
     const stateTokens = estimateTokens(JSON.stringify(work.state)) + 256;
     need(Object.keys(work.questions).length <= 10 && stateTokens + estimateTokens(JSON.stringify(work.questions)) + 32 * Object.keys(work.questions).length <= 48_000 && Object.values(work.questions).every((q) => stateTokens + estimateTokens(JSON.stringify(q)) + 32 <= 24_000), '片段或题目太大；减少片段后重跑');
@@ -58,8 +65,7 @@ export function questionWork(input: unknown, pieces: Piece[], model: string): Wo
   const all = Object.fromEntries(pieces.map((p) => [p.id, p.text])); const grouped = new Map<string, { state: Record<string, string>; questions: Record<string, JevQuestion> }>();
   for (const [id, raw] of Object.entries(input.questions)) {
     need(isQuestionId(id), '题目标识不合格；用字母数字下划线或连字符'); const question = checkQuestion(id, raw);
-    need(Array.from(question.instructions).length <= 2000, 'instructions 超过 2000 字；缩短问题，不能夹带受限正文');
-    if (question.type === 'choice') need(Object.values(question.criteria).every((v) => v === null || Array.from(v).length <= 160), '选项说明超过 160 字；缩短说明');
+    egressQuestion(question);
     const refs = [...JSON.stringify(question).matchAll(/`([^`]+)`/g)].map((m) => m[1]!.split(/[.\[]/)[0]!).filter((key) => Object.hasOwn(all, key));
     const ids = refs.length ? [...new Set(refs)].sort() : Object.keys(all); const key = JSON.stringify(ids); const group = grouped.get(key) ?? { state: Object.fromEntries(ids.map((key) => [key, all[key]!])), questions: {} }; group.questions[id] = question; grouped.set(key, group);
   }
