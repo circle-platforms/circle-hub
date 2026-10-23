@@ -5249,8 +5249,7 @@
    "values": [
     {
      "code": "same_subject",
-     "label": "说的是同一件事",
-     "description": "两段说的是同一议题，不表示内容等价"
+     "label": "说的是同一件事"
     },
     {
      "code": "contradicts",

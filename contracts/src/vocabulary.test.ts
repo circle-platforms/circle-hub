@@ -24,7 +24,7 @@ for (const axis of model.vocabulary) {
     const entry = AXES[axis.axis as AxisName];
     assert.equal(entry.label, axis.label);
     assert.equal(entry.owner, axis.owner);
-    assert.deepEqual(entry.values, axis.values.map(({code,label})=>({code,label})), 'semantic descriptions remain in the model; the generated label table publishes codes and labels');
+    assert.deepEqual(entry.values, axis.values);
     assert.equal(axisLabel(axis.axis as AxisName), axis.label);
 
     assert.deepEqual(exported[C], codes, `${C} lists the codes`);
