@@ -128,6 +128,8 @@ export const IndexView = z.strictObject({
   keys: z.record(z.string(), z.array(Sha256).max(MAX_INDEX_PER_KEY)).describe('field value -> digests of the entries that carry it, sorted'),
   entries: z.record(Sha256, ViewEntry).describe('those entries, once'),
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
+  only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),
+  cut_keys: z.array(z.string()).optional().describe('listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included'),
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),

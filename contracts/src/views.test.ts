@@ -93,6 +93,10 @@ test('an index view maps a data value to the entries that carry it', () => {
     notes: [],
   };
   assert.ok(IndexView.safeParse(index).success);
+  assert.ok(IndexView.safeParse({ ...index, only: ['61061'], cut_keys: [] }).success);
+  assert.ok(IndexView.safeParse({ ...index, cut_keys: ['61061'] }).success);
+  assert.ok(!IndexView.safeParse({ ...index, only: [61061] }).success);
+  assert.ok(!IndexView.safeParse({ ...index, cut_keys: [61061] }).success);
   assert.ok(!IndexView.safeParse({ ...index, keys: { '61061': ['nothex'] } }).success, 'entries are named by digest');
   assert.ok(!IndexView.safeParse({ ...index, key: 'Defects' }).success);
 });
