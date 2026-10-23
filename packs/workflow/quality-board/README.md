@@ -127,3 +127,7 @@ registry publication and a temporary PostgreSQL production run with a fake knowl
 results on real business inputs; the integrator runs the real scans and acceptance after publication.
 
 Privacy update (integrator, 2026-10-23): acceptance group names use ordinals only. The scan prints build ordinals, never hashes of names. The board prints a digest of metric counts only, excluding line and module labels. Private `--out` files retain correspondence.
+
+Gold closure A: --case-commands validates the consumed measurement fields, document coverage and per-document counts against
+its case rows before counting paths. A listed document with zero case rows is an observed zero, not a missing export;
+contradictory metadata and malformed paths are refused with a fixed rerun instruction. No Hub/pack runtime is imported.

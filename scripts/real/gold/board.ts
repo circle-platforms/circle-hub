@@ -71,6 +71,39 @@ export function boardGold(options: { product: string; build: string; tree: unkno
   const sorted = [...groups.values()].sort((a, b) => a.label < b.label ? -1 : a.label > b.label ? 1 : 0);
   return { types: options.types ?? false, product: options.product, build: options.build, groups: sorted, totals: sorted.reduce((sum, g) => ({ cases: sum.cases + g.cases, missing: sum.missing + g.missing, vague: sum.vague + g.vague, negative: sum.negative + g.negative }), { cases: 0, missing: 0, vague: 0, negative: 0 }), documents: { count: options.maps.length, not_in_tree: notInTree, no_cases: noCases } };
 }
+/** Validate the independent measurement before interpreting missing rows as zero. */
+function measuredUnplaced(raw: unknown, listed: ReadonlySet<string>): number {
+  const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const refuse = (detail: string): never => { throw new GoldRefusal(`case-commands 独立答案${detail}：按这个构建的清单重跑 case-commands.ts`); };
+  if (!record(raw) || !Array.isArray(raw.cases)) return refuse('里 cases 不是数组');
+  if (raw.schema !== 'case-commands-gold@1' || typeof raw.tree_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(raw.tree_sha256)) return refuse('的格式或命令树摘要无效');
+  if (!Array.isArray(raw.documents) || raw.documents.some(doc => typeof doc !== 'string' || cleanDocId(doc) === '')) return refuse('里 documents 不是有效文档清单');
+  const documents = new Set((raw.documents as string[]).map(cleanDocId));
+  if (documents.size !== raw.documents.length || !record(raw.document_cases)) return refuse('里 document_cases 不是有效文档计数');
+  const counts = new Map<string, number>();
+  for (const [doc, count] of Object.entries(raw.document_cases)) {
+    const id = cleanDocId(doc);
+    if (!documents.has(id) || counts.has(id) || !Number.isSafeInteger(count) || Number(count) < 0) return refuse('的文档计数与清单不一致');
+    counts.set(id, Number(count));
+  }
+  if (counts.size !== documents.size) return refuse('的文档计数没有覆盖文档清单');
+  const match = (value: unknown): boolean => record(value) && typeof value.path === 'string' && value.path.startsWith('/commands/')
+    && typeof value.abbreviated === 'boolean' && typeof value.via_no === 'boolean' && Number.isSafeInteger(value.words) && Number(value.words) > 0;
+  const rows: Array<{document:string; paths:unknown[]}> = [];
+  const observed = new Map<string, number>();
+  for (const value of raw.cases) {
+    if (!record(value) || typeof value.document !== 'string' || !documents.has(cleanDocId(value.document)) || typeof value.comparable !== 'boolean'
+      || !Array.isArray(value.paths) || !value.paths.every(match) || !Array.isArray(value.steps) || !value.steps.every(match)) return refuse('的用例行或命令路径无效');
+    const document = cleanDocId(value.document);
+    rows.push({document, paths:value.paths}); observed.set(document, (observed.get(document) ?? 0) + 1);
+  }
+  for (const [doc, count] of counts) if ((observed.get(doc) ?? 0) !== count) return refuse('的用例行数与文档计数不一致');
+  const required = new Set([...listed].map(cleanDocId));
+  const missing = [...required].filter(doc => !documents.has(doc));
+  if (missing.length > 0) throw new GoldRefusal(`case-commands 独立答案缺 ${missing.length} 份文档：按这个构建的清单重跑 case-commands.ts`);
+  return rows.filter(row => required.has(row.document) && row.paths.length === 0).length;
+}
+
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const tree = value('tree'), cases = value('cases-dir'), docs = value('docs'), product = value('product'), build = value('build'), out = value('out');
@@ -100,22 +133,13 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     // item (its out JSON: comparable cases with no parsed path; only cases of THIS build's documents count).
     const caseCommandsPath = value('case-commands');
     if (caseCommandsPath !== undefined) {
-      let commands: { cases?: unknown };
+      let commands: unknown;
       try {
-        commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: unknown };
+        commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8'));
       } catch {
         throw new GoldRefusal('case-commands 独立答案不是 JSON：按这个构建的清单重跑 case-commands.ts');
       }
-      // The input is validated before anything is counted: a {} file must not read as 0 unplaced cases.
-      if (!Array.isArray(commands.cases)) throw new GoldRefusal('case-commands 独立答案里 cases 不是数组：按这个构建的清单重跑 case-commands.ts');
-      const listed2 = new Set([...listed].map((d) => d.replace(/^.*:/, '')));
-      const casesOfBuild = (commands.cases as Array<{ document: string; paths: unknown[] }>).filter((c) => listed2.has(c.document.replace(/^.*:/, '')));
-      const covered = new Set(casesOfBuild.map((c) => c.document.replace(/^.*:/, '')));
-      const missingDocs = [...listed2].filter((d) => !covered.has(d));
-      if (missingDocs.length > 0) throw new GoldRefusal(`case-commands 独立答案缺 ${missingDocs.length} 份文档：按这个构建的清单重跑 case-commands.ts`);
-      // The Hub's 'N cases with no parsed command' is the null row of by=commands: commands come from the case
-      // title and labels only, so step-placed and id-less cases are unplaced too — count every case with no path.
-      const unplaced = casesOfBuild.filter((c) => c.paths.length === 0).length;
+      const unplaced = measuredUnplaced(commands, listed);
       (gold as { unplaced?: number }).unplaced = unplaced;
       (gold as { placement?: boolean }).placement = true;
     }

@@ -120,7 +120,7 @@ test('--case-commands writes the independent unplaced count into the gold', () =
     writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
     writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
     writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
-    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a'], totals: { cases: 3, comparable: 2, excluded: 1, unplaced: 1, step_placed: 0 }, cases: [
+    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a','doc-b'], document_cases: {'doc-a':2,'doc-b':1}, totals: { cases: 3, comparable: 3, excluded: 0, unplaced: 2, step_placed: 0 }, cases: [
       { key: 'doc-a#c1', document: 'doc-a', node: 'c1', comparable: true, paths: [], steps: [] },
       { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }], steps: [] },
       { key: 'doc-b#c3', document: 'doc-b', node: 'c3', comparable: true, paths: [], steps: [] },
@@ -150,7 +150,7 @@ test('--case-commands counts the Hub definition: every case of the listed docume
       { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [], steps: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }] },
       { key: 'doc-a#c3', document: 'doc-a', node: 'c3', comparable: false, paths: [], steps: [] },
     ];
-    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a'], cases }));
+    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a'], document_cases: {'doc-a':3}, cases }));
     const run = spawnSync(process.execPath, [...base, '--case-commands', join(dir, 'cc.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     assert.equal(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')).unplaced, 3);
@@ -160,7 +160,7 @@ test('--case-commands counts the Hub definition: every case of the listed docume
     assert.equal(notArray.status, 1);
     assert.match(notArray.stderr, /case-commands 独立答案里 cases 不是数组：按这个构建的清单重跑 case-commands\.ts/);
     // A file that covers none of the listed documents is refused with the missing count.
-    writeFileSync(join(dir, 'other.json'), JSON.stringify({ cases: [{ key: 'doc-b#c9', document: 'doc-b', node: 'c9', comparable: true, paths: [], steps: [] }] }));
+    writeFileSync(join(dir, 'other.json'), JSON.stringify({ schema:'case-commands-gold@1',tree_sha256:'0'.repeat(64),documents:['doc-b'],document_cases:{'doc-b':1},cases: [{ key: 'doc-b#c9', document: 'doc-b', node: 'c9', comparable: true, paths: [], steps: [] }] }));
     const none = spawnSync(process.execPath, [...base, '--case-commands', join(dir, 'other.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
     assert.equal(none.status, 1);
     assert.match(none.stderr, /case-commands 独立答案缺 1 份文档：按这个构建的清单重跑 case-commands\.ts/);
