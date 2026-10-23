@@ -95,3 +95,5 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 决定 40：草稿与配置检查共用 case-compile 的 tables/dispatch-roles.json，派发方式精确匹配，参数角色只能从对应行取；不按方法名推断。角色列表为空的组合自动列 unopened，缺失事实与下一步原样取该表，即使 reviewed:true 也不能开放。requires_method_review 为真的方法及所有零参数方法，在草稿 allowed 项的 reviewed 指针留下 pending，说明内部动作没有经过角色与拒绝表核验，并要求集成者逐个只读审阅后显式决定。只保留决定文件中的布尔 true，不自动补 true；角色齐全不代表方法已经审阅。选择不开放则列 unopened 并填完整事实、原因和下一步。reviewed 字段名从 runtime-profile-format.json 的 method_review_field 取，--check 同时核对该决定并调用包的 parseProfile；删除 pending 不能绕过审阅。此决定是集成者的开通声明，不证明真实设备上的内部动作安全。
 
 决定 40 的本机合成回归：新增三条先失败后通过，转换脚本 40 项、管理脚本 13 项、真实 Hub 配临时 PostgreSQL 和回环假网关的全链路 6 项，共 59 项通过，零失败、零跳过；类型检查通过，69 份合约生成物一致，case-compile 包清单摘要新鲜。全链路夹具同步显式审阅声明，并按当前发布包版本登记核验函数身份，避免沿用旧版本身份。没有运行真实入口或接触真实系统。
+
+收尾诊断：runtime-contract 与 runtime-profile 使用包解析器给出的固定原因，保留安全字段指针（含 reviewed）和修正动作；dispatch/status/kind 的格式缺口要求核对并另开格式表任务，摘要不符则补取网关钉住的合约及摘要。清单解析器的源值仍不显示在终端；完整问题列表保存到 --out 下的 parser-diagnostics.json（0600，不覆盖），请集成者私下核对该记录后重跑。转换器不通过匹配异常消息猜原因。

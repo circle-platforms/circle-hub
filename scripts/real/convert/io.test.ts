@@ -101,3 +101,36 @@ test('all conversion entries run through symlinked checkouts and refuse missing 
     assert.equal(child.status, 0, child.stderr); assert.match(child.stdout, /doc put runner-contract/); assert.equal(readFileSync(join(dir, 'good/runtime-contract.json'), 'utf8'), JSON.stringify(contract));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('contract and profile refusals retain fixed parser reasons and choose corrective actions by schema field', async () => {
+  const { parserDiagnostics } = await import('./io.ts');
+  const { parseProfile } = await import('../../../packs/workflow/case-compile/functions/profile.ts');
+  const { parseManifest } = await import('../../../packs/workflow/case-compile/functions/manifest.ts');
+  const { parseRuntimeContract } = await import('../../../packs/workflow/case-compile/functions/runtime-contract.ts');
+  const { profileDocument } = await import('../../../packs/workflow/case-compile/testing/runtime.ts');
+  const { MANIFEST_DOC } = await import('../../../packs/workflow/case-compile/functions/test-support.ts');
+  const raw = runtimeDocument(); const parsed = parseRuntimeContract(raw); assert.ok(parsed.ok);
+  const manifest = parseManifest(MANIFEST_DOC); assert.ok(manifest.ok);
+  const profile = parseProfile({ ...profileDocument(raw), bed: 'synthetic-absent' }, parsed.contract, manifest.beds); assert.ok(!profile.ok);
+  const diagnosis = parserDiagnostics('runtime-profile', profile.problems, '重新 --check');
+  assert.match(diagnosis, /配置的台架不在清单里/); assert.ok(!diagnosis.includes('synthetic-absent'));
+  assert.match(parserDiagnostics('runtime-profile', [{ pointer: '/allowed/0/reviewed', message: '合成固定审阅原因', fix: '合成固定动作' }], '重跑'), /\/reviewed.*合成固定审阅原因/);
+  const unknown = signRuntime({ ...raw, entries: raw.entries.map((v, i) => i ? v : { ...v, dispatch: 'synthetic-unknown' }) });
+  assert.throws(() => checkContract(Buffer.from(JSON.stringify(unknown)), unknown.contract_sha256), /\/dispatch.*不认识的派发方式.*格式表/);
+  assert.throws(() => checkContract(Buffer.from(JSON.stringify({ ...raw, contract_sha256: 'b'.repeat(64) })), raw.contract_sha256), /contract_sha256.*摘要.*钉住/);
+});
+
+test('manifest parser details are staged privately while terminal diagnostics hide source values', async () => {
+  const { topology } = await import('./testing.ts'); const { definition } = await import('../../../hub/dispatch/testing/definition.ts'); const { statSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'convert-private-diagnostics-'));
+  try {
+    const raw = topology(); raw.topology.devices[1].name = raw.topology.devices[0].name;
+    output(dir, 'source.json', JSON.stringify({ jsonrpc: '2.0', id: 1, result: { structuredContent: { snapshot: raw } } }));
+    output(dir, 'executor.json', JSON.stringify({ ...definition('http://127.0.0.1/mcp'), capture_pointers: ['/snapshot'] }));
+    const out = join(dir, 'out'); const child = spawnSync(process.execPath, ['scripts/real/convert/bed-topology.ts', join(dir, 'source.json'), '--definition', join(dir, 'executor.json'), '--out', out], { encoding: 'utf8' });
+    assert.equal(child.status, 1); assert.ok(!child.stderr.includes(raw.topology.devices[0].name));
+    const file = join(out, 'parser-diagnostics.json'); const details = JSON.parse(readFileSync(file, 'utf8'));
+    assert.ok(details.some((v: any) => v.component === 'test-bed' && v.problems.some((p: any) => p.message.includes(raw.topology.devices[0].name.toLowerCase()))));
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

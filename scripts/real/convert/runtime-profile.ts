@@ -3,7 +3,7 @@ import FORMAT from '../../../packs/workflow/case-compile/tables/runtime-profile-
 import { parseManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
 import { parseProfile } from '../../../packs/workflow/case-compile/functions/profile.ts';
 import { parseRuntimeContract, type RuntimeContract } from '../../../packs/workflow/case-compile/functions/runtime-contract.ts';
-import { argumentsOf, jsonBytes, main, output, parserDiagnostics, readJson, record, requireFact, summary } from './io.ts';
+import { argumentsOf, jsonBytes, main, output, parserDiagnostics, parserRefusal, readJson, record, requireFact, summary } from './io.ts';
 const pair = (v: { object: unknown; method: unknown }) => JSON.stringify([v.object, v.method]);
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 interface Unopened { object: string; method: string; parameters: Array<{ name: string; missing: string; reason: string; next: string }> }
@@ -31,7 +31,7 @@ const blockedCredentials = (method: Method) => method.parameters.some(p => p.req
 export function draftProfile(environment: unknown, manifest: unknown, rawContract: unknown, decisions?: unknown) {
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
   requireFact(contract.ok, contract.ok ? '' : parserDiagnostics('runtime-contract', contract.problems, '集成者重新只读取得网关钉住的合约原件后重跑'));
-  requireFact(beds.ok, beds.ok ? '' : parserDiagnostics('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换完整清单后重跑'));
+  if (!beds.ok) throw parserRefusal('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换完整清单后重跑');
   requireFact(beds.beds.length === 1, '清单 /beds 缺少唯一台架；集成者明确本轮单台架输入后重跑');
   requireFact(record(environment) && environment.ready === true && Number.isSafeInteger(environment.device_count) && (environment.device_count as number) > 0, '缺少成功预检及 device_count；集成者重新只读取得环境预检回答');
   const wanted = contract.contract;
@@ -117,7 +117,7 @@ export function checkCoverage(profile: unknown, contract: RuntimeContract): void
 export function checkProfile(profile: unknown, manifest: unknown, rawContract: unknown) {
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
   requireFact(contract.ok, contract.ok ? '' : parserDiagnostics('runtime-contract', contract.problems, '集成者重新只读取得网关钉住的合约原件后重跑 --check'));
-  requireFact(beds.ok, beds.ok ? '' : parserDiagnostics('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换清单后重跑 --check'));
+  if (!beds.ok) throw parserRefusal('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换清单后重跑 --check');
   checkCoverage(profile, contract.contract);
   requireFact(record(profile) && Array.isArray(profile.pending) && profile.pending.length === 0, '仍有待填事实；集成者填写并逐项清除 pending 后重跑 --check');
   const parsed = parseProfile(profile, contract.contract, beds.beds);

@@ -34,7 +34,7 @@ test('service protocol translation accepts only the declared source table', () =
 
 test('invalid source bed identifiers disclose the exact safe pointer and accept explicit mapping only', () => {
   const raw = topology(); raw.topology._bed.conf = 'Synthetic_Bed.conf';
-  assert.throws(() => convertTopology(raw), error => error instanceof Error && /\/beds\/0\/name.*标识.*--bed-name/.test(error.message) && !error.message.includes('Synthetic_Bed.conf'));
+  assert.throws(() => convertTopology(raw), error => error instanceof Error && /\/beds\/0\/name.*清单字段约束.*--bed-name/.test(error.message) && !error.message.includes('Synthetic_Bed.conf'));
   const converted = topologyReport(raw, 'bed-mapped'); assert.equal(converted.manifest.beds[0].name, 'bed-mapped');
   assert.deepEqual(converted.name_mapping, { source: 'Synthetic_Bed.conf', manifest: 'bed-mapped', explicit: true });
   assert.throws(() => convertTopology(raw, 'INVALID_Name'), /\/beds\/0\/name/);

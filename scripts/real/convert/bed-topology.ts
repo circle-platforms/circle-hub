@@ -4,7 +4,7 @@ import { parseInterface, parseIp, subnetContains } from '../../../packs/workflow
 import { readFileSync } from 'node:fs';
 import { parseManifest, type DeviceType } from '../../../packs/workflow/test-bed/functions/manifest.ts';
 import { parseManifest as parseCompileManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
-import { argumentsOf, jsonBytes, main, output, parserDiagnostics, record, readJson, requireFact } from './io.ts';
+import { argumentsOf, jsonBytes, main, output, FactError, parserDiagnostics, record, readJson, requireFact } from './io.ts';
 // Source label translation, derived from the gateway topology format; no device-name inference.
 const SOURCE_LABELS: Readonly<Record<string, DeviceType>> = { '负载均衡': 'load-balancer', '路由器': 'router', '客户端': 'client', '服务器': 'server', '控制台': 'console' };
 const SERVICE_PROTOCOLS: Readonly<Record<string, 'tcp' | 'udp'>> = { http: 'tcp', https: 'tcp', dns: 'udp' };
@@ -42,7 +42,7 @@ export function topologyReport(raw: unknown, bedName?: string) {
   });
   const manifest = { schema: 'test-bed-manifest@1', beds: [{ name: bedName ?? topology._bed.conf.toLowerCase(), devices, services, reserved: [...reserved] }] };
   const bed = parseManifest(manifest); const compile = parseCompileManifest(manifest);
-  requireFact(bed.ok && compile.ok, [bed.ok ? '' : parserDiagnostics('test-bed', bed.problems, '集成者核对该字段；台架名不合格式时用 --bed-name 显式指定映射，不改源事实，重新转换'), compile.ok ? '' : parserDiagnostics('case-compile', compile.problems, '集成者核对同一清单字段；必要时用 --bed-name 明确台架映射后重跑')].filter(Boolean).join('\n'));
+  if (!bed.ok || !compile.ok) throw new FactError([bed.ok ? '' : parserDiagnostics('test-bed', bed.problems, '集成者核对该字段；台架名不合格式时用 --bed-name 显式指定映射，不改源事实，重新转换'), compile.ok ? '' : parserDiagnostics('case-compile', compile.problems, '集成者核对同一清单字段；必要时用 --bed-name 明确台架映射后重跑')].filter(Boolean).join('\n'), [...(!bed.ok ? [{ component: 'test-bed', problems: bed.problems }] : []), ...(!compile.ok ? [{ component: 'case-compile', problems: compile.problems }] : [])]);
   return { manifest, protocols, ignored_neighbours: [...ignored], name_mapping: { source: topology._bed.conf, manifest: manifest.beds[0].name, explicit: bedName !== undefined } };
 }
 export function convertTopology(raw: unknown, bedName?: string) { return topologyReport(raw, bedName).manifest; }
