@@ -296,6 +296,11 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
 
 ## Needs from other packages
 
+- **runs / server**: surface the last ParseError message when all parsers for the declared media type refuse.
+  Both start_run and upload_file must return that definite reason and a corrective action; recognize currently drops
+  it, so this branch cannot claim caller-visible refusal diagnostics until the owners add this handoff. This is an
+  integration need outside the XLSX parser task's allowed paths.
+
 - **contracts**: (1) a protocol code for "the source does not parse with the declared parser" (for example
   `SOURCE_UNPARSEABLE`, fix "上传能按声明格式解析的文件，或换用对应的解析器"), or confirmation that
   `SUBMISSION_SCHEMA_VIOLATION` is meant; (2) move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs

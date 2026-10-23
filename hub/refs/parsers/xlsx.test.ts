@@ -356,3 +356,10 @@ test('ZIP failures disclose a specific rule and safe member location without nam
   for (const [name, reason] of [['../a.xml', /路径段/], ['a'.repeat(600), /路径长度/], ['a\\b.xml', /反斜杠/]] as const) refuses(zip([{ name }]), reason);
   assert.throws(() => xlsxParser.parse(workbook(), { maxNodes: 21 }), (error: unknown) => error instanceof ParseLimitError && error.max === 21 && /21/.test(error.message));
 });
+
+test('refs records the caller diagnostic handoff required from runs and server', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /runs \/ server[^\n]*last ParseError/);
+  assert.match(readme, /start_run and upload_file[^\n]*reason/);
+});
