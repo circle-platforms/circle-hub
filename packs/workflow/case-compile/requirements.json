@@ -4,7 +4,7 @@
     {
       "key": "plan",
       "name": "执行计划",
-      "description": "模型按受限结构为每个用例编一份执行计划：桶（台架）、块（setup/teardown）、步骤（对象，方法，参数）、期望结果（带逐字引文）和由槽位确定性生成的 plan_json。槽位内容由下面五个事实要求项逐项核对，这一项是模型自己的计划",
+      "description": "模型按受限结构为每个用例编一份执行计划：桶（台架）、块（setup/teardown）、步骤（对象，方法，参数）、期望结果（带逐字引文）。执行计划由 Hub 从槽位确定性生成（exec-plan@1，模型不写）；槽位内容由下面五个事实要求项逐项核对，这一项是模型自己的计划",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",

@@ -163,6 +163,9 @@ describe('a production run of case-compile', { skip }, () => {
     const interpreterClaims = claims.filter((claim) => claim.qualifier.nature === 'fact' && (claim.warrant.id === 'catalog@1' || claim.warrant.id === 'quote@1'));
     assert.ok(interpreterClaims.length > 0, '解释器结论在（命令目录和逐字引文）');
     for (const claim of interpreterClaims) assert.equal(claim.statement.verdict, 'support', claim.statement.text);
+    // 解释器的 pointer 照实钉住（README「Pointers」一节按此写）：catalog@1 是 /phrases/<k>，quote@1 是 /quotes/<k>/text。
+    for (const claim of interpreterClaims.filter((claim) => claim.warrant.id === 'catalog@1')) assert.equal(claim.pointer, '/phrases/0');
+    for (const claim of interpreterClaims.filter((claim) => claim.warrant.id === 'quote@1')) assert.equal(claim.pointer, '/quotes/0/text');
     assert.ok(
       claims.some((claim) => claim.qualifier.nature === 'judgment'),
       'plan 要求是模型自己的判断（执行计划），五个事实要求项逐项核对它',
@@ -195,6 +198,7 @@ describe('a production run of case-compile', { skip }, () => {
     assert.match(forbidden.statement.text, /按合成合约核对/);
     assert.match(forbidden.statement.text, /不证明在真实设备上跑得通/);
     assert.equal(forbidden.qualifier.nature, 'fact');
+    assert.equal(forbidden.pointer, '/data/steps/0', '包函数的驳回带 /data/ 形状的 pointer');
     assert.equal(result.acceptance, 'accepted', '校验照常完成并存下；不满足写在要求项状态上');
     const requirementOf = (key: string) => {
       for (const items of Object.values(result.partitions)) {

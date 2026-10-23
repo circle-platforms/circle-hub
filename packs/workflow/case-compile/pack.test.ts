@@ -61,7 +61,7 @@ describe('the case-compile pack files', () => {
     const checks = (json('checks.json') as { checks: Array<{ id: string }> }).checks.map((check) => check.id);
     const files: Record<string, string[]> = {
       positive: ['contract-valid.json', 'addresses-valid.json', 'commands-valid.json', 'expects-sourced.json', 'quotes-verbatim.json', 'plan-deterministic.json'],
-      negative: ['method-forbidden.json', 'listen-blind.json', 'commands-out-of-range.json', 'expect-without-source.json', 'quote-mismatch.json', 'plan-in-slots.json'],
+      negative: ['method-forbidden.json', 'listen-blind.json', 'backend-not-server.json', 'commands-out-of-range.json', 'expect-without-source.json', 'expect-not-in-quote.json', 'quote-mismatch.json', 'plan-in-slots.json'],
     };
     for (const [polarity, names] of Object.entries(files)) {
       const seen = new Set<string>();

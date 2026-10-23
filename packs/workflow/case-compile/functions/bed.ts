@@ -2,8 +2,8 @@
 // addresses grouped by segment, listen candidates (a DUT interface whose segment also holds a trigger device), blind
 // addresses (a DUT interface on a segment without any), backends (server interfaces and the declared services), and
 // the devices without any interface address as unknowns. Address use in a plan is judged from these facts plus the
-// run's lineage leases (allocated addresses).
-import type { ManifestBed } from './manifest.ts';
+// run's lineage leases (allocated addresses); every comparison is by the numeric address key, never by notation.
+import { addressKey, type ManifestBed } from './manifest.ts';
 
 export const TRIGGER_TYPES: ReadonlySet<string> = new Set(['router', 'client']);
 
@@ -101,29 +101,44 @@ export interface LeaseRow {
 
 /**
  * What a literal address is on this bed: a device's interface address, an address this run's lineage holds a lease of
- * (bed/<bed>/ip/<address>, marked mine and unexpired at the frozen moment), or off the bed.
+ * (bed/<bed>/ip/<address>, marked mine and unexpired at the frozen moment), or off the bed. Compared by the numeric
+ * address key: 2001:DB8::10 and 2001:db8:0:0::10 are the same address, and so is the address part of a lease key.
  */
 export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: string, address: string): AddressReading {
+  const key = addressKey(address);
+  if (key === null) return { kind: 'off_bed' };
   for (const device of bed.devices) {
     for (const iface of [...device.ipv4, ...device.ipv6]) {
-      if (iface.address === address) return { kind: 'interface', device: device.name, type: device.type, subnet: iface.subnet };
+      if (addressKey(iface.address) === key) return { kind: 'interface', device: device.name, type: device.type, subnet: iface.subnet };
     }
   }
-  const leased = leases.some((row) => row.mine === true && row.until > now && row.key === `bed/${bed.name}/ip/${address}`);
+  const prefix = `bed/${bed.name}/ip/`;
+  const leased = leases.some((row) => row.mine === true && row.until > now && typeof row.key === 'string' && row.key.startsWith(prefix) && addressKey(row.key.slice(prefix.length)) === key);
   return leased ? { kind: 'allocated' } : { kind: 'off_bed' };
 }
 
-/** Whether a blind fact names this address (a DUT interface on a segment without a trigger device). */
+/** Whether a blind fact names this address (a DUT interface on a segment without a trigger device), by the numeric key. */
 export function isBlind(facts: BedFacts, address: string): boolean {
-  return facts.blind.some((fact) => fact.address === address);
+  const key = addressKey(address);
+  return key !== null && facts.blind.some((fact) => addressKey(fact.address) === key);
 }
 
-/** Whether a backend fact names this address (a server interface or a declared service). */
+/** Whether a backend fact names this address (a server interface or a declared service), by the numeric key. */
 export function isBackend(facts: BedFacts, address: string): boolean {
-  return facts.backends.some((fact) => fact.address === address);
+  const key = addressKey(address);
+  return key !== null && facts.backends.some((fact) => addressKey(fact.address) === key);
+}
+
+/** Whether the address is an interface of a type=server device (the compile rule's backend; the declared services do not count). */
+export function isServerInterface(bed: ManifestBed, address: string): boolean {
+  const key = addressKey(address);
+  if (key === null) return false;
+  return bed.devices.some((device) => device.type === 'server' && [...device.ipv4, ...device.ipv6].some((iface) => addressKey(iface.address) === key));
 }
 
 /** The listener fact of this address, when it is a DUT interface whose segment holds a trigger device. */
 export function listenerOf(facts: BedFacts, address: string): ListenerFact | undefined {
-  return facts.listeners.find((fact) => fact.address === address);
+  const key = addressKey(address);
+  if (key === null) return undefined;
+  return facts.listeners.find((fact) => addressKey(fact.address) === key);
 }
