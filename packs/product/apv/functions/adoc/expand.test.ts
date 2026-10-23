@@ -147,11 +147,78 @@ test('a container with no text of its own is not reported as unverified, and a r
   // a gap that is not there.
   assert.equal(out.report.unverified.filter((u) => u.kind === 'ulist').length, 0, JSON.stringify(out.report.unverified));
   assert.deepEqual(out.model.blocks.filter((b) => b.kind === 'list_item').map((b) => b.origins[0]?.selector ?? null), ['l/5', 'l/6']);
-  // The sentence stands on two lines inside the locator's neighbourhood: each copy is cited at the line the engine
-  // reported for it, and the report says a choice was made among candidates.
+  // The sentence stands on two lines, but a blank line separates them, so the other copy is another block's line: each
+  // paragraph cites its own and no choice had to be made.
   const repeated = out.model.blocks.filter((b) => b.raw === '同一段说明文字。');
   assert.deepEqual(repeated.map((b) => b.origins[0]?.selector ?? null), ['l/8', 'l/10']);
   assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
-  assert.deepEqual(out.report.disambiguated.map((d) => [d.kind, d.reported_line, d.candidates]), [['paragraph', 8, 2], ['paragraph', 10, 2]]);
+  assert.equal(out.report.disambiguated_count, 0);
+});
+
+test('two identical items on adjacent lines are told apart by the engine cursor, and the choice is disclosed', async () => {
+  const out = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\n* 甲\n* 甲\n' }));
+  assert.ok(out.ok, JSON.stringify(out));
+  assert.deepEqual(out.model.blocks.filter((b) => b.kind === 'list_item').map((b) => b.origins[0]?.selector ?? null), ['l/5', 'l/6']);
+  assert.deepEqual(out.report.disambiguated.map((d) => [d.kind, d.reported_line, d.candidates]), [['list_item', 5, 2], ['list_item', 6, 2]]);
   assert.equal(out.report.disambiguated_count, 2);
+});
+
+test('a block cites its own line, not a neighbour that happens to hold the same words', async () => {
+  // An admonition whose label the engine drops, next to a paragraph that says the same words.
+  const labelled = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\n修改后保存配置。\n\nNOTE: 修改后保存配置。\n' }));
+  assert.ok(labelled.ok, JSON.stringify(labelled));
+  assert.deepEqual(
+    labelled.model.blocks.filter((b) => b.kind === 'paragraph' || b.kind === 'admonition').map((b) => [b.kind, b.reportedLine, b.origins[0]?.selector ?? null]),
+    [['paragraph', 5, 'l/5'], ['admonition', 7, 'l/7']],
+  );
+  assert.equal(labelled.report.disambiguated_count, 0, 'the other line is not a candidate at all: a blank line sits between');
+
+  // A description list whose second value stands on its own line, and a term that repeats it.
+  const described = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\nname:: 成员名称\nweight::\n成员名称\n' }));
+  assert.ok(described.ok, JSON.stringify(described));
+  assert.deepEqual(
+    described.model.blocks.filter((b) => b.kind === 'list_item').map((b) => [b.raw, b.reportedLine, b.origins[0]?.selector ?? null]),
+    [['name', 5, 'l/5'], ['成员名称', 5, 'l/5'], ['weight', 6, 'l/6'], ['成员名称', 7, 'l/7']],
+  );
+
+  // A list item whose attribute expands to what the next item says literally: each cites its own line, whichever family
+  // expands it, so the two family copies never cite different lines for the same item.
+  for (const product of ['APV', 'NSAE']) {
+    const twin = await compileAdoc(group({ 'book.adoc': `= Synthetic\n\n== 说明\n\n* {product} 支持热备\n* ${product} 支持热备\n` }, { product }));
+    assert.ok(twin.ok, JSON.stringify(twin));
+    assert.deepEqual(
+      twin.model.blocks.filter((b) => b.kind === 'list_item').map((b) => b.origins[0]?.selector ?? null),
+      ['l/5', 'l/6'],
+      `product=${product}`,
+    );
+  }
+
+  // A callout line in a listing and an indented literal block: each cites the line it is written on, and the cursor
+  // offset the engine's delimiter reporting causes is disclosed as a remap.
+  const marks = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\n----\n<1> 保存\n----\n\n 保存配置。\n' }));
+  assert.ok(marks.ok, JSON.stringify(marks));
+  assert.equal(marks.model.blocks.find((b) => b.kind === 'listing')?.origins[0]?.selector, 'l/6');
+  assert.equal(marks.model.blocks.find((b) => b.kind === 'literal')?.origins[0]?.selector, 'l/9');
+  assert.deepEqual(marks.report.remapped.map((r) => [r.reported_line, r.verified_line]), [[5, 6]]);
+
+  // A checklist item: the engine drops the `[x]` mark, so no source line folds to its text. Nothing is cited and the
+  // block is reported — the neighbour's line is never borrowed.
+  const checklist = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\n* [x] 保存\n* [ ] 保存\n' }));
+  assert.ok(checklist.ok, JSON.stringify(checklist));
+  const items = checklist.model.blocks.filter((b) => b.kind === 'list_item');
+  assert.deepEqual(items.map((b) => b.origins.length), [0, 0]);
+  assert.deepEqual(checklist.report.unverified.map((u) => [u.kind, u.reported_line]), [['list_item', 5], ['list_item', 6]]);
+});
+
+test('a paragraph the engine reports at the endif of a removed branch still cites the line it was read from', async () => {
+  const out = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\n保存配置。\nifdef::brand-apv[]\nAPV 设备另需重启。\nendif::[]\n\n保存配置。\n' }));
+  assert.ok(out.ok, JSON.stringify(out));
+  // The window is counted in visible lines, so the line before the removed branch is still reachable, and a candidate
+  // across a blank line is another block's line: the first paragraph cites l/5, the second l/10.
+  assert.deepEqual(
+    out.model.blocks.filter((b) => b.kind === 'paragraph').map((b) => [b.reportedLine, b.origins[0]?.selector ?? null]),
+    [[8, 'l/5'], [10, 'l/10']],
+  );
+  assert.deepEqual(out.report.remapped.map((r) => [r.reported_line, r.verified_line]), [[8, 5]], 'the cursor offset is disclosed');
+  assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
 });

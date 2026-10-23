@@ -386,21 +386,34 @@ line), and the verbatim text that text@1 would return is kept with it. Source li
 another file, become separate origins: no continuous range is invented. NUL removal and CR/LF splitting follow text@1,
 while the file digest stays over the original bytes.
 
-A match is tried in two passes. The first is the exact spelling: the source line as written, or that line with the
-structural marker of the context taken off (the equals signs of a heading, a list bullet, the `term::` separator of a
-description list, an admonition label, the cell separators of a table row, the `ifdef::name[...]` wrapper of a retained
-single-line branch, in any order). The second pass runs only when nothing matched exactly, and compares the words
-instead of the spelling: `text.ts plainText` drops tags, decodes character references, reduces an inline macro to its
-text, resolves escapes, drops inline markup marks, folds the engine's typographic replacements back to ASCII and
-collapses white space, while the engine itself expands the candidate line's attribute references. The engine's own text
-of a list item, a description-list item or a table cell is converted, so this fold is what lets those blocks be cited at
-all; the fold locates a line and never becomes a citation or a statement, and a block whose inline conversion the fold
-cannot invert (a menu path, a key cap, a footnote number) stays uncited and is reported.
+A match is tried in two passes and both are collected before anything is decided. The exact pass compares the source line
+as written, or that line with the narrow marker of the context taken off (a heading's equals signs, a `*`/`-`/`.`/`1.`
+list bullet, an admonition label, a table row's cell separators). The folded pass runs too, and compares words instead of
+spelling: `text.ts plainText` decodes character references, reduces an inline macro to its text, resolves escapes, drops
+inline markup marks, folds the engine's typographic replacements back to ASCII and collapses white space, while the engine
+itself expands the candidate line's attribute references; it strips every structural marker the source can carry (any list
+bullet, a description list's `term::` separator, an admonition label, a heading's equals signs, a table row's cell
+separators and the `ifdef::name[...]` wrapper of a retained single-line branch, in any order). The engine's own text of a
+list item, a description-list item or a table cell is converted, so the fold is what lets those blocks be cited at all; it
+locates a line and never becomes a citation or a statement, and a block whose inline conversion the fold cannot invert (a
+menu path, a key cap, a footnote number, a checkbox mark) stays uncited and is reported. Both passes' candidates are kept,
+because a neighbouring line that literally holds the engine's words — an admonition whose label the engine dropped, an
+item whose attribute expands to what the next item says — is an exact match for the wrong line, and had the exact pass
+alone decided, the folded pass that finds the block's own line would never have run. The one exception is the exact pass
+finding the cursor's own line: that line holds this block's text as written where the engine says the block is, and
+nothing stronger exists, so the folded pass is not run (on a table-dense book it would cost more than the rest of the
+expansion together). For the same reason the engine's attribute substitution is asked only of a candidate line that
+carries a `{`.
 
-When several nearby lines hold this exact text, the one at the engine's own cursor is the block's line: the text is
-proven on every candidate, so only the position is chosen, and the choice is disclosed (`disambiguated`,
-`disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`). A cursor that is
-none of the candidates leaves the choice open and cites nothing.
+The window is counted in visible lines: the cursor's own line, three visible lines before it and two after, so a block the
+engine reports at the `endif` of a removed branch still reaches the line it was read from. A candidate is used only when
+the engine's cursor can belong to it: every line between them is one the reader consumes without producing a block (a
+conditional control, a block delimiter, a block attribute or title line, a heading, an attribute entry, an include) or a
+line a condition removed. A blank line is not one of them, because a blank line ends a paragraph: a candidate on the other
+side of one is another block's line and is never cited. When several candidates are left, the one at the cursor is the
+block's line — the text is proven on every candidate, so only the position is chosen — and the choice is disclosed
+(`disambiguated`, `disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`);
+when none of them is at the cursor, nothing is cited. A cursor that reaches no candidate leaves the block uncited too.
 
 A block or cell that cannot be verified uniquely has no reference. `unverified_count` gives the total, `unverified` keeps
 the first 100 diagnostics and `unverified_examples_truncated` is true past that. The model keeps the empty `origins`

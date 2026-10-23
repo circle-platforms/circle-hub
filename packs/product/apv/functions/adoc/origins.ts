@@ -44,6 +44,8 @@ const ADMONITION = /^[A-Z][A-Z_0-9]*:\s+/;
 const INLINE_CONDITION = /^\s*(?:ifdef|ifndef)::([^\[]*)\[(.*)\]\s*$/;
 const DESCRIBED = /^(.+?)\s*(?::{2,4}|;;)\s*(.*)$/;
 const BULLET = /^\s*(?:\*+|-|\+|\.+|[0-9]+[.)]|[a-z][.)])\s+/i;
+/** The narrow marker rule the exact pass has always used; the folded pass uses BULLET and the other variants. */
+const EXACT_BULLET = /^\s*(?:\*+|[-.]|[0-9]+[.)]) +/;
 const CELL = /(?<!\\)\|/;
 
 /**
@@ -81,12 +83,65 @@ function lineMatches(kind: string, expected: string, source: string, expand: (te
   if (!folded) {
     if (kind === 'section' || kind === 'floating_title') return HEADING.test(source) && source.replace(HEADING, '') === expected;
     if (kind === 'table_cell') return source.split(CELL).some((cell) => cell.trim() === expected);
-    if (kind === 'list_item') return source.replace(/^\s*(?:\*+|[-.]|[0-9]+[.)]) +/, '') === expected;
+    if (kind === 'list_item') return source.replace(EXACT_BULLET, '') === expected;
+    if (kind === 'admonition') return source.replace(ADMONITION, '') === expected;
     return source === expected;
   }
   const want = (CONVERTED.has(kind) ? plainConverted : plainText)(expected);
   if (want === '') return false;
-  return variantsOf(kind, source).some((variant) => plainText(expand(variant)) === want);
+  // The engine's attribute substitution is asked only of a line that carries a reference: expanding every candidate line
+  // of every block costs more than the rest of the expansion together on a table-dense book.
+  return variantsOf(kind, source).some((variant) => plainText(variant) === want || (variant.includes('{') && plainText(expand(variant)) === want));
+}
+
+/**
+ * A line the engine's reader consumes without producing a block of its own, so a cursor may sit past it: a conditional
+ * control, a block delimiter, a block attribute or title line, a heading, an attribute entry, an include line — and a
+ * line a condition removed, which is not visible at all. A blank line is NOT one of them: it ends a paragraph, so a
+ * cursor never sits past one, and a candidate on the other side of a blank line is another block's line.
+ */
+const SKIPPABLE: ReadonlyArray<RegExp> = [
+  /^\s*(?:ifdef|ifndef|ifeval|endif)::/,
+  /^\s*(?:\|={2,}|-{2,}|={2,}|_{2,}|\.{2,}|\+{2,}|\*{2,}|"{2,})\s*$/,
+  /^\s*\[[^\]]*\]\s*$/,
+  /^\s*\.[^\s.]/,
+  /^\s*={1,6}\s+\S/,
+  /^\s*:[^\s:][^:]*!?:/,
+  /^\s*include::\S+\[.*\]\s*$/,
+];
+
+/** Whether the engine's cursor can belong to a block whose text starts at `at`: every line between is one the reader
+ * consumes without producing a block. This is what keeps a neighbouring line that happens to hold the same words from
+ * being cited for a block the engine put elsewhere. */
+function reachableFrom(cursor: number, at: number, mapped: MappedLine[], visible: Set<number>): boolean {
+  for (let index = Math.min(cursor, at) + 1; index < Math.max(cursor, at); index++) {
+    if (!visible.has(index)) continue;
+    const line = mapped[index];
+    // A cursor past the last mapped line reaches nothing: the line between is unknown, so it is not skippable.
+    if (line === undefined) return false;
+    if (!SKIPPABLE.some((pattern) => pattern.test(line.text))) return false;
+  }
+  return true;
+}
+
+/** The visible lines a candidate may start on: the cursor's own line, three visible lines before it and two after. The
+ * window is counted in visible lines, so a block whose cursor sits on the `endif` of a removed branch still reaches the
+ * line it was read from. */
+function windowStarts(cursor: number, mapped: MappedLine[], visible: Set<number>): number[] {
+  const out: number[] = [];
+  let seen = 0;
+  for (let at = cursor; at >= 0 && seen < 4; at--) {
+    if (!visible.has(at)) continue;
+    out.push(at);
+    seen++;
+  }
+  seen = 0;
+  for (let at = cursor + 1; at < mapped.length && seen < 2; at++) {
+    if (!visible.has(at)) continue;
+    out.push(at);
+    seen++;
+  }
+  return out;
 }
 
 export function verifyOrigin(
@@ -101,51 +156,60 @@ export function verifyOrigin(
   if (raw === '' || !Number.isInteger(reported) || reported! < 1) return { origins: [], flat: null, reason: '引擎没有可逐字回核的内容或行号', chosenAmong: 0 };
   const expected = raw.split('\n');
   const { originals, expand = IDENTITY } = context;
-  const candidatesAt = (folded: boolean): Array<{ rows: MappedLine[]; flat: number }> => {
+  const cursor = reported! - 1;
+  const starts = windowStarts(cursor, mapped, visible);
+  const collectAt = (folded: boolean): Array<{ rows: MappedLine[]; flat: number }> => {
     const found: Array<{ rows: MappedLine[]; flat: number }> = [];
-    // Fixed, narrow recovery for the observed delimiter/conditional cursor offsets. No whole-document fuzzy search.
-    for (let at = Math.max(0, reported! - 3); at <= Math.min(mapped.length - 1, reported! + 1); at++) {
-      if (!visible.has(at)) continue;
+    for (const at of starts) {
       const rows: MappedLine[] = [];
-      let cursor = at;
+      let walked = at;
       for (const line of expected) {
-        while (cursor < mapped.length && !visible.has(cursor)) cursor++;
-        if (cursor >= mapped.length) break;
-        const actual = mapped[cursor];
+        while (walked < mapped.length && !visible.has(walked)) walked++;
+        if (walked >= mapped.length) break;
+        const actual = mapped[walked];
         if (!lineMatches(kind, line, actual.text, expand, folded)) break;
-        rows.push(actual); cursor++;
+        rows.push(actual); walked++;
       }
       if (rows.length === expected.length) found.push({ rows, flat: at + 1 });
     }
     return found;
   };
-  let candidates = candidatesAt(false);
-  let folded = false;
-  if (candidates.length === 0) {
-    candidates = candidatesAt(true);
-    folded = true;
-  }
-  // The same text on several lines near the cursor (a repeated sentence, a repeated table cell): every candidate holds
-  // this exact text, so the engine's own cursor decides which line the block came from, and the choice is disclosed in
-  // the report. Nothing is forced onto a line that does not hold the text.
-  const among = candidates.length;
-  if (among > 1) {
-    const atCursor = candidates.filter((candidate) => candidate.flat === reported);
-    if (atCursor.length === 1) candidates = atCursor;
-  }
-  if (candidates.length !== 1) {
+  // The exact pass decides on its own only when it found the engine's cursor's own line: that line holds this block's
+  // text as written where the engine said the block is, and nothing stronger exists. Every other case collects both
+  // passes before deciding, because a neighbouring line that literally holds the engine's words (an admonition label, an
+  // expanded attribute, a marker) is an exact match for the wrong line, and had the exact pass alone decided, the folded
+  // pass that finds the block's own line would never have run.
+  const byFlat = new Map<number, { rows: MappedLine[]; flat: number }>();
+  const exact = collectAt(false);
+  for (const candidate of exact) byFlat.set(candidate.flat, candidate);
+  const foldedOnly = exact.some((candidate) => candidate.flat === reported) ? [] : collectAt(true).filter((candidate) => !byFlat.has(candidate.flat));
+  for (const candidate of foldedOnly) byFlat.set(candidate.flat, candidate);
+  const matched = [...byFlat.values()].sort((a, b) => a.flat - b.flat);
+  const admissible = matched.filter((candidate) => reachableFrom(cursor, candidate.flat - 1, mapped, visible));
+  if (admissible.length === 0) {
     return {
       origins: [],
       flat: null,
       chosenAmong: 0,
-      reason: candidates.length > 0
-        ? `候选行不唯一（${candidates.length} 行都有这段文字，引擎报告的第 ${reported} 行不在其中或不止一行相符），不能把相同文字硬归到某一行`
-        : folded
-          ? 'sourcemap 邻近行里没有原文与本块的文字相符（已按结构标记、属性展开、行内标记与宏、字符引用和排版替换归一后再找）'
-          : 'sourcemap 附近没有逐字相符的原文',
+      reason: matched.length > 0
+        ? `有 ${matched.length} 行与这段文字相符，但都与引擎报告的第 ${reported} 行隔着正文行，不能确定是哪一行`
+        : foldedOnly.length > 0 || byFlat.size > 0
+          ? 'sourcemap 邻近行里没有原文与本块的文字相符'
+          : 'sourcemap 邻近行里没有原文与本块的文字相符（已按结构标记、属性展开、行内标记与宏、字符引用和排版替换归一后再找）',
     };
   }
-  const chosen = candidates[0];
-  const origins = ranges(chosen.rows, input, originals);
-  return { origins, flat: origins.length ? chosen.flat : null, reason: origins.length ? '' : '候选映射与重新读取的原件行不符', chosenAmong: origins.length > 0 ? among : 0 };
+  // The same text on several admissible lines: the engine's own cursor decides, and the report says a choice was made.
+  const among = admissible.length;
+  const chosen = among > 1 ? admissible.filter((candidate) => candidate.flat === reported!) : admissible;
+  if (chosen.length !== 1) {
+    return {
+      origins: [],
+      flat: null,
+      chosenAmong: 0,
+      reason: `候选行不唯一（${among} 行都有这段文字，引擎报告的第 ${reported} 行不在其中），不能把相同文字硬归到某一行`,
+    };
+  }
+  const one = chosen[0]!;
+  const origins = ranges(one.rows, input, originals);
+  return { origins, flat: origins.length ? one.flat : null, reason: origins.length ? '' : '候选映射与重新读取的原件行不符', chosenAmong: origins.length > 0 ? among : 0 };
 }
