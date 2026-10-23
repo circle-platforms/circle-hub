@@ -56,7 +56,7 @@ export function parseSummary(summary: string, categories: readonly TemplateCateg
  * that shows the clipped, id-only form but no readable '全文 <引用>' is a format this script does not recognize:
  * that is an error to fix here and now, not an unknown. */
 export function truncationReference(summary: string): string | null {
-  const at = /全文 ([^ ；]+)/.exec(summary);
+  const at = /全文 (rec:[0-9a-f]{64}#\/items\/[0-9]+)(?=）)/.exec(summary);
   if (at !== null) return at[1]!;
   if (summary.includes('（只列编号）')) {
     throw new Error(`摘要已截断（只列编号），但认不出全文引用的格式：${summary.slice(0, 200)}`);

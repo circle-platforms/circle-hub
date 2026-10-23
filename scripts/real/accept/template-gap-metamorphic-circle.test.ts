@@ -286,3 +286,8 @@ test('review 3: every mixed-document run has distinct root ids with a batch of f
     }
   }
 });
+
+test('review 5: clip references exclude the closing full-width parenthesis', () => {
+  const reference = `rec:${'a'.repeat(64)}#/items/12`;
+  assert.equal(truncationReference(`用例 1 个；缺 21 个模板类别：功能…（共 480 个字符，全文 ${reference}）`), reference);
+});
