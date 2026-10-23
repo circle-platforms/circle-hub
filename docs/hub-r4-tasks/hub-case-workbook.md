@@ -14,7 +14,7 @@
 3. 生成器（functions/generate.ts，零依赖，只用 Node 内置；包的检查和 Circle 脚本导入同一个模块）：输入为槽位、条目字段（autoid、标题、步骤原文）、合约身份和配置；输出 xlsx 字节。zip 只用 STORE、固定时间戳、固定成员次序、自算 CRC32；只用内联字符串，C 列是数字，A 列是文本；行序为身份行、表头、说明行（C=0，E–I 空，D 写运行号和构建，不写人名）、用例各步（autoid 只在第一行且该行 E 不空，每条期望一行字面断言紧跟它的 after 步骤）、空行、收尾行；范围名是工作簿级、指向表头行。OOXML 的写法参照 circle-packs 里 10-13 在台架上跑通过的 xlsx.mjs（只读参照），差异逐条写进 README。
 4. Circle 脚本（scripts/）：normalize-mindmap.ts 把本地导出文件规整成 kityminder 形状，打印两边的摘要；generate-workbook.ts 读本地保存的已满足提交、条目字段、合约身份和配置，写出 xlsx，打印 sha256 和生成器版本。只用 Node 内置，不联网。SKILL.md 写明这些输入从哪次工具调用的回答里取。
 5. 输入槽 workbook（角色待判定产物，接受 xlsx 媒体类型，选填）和要求项 workbook_verified（事实、阻断）；没绑定时记未知（缺输入）。
-6. 核验检查（functions/workbook.ts，独立读取器，不调用生成器去解析）：设计第 3 节第 1 到 8 条；再用生成器从本次提交的槽位重算，字节相等才支持。支持结论的 data 写 {sha256, autoids, bed, build, generator}（任务 3 的接口），其中 bed 是 {id, manifest_sha256}：id 是台架清单里的台架名，manifest_sha256 是本次运行绑定的台架清单的字节摘要；不带工作簿内容；生成器版本与本运行的包版本不符时写明。
+6. 核验检查（functions/workbook.ts，独立读取器，不调用生成器去解析）：设计第 3 节第 1 到 8 条；再用生成器从本次提交的槽位重算，字节相等才支持。支持结论的 data 写 {sha256, autoids, bed, build, generator, plan_run}（任务 3 的接口），其中 bed 是 {id, manifest_sha256}：id 是台架清单里的台架名，manifest_sha256 是本次运行绑定的台架清单的字节摘要；plan_run 是工作簿据以生成的已满足计划运行，说明行的 D 和参数 plan_run 都要等于它（它和本运行的 predecessor 相等由派发核）；不带工作簿内容；生成器版本与本运行的包版本不符时写明。
 7. Hub 侧生成计划的要求项（deterministic_plan）已在 hub-case-runtime 里随 2.0 移除（决定 26：Hub 不生成内容）；这里在 README 和 SKILL.md 里写两次运行的步骤。
 
 ## 必须有的测试
