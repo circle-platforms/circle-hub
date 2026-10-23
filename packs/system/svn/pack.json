@@ -1,0 +1,20 @@
+{
+  "schema": "pack@1",
+  "id": "svn",
+  "version": "1.0.0",
+  "kind": "system",
+  "title": "SVN 只读系统包",
+  "description": "按修订号读取仓库原件",
+  "files": [
+    {
+      "path": "functions/webdav.ts",
+      "sha256": "44fbba1f07f3e867f9a8a9185bac7d64b424fff6b201547aa0409093de451185",
+      "size": 8813
+    },
+    {
+      "path": "system.json",
+      "sha256": "cc6eb38041afb0c4d21c330a5a9bdf6cf573be0a4510363439f415e28f84cf15",
+      "size": 2793
+    }
+  ]
+}

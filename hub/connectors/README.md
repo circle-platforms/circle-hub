@@ -567,3 +567,5 @@ source).
   every request)? Now a reset ends stops and cool-downs only; a new credential is used at the next login.
 - Should the first request carrying a new static value also be marked in the session entry, as a login is, so that two
   processes never both send a new (possibly wrong) value? Now each process sends it once at most (Limits).
+
+Pack sandbox error messages reach only the internal administrator-note reason channel after redaction, never persisted read-manifest reasons, nested pack inputs or public tool output (nested diagnostics stay in the administrator log); a terminal plan with no requests or nested reads may use its existing projection error to explain the refusal (the original sentinel is `unavailable`, and no projected success or artifact is accepted).

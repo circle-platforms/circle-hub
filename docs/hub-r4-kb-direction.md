@@ -73,3 +73,28 @@
 - 现在的手册生产器读 md 和 catalog.json，只把命令锚挂到 `/commands/...`，其余段落留在根下未归位。
 - 候选层和观察层的记录形状已经有了（`hub/knowledge/layers.ts`），但运行里的提交还没有写候选层的通道，K04 R[6] 的归位提议核验也没有。
 - 版本别名在产品包的 `names` 里，随包的版本发布，修改天然留版本、可以下架回滚。是否还要单独的别名修订记录，在任务里核对。
+- 所有者 10-23 告知：adoc 原件在手册库所在的那台服务器上。集成者只读核对：
+  - 手册库的 WebDAV 只暴露发布目录（cli、app、spec、qa、product、release），没有 adoc 的输入目录；
+  - 这台 Mac 上没有那台服务器的 SSH 配置。
+  
+  所以要读 adoc 原件，还要所有者给出读法：在 WebDAV 上只读暴露 adoc 输入目录，或者给只读的 SSH。
+
+## 现在的 md 是怎么生成的（读 InfoTest 的说明和脚本得到的事实，没有运行或复制）
+
+InfoTest 的 `docs/HANDOFF_manual_catalog_2.90.md` 和 `scripts/maintenance/adoc2md.py` 描述了服务器上的转换链：
+
+1. 输入一个目录，递归找出所有 adoc，按所在目录分组（例如 `cli_cn`）。
+2. 同组的各章按文件名里的数字排序后合并。
+3. 合并稿经 asciidoctor 转成 DocBook 5，再经 pandoc 转成 GFM，得到 `<组名>.md`。
+4. 各章再单独经 asciidoctor 转成 DocBook，从里面抽出命令目录，写成同目录的 `<组名>.catalog.json`：签名、取值域、示例（只作参考）。另写一份对账报告。
+5. catalog 的身份记录：各章 adoc 的 sha256，加本轮 md 的 sha256。没有时间戳，同样的输入产出相同的字节。
+6. fail-closed：签名锚定不到、覆盖不全，就算这一组转换失败；下游发现 catalog 缺失、身份对不上（md 被单独改过），就拒收这一版、保留旧的。
+7. APP 手册的复杂多行表格被 pandoc 写成 md 里的原始 HTML，签名因此有两种写法（GFM 粗体和 HTML 里的 strong）。
+8. 有的章节源文件里混有 NUL 字节，一路带进 md。
+
+对 Hub 的 adoc 生产器（计划 K4）的含义：
+
+- 直接读各章 adoc，章节层级、表格、签名块都能从 adoc 结构里拿到，不必经过 DocBook 和 pandoc 两次转换，也就没有原始 HTML 表格这类转换伪影。
+- 身份耦合、同批换代、fail-closed 这三条纪律照搬为 Hub 的规则：生产器记下每章 adoc 的摘要，组成记录里能查到；一组里缺章或者解析失败，就是这组生产失败，保留旧根。
+- 章节的合并次序（按文件名里的数字）是转换链的约定，要照样遵守，或者由文件里的 include 决定。
+- NUL 字节这类源数据问题照实报，不在生产器里悄悄清掉。

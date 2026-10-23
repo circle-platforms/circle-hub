@@ -183,7 +183,7 @@ Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节
 `POST /v1/tools/{name}/call` body 为 `{"args":{...},"idempotencyKey":"<每次逻辑调用的稳定键，8–200 字符>"}`。读工具返回 200：
 
 ```json
-{"result":{"build":"Rel_PHOTON_10_5_0_101","commands":[]},
+{"result":{"build":"Rel_PHOTON_10_6_0_101","commands":[]},
  "evidence":[{"evidenceId":"knr_...","sha256":"<64位 SHA-256>"}]}
 ```
 
@@ -261,7 +261,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 索引批量发布与当前权限过滤沿上述 B 设计实现；源 head 的 generation 用来区分再次观察到旧字节，旧快照成员在升级时回填保留。
 
-`npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
+`npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.6，正式构建 `Rel_PHOTON_10_6_0_101` / `Rel_PHOTON_10_6_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
 
 ## 第二阶段：技能包约定与 RPC 边界
 

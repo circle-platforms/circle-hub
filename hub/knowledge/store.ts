@@ -52,6 +52,11 @@ export const PART_SHAPES = {
 export type PartSchema = keyof typeof PART_SHAPES;
 export type PartBody<S extends PartSchema> = z.infer<(typeof PART_SHAPES)[S]>;
 
+/** The indexed key of a contradiction relation between two claims (B01 R[2]): a claim record whose body says
+ * relation: 'contradicts' and the other claim's tree address. The candidate layer (another terminal) proposes these;
+ * a deterministic rule may too. Reading computes the flag, never adjudicates (K-direction §5). */
+export const CONTRADICTION = 'knowledge.claim.contradiction';
+
 /** Index keys this package writes (all under `knowledge.`, plus the records package's `action.kind`). */
 export const INDEX = {
   node: 'knowledge.node',
@@ -64,6 +69,7 @@ export const INDEX = {
   produceRoot: 'knowledge.produce.root',
   produceProduct: 'knowledge.produce.product',
   sync: 'knowledge.sync',
+  contradiction: CONTRADICTION,
   build: 'knowledge.build',
   buildProduct: 'knowledge.build.product',
   buildBase: 'knowledge.build.base',
