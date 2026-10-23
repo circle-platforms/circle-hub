@@ -21,6 +21,6 @@
 6. case-location：未标记的编号两种都读，存在的那个定种类（expected.ts:50-60）；用例粒度用“带标签或带标记”（project.ts:79，决定 18）；在配置的根之外、构建站没列出的构建名都记确定结论（后者为提示档反驳）。
 7. 验收脚本：任何以未知结束的检查判失败并打印原因（scripts/real/accept/traceability.ts、case-location.ts）；compile-check 里 Hub 缺结论算差异，逐位置比较不跳过。
 8. quality-board、template-gap：未打标签的用例单独计数；阈值写进参数模式，由 start_run 拒绝非法值；template-gap 的 covered 一律给出。
-9. case-compile、test-bed：依赖修复的要求项记“在等某一步”；清单里没有接口地址的设备在导入时拒绝；hub-job-dispatch 合并后经执行器只读查询装的构建和当前会话，记带采集时刻的观察。
+9. case-compile、test-bed：依赖修复的要求项记“在等某一步”；清单里没有接口地址的设备在导入时拒绝。装的构建和当前会话的只读探测由 `dispatch-gateway` 做（`gateway-request-ids.md` 第 13 条，`hub-device-run.md` 第 6 条），记成带采集时刻的观察；这一件只读用那份观察，不另做一套探测。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。
