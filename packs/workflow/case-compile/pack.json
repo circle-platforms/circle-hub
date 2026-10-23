@@ -383,7 +383,7 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "420fd555830bfa26360674b0ed4142e36ae1169519f681c571f6a4df85a4c5ac",
+      "sha256": "6ccc7f1016dc2c047ef57ce40cc4f733cae92f3134b1e3ddac16fb03e311039d",
       "size": 29477
     },
     {
@@ -618,7 +618,7 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "89d96809709e4e09c8fbb5ffd8e3eb72532cf52b69f3503c36e561e0dfdc9c52",
+      "sha256": "3c5e3da01d6c28a4fe624fb8efe3740a623d72117fd358a8f64a6a9ceea02299",
       "size": 29431
     },
     {
