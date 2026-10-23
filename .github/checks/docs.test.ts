@@ -276,6 +276,10 @@ describe('no machine paths in repository text', () => {
     for(const value of ['file:///c:'+'/'+'users/synthetic','"C:'+slash+'users'+slash+'synthetic"'])assert.equal(localPathProblems('code/example.ts',value).length,1,value);
   });
 
+  it('does not carry a URL exemption across following non-ASCII prose', () => {
+    for(const value of ['访问https://example.com/后在'+'/'+'home/synthetic/repo'+'下运行','打开http://192.0.2.1:8000/再看'+'/'+'Users/synthetic/project'])assert.equal(localPathProblems('docs/example.md',value).length,1,value);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
