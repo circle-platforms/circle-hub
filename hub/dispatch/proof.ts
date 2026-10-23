@@ -33,7 +33,7 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
   const proofRequirement = required.find(r => r.key === d.proof.requirement);
   if (!proofRequirement || proofRequirement.accepted_producer !== 'fact') throw new Error('派发要求项不是必需的事实要求项');
   const claims = [...result.cross_item, ...result.partitions.delivered.flatMap(i => i.requirements.filter(r => r.requirement === d.proof.requirement).flatMap(r => r.claims))]
-    .filter(c => c.requirement === d.proof.requirement && c.qualifier.nature === 'fact' && c.warrant.producer === 'function' && validClaim(c, now));
+    .filter(c => c.requirement === d.proof.requirement && c.qualifier.nature === 'fact' && c.warrant.producer === 'function' && c.warrant.id === d.proof.warrant_id && validClaim(c, now));
   if (!claims.length || claims.some(c => canonicalize(c.statement.data ?? null) !== canonicalize(claims[0].statement.data ?? null))) throw new Error('缺少一致且有效的派发核验事实');
   const data = claims[0].statement.data;
   const planRun = at(data, d.proof.plan_run);

@@ -21,6 +21,6 @@ export function definition(endpoint: string) {
     status: { pointer: '/state', exit_code: '/exit', map: { queued: { effect_outcome: 'issued' }, working: { effect_outcome: 'issued' }, ended: { action_result: 'completed', effect_outcome: 'effective' }, vanished: { effect_outcome: 'unknown' } } },
     result: { id: '/key', sha256: '/digest', submitted_at: '/submitted', items: '/rows', item_id: '/id', item_outcome: '/outcome', map: { good: 'pass', bad: 'fail' }, complete: '/complete' },
     conditions: [{ pointer: '/build', equals: { $value: 'build' } }, { pointer: '/seats', at_least: 2 }, { pointer: '/reachable', equals: true }],
-    proof: { package: 'synthetic-workflow', manifest_sha256: '/bed/manifest_sha256', requirement: 'workbook_verified', slot: 'synthetic-artifact', plan_run: '/plan_run', sha256: '/sha256', items: '/autoids', target: '/bed/id', build: '/build', generator: '/generator' },
+    proof: { package: 'synthetic-workflow', manifest_sha256: '/bed/manifest_sha256', requirement: 'workbook_verified', warrant_id: 'synthetic.verify@1', slot: 'synthetic-artifact', plan_run: '/plan_run', sha256: '/sha256', items: '/autoids', target: '/bed/id', build: '/build', generator: '/generator' },
   };
 }

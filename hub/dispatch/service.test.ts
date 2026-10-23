@@ -85,3 +85,20 @@ test('dispatch uses the latest accepted validation without relabeling an unrelat
   c.detail.submissions.push({ record: 'f'.repeat(64), received_at: c.now().toISOString(), acceptance: 'not_accepted', errors: [], result: null });
   assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
 });
+
+test('proof selects the declared function and ignores catalog and quote facts in the same requirement', async t => {
+  const c = await setup(); t.after(() => c.close());
+  const row = c.detail.latest!.result.partitions.delivered[0].requirements[0];
+  const proof = row.claims[0];
+  for (const id of ['catalog@1', 'quote@1']) row.claims.push({ ...structuredClone(proof), warrant: { ...proof.warrant, id }, statement: { verdict: 'support', text: '合成独立核对事实', data: { other: id } } });
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+});
+
+
+test('a different function cannot substitute for the declared verification function', async t => {
+  const c = await setup(); t.after(() => c.close());
+  c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = 'synthetic.other@1';
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /核验事实/);
+  assert.equal(c.calls.includes('send_blob'), false);
+});
