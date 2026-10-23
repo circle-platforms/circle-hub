@@ -16,7 +16,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     return 1;
   }
   try {
-    const tree = JSON.parse(readFileSync(treePath, 'utf8'));
+    const tree = JSON.parse(readFileSync(treePath!, 'utf8'));
     const plmPaths: string[] = [];
     for (let i = 0; i < argv.length; i++) if (argv[i] === '--plm') {
       while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) plmPaths.push(...argv[++i].split(','));
