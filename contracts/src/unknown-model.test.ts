@@ -186,3 +186,21 @@ test('reason selectors cannot reject an artifact and the generated boundary agre
     assert.equal(validate(body).valid,pack.RequirementsFile.safeParse(body).success);
   }
 });
+
+test('contract minimum work limits match the sandbox protocol and reject values below it',()=>{
+  const text=readFileSync(new URL('../../hub/rules/sandbox/sandbox.ts',import.meta.url),'utf8');
+  const body=/const MIN_LIMITS: SandboxLimits = \{([\s\S]*?)\};/.exec(text)?.[1];assert.ok(body);
+  const values=Object.fromEntries([...body.matchAll(/([A-Za-z]+):\s*([0-9_* ]+)/g)].map(match=>[match[1],match[2].split('*').reduce((value,part)=>value*Number(part.replaceAll('_','').trim()),1)]));
+  assert.deepEqual(pack.CHECK_LIMITS_MIN,values);
+  for(const [key,value] of Object.entries(values)){
+    assert.ok(pack.CheckWorkLimits.safeParse({[key]:value}).success);
+    assert.equal(pack.CheckWorkLimits.safeParse({[key]:value-1}).success,false,key);
+  }
+});
+
+test('external exit identities report identity errors rather than missing-fact errors',()=>{
+  const result=validation.ExitAudience.safeParse({external:{mapping:'rec:'+'a'.repeat(64),identity:' '}});
+  assert.equal(result.success,false);
+  if(!result.success){const errors=JSON.stringify(result.error.issues);assert.ok(errors.includes('name the mapped external identity'));assert.ok(!errors.includes('name the missing fact'));}
+  assert.ok(validation.ExitAudience.safeParse({external:{mapping:'rec:'+'a'.repeat(64),identity:'synthetic-account'}}).success);
+});

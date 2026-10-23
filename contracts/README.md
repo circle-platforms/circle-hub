@@ -292,3 +292,7 @@ already includes this scan. No extra CI job or relaxed exception is needed. Revi
 fixed on this baseline. The narrow scan still reports unrelated lease_op comparisons in `hub/server/cli-admin.ts` and
 `packs/workflow/test-bed/functions/check-bed.ts`; those remain visible failures, not exclusions or verified passes.
 Their owners must fix the generated types; this branch does not edit the pack's unknown producers.
+
+The check-work contract now names both `CHECK_LIMITS_MIN` and `CHECK_LIMITS_MAX`; source-only tests anchor each bound
+to the independent sandbox protocol constants and reject values below the lower bound. `MappedIdentity` describes a
+mapped external account; it deliberately has its own diagnostic instead of reusing the missing-fact field type.

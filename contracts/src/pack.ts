@@ -200,12 +200,13 @@ export const PublishableRequirementsFile=RequirementsFile.superRefine((file,ctx)
 
 /** These are the sandbox protocol capacities, not effect counts or effect durations. */
 export const CHECK_LIMITS_MAX={timeoutMs:120_000,memoryMb:4096,outputBytes:64*1024*1024,logBytes:1024*1024,inputBytes:128*1024*1024} as const;
+export const CHECK_LIMITS_MIN={timeoutMs:100,memoryMb:32,outputBytes:1024,logBytes:0,inputBytes:1024} as const;
 export const CheckWorkLimits=z.strictObject({
-  timeoutMs:z.number().int().min(100).max(CHECK_LIMITS_MAX.timeoutMs).optional(),
-  memoryMb:z.number().int().min(32).max(CHECK_LIMITS_MAX.memoryMb).optional(),
-  outputBytes:z.number().int().min(1024).max(CHECK_LIMITS_MAX.outputBytes).optional(),
-  logBytes:z.number().int().min(0).max(CHECK_LIMITS_MAX.logBytes).optional(),
-  inputBytes:z.number().int().min(1024).max(CHECK_LIMITS_MAX.inputBytes).optional(),
+  timeoutMs:z.number().int().min(CHECK_LIMITS_MIN.timeoutMs).max(CHECK_LIMITS_MAX.timeoutMs).optional(),
+  memoryMb:z.number().int().min(CHECK_LIMITS_MIN.memoryMb).max(CHECK_LIMITS_MAX.memoryMb).optional(),
+  outputBytes:z.number().int().min(CHECK_LIMITS_MIN.outputBytes).max(CHECK_LIMITS_MAX.outputBytes).optional(),
+  logBytes:z.number().int().min(CHECK_LIMITS_MIN.logBytes).max(CHECK_LIMITS_MAX.logBytes).optional(),
+  inputBytes:z.number().int().min(CHECK_LIMITS_MIN.inputBytes).max(CHECK_LIMITS_MAX.inputBytes).optional(),
 });
 export type CheckWorkLimits=z.infer<typeof CheckWorkLimits>;
 

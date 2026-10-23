@@ -22,11 +22,13 @@ import { ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One concrete fact the process must obtain; whitespace never describes a missing fact. */
 export const MissingFact = z.string().regex(/\S/, 'name the missing fact');
+/** A nonblank external account identity supplied by the referenced mapping. */
+export const MappedIdentity=z.string().regex(/\S/,'name the mapped external identity').describe('External account identity bound by the referenced mapping');
 /** Named request recipients are accounts or mapped external identities, never a role placeholder. */
 export const ExitAudience = z.union([
   z.strictObject({hub:z.literal(true)}),
   z.strictObject({user:UserId}),
-  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MissingFact})}),
+  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MappedIdentity})}),
 ]);
 export const UnknownExit = z.strictObject({
   action:ExitActionSchema,
