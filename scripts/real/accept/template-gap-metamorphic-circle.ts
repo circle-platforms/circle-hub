@@ -6,6 +6,7 @@
 // refused upload or start, or a summary that cannot be read in full, is recorded as unknown with its fixed reason
 // and never counts as agreement. A request after the start with no tool results (Circle compacting the
 // conversation) gets one line of text; nothing restarts or advances, and the compaction check fails.
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -65,17 +66,18 @@ export function truncationReference(summary: string): string | null {
 }
 
 /** The summary out of a hub_get_nodes answer ('内容 <引用>：<text>'; the answer may arrive JSON-encoded). */
-export function summaryOfGetNodes(result: string): string | null {
+export function summaryOfGetNodes(result: string, expectedReference?: string): string | null {
   let text = result;
-  if (text.startsWith('"')) {
-    try {
-      text = String(JSON.parse(text));
-    } catch {
-      // Not JSON-encoded: read it as it is.
-    }
+  if (text.startsWith('"')) { try { const decoded: unknown = JSON.parse(text); if (typeof decoded !== 'string') return null; text = decoded; } catch { return null; } }
+  const lines = text.trim().split(/\r?\n/); const head = /^内容 (\S+)：(.+)$/.exec(lines[0] ?? '');
+  if (!head || expectedReference !== undefined && head[1] !== expectedReference || head[2] !== labelOf('read_tier', 'model_readable')) return null;
+  const candidates: string[] = [];
+  for (const line of lines.slice(1)) {
+    if (line.startsWith('追踪 ')) break;
+    if (line.startsWith('"')) { try { const value: unknown = JSON.parse(line); if (typeof value === 'string') candidates.push(value); } catch { return null; } }
+    else if (line.startsWith('用例 ')) candidates.push(line);
   }
-  const at = /^内容 \S+：([\s\S]*)$/.exec(text.trim());
-  return at === null ? null : at[1]!;
+  return candidates.length === 1 ? candidates[0]! : null;
 }
 
 export const sha256Of = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -250,7 +252,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       lastUploaded = [];
     }
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
-      const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '');
+      const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
       if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
       else {
         const parsed = parseSummary(full, categories);
@@ -263,7 +265,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     if (truncatedKey !== undefined && reference !== undefined) {
       truncated.delete(truncatedKey);
       {
-        pendingGetNodes = { key: truncatedKey };
+        pendingGetNodes = { key: truncatedKey, reference: reference.endsWith('/summary') ? reference : `${reference}/summary` };
         // The clip names the full text's reference; the summary is read at that reference's /summary (a reference
         // that already ends in /summary is used as it is).
         const normalized = reference.endsWith('/summary') ? reference : `${reference}/summary`;
@@ -309,7 +311,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   };
   let phaseUploaded: string[] = [];
   let lastUploaded: Pending[] = [];
-  let pendingGetNodes: { key: string } | null = null;
+  let pendingGetNodes: { key: string; reference: string } | null = null;
   let phaseRunsQueued = 0;
 
   void allPending;

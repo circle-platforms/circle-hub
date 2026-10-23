@@ -100,12 +100,13 @@ test('parseSummary reads the count, the id-only list and the covered form', () =
 });
 
 test('truncationReference and summaryOfGetNodes', () => {
-  const reference = truncationReference('用例 2 个；缺 2 个模板类别（只列编号）：functional、negative；全文 rec:abc123/summary');
-  assert.equal(reference, 'rec:abc123/summary');
+  const ref = `rec:${'a'.repeat(64)}#/items/0`;
+  assert.equal(truncationReference(`用例 2 个…（共 480 个字符，全文 ${ref}）`), ref);
   assert.equal(truncationReference('用例 2 个；24 个模板类别都已覆盖'), null);
-  assert.equal(summaryOfGetNodes('内容 rec:abc123/summary：用例 2 个；缺 2 个模板类别：Functional（functional）'), '用例 2 个；缺 2 个模板类别：Functional（functional）');
-  const jsonEncoded = JSON.stringify('内容 rec:x：用例 2 个；24 个模板类别都已覆盖');
-  assert.equal(summaryOfGetNodes(jsonEncoded), '用例 2 个；24 个模板类别都已覆盖');
+  const summary = '用例 2 个；24 个模板类别都已覆盖';
+  const text = `内容 ${ref}/summary：模型可读\n原文（1 行）：\n${JSON.stringify(summary)}\n追踪 synthetic`;
+  assert.equal(summaryOfGetNodes(text, `${ref}/summary`), summary);
+  assert.equal(summaryOfGetNodes(JSON.stringify(text), `${ref}/summary`), summary);
   assert.equal(summaryOfGetNodes('别的形状'), null);
 });
 
@@ -313,4 +314,13 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   }
   assert.equal(reads, 4);
   assert.equal(scenario.check([]).find(check => check.name === '原件用例数')?.ok, true);
+});
+
+test('review 7: full-summary reads match their reference and exclude tier, page metadata and trace', () => {
+  const reference = `rec:${'b'.repeat(64)}#/items/0/summary`;
+  const summary = '用例 2 个；24 个模板类别都已覆盖';
+  const reply = (trace: string) => `内容 ${reference}：模型可读\n原文（1 行）：\n${JSON.stringify(summary)}\n追踪 ${trace}`;
+  assert.equal(summaryOfGetNodes(reply('first'), reference), summary);
+  assert.equal(summaryOfGetNodes(reply('second'), reference), summary);
+  assert.equal(summaryOfGetNodes(reply('first'), reference.replace('/0/', '/1/')), null);
 });
