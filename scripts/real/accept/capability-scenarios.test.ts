@@ -9,13 +9,17 @@ import type { LoggedTurn, Scenario } from '../lib/accept.ts';
 import caseLocation from './case-location.ts';
 import maintenanceSweep, { type SweepGold } from './maintenance-sweep.ts';
 import qualityBoard, { type BoardGold } from './quality-board.ts';
-import regressionScope, { type ScopeGold } from './regression-scope.ts';
+import regressionScope, { facetCountCheck, facetReader, type ScopeGold } from './regression-scope.ts';
 import templateGap from './template-gap.ts';
 import traceability, { type TraceGold } from './traceability.ts';
 
-const turnsOf = (result: string): LoggedTurn[] => [
+const FACET_SOURCE = `src:${'a'.repeat(64)}`;
+const facetValue = (count = 0) => ({ schema: 'facet-view@1', product: 'synthetic', build: { build: 'Later', root: 'b'.repeat(64) }, kind: 'case', by: ['commands'], rows: count ? [{ values: { commands: null }, count }] : [], total: count, truncated: false, skipped: 0, notes: [] });
+const sourceResult = (value: unknown) => `内容 ${FACET_SOURCE}：模型可读\n原文（100 个字符）：\n${JSON.stringify(value)}\n追踪 synthetic`;
+const turnsOf = (result: string, count = 0): LoggedTurn[] => [
   { index: 0, toolResults: [], tools: ['hub_start_run'] },
-  { index: 1, toolResults: [{ id: 'r1', text: result, isError: false }], tools: [] },
+  { index: 1, toolResults: [{ id: 'r1', text: `${result}\n- 线索 ${FACET_SOURCE}（输入 facets）`, isError: false }], tools: ['hub_get_nodes'] },
+  { index: 2, toolResults: [{ id: 'r2', text: sourceResult(facetValue(count)), isError: false }], tools: [] },
 ];
 
 const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
@@ -25,6 +29,7 @@ const turn = (index: number) => ({ index, system: null, messages: [], tools: [],
 
 describe('regression-scope scenario', () => {
   const gold: ScopeGold = {
+    caseCommandsUnplaced: 0,
     product: 'apv',
     earlier: 'Rel_APV_10_6_1_56',
     later: 'Rel_APV_10_6_1_57',
@@ -41,9 +46,10 @@ describe('regression-scope scenario', () => {
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' } } } },
+      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' }, facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=commands' } } } },
     ]);
-    assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
+    assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE } }]);
+    assert.deepEqual(scenario.respond({ ...turn(2), toolResults: turnsOf('运行 run_synthetic')[2].toolResults }), [{ text: '对比完成。' }]);
   });
   test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
     const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（modified）、/commands/demo/show（modified）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
@@ -60,6 +66,7 @@ describe('regression-scope scenario', () => {
 
 describe('maintenance-sweep scenario', () => {
   const gold: SweepGold = {
+    caseCommandsUnplaced: 0,
     product: 'apv',
     earlier: 'Rel_APV_10_6_1_56',
     later: 'Rel_APV_10_6_1_57',
@@ -71,7 +78,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' } } } },
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' }, facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_56?kind=case&by=commands' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {
@@ -176,8 +183,8 @@ describe('quality-board scenario', () => {
 describe('product line unbinding in start_run inputs', () => {
   test('start_run 输入里没有 product', async () => {
     const scenarios = [
-      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
-      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      regressionScope({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
       traceability({ product: 'apv', build: 'b1', defects: [] }),
       qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
     ];
@@ -218,8 +225,8 @@ describe('unversioned pack names in start_run inputs', () => {
     const allScenarios = [
       caseLocation({ document: '90001', product: 'apv', line: '10.6.1' }),
       templateGap({ document: '90001', cases: 10 }),
-      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
-      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      regressionScope({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
       traceability({ product: 'apv', build: 'b1', defects: [] }),
       qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
     ];
@@ -236,4 +243,57 @@ describe('unversioned pack names in start_run inputs', () => {
       assert.ok(!pack.includes('@'), `${s.name} 的 pack 不应包含 @ 版本号，实际为 ${pack}`);
     }
   });
+});
+
+for (const name of ['regression-scope', 'maintenance-sweep']) test(`${name} validates independent count before client work and refuses prior-run disclosure exports`, () => {
+  const base = { product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], cases: [], caseCommandsUnplaced: 0 };
+  const make = (value: unknown) => name === 'regression-scope' ? regressionScope(value as ScopeGold) : maintenanceSweep(value as SweepGold);
+  assert.throws(() => make({ ...base, caseCommandsUnplaced: undefined }), /caseCommandsUnplaced.*totals.unplaced/);
+  assert.throws(() => make({ ...base, caseCommandsUnplaced: -1 }), /caseCommandsUnplaced/);
+  assert.throws(() => make({ ...base, unplaced: 4 }), /unplacedRun/);
+  for(const actual of [4,7])assert.throws(()=>make({...base,unplaced:4,unplacedRun:{run:{groups:[{kind:name,message:`有 ${actual} 个用例没有解析出命令`}]}}}),(error:any)=>error.reason==='live_replay');
+});
+
+for (const [name, make] of [
+  ['regression-scope', () => regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], caseCommandsUnplaced: 4 })],
+  ['maintenance-sweep', () => maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [], caseCommandsUnplaced: 4 })],
+] as const) test(`${name} must read bound facets and compare with independent count`, () => {
+  const scenario = make();
+  assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE } }]);
+  const check = (count: number) => scenario.check(turnsOf('运行 run_synthetic', count)).find((c) => c.name === '分面未归位数与独立抽取相符')!;
+  assert.equal(check(4).ok, true); assert.equal(check(7).ok, false); assert.deepEqual([check(4).expected, check(4).actual], ['4', '4']);
+  assert.equal(scenario.check(turnsOf('运行 run_synthetic').slice(0, 2)).find((c) => c.name === '分面未归位数与独立抽取相符')?.ok, false);
+});
+test('facet source pagination is followed and reassembled before comparing', () => {
+  const value = JSON.stringify(facetValue(4)); const split = 90;
+  const page1 = `内容 ${FACET_SOURCE}：模型可读\n原文（${value.length} 个字符）：\n${value.slice(0, split)}\n部分：下一页：get_nodes {"reference":"${FACET_SOURCE}","cursor":"next-synthetic"}\n追踪 synthetic`;
+  const page2 = `内容 ${FACET_SOURCE}：模型可读\n原文（共 ${value.length} 个字符、1 行），从第 1 行的第 ${split + 1} 个字符起：\n（接上页：第 1 行的前 ${split} 个字符在上一页）\n${value.slice(split)}\n追踪 synthetic`;
+  const read = facetReader();
+  read({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }, '完成');
+  assert.deepEqual(read({ ...turn(2), toolResults: [{ id: 'page1', text: page1, isError: false }] }, '完成'), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE, cursor: 'next-synthetic' } }]);
+  const logs = [...turnsOf('运行 run_synthetic').slice(0, 2), { index: 2, toolResults: [{ id: 'page1', text: page1, isError: false }], tools: ['hub_get_nodes'] }];
+  assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
+  logs.push({ index: 3, toolResults: [{ id: 'page2', text: page2, isError: false }], tools: [] });
+  assert.equal(facetCountCheck('synthetic', 4, logs).ok, true);
+});
+test('truncated, skipped, duplicate null groups and wrong source pages cannot prove a count', () => {
+  const raw = facetValue(4);
+  for (const value of [{ ...raw, truncated: true }, { ...raw, skipped: 1 }, { ...raw, rows: [...raw.rows, ...raw.rows] }]) {
+    const logs = turnsOf('运行 run_synthetic'); logs[2].toolResults[0].text = sourceResult(value);
+    assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
+  }
+  const logs = turnsOf('运行 run_synthetic', 4); logs[2].toolResults[0].text = logs[2].toolResults[0].text.replace(FACET_SOURCE, `src:${'c'.repeat(64)}`);
+  assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
+});
+test('scope and sweep answers are never supplied or contaminated by placed facet rows', () => {
+  const path = '/commands/widget/add'; const id = 'synthetic-doc:case';
+  const scope = regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [path], removed: [], inScope: [{ id, path }], outOfScope: [], caseCommandsUnplaced: 0 });
+  const sweep = maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [{ id, path, removed: false }], caseCommandsUnplaced: 0 });
+  const logs = turnsOf(`运行 run_synthetic。条目 ${id} ${path} 有字段差异。`);
+  const facet = { ...facetValue(), rows: [{ values: { commands: '/commands/widget/other' }, count: 1 }], total: 1, notes: [`${id} ${path} 有字段差异`] };
+  logs[2].toolResults[0].text = sourceResult(facet);
+  assert.ok(allOk(scope, logs)); assert.ok(allOk(sweep, logs));
+  logs[1].toolResults[0].text = `运行 run_synthetic。条目 ${id} 没有原因。\n- 线索 ${FACET_SOURCE}（输入 facets）`;
+  assert.ok(scope.check(logs).some((v) => !v.ok && v.name.includes('范围里的用例')));
+  assert.ok(sweep.check(logs).some((v) => !v.ok && v.name.includes('命令已改')));
 });

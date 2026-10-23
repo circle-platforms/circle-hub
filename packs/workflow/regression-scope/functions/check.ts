@@ -139,7 +139,7 @@ function inScope(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
+  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
   return out;
 }
 

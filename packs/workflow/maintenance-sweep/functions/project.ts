@@ -6,6 +6,7 @@
 import { readParameters, sweepOf, type SweepItem } from './sweep.ts';
 import { PACK, guarded, isRecord } from './text.ts';
 import { parseView } from './view.ts';
+import { FacetsError, readFacets, unplacedMessage, FACETS_FIX } from './facets.ts';
 
 export const SLOT = 'impact';
 const BEHAVIOUR_SLOT = 'behaviour';
@@ -75,9 +76,10 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   // The behaviour view of the same pair of builds (optional): never in the sweep, only a clue paragraph.
   const clue = behaviourClue(input, parsed.view);
   if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
+  let facets;try{facets=readFacets({ inputs: input.inputs }, parsed.view);}catch(error){if(error instanceof FacetsError)return refusal('facets_view',error.message,error.fix);throw error;}
   const sweep = sweepOf(parsed.view, parameters);
   // The run note also names the view itself: the command-diff summary of the check cites it as its ground.
-  const note = { ...sweep.note, view: `src:${sha256}` };
+  const note = { ...sweep.note, view: `src:${sha256}`, unplaced: facets.unplaced, unplaced_build: facets.build, message: `${sweep.note.message} ${unplacedMessage(facets)}` };
   const budget = { ...LIMITS, ...limits };
   if (sweep.items.length > budget.maxItems) {
     return refusal('too_large', `要维护的用例有 ${sweep.items.length} 条，一次运行最多 ${budget.maxItems} 条`, '巡检范围只按命令定义的变化算：先看定义变化是否已经把范围缩小，再把起始构建换得离目标更近（少跨几个版本）', sweep.warnings.slice(0, 20));

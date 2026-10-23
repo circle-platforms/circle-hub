@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.6.2",
+  "version": "1.8.1",
   "kind": "workflow",
   "title": "维护巡检",
   "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）先按路径列出整个命令差（变更种类、前一构建用例数），再列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d1d37dd6a399bf99e4b321e7694441a035fefc9811658fcb2abf22c9abaa0355",
-      "size": 1870
+      "sha256": "e9281cf89094e467f89b5c989bd3ee43013cc578555aa7361f76585d432b32fa",
+      "size": 4211
     },
     {
       "path": "checks.json",
@@ -23,13 +23,18 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "225dec010e909fd63509edceed84650c7702fbae3a4dcea33b66a47f8ab2edc7",
-      "size": 16525
+      "sha256": "f0fe59fbf2617b8f8f059dfcefd3013372baf960442f4e21a36f6f822c0cac8b",
+      "size": 16778
     },
     {
       "path": "functions/diff.ts",
       "sha256": "cb635d2bc2e3a742751c3610916ae2b4501560ad4934a0889f1a1b87a9721c74",
       "size": 3955
+    },
+    {
+      "path": "functions/facets.ts",
+      "sha256": "908b1c305211f9b50b6829ebc7808515ea7381e9ecc3ca2b20fb4956885afad8",
+      "size": 4267
     },
     {
       "path": "functions/generated/vocabulary.ts",
@@ -38,8 +43,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "20927ba906c37ee075c1e2e80437ed393336f7e1a41849655a07cf64d8870336",
-      "size": 7625
+      "sha256": "4f3b847c869f0792742c0da650f460467bc4e008613a217efd59515474fd81c6",
+      "size": 8015
     },
     {
       "path": "functions/subject.ts",
@@ -48,8 +53,8 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "946951d5b120b78e00489598bffff9732c68acf9f6c35995e814057d6ccfddf1",
-      "size": 13375
+      "sha256": "e5b9f700922f75d1ee4657cf1337d632e96fc62d5517c21745cd13a378c96aed",
+      "size": 13555
     },
     {
       "path": "functions/text.ts",
@@ -58,13 +63,13 @@
     },
     {
       "path": "functions/view.ts",
-      "sha256": "82961796d92794240fe03e6af8bd83c092797003af02b22f0507f68d4841c561",
-      "size": 7393
+      "sha256": "a9c53467525e928e33417fa9bc8b7ea4d6cd337be40b7e327b50f61118c9a4b3",
+      "size": 7493
     },
     {
       "path": "requirements.json",
-      "sha256": "b88c1371d3f54717cabed87013f8b840d1f6ec8e958b885fd755da1cc31a5c34",
-      "size": 1217
+      "sha256": "5250dbb0959e2e01a39e8e2775359483fb60bb3fc5d583bb0aa7888838382859",
+      "size": 1401
     },
     {
       "path": "samples/negative/command-changed.json",
@@ -93,13 +98,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "b6eff6222f52c33d41fdfbeb624912038a5a3287765cdba6dfa06228e812c2ac",
-      "size": 4127
+      "sha256": "c7b018f794ac0ff799801ed2d669c1de22d23e335370685b1265572e624b8f1c",
+      "size": 4588
     },
     {
       "path": "workflow.json",
-      "sha256": "214dd73fbb27a829e329af10cbf362a34130aa7a38543a97998f0789659ef4fa",
-      "size": 1580
+      "sha256": "b7b43b46e69b3cae8ea6f161fbce918f6b66a4da07801bcf31b453c29eaadeb8",
+      "size": 1933
     }
   ]
 }

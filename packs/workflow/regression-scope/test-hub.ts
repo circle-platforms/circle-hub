@@ -59,7 +59,7 @@ export class FakeExternal implements ExternalReaderPort {
     this.objects.set(id, bytes);
   }
   async accepts(id: string): Promise<boolean> {
-    return id.startsWith('knowledge:impact:');
+    return id.startsWith('knowledge:impact:') || id.startsWith('knowledge:facets:');
   }
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);

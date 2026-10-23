@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildImpact, type CaseSpec, type ChangeSpec } from './test-support.ts';
 import { checkOutcomes } from './check.ts';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 
 const SOURCE = 'a'.repeat(64);
 const PATHS = 30;

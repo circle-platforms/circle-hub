@@ -4,7 +4,7 @@ import type { ChangeKind, Verdict, CheckTier, Reason as UnknownReason } from '..
 // impact view), then a case on a modified path whose definition data differ is an advisory refutation. A well-formed
 // item can carry both. Nothing is
 // claimed about cases the index does not hold: when the subject carries the projection note, command_exists adds that
-// unknown (and, when the view was truncated, an integrity unknown). Samples omit the note, so their polarity stays
+// disclosure stays in the projection note; skipped sources and truncated impact remain unknown. Samples omit the note, so their polarity stays
 // the verdict of the item.
 // A reason on an item is only the index of its path in note.details and the change kind; path strings, field
 // differences and definition references are joined from that run-level table, so an outcome stays small at any
@@ -230,7 +230,7 @@ function commandExists(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   if (note !== null) {
     const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
-    const base = '索引没有收录的用例，这里不作结论。';
+    const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
     const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
     out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
     if (note.truncated === true) {
@@ -238,7 +238,7 @@ function commandExists(subject: unknown): Outcome[] {
       out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
   return out;
 }
 
@@ -361,7 +361,7 @@ function commandUnchanged(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+  if (out.length === 0 && noteOf(subject) === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
   return out;
 }
 

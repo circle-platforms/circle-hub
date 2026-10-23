@@ -149,7 +149,7 @@ function definitionData(view: NormView, digests: readonly string[], warnings: Wa
 
 /** What the run note says about cases the index does not hold. */
 export function indexNote(skippedFrom: number): string {
-  const base = '索引没有收录的用例，这里不作结论。';
+  const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
   if (skippedFrom > 0) return `较早构建的索引缺少 ${skippedFrom} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}`;
   return base;
 }
