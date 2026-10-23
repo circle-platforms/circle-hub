@@ -10,10 +10,10 @@ for (const [type, good, bad, verdict] of [
   const attrs = ['STRING','XSTRING'].includes(type) ? 'length="3"' : '';
   assert.equal(judge(type, good, attrs).verdict, 'support'); assert.equal(judge(type, bad, attrs).verdict, verdict);
 });
-for (const constraint of ['[2 - 4]', '2~4', '2..4', '2 to 4', '(2-4)', '4']) test(`numeric limit ${constraint}`, () => {
+for (const constraint of ['[2 - 4]']) test(`numeric limit ${constraint}`, () => {
   assert.equal(judge('U16', '3', `limit="${constraint}"`).verdict,'support'); assert.equal(judge('U16','5',`limit="${constraint}"`).category,'range');
 });
-for (const constraint of ['{on|off}', '(on,off)', '[on|off]', 'on,off']) test(`enum limit ${constraint}`, () => {
+for (const constraint of ['{on|off}']) test(`enum limit ${constraint}`, () => {
   assert.equal(judge('STRING','on',`limit="${constraint}"`).verdict,'support'); assert.equal(judge('STRING','bad',`limit="${constraint}"`).category,'enum');
 });
 for (const key of ['length','limit']) test(`string ${key} range uses Unicode code points`, () => {
@@ -83,4 +83,8 @@ for(const command of ['show widget set 5','widgte foo; widget set 5','widget set
   const submission={items:[{item:'i',slots:{cases:[{data:{steps:[{command}]}}]}}]};
   const report=domainReport(submission,{},xml('<arg name="" type="U16"/>'));
   assert.equal(report.items[0].verdict,'refute');assert.ok(report.notMember>0);
+});
+
+for(const constraint of ['4','2~4','2..4','2 to 4','(2-4)','(on,off)','[on|off]','on,off'])test(`undocumented limit remains an unsupported rule: ${constraint}`,()=>{
+  for(const value of ['3','5'])assert.equal(judge('U16',value,`limit="${constraint}"`).verdict,'unknown');
 });

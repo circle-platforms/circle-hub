@@ -90,13 +90,13 @@ function checkArg(arg: Arg, value: string): DomainResult {
     default: return unknown('declared_argument_type_rule');
   }
   if (arg.limit) {
-    const range = bounds(arg.limit);
-    const enums = /^[{[(]?\s*([^\s|,{}()[\]]+(?:\s*[|,]\s*[^\s|,{}()[\]]+)+)\s*[}\])]?$/.exec(arg.limit);
+    const range = /^\[\s*-?\d{1,15}\s*-\s*-?\d{1,15}\s*\]$/.test(arg.limit)?bounds(arg.limit):null;
+    const enums = /^\{([^{}|]+(?:\|[^{}|]+)+)\}$/.exec(arg.limit);
     if (range) {
       if (magnitude === undefined) return unknown();
       if (magnitude < range[0] || magnitude > range[1]) return result('range');
     } else if (enums) {
-      if (!enums[1].split(/\s*[|,]\s*/).includes(value)) return result('enum');
+      if (!enums[1].split('|').map(part=>part.trim()).includes(value)) return result('enum');
     } else return unknown('argument_limit_rule');
   }
   if (arg.length) {
