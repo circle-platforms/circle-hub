@@ -319,3 +319,7 @@ test('gold and legacy expectations agree, additional gold path changes verdict, 
   assert.equal(mismatch.allEqual, false);
   assert.ok(!renderReport(mismatch).includes('synthetic-doc')); assert.ok(!renderReport(mismatch).includes('/commands/'));
 });
+test('incomplete legacy reasons are displayed as categories without private path or cursor values', () => {
+  const report = computeScopeCases({ diff: { added: [], modified: [], removed: [] }, earlierNodesLines: [JSON.stringify({ next: 'opaque-private-cursor', nodes: [] })], laterNodesLines: [], regressionRun: { items: [] }, maintenanceRun: { items: [] } });
+  const output = renderReport(report); assert.match(output, /分页未完 1 项/); assert.match(output, /下一步.*next/); assert.ok(!output.includes('opaque-private-cursor')); assert.ok(output.endsWith('判定：输入不全'));
+});

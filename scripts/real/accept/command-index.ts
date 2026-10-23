@@ -10,6 +10,7 @@ export interface IndexReport {
   hashes: { gold: string; hub: string };
   details: Record<string, unknown>;
   incomplete: string[];
+  incompleteSummary: IncompleteCategory[];
 }
 export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[]): IndexReport {
   if (gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases) || !Array.isArray(gold.documents)) throw new Error('金标准格式不对');
@@ -101,7 +102,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   };
   const equal = !hubDefects.length && !onlyGold.length && !onlyHub.length && !different.length && !dataMismatches.size && !counts.documents_gold_only && !counts.documents_hub_only;
   return { verdict: incomplete.length ? '输入不全' : equal ? '相等' : '不相等', counts, hashes: { gold: sha256(JSON.stringify(table(goldMap))), hub: sha256(JSON.stringify(table(hub))) },
-    details: { hub_entry_defects: hubDefects, documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
+    details: { hub_entry_defects: hubDefects, documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete), incompleteSummary: summarizeIncomplete(incomplete) };
 }
 export function renderIndexReport(report: IndexReport): string {
   const labels: Record<string, string> = {
@@ -111,7 +112,7 @@ export function renderIndexReport(report: IndexReport): string {
     unplaced_gold: 'gold 全部未归位用例', unplaced_hub: 'Hub 全部未归位用例', unplaced_gold_comparable: 'gold 可比较未归位用例', unplaced_hub_comparable: 'Hub 可比较未归位用例',
     unplaced_both: '可比较用例中两边都未归位', unplaced_gold_only: '可比较用例中只有 gold 未归位', unplaced_hub_only: '可比较用例中只有 Hub 未归位', steps_placed_in_hub_unplaced: 'Hub 可比较未归位用例中步骤有命令', entry_data_mismatches: '条目与数据命令集合不符用例', hub_entry_defects: 'Hub 输出条目缺陷',
   };
-  return [...Object.entries(report.counts).map(([name, count]) => `${labels[name]}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incomplete.length}`, `判定：${report.verdict}`].join('\n');
+  return [...Object.entries(report.counts).map(([name, count]) => `${labels[name]}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incompleteSummary.reduce((n, v) => n + v.count, 0)}`, ...renderIncomplete(report.incompleteSummary), `判定：${report.verdict}`].join('\n');
 }
 export function main(argv: string[]): number {
   try {
@@ -125,3 +126,24 @@ export function main(argv: string[]): number {
   } catch { process.stderr.write('读取或比较失败：检查 gold 和全部索引分片的格式及可读性\n'); return 1; }
 }
 if (process.argv[1]?.endsWith('/accept/command-index.ts')) process.exitCode = main(process.argv.slice(2));
+
+export interface IncompleteCategory { category: string; count: number; missing: string; action: string }
+/** Categories are fixed text. Raw reasons can contain private cursor, document and path values and stay in --out. */
+export function summarizeIncomplete(reasons: readonly string[]): IncompleteCategory[] {
+  const grouped = new Map<string, IncompleteCategory>();
+  for (const reason of reasons) {
+    let category = '其他输入缺项', missing = '可核验的本轮完整输入', action = '检查报告并重新导出所需证据';
+    if (reason.includes('截断')) { category = '分片截断'; missing = '完整索引分片'; action = '按 only= 分成更小分片后重新导出'; }
+    else if (reason.includes('未读来源')) { category = '未读来源'; missing = '来源完整性'; action = '修复来源并重新生产根，再导出索引'; }
+    else if (reason.includes('索引根')) { category = '根不一致'; missing = '同一产品同一构建根的分片'; action = '重新导出同一产品及构建根的全部分片'; }
+    else if (reason.includes('请求全部')) { category = '缺少分片'; missing = '金标准文档对应的全部分片'; action = '补齐对应 only= 分片再比较'; }
+    else if (reason.includes('没有索引视图')) { category = '没有视图'; missing = '索引导出文件'; action = '提供完整索引视图及其分片'; }
+    else if (reason.includes('游标')) { category = '分页未完'; missing = '后续节点页'; action = '按 next 游标继续导出并追加到同一 JSONL'; }
+    else if (reason.includes('data') || reason.includes('document') || reason.includes('node')) { category = '条目字段缺失'; missing = '完整用例字段'; action = '重新导出含 data.document 和 data.node 的节点页'; }
+    else if (reason.includes('JSON') || reason.includes('应答为出错')) { category = '应答无效'; missing = '有效节点应答'; action = '修复读取失败并重新导出有效 JSONL'; }
+    else if (reason.includes('必须同时给') || reason.includes('不能混用')) { category = '输入方式不完整'; missing = '前后构建一致的输入方式'; action = '前后同时提供 gold 或同时提供 nodes，不混用'; }
+    const old = grouped.get(category); if (old) old.count++; else grouped.set(category, { category, count: 1, missing, action });
+  }
+  return [...grouped.values()].sort((a, b) => a.category < b.category ? -1 : a.category > b.category ? 1 : 0);
+}
+export function renderIncomplete(rows: readonly IncompleteCategory[]): string[] { return rows.map((v) => `输入不全：${v.category} ${v.count} 项；缺少${v.missing}；下一步：${v.action}`); }

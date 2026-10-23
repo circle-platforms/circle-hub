@@ -90,3 +90,7 @@ for (const [name, mutate] of Object.entries({
 })) test(`malformed Hub output is a mismatch rather than incomplete input: ${name}`, () => {
   const raw = view(); mutate(raw); const result = compareCommandIndex(gold, [raw]); assert.equal(result.verdict, '不相等'); assert.ok(result.counts.hub_entry_defects > 0); assert.deepEqual(result.incomplete, []);
 });
+test('incomplete screen output gives fixed missing-fact categories and useful next actions', () => {
+  const raw = view(); raw.truncated = true; const result = compareCommandIndex(gold, [raw, raw]); const output = renderIndexReport(result);
+  assert.match(output, /分片截断 2 项/); assert.match(output, /下一步.*only=/); assert.ok(!output.includes('synthetic-doc')); assert.ok(!output.includes('/commands/'));
+});

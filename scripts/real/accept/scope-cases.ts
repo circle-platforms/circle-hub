@@ -17,6 +17,7 @@
 //      - any get_nodes response has a next page cursor without a following page in the file;
 //      - or any case entry lacks data (or document/node in data).
 import { readFileSync, writeFileSync } from 'node:fs';
+import { summarizeIncomplete, renderIncomplete } from './command-index.ts';
 import { resolve } from 'node:path';
 import { comparableNode, documentKey, sha256, type CommandsGold } from '../gold/case-commands.ts';
 
@@ -283,6 +284,7 @@ export function renderReport(report: ScopeCasesReport): string {
     lines.push(`${name}：期望 ${comparison.expectedCount}，运行 ${comparison.actualCount}，共有 ${comparison.sharedCount}，只在运行 ${comparison.onlyInRun.length}，只在期望 ${comparison.onlyInExpected.length}`);
     lines.push(`${name}差异 SHA-256：${sha256(JSON.stringify({ onlyInRun: comparison.onlyInRun, onlyInExpected: comparison.onlyInExpected }))}`);
   }
+  lines.push(...renderIncomplete(summarizeIncomplete(report.incompleteReasons)));
   lines.push(`判定：${report.isIncomplete ? '输入不全' : report.allEqual ? '相等' : '不相等'}`);
   return lines.join('\n');
 }
