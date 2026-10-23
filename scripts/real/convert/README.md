@@ -30,7 +30,7 @@ node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合�
 检查先证明全部启用组合恰好落在 allowed 或 unopened 一边，不重不漏、无禁用组合；allowed 每个参数都有包表角色，再调用包的配置解析器核身份及形状。额外核对座位序号小于预检设备数。只说明已启用组合的覆盖情况，不以草稿代替部署事实核对；拒绝命令文本由集成者填写，不在脚本预设。
 
 ```
-node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked]
+node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked] [--profile <运行环境配置>]
 ```
 
 核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则及编号列表，标准输出仅个数与源字节摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
@@ -80,3 +80,5 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 参数覆盖按能实际传入的参数核对：可选脱敏参数默认不传，不给角色；普通可选参数只有在该 allowed 项的 unsupplied 名单里显式声明永不传入时才可省角色。必需参数不能列入名单，名单不许重复、含签名外参数或与角色重叠。包原有的参数绑定/角色核对会拒绝实际传入这些参数。必需脱敏参数及只有脱敏参数的方法保持未开，草稿明确认证接入的缺口与补取动作。
 
 零参数启用方法也等待集成者显式决定：草稿不自动放进 allowed，pending 指出缺方法语义和效果事实。明确开放可列为 {object,method,parameters:{}}；明确未开则用 parameters:[]，另填方法级 missing、reason、next。没有决定时，即使删掉 pending，完整覆盖核对也不能通过。
+
+用例选择与计划运行同一抽取规则：任何抽取用例含不精确数值编号即拒绝；每个入选编号必须在全部抽取用例中只出现一次，不只比五个 YES。传 --profile 时按同份配置的 workbook.autoid_pattern 核对入选编号；未提供配置时不声称核过网关的编号位数，集成者在计划前应带同份配置重跑。

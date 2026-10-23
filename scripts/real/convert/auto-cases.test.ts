@@ -15,3 +15,16 @@ test('auto selection refuses duplicate missing and imprecise ids and respects pl
   Object.assign(raw.root.children[1]!.data, { autoid: Number.MAX_SAFE_INTEGER + 1 }); assert.throws(() => autoCases(Buffer.from(JSON.stringify(raw))));
   assert.throws(() => autoCases(Buffer.from(JSON.stringify(mindmap(5))), 'tagged'), /找到 0 个/);
 });
+
+test('selection rejects imprecision anywhere and selected ids duplicated by excluded cases', () => {
+  const imprecise = mindmap(5); Object.assign(imprecise.root.children[5].data, { autoid: Number.MAX_SAFE_INTEGER + 1 });
+  assert.throws(() => autoCases(Buffer.from(JSON.stringify(imprecise))), /文档.*精度.*文本/);
+  const duplicate = mindmap(5); duplicate.root.children[5].data.autoid = duplicate.root.children[0].data.autoid;
+  assert.throws(() => autoCases(Buffer.from(JSON.stringify(duplicate))), /重复.*case_rule/);
+});
+test('the optional deployment profile applies the exact plan autoid pattern', () => {
+  const bytes = Buffer.from(JSON.stringify(mindmap(5)));
+  const profile = { schema: 'runtime-profile@1', workbook: { autoid_pattern: '^synthetic-auto-[0-9]+$' } };
+  assert.equal(autoCases(bytes, 'marked', profile).length, 5);
+  for (const pattern of ['^[0-9]{18}$', '[', 'unanchored']) assert.throws(() => autoCases(bytes, 'marked', { ...profile, workbook: { autoid_pattern: pattern } }), /autoid_pattern.*--profile/);
+});
