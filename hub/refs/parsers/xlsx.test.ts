@@ -5,19 +5,35 @@ import { test } from 'node:test';
 import { ParseError, ParseLimitError } from '../parser.ts';
 import { readXlsxArchive, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
-type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; attributes?: number; descriptor?: boolean; compressed?: Buffer };
+type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
   const local: Buffer[] = []; const central: Buffer[] = []; let offset = 0;
   for (const member of members) {
-    const name = Buffer.from(member.name); const bytes = member.bytes ?? Buffer.from(member.text ?? '<synthetic/>');
-    const method = member.method ?? 0; const flags = member.flags ?? 0x800; const extra = member.extra ?? Buffer.alloc(0);
+    const name = member.nameBytes ?? Buffer.from(member.name); const bytes = member.bytes ?? Buffer.from(member.text ?? '<synthetic/>');
+    const method = member.method ?? 0; const flags = member.flags ?? 0x800; let extra = member.extra ?? Buffer.alloc(0); let localExtra = member.localExtra ?? extra;
     const compressed = member.compressed ?? (method === 8 ? deflateRawSync(bytes) : bytes);
     const crc = member.crc ?? crc32(bytes); const size = member.size ?? bytes.length;
-    const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(flags, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc, 14); header.writeUInt32LE(compressed.length, 18); header.writeUInt32LE(size, 22); header.writeUInt16LE(name.length, 26); header.writeUInt16LE(extra.length, 28);
+    if (member.zip64) {
+      extra = Buffer.alloc(28); extra.writeUInt16LE(1); extra.writeUInt16LE(24, 2); extra.writeBigUInt64LE(BigInt(size), 4); extra.writeBigUInt64LE(BigInt(compressed.length), 12); extra.writeBigUInt64LE(BigInt(offset), 20);
+      localExtra = Buffer.from(extra.subarray(0, 20)); localExtra.writeUInt16LE(16, 2);
+    }
+    const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(flags, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc, 14); header.writeUInt32LE(compressed.length, 18); header.writeUInt32LE(size, 22); header.writeUInt16LE(name.length, 26); header.writeUInt16LE(localExtra.length, 28);
     const directory = Buffer.alloc(46); directory.writeUInt32LE(0x02014b50); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(flags, 8); directory.writeUInt16LE(method, 10); directory.writeUInt32LE(crc, 16); directory.writeUInt32LE(compressed.length, 20); directory.writeUInt32LE(size, 24); directory.writeUInt16LE(name.length, 28); directory.writeUInt16LE(extra.length, 30); directory.writeUInt32LE(member.attributes ?? 0, 38); directory.writeUInt32LE(offset, 42);
-    const descriptor = member.descriptor ? Buffer.alloc(16) : Buffer.alloc(0);
-    if (member.descriptor) { descriptor.writeUInt32LE(0x08074b50); descriptor.writeUInt32LE(crc, 4); descriptor.writeUInt32LE(compressed.length, 8); descriptor.writeUInt32LE(size, 12); header.fill(0, 14, 26); }
-    local.push(header, name, extra, compressed, descriptor); central.push(directory, name, extra); offset += 30 + name.length + extra.length + compressed.length + descriptor.length;
+    const descriptor = Buffer.alloc(member.descriptor === true ? 16 : member.descriptor || 0);
+    if (member.zip64) {
+      header.writeUInt16LE(45, 4); directory.writeUInt16LE(45, 6);
+      header.writeUInt32LE(0xffffffff, 18); header.writeUInt32LE(0xffffffff, 22);
+      for (const at of [20, 24, 42]) directory.writeUInt32LE(0xffffffff, at);
+    }
+    if (member.descriptor) {
+      let at = 0;
+      if (descriptor.length === 16 || descriptor.length === 24) { descriptor.writeUInt32LE(0x08074b50); at = 4; }
+      descriptor.writeUInt32LE(crc, at);
+      if (descriptor.length >= 20) { descriptor.writeBigUInt64LE(BigInt(compressed.length), at + 4); descriptor.writeBigUInt64LE(BigInt(size), at + 12); }
+      else { descriptor.writeUInt32LE(compressed.length, at + 4); descriptor.writeUInt32LE(size, at + 8); }
+      header.fill(0, 14, 26);
+    }
+    local.push(header, name, localExtra, compressed, descriptor); central.push(directory, name, extra); offset += 30 + name.length + localExtra.length + compressed.length + descriptor.length;
   }
   const directory = Buffer.concat(central); const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(members.length, 8); end.writeUInt16LE(members.length, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...local, directory, end]);
@@ -111,12 +127,12 @@ test('xlsx@1 gives cells, member types, names and deterministic selectors withou
   assert.equal(document.model.sheets[0].lastRow, 1);
   assert.deepEqual(document.model.definedNames, [{ name: '合成区域', scope: null, reference: "'合成表'!$A$1:$B$1" }]);
   assert.equal(document.model.members.find((member) => member.name === 'xl/workbook.xml')?.contentType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml');
-  assert.equal(document.locate('c/0/A1')?.text, '合成文本 & 空白 ');
-  assert.equal(document.locate('n/0')?.text, "'合成表'!$A$1:$B$1");
-  assert.equal(document.locate('c/0/A1')?.byteRange, null);
+  assert.equal(document.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(document.locate('n/合成区域')?.text, "'合成表'!$A$1:$B$1");
+  assert.equal(document.locate('c/合成表/A1')?.byteRange, null);
   for (const selector of document.listSelectors()) assert.equal(document.locate(selector)?.selector, selector);
   for (const invalid of ['c/99/A1', 'c/0/Z999', 'n/99', 'c/00/A1', '%zz', 'n/-1', '__proto__', '']) assert.equal(document.locate(invalid), null);
-  assert.deepEqual(document.listSelectors('c/', { limit: 1 }), ['c/0/A1']);
+  assert.deepEqual(document.listSelectors('c/', { limit: 1 }), ['c/合成表/A1']);
   assert.doesNotMatch(JSON.stringify(document.summary()), /合成文本|合成表|合成区域|10\.7/);
 });
 test('xlsx@1 preserves shared and rich strings, formula flags and cached values, literal equals and cell styles', () => {
@@ -168,7 +184,7 @@ test('xlsx@1 decodes escaped strings once and preserves their whitespace and lit
 });
 test('xlsx@1 resolves namespace prefixes and parent-relative package relationships', () => {
   const document = parseWorkbook({ book: `<s:workbook xmlns:s="${MAIN}" xmlns:q="${DOC_REL}"><s:sheets><s:sheet name="前缀" sheetId="1" q:id="sheet"/></s:sheets></s:workbook>`, sheet: `<s:worksheet xmlns:s="${MAIN}"><s:sheetData><s:row r="1"><s:c r="A1" t="inlineStr"><s:is><s:r><s:t>甲</s:t></s:r><s:r><s:t>乙</s:t></s:r></s:is></s:c></s:row></s:sheetData></s:worksheet>`, relations: `<Relationship Id="styles" Type="${DOC_REL}/styles" Target="../styles.xml"/>`, extra: [{ name: 'styles.xml', text: '<opaque/>' }] });
-  assert.equal(document.locate('c/0/A1')?.text, '甲乙');
+  assert.equal(document.locate('c/前缀/A1')?.text, '甲乙');
   assert.ok(document.model.relationships.some((r) => r.target === '../styles.xml'));
 });
 test('xlsx@1 limits XML structure and selectors and refuses undeclared prefixes and out-of-range shared indices', () => {
@@ -192,23 +208,28 @@ test('xlsx@1 parses a freshly generated workbook from the existing independent E
   sheet.getCell('A10').font = { bold: true };
   book.addWorksheet('隐藏合成', { state: 'hidden' }); book.definedNames.add("'独立合成'!$A$1", '合成名');
   const bytes = Buffer.from(await book.xlsx.writeBuffer()); const document = xlsxParser.parse(bytes);
-  assert.equal(document.locate('c/0/A1')?.text, '共享合成文本'); assert.equal(document.locate('c/0/B1')?.text, '10.7');
+  assert.equal(document.locate('c/独立合成/A1')?.text, '共享合成文本'); assert.equal(document.locate('c/独立合成/B1')?.text, '10.7');
   assert.equal(document.model.sheets[0].rows.find((row) => row.number === 2)?.hidden, true);
-  assert.equal((document.locate('c/0/C2')?.data as { formula: boolean }).formula, true);
+  assert.equal((document.locate('c/独立合成/C2')?.data as { formula: boolean }).formula, true);
   assert.equal(document.model.sheets[0].lastRow, 10); assert.equal(document.model.sheets[1].state, 'hidden');
   assert.ok(document.model.members.some((member) => member.name === 'xl/styles.xml'));
   assert.ok(document.model.definedNames.some((name) => name.name === '合成名'));
   assert.deepEqual(document.model, xlsxParser.parse(bytes).model);
 });
-test('xlsx@1 rejects random and corrupted containers only with typed deterministic parse errors', () => {
+test('xlsx@1 rejects random and corrupted containers only with typed deterministic parse errors', { timeout: 10000 }, () => {
+  const started = performance.now();
   let seed = 2197; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
   const base = workbook();
   for (let i = 0; i < 800; i++) {
     const bytes = i % 2 ? Buffer.from(base) : Buffer.from(Array.from({ length: random(512) }, () => random(256)));
     if (i % 2) for (let j = 0; j < 1 + random(4); j++) bytes[random(bytes.length)] ^= 1 << random(8);
-    try { const document = xlsxParser.parse(bytes); for (const selector of document.listSelectors()) assert.ok(document.locate(selector)); }
-    catch (error) { assert.ok(error instanceof ParseError, String(error)); assert.equal(error.parser, 'xlsx@1'); }
+    const outcome = () => {
+      try { const document = xlsxParser.parse(bytes); for (const selector of document.listSelectors()) assert.ok(document.locate(selector)); return { model: document.model, selectors: document.listSelectors() }; }
+      catch (error) { assert.ok(error instanceof ParseError, String(error)); assert.equal(error.parser, 'xlsx@1'); return { name: error.name, message: error.message, offset: error.offset }; }
+    };
+    assert.deepEqual(outcome(), outcome());
   }
+  assert.ok(performance.now() - started < 5000);
 });
 
 
@@ -218,11 +239,11 @@ test('xlsx@1 follows workbook relationships instead of assuming workbook and wor
     text: bytes.toString().replaceAll('xl/workbook.xml', 'data/book.xml'),
   }));
   const document = xlsxParser.parse(zip(moved));
-  assert.equal(document.model.sheets[0].part, 'data/worksheets/sheet1.xml'); assert.equal(document.locate('c/0/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(document.model.sheets[0].part, 'data/worksheets/sheet1.xml'); assert.equal(document.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
 });
 test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign namespace', () => {
   const strict = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: bytes.toString().replaceAll(MAIN, 'http://purl.oclc.org/ooxml/spreadsheetml/main').replaceAll(DOC_REL, 'http://purl.oclc.org/ooxml/officeDocument/relationships') }));
-  assert.equal(xlsxParser.parse(zip(strict)).locate('c/0/B1')?.text, '10.7');
+  assert.equal(xlsxParser.parse(zip(strict)).locate('c/合成表/B1')?.text, '10.7');
   badWorkbook({ sheet: '<worksheet xmlns="urn:synthetic:foreign"><sheetData/></worksheet>' }, /工作表部件/);
 });
 
@@ -248,4 +269,159 @@ test('ZIP legacy filename decoding covers all CP437 byte values without dropping
     const name = [...readXlsxArchive(bytes).keys()][0]; assert.equal(name.length, 5);
     if (i === 0x82) assert.equal(name, 'é.xml'); if (i === 0xff) assert.equal(name, '\u00a0.xml');
   }
+});
+
+test('xlsx rejects repeated resolved sheet parts before rebuilding their cell models', () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: 64 }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1"><v>1</v></c>'.repeat(256)}</row></sheetData></worksheet>`;
+  badWorkbook({ book, sheet }, /工作表.*同一个部件/);
+});
+
+test('five thousand sheets sharing one part are refused within a bounded parse time', { timeout: 5000 }, () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: 5000 }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
+  const started = performance.now();
+  badWorkbook({ book }, /工作表.*同一个部件/);
+  assert.ok(performance.now() - started < 2000);
+});
+
+function unicodePath(name: Buffer | string, replacement: string): Buffer {
+  const path = Buffer.from(replacement); const field = Buffer.alloc(9 + path.length);
+  field.writeUInt16LE(0x7075); field.writeUInt16LE(5 + path.length, 2); field[4] = 1;
+  field.writeUInt32LE(crc32(typeof name === 'string' ? Buffer.from(name) : name), 5); path.copy(field, 9); return field;
+}
+test('Unicode path metadata cannot conceal raw unsafe names, duplicates or a different local-header identity', () => {
+  const unsafe = '..\\..\\evil.xml';
+  refuses(zip([{ name: unsafe, extra: unicodePath(unsafe, 'safe.xml') }]), /路径/);
+  refuses(zip([{ name: 'a.xml' }, { name: 'a.xml', extra: unicodePath('a.xml', 'b.xml') }]), /重复|路径.*不一致/);
+  refuses(zip([{ name: 'a.xml', localExtra: unicodePath('a.xml', 'b.xml') }]), /路径.*不一致/);
+  assert.equal(readXlsxArchive(zip([{ name: 'a.xml', extra: unicodePath('a.xml', 'a.xml') }])).size, 1);
+});
+
+test('resolved shared-string text has a separate aggregate cell-model budget before serialization', { timeout: 5000 }, () => {
+  const shared = `<sst xmlns="${MAIN}"><si><t>${'x'.repeat(100000)}</t></si></sst>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(400)}</row></sheetData></worksheet>`;
+  const started = performance.now();
+  badWorkbook({ shared, sheet }, /模型.*单元格文本.*上限/);
+  assert.ok(performance.now() - started < 2000);
+});
+
+test('decoded NULs are removed and counted once at their source in cells, sheet names and defined names', () => {
+  const document = parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="S_x0000_" sheetId="1" r:id="sheet"/></sheets><definedNames><definedName name="N_x0000_">S!A1</definedName></definedNames></workbook>`, sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a_x0000_b</t></is></c></row></sheetData></worksheet>` });
+  assert.equal(document.model.sheets[0].name, 'S'); assert.equal(document.model.definedNames[0].name, 'N');
+  assert.equal(document.model.sheets[0].rows[0].cells[0].text, 'ab');
+  assert.equal(document.model.nulRemoved, 3); assert.equal(document.summary().nulRemoved, 3);
+  assert.ok(!JSON.stringify(document.model).includes('\\u0000'));
+});
+
+test('OPC rejects ASCII case-equivalent member names and resolves case-equivalent targets', () => {
+  refuses(zip([{ name: 'xl/a.xml' }, { name: 'XL/A.XML' }]), /重复/);
+  const document = parseWorkbook({ relations: `<Relationship Id="case" Type="${DOC_REL}/styles" Target="WORKSHEETS/SHEET1.XML"/>` });
+  assert.equal(document.model.sheets.length, 1);
+});
+
+test('content types reject duplicate declarations without inventing their own media type', () => {
+  for (const declarations of [
+    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="XML" ContentType="text/xml"/>',
+    '<Override PartName="/xl/workbook.xml" ContentType="application/xml"/><Override PartName="/XL/WORKBOOK.XML" ContentType="text/xml"/>',
+  ]) badWorkbook({ types: `<Types xmlns="${TYPES}">${declarations}</Types>` }, /内容类型.*重复/);
+  assert.equal(parseWorkbook().model.members.find((member) => member.name === '[Content_Types].xml')!.contentType, null);
+});
+
+function zip64Directory(base: Buffer, extra = Buffer.alloc(0)): Buffer {
+  const end = Buffer.from(base.subarray(-22)); const at = base.length - 22;
+  const record = Buffer.alloc(56 + extra.length); record.writeUInt32LE(0x06064b50); record.writeBigUInt64LE(BigInt(44 + extra.length), 4); record.writeUInt16LE(45, 14);
+  record.writeBigUInt64LE(BigInt(end.readUInt16LE(10)), 24); record.writeBigUInt64LE(BigInt(end.readUInt16LE(10)), 32);
+  record.writeBigUInt64LE(BigInt(end.readUInt32LE(12)), 40); record.writeBigUInt64LE(BigInt(end.readUInt32LE(16)), 48); extra.copy(record, 56);
+  const locator = Buffer.alloc(20); locator.writeUInt32LE(0x07064b50); locator.writeBigUInt64LE(BigInt(at), 8); locator.writeUInt32LE(1, 16);
+  return Buffer.concat([base.subarray(0, -22), record, locator, end]);
+}
+test('ZIP64 agrees with all non-sentinel EOCD fields and permits bounded extensible data', () => {
+  const base = zip64Directory(zip([{ name: 'a.xml' }, { name: 'b.xml' }]));
+  for (const field of [8, 10, 12, 16]) {
+    const changed = Buffer.from(base); const at = changed.length - 22 + field;
+    if (field < 12) changed.writeUInt16LE(1, at); else changed.writeUInt32LE(1, at);
+    refuses(changed, /ZIP64.*不一致/);
+  }
+  const mixedSentinel = Buffer.from(base); mixedSentinel.writeUInt16LE(0xffff, mixedSentinel.length - 14);
+  assert.equal(readXlsxArchive(mixedSentinel).size, 2);
+  const extension = Buffer.alloc(8); extension.writeUInt32LE(2, 2);
+  assert.equal(readXlsxArchive(zip64Directory(zip([{ name: 'a.xml' }]), extension)).size, 1);
+  refuses(zip64Directory(zip([{ name: 'a.xml' }]), Buffer.alloc(1)), /越界|不完整/);
+});
+
+test('zero custom height is hidden while preserving literal row height and flags', () => {
+  const document = parseWorkbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="1" ht="0" customHeight="1"><c r="A1"/></row><row r="2" ht="12.5" customHeight="1"/><row r="3" ht="0"/></sheetData></worksheet>` });
+  assert.deepEqual(document.model.sheets[0].rows.map((row) => [row.hidden, row.ht, row.customHeight]), [[true, '0', true], [false, '12.5', true], [false, '0', false]]);
+  assert.equal(document.summary().hiddenRows, 1);
+});
+
+test('contradictory row coordinates and dangling defined name scopes are refused', () => {
+  for (const rows of ['<row r="1"><c r="A5"/></row>', '<row r="2"/><row r="1"/>', '<row r="1"/><row r="1"/>'])
+    badWorkbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData>${rows}</sheetData></worksheet>` }, /行号.*不一致|行号.*递增/);
+  badWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="合成" sheetId="1" r:id="sheet"/></sheets><definedNames><definedName name="合成名" localSheetId="1">A1</definedName></definedNames></workbook>` }, /作用域.*不存在/);
+});
+
+test('non-worksheet sheets disclose the relationship id and literal type', () => {
+  for (const type of ['chartsheet', 'styles']) {
+    const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: name.endsWith('workbook.xml.rels') ? bytes.toString().replace('/worksheet"', `/${type}"`) : name.endsWith('sheet1.xml') ? `<${type} xmlns="${MAIN}"/>` : bytes.toString() }));
+    const sheet = xlsxParser.parse(zip(members)).model.sheets[0];
+    assert.equal(sheet.relationshipId, 'sheet'); assert.equal(sheet.relationshipType, `${DOC_REL}/${type}`); assert.deepEqual(sheet.rows, []);
+  }
+});
+
+test('ZIP failures disclose a specific rule and safe member location without names', () => {
+  const deflated = deflateRawSync(Buffer.from('synthetic text'));
+  for (const [compressed, size, reason] of [[deflated.subarray(0, -1), 14, /流不完整/], [deflated, 2, /实际解压大小超过声明/], [Buffer.from([0xff, 0xff]), 14, /Deflate 数据损坏/]] as const) {
+    assert.throws(() => readXlsxArchive(zip([{ name: 'private-name.xml', method: 8, compressed, size }])), (error: unknown) => {
+      assert.ok(error instanceof ParseError); assert.match(error.message, reason); assert.match(error.message, /成员 1/); assert.equal(error.offset, 0); assert.ok(!error.message.includes('private-name')); return true;
+    });
+  }
+  for (const [name, reason] of [['../a.xml', /路径段/], ['a'.repeat(600), /路径长度/], ['a\\b.xml', /反斜杠/]] as const) refuses(zip([{ name }]), reason);
+  assert.throws(() => xlsxParser.parse(workbook(), { maxNodes: 21 }), (error: unknown) => error instanceof ParseLimitError && error.max === 21 && /21/.test(error.message));
+});
+
+test('refs records the caller diagnostic handoff required from runs and server', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /runs \/ server[^\n]*last ParseError/);
+  assert.match(readme, /start_run and upload_file[^\n]*reason/);
+});
+
+test('canonical XLSX selectors prefer escaped names and fall back for ambiguous or long identities', () => {
+  const normal = parseWorkbook();
+  assert.equal(normal.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(normal.locate('n/合成区域')?.text, "'合成表'!$A$1:$B$1");
+  const named = (name: string, definitions: string) => parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${name}" sheetId="1" r:id="sheet"/></sheets><definedNames>${definitions}</definedNames></workbook>` });
+  const scoped = named('甲 / 乙', '<definedName name="区域" localSheetId="0">A1</definedName><definedName name="区域">B1</definedName>');
+  assert.ok(scoped.locate('c/甲%20%2F%20乙/A1')); assert.equal(scoped.locate('n/甲%20%2F%20乙/区域')?.text, 'A1'); assert.equal(scoped.locate('n/区域')?.text, 'B1');
+  const duplicate = named('甲', '<definedName name="重复">A1</definedName><definedName name="重复">B1</definedName>');
+  assert.equal(duplicate.locate('n/重复'), null); assert.equal(duplicate.locate('i/n/0')?.text, 'A1'); assert.equal(duplicate.locate('i/n/1')?.text, 'B1');
+  const long = named('甲'.repeat(5000), '<definedName name="长" localSheetId="0">A1</definedName>');
+  assert.ok(long.locate('i/0/0/0')); assert.equal(long.locate('i/n/0')?.text, 'A1');
+  const sameSheets = parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="同名" sheetId="1" r:id="sheet"/><sheet name="同名" sheetId="2" r:id="second"/></sheets></workbook>`, relations: `<Relationship Id="second" Type="${DOC_REL}/worksheet" Target="worksheets/second.xml"/>`, extra: [{ name: 'xl/worksheets/second.xml', text: `<worksheet xmlns="${MAIN}"><sheetData><row><c><v>2</v></c></row></sheetData></worksheet>` }] });
+  assert.equal(sameSheets.locate('c/同名/A1'), null); assert.ok(sameSheets.locate('i/0/0/0')); assert.equal(sameSheets.locate('i/1/0/0')?.text, '2');
+});
+
+test('refs records the retained resolve test scope deviation', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /resolve\.test\.ts[^\n]*outside[^\n]*allowed paths/);
+  assert.match(readme, /xlsx@999[^\n]*unregistered/);
+});
+
+test('all descriptor widths and per-member ZIP64 declarations have valid and contradictory vectors', { timeout: 5000 }, () => {
+  const started = performance.now();
+  for (const length of [12, 16, 20, 24] as const) {
+    const bytes = zip([{ name: 'a.xml', text: 'synthetic', flags: 0x808, descriptor: length }]);
+    const central = bytes.readUInt32LE(bytes.length - 6); const dataAt = 30 + bytes.readUInt16LE(26) + bytes.readUInt16LE(28);
+    assert.equal(central - dataAt - Buffer.byteLength('synthetic'), length);
+    assert.equal(readXlsxArchive(bytes).get('a.xml')?.toString(), 'synthetic');
+    const damaged = Buffer.from(bytes); damaged[central - length + (length === 16 || length === 24 ? 4 : 0)] ^= 1; refuses(damaged, /描述符/);
+  }
+  const wide = zip([{ name: 'a.xml', text: 'synthetic', zip64: true }]);
+  const central = wide.readUInt32LE(wide.length - 6);
+  assert.equal(wide.readUInt32LE(central + 24), 0xffffffff); assert.equal(readXlsxArchive(wide).get('a.xml')?.toString(), 'synthetic');
+  const damaged = Buffer.from(wide); const extraAt = central + 46 + wide.readUInt16LE(central + 28); damaged.writeBigUInt64LE(10n, extraAt + 4);
+  refuses(damaged, /本地头大小|大小不一致/);
+  assert.ok(performance.now() - started < 2000);
 });
