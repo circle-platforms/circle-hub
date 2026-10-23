@@ -78,3 +78,9 @@ test('refresh syntax and nested CSS strings distinguish targets from non-resourc
   assert.equal(summarizePage(`<style>p{background:image-set('https://192.0.2.1/a' 1x,url(https://192.0.2.2/b) 2x)}</style>`).externalAddresses,2);
   assert.equal(summarizePage('<svg><rect fill="url(#local)" filter="u\\72l(https://192.0.2.1/a)"/></svg>').externalAddresses,1);
 });
+
+for(const embedded of [false,true])test('noscript closing text is scanned in both scripting modes '+String(embedded),()=>{
+  const markup='<noscript><p title="</noscript><img src=https://192.0.2.1/a.png>\"></noscript>';
+  const attribute=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  assert.equal(summarizePage(embedded?'<iframe srcdoc="'+attribute(markup)+'"></iframe>':markup).externalAddresses,1);
+});

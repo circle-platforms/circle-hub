@@ -12,7 +12,7 @@ export interface PageMetrics {
 }
 
 /** Inspect resource-bearing HTML and CSS syntax, including embedded documents, without following a URL. */
-function externalAddresses(body:string):number {
+function externalAddresses(body:string,scriptingEnabled:boolean):number {
   const attributes=new Set(['href','src','srcset','imagesrcset','action','formaction','poster','data','ping','background','cite','manifest','icon']);
   const external=(value:string)=>{
     const address=value.replace(/[\t\r\n]/g,'').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g,'');
@@ -74,7 +74,7 @@ function externalAddresses(body:string):number {
     return target;
   };
   let count=0;
-  const pending:DefaultTreeAdapterMap['node'][]=[parse(body,{scriptingEnabled:false})];
+  const pending:DefaultTreeAdapterMap['node'][]=[parse(body,{scriptingEnabled})];
   while(pending.length){
     const node=pending.pop()!;
     if('childNodes' in node)for(const child of node.childNodes)pending.push(child);
@@ -88,7 +88,7 @@ function externalAddresses(body:string):number {
     for(const attribute of node.attrs){
       const name=attribute.name.toLowerCase().split(':').at(-1)!,value=attribute.value;
       if(name==='style')count+=cssTargets(value).filter(external).length;
-      else if(name==='srcdoc')pending.push(parse(value,{scriptingEnabled:false}));
+      else if(name==='srcdoc')pending.push(parse(value,{scriptingEnabled}));
       else if(attributes.has(name))count+=(name==='srcset'||name==='imagesrcset'?candidates(value):name==='ping'?value.split(/\s+/u):[value]).filter(external).length;
       else if(/url\s*\(/i.test(cssDecode(value)))count+=cssTargets(value).filter(external).length;
     }
@@ -107,7 +107,7 @@ export function summarizePage(body: string): PageMetrics {
     ? tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i,(_all,prefix:string,quote:string)=>`${prefix}${quote}[csrf]${quote}`) : tag);
   return {
     scripts: (body.match(/<script\b/gi) ?? []).length,
-    externalAddresses: externalAddresses(body),
+    externalAddresses: Math.max(externalAddresses(body,true),externalAddresses(body,false)),
     tableRows: [...body.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)].map((match) => {
       const content = match[1].replace(/<thead\b[^>]*>[\s\S]*?<\/thead>/gi, '');
       return [...content.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].filter((row) => /<td\b/i.test(row[1])).length;
