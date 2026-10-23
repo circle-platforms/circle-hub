@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { projectDefects } from './projection.ts';
 import { checkQuoteSources } from './checks.ts';
@@ -18,6 +19,7 @@ for (const line of ['10.7', null]) test(`manual refusal gives a usable optional 
   const external = 'manual:cli:10.8';
   const result = projectDefects({ ...input, context: { line }, inputs: [...input.inputs, { slot: 'manual', external, sha256: 'c'.repeat(64), model: {} }] });
   assert.ok('error' in result); assert.equal(result.error.code, 'defect-to-case.manual_mismatch');
+  assert.match(result.error.message, /^输入槽 manual：/);
   if (line) {
     assert.ok(result.error.message.includes(external)); assert.ok(result.error.message.includes(line));
     assert.match(result.error.fix ?? '', /不绑定 manual/); assert.match(result.error.fix ?? '', /修复说明字段/);
@@ -30,4 +32,11 @@ test('multiple manuals are disclosed as multiple bindings and offer leaving the 
   const manuals = ['manual:cli:10.7', 'manual:cli:10.8'].map(external => ({ slot: 'manual', external, sha256: 'c'.repeat(64), model: {} }));
   const result = projectDefects({ ...input, inputs: [...input.inputs, ...manuals] });
   assert.ok('error' in result); assert.match(result.error.message, /2.*手册/); assert.match(result.error.fix ?? '', /不绑定 manual/);
+});
+
+test('manual refusal documents the missing cross-slot error path contract', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /PackError\.path/);
+  assert.ok(readme.includes('/inputs/<declared slot>'));
+  assert.ok(readme.includes('/inputs/manual'));
 });

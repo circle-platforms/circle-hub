@@ -60,7 +60,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
     const bound = manuals.map(m => m.external ?? '无外部身份的来源').join('、');
     const message = line === null ? `运行没有版本线，不能绑定版本线手册（已绑定：${bound}）` : manuals.length > 1 ? `绑定了 ${manuals.length} 份手册（${bound}），本次版本线 ${line} 最多绑定一份 manual:cli:${line}` : `绑定的手册 ${bound} 不是本次版本线 ${line} 的 manual:cli:${line}`;
     const fix = line === null ? '不绑定 manual，只引用已配置的修复说明字段；需要手册时先选择有明确版本线的构建，再重新开始运行' : `改绑 manual:cli:${line}；这条线没有手册时不绑定 manual，只引用修复说明字段；重新开始运行`;
-    return { error: { code: `${PACK}.manual_mismatch`, message, fix }, warnings: [] };
+    return { error: { code: `${PACK}.manual_mismatch`, message: `输入槽 manual：${message}`, fix }, warnings: [] };
   }
   const manual = manuals[0] ?? null;
   const warnings: PackWarning[] = [];

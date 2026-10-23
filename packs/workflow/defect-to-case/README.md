@@ -93,6 +93,8 @@ npx tsc --noEmit
 
 ## 需要别的包做的事
 
+- **contracts 与 hub/runs/engine**：需要可选的 `PackError.path`，仅允许 `/inputs/<declared slot>`，由引擎校验槽已声明后采用，取代当前一律定位 subject 槽的行为。当前 manual_mismatch 的协议 path 仍被核心写成 /inputs/defects；本包先以“输入槽 manual：”开头，避免用户改错输入。合约与引擎合入后，本包须返回 `/inputs/manual` 并增加端到端路径断言，不能把文本提示当作协议位置已修复。
+
 - **packs/system/plm**：缺陷 content.fix_field 必须回传资源 settings.bug_fix_field 的字段名或 null；plm-fields 1.2.0 已完成本地合成验证，仍须集成者合入、发布、更新资源并核实真实字段后才生效，本包不把分支代码视为部署可用。
 - **packs/product/apv**：若要增加按期望结果去重，需要 cases 生产器在用例索引提供期望原文及其来源；产品包字段和本包检查一起排期，当前只比较完整规范化标题。
 - **hub/runs/engine**：显式绑定不可读外部对象时，SOURCE_UNAVAILABLE 回执尚不能指出可补取的槽与对象；客户端当前须先核实可读再绑，可选 manual 不可读时不绑定，避免无说明地终止。
