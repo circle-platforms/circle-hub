@@ -914,6 +914,28 @@ describe('applicability from explicit conditions', () => {
 
 
 
+
+  it('reads no 仅/只 that lacks the 支持 right after the series noun, wherever it stands (closure c3 item 2)', () => {
+    const sentences = [
+      '该命令在所有平台都可用，仅 hg-k 平台的输出格式有差异。',
+      '该命令对所有平台有效，只 hg-k 平台的日志路径有变化。',
+      '各平台默认开启，仅虚拟平台的默认值为关闭。',
+      '该命令仅 X9000 系列的接口名称有差异。',
+      '该命令仅 hg-k 平台。',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      assert.equal(behaviour?.applicability ?? null, null, `${sentence} 不该读出条件`);
+    }
+    // The documented form still reads, at the clause start and after a leading subject.
+    for (const sentence of ['仅 hg-k 平台支持。', '该命令仅 hg-k 平台支持。', '该命令仅 X9000 系列支持。']) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      assert.ok(behaviour?.applicability !== null && behaviour?.applicability !== undefined, `${sentence} 该读出条件`);
+    }
+  });
+
   it('reads no exception, widening or partly joined condition (closure findings 6, 13, 14)', () => {
     const sentences = [
       '适用于 hg-k 平台外的所有平台。',

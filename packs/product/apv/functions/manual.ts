@@ -477,9 +477,10 @@ function conditionsOf(text: string): Conditions {
     for (const itemsAt of positions) {
       const before = slice.slice(Math.max(0, itemsAt - 64), itemsAt);
       if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
-      // A 仅/只 candidate is tight only at the clause start (the whole clause is the series: 仅 hg-k 平台支持…).
-      const isTight = tight.includes(itemsAt);
-      if (isTight && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
+      // Every 仅/只 candidate is a restriction ONLY in the documented form — the series noun itself followed by
+      // 支持 ('仅 hg-k 平台支持', c3 item 2): a mid-clause 仅 about one platform's difference is not one.
+      const isOnlyCandidate = tight.includes(itemsAt) || loose.includes(itemsAt);
+      if (isOnlyCandidate && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
       // The candidate series: at most CLAUSE_BOUND characters from the trigger.
       const candidate = slice.slice(itemsAt, Math.min(slice.length, itemsAt + CLAUSE_BOUND)).trim();
       const read = readSeries(candidate);
