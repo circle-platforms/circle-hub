@@ -867,6 +867,38 @@ describe('applicability from explicit conditions', () => {
 
 
 
+
+  it('reads no exception, widening or partly joined condition (closure findings 6, 13, 14)', () => {
+    const sentences = [
+      '适用于 hg-k 平台外的所有平台。',
+      '适用于 hg-k 平台外的环境。',
+      '适用于虚拟平台外的环境。',
+      '适用于 X9000 系列外的机型。',
+      '适用于 hg-k 平台外。',
+      '适用于 hg-k 平台除外的环境。',
+      '也可适用于 hg-k 平台。',
+      '亦可适用于 hg-k 平台。',
+      '同样可以适用于 hg-k 平台。',
+      '还可以适用于 hg-k 平台。',
+      '该命令也能适用于 hg-k 平台。',
+      '适用于 hg-k 平台，以及其他平台。',
+      '仅 hg-k 平台（ft-kylinv10 平台亦可）支持。',
+      '适用于 X9000 系列及以上机型。',
+      '适用于虚拟平台和物理设备。',
+      '适用于虚拟平台和物理设备以外的环境。',
+      '适用于 hg-k 平台的 X9000 系列。',
+      '适用于 X9000 系列的 hg-k 平台。',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      assert.equal(behaviour?.applicability ?? null, null, `${sentence} 不该读出条件`);
+    }
+    // A fullwidth comma joins a closed list like the ASCII one (closure 14).
+    const closed = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n适用于 hg-k 平台，ft-kylinv10 平台。\n'));
+    assert.deepEqual(closed.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['ft-kylinv10', 'hg-k'] }, 'a fullwidth comma joins a closed list');
+  });
+
   it('reads no vague, deictic, negated, exception or garbled model value (closure findings 3 and 12)', () => {
     const sentences = [
       '适用于所有型号。',

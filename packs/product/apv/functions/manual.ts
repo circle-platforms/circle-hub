@@ -389,16 +389,16 @@ const escapeRe = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g,
 /** List connectives between items (a coordinated list counts only when every item is readable). */
 const CONNECTIVES = ['、', ',', '，', '/', '和', '与', '及', '以及', '或者', '或', '并'];
 /** A list followed by 等 never counts (the source says it is partial), and an exception list (以外/之外) inverts. */
-const ETC = /等等?|以外|之外|其余|其他/;
+const ETC = /等等?|以外|之外|除外|其余|其他/;
 /** Any of these in the clause before the trigger makes the whole match unread (a negation over the condition). */
 const CLAUSE_NEGATION = /[不未无非没勿]/;
-/** These right before the trigger widen instead of restrict (也适用于): unread. */
-const ALSO_BEFORE = /(?:也|同样|亦|还)\s*$/;
+/** A widening word anywhere in the clause before the trigger (也可/亦可/同样可以/还可以/也能…适用于) widens instead of restricting: unread (closure 6). */
+const ALSO_BEFORE = /(?:也|亦|同样|还)(?:可以?|能)?|该命令也能/;
 /** The applicability triggers: what follows one, up to the clause's end, is the candidate series. */
 const TRIGGERS = [/适用于/gu];
 
 /** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
-const CLAUSE_END = /[。；，：\n]/;
+const CLAUSE_END = /[。；：\n]/;
 
 /**
  * The conditions one text declares, per field — read linearly, never by a backtracking series regex. For every
@@ -434,7 +434,8 @@ function conditionsOf(text: string): Conditions {
       // FIRST noun ends an item group; a connective after it continues the series, another noun extends the field
       // word (系列机型), 等/以外/其他/其余 ends it unread, a negation anywhere after the trigger ends it unread, and
       // any other tail (的功能) is quiet and ends the read.
-      const NOUN_RE = /(平台|系列|机型|型号)(?:\s*支持)?/u;
+      const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
+      let nounAteSupport = false;
       const fieldOf = (word: string): 'platforms' | 'models' => (word === '平台' ? 'platforms' : 'models');
       let rest = candidate;
       const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
@@ -454,6 +455,10 @@ function conditionsOf(text: string): Conditions {
             if (nextNoun === null) { ok = false; break; } // 或其他平台: a connective with no readable item after it
             continue;
           }
+          // The quiet tail is a possessive tail (starts with 的) or a start-build tail (自 <版本> 起…): an
+          // unfinished item (物理设备 without its own noun) or any other leftover keeps the whole series unread.
+          const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
+          if (left.trim() !== '' && !startTailHere && !/^的/u.test(left.trim())) { ok = false; break; }
           quiet = true;
           break;
         }
@@ -464,16 +469,29 @@ function conditionsOf(text: string): Conditions {
         else if (field !== nextField) { ok = false; break; } // mixed fields in one series stay unread
         const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
         if (itemPart.trim() !== '' && pieceTokens.length === 0) { ok = false; break; }
+        // A token that is neither a known platform word nor a model atom fails the WHOLE series (closure 14): a
+        // narrowed first-item read (虚拟 of 虚拟平台和物理设备) never happens.
+        if (field === 'platforms' && !pieceTokens.every((token) => PLATFORM_WORDS.has(token.toLowerCase()))) { ok = false; break; }
+        if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) { ok = false; break; }
         tokensByField[field].push(...pieceTokens);
+        nounAteSupport = head[2] !== undefined;
         rest = rest.slice(head.index + head[0].length);
         const after = rest;
         if (after.trim() === '') break;
-        if (ETC.test(after) || CLAUSE_NEGATION.test(after)) { ok = false; break; }
+        if (ETC.test(after) || CLAUSE_NEGATION.test(after) || /^\s*外/.test(after)) { ok = false; break; }
         const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(after);
         if (connective !== null) {
           rest = after.slice(connective[0].length);
           continue;
         }
+        // A leftover that is itself a field noun (系列机型: the noun extends) continues the loop — the head branch
+        // consumes it next. Otherwise the tail is a possessive tail (的功能…) or Han prose after the noun's own 支持
+        // (仅 hg-k 平台支持硬件加速); anything else — an unfinished item (物理设备), a foreign tail — keeps the whole
+        // series unread (closure 14).
+        if (NOUN_RE.test(rest.trim())) continue;
+        // A start-build tail (自 <版本> 起…/可用/不可用) is prose about availability, not a condition item.
+        const startTail = /^自\s*\S+\s*起/.test(rest.trim());
+        if (rest.trim() !== '' && !startTail && !/^的/u.test(rest.trim()) && !nounAteSupport) { ok = false; }
         quiet = true;
         break;
       }
@@ -485,6 +503,12 @@ function conditionsOf(text: string): Conditions {
       if (at[0].startsWith('仅') || at[0].startsWith('只')) {
         if (!/(?:平台|系列|机型|型号)\s*支持/u.test(candidate)) { continue; }
       }
+      // The quiet tail must be quiet indeed: another field noun, a bracket group, a separator or a connective with
+      // no item after it makes the whole series unread — never a narrowed read (closure 14). A following FIELD NOUN
+      // that only extends the same field's noun (系列机型, 系列型号) is the noun itself, not a foreign tail.
+      const tailText = rest.replace(/^(?:系列|机型|型号)+\s*$/u, '').trim();
+      if (process.env.FDBG) console.error('END', JSON.stringify({ok, field, tokens: tokensByField, quiet, rest, tailText}));
+      if (quiet && tailText !== '' && (/(?:平台|系列|机型|型号)/u.test(tailText) || /[（）()【】\[\]{}:：、,，/／]/u.test(tailText) || CONNECTIVES.some((word) => tailText.includes(word)))) { continue; }
       if (!ok || field === null || quiet === false && rest.trim() !== '') continue;
       void quiet;
       const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
