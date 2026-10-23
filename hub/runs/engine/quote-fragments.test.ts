@@ -260,21 +260,25 @@ test('resolver codes refute parser and range failures even when the message neve
   }
 });
 
-test('a locked tree with no readable text stays unknown, including retained content and failed reads', { skip }, async t => {
+test('a locked tree preserves retained/empty grades and automatically recovers temporary read failures', { skip }, async t => {
   const {h,map}=await open(); t.after(()=>h.close());
   const treeReader=h.knowledge.treeReader();
+  let offlineReads=0;
   t.mock.method(h.knowledge,'treeReader',()=>({...treeReader,hasRoot:()=>true,read:(...args:Parameters<typeof treeReader.read>)=>{
     if (args[1] === '/empty') return {text:null,mediaType:'application/octet-stream',readTier:'model_readable' as const,grounds:[]};
     if (args[1] === '/held') return {text:null,mediaType:'text/plain',readTier:'retain_only' as const,grounds:[]};
-    if (args[1] === '/offline') throw new Error('合成读取失败');
+    if (args[1] === '/offline') { if(++offlineReads < 3) throw new Error('合成读取失败'); return {text:'任意引文',mediaType:'text/plain',readTier:'model_readable' as const,grounds:[]}; }
     if (args[1] === '/missing') return null;
     return treeReader.read(...args);
   }}));
-  for (const [path,message] of [['/empty',/取不回/],['/held',/含凭据，原文不可读/],['/offline',/取不回/]] as const) {
+  for (const [path,message] of [['/empty',/取不回/],['/held',/含凭据，原文不可读/]] as const) {
     const result=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}${path}`});
     assert.ok(!result.claims.some(c=>c.statement.verdict==='refute'));
     assert.ok(result.claims.some(c=>c.statement.verdict==='unknown' && message.test(c.statement.text)));
   }
+  const recovered=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/offline`});
+  assert.equal(offlineReads,3);
+  assert.ok(!recovered.claims.some(c=>c.statement.verdict==='unknown'||c.statement.verdict==='refute'));
   const missing=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/missing`});
   const refute=missing.claims.find(c=>c.statement.verdict==='refute');
   assert.ok(refute);

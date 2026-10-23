@@ -18,7 +18,7 @@ import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, source
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
-import { retryRead, type ReadFailureReason } from './retry-read.ts';
+import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
@@ -427,7 +427,18 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
         }
         // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
-        return finish(await resolveReference(ref, resolveCtx));
+        let result: Awaited<ReturnType<typeof resolveReference>>;
+        try {
+          result = await retryRead(() => resolveReference(ref, resolveCtx), value => !value.resolved
+            && value.code === 'SOURCE_UNAVAILABLE' && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
+            attempt => { if(attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read',ENGINE_COMPONENT,attempt,{reference})); });
+        } catch(error) {
+          onError(error,'graded fragment');
+          throw new HubReadFailure(reference,'check_error',retryAttempts);
+        }
+        if(!result.resolved && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined)
+          throw new HubReadFailure(reference,result.reason,retryAttempts);
+        return finish(result);
       })();
       fragmentCache.set(reference, pending);
     }

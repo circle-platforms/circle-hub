@@ -432,7 +432,7 @@ Exact-value resolution retries only SOURCE_UNAVAILABLE carrying an internal chec
 (and thrown read failures), using the same three-attempt 50/100 ms policy. Genuine absent/forbidden references and invalid
 selectors keep their existing model-side treatment; source bounds and integrity checks are never bypassed. On exhausted
 Hub failure, validation records a validate action with hub_error, the fixed source reason, retry_attempts, repair: [] and
-no validation result. The public code/message stays neutral SOURCE_UNAVAILABLE, with an administrator-restore fix and no
+no validation result. The protocol code stays SOURCE_UNAVAILABLE pending the model-owned code; the message identifies the Hub read failure, with an administrator-restore fix and no
 requirement/rounds_left. The raw submission is still stored once. Hub-failure actions do not mark the digest as a consumed
 repair attempt, so the identical body can be checked after restoration; genuine errors then consume their normal round.
 A completed result still replays idempotently. The model-facing resolver keeps its neutral return rather than throwing.
@@ -499,3 +499,8 @@ the actual cause only in the administrator log. Caller answers, stored unread_so
 Retry evidence uses action_kind read/validate and the actual versioned pack or engine component; module/item/reference
 identify the operation without a new classification axis. Sandbox control codes and queue_full/spawn_failed/stopping
 remain parent-only diagnostics; persisted reasons map to timeout, budget_exhausted or check_error.
+
+Data-only quoted fragments use the same bounded internal-fault reread policy as exact values, once per reference per
+evaluation. A recovered read proceeds to quote checking; exhaustion produces a Hub error action and administrator
+recovery/resubmit instruction, without a model repair charge or an accepted result frozen on a temporary read unknown.
+Retain-only and neutral absent/forbidden reads are not transient retry targets in this path.
