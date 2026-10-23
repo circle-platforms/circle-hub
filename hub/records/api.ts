@@ -124,6 +124,8 @@ export interface RecordInput<B = unknown> {
 
 /** A stored record (contracts RecordEnvelope). Its digest is verified every time it is read. */
 export interface StoredRecord<B = unknown> {
+  /** Unsealed read diagnostic; never part of the historical body or digest. */
+  integrity_note?: string;
   id: string;
   kind: RecordKind;
   schema: string;

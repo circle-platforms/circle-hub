@@ -14,7 +14,9 @@ test('canonical records retain the fast path; noncanonical equivalent bodies are
   const digest = recordDigest(legacy); const id = newId('rcd');
   const text = '{ "second": "合成", "first": 1 }';
   await db.query('INSERT INTO records (id,digest,kind,schema,provenance,created_at,body,size) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [id, digest, legacy.kind, legacy.schema, legacy.provenance, legacy.created_at, text, Buffer.byteLength(text)]);
-  assert.deepEqual((await kit.store.get(digest))!.body, legacy.body);
+  const read=await kit.store.get(digest);assert.deepEqual(read!.body,legacy.body);
+  assert.equal(read!.integrity_note,'正文不是规范写法、内容与摘要一致');
+  assert.equal((await kit.store.get(canonical.digest))!.integrity_note,undefined);
   const { recordIntegrityNotes } = await import('./store.ts');
   const before = recordIntegrityNotes().readings;
   await kit.store.get(canonical.digest);
