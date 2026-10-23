@@ -8,6 +8,7 @@
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: secrets and tokens come from standard input only, never from argv.
+import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
@@ -1125,6 +1126,8 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
+  { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
+  { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },

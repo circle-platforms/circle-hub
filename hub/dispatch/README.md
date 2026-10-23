@@ -54,3 +54,11 @@ MCP 初始化后先逐页读取 tools/list；允许清单缺任何一项就停�
 目标租约按期限三分之一安排心跳，中断单独记录，继续状态读取，不重交；终态后停止心跳再释放。派发后 Hub 围栏变化单独记漂移，不声称保持同一租约。结果包含这些限定。登记时可明确租约期限和提交时间的数值缩放，避免猜时间单位。全产出测试扫描对象、文件和全部种类的记录，确认目标回显的调用密钥也已剔除。
 
 核验事实另含 `plan_run`，按执行器声明的指针读取，必须等于核验运行自己的 predecessor。缺失或不相等时拒绝，提示“用计划运行作 predecessor 重开核验运行”；不会猜计划运行或挪用其他前驱。
+
+## 管理员命令与装配
+
+- `circle-hub executor add <定义文件>`：调用密钥从标准输入读；`update <编号> <文件> [--secret]`、`list`、`disable <编号>`。只输出资源编号、定义摘要和计数，不输出端点、台架名或密钥。
+- `circle-hub job precheck --executor <编号> [--booking <运行>] [--save <暂存目录>]`：只读观察可导出到仓库外、权限 0600 的编号文件，不覆盖已有文件。
+- `circle-hub job dispatch --run <核验运行> --executor <编号>`；`status|resume <作业摘要>`；`dispose <作业摘要> --reconcile <远端编号>` 或 `--keep-unknown` 或 `--mark-failed --reason <说明> [--accept-possible-duplicate-effects]`。
+
+未知输出下一步管理员对账命令；结果只打印引用。错误参数不回显值，不允许把其他子命令的标志混进派发。CLI 结束时关闭本命令拥有的租约数据库池；传入的服务仍由调用方管理。装配没有新增 MCP 工具，也没有自动派发钩子。cli-admin 仅新增 import 和两个命令表项；与并行 secret import 的合并由集成者处理。

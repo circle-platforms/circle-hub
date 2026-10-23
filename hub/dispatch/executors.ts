@@ -20,6 +20,12 @@ export class ExecutorRegistry {
     await this.admin(by); if (!await this.get(id)) throw new Error('执行器对你不可用');
     return this.configure(by, this.validate({ ...(input as object), id }));
   }
+  async setSecret(by: Principal, id: string, secret: string): Promise<void> {
+    await this.admin(by); const current = await this.get(id);
+    if (!current || !secret.trim() || secret.length > 4096 || /[\r\n]/.test(secret)) throw new Error('执行器或密钥无效');
+    if (new TextDecoder().decode(canonicalBytes(current.definition)).includes(secret)) throw new Error('执行器定义不能包含调用密钥');
+    await this.records.vault.put(`executor.${id}.bearer`, secret);
+  }
   async disable(by: Principal, id: string): Promise<RegisteredExecutor> {
     const current = await this.get(id); if (!current) throw new Error('执行器对你不可用');
     return this.update(by, id, { ...current.definition, enabled: false });

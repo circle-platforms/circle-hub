@@ -9,7 +9,7 @@ import { RpcClient, object, type Exchange } from './transport.ts';
 import { verifyInput, type VerificationPort } from './proof.ts';
 export interface DispatchOptions {
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
-  workflows: Pick<WorkflowStore, 'byDigest'>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
+  workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
 export interface JobStatus { job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; }
 interface RemoteLease { id: unknown; token: unknown; ttl: number; }
@@ -20,11 +20,13 @@ export class DispatchService {
   readonly journal: Journal;
   readonly now: () => Date;
   readonly sleep: (ms: number) => Promise<void>;
+  #closing: Promise<void> | null = null;
   constructor(options: DispatchOptions) {
     this.options = options; this.now = options.now ?? (() => new Date());
     this.sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
     this.registry = new ExecutorRegistry(options.records); this.journal = new Journal(options.records, this.now);
   }
+  async close(): Promise<void> { await (this.#closing ??= this.options.close?.() ?? Promise.resolve()); }
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
