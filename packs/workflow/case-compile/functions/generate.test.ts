@@ -40,12 +40,7 @@ test('multiple expectations follow the same command before the next step', () =>
   assert.equal(rows[4].cells.find((c) => c.reference === 'G5')?.text, input.slots.expects[0].text);
   assert.equal(rows[5].cells.find((c) => c.reference === 'G6')?.text, '设置成功');
 });
-test('XML and SpreadsheetML text are preserved without dropping invalid characters silently', () => {
-  const input = generationFixture(); input.fields.title = '原文 _x000D_ & < >\n值\r尾'; input.fields.steps = []; input.slots.expects[0].text = '原文 _x0041_';
-  const parsed = recognize(createDefaultRegistry(), generateWorkbook(input), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')!;
-  const model = readWorkbookModel(parsed.document.model)!; assert.equal(model.sheets[0].rows[3].cells.find((c) => c.reference === 'D4')?.text, input.fields.title);
-  const row = model.sheets[0].rows[4]; assert.equal(row.cells.find((c) => c.reference === 'G5')?.text, input.slots.expects[0].text);
-});
+test('SpreadsheetML escape-looking text is refused with a fixed reason', () => { const input=generationFixture(); input.fields.title='_x0041_'; assert.throws(()=>generateWorkbook(input),(e:unknown)=>e instanceof GenerationError&&e.rule==='xstring_escape'); });
 for (const [name, change] of Object.entries({
   autoid: (v: any) => { v.fields.autoid = Number(v.fields.autoid); }, codec: (v: any) => { v.slots.steps[0].args = ['k=value']; }, seat: (v: any) => { v.profile.device_count = 0; }, after: (v: any) => { v.slots.expects[0].after = 3; }, formula: (v: any) => { v.fields.title = '=unsafe'; v.fields.steps = []; }, control: (v: any) => { v.fields.title = 'a\u0001b'; v.fields.steps = []; }, version: (v: any) => { v.generator = 'fixture-old'; },
 })) test(`generation refuses with a location: ${name}`, () => { const input = generationFixture(); change(input); assert.throws(() => generateWorkbook(input), (e: unknown) => e instanceof GenerationError && e.pointer.startsWith('/')); });

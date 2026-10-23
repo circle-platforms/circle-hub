@@ -537,15 +537,16 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@2.1.0"
+      "generator": "case-compile@2.2.0"
     },
     "workbook": {
       "model": {
+        "nulRemoved": 0,
         "members": [
           {
             "name": "[Content_Types].xml",
             "size": 679,
-            "contentType": "application/xml"
+            "contentType": null
           },
           {
             "name": "_rels/.rels",
@@ -598,6 +599,8 @@
         ],
         "sheets": [
           {
+            "relationshipId": "rId1",
+            "relationshipType": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
             "name": "FixtureSheet",
             "state": "visible",
             "part": "xl/worksheets/sheet1.xml",
@@ -605,6 +608,8 @@
               {
                 "number": 1,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A1",
@@ -630,14 +635,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@2.1.0",
+                    "text": "case-compile@2.2.0",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "5e1a010bdccaf8df598b5bdd4f78661e17fb14aeba30d378bb71f648696f57aa",
+                    "text": "7945696d62785e29e480c8df9d15e0603c6d1f3c0727e860e7b4b8489762bbe9",
                     "formula": false,
                     "style": null
                   }
@@ -646,6 +651,8 @@
               {
                 "number": 2,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A2",
@@ -715,6 +722,8 @@
               {
                 "number": 3,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "C3",
@@ -735,6 +744,8 @@
               {
                 "number": 4,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A4",
@@ -790,6 +801,8 @@
               {
                 "number": 5,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "C5",
@@ -831,6 +844,8 @@
               {
                 "number": 6,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "B6",
@@ -879,6 +894,8 @@
               {
                 "number": 7,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "B7",
@@ -927,11 +944,15 @@
               {
                 "number": 8,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": []
               },
               {
                 "number": 9,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A9",
@@ -955,7 +976,7 @@
           }
         ]
       },
-      "sha256": "f3f0043f478a3bb3ebee2d251b10aa4728c1579a79245d6d42154cb3be8b738d"
+      "sha256": "b7ce15a06afd6ea1834f7673e82ae33842a13d1f137c388ef7782ee8ebeb4360"
     }
   },
   "expect": [
