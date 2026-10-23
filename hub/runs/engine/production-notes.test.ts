@@ -87,3 +87,11 @@ test('a missing fragment in a bound source is a definite refusal, and notes of a
   const judgment=await pack({judgment:true});const normal=await h.service.startRunDetailed(h.alice,{pack:judgment,inputs:{map:{reference:source}}},h.call());
   assert.equal(normal.answer.call_result,'ok');assert.equal(normal.production,null);
 });
+
+// Each refusal concerns projection output, not a location in the caller arguments.
+for(const mode of ['shape','ground'])test(`projection ${mode} errors never invent a call-argument path`,{skip},async()=>{
+  const override=mode==='shape'?{grounds:[]}:{grounds:[`${source}/json@1/p/not_present`]};
+  const id=await pack({override});const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
+  assert.equal(detail.answer.call_result,'error');assert.equal(detail.answer.errors[0].path,undefined);
+  assert.match(detail.answer.errors[0].message,/groups\/0/);assert.ok(detail.answer.errors[0].fix);
+});

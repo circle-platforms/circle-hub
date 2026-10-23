@@ -648,13 +648,12 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
   for (const {group, i} of notes) {
     const at = pointerOf('groups', i);
     const note = noteSchema.safeParse(group);
-    if (!note.success) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包的确定说明 ${at} 不合格：需要 message 和非空 grounds`, {path:at,fix:'请任务包维护人修正投影函数的事实说明后重开运行'})]);
+    if (!note.success) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包的确定说明 ${at} 不合格：需要 message 和非空 grounds`, {fix:'请任务包维护人修正投影函数的事实说明后重开运行'})]);
     const grounds: string[] = [];
     const roles: Array<SourceRole | null> = [];
     for (const reference of note.data.grounds) {
       const resolved = await resolver.resolve(reference);
       if (!resolved.ok) throw new Refusal([protocolError(resolved.code ?? 'REFERENCE_UNRESOLVED', `任务包的确定说明 ${at} 的根据解析不出：${resolved.message}`, {
-        path:`${at}/grounds`,
         fix:resolved.code === 'SOURCE_UNAVAILABLE'
           ? `请 ${user.name} 先重读该引用并核对权限、读取档位和解析器；恢复可读后重开运行，不能恢复时把追踪号交给管理员核查`
           : '按本次运行绑定的源文件和锁定根修正投影函数的引用，再重开运行',
