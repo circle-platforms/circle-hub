@@ -46,7 +46,9 @@ test('zero or multiple matches never issue a build request or invent an empty re
   for (const [items, resolution] of [[[], 'unresolved'], [[products[0], { id: 412, name: 'Alternate / Synthetic' }], 'ambiguous']] as const) {
     const input = { ...request(), responses: productResponse([...items]), original: 'products' };
     assert.deepEqual(buildsPlan(input), { requests: [], original: 'products', done: true });
-    assert.deepEqual(content(buildsProject(input)), { product: null, product_resolution: resolution, builds: [] });
+    const out = buildsProject(input) as any; const data = content(out);
+    assert.equal(data.product, null); assert.equal(data.product_resolution, resolution); assert.equal(data.builds, null);
+    assert.equal(out.complete, false); assert.match(out.note, /下一步/); assert.equal(data.candidates.length, items.length);
   }
 });
 test('malformed keys or responses refuse without guessing names or empty build lists', () => {

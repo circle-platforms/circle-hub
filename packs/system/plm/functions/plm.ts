@@ -210,7 +210,7 @@ function buildKey(key: string): BuildKey | null {
   } catch { return null; }
 }
 
-type ProductChoice = { product: Product | null; resolution: Resolution };
+type ProductChoice = { product: Product | null; resolution: Resolution; candidates?: Product[] };
 /** The caller's numeric identity is explicit; names need exactly one matching product row. */
 function chooseProduct(key: BuildKey, responses: Record<string, Response>): ProductChoice | null {
   if ('id' in key) return { product: { id: key.id, name: null }, resolution: 'resolved' };
@@ -219,10 +219,15 @@ function chooseProduct(key: BuildKey, responses: Record<string, Response>): Prod
   if (response?.ok === false || !Array.isArray(data) || data.some((item) => !isRecord(item) || typeof item.name !== 'string')) return null;
   const matches = data.filter((item) => isRecord(item) && typeof item.name === 'string' &&
     key.names.every((name) => (item.name as string).normalize('NFKC').split('/').map(nameKey).includes(name)));
-  if (matches.length !== 1) return { product: null, resolution: matches.length ? 'ambiguous' : 'unresolved' };
-  const id = idText(matches[0].id);
-  if (id === null || !PRODUCT_ID.test(id)) return null;
-  return { product: { id, name: matches[0].name as string }, resolution: 'resolved' };
+  const distinct = new Map<string, Product>();
+  for (const row of matches) {
+    const id = idText(row.id);
+    if (id === null || !PRODUCT_ID.test(id)) return null;
+    if (!distinct.has(id)) distinct.set(id, { id, name: row.name as string });
+  }
+  const candidates = [...distinct.values()];
+  if (candidates.length !== 1) return { product: null, resolution: candidates.length ? 'ambiguous' : 'unresolved', candidates };
+  return { product: candidates[0], resolution: 'resolved' };
 }
 
 /** Numeric keys read one build list; name keys first resolve the product, with at most two requests. */
@@ -243,7 +248,11 @@ export function buildsProject(input: unknown): unknown {
   if (key === null) return { error: { code: 'plm.invalid_key', message: '构建列表标识无效：提供产品编号，或逐个 URI 编码后以 + 连接的产品名字' } };
   const choice = chooseProduct(key, responses);
   if (choice === null) return { error: { code: 'plm.no_products', message: '产品列表不能证明产品身份；重新读取产品列表并核实 id 和 name 字段' } };
-  if (choice.product === null) return { artifacts: [{ name: 'content', media_type: 'application/json', json: { product: null, product_resolution: choice.resolution, builds: [] } }] };
+  if (choice.product === null) {
+    const cause = choice.resolution === 'ambiguous' ? '多个不同产品编号同时匹配请求名字' : '没有产品同时包含全部请求名字';
+    const note = ('下一步：核对名字，或明确使用 plm:builds:<产品编号> 重新读取（由集成者核实编号后配置）；尚未读取构建列表。原因：' + cause).slice(0, 500);
+    return { complete: false, note, artifacts: [{ name: 'content', media_type: 'application/json', json: { product: null, product_resolution: choice.resolution, builds: null, candidates: choice.candidates ?? [], requested_names: 'names' in key ? key.names : [], note } }] };
+  }
   const data = responses[original]?.json;
   if (responses[original]?.ok === false || !Array.isArray(data)) return { error: { code: 'plm.no_records', message: '构建列表不是数组；重新读取该产品的构建原件' } };
   const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};

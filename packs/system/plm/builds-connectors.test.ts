@@ -60,7 +60,9 @@ test('URI-encoded Unicode names survive the connector boundary and normalize bef
 test('unmatched and ambiguous names stop after the product list', async () => {
   for (const [key, resolution] of [['Absent', 'unresolved'], ['Both+Shared', 'ambiguous']]) {
     const at = plm.requests.length;
-    assert.deepEqual(await read(key), { product: null, product_resolution: resolution, builds: [] });
+    const data = await read(key);
+    assert.equal(data.product, null); assert.equal(data.product_resolution, resolution); assert.equal(data.builds, null);
+    assert.equal(data.candidates.length, resolution === 'ambiguous' ? 2 : 0); assert.match(data.note, /plm:builds:/);
     assert.deepEqual(plm.requests.slice(at).map((r) => r.path), ['/plmquery/product/all/']);
   }
 });
