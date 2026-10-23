@@ -12,6 +12,7 @@
 //   node scripts/real/gold/locations.ts --tree <agile-tree.json> [--root <rootId>] --out <locations.json>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { idKey, rawIdAt } from './id-text.ts';
 
 export interface DocumentLocationGold {
   document: string;
@@ -107,25 +108,9 @@ export function isModuleName(raw: string): boolean {
 }
 
 function idAt(text: string, at: number, min: number, max: number, bare: boolean): { id: string; end: number } | null {
-  let end = at;
-  while (end < text.length && text[end] >= '0' && text[end] <= '9') end += 1;
-  const id = text.slice(at, end);
-  if (id.length < min || id.length > max || id.startsWith('0')) return null;
-  const before = text[at - 1] ?? '';
-  const next = text[end] ?? '';
-  const after = text[end + 1] ?? '';
-  const short = id.length <= 4;
-  if (/[0-9]/.test(before) || (before === '.' && /[0-9]/.test(text[at - 2] ?? ''))) return null;
-  if (next === '.' && /[0-9]/.test(after)) return null;
-  if (short && (next === '/' || next === ':') && /[0-9]/.test(after)) return null;
-  if (id.length === 4 && next === '-' && /^[0-9]{1,2}(?:[^0-9]|$)/.test(text.slice(end + 1, end + 4))) return null;
-  if (short && /[a-z]/.test(next)) return null;
-  if (id.length === 8) {
-    const y = Number(id.slice(0, 4));
-    const m = Number(id.slice(4, 6));
-    const d = Number(id.slice(6, 8));
-    if (y >= 1970 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) return null;
-  }
+  const found = rawIdAt(text, at, min, max);
+  if (found === null) return null;
+  const {id,end} = found;
   if (/^\s*[年月日号]/u.test(text.slice(end, end + 3))) return null;
   if (bare && /^\s*:/.test(text.slice(end, end + 3))) return null;
   return { id, end };
@@ -187,7 +172,8 @@ function scanLeading(text: string): string[] {
     at += skip.length;
   }
   at += (sticky(LEAD_OPEN, text, at) ?? '').length;
-  const { ids, ends } = idList(text, at, 5, 7, true);
+  const { ids, ends } = idList(text, at, 4, 7, true);
+  if (ids[0]?.length === 4 && Number(ids[0]) >= 1900 && Number(ids[0]) <= 2099) return [];
   if (ends.some((end) => GLUED_HAN.test(text.slice(end, end + 1)) || UNIT.test(text.slice(end, end + 12)))) return [];
   return ids;
 }
@@ -209,24 +195,26 @@ export function extractAssociatedIds(title: string, ancestors: string[]): {
   }
 
   const allFound = [...titleMarked, ...ancestorMarked, ...titleLeading.map((id) => ({ id, kind: null as 'story' | 'bug' | null }))];
-  const storiesSet = new Set<string>();
-  const bugsSet = new Set<string>();
-  const unclassifiedSet = new Set<string>();
+  const storiesSet = new Map<string,string>();
+  const bugsSet = new Map<string,string>();
+  const unclassifiedSet = new Map<string,string>();
 
   for (const item of allFound) {
-    if (item.kind === 'story') storiesSet.add(item.id);
-    else if (item.kind === 'bug') bugsSet.add(item.id);
+    if (item.kind === 'story' && !storiesSet.has(idKey(item.id))) storiesSet.set(idKey(item.id),item.id);
+    else if (item.kind === 'bug' && !bugsSet.has(idKey(item.id))) bugsSet.set(idKey(item.id),item.id);
   }
   for (const item of allFound) {
-    if (item.kind === null && !storiesSet.has(item.id) && !bugsSet.has(item.id)) {
-      unclassifiedSet.add(item.id);
+    if (item.kind === null && !storiesSet.has(idKey(item.id)) && !bugsSet.has(idKey(item.id)) && !unclassifiedSet.has(idKey(item.id))) {
+      unclassifiedSet.set(idKey(item.id),item.id);
     }
   }
 
-  const stories = [...storiesSet].sort();
-  const bugs = [...bugsSet].sort();
-  const unclassified = [...unclassifiedSet].sort();
-  const associatedIds = [...new Set([...stories, ...bugs, ...unclassified])].sort();
+  const stories = [...storiesSet.values()].sort();
+  const bugs = [...bugsSet.values()].sort();
+  const unclassified = [...unclassifiedSet.values()].sort();
+  const identities = new Map<string,string>();
+  for(const id of [...stories,...bugs,...unclassified])if(!identities.has(idKey(id)))identities.set(idKey(id),id);
+  const associatedIds = [...identities.values()].sort();
 
   return { stories, bugs, unclassified, associatedIds };
 }

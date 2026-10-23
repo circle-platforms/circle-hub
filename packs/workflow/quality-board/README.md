@@ -135,3 +135,8 @@ contradictory metadata and malformed paths are refused with a fixed rerun instru
 Gold closure B: --placement only asks the scenario to bind placement and require the Hub count sentence; it omits
 unplaced unless --case-commands provided an independent measurement. An observed zero remains a strict comparison,
 while a count that was not measured is never invented as zero. Missing Hub output still fails the check.
+
+Independent id policy: the gold extractors follow the APV README, preserving zero padding in output spellings and raw
+source titles, using normalized nonzero keys only for classification/joins, and rejecting zero-only or out-of-bound digit
+runs. Bare ids use the APV 4–7 written-digit range. Dates/versions are excluded before joining. This supersedes the old
+location-gold exception that rejected every leading zero. The separate gold-location branch is aligned by its owner.

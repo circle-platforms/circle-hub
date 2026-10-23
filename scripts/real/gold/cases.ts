@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GoldRefusal } from './refusal.ts';
+import { rawIdAt } from './id-text.ts';
 
 export interface GoldNode {
   index: number;
@@ -94,7 +95,6 @@ const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', 
 const BUG_MARKERS =
   /(?<![A-Za-z])(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)/gi;
 const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{2})/i;
-const NOT_ID = /^(?:19|20)[0-9]{2}/;
 
 
 /** A document with no case nodes: caught by type, never by matching the message text. */
@@ -110,12 +110,10 @@ export function bugIdsOf(raw: string): string[] {
     let at = (match.index ?? 0) + match[0].length;
     at += /^[\s_\-–—:#.]*/.exec(text.slice(at))![0].length;
     for (let guard = 0; guard < 64; guard++) {
-      const found = /^\d{2,9}/.exec(text.slice(at));
+      const found = rawIdAt(text, at, 2, 9);
       if (found === null) break;
-      const id = found[0];
-      const next = text.slice(at + id.length, at + id.length + 2);
-      if (!(NOT_ID.test(id) && id.length === 8 && /^\d{2}$/.test(next)) && !/^\d{4}-\d{1,2}/.test(id + next)) ids.push(id);
-      at += id.length;
+      ids.push(found.id);
+      at = found.end;
       const separator = SEPARATOR.exec(text.slice(at, at + 12));
       if (separator === null) break;
       at += separator[0].length;

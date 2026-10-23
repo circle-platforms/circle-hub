@@ -397,14 +397,14 @@ describe('locations gold generator', () => {
 });
 
 describe('leading-zero associated identifiers', () => {
-  it('keeps the case-location rule: ids with leading zeros stay unmarked here (the trace path keeps them via bugIdsOf)', () => {
-    assert.deepEqual(extractAssociatedIds('缺陷 0910011 合成', []).bugs, []);
+  it('keeps the published APV rule: nonzero leading-zero ids retain their spelling', () => {
+    assert.deepEqual(extractAssociatedIds('缺陷 0910011 合成', []).bugs, ['0910011']);
   });
   it('preserves nonzero identifiers for normalized joins and rejects all-zero runs', async () => {
     const { joinGold } = await import('./join.ts');
     const { bugIdsOf } = await import('./cases.ts');
-    // The trace path feeds the join bugIdsOf (cases.ts), which keeps leading zeros; this extractor does not.
-    const bugs = bugIdsOf('缺陷 00910001；缺陷 000000').filter((id) => !/^0+$/.test(id));
+    // Both independent extractors preserve padding; only comparison keys discard it.
+    const bugs = bugIdsOf('缺陷 00910001；缺陷 000000');
     assert.deepEqual(bugs, ['00910001']);
     const joined = joinGold([{ bug: '910001', status: 'fixed', module: '', system: 'plm' }], [{ document: 'synthetic-doc', id: 'synthetic-case', title: '合成用例', defects: bugs }], { plm: [{ id: '00910001', status: 'closed' }] });
     assert.equal(joined.closed_traced, 1);
