@@ -8,7 +8,7 @@ import { topology } from './testing.ts';
 function setup() {
   const original = runtimeDocument();
   const contract = signRuntime({ ...original, entries: [...original.entries.filter((v) => v.f !== 'credential').map((v) => v.f === 'configure' ? { ...v, signature: { ...v.signature, parameters: v.signature.parameters.slice(0, 1), optional: [] } } : v), entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }]), entry('widget-seat', 'opaque', [{ name: 'binary', kind: 'positional_only', required: true, default: null }])] });
-  const profile = { ...profileDocument(contract), allowed: [...profileDocument(contract).allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' } }], unopened: [{ object: 'widget-seat', method: 'opaque', parameters: [{ name: 'binary', missing: '合成二进制参数没有角色', reason: '现有角色无法核验', next: '另开包检查任务，增加角色与筛查' }] }], pending: [] };
+  const profile = { ...profileDocument(contract), synthetic: false, allowed: [...profileDocument(contract).allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' } }], unopened: [{ object: 'widget-seat', method: 'opaque', parameters: [{ name: 'binary', missing: '合成二进制参数没有角色', reason: '现有角色无法核验', next: '另开包检查任务，增加角色与筛查' }] }], pending: [] };
   const manifest = convertTopology(topology()); return { contract, profile, manifest };
 }
 test('profile draft includes all six enabled combinations and separates explicit unopened parameters', () => {
@@ -32,4 +32,13 @@ test('profile drafts never guess parameter semantics or environment mappings', (
   assert.equal(draft.seats, null); assert.equal(draft.denied.device, null);
   assert.throws(() => draftProfile({ ready: false, device_count: 2 }, manifest, contract));
   assert.throws(() => draftProfile({ ready: true }, manifest, contract));
+});
+
+test('deployment publication refuses empty command screens and synthetic identity markers', () => {
+  const { profile, contract, manifest } = setup(); const deployed = { ...profile, synthetic: false };
+  for (const [part, expression] of [['device', /denied\/device.*重启.*清配置.*升级.*HA.*--check/], ['host', /denied\/host.*重启.*关机.*格式化.*--check/]] as const) {
+    const bad = structuredClone(deployed); bad.denied[part] = []; assert.throws(() => checkProfile(bad, manifest, contract), expression);
+  }
+  assert.throws(() => checkProfile({ ...deployed, synthetic: true }, manifest, contract), /synthetic.*false.*--check/);
+  assert.equal(checkProfile(deployed, manifest, contract).synthetic, false);
 });

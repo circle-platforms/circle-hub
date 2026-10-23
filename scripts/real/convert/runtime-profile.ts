@@ -65,6 +65,10 @@ export function checkProfile(profile: unknown, manifest: unknown, rawContract: u
   requireFact(record(profile) && Array.isArray(profile.pending) && profile.pending.length === 0, '仍有待填事实；集成者填写并逐项清除 pending 后重跑 --check');
   const parsed = parseProfile(profile, contract.contract, beds.beds);
   requireFact(parsed.ok, '配置未通过包解析器；核对角色、身份、座位、主机、等待上限、拒绝表和工作簿字段后重跑 --check');
+  requireFact(record(profile) && profile.synthetic === false, '部署配置的 synthetic 必须是 false；集成者核对真实接入事实后设为 false 并重跑 --check');
+  for (const [role, key, classes] of [['device_cli', 'device', '重启、清配置、升级、HA'], ['host_shell', 'host', '重启、关机、格式化']] as const) {
+    requireFact(!parsed.profile.allowed.some(call => Object.values(call.parameters).includes(role)) || parsed.profile.denied[key].length > 0, `denied/${key} 缺少${classes}类命令的部署文字；请集成者从运行器接入规则补取并填写拒绝表后重跑 --check`);
+  }
   requireFact(parsed.profile.seats.every((v) => v.ordinal < parsed.profile.device_count), '座位序号超出预检设备数；重新核对座位顺序');
   return parsed.profile;
 }
