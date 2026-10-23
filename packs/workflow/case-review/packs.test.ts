@@ -110,20 +110,38 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
       const schemaName = node.expression.expression.getText(source);
       if (axes.some(axis => schemaName === axis.type + 'Schema')) return;
     }
-    const checkedMap = (value: ts.Expression, type: string): boolean => {
+    const checkedMap = (value: ts.Expression, axis: {type:string;values:Set<string>}): boolean => {
       let at: ts.Node = value;
       while (ts.isParenthesizedExpression(at.parent) || ts.isAsExpression(at.parent)) at = at.parent;
       const annotation = ts.isSatisfiesExpression(at.parent) ? at.parent.type : ts.isVariableDeclaration(at.parent) ? at.parent.type : undefined;
-      const record = (t: ts.TypeNode): boolean => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)
-        && (t.typeName.text === 'Record'
-          || ['Readonly', 'Partial'].includes(t.typeName.text) && !!t.typeArguments?.[0] && record(t.typeArguments[0]));
-      return annotation !== undefined && record(annotation);
+      if (semantic) {
+        const context = semantic.checker.getContextualType(value) ?? (annotation ? semantic.checker.getTypeFromTypeNode(annotation) : undefined);
+        if (!context || semantic.checker.getIndexTypeOfType(context,ts.IndexKind.String)) return false;
+        return context.getProperties().filter(p=>axis.values.has(p.name)).length >= 2;
+      }
+      const constrained = (t:ts.TypeNode):boolean => {
+        if (ts.isMappedTypeNode(t)) return !!t.typeParameter.constraint && derives(t.typeParameter.constraint,axis.type);
+        if (!ts.isTypeReferenceNode(t) || !ts.isIdentifier(t.typeName)) return false;
+        if(t.typeName.text==='Record') return !!t.typeArguments?.[0] && derives(t.typeArguments[0],axis.type);
+        return ['Readonly','Partial'].includes(t.typeName.text) && !!t.typeArguments?.[0] && constrained(t.typeArguments[0]);
+      };
+      return annotation !== undefined && constrained(annotation);
+    };
+    const structuralKeys = (node:ts.Node,seen=new Set<ts.Node>()):boolean => {
+      if(seen.has(node))return false;seen.add(node);
+      if(ts.isTypeOperatorNode(node) && node.operator===ts.SyntaxKind.KeyOfKeyword)return true;
+      if(ts.isTypeReferenceNode(node) && semantic){
+        let symbol=semantic.checker.getSymbolAtLocation(node.typeName);
+        if(symbol && symbol.flags&ts.SymbolFlags.Alias)symbol=semantic.checker.getAliasedSymbol(symbol);
+        return symbol?.declarations?.some(d=>ts.isTypeAliasDeclaration(d)&&structuralKeys(d.type,seen)) ?? false;
+      }
+      return false;
     };
     if (ts.isObjectLiteralExpression(node) && node.properties.every(p => ts.isPropertyAssignment(p) && ts.isStringLiteral(p.initializer))) {
       const keys = node.properties.flatMap(p => ts.isPropertyAssignment(p) && ts.isStringLiteral(p.initializer) && p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? [p.name.text] : []);
       for (const axis of axes) {
         const matching = [...new Set(keys.filter(k => axis.values.has(k)))];
-        if (matching.length >= 2 && !checkedMap(node, axis.type)) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
+        if (matching.length >= 2 && !checkedMap(node, axis)) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
       }
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
@@ -141,12 +159,15 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
       };
       collect(node);
       for (const { values, expression } of compared.values()) for (const axis of axes) {
-        const type = semantic?.checker.getTypeAtLocation(expression);
-        const symbol = semantic?.checker.getSymbolAtLocation(expression);
+        const originalType = semantic?.checker.getTypeAtLocation(expression);
+        const type = originalType && (semantic!.checker.getBaseConstraintOfType(originalType) ?? originalType);
         const members = type?.isUnion() ? type.types : type ? [type] : [];
-        const finiteAxis = members.length > 0 && members.every(t => (t.flags & ts.TypeFlags.StringLiteral) !== 0 && axis.values.has((t as ts.StringLiteralType).value));
-        const typed = finiteAxis || type?.aliasSymbol?.name === axis.type || type?.aliasSymbol?.declarations?.some(d => ts.isTypeAliasDeclaration(d) && derives(d.type, axis.type)) || symbol?.declarations?.some(d => (ts.isPropertySignature(d) || ts.isParameter(d) || ts.isVariableDeclaration(d)) && d.type && derives(d.type, axis.type));
-        if (typed) continue;
+        const finite = members.length > 0 && members.every(t => (t.flags & ts.TypeFlags.StringLiteral) !== 0);
+        const finiteAxis = finite && axes.some(a=>members.every(t=>a.values.has((t as ts.StringLiteralType).value)));
+        const symbol=semantic?.checker.getSymbolAtLocation(expression);
+        const structural = finite && symbol?.declarations?.some(d=>(ts.isPropertySignature(d)||ts.isParameter(d)||ts.isVariableDeclaration(d)) && d.type && structuralKeys(d.type));
+        const derived = finite && axes.some(a=>type?.aliasSymbol?.declarations?.some(d=>ts.isTypeAliasDeclaration(d)&&derives(d.type,a.type)) || symbol?.declarations?.some(d=>(ts.isPropertySignature(d)||ts.isParameter(d)||ts.isVariableDeclaration(d)) && d.type && derives(d.type,a.type)));
+        if (finiteAxis || structural || derived) continue;
         const matching = [...values].filter(v => axis.values.has(v));
         if (matching.length >= 2) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
       }
@@ -216,6 +237,37 @@ describe('the vocabulary', () => {
     const program = ts.createProgram([file], { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, host);
     const hits = handWrittenAxes(text, { source: program.getSourceFile(file)!, checker: program.getTypeChecker() });
     assert.equal(hits.filter(h => h.axis === 'change_kind').length, 1);
+  });
+
+  it('c3 applies contextual key constraints and generated value types across axes', () => {
+    const file=join(root,'scan-types-self-test.ts');
+    const text=[
+      "import type {ChangeKind,StaticTerminal,Nature,PackKind} from './contracts/generated/vocabulary.ts';",
+      "type Labels=Record<ChangeKind,string>;",
+      "const goodMapped={added:'a',removed:'b',modified:'c'} as const satisfies {readonly [K in ChangeKind]:string};",
+      "const goodAlias:Labels={added:'a',removed:'b',modified:'c'};",
+      "const goodProperty:{labels:Labels}={labels:{added:'a',removed:'b',modified:'c'}};",
+      "function accept(x:Labels){} accept({added:'a',removed:'b',modified:'c'});",
+      "function result():Labels{return {added:'a',removed:'b',modified:'c'}};",
+      "interface RangeSpec {min:string;max:string} const goodRange:RangeSpec={min:'1',max:'9'};",
+      "interface Identity {run:string;item:string} const goodIdentity:Identity={run:'run-1',item:'item-1'};",
+      "const badBroad:Record<string,string>={added:'a',removed:'b',modified:'c'};",
+      "const badSatisfies={added:'a',removed:'b',modified:'c'} satisfies Record<string,string>;",
+      "declare const terminal:StaticTerminal; terminal==='pass'||terminal==='incomplete';",
+      "declare const nature:Nature; nature==='fact'||nature==='judgment';",
+      "declare const kind:PackKind; kind==='product'||kind==='workflow';",
+      "function generic<T extends ChangeKind>(v:T){return v==='added'||v==='removed'};",
+      "type Mixed='other'|Extract<ChangeKind,'added'|'removed'>; declare const mixed:Mixed; mixed==='added'||mixed==='removed';",
+      "declare const badWide:ChangeKind|string; badWide==='added'||badWide==='removed';",
+      "declare const key:keyof RangeSpec; key==='min'||key==='max';",
+      "const badUntyped={run:'run-1',item:'item-1'};",
+    ].join('\n');
+    const host=ts.createCompilerHost({}),original=host.getSourceFile;
+    host.getSourceFile=(path,language,onError,create)=>path===file?ts.createSourceFile(path,text,language,true):original(path,language,onError,create);
+    const program=ts.createProgram([file],{target:ts.ScriptTarget.ESNext,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext},host);
+    const hits=handWrittenAxes(text,{source:program.getSourceFile(file)!,checker:program.getTypeChecker()});
+    const badLines=text.split('\n').flatMap((line,i)=>line.includes('bad')?[i+1]:[]);
+    assert.deepEqual([...new Set(hits.map(h=>h.line))].sort((a,b)=>a-b),badLines);
   });
 
   it('uses generated axes in hub and every pack without handwritten exceptions', () => {

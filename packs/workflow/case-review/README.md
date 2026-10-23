@@ -435,3 +435,5 @@ node --test --test-concurrency=1 "contracts/**/*.test.ts" packs/workflow/case-re
 比较链在同一表达式上比较同轴两个以上代码即检查，包括子集；已有生成轴类型或 Extract 子集约束的业务分支放行。
 扫描使用 TypeScript 类型信息追踪这些约束，手写联合类型仍由原有扫描检查，不能用手写类型逃避检测。
 CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固定查重预算的出口和完整性片段分级另有定向回归。
+
+决定 41 扫描补充：标签表只在上下文类型明确约束了键时豁免，包括生成轴的 Record、映射类型、别名及声明的结构类型；Record<string, string> 没有限定键，不豁免。比较值须是生成轴或 Extract 子集，或声明结构类型的 keyof；类型参数使用其约束，轴类型与 string 的联合不算受约束。结构不按 run/item/min/max 的名字或路径豁免；CLI 命令说明表显式声明结构类型。
