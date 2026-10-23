@@ -22,7 +22,7 @@ export function relationNode(entries:readonly {kind:string;producers:readonly st
 }
 
 export interface RelationFacts { links: LinkEdge[]; drift: LinkDrift[]; entries: number; literals: number;diagnostics:LinkDiagnostic[] }
-export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number }
+export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string }
 const summaryOf=(text:string)=>cutText(text.replace(/\s+/gu,' ').trim(),160);
 const beneath=(path:string,prefix:string)=>prefix==='/'||path===prefix||path.startsWith(prefix+'/');
 const rulesOf=(value:unknown):Rule[]=>{
@@ -113,7 +113,7 @@ export class LinkReading {
     const user=await this.#context.records.principals.get(reader.id);if(!user||user.disabled)return false;
     return user.role==='admin'||(await this.#context.packs.readableProducts(reader)).has(product);
   }
-  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null}>{
+  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string}>{
     if(!RunId.safeParse(run).success)throw new Error('运行编号写法不对');
     // Record ids are storage ids; the run writer publishes its logical ids through this index.
     const page=await this.#context.records.store.find({key:'runs.id',value:run,kind:'run',limit:1});
@@ -124,7 +124,7 @@ export class LinkReading {
       const data=claim.statement.data;
       return data?.field==='build'&&data.root===body.root&&Sha256.safeParse(data.composition).success&&claim.validity.bound.includes(String(data.composition))?[String(data.composition)]:[];
     });
-    return {found:true,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null};
+    return {found:true,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
   }
   async facts(composition:CompositionView):Promise<RelationFacts>{
     const cached=this.#cache.get(composition.record);if(cached)return cached;
@@ -148,7 +148,7 @@ export class LinkReading {
   async page(composition:CompositionView,request:LinkRequest={}):Promise<LinksView>{
     const prefix=request.prefix??'/',target=request.target??null,rule=request.rule??null;
     pathSegments(prefix);if(target!==null)pathSegments(target);
-    const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
+    const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:request.build??composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
     if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取']};
     if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new Error('这份组成没有请求的链接声明，请按声明编号重读');
     const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target)&&(rule===null||edge.rule===rule));
@@ -156,7 +156,7 @@ export class LinkReading {
     const diagnostics=facts.diagnostics.filter(diagnostic=>beneath(diagnostic.path,prefix)&&(rule===null||diagnostic.rule===rule));
     const references=new Set([...links.map(l=>l.reference),...drift.flatMap(g=>g.occurrences.map(o=>o.reference)),...diagnostics.map(d=>d.reference)]);
     const totals={entries:references.size,literals:links.length+drift.reduce((n,g)=>n+g.total,0),links:links.length,drift_literals:drift.length,drift_occurrences:drift.reduce((n,g)=>n+g.total,0),...(diagnostics.length?{diagnosed_entries:new Set(diagnostics.map(d=>d.reference)).size}:{})};
-    const key=sha256Hex(canonicalBytes([composition.record,prefix,target,rule])),limit=request.limit??100;
+    const key=sha256Hex(canonicalBytes([composition.record,prefix,target,rule,...(request.build?[request.build]:[])])),limit=request.limit??100;
     if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error('链接视图每页要取 1 到 200 项');
     let offset=0;
     if(request.cursor){try{const c=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(c.q!==key||!Number.isSafeInteger(c.o)||c.o<0)throw new Error();offset=c.o;}catch{throw new Error('链接视图游标不属于这份组成和请求，请重读首页');}}

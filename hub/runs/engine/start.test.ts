@@ -290,13 +290,13 @@ test('a repeated client key inside its window returns the run even after the pac
   assert.deepEqual((await h.service.startRun(h.bob, { ...request, client_key: 'retry-2' }, h.call())).errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
 });
 
-test('the target composition is passed to both input and expected-source reads before the run is stored', {skip}, async()=>{
-  const read=h.external.read.bind(h.external),resolve=h.knowledge.rootOfBuild.bind(h.knowledge),contexts:Array<{composition?:string|null}> = [];
+test('the target composition and canonical build are passed to input and expected-source reads before the run is stored', {skip}, async()=>{
+  const read=h.external.read.bind(h.external),resolve=h.knowledge.rootOfBuild.bind(h.knowledge),contexts:Array<{composition?:string|null;build?:string}> = [];
   let selected:string|null=null;
   h.knowledge.rootOfBuild=async(product,name)=>{const root=await resolve(product,name);selected=root?.composition??null;return root;};
   h.external.read=async(id,context)=>{contexts.push(context);return read(id,context);};
   try{
     const answer=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',inputs:{map:{external:'toy:mindmap:docq7'}}},h.call());
-    assert.equal(answer.call_result,'ok');assert.ok(selected);assert.ok(contexts.length>1);assert.ok(contexts.every(context=>context.composition===selected));
+    assert.equal(answer.call_result,'ok');assert.ok(selected);assert.ok(contexts.length>1);assert.ok(contexts.every(context=>context.composition===selected));assert.ok(contexts.every(context=>context.build===answer.run!.build));
   }finally{h.external.read=read;h.knowledge.rootOfBuild=resolve;}
 });

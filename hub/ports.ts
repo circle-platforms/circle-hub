@@ -86,6 +86,8 @@ export interface ExternalReadContext {
   purpose: string;
   /** Composition already selected by the caller; it is never replaced with a newer production. */
   composition?: string | null;
+  /** Canonical name of the build selected by the run; absent on legacy callers. */
+  build?:string;
 }
 
 /** Names the engine looks for in the artifacts of a read: the response as received, the content to parse, and metadata about the object. */

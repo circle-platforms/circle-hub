@@ -63,7 +63,7 @@ const PROTO_KEY = '__proto__';
 export type ViewRequest =
   | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; catalog: string | null; revision: string | null }
   | { type: 'facets'; product: string; build: string; kind: EntryKind; by: string[]; revision: string | null }
-  | { type: 'links'; product: string; line: string; prefix: string; target: string | null; rule: string | null; composition: string | null; cursor: string | null; limit: number; revision: string | null }
+  | { type: 'links'; product: string; build: string; prefix: string; target: string | null; rule: string | null; composition: string | null; cursor: string | null; limit: number; revision: string | null }
   | { type: 'index'; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -161,7 +161,7 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     if(values.composition!==null&&!Sha256.safeParse(values.composition).success)return {ok:false,reason:'组成摘要写法不对'};
     const limit=Number(values.limit);if(!Number.isInteger(limit)||limit<1||limit>200)return {ok:false,reason:'每页要取 1 到 200 项'};
     if(revision!==null&&!Sha256.safeParse(revision).success)return {ok:false,reason:'链接视图修订是一份组成摘要'};
-    return {ok:true,value:{type:'links',product,line:build,prefix:values.prefix!,target:values.target,rule:values.rule,composition:values.composition,cursor:values.cursor,limit,revision}};
+    return {ok:true,value:{type:'links',product,build,prefix:values.prefix!,target:values.target,rule:values.rule,composition:values.composition,cursor:values.cursor,limit,revision}};
   }
   if (view === 'impact') {
     if (from === '' || to === '') return { ok: false, reason: '版本差要写成 <起始构建>..<目标构建>' };
@@ -796,20 +796,46 @@ export class KnowledgeViews {
   async #readLinks(bare:string,request:Extract<ViewRequest,{type:'links'}>,context:ExternalReadContext,startedAt:string):Promise<ExternalRead>{
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
     if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
-    let locked=context.composition,lockedRoot:string|null=null;
-    if(context.run){const run=await this.#relations.runLock(context.run,context.principal);
-      if(run.found&&run.root){if(!run.composition||locked&&locked!==run.composition)return {ok:false,id:bare,reason:'运行缺少组成绑定，或这次读的组成与运行锁定的不同'};locked=run.composition;lockedRoot=run.root;}
-      else if(run.found)locked=locked??null;
-      else if(locked===undefined)return {ok:false,id:bare,reason:'运行尚未存下，读取必须透传已选定的组成'};
+    const fold=(name:string)=>name.normalize('NFC').toLowerCase();
+    let locked=context.composition,lockedRoot:string|null=null,selectedBuild=context.build,selectedProduct:string|null=null;
+    let storedRun=false,storedComposition:string|null|undefined;
+    if(context.run){
+      const run=await this.#relations.runLock(context.run,context.principal);storedRun=run.found;
+      if(run.found){selectedBuild=run.build??selectedBuild;selectedProduct=run.product??null;storedComposition=run.composition;locked=run.composition;lockedRoot=run.root;}
+      else if(locked===undefined)return {ok:false,id:bare,reason:'运行尚未存下；读取必须透传已选定的组成'};
     }
-    if(locked&&request.composition&&locked!==request.composition)return {ok:false,id:bare,reason:'请求的组成与这次读锁定的组成不同'};
-    let composition=locked??request.composition??request.revision;
-    if(!composition&&request.cursor){try{const c=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(Sha256.safeParse(c.c).success)composition=c.c;}catch{}}
-    if(!composition){const current=await this.#builds.currentRoot(handle.product.id,request.line);if(!current)return {ok:false,id:bare,reason:'这条线没有当前组成，请先生产并移动这条线的指针'};composition=current.composition;}
+    const lockedBody=locked?await this.#context.store.composition(locked):null;
+    selectedProduct??=lockedBody?.product??null;
+    const frozenSelector=!!context.run&&selectedBuild!==undefined&&fold(request.build)===fold(selectedBuild)&&lockedBody?.product===handle.product.id;
+    let named=frozenSelector?{...lockedBody!.build,name:selectedBuild!}:await this.#builds.named(handle.product.id,request.build);
+    const history=async()=>this.#context.store.buildsOf(handle.product.id);
+    if(named===null){const saved=(await history()).find(row=>fold(row.body.build.name)===fold(request.build));named=saved?.body.build??null;}
+    const target=!!context.run&&named!==null&&selectedBuild!==undefined&&fold(named.name)===fold(selectedBuild)&&selectedProduct===handle.product.id;
+    const useRunLock=named===null||target;
+    if(storedRun&&useRunLock&&context.composition&&context.composition!==storedComposition)return {ok:false,id:bare,reason:'读取上下文的组成与已存运行锁定的组成不同；按运行记录的组成重读'};
+
+    if(context.run&&named!==null&&!storedRun&&locked&&selectedBuild===undefined)return {ok:false,id:bare,reason:'运行尚未存下，命名构建读取缺少 build 上下文；下一步：透传运行选定的规范构建名'};
+    if(context.run&&useRunLock&&storedRun&&lockedRoot!==null&&!locked)return {ok:false,id:bare,reason:'这个运行没有锁定组成快照；下一步：以同样输入新开运行再读关联'};
+    const effectiveLock=context.run?(useRunLock?locked:undefined):locked;
+    if(effectiveLock&&request.composition&&effectiveLock!==request.composition)return {ok:false,id:bare,reason:'请求的组成与运行锁定的组成不同；按锁定组成重读'};
+    let composition=effectiveLock??request.composition??request.revision;
+    if(!composition&&request.cursor){try{const cursor=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(Sha256.safeParse(cursor.c).success)composition=cursor.c;}catch{}}
+    if(!composition){
+      if(named!==null){const namedRoot=await this.#builds.rootOfBuild(handle.product.id,named.name);if(!namedRoot)return {ok:false,id:bare,reason:'这个命名构建没有已生产的组成；先生产其基础构建再读'};composition=namedRoot.composition;}
+      else {const current=await this.#builds.currentRoot(handle.product.id,request.build);if(!current)return {ok:false,id:bare,reason:'没有这个构建或版本线的当前组成；先核对名称并生产后再读'};composition=current.composition;}
+    }
     const body=await this.#context.store.composition(composition);
-    if(!body||body.product!==handle.product.id||body.version.line!==request.line||lockedRoot!==null&&body.root!==lockedRoot)return {ok:false,id:bare,reason:'组成不属于请求的产品和版本线'};
+    if(!body||body.product!==handle.product.id)return {ok:false,id:bare,reason:'组成不属于请求的产品，改用该产品的组成'};
+    if(useRunLock&&context.run&&lockedRoot!==null&&body.root!==lockedRoot)return {ok:false,id:bare,reason:'组成的根与运行锁定的根不同；按运行锁定组成重读'};
+    if(named===null&&body.version.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
+    if(named!==null&&!target){
+      const base=fold(body.build.name),graph=new Map<string,Set<string>>();
+      for(const row of await history()){const key=fold(row.body.build.name),values=graph.get(key)??new Set<string>();values.add(fold(row.body.build.base));graph.set(key,values);}
+      const seen=new Set<string>(),belongs=(name:string):boolean=>{const key=fold(name);if(key===base)return true;if(seen.has(key))return false;seen.add(key);return [...(graph.get(key)??[])].some(belongs);};
+      if(!belongs(named.name))return {ok:false,id:bare,reason:'组成不属于这个命名构建或它已记录的基础构建；核对 composition 后重读'};
+    }
     if(request.revision!==null&&request.revision!==composition)return {ok:false,id:bare,reason:'要求的修订与锁定组成不同，请按锁定组成重读'};
-    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),request);
+    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:request.cursor,limit:request.limit,...(named?{build:request.build}:{})});
     LinksView.parse(view);
     const inputs=[`tree:${body.root}/`,`rec:${composition}`],origin={generated:{generator:COMPONENTS.views,inputs}},sources=new Set<string>();
     const sourceView=new CompositionView(this.#context.store,composition,body);

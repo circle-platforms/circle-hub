@@ -1,7 +1,15 @@
 // Relations are generic: synthetic terms and notes, no product dialect or model calls.
 import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createRunsService} from '../runs/api.ts';
+import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
+import {writePack} from '../runs/engine/testing/packs.ts';
+import {osIsolationAvailable} from '../rules/api.ts';
 import { after,before,test } from 'node:test';
 import { runRecord as baseRun } from '../../contracts/src/fixtures.ts';
+import {KnowledgeBuildBody} from '../../contracts/src/knowledge.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
 import { newId } from '../records/api.ts';
 import { LINK_MATCH } from '../../contracts/generated/vocabulary.ts';
@@ -117,6 +125,8 @@ test('an existing run is found by its writer index and cannot be redirected to a
   const reader=createKnowledgeReader(f.w.knowledge),context:ExternalReadContext={principal:f.w.user,run,purpose:'stored run'};
   const locked=await f.json(await reader.read('knowledge:links:widget:10.6.1',context));assert.deepEqual(locked.bytes,old.bytes);
   assert.equal((await reader.read('knowledge:links:widget:10.6.1?composition='+next.composition,context)).ok,false);
+  assert.equal((await reader.read('knowledge:links:widget:'+build.name,{...context,composition:next.composition,build:build.name})).ok,false,'a supplied context must not replace the stored run composition');
+
 });
 
 test('unplaced occurrences retain directly resolvable entry references rather than invented tree membership',async t=>{
@@ -186,4 +196,52 @@ test('a historical root points to a concrete composition view instead of moving 
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
   assert.ok(page);assert.match(page.coverage.note??'',/knowledge:links:widget:/);assert.ok(page.coverage.note?.includes('composition='+f.first.composition));
   assert.doesNotMatch(page.coverage.note??'',/移动.*指针/);
+});
+
+const keepBuild=async(w:World,spec:KnownBuild)=>{
+  const {root,...info}=spec;
+  return w.knowledge.store.putBuild(KnowledgeBuildBody.parse({product:'widget',build:info,pack:{id:w.product.id,version:w.product.version,digest:w.product.digest},plan:null,sync:null}));
+};
+test('named alias targets use the frozen composition while another named build with the same root is independent',async t=>{
+  const f=await fixture(t),alias={...build,name:'Rel_ALIAS_10_6_1_1',base:build.name};
+  await keepBuild(f.w,alias);
+  const other={...build,name:'Rel_WIDGET_10_6_1_2',base:'Rel_WIDGET_10_6_1_2'};
+  f.w.product.product.links=[{...rule,normalize:undefined}];f.w.product.digest='c'.repeat(64);
+  const otherRoot=await f.w.knowledge.produceTree({product:f.w.product,build:other});assert.ok(otherRoot.ok);assert.equal(otherRoot.root,f.first.root);
+  const refreshed=await f.w.knowledge.produceTree({product:f.w.product,build});assert.ok(refreshed.ok);assert.notEqual(refreshed.composition,f.first.composition);
+  const reader=createKnowledgeReader(f.w.knowledge),context:ExternalReadContext={principal:f.w.admin,run:newId('run'),purpose:'pending run',composition:f.first.composition,build:alias.name};
+  const target=(await f.json(await reader.read('knowledge:links:widget:'+alias.name,context))).view;
+  assert.equal(target.composition,f.first.composition);assert.equal(target.build.build,alias.name);assert.equal(target.totals?.links,2);
+  const independent=(await f.json(await reader.read('knowledge:links:widget:'+other.name,context))).view;
+  assert.equal(independent.composition,otherRoot.composition);assert.equal(independent.totals?.links,1);
+  const legacy={principal:context.principal,run:context.run,purpose:'legacy caller',composition:f.first.composition};
+  assert.equal((await f.json(await reader.read('knowledge:links:widget:'+build.line,legacy))).view.composition,f.first.composition);
+});
+
+test('start_run binds a named links view through a workflow input before persisting the alias target',async t=>{
+  const f=await fixture(t),alias={...build,name:'Rel_ALIAS_10_6_1_3',base:build.name};await keepBuild(f.w,alias);
+  const directory=await mkdtemp(join(tmpdir(),'links-binding-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const path=await writePack(directory,{id:'links-input',version:'1.0.0',kind:'workflow',title:'合成关联输入',description:'合成关联读取',
+    files:{
+      'SKILL.md':'Read the frozen synthetic input',
+      'workflow.json':{json:{schema:'workflow@1',inputs:[{slot:'view',role:'subject',description:'Synthetic links',accepts:['knowledge:links','application/json'],required:true,many:false}],parameters:[],product:{id:'widget',catalogs:[]},subject:'view',projection:{module:'functions/project.ts'}}},
+      'requirements.json':{json:{schema:'requirements@1',requirements:[{key:'source',name:'合成输入',description:'Synthetic source',target:'item',required:true,done_rule:'bookkeeping',layers:['static'],accepted_producer:'fact',checks:['source'],error_handling:[]}]}},
+      'checks.json':{json:{schema:'checks@1',checks:[{id:'source',title:'合成输入',function:{module:'functions/check.ts'},applies:'item',judges:'subject',tier:'blocking',basis:'Synthetic source data'}]}},
+      'functions/check.ts':"export default ()=>[{verdict:'support',statement:'已核对合成输入',grounds:[],tier:'blocking'}];",
+      'slots.schema.json':{json:{schema:'slots@1',item:{},run:{}}},
+      'functions/project.ts':"export default function(input:any){const value=input.inputs[0].model;return {items:[{id:'view',label:'合成关联',location:{slot:'view',parser:'json@1',selector:'p/schema'},fields:{composition:value.composition,links:value.totals.links}}],warnings:[]};}",
+    }});
+  const workflows=new FakeWorkflowStore();await workflows.add(path);workflows.assign(f.w.user.id,'links-input');
+  const reader=createKnowledgeReader(f.w.knowledge);let captured:ExternalReadContext|undefined;
+  const external={accepts:(id:string)=>reader.accepts(id),read:async(id:string,context:ExternalReadContext)=>{
+    captured=context;
+    assert.equal((await f.w.kit.store.find({key:'runs.id',value:context.run!,kind:'run',limit:1})).items.length,0);
+    f.w.product.product.links=[{...rule,normalize:undefined}];f.w.product.digest='b'.repeat(64);
+    const changed=await f.w.knowledge.produceTree({product:f.w.product,build});assert.ok(changed.ok);assert.notEqual(changed.composition,f.first.composition);
+    return reader.read(id,context);
+  }};
+  const service=createRunsService({records:f.w.kit,workflows,packs:f.w.packs,knowledge:f.w.knowledge,external,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const result=await service.startRun(f.w.user,{pack:'links-input',product:'WIDGET',build:alias.name,inputs:{view:{external:'knowledge:links:widget:'+alias.name}}},{traceId:'1'.repeat(32),sessionId:null});
+  assert.equal(result.call_result,'ok',JSON.stringify(result.errors));assert.equal(captured?.build,alias.name);assert.equal(captured?.composition,f.first.composition);
+  assert.equal(result.run?.items[0].fields.composition,f.first.composition);assert.equal(result.run?.items[0].fields.links,2);
 });
