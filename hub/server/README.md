@@ -238,7 +238,7 @@ links are fixed paths with encoded query parameters).
   it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
   record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
   The authoritative run page uses that same production result as its partition list and displays the latest later accepted
-  result separately as 模型评论（判断）; the results page identifies that commentary record when present.
+  result separately as 模型评论（判断）; its counts are labelled 判断，未采用, with per-item judgment claims, the original model handling declarations and cross-item claims. Commentary never reuses the adopted/open/request group titles. The results page identifies that commentary record when present.
   If the production record is absent, both pages name the missing start_run result explicitly, distinguish any accepted
   commentary, and direct the reader to start a new run with the same inputs and a new client_key; replaying the old key
   would return the old run. Neither page starts or repairs a run. It shows partition counts via

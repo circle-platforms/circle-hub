@@ -4,7 +4,7 @@
 // rule 13, each item's two cells by the conjunction of hub/runs (V03 R[3]), and every submission as received, marked
 // unverified, next to its receipt (display rule 3).
 import { DISPLAY_ORDER } from '../../../contracts/generated/protocol.ts';
-import { LAYER, PARTITION, axisLabel, isEnvironment, labelOf, type Partition } from '../../../contracts/generated/vocabulary.ts';
+import { LAYER, PARTITION, axisLabel, isEnvironment, isItemHandling, labelOf, type Partition } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
@@ -151,6 +151,22 @@ function partitionGroups(result: ValidationResult, run: RunRecord): Html {
   return html`${groups}`;
 }
 
+/** Commentary has judgments, not another authoritative partition report. */
+function commentaryJudgments(result: ValidationResult): Html {
+  return table(['条目', '名称', '模型逐条判断（未采用）'], PARTITION.flatMap(partition => result.partitions[partition]).map(item => [code(item.item), item.label,
+    html`${item.requirements.flatMap(requirement => requirement.claims).filter(claim => claim.qualifier.nature === 'judgment').map(claimBlock)}`]), '没有逐条模型判断');
+}
+
+async function commentaryHandling(ctx: PageContext, detail: RunDetail, result: NonNullable<RunDetail['latest']>): Promise<Html> {
+  const submission = detail.submissions.find(entry => entry.result === result.record);
+  const record = submission === undefined ? null : await ctx.deps.records.store.get(submission.record);
+  const body = record?.body;
+  if (record?.kind !== 'submission' || !isObject(body) || body.run !== detail.run.run || !Array.isArray(body.items)) return html`<p class="notice">缺少对应的模型提交原件；请刷新本页重读，仍缺请管理员按评论结果记录核对原提交。</p>`;
+  return table(['条目', '模型处理声明（未经平台验证）', '声明理由'], body.items.filter(isObject).map(item => [code(String(item.item ?? '')),
+    isItemHandling(item.handling) ? `模型声明${labelOf('item_handling', item.handling)} ${String(item.item ?? '')}` : '没有可识别的模型处理声明',
+    typeof item.reason === 'string' ? item.reason : '—']), '没有模型处理声明');
+}
+
 /** Longest submission text the run page shows; the rest stays in the record. */
 const SHOWN_SUBMISSION_CHARS = 256 * 1024;
 
@@ -230,9 +246,9 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   );
   const factOnly=run.requirements.length>0&&run.requirements.every(requirement=>requirement.accepted_producer==='fact');
   const primary=factOnly?detail.production:detail.latest;
-  const renderResult=(latest:NonNullable<RunDetail['latest']>,recordLabel:string):Html=>{
+  const renderResult=(latest:NonNullable<RunDetail['latest']>,recordLabel:string,commentary=false):Html=>{
     const result = latest.result;
-    return html`<p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
+    return html`<p><strong>${commentary ? '模型声明的分区（判断，未采用）：' : ''}${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
 ${definitions([
   [recordLabel, code(latest.record)],
   ['提交摘要', code(result.submission)],
@@ -241,13 +257,13 @@ ${definitions([
   ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识根 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
   ['追踪', code(result.trace)],
 ])}
-${partitionGroups(result, run)}
+${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result)) : partitionGroups(result, run)}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : html`${result.cross_item.map(claimBlock)}`)}
 ${section('错误与修正', errorsTable(result.errors))}`;
   };
   const results=primary===null?(factOnly?missingProductionResult(detail):html`<p class="empty">还没有校验结果</p>`):renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
   const commentary=factOnly&&detail.latest!==null&&detail.latest.record!==primary?.record
-    ? section('模型评论（判断）',html`<p class="notice">后续受理的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录')}`):'';
+    ? section('模型评论（判断）',html`<p class="notice">后续受理的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录',true)}${section('模型处理声明（未经平台验证）', await commentaryHandling(ctx, detail, detail.latest))}`):'';
   // Display rule 3: what was submitted, unverified, side by side with the platform's receipt and result.
   const submissionRows: unknown[][] = [];
   for (const s of detail.submissions) {

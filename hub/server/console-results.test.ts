@@ -52,7 +52,9 @@ test('result page keeps the production record and counts after accepted model co
   const main=run.body.split('<h2>分区清单</h2>')[1].split('<h2>模型评论（判断）</h2>')[0];
   assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions)));
   assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions)));
-  const commentary=run.body.split('<h2>模型评论（判断）</h2>')[1];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
+  const commentary=run.body.split('<h2>模型评论（判断）</h2>')[1]?.split('<h2>提交与回执</h2>')[0];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
+  for(const title of ['已采用的成果','仍需处理的事项','需要你决定的请求'])assert.ok(!commentary.includes(title),title);
+  assert.match(commentary,/模型声明的分区（判断，未采用）/);assert.match(commentary,/模型声明跳过 entry-0/);assert.match(commentary,/合成跳过/);
 
 });
 
