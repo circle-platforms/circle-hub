@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import type { IndexView } from '../../../../contracts/src/views.ts';
 import { checkDuplicate } from './checks.ts';
 import { buildCompactIndex, isCompactIndex, MAX_INDEX_PER_KEY, onlyOfExternal } from './compact-index.ts';
-import { goodDraft, SYNTHETIC_INDEX_VIEW, SYNTHETIC_INDEX_VIEW_COMPLETE } from '../testing/fixtures.ts';
+import { goodDraft, SYNTHETIC_CATALOG, SYNTHETIC_INDEX_VIEW, SYNTHETIC_INDEX_VIEW_COMPLETE } from '../testing/fixtures.ts';
 
 const HEX2 = '2'.repeat(64);
 const NARROWED = 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative';
@@ -20,6 +20,7 @@ const inputOf = (options: { drafts?: unknown[]; indexed_cases?: unknown }): unkn
     drafts: options.drafts ?? [goodDraft()],
     indexed_cases: options.indexed_cases ?? SYNTHETIC_INDEX_VIEW,
   },
+  catalog: SYNTHETIC_CATALOG,
 });
 
 describe('onlyOfExternal reads the bound URI', () => {

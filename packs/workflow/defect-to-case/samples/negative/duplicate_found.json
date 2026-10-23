@@ -2,7 +2,7 @@
   "id": "duplicate_found",
   "source": "author",
   "check": "duplicate_check",
-  "note": "起草用例与已有索引用例命令与标题相同",
+  "note": "起草用例与已有索引用例命令与标题相同；草稿的命令行先按目录解析出命令头，再按命令头集合查重",
   "subject": {
     "item": "74001",
     "drafts": [
@@ -77,5 +77,53 @@
       "item": "74001",
       "tier": "advisory"
     }
-  ]
+  ],
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "设置健康检查间隔"
+      },
+      {
+        "head": "show health",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查状态"
+      },
+      {
+        "head": "show health detail",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查详细信息"
+      },
+      {
+        "head": "service http port",
+        "signatures": [
+          [
+            {
+              "name": "port",
+              "type": "port",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          ]
+        ],
+        "summary": "设置HTTP服务端口"
+      }
+    ]
+  }
 }

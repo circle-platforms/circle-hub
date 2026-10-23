@@ -58,6 +58,7 @@
       "function": { "module": "functions/checks.ts", "export": "checkDuplicate" },
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "duplicateSubject" },
+      "catalog": "commands@1",
       "judges": "artifact_under_verification",
       "tier": "advisory",
       "basis": "要求项 not_duplicate：起草用例不与已索引的用例重复；未发现重复但在索引存在跳过文档时为未知（完整性未证明）"

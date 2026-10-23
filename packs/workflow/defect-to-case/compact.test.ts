@@ -4,7 +4,7 @@ import type { BoundInput, RunContext } from '../../../contracts/src/pack.ts';
 import type { IndexView, ViewEntry } from '../../../contracts/src/views.ts';
 import { checkDuplicate } from './functions/checks.ts';
 import { projectDefects } from './functions/projection.ts';
-import { SYNTHETIC_BUG_74001, makeGoodDraft } from './testing/fixtures.ts';
+import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG, makeGoodDraft } from './testing/fixtures.ts';
 
 const DUMMY_CONTEXT: RunContext = {
   product: 'apv',
@@ -140,15 +140,16 @@ describe('compact case index and deduplication at real scale', () => {
       notes: ['紧凑索引超出大小上限，按键顺序截断并丢弃 48000 个用例'],
     };
 
-    // Case A: Draft does NOT match any retained entry -> must return unknown stating dropped count
+    // Case A: Draft resolves to a head that is not in the truncated index -> must return unknown stating dropped count
     const nonMatchingDraft = makeGoodDraft();
-    nonMatchingDraft.steps = [{ command: 'unrelated command foo' }];
+    nonMatchingDraft.steps = [{ command: 'widget health interval 60' }];
     nonMatchingDraft.title = '全然不同的用例';
 
     const unknownOutcome = checkDuplicate({
       item: '74001',
       drafts: [nonMatchingDraft],
       indexed_cases: truncatedIndex,
+      catalog: SYNTHETIC_CATALOG,
     });
     assert.equal(unknownOutcome.length, 1);
     assert.equal(unknownOutcome[0].verdict, 'unknown');
@@ -168,6 +169,7 @@ describe('compact case index and deduplication at real scale', () => {
       item: '74001',
       drafts: [duplicateDraft],
       indexed_cases: truncatedIndex,
+      catalog: SYNTHETIC_CATALOG,
     });
     assert.equal(refuteOutcome.length, 1);
     assert.equal(refuteOutcome[0].verdict, 'refute');
@@ -263,13 +265,14 @@ describe('compact case index and deduplication at real scale', () => {
 
     // A draft matching the unplaced case must NOT be refuted because unplaced cases do not participate in deduplication
     const draftMatchingUnplaced = makeGoodDraft();
-    draftMatchingUnplaced.steps = [{ command: 'some command' }];
+    draftMatchingUnplaced.steps = [{ command: 'widget health interval 60' }];
     draftMatchingUnplaced.title = '无命令的未归位用例';
 
     const outcome = checkDuplicate({
       item: '74001',
       drafts: [draftMatchingUnplaced],
       indexed_cases: compact,
+      catalog: SYNTHETIC_CATALOG,
     });
     // An entry without a commands field keeps "no duplicate" unknown (its set is unknown, not empty); the empty-list
     // one never triggers a refutation on its own.

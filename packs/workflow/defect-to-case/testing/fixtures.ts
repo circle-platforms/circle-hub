@@ -63,6 +63,11 @@ export const SYNTHETIC_CATALOG_SPEC: CatalogSpec = {
       summary: '查看健康检查状态',
     },
     {
+      head: 'show health detail',
+      signatures: [[]],
+      summary: '查看健康检查详细信息',
+    },
+    {
       head: 'service http port',
       signatures: [[{ name: 'port', type: 'port', minimum: 1, maximum: 65535 }]],
       summary: '设置HTTP服务端口',

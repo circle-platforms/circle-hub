@@ -236,6 +236,23 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
   ];
 }
 
+/**
+ * The command head of a line: the longest catalog entry whose words head the line's words (NFKC, case-insensitive,
+ * whitespace collapsed). Null when no entry heads it — the commands check refutes such a line on its own.
+ */
+export function commandHeadOf(line: string, catalogEntries: CatalogEntry[]): string | null {
+  const words = normalizeCommand(line).split(' ').filter(Boolean);
+  if (words.length === 0) return null;
+  let best: { head: string; length: number } | null = null;
+  for (const entry of catalogEntries) {
+    const entryWords = (entry.words ?? []).map((word) => normalizeText(word));
+    if (entryWords.length === 0 || entryWords.length > words.length) continue;
+    if (!entryWords.every((word, i) => word === words[i])) continue;
+    if (best === null || entryWords.length > best.length) best = { head: normalizeCommand(entry.words.join(' ')), length: entryWords.length };
+  }
+  return best?.head ?? null;
+}
+
 /** Helper to match a command against catalog entries */
 function matchCatalogCommand(cmdText: string, catalogEntries: CatalogEntry[]): { matched: boolean; head?: string } {
   const norm = normalizeCommand(cmdText);
@@ -466,6 +483,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   const subject = isRecord(record.subject) ? record.subject : record;
   const itemId = typeof subject.item === 'string' ? subject.item : undefined;
   const own = itemId !== undefined ? { item: itemId } : {};
+  const catalog = Array.isArray(record.catalog) ? (record.catalog as CatalogEntry[]) : [];
 
   // Drafts can come from subject.drafts or extractDrafts(subject.slots)
   const drafts: DraftCase[] = Array.isArray(subject.drafts) ? (subject.drafts as DraftCase[]) : extractDrafts(subject.slots);
@@ -502,6 +520,36 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   const outcomes: CheckOutcome[] = [];
   const buckets = compactIndex.by_commands ?? {};
 
+  // Every draft command line resolves to its head first (the longest catalog entry heading it); the narrowing
+  // judgment and the buckets are by head sets. A line with no head is refuted by the commands check on its own;
+  // here the draft is unknown with the reason named.
+  const unresolved = new Map<unknown, string>();
+  const headSets = new Map<unknown, string[]>();
+  for (const draft of drafts) {
+    const lines = draft.steps.map((s) => s.command).filter((c): c is string => typeof c === 'string' && c.trim() !== '');
+    const heads: string[] = [];
+    for (const line of lines) {
+      const head = commandHeadOf(line, catalog);
+      if (head === null) {
+        unresolved.set(draft, line);
+        break;
+      }
+      heads.push(head);
+    }
+    if (!unresolved.has(draft)) headSets.set(draft, heads);
+  }
+  for (const [draft, line] of unresolved) {
+    const title = (draft as { title?: string }).title ?? '（无标题）';
+    outcomes.push({
+      verdict: 'unknown',
+      reason: 'missing_input',
+      statement: `起草用例“${title}”的命令行“${line}”在锁定构建的命令目录里解析不出命令头，无法核对重复（命令检查已另行驳回它）`,
+      grounds: [],
+      tier: 'advisory',
+      ...own,
+    });
+  }
+
   // The narrowed keys (only=…), normalized the same way as the bucket keys. Null: the view is complete (no narrowing).
   // A hand-built compact index may predate the field; undefined means un-narrowed.
   const only = compactIndex.only ?? null;
@@ -518,29 +566,27 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   };
   const undecidable = new Set<unknown>();
   const cappedOnly = new Set<unknown>();
-  for (const draft of drafts) {
-    const cmds = draft.steps.map((s) => s.command).filter(Boolean);
-    const state = keyState(cmds);
+  for (const draft of headSets.keys()) {
+    const state = keyState(headSets.get(draft) ?? []);
     if (!state.covered) undecidable.add(draft);
     else if (state.onlyCapped) cappedOnly.add(draft);
   }
 
-  for (let i = 0; i < drafts.length; i++) {
-    const draft = drafts[i];
-    const draftCmds = draft.steps.map((s) => s.command).filter(Boolean);
-    const draftKey = commandSetKey(draftCmds);
+  for (const draft of headSets.keys()) {
+    const heads = headSets.get(draft) ?? [];
+    const draftKey = commandSetKey(heads);
     if (!draftKey) continue;
     if (undecidable.has(draft)) continue;
 
     const candidates = buckets[draftKey];
     if (!candidates || candidates.length === 0) continue;
 
-    const draftTitle = normalizeText(draft.title);
+    const draftTitle = normalizeText((draft as { title?: string }).title ?? '');
 
     for (const cand of candidates) {
       // 1. Same negative flag
       const candNegative = cand.negative === true;
-      if (draft.negative !== candNegative) continue;
+      if ((draft as { negative?: boolean }).negative === true !== candNegative) continue;
 
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
       // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
@@ -554,7 +600,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
         outcomes.push({
           verdict: 'refute',
           code: CODES.DUPLICATE_CASE,
-          statement: `起草用例“${draft.title}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
+          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
           grounds: [cand.reference],
           tier: 'advisory',
           ...own,
@@ -573,8 +619,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
 
   // A draft outside the narrowing is unknown on its own (the index does not cover its commands).
   if (undecidable.size > 0) {
-    const sample = [...undecidable][0] as { title?: string; steps?: Array<{ command?: string }> };
-    const cmds = (sample.steps ?? []).map((s) => s.command).filter((c): c is string => typeof c === 'string').join('、');
+    const sample = [...undecidable][0] as { title?: string };
+    const cmds = (headSets.get(sample) ?? []).join('、');
     outcomes.push({
       verdict: 'unknown',
       reason: 'missing_input',
