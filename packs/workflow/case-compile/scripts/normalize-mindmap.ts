@@ -21,7 +21,7 @@ export function normalizeMindmap(bytes: Uint8Array): { bytes: Uint8Array; before
   const output = Buffer.from(text, 'utf8'); return { bytes: output, before_sha256: sha256(bytes), after_sha256: sha256(output), transformations };
 }
 export async function main(argv: string[]): Promise<number> {
-  try { const args = argumentsOf(argv, ['in', 'out']); const out = normalizeMindmap(await readBytes(args.in)); await writeNew(args.out, out.bytes); process.stdout.write(JSON.stringify({ before_sha256: out.before_sha256, after_sha256: out.after_sha256, transformations: out.transformations, note: '客户端规整，不改用例内容' }) + '\n'); return 0; }
+  try { const args = argumentsOf(argv, ['in', 'out']); const out = normalizeMindmap(await readBytes(args.in,'in')); await writeNew(args.out, out.bytes); process.stdout.write(JSON.stringify({ before_sha256: out.before_sha256, after_sha256: out.after_sha256, transformations: out.transformations, note: '客户端规整，不改用例内容' }) + '\n'); return 0; }
   catch (error) { process.stderr.write(`规整失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

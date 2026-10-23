@@ -7,7 +7,7 @@ for (const [name, mutate, code] of [
   ['disabled', (v: any) => { v.steps[0].object = 'widget-disabled'; v.steps[0].method = 'cycle'; }, 'method_forbidden'],
   ['internal', (v: any) => { v.steps[0].method = 'hidden'; }, 'method_forbidden'],
   ['candidate', (v: any) => { v.steps[0].method = 'candidate'; }, 'method_forbidden'],
-  ['empty call', (v: any) => { v.steps[0].method = 'credential'; v.steps[0].args = []; }, 'param_arity'],
+  ['empty call', (v: any) => { v.steps[0].method = 'credential'; v.steps[0].args = []; }, 'method_not_allowed'],
   ['extra keyword', (v: any) => { v.steps[0].keywords.extra = 'x'; }, 'param_arity'],
   ['missing required', (v: any) => { v.steps[0].args = []; }, 'param_arity'],
   ['positional only', (v: any) => { v.steps[0].keywords.line = v.steps[0].args[0]; v.steps[0].args = []; }, 'param_keyword'],

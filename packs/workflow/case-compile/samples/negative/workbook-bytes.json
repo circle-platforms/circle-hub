@@ -395,28 +395,32 @@
           "method": "configure",
           "parameters": {
             "line": "device_cli"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-host",
           "method": "shell",
           "parameters": {
             "command": "host_shell"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-check",
           "method": "literal",
           "parameters": {
             "expected": "literal_assertion"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-clock",
           "method": "pause",
           "parameters": {
             "seconds": "wait"
-          }
+          },
+          "reviewed": true
         }
       ],
       "denied": {
@@ -537,15 +541,16 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@2.1.0"
+      "generator": "case-compile@2.3.1"
     },
     "workbook": {
       "model": {
+        "nulRemoved": 0,
         "members": [
           {
             "name": "[Content_Types].xml",
             "size": 679,
-            "contentType": "application/xml"
+            "contentType": null
           },
           {
             "name": "_rels/.rels",
@@ -569,7 +574,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 3404,
+            "size": 3398,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -598,6 +603,8 @@
         ],
         "sheets": [
           {
+            "relationshipId": "rId1",
+            "relationshipType": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
             "name": "FixtureSheet",
             "state": "visible",
             "part": "xl/worksheets/sheet1.xml",
@@ -605,6 +612,8 @@
               {
                 "number": 1,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A1",
@@ -630,14 +639,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@2.1.0",
+                    "text": "case-compile@2.3.1",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "5e1a010bdccaf8df598b5bdd4f78661e17fb14aeba30d378bb71f648696f57aa",
+                    "text": "8f897fd39dd565f99c2294ff1a260242175db52c2cfdd255c76d001131d0eddb",
                     "formula": false,
                     "style": null
                   }
@@ -646,6 +655,8 @@
               {
                 "number": 2,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A2",
@@ -715,6 +726,8 @@
               {
                 "number": 3,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "C3",
@@ -735,6 +748,8 @@
               {
                 "number": 4,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A4",
@@ -760,7 +775,7 @@
                   {
                     "reference": "D4",
                     "type": "inlineStr",
-                    "text": "原始配置步骤",
+                    "text": "合成用例",
                     "formula": false,
                     "style": null
                   },
@@ -790,6 +805,8 @@
               {
                 "number": 5,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "C5",
@@ -831,6 +848,8 @@
               {
                 "number": 6,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "B6",
@@ -879,6 +898,8 @@
               {
                 "number": 7,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "B7",
@@ -927,11 +948,15 @@
               {
                 "number": 8,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": []
               },
               {
                 "number": 9,
                 "hidden": false,
+                "ht": null,
+                "customHeight": false,
                 "cells": [
                   {
                     "reference": "A9",
@@ -955,7 +980,7 @@
           }
         ]
       },
-      "sha256": "8164efa9c69271e3862a25e42663f526560a0c7dd171cc0de41b2279309995b7"
+      "sha256": "a58c7711ffc3b074e3ff3d9182da3a8788c2f3076c9b068a94e0d8f94fb95ff4"
     }
   },
   "expect": [

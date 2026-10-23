@@ -1,4 +1,5 @@
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.
+import { checkContractShape } from './checks.ts';
 import { isRecord } from './text.ts';
 import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall } from './profile.ts';
@@ -23,7 +24,7 @@ export function planSubject(input: unknown): PlanSubject {
   return { case_texts: authoredCaseTexts(item.fields), item: typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '', location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString() };
 }
 export function commandSubject(input: unknown): unknown {
-  const subject = planSubject(input); const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+  const subject = planSubject(input); const blocked=checkContractShape({subject}).filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, location: subject.location };
   const phrases: string[] = [];
@@ -38,7 +39,7 @@ export function commandSubject(input: unknown): unknown {
   return { item: subject.item, location: subject.location, phrases, negative: false };
 }
 export function quoteSubject(input: unknown): unknown {
-  const subject = planSubject(input); const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+  const subject = planSubject(input); const blocked=checkContractShape({subject}).filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
   if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };

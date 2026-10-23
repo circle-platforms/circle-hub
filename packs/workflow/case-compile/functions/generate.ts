@@ -11,7 +11,7 @@ import { zipStore } from './zip-store.ts';
 export const GENERATOR = FORMAT.generator;
 export interface GenerationFields { autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
-export class GenerationError extends Error { readonly pointer: string; constructor(pointer: string, message: string) { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; } }
+export class GenerationError extends Error { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
 export function gOptions(object: string, method: string, contract: RuntimeContract, profile: RuntimeProfile): GOptions {
   const entry = runtimeMethod(contract, object, method); const allowed = allowedCall(profile, object, method);
@@ -21,7 +21,8 @@ const NS = 'http://schemas.openxmlformats.org/';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 function escape(text: string, at: string, xstring = true): string {
   if (typeof text !== 'string' || !text.isWellFormed() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\uFFFE\uFFFF]/.test(text) || text.length > FORMAT.max_cell_chars || text.startsWith('=')) reject(at, '单元格文字不属于生成子集（公式前缀、无效 XML 字符或过长），不作静默修复');
-  return (xstring ? text.replace(/_x[0-9a-fA-F]{4}_/g, (v) => '_x005F_' + v.slice(1)) : text).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;').replaceAll('\r', '&#13;');
+  if (/_x[0-9a-fA-F]{4}_/.test(text)) throw new GenerationError(at, 'xstring_escape：内联文字的转义读法不一致；改用没有该序列的原文', 'xstring_escape');
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;').replaceAll('\r', '&#13;');
 }
 /** Rows are constructed only here; the independent workbook reader does not call this routine to interpret input. */
 export function generateWorkbook(input: GenerationInput): Uint8Array {
@@ -58,7 +59,7 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(`/steps/${i}`, '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(`/steps/${i}/G`, e instanceof Error ? e.message : 'G 无法往返'); }
-    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.steps[i]?.text ?? fields.title, step.object, step.method, g]);
+    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.title, step.object, step.method, g]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
       if (!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(`/expects/${k}/after`, '期望不能跟在等待或断言之后');
       if (!hasSingleLineValue(expect.text)) reject(`/expects/${k}/text`, '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');

@@ -57,7 +57,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   if (!isRecord(value.source_hashes)) issue('/source_hashes', '缺少源文件摘要表');
   else for (const [path, digest] of Object.entries(value.source_hashes)) if (!path || typeof digest !== 'string' || !SHA.test(digest)) issue(`/source_hashes/${pointer(path)}`, '源文件摘要写法无效');
   if (!isRecord(value.atlas_snapshot)) issue('/atlas_snapshot', '缺少快照元数据');
-  if (!(Array.isArray(value.execute_actions) || isRecord(value.execute_actions))) issue('/execute_actions', '缺少动作注册表（本轮不开放）');
+  if (!(Array.isArray(value.execute_actions) || isRecord(value.execute_actions))) issue('/execute_actions', '缺少原格式动作注册表（仅核身份完整性，角色覆盖另按包声明表核验）');
   if (!isRecord(value.certification) || value.certification.schema !== FORMAT.certification_schema || !Number.isSafeInteger(value.certification.receipt_count) || (value.certification.receipt_count as number) < 0) issue('/certification', '认证集合形状无效');
   const objects = new Map<string, string>();
   if (!Array.isArray(value.objects)) issue('/objects', '没有对象列表');

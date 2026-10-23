@@ -12,3 +12,5 @@
 8. 读取全部核验结果；只有所有必需要求项 satisfied 才可交给集成者。支持回执 data 为 {sha256,autoids,bed:{id,manifest_sha256},build,generator,plan_run}，无工作簿内容。包内只核说明行和 plan_run 参数一致，派发再核其与 predecessor 相同，并重查设备数/租约。原样转述“按合成合约核对”或“按发布的运行器合约核对”、身份前 12 位和“不证明在真实设备上跑得通”。未知必须明确缺的事实并继续取证、补件或重开运行，不以未知结束。真实派发由集成者在所有者答复设计第 6 节后处理。
 
 等待必须是 max_wait_seconds 内的正整数秒数；断言 text 也必须符合单行、无边缘空白、无公式前缀和无占位符的取值规则。
+
+allowed 是已开放的启用子集；未开组合换用已开放组合，无角色参数去掉或换组合。direct_method_call 和零参数方法须集成者逐个只读审阅并在 allowed 项显式写 reviewed:true，模型不改冻结配置。派发角色范围照 dispatch-roles.json。主机 shell 不进设备目录，只核语法、地址和主机拒绝表。

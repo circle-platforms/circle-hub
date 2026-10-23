@@ -36,3 +36,17 @@ test('an expectation can explicitly judge a host shell command', () => {
   const data = goodData(); data.expects[0].after = 2;
   assert.equal(checkExpectedSources(subjectOf(data))[0].verdict, 'support');
 });
+
+test('expectation quotation follows contextual East Asian whitespace without joining Latin values',()=>{
+ for(const [fragment,text,match] of [
+  ['页面跳转到\n首页','页面跳转到首页',true],
+  ['状态 为 ready','状态为ready',true],
+  ['Ａ Ｂ','ＡＢ',true],
+  ['set  10\t0','set 10 0',true],
+  ['set 10 0','set 100',false],
+  ['a+b','a +b',false],
+  ['a\u0085b','a b',true],
+  ['a\ufeffb','a b',false],
+ ] as const){const data=goodData();data.expects[0].quote.text=fragment;data.expects[0].text=text;const results=checkExpectedSources(subjectOf(data));assert.equal(results.every(v=>v.verdict==='support'),match,JSON.stringify({fragment,text,results}));if(!match)assert.ok(results.some(v=>v.code==='case-compile.expect_not_in_quote'&&v.pointer==='/data/expects/0/text'));}
+ const replaced=goodData();replaced.replacements=[{case:'192.0.2.200',bed:'192.0.2.90'}];replaced.expects[0].quote.text='服务器\n192.0.2.200 成功';replaced.expects[0].text='服务器192.0.2.90成功';assert.equal(checkExpectedSources(subjectOf(replaced))[0].verdict,'support');
+});

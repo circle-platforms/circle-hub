@@ -22,7 +22,7 @@ test('review 01 host arguments without roles and unbounded waits are rejected wi
   for (const value of ['abc', '99999999']) { const bad = goodData(); bad.steps[2].args = [value]; assert.ok(codes(checkContractShape(subjectOf(bad))).includes('case-compile.wait_value')); }
 });
 test('review 02 netmasks wildcard masks and network prefixes are not off-bed host addresses', () => {
-  for (const text of ['widget config 192.0.2.10 255.255.255.192', 'widget route 0.0.0.0 0.0.0.0 192.0.2.10', 'widget acl 192.0.2.0 0.0.0.63', 'widget route 192.0.2.224/27', 'widget broadcast 192.0.2.63']) {
+  for (const text of ['widget config 192.0.2.10 255.255.255.192', 'widget route 192.0.2.0 255.255.255.192 192.0.2.10', 'widget acl 192.0.2.0 0.0.0.63', 'widget route 192.0.2.224/27', 'widget broadcast 192.0.2.63']) {
     const data = goodData(); data.steps[0].args = [text]; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support', text);
   }
 });
@@ -70,9 +70,7 @@ test('review 12 unreadable inputs retain document pointers and cannot become vac
   const bad = subjectOf(goodData(), { contractDoc: {} }); const result = checkContractShape(bad)[0]; assert.equal(result.verdict, 'unknown'); assert.match(result.statement, /contract.*\/schema/); assert.ok(Array.isArray(result.data?.problems));
   const data = { ...goodData(), extra: true }; const raw = { item: 'fixture', slots: { plan: [{ data }] }, context: { groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC }] } };
   const command = commandSubject(raw) as Record<string, unknown>; assert.ok(!Object.hasOwn(command, 'phrases'));
-  const quotes = quoteSubject(raw) as { quotes: unknown[] }; assert.ok(quotes.quotes.length > 0);
-  const table = JSON.parse(readFileSync(new URL('../tables/quotes.json', import.meta.url), 'utf8'));
-  const out = await runCheck({ interpreter: 'quote@1' }, { subject: quotes, table, context: { pack: 'case-compile' } }); assert.ok(out.every((v) => v.verdict !== 'support'));
+  const quotes = quoteSubject(raw) as {blocked:Array<{pointer:string;code:string}>}; assert.ok(quotes.blocked.some(v=>v.pointer==='/data/extra'&&v.code==='case-compile.slots_invalid'));
 });
 test('review 13 a profile determines exactly one fully specified literal assertion call', () => {
   const none = structuredClone(PROFILE_DOC); none.allowed = none.allowed.filter((v) => v.method !== 'literal'); assert.equal(parseProfile(none, contractOf(), bedsOf()).ok, false);
@@ -99,13 +97,13 @@ test('review 18 every imprecise case id has its source pointer and a lossless-in
   const result = projectItems(projectionInput(model)) as { error: { code: string }; warnings: Array<{ message: string }> };
   assert.equal(result.error.code, 'case-compile.autoid_imprecise'); assert.equal(result.warnings.length, 2); assert.ok(result.warnings.every((v) => /\/data\/autoid/.test(v.message) && /无损|文本/.test(v.message)));
 });
-test('review 19 decision 35 opens every enabled pair and all bed interfaces without dropping lineage allocations', () => {
+test('review 19 decision 35 opens covered combinations and all bed interfaces without dropping lineage allocations', () => {
   const description = JSON.parse(readFileSync(new URL('../requirements.json', import.meta.url), 'utf8')).requirements.find((v: { key: string }) => v.key === 'bed_addresses').description;
   assert.match(description, /本血缘分配/); assert.match(description, /本台架/);
   const data = goodData(); data.steps[0].args = ['widget address 192.0.2.1']; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
   const doc = structuredClone(CONTRACT_DOC); doc.entries.push({ ...entry('widget-host', 'fixture_action', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }]), dispatch: 'execute_registry' }); const signed = signRuntime(doc); const rawProfile = profileDocument(signed);
   rawProfile.allowed.push({ object: 'widget-host', method: 'fixture_action', parameters: { command: 'host_shell' } } as any); rawProfile.hosts.push({ object: 'widget-host', method: 'fixture_action', device: 'client0' });
-  assert.equal(parseProfile(rawProfile, contractOf(signed), bedsOf()).ok, true);
+  assert.equal(parseProfile(rawProfile, contractOf(signed), bedsOf()).ok, false);
   const missingRoleProfile = profileDocument(signed); const target = goodData(); target.steps[1].method = 'fixture_action';
-  const result = checkContractShape(subjectOf(target, { contractDoc: signed, profileDoc: missingRoleProfile })); assert.ok(!codes(result).includes('case-compile.method_not_allowed')); assert.ok(codes(result).includes('case-compile.param_unassigned'));
+  const result = checkContractShape(subjectOf(target, { contractDoc: signed, profileDoc: missingRoleProfile })); assert.ok(codes(result).includes('case-compile.method_not_allowed')); assert.ok(!codes(result).includes('case-compile.param_unassigned'));
 });

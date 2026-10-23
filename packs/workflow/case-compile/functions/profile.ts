@@ -1,9 +1,10 @@
 // Deployment profile owned by this pack; it assigns meaning absent from the runner's signature contract.
+import DISPATCH from '../tables/dispatch-roles.json' with {type:'json'};
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
 import { runtimeMethod, type RuntimeContract, type Problem } from './runtime-contract.ts';
 import type { ManifestBed } from './manifest.ts';
-export interface AllowedCall { object: string; method: string; parameters: Record<string, string> }
+export interface AllowedCall { reviewed?:boolean; object: string; method: string; parameters: Record<string, string> }
 export interface RuntimeProfile {
   synthetic: boolean;
   max_wait_seconds: number | null;
@@ -39,6 +40,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (header.length !== FORMAT.header_columns || header.some((v) => !oneLine(v)) || new Set(header).size !== header.length) issue('/workbook/header', '表头必须是九个不同的非空单行文字');
   const closing = Array.isArray(workbook.closing_row) ? workbook.closing_row : [];
   if (closing.length !== FORMAT.header_columns || closing.some((v) => typeof v !== 'string' || v !== '' && !oneLine(v)) || !closing.some((v) => v !== '')) issue('/workbook/closing_row', '收尾行必须是九格文字，至少一格非空');
+  if(closing.slice(4).some(v=>v!=='')||closing[2]!==''&&(typeof closing[2]!=='string'||!/^[0-9]+$/.test(closing[2])||!Number.isSafeInteger(Number(closing[2]))||Number(closing[2])===1))problems.push({pointer:'/workbook/closing_row',message:'收尾行 E–I 必须为空，C 只能为空或不等于 1 的安全非负整数',fix:'管理员按 runtime-profile@1 修正收尾行后重新发布'});
   if (typeof workbook.autoid_pattern === 'string') {
     try { if (!workbook.autoid_pattern.startsWith('^') || !workbook.autoid_pattern.endsWith('$') || workbook.autoid_pattern.length > 200) throw new Error(); new RegExp(workbook.autoid_pattern, 'u'); } catch { issue('/workbook/autoid_pattern', '用例号形状必须是有首尾锚点的正则表达式，至多 200 字符'); }
   }
@@ -73,19 +75,24 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (!isRecord(raw)) { issue(at, '允许组合不是对象'); continue; }
     const method = runtimeMethod(contract, String(raw.object), String(raw.method));
     if (!method) issue(at, '允许组合不在合约启用集合里');
+    const declared=DISPATCH.dispatches.find(v=>v.dispatch===method?.dispatch);
+    const roleIssue=(pointer:string)=>problems.push({pointer,message:declared?.roles.length?'该派发方式不支持配置的参数角色；不能冒充其他角色':declared?.missing??'派发方式缺少可核验角色声明',fix:declared?.roles.length?'集成者按派发角色声明表修正配置或保持未开，重新发布后新开运行':declared?.next??'按包格式表补齐派发角色及检查，另写一页后重新发布'});
+    if(method&&(declared?.requires_method_review||method.parameters.length===0)&&raw[FORMAT.method_review_field]!==true)problems.push({pointer:at+'/'+FORMAT.method_review_field,message:declared?.requires_method_review?declared.missing!:'零参数方法内部动作没有被参数角色和拒绝表核验',fix:declared?.requires_method_review?declared.next!:'集成者逐个只读审阅后在 allowed 项显式写 reviewed:true 决定开；否则保持未开，重新发布后新开运行'});
+    if(!declared||!declared.roles.length)roleIssue(at);
     const pair = JSON.stringify([raw.object, raw.method]); if (pairs.has(pair)) issue(at, '允许组合重复'); pairs.add(pair);
     if (!isRecord(raw.parameters)) issue(`${at}/parameters`, '没有参数角色映射对象');
     const parameters = Object.create(null) as Record<string, string>;
     for (const [name, role] of Object.entries(isRecord(raw.parameters) ? raw.parameters : {})) {
       const pat = `${at}/parameters/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;
       const param = method?.parameters.find((v) => v.name === name);
+      if(typeof role==='string'&&!declared?.roles.some(candidate=>candidate===role))roleIssue(pat);
       if (!param || param.redacted) issue(pat, '参数不在签名里或是脱敏凭据参数');
       if (typeof role !== 'string' || !FORMAT.parameter_roles.includes(role)) issue(pat, '不认识的参数角色');
       if (role === 'device_cli' && !seats.some((v) => v.object === raw.object)) issue(pat, '设备命令参数没有匹配的座位');
       if (role === 'host_shell' && !hosts.some((v) => v.object === raw.object && v.method === raw.method)) issue(pat, '主机 shell 参数没有匹配的主机方法');
       if (typeof role === 'string') parameters[name] = role;
     }
-    allowed.push({ object: String(raw.object), method: String(raw.method), parameters });
+    allowed.push({ object: String(raw.object), method: String(raw.method), parameters, ...(raw[FORMAT.method_review_field]===true?{reviewed:true}:{}) });
   }
   const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
   if (assertions.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');

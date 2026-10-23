@@ -10,7 +10,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.1.0'); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.3.1'); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -41,7 +41,7 @@ test('complete slot schema rejects legacy data and nonempty blocks', () => {
 });
 test('each runtime plan rule has paired positive and negative author samples', () => {
   const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
-  assert.deepEqual(positive, negative); assert.equal(positive.length, 34);
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 47);
   const coverage = new Set<string>();
   for (const name of positive) {
     const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);

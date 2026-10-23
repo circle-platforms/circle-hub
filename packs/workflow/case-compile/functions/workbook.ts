@@ -23,10 +23,14 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] };
   const plan = slots.slots; const profile = recipe.profile; const book = profile.workbook;
   if (JSON.stringify(model.members.map((v) => v.name).sort()) !== JSON.stringify([...FORMAT.members].sort()) || new Set(model.members.map((v) => v.name)).size !== FORMAT.members.length) issue('members', '/members', '成员必须恰好是同版生成器的六个部件');
+  if(model.nulRemoved>0)issue('subset','/nulRemoved','解析移除了 NUL，不属于生成器原字节子集');
+  const relation='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  const expected=[{source:'',id:'rId1',type:relation+'officeDocument',target:'xl/workbook.xml',external:false},{source:'xl/workbook.xml',id:'rId1',type:relation+'worksheet',target:'worksheets/sheet1.xml',external:false},{source:'xl/workbook.xml',id:'rId2',type:relation+'styles',target:'styles.xml',external:false}];
+  if(model.relationships.length!==expected.length||expected.some(e=>!model.relationships.some(r=>Object.entries(e).every(([k,v])=>r[k as keyof typeof r]===v))))issue('subset','/relationships','六个部件的关系类型、来源、目标或身份不属于生成子集');
   if (model.sharedStrings.length || model.relationships.some((v) => v.external || v.type.endsWith('/sharedStrings'))) issue('subset', '/relationships', '不接受共享字符串或外部关系');
   if (model.sheets.length !== 1) issue('sheets', '/sheets', '只接受一张工作表');
   const sheet = model.sheets[0]; if (!sheet) return { ok: false, problems };
-  if (sheet.name !== book.sheet || sheet.part !== FORMAT.worksheet_part || sheet.state !== 'visible') issue('sheets', '/sheets/0', '表名、部件或可见性不符合生成子集');
+  if (sheet.relationshipType!==relation+'worksheet' || sheet.name !== book.sheet || sheet.part !== FORMAT.worksheet_part || sheet.state !== 'visible') issue('sheets', '/sheets/0', '表名、部件或可见性不符合生成子集');
   const rows = new Map<number, WorkbookRow>(); const values = new Map<number, string[]>(); let previous = 0;
   for (const [r, row] of sheet.rows.entries()) {
     if (row.number <= previous || row.number > FORMAT.max_rows || row.hidden) issue('subset', `/sheets/0/rows/${r}`, '行号重复、乱序、过大或有隐藏行'); previous = row.number; rows.set(row.number, row);
@@ -82,7 +86,7 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   let row = 4;
   for (const [i, step] of plan.steps.entries()) {
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.steps[i]?.text ?? recipe.fields.title)) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.title)) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
