@@ -6,7 +6,7 @@ import { at, type ExecutorDefinition } from './definition.ts';
 export type VerificationPort = Pick<RunsService, 'getRun'>;
 export interface VerifiedInput {
   run: string; user: string; lineage: string; ancestors: string[]; item: string; items: string[];
-  sha256: string; target: string; manifest_sha256: string; build: string; generator: unknown; result: string;
+  plan_run: string; sha256: string; target: string; manifest_sha256: string; build: string; generator: unknown; result: string;
 }
 function validClaim(c: Claim, now: Date): boolean {
   return c.statement.verdict === 'support' && c.validity.status === 'valid' && (!c.validity.expires_at || Date.parse(c.validity.expires_at) > now.getTime());
@@ -37,6 +37,8 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
     .filter(c => c.requirement === d.proof.requirement && c.qualifier.nature === 'fact' && c.warrant.producer === 'function' && validClaim(c, now));
   if (!claims.length || claims.some(c => canonicalize(c.statement.data ?? null) !== canonicalize(claims[0].statement.data ?? null))) throw new Error('缺少一致且有效的派发核验事实');
   const data = claims[0].statement.data;
+  const planRun = at(data, d.proof.plan_run);
+  if (typeof planRun !== 'string' || !planRun || planRun !== detail.run.predecessor) throw new Error('用计划运行作 predecessor 重开核验运行');
   const sha256 = at(data, d.proof.sha256); const ids = at(data, d.proof.items); const target = at(data, d.proof.target);
   const manifest = at(data, d.proof.manifest_sha256); const build = at(data, d.proof.build); const generator = at(data, d.proof.generator);
   if (typeof sha256 !== 'string' || !isSha256(sha256) || !Array.isArray(ids) || ids.length !== 1 || ids.some(v => typeof v !== 'string' || !v || v.length > 200) || new Set(ids).size !== ids.length || typeof target !== 'string' || typeof manifest !== 'string' || !isSha256(manifest) || typeof build !== 'string' || !build || generator === undefined || generator === null) throw new Error('核验事实的派发身份字段不完整；本轮只允许一个条目');
@@ -54,5 +56,5 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
     ancestor = predecessor ? await runs.getRun(by, predecessor) : null;
     if (predecessor && !ancestor) throw new Error('预订前驱不可读取');
   }
-  return { run: id, user: owner.id, lineage: ancestors.at(-1)!, ancestors, item: detail.run.items[0].id, items: ids as string[], sha256, target, manifest_sha256: manifest, build, generator, result: detail.latest.record };
+  return { run: id, plan_run: planRun, user: owner.id, lineage: ancestors.at(-1)!, ancestors, item: detail.run.items[0].id, items: ids as string[], sha256, target, manifest_sha256: manifest, build, generator, result: detail.latest.record };
 }

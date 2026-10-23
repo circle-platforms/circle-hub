@@ -50,3 +50,13 @@ test('intent storage failure rolls back the business key and never submits', asy
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
   assert.ok(c.calls.includes('close_slot'));
 });
+
+test('plan_run must equal the verification predecessor and cannot be omitted', async t => {
+  for (const value of [undefined, 'run_0123456789abcdefghjkmnpqrs']) {
+    const c = await setup(); t.after(() => c.close());
+    const proof = c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
+    proof.plan_run = value;
+    await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /用计划运行作 predecessor 重开核验运行/);
+    assert.equal(c.calls.includes('send_blob'), false);
+  }
+});

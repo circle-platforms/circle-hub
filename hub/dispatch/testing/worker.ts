@@ -14,7 +14,7 @@ const db = new Database(createPool(input.config.database, 2));
 try {
   const detail = input.detail as RunDetail;
   const service = new DispatchService({ records: kit, leases: new LeaseService(db, { now: async () => now() }),
-    runs: { getRun: async (_by, id) => id === detail.run.run ? detail : null },
+    runs: { getRun: async (_by, id) => id === detail.run.run ? detail : id === detail.run.predecessor ? { ...detail, run: { ...detail.run, run: id, predecessor: undefined } } : null },
     workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }] } as unknown as LoadedWorkflow) }, now });
   if (process.send) { process.send({ ready: true }); await new Promise(resolve => process.once('message', resolve)); }
   const result = await service.dispatch(input.admin, detail.run.run, input.executor);

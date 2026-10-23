@@ -21,7 +21,7 @@ export const ExecutorDefinition = z.strictObject({
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   conditions: z.array(z.strictObject({ pointer, equals: z.unknown().optional(), at_least: z.number().optional(), sha256: z.string().regex(/^[a-f0-9]{64}$/).optional() }).refine(c => Number(Object.hasOwn(c, 'equals')) + Number(c.at_least !== undefined) + Number(c.sha256 !== undefined) === 1)).min(1).max(100),
-  proof: z.strictObject({ package: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/), manifest_sha256: pointer, requirement: z.string().min(1), sha256: pointer, items: pointer, target: pointer, build: pointer, generator: pointer }),
+  proof: z.strictObject({ package: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/), manifest_sha256: pointer, requirement: z.string().min(1), plan_run: pointer, sha256: pointer, items: pointer, target: pointer, build: pointer, generator: pointer }),
 }).superRefine((d, ctx) => {
   const u = new URL(d.endpoint); const host = u.hostname.replace(/^\[|\]$/g, '');
   const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
