@@ -9,3 +9,9 @@ node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网
 合约通过 case-compile 原格式解析器重算身份，输出保留原字节。`--expect` 由集成者从部署网关只读获取，不从本地副本自证，不在脚本中预设。打印摘要为原字节摘要，合约自己的规范摘要仍保留在文档中。
 
 真实动作由集成者运行。派发运行脚本和全链路验收等待派发分支合并，本阶段没有联机或上机结果。
+
+```
+node scripts/real/convert/bed-topology.ts <网关拓扑回答副本> --out <暂存目录>
+```
+
+输入是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自邻居观察，逐项变成单地址范围，重复观察合并。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。标准输出摘要是完整源回答的原字节摘要。
