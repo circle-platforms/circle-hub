@@ -2,6 +2,7 @@
 // independent command diff in the gold file (added+modified paths are the changed paths; removed paths are not in the
 // scope), and every case of the scope sits on a changed path while a case off them is out.
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
+import type { Turn, Reply } from '../scripted-model.ts';
 import type { Check } from '../lib/report.ts';
 import { lengthBounded, pathSetMatches, runStarted } from './checks.ts';
 
@@ -12,8 +13,10 @@ export interface ScopeCaseGold {
 }
 
 export interface ScopeGold {
-  /** Optional independently measured count of cases without parsed commands. */
+  /** Optional expected count in replay text containing the client disclosure sentence. */
   unplaced?: number;
+  /** Required totals.unplaced from independent case-commands gold for the later build. */
+  caseCommandsUnplaced: number;
   product: string;
   earlier: string;
   later: string;
@@ -32,6 +35,7 @@ export interface ScopeGold {
 export default function scenario(gold: ScopeGold): Scenario {
   const area = '回归范围';
   const pack = 'regression-scope';
+  const readFacets = facetReader();
   return {
     name: 'regression-scope',
     area,
@@ -39,7 +43,7 @@ export default function scenario(gold: ScopeGold): Scenario {
     respond: (turn) =>
       turn.index === 0
         ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.later}?kind=case&by=commands` } } } }]
-        : [{ text: '对比完成。' }],
+        : readFacets(turn, '对比完成。'),
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
       const hubPaths = [...text.matchAll(/\/commands\/[a-z0-9_.\-/]+/gi)].map((m) => m[0]);
@@ -68,7 +72,7 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
         ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
       }));
-      return [...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
 }
@@ -78,4 +82,69 @@ function unplacedChecks(area: string, expected: number | undefined, text: string
   if (expected === undefined) return [];
   const actual = [...new Set([...text.matchAll(/(\d+) 个用例没有解析出命令/g)].map((m) => Number(m[1])))];
   return [{ area, name: '未归位用例数', expected: String(expected), actual: actual.length ? actual.join('、') : '未给出', ok: Number.isSafeInteger(expected) && expected >= 0 && actual.length === 1 && actual[0] === expected }];
+}
+
+/** The bound source, never a newly computed view: this is exactly the hint the projection validated. */
+export function boundFacetReference(texts: readonly string[]): string | null {
+  for (const text of texts) for (const line of text.split('\n')) {
+    if (!line.includes('输入 facets')) continue;
+    const reference = /src:[0-9a-f]{64}/.exec(line)?.[0];
+    if (reference) return reference;
+  }
+  return null;
+}
+function continuation(text: string): { reference: string; cursor?: string } | null {
+  const match = /(?:下一页|接着读)：get_nodes (\{[^\n]*?\})/.exec(text);
+  if (!match) return null;
+  try { const value = JSON.parse(match[1]) as { reference?: unknown; cursor?: unknown }; return typeof value.reference === 'string' && (value.cursor === undefined || typeof value.cursor === 'string') ? value as { reference: string; cursor?: string } : null; } catch { return null; }
+}
+export function facetReader(): (turn: Turn, done: string) => Reply {
+  let reference: string | null = null;
+  const requested = new Set<string>();
+  return (turn, done) => {
+    if (turn.index === 1) {
+      reference = boundFacetReference(turn.toolResults.map((r) => r.text));
+      if (!reference) return [{ text: '缺少已绑定 facets 的源引用，未归位数尚未核对；请补齐运行来源回答后重试。' }];
+      return [{ tool: 'hub_get_nodes', input: { reference } }];
+    }
+    const next = continuation(turn.toolResults.map((r) => r.text).join('\n'));
+    if (next) {
+      const key = JSON.stringify(next);
+      if (!reference || !next.reference.startsWith(reference) || requested.has(key) || requested.size >= 1024) return [{ text: '分面分页没有前进或换了源，缺少完整计数；请补齐该源的完整分页后重试。' }];
+      requested.add(key);
+      return [{ tool: 'hub_get_nodes', input: next }];
+    }
+    return [{ text: done }];
+  };
+}
+/** Reassemble only the MCP pages of the bound source. Headers and omission notes are never input data. */
+export function facetCountCheck(area: string, expected: number, turns: readonly LoggedTurn[]): Check {
+  const reference = boundFacetReference(resultTexts(turns));
+  const pages = turns.flatMap((t) => t.toolResults).filter((r) => !r.isError && reference !== null && r.text.startsWith(`内容 ${reference}`));
+  let raw = '';
+  let valid = pages.length > 0;
+  for (let i = 0; i < pages.length; i++) {
+    const text = pages[i].text;
+    const lines = text.split('\n');
+    const head = lines.findIndex((line) => line.startsWith('原文（'));
+    if (head < 0) { valid = false; continue; }
+    const continuedLine = /第 \d+ 个字符/.test(lines[head]);
+    let from = head + 1;
+    if (lines[from]?.startsWith('（接上页：')) from++;
+    let to = lines.findIndex((line, at) => at >= from && (line.startsWith('部分：') || line.startsWith('追踪 ')));
+    if (to < 0) to = lines.length;
+    raw += (i > 0 && !continuedLine ? '\n' : '') + lines.slice(from, to).join('\n');
+    if (i === pages.length - 1 && continuation(text)) valid = false;
+  }
+  let actual: number | null = null;
+  try {
+    const value = JSON.parse(raw) as { schema?: string; kind?: string; by?: string[]; rows?: Array<{ values: { commands?: unknown }; count: number }>; truncated?: boolean; skipped?: number };
+    if (value.schema !== 'facet-view@1' || value.kind !== 'case' || JSON.stringify(value.by) !== '["commands"]' || value.truncated !== false || value.skipped !== 0 || !Array.isArray(value.rows)) valid = false;
+    else {
+      const empty = value.rows.filter((row) => row.values.commands === null);
+      if (empty.length > 1 || empty.some((row) => !Number.isSafeInteger(row.count) || row.count < 1)) valid = false;
+      else actual = empty[0]?.count ?? 0;
+    }
+  } catch { valid = false; }
+  return { area, name: '分面未归位数与独立抽取相符', expected: String(expected), actual: valid && actual !== null ? String(actual) : '输入不全', ok: valid && actual !== null && Number.isSafeInteger(expected) && expected >= 0 && actual === expected };
 }
