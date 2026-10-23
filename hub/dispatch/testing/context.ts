@@ -13,7 +13,7 @@ import { startEndpoint } from './server.ts';
 let cluster:Promise<TemporaryPostgres>|undefined;
 after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
 
-export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[] } = {}) {
+export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; delay?: Record<string,number> } = {}) {
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);
   const kit = await openTestRecords({ now, postgres: await (cluster ??= startPostgres()) });
@@ -31,8 +31,8 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const submitted: Uint8Array[] = [];
   let submittedRequest: unknown; let submittedSha = payload.body.sha256; let submittedIds: unknown = ['synthetic-case'];
   const replies = (name: string): Record<string, unknown> => {
-    if (name === 'open_slot') return { ok: options.mode !== 'busy', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 300 };
-    if (name === 'touch_slot') return { ok: options.mode !== 'heartbeat-failure', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 300 };
+    if (name === 'open_slot') return { ok: options.mode !== 'busy', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 30000 };
+    if (name === 'touch_slot') return { ok: options.mode !== 'heartbeat-failure', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 30000 };
     if (name === 'inspect_slot') return { build: options.mode === 'build' ? 'wrong' : 'synthetic-build', seats: options.mode === 'seats' ? 0 : 2, reachable: true, topology: { synthetic: true } };
     if (name === 'send_blob') return { request: submittedRequest, ok: options.mode !== 'reject', key: 'synthetic-remote', digest: options.mode === 'receipt-sha' ? 'f'.repeat(64) : submittedSha, ids: options.mode === 'receipt-items' ? ['different'] : submittedIds };
     if (name === 'inspect_blob') return { state: options.mode === 'lost' ? 'vanished' : options.mode === 'unmapped' ? 'unmapped' : ++stateReads <= 2 ? 'working' : 'ended', exit: 0 };
@@ -41,6 +41,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   };
   endpoint = await startEndpoint([...definition('x').allowed_tools, 'synthetic_admin_reset', ...(options.extraTools ?? [])], async (name, _args, res) => {
     calls.push(name);
+    if(options.delay?.[name])await new Promise(resolve=>setTimeout(resolve,options.delay![name]));
     if (options.mode === 'fencing-result' && name === 'read_blob') await leases.forceRelease({ keys: definition('x').resources, by: admin.id, reason: '合成结果阶段强制释放' });
     if (!failedRead && ((options.mode === 'transient-status' && name === 'inspect_blob') || (options.mode === 'transient-result' && name === 'read_blob'))) { failedRead = true; res.destroy(); return {}; }
     if (name === 'send_blob') {

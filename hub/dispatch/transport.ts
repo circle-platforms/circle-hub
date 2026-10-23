@@ -98,10 +98,10 @@ export class RpcClient {
     catch{throw new InvocationDefinitionError();}
     return args;
   }
-  async call(role: CallRole, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
+  async call(role: CallRole, context: Readonly<Record<string, unknown>>, timeoutMs?:number): Promise<Exchange> {
     const declaration = this.definition.calls[role];
     if (!declaration) throw new Error('该生命周期调用未登记；请补齐定义');
-    return this.invoke(declaration, context, role, role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms);
+    return this.invoke(declaration, context, role, timeoutMs ?? (role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms));
   }
   async precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
     const declaration = this.definition.precheck_reads[index];

@@ -32,8 +32,9 @@ test('incomplete channels and empty or unmapped rows have no verdict; mismatched
 
 test('heartbeat deadlines and interruptions are recorded while status reads continue; fencing changes are disclosed', async t => {
   for (const mode of ['heartbeat-failure', 'fencing']) {
-    const c = await setup({ mode, ttl: 30 }); t.after(() => c.close());
+    const c = await setup({ mode, ...(mode==='heartbeat-failure'?{ttl:60,delay:{inspect_slot:160}}:{}) }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    if(mode==='heartbeat-failure'){assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);continue;}
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
     const events = await c.service.journal.events(state.job);
     if (mode === 'heartbeat-failure') {
