@@ -19,7 +19,7 @@ import { PLACEMENT_CHAIN } from './calibration.ts';
 import { ListLoader, uniqueList } from './lists.ts';
 import { infoOf, plannedSources, produceTree } from './produce.ts';
 import { SourceLoader } from './sources.ts';
-import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists } from './store.ts';
+import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists, pointerName } from './store.ts';
 
 export const DEFAULT_MAX_ROUNDS = 6;
 export const DEFAULT_MAX_READS = 300;
@@ -88,6 +88,7 @@ export interface SyncReport {
     limits: { rounds: boolean; reads: boolean; max_rounds: number; max_reads: number };
   };
   builds: SyncBuildReport[];
+  scope?: Omit<SyncBuildReport, 'name' | 'family' | 'line' | 'base'>;
   pointers: LineReconciliation[];
   counts: { produced: number; registered: number; skipped: number; failed: number };
   warnings: string[];
@@ -99,6 +100,7 @@ type SyncRead = SyncPlanInput['read'][string];
 
 /** A plan answer as checked: its builds that are build-info@1, and those that are not (failed builds of the report). */
 interface PlanAnswer {
+  scope?: BuildInfo['sources'];
   fetch: string[];
   builds: BuildInfo[];
   invalid: Array<{ index: number; raw: unknown; reason: string }>;
@@ -107,7 +109,7 @@ interface PlanAnswer {
 }
 
 /** The envelope of sync-plan-output@1 with the builds unchecked: one build that is not build-info@1 fails only itself. */
-const PlanEnvelope = z.strictObject({ fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
+const PlanEnvelope = z.strictObject({ scope: SyncPlanOutput.shape.scope, fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
 
 async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
@@ -144,6 +146,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   const finish = (): SyncReport => {
     report.ended_at = context.now().toISOString();
     for (const build of report.builds) report.counts[build.outcome]++;
+    if (report.scope) report.counts[report.scope.outcome]++;
     return report;
   };  if (declaration === undefined) {
     report.error = '产品包没有声明 sync，无法同步';
@@ -296,6 +299,17 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   for (const build of own) report.builds.push(results.get(build.name) as SyncBuildReport);
   report.builds.sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
 
+  if (output.scope !== undefined) {
+    const result = await processOwnTree(context, product, null, { sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
+    const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
+    report.scope = scopeReport;
+    if (!dryRun && result.root !== null && result.composition !== null) {
+      const production = await context.store.latestProduction(productId, null);
+      const pointer = await context.records.pointers.get(pointerName(productId, null));
+      if (production !== null) await builds.moveRoot(productId, null, pointer?.target ?? null, result.root, production.record.digest, { by, composition: result.composition, expected_action: pointer?.action ?? null });
+    }
+  }
+
   // ---------------------------------------------------------------- current roots
   if (!dryRun) {
     for (const line of [...touchedLines].sort(compareText)) {
@@ -312,15 +326,16 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
 async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
-  build: BuildInfo,
+  build: BuildInfo | null,
   options: { sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
+  scope?: BuildInfo['sources']
 ): Promise<SyncBuildReport> {
   const productId = product.product.id;
-  const base = { name: build.name, family: build.family, line: build.line, base: build.base };
-  const info = infoOf(build);
-  const existing = await context.store.latestProduction(productId, build.name);
+  const base = build === null ? { name: '不分版本', family: '', line: '', base: '' } : { name: build.name, family: build.family, line: build.line, base: build.base };
+  const info = build === null ? null : infoOf(build);
+  const existing = await context.store.latestProduction(productId, build?.name ?? null);
   const keyOf = (s: { producer: string; slot: string; external: string | null }): string => `${s.producer}\u0000${s.slot}\u0000${s.external ?? ''}`;
-  const planned = plannedSources(product, info);
+  const planned = plannedSources(product, info, scope);
   const plannedKeys = planned.filter((s) => !s.many).map(keyOf).sort(compareText);
   const plannedLists = planned
     .filter((s) => s.many)
@@ -336,10 +351,10 @@ async function processOwnTree(
     else if (existing.record.body.component !== COMPONENTS.produce) changed = `Hub 的生产组件变了（${existing.record.body.component} → ${COMPONENTS.produce}）`;
     // The listing changed (released since, other line or platform, other sources): the composition records the build as listed.
     else if (
-      canonicalize(withoutLists(existing.detail.build)) !== canonicalize(withoutLists(info)) ||
-      canonicalize(listRoles(existing.detail.build)) !== canonicalize(listRoles(info))
+      canonicalize(existing.detail.build === null ? null : withoutLists(existing.detail.build)) !== canonicalize(info === null ? null : withoutLists(info)) ||
+      canonicalize(existing.detail.build === null ? [] : listRoles(existing.detail.build)) !== canonicalize(info === null ? [] : listRoles(info))
     ) changed = '构建信息变了';
-    else if (canonicalize(existing.detail.build) !== canonicalize(recordedOf(info).build)) changed = '来源列表变了';
+    else if (canonicalize(existing.detail.build) !== canonicalize(info === null ? null : recordedOf(info).build)) changed = '来源列表变了';
     else if (recorded !== null && recorded.spans > 0) {
       // Spans placed by the typed-judgment model depend on the model and the chain's calibration; a judge failure is retried.
       const model = context.placer.model;
@@ -417,7 +432,8 @@ async function processOwnTree(
   }
   const produced = await produceTree(context, {
     product,
-    build: { ...info, root: existing?.detail.root ?? null },
+    build: info === null ? null : { ...info, root: existing?.detail.root ?? null },
+    scope,
     by: options.by,
     sync: options.sync,
     loader: options.loader,
@@ -490,7 +506,7 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
     if (build.success) builds.push(build.data);
     else invalid.push({ index, raw, reason: `计划给出的第 ${index + 1} 个构建不符合 build-info@1：${issueText(build.error)}` });
   });
-  return { ok: true, value: { fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
+  return { ok: true, value: { ...(parsed.data.scope === undefined ? {} : { scope: parsed.data.scope }), fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
 }
 
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */

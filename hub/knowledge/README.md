@@ -840,3 +840,21 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 
 
 合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。
+
+
+### Product-wide production
+
+`sync-plan-output@1.scope` lists source roles without a version or build. A producer
+with `unversioned: true` runs only for that scope; other producers run only for builds.
+Its `ProducerInput` omits `build`; its composition records `version: null`, `build: null`
+and sources with `basis: declared`, decided by the product pack id and version.
+The product-wide pointer is `knowledge/<product>`; version pointers always have one
+more path segment, so even a line named `unversioned` cannot collide. Moves use the
+same audited compare-and-set operation, including composition refresh at equal roots.
+Sync reports put this result in `scope`, separately from `builds`. Without `scope`,
+no product-wide production or pointer move occurs.
+
+Needs: merge hub-variables step two before merging this first step. Before deployment,
+keep the existing option/parameter path; after deployment use that implementation's
+resolved variable snapshot for both kinds of production and record its variables in
+the composition (decision 44). No variable subsystem or deployment migration is added here.

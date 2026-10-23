@@ -66,6 +66,7 @@ export const INDEX = {
   rootBuild: 'knowledge.root.build',
   rootProduct: 'knowledge.root.product',
   produce: 'knowledge.produce',
+  produceScope: 'knowledge.produce.scope',
   produceRoot: 'knowledge.produce.root',
   produceProduct: 'knowledge.produce.product',
   sync: 'knowledge.sync',
@@ -192,7 +193,8 @@ export function recordedOf(build: BuildInfo): { build: RecordedBuild; lists: Lis
 }
 
 /** Pointer name of the current root of a product line@version: the line's UTF-8 bytes outside [a-z0-9._-] are written :hh. */
-export function pointerName(product: string, line: string): string {
+export function pointerName(product: string, line: string | null): string {
+  if (line === null) return `knowledge/${product}`;
   let encoded = '';
   for (const byte of Buffer.from(line.normalize('NFC'), 'utf8')) {
     const ch = String.fromCharCode(byte);
@@ -290,7 +292,7 @@ export const ProduceDetail = z.object({
   product: z.string(),
   pack: z.object({ id: z.string(), version: z.string(), digest: z.string() }),
   /** The build as listed, its list roles by reference (the ids are an object). */
-  build: RecordedBuild,
+  build: RecordedBuild.nullable(),
   root: z.string().nullable(),
   composition: z.string().nullable(),
   /** The sources of single slots (list sources are summarised in `lists`). */
@@ -522,7 +524,7 @@ export class KnowledgeStore {
         body: checked(SCHEMAS.root, body),
         index: [
           { key: INDEX.root, value: body.root },
-          { key: INDEX.rootBuild, value: buildKey(body.product, body.build.name) },
+          ...(body.build === null ? [] : [{ key: INDEX.rootBuild, value: buildKey(body.product, body.build.name) }]),
           { key: INDEX.rootProduct, value: body.product },
         ],
       },
@@ -650,13 +652,13 @@ export class KnowledgeStore {
   }
 
   /** The newest completed production of a product's base build (exact name), or null. Reads a few records at first. */
-  async latestProduction(product: string, base: string): Promise<ProduceAction | null> {
+  async latestProduction(product: string, base: string | null): Promise<ProduceAction | null> {
     let found: ProduceAction | null = null;
     await this.newest<ActionBody>(
-      { key: INDEX.produce, value: buildKey(product, base), kind: 'action' },
+      { key: base === null ? INDEX.produceScope : INDEX.produce, value: base === null ? product : buildKey(product, base), kind: 'action' },
       (record) => {
         const produced = KnowledgeStore.produceOf(record);
-        if (produced === null || !produced.completed || produced.detail.product !== product || produced.detail.build.name !== base) return false;
+        if (produced === null || !produced.completed || produced.detail.product !== product || (produced.detail.build?.name ?? null) !== base) return false;
         found = produced;
         return true;
       },

@@ -177,7 +177,7 @@ const elementKey = (source: ParsedSource): { sha256: string; media_type: string;
 });
 
 /** SHA-256 of the canonical JSON of the build exactly as a producer receives it (ProducerInput.build). */
-export function buildDigest(build: KnownBuild): string {
+export function buildDigest(build: KnownBuild | null): string {
   return sha256Hex(canonicalize(build));
 }
 
@@ -185,7 +185,7 @@ export interface MemoKeyInput {
   pack: string;
   producer: Producer;
   /** The build as the function receives it. */
-  build: KnownBuild;
+  build: KnownBuild | null;
   list: string;
   batch: { index: number; of: number };
   elements: readonly ParsedSource[];
@@ -254,7 +254,7 @@ export interface ListCallContext {
   product: ProductHandle;
   producer: Producer;
   /** The build as the function receives it, and its digest. */
-  build: KnownBuild;
+  build: KnownBuild | null;
   buildDigest: string;
   slots: ReadonlyMap<string, ParsedSource | null>;
   list: string;
