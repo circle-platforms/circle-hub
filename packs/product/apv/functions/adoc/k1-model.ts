@@ -6,7 +6,7 @@ import type { Block, Composition } from './types.ts';
 import type { MarkdownBlock, MarkdownModel, MarkdownSection } from '../../../../../hub/refs/api.ts';
 
 export const K1_KINDS: Readonly<Record<string, string>> = {
-  paragraph: 'para',
+  paragraph: 'paragraph',
   section: 'heading',
   listing: 'code_block',
   literal: 'code_block',
@@ -130,10 +130,26 @@ export function toK1Model(model: { blocks: Block[] }, composition: Composition, 
     const section = sectionOf(block.path);
     // A table's own origin is often lost (the engine rewrites its raw text): its selector cites the first verified
     // line among its cells, so the K1 producer always has a citable fragment for the block.
+    if (block.kind === 'listing' && block.role === 'signature') {
+      // The explicit signature structure: each line becomes one paragraph anchor (a bare line gains the bold marks
+      // the role declares; a marked line stays as written), citing the line's own verified origin.
+      for (const line of block.raw.split('\n')) {
+        const marked = /^\*\*/.test(line) ? line : `**${line}**`;
+        const lineOrigin = block.origins.find((origin) => origin.verbatim.split('\n').includes(line)) ?? block.origins[0] ?? null;
+        const at = sections[section]!.blocks.length;
+        sections[section]!.blocks.push(blocks.length);
+        blocks.push({ kind: 'paragraph', section, index: at, line: (lineOrigin?.from ?? 1) - 1, lines: 1, text: marked, selector: lineOrigin === null ? null : `src:${composition.files.find((f) => f.file === lineOrigin.file)?.sha256 ?? ''}/text@1/${lineOrigin.selector}`, path: block.path.map((s) => s.title) });
+      }
+      continue;
+    }
     const origin = block.origins[0] ?? (block.kind === 'table' ? tableOrigin(block) : null);
     const index = sections[section]!.blocks.length;
     sections[section]!.blocks.push(blocks.length);
-    const text = block.kind === 'table' ? tableText(block) : signatureShape(inlineOf(block.expanded));
+    // Paragraphs cite their RAW source text (the verbatim markdown-shaped line: `**cmd** *\<param\>*`), not the
+    // engine's collapsed inline HTML — the raw is what step one verified against the source, and K1's anchor
+    // grammar reads it directly. A role=signature listing becomes a signature block; an example block keeps its
+    // listing shape (K1 records its lines as code literals, never anchors).
+    const text = block.kind === 'table' ? tableText(block) : block.raw;
     blocks.push({
       kind: kindOf(block),
       section,

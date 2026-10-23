@@ -246,7 +246,7 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  * tree cannot resolve as drift candidates. What an entry's digest covers never depends on the tree; placement does
  * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
  */
-export type ManualOptions = { name?: string; catalog?: CommandCatalog | null; /** A production whose tree slot is unusable: signatures stay at their section nodes (no synthetic paths). */ noTree?: boolean };
+export type ManualOptions = { name?: string; catalog?: CommandCatalog | null; /** A production whose tree slot is unusable: signatures stay at their section nodes (no synthetic paths). */ noTree?: boolean; /** This line has an adoc source: the transitional catalog.json reading (K1 item 4) is off (K4 item 6). */ adocSource?: boolean };
 
 /**
  * A span the code could not place; it stays citable by its selector and goes to the typed-judgment model later. `kind` is

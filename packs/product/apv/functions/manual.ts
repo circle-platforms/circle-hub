@@ -1023,7 +1023,12 @@ export function produceManualEntries(input: MarkdownModel | ManualCatalog, heads
   const warnings: string[] = [];
   try {
     const known = heads === null ? null : new Set(asStrings(heads).map((head) => squeeze(head).split(' ')[0].toLowerCase()).filter((head) => head !== ''));
-    if (isCatalog(input)) return fromCatalog(input, warnings);
+    if (isCatalog(input)) {
+      // K4 item 6: a line with an adoc source reads signatures, value domains and examples from the adoc alone;
+      // the transitional catalog.json reading is off, with the next action named.
+      if (options.adocSource === true) return { entries: [], unplaced: [], warnings: ['本版本线有 adoc 源，catalog.json 的过渡读法已停用；把手册以 adoc 源接入后重新生产'] };
+      return fromCatalog(input, warnings);
+    }
     if (isMarkdown(input)) return fromMarkdown(input, known !== null && known.size > 0 ? known : null, options, warnings);
     return { entries: [], unplaced: [], warnings: ['输入既不是 markdown@1 模型，也不是手册命令目录（ist.manual-command-catalog）'] };
   } catch (error) {
