@@ -1,6 +1,6 @@
 # 离线接入转换
 
-这些 TypeScript 命令由集成者对只读副本运行，不联网、不读取环境或凭据，不执行发布命令。必须指定仓库外的 `--out` 暂存目录；符号链接指向仓库也拒绝。新文件权限为 0600，不覆盖已有文件。标准输出只含个数、SHA-256，以及三份接入文档各自最后一行的发布命令。发布前切换到暂存目录，集成者核对后自行执行该命令。失败退出非零；不会把源数据或底层异常打印到终端。
+这些 TypeScript 命令由集成者对只读副本运行，不联网、不读取环境或凭据，不执行发布命令。必须指定仓库外的 `--out` 暂存目录；符号链接指向仓库也拒绝。新文件权限为 0600，不覆盖已有文件。标准输出只含个数、SHA-256，以及三份接入文档各自最后一行的发布命令（固定名 runner-contract、bed-topology、runtime-profile）。发布前切换到暂存目录，集成者核对后自行执行该命令。失败退出非零；不会把源数据或底层异常打印到终端。
 
 ```
 node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网关钉住的摘要> --out <暂存目录>
@@ -14,7 +14,7 @@ node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网
 node scripts/real/convert/bed-topology.ts <网关拓扑回答副本> --out <暂存目录>
 ```
 
-输入是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自邻居观察，逐项变成单地址范围，重复观察合并。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。标准输出摘要是完整源回答的原字节摘要。
+输入是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自 IPv4 ARP 邻居观察，只保留本台架设备接口网段内的邻居，逐项变成单地址范围，重复观察合并；网段外邻居仅记到私有 topology-accounting.json，屏幕打印排除个数。服务源协议只按一张表转换：http、https → tcp，dns → udp；表外整份拒绝，指出服务序号与 proto 字段。屏幕打印这三类服务个数、保留与排除个数。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。标准输出摘要是完整源回答的原字节摘要。
 
 ```
 node scripts/real/convert/runtime-profile.ts <环境预检回答> <清单> <合约副本> --out <暂存目录> [--decisions <角色决定文件>]

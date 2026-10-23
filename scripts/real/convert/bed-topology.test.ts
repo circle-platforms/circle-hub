@@ -19,3 +19,15 @@ for (const [name, mutate] of Object.entries({
   services: (v: ReturnType<typeof topology>) => { Reflect.deleteProperty(v, 'services'); },
   observation: (v: ReturnType<typeof topology>) => { Reflect.deleteProperty(v, 'observation'); },
 })) test(`topology refuses ${name} without guessing`, () => { const raw = topology(); mutate(raw); assert.throws(() => convertTopology(raw)); });
+
+test('outside-subnet neighbours are excluded while both in-subnet observations remain', () => {
+  const raw = topology(); raw.topology.devices[0].ipv4 = ['192.0.2.10/26']; raw.topology.devices[1].ipv4 = ['192.0.2.11/26'];
+  raw.observation.unregistered_neighbours.eth0.push('192.0.2.200');
+  assert.deepEqual(convertTopology(raw).beds[0].reserved, ['192.0.2.20-192.0.2.20', '192.0.2.21-192.0.2.21']);
+});
+test('service protocol translation accepts only the declared source table', () => {
+  const raw = topology(); raw.services[0].proto = 'http'; assert.equal(convertTopology(raw).beds[0].services[0].proto, 'tcp');
+  raw.services[0].proto = 'https'; assert.equal(convertTopology(raw).beds[0].services[0].proto, 'tcp');
+  raw.services[0].proto = 'dns'; assert.equal(convertTopology(raw).beds[0].services[0].proto, 'udp');
+  raw.services[0].proto = 'synthetic-unknown'; assert.throws(() => convertTopology(raw), /services\/0\/proto/);
+});

@@ -13,6 +13,6 @@ export function run(args: string[]): void {
   const { files, options } = argumentsOf(args, 1, ['--expect', '--out']);
   const bytes = readFileSync(files[0]!); const checked = checkContract(bytes, options['--expect'] ?? '');
   output(options['--out'] ?? '', 'runtime-contract.json', bytes);
-  summary(checked.contract.enabled.length, bytes, { name: 'runtime-contract', file: 'runtime-contract.json' });
+  summary(checked.contract.enabled.length, bytes, { name: 'runner-contract', file: 'runtime-contract.json' });
 }
 main(import.meta.url, run);
