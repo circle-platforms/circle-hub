@@ -24,6 +24,9 @@ The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Re
 
 ## The answer
 
+Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<earlier build>?kind=case&by=commands`, matching the impact product and starting root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. `command_exists` adds a support disclosure: N cases have no parsed command and were excluded from the sweep. This does not change the items, reasons or detail tables. The client skill continues by listing those cases for the user to establish command ownership.
+
+
 Each item is one case of the earlier build, id `<document>:<node>`, sorted by id. A case on several maintenance paths is
 one item. Reasons are sorted by path and carry only the index of the path in the run-level details table and `change`
 (`removed` or `modified`) — since 1.3.0 the path string, the field differences and the tree references live once per
@@ -70,7 +73,7 @@ cross-item claims before items, the diff is visible however many items are paged
 ## How to test
 
 ```
-node --test --test-concurrency=2 "packs/workflow/maintenance-sweep/**/*.test.ts"
+node --test --test-concurrency=1 "packs/workflow/maintenance-sweep/**/*.test.ts"
 npx tsc --noEmit
 node packs/workflow/maintenance-sweep/pack-files.ts --check
 ```
@@ -82,6 +85,9 @@ A skip is not a pass. `production.test.ts` has one `it.todo` for the real knowle
 product pack's cases index is committed.
 
 ## Limits
+
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a definite disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
+
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.
 - A run admits at most 4,000 maintenance items and about 6 MiB of projection output (`maintenance-sweep.too_large`, with
@@ -95,6 +101,9 @@ product pack's cases index is committed.
 
 ## Needs from other packages
 
+- If the impact view carried unplaced counts for each side, the second input would no longer be needed. A truncation-proof facet summary is pending in knowledge.
+
+
 - **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): done — empty item sets are accepted as legal answers, storing an empty validation result and carrying the projection's explanation.
 - **product pack** (cases producer): confirm the case entry fields. Until that producer is committed, the real-reader end-to-end test stays a todo.
 - **knowledge pack**: this pack only parses `impact-view@1`.
@@ -102,3 +111,7 @@ product pack's cases index is committed.
 ## 生成词表与包版本
 
 maintenance-sweep@1.6.1 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+## Unplaced disclosure decision
+
+The integration owner clarified that positive unplaced counts are support disclosures and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes. No vocabulary axis was added. Facet tests cover required binding, zero and positive counts, wrong roots and fields, and truncation refusal. The real knowledge reader test uses a synthetic producer with one unplaced case in the earlier build.
