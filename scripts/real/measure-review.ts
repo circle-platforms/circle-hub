@@ -20,7 +20,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
-import { catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
+import { acceptedSubmissionReference, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -35,10 +35,41 @@ export interface Drivers {
   review(spec: SessionSpec, prompt: string, out: string, name: string): { code: number; calls: string };
   /** Fetches one run (`node bin/circle-hub run show <run> --json`). */
   show(run: string): { code: number; json: string };
+  readSubmission?(reference: string, out: string): {code:number;json:string};
+}
+
+/** Fetch the complete record body; a cursor loop or unavailable page cannot become a partial submission. */
+export function readSubmissionPages(read: (args: {reference:string;cursor?:string}) => {code:number;json:string}, reference: string): {code:number;json:string} {
+  let cursor: string | undefined, text = '';
+  const seen = new Set<string>();
+  for (let page = 0; page < 1024; page++) {
+    const result = read({reference,...(cursor === undefined ? {} : {cursor})});
+    if (result.code !== 0) return {code:1,json:''};
+    let value: unknown;
+    try { value = JSON.parse(result.json); } catch (error) { if (error instanceof SyntaxError) return {code:1,json:''}; throw error; }
+    if (value === null || typeof value !== 'object') return {code:1,json:''};
+    const row = value as {content?:{reference?:unknown;readable?:unknown;text?:unknown};next?:unknown};
+    if (row.content?.reference !== reference || row.content.readable !== true || typeof row.content.text !== 'string') return {code:1,json:''};
+    text += row.content.text;
+    if (Buffer.byteLength(text) > 64 * 1024 * 1024) return {code:1,json:''};
+    if (row.next === null || row.next === undefined) return {code:0,json:text};
+    if (typeof row.next !== 'string' || !row.next || seen.has(row.next)) return {code:1,json:''};
+    cursor = row.next; seen.add(cursor);
+  }
+  return {code:1,json:''};
 }
 
 /** The real drivers: subprocesses, with the Hub's loopback URL and the repo's binary. */
 export const realDrivers: Drivers = {
+  readSubmission: (reference, out) => {
+    let page = 0;
+    return readSubmissionPages(args => {
+      const file = join(out, 'submission-page-' + (++page) + '.jsonl');
+      writeFileSync(file, '', {flag:'wx',mode:0o600});
+      const result = spawnSync(process.execPath, [resolve(import.meta.dirname,'hub-call.ts'),'--token-env','HUB_REAL_TOKEN','--structured',file,'get_nodes',JSON.stringify(args)], {cwd:resolve(import.meta.dirname,'../..'),encoding:'utf8',env:process.env,maxBuffer:64*1024*1024});
+      return {code:result.status ?? 1,json:readFileSync(file,'utf8').trim()};
+    },reference);
+  },
   review: (spec, prompt, out, name) => {
     const run = spawnSync('node', [resolve(import.meta.dirname, 'review-circle.ts'), ...spec.args, '--prompt', prompt, '--out', out, '--name', name], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env });
     writeFileSync(join(out, name + '.stdout.txt'), run.stdout ?? '', { mode: 0o600 });
@@ -275,6 +306,13 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
         try { original = readCatalogInput(options.submission.replaceAll('{n}', String(n))); } catch { /* The report requests accepted bytes by digest. */ }
       }
       const shown = JSON.parse(readFileSync(join(dir, 'draft.run.json'), 'utf8')) as unknown;
+      if (original === undefined && drivers.readSubmission) {
+        const reference = acceptedSubmissionReference(shown);
+        if (reference !== null) {
+          const read = drivers.readSubmission(reference, dir);
+          if (read.code === 0) original = Buffer.from(read.json, 'utf8');
+        }
+      }
       const excludeNodes = injected.gold.flatMap(entry => [entry.node, ...(entry.copy === undefined ? [] : [entry.copy]), ...(entry.deletedCases ?? [])]);
       round.catalog = catalogMarks({ treeXml: catalogInput.treeXml, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, excludeNodes });
       for (const pending of round.catalog.requests) {

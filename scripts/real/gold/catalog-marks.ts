@@ -3,6 +3,7 @@
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
 //   [--table <cited-commands.json>] --out <new private directory>
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
+import { canonicalJson } from './compile-check.ts';
 import { SaxesParser } from 'saxes';
 import { isIP } from 'node:net';
 import { createHash } from 'node:crypto';
@@ -331,18 +332,29 @@ export function tableRequests(value: unknown): EvidenceRequest[] {
   return problems;
 }
 
-/** Receipt checks precede every adjudication. Original bytes are hashed before parsing, never reserialized. */
+export function acceptedSubmissionReference(value: unknown): string | null {
+  if (!object(value) || !object(value.latest)) return null;
+  const latest = value.latest;
+  const accepted = array(value.submissions).find(row => object(row) && row.result === latest.record);
+  if (!object(accepted) || typeof accepted.record !== 'string') return null;
+  const digest = accepted.record.replace(/^rec:/, '');
+  return /^[a-f0-9]{64}$/.test(digest) ? 'rec:' + digest : null;
+}
+
+/** Receipt checks precede every adjudication. Submission identity uses the declared canonical JSON digest; raw source bytes retain byte identity. */
 export function catalogMarks(input: CatalogInputs): CatalogReport {
   const empty: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
   const run = object(input.run) ? input.run : {}, record = object(run.run) ? run.run : {}, latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
   const wanted = typeof result.submission === 'string' && /^[0-9a-f]{64}$/.test(result.submission) ? result.submission : null;
-  const inputs = { tree_sha256: sha256(input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : sha256(input.submissionBytes), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
+  const inputs = { tree_sha256: sha256(input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : (() => { try { return sha256(canonicalJson(parseJson(input.submissionBytes))); } catch { return null; } })(), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
   const requests = tableRequests(input.table);
   const add = (where: string, pointer: string, fact: string, next_action: string): void => { requests.push(request({ input: where, pointer }, fact, next_action)); };
-  const exportSubmission = wanted === null ? '先补取 run show 最新受理提交的原件字节摘要，再由集成者按该摘要执行 circle-hub original export <摘要> --out <仓库外新提交原件.json>，通过 --submission 传入；不能使用记录封套摘要替代' : `由集成者执行 circle-hub original export ${wanted} --out <仓库外新提交原件.json>，再用 --submission <该文件> 重跑；保留原字节，不格式化`;
+  const recordRef = acceptedSubmissionReference(run) ?? '<run.submissions 中 result 等于 latest.record 的 record>';
+  const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
+
   if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的原件字节 sha256', exportSubmission);
   if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整原始字节', exportSubmission);
-  else if (wanted !== null && inputs.submission_sha256 !== wanted) add('submission', '/', '提交原件字节摘要与最新受理提交不一致', exportSubmission);
+  else if (wanted !== null && inputs.submission_sha256 !== wanted) add('submission', '/', '提交正文规范 JSON 摘要与最新受理提交不一致', exportSubmission);
   if (result.acceptance !== 'accepted') add('run', '/latest/result/acceptance', '最新已受理的评审结果', '请集成者重导出本次 circle-hub run show <运行> --json 的最新受理结果');
   if (typeof record.run !== 'string' || result.run !== record.run) add('run', '/latest/result/run', '提交、最新受理结果和运行的同一身份', '重新导出同一次运行的 run show 与提交原件后重跑');
   if (typeof record.root !== 'string' || !/^[0-9a-f]{64}$/.test(record.root)) add('run', '/run/root', '本次运行锁定的知识树根', '重导出完整 run show，并由集成者从这个锁定根导出 --tree 命令树原件');
