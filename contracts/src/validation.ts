@@ -148,6 +148,7 @@ function itemResult<const E extends z.ZodRawShape>(extra: E) {
   return z.strictObject({
     item: ItemId,
     label: z.string(),
+    skip_reason:MissingFact.optional().describe('The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code'),
     location: ReferenceUri.describe('reference URI of the item in the judged source'),
     ...extra,
     carried_over: referenceUriOf('rec')

@@ -166,6 +166,11 @@
               "label": {
                 "type": "string"
               },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
+              },
               "location": {
                 "type": "string",
                 "maxLength": 8192,
@@ -1462,6 +1467,11 @@
               },
               "label": {
                 "type": "string"
+              },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
               },
               "location": {
                 "type": "string",
@@ -2765,6 +2775,11 @@
               },
               "label": {
                 "type": "string"
+              },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
               },
               "location": {
                 "type": "string",
@@ -4080,6 +4095,11 @@
               },
               "label": {
                 "type": "string"
+              },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
               },
               "location": {
                 "type": "string",

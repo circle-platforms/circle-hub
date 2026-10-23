@@ -11,6 +11,7 @@ import {
   DoneRuleSchema,
   ErrorHandlingSchema,
   LayerSchema,
+  ReasonSchema,
   LeaseOpSchema,
   PackKindSchema,
   SAMPLE_SOURCE,
@@ -115,11 +116,13 @@ const Key = z.string().regex(/^[a-z][a-z0-9_]*$/, 'lowercase letters, digits and
 /** One row of the error handling table: a violation code (or * for any other) and what happens to a requirement that shows it. */
 export const ErrorHandlingRow = z
   .strictObject({
-    code: z.string().min(1).describe('a core violation code, a pack code, or * for any other'),
+    code: z.string().min(1).optional().describe('A violation code or *, mutually exclusive with reason'),
+    reason:ReasonSchema.optional().describe('A generated cause selector, mutually exclusive with code'),
     action: ErrorHandlingSchema,
     max_rounds: z.number().int().min(1).max(10).optional().describe('repair rounds for the whole requirement; required when the action is repair'),
   })
   .superRefine((r, ctx) => {
+    if((r.code===undefined)===(r.reason===undefined))ctx.addIssue({code:'custom',path:['code'],message:'select exactly one code or reason'});
     if ((r.action === 'repair') !== (r.max_rounds !== undefined)) ctx.addIssue({ code: 'custom', path: ['max_rounds'], message: 'a repair row names its rounds and only a repair row does' });
   });
 export type ErrorHandlingRow = z.infer<typeof ErrorHandlingRow>;
@@ -165,9 +168,9 @@ export const RequirementTemplate = z
     if (r.accepted_producer === 'fact' && r.target === 'run' && r.checks.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['checks'], message: 'a fact over the whole target needs a check' });
     }
-    const codes = r.error_handling.map((e) => e.code);
+    const codes = r.error_handling.map(e=>e.code!==undefined?'code:'+e.code:'reason:'+e.reason);
     codes.forEach((c, i) => {
-      if (codes.indexOf(c) !== i) ctx.addIssue({ code: 'custom', path: ['error_handling', i, 'code'], message: `code ${c} is handled twice` });
+      if (codes.indexOf(c) !== i) ctx.addIssue({ code: 'custom', path: ['error_handling', i, r.error_handling[i].reason!==undefined?'reason':'code'], message: `selector ${c} is handled twice` });
     });
   });
 export type RequirementTemplate = z.infer<typeof RequirementTemplate>;

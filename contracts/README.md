@@ -200,3 +200,11 @@ keep their defined empty numeric value and do not accept the min/max-only option
 from generated terminal codes. Interpreter execution/attribution remains hub-retry-split's work. Complete catalog absence
 is a refutation; an incomplete catalog needs its missing sources and recovery, not a fabricated complete scope. View scope
 fields are deliberately left to the owner of views.ts.
+
+### Cause routing and skipped work (task item 7)
+
+ErrorHandlingRow selects exactly one `code` or generated `reason`; duplicate selectors are checked in separate namespaces.
+The existing repair/max_rounds contract is unchanged. Static pack validation recognizes reason selectors without pretending
+that a reason is an installed interpreter code. Runtime cause routing, repair exhaustion and B07 records remain
+hub-unknown-exits's work. Skipped submissions may name remaining work/intent; their required reason is preserved in the
+new result `skip_reason` field when the consumer projects it, rather than being lost behind the declared_skip code.

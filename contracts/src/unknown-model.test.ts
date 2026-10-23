@@ -4,6 +4,8 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {AjvJsonSchemaValidator} from '@modelcontextprotocol/sdk/validation/ajv';
 import {accepted,copy} from './fixtures.ts';
+import {ErrorHandlingRow,RequirementTemplate} from './pack.ts';
+import {SkippedItem} from './submission.ts';
 import {RangeTable} from './tables.ts';
 import {CheckOutcome} from './tables.ts';
 import {LayerResult} from './validation.ts';
@@ -73,4 +75,14 @@ test('item 6 declares empty threshold behavior while omission means failure',()=
   assert.ok(RangeTable.safeParse(table).success);
   assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'fail'}}]}).success);
   assert.equal(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',empty:'unknown'}}]}).success,false);
+});
+
+
+test('item 7 selects error handling by exactly one code or generated reason',()=>{
+  assert.ok(ErrorHandlingRow.safeParse({reason:'declared_skip',action:'repair',max_rounds:2}).success);
+  assert.ok(ErrorHandlingRow.safeParse({code:'core.structure.required_empty',action:'repair',max_rounds:2}).success);
+  for(const value of [{action:'repair',max_rounds:2},{code:'*',reason:'timeout',action:'repair',max_rounds:2},{reason:'invented_reason',action:'unknown'}])assert.equal(ErrorHandlingRow.safeParse(value).success,false);
+  const req={key:'test',name:'合成要求',description:'合成事实',target:'item',required:true,done_rule:'gating',layers:['static'],accepted_producer:'fact',checks:['check'],error_handling:[{reason:'timeout',action:'repair',max_rounds:1},{reason:'missing_input',action:'repair',max_rounds:2}]};
+  assert.ok(RequirementTemplate.safeParse(req).success);assert.equal(RequirementTemplate.safeParse({...req,error_handling:[req.error_handling[0],req.error_handling[0]]}).success,false);
+  assert.equal(SkippedItem.safeParse({item:'one',handling:'skipped',reason:'not completed',missing:'Synthetic remaining work'}).success,true);
 });
