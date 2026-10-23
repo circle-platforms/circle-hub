@@ -22,3 +22,10 @@ test('R01 heartbeat failures after submission do not permanently stop renewal at
   const failed=beats.findIndex(e=>e.body.detail.lease_interrupted===true);
   assert.ok(failed>=0 && beats.slice(failed+1).some(e=>e.body.result==='completed'));
 });
+
+test('R02 rekeying an occupied executor cannot hide an unresolved effect',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.frozen,true);
+  await assert.rejects(c.registry.update(c.admin,c.executor.id,{...c.executor.definition,resources:['synthetic/device/c']}),new RegExp(first.job));
+  assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+});

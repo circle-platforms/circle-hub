@@ -1,4 +1,5 @@
 import { canonicalBytes, newId, scanForCredentials, type Principal, type RecordsKit } from '../records/api.ts';
+import { Journal } from './journal.ts';
 import { ExecutorDefinition } from './definition.ts';
 export type RegisteredExecutor = { id: string; digest: string; definition: ExecutorDefinition };
 export class ExecutorRegistry {
@@ -20,6 +21,11 @@ export class ExecutorRegistry {
   async update(by: Principal, id: string, input: unknown, nextSecret?: string): Promise<RegisteredExecutor> {
     await this.admin(by); if (!await this.get(id)) throw new Error('执行器对你不可用');
     const definition = this.validate({ ...(input as object), id });
+    const current=await this.get(id);
+    if(current && (current.definition.target!==definition.target || current.definition.endpoint!==definition.endpoint || JSON.stringify([...current.definition.resources].sort())!==JSON.stringify([...definition.resources].sort()))) {
+      const blocked=await new Journal(this.records,()=>new Date()).blockers(id,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
+      if(blocked.length)throw new Error(`执行器身份或资源仍被作业 ${blocked.join('、')} 占用；先运行 circle-hub job resume ${blocked[0]}，冻结时先完成对账处置`);
+    }
     const secret = await this.records.vault.getText(`executor.${id}.bearer`);
     if (secret && containsSecret(definition, secret)) throw new Error('执行器定义不能包含调用密钥');
     if (nextSecret !== undefined) {

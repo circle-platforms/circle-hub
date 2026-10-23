@@ -55,7 +55,7 @@ export class DispatchService {
     const d = registered.definition;
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
     if (booking && !booked) throw new Error('预订运行对你不可用');
-    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, target_key: digestOfValue([...d.resources].sort()), input: null,
+    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
       user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
     const client = this.session(binding, d, await this.secret(executor));
@@ -128,7 +128,7 @@ export class DispatchService {
     if (!source?.bytes) throw new Error('核验字节不可读取，未提交');
     const initial = await this.holders(input.ancestors, input.user, d.resources, d.max_run_ms);
     const secret = await this.secret(executor);
-    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, input, user: input.user, resources: d.resources, fences: initial, target_key: digestOfValue([...d.resources].sort()) };
+    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if (JSON.stringify(binding).includes(secret)) throw new Error('绑定元数据不能包含执行器密钥');
     await this.reserve(binding);
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
@@ -376,12 +376,10 @@ export class DispatchService {
   }
 
   private async reserve(binding: JobBinding): Promise<void> {
+    const definition=await this.pinned(binding);
+    const blocked=await this.journal.blockers(binding.executor,definition.target,new URL(definition.endpoint).origin,binding.resources);
+    if(blocked.length)throw new Error(`物理目标被未结束或冻结的作业 ${blocked.join('、')} 占用；先查询并运行 circle-hub job resume ${blocked[0]}，冻结时先完成对账处置`);
     const history = await this.journal.targets(binding.resources);
-    const jobs = new Set(history.map(e => String(e.body.detail.job)));
-    for (const job of jobs) {
-      const own = history.filter(e => e.body.detail.job === job);
-      if (isFrozen(own) || !isDone(own)) throw new Error('物理目标有未结束或未知的作业；先查询或由管理员对账');
-    }
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     await this.options.records.store.withTransaction(async tx => {
       for (const resource of resources) {

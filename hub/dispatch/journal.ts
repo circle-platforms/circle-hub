@@ -3,7 +3,7 @@ import type { ActionKind, ActionResult } from '../../contracts/generated/vocabul
 import { newId, sha256Hex, canonicalBytes } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
 import type { VerifiedInput } from './proof.ts';
-export interface JobBinding { job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; target_key: string; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
+export interface JobBinding { job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; target_key: string; scope?: {target:string;origin:string}; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
 export type Event = StoredRecord<ActionBody>;
 export class Journal {
   readonly records: RecordsKit;
@@ -11,12 +11,27 @@ export class Journal {
   constructor(records: RecordsKit, now: () => Date) { this.records = records; this.now = now; }
   async events(job: string): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.job', values: [job], kind: 'action' }); }
   async targets(resources: readonly string[]): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.resource', values: resources.map(r => sha256Hex(r)), kind: 'action' }); }
+  async blockers(executor:string,target:string,origin:string,resources:readonly string[]):Promise<string[]> {
+    // One linear batch also covers old reservations lacking scope indexes; never rewrite their records.
+    const events=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation','complete','unknown','dispose','receipt','reconciled','rejection']});
+    const jobs=new Map<string,Event[]>();
+    for(const event of events){const job=String(event.body.detail.job);const list=jobs.get(job)??[];list.push(event);jobs.set(job,list);}
+    const blocked:string[]=[];
+    for(const [job,history] of jobs) {
+      const b=history.find(e=>e.body.detail.phase==='reservation')?.body.detail.binding as JobBinding|undefined;
+      if(!b?.resources.length || isDone(history) && !isFrozen(history))continue;
+      let matches=b.executor===executor || b.resources.some(key=>resources.includes(key)) || (b.scope?.target ?? b.input?.target)===target || b.scope?.origin===origin;
+      if(!matches && !b.scope){const bytes=await this.records.objects.get(b.executor_digest);if(!bytes)matches=true;else{const d=JSON.parse(new TextDecoder().decode(bytes));matches=d.target===target || new URL(d.endpoint).origin===origin;}}
+      if(matches)blocked.push(job);
+    }
+    return blocked;
+  }
   async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction) {
     const time = this.now().toISOString();
     return this.records.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: time,
       body: { action, run: binding.input?.run ?? null, item: binding.input?.item ?? null, inputs, component: 'dispatch@1', lease: binding.fences?.length ? { lease: binding.fences[0].lease, fencing: binding.fences[0].fencing } : null, started_at: typeof detail.started_at === 'string' ? detail.started_at : time, ended_at: typeof detail.ended_at === 'string' ? detail.ended_at : time, result,
         error_code: result === 'error' ? (phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE') : null, acceptance: phase === 'gate' && detail.allow_submit === true ? 'accepted' : null, codes: result === 'error' ? [phase === 'heartbeat' ? 'LEASE_UNAVAILABLE' : 'SOURCE_UNAVAILABLE'] : [], detail: { job: binding.job, initiated_by: binding.initiated_by, acting_by: binding.acting_by ?? binding.initiated_by, phase, event: newId('evt'), ...detail } },
-      index: [{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key }, ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
+      index: [{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key },{key:'dispatch.executor',value:binding.executor},...(binding.scope?[{key:'dispatch.scope.target',value:sha256Hex(binding.scope.target)},{key:'dispatch.scope.origin',value:sha256Hex(binding.scope.origin)}]:[]), ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
         ...(binding.input ? [{ key: 'dispatch.lineage', value: binding.input.lineage }, ...(phase === 'intent' ? [{ key: 'dispatch.bytes', value: binding.input.sha256 }] : [])] : [])], ...(unique_key ? { unique_key } : {}) }, tx);
   }
   async raw(binding: JobBinding, bytes: Uint8Array, operation: string, complete: boolean): Promise<{ reference: string; record: string }> {
