@@ -3,7 +3,7 @@
 决定 20 定了：带凭据的数据照常处理，数据更新不用问。现在管理员受理凭据扫描命中（records 决定 18）只对那一份字节有效，绑定的是 `scanDigest`（命中的位置和检测器）。系统包从原件派生出来的文档、知识视图从知识树生成的回答，字节不同、命中位置不同，于是又成了只保留。每次数据更新以后，集成者都要手动再受理一遍派生文档；知识视图还会把自身文字里有命中的条目剔掉（知识包 README 的 Needs、records 第 1 条）。目标是让受理在派生这一层自动带上：派生的字节里每处命中，在它所派生自的、受理仍有效的来源里都有同样的命中文字，这份派生字节就算受理。
 
 - 分支和工作树：`hub-derived-acceptance`，目录 `circle-hub-derived-acceptance`（依赖已装好）
-- 可以改的路径：`hub/records/**`、`hub/knowledge/**`、`hub/connectors/**`（只在派生文档的写入处），以及对应的测试和 README。别的路径不动；合约缺什么先回报，不自己改 `contracts/`。
+- 可以改的路径：`hub/records/**`、`hub/knowledge/**`、`hub/connectors/**`（只在派生文档的写入处）、`hub/server/cli-admin.ts`（只改 `source held`、`source findings` 的显示，10-23 补授权），以及对应的测试和 README。别的路径不动；合约缺什么先回报，不自己改 `contracts/`。
 - 规则：同前（不推送、不建 PR、不发布、不部署，不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，样例凭据一律是假的；`git commit -s`）。
 - 验证：`npx tsc --noEmit`；`node --test --test-concurrency=2` 对 `hub/records/**`、`hub/knowledge/**`、`hub/connectors/**`；需要临时 PostgreSQL 的测试照现有写法起，不和别的终端同时跑验收套件。
 
