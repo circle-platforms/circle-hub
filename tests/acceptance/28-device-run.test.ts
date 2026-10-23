@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
 // All endpoints, documents, models and workbook bytes in this suite are synthetic.
 import assert from 'node:assert/strict';
 import CASE_COMPILE_PACK from '../../packs/workflow/case-compile/pack.json' with { type: 'json' };
@@ -148,7 +149,7 @@ before(async () => {
   });
   const raw = definition(endpoint.endpoint);
   const configured = ExecutorDefinition.parse({ ...raw, target: 'bed-a', manifest_sha256: sha256Hex(bytes(MANIFEST_DOC)), resources: MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`), precheck_context: { build: bed.site.RELEASED }, proof: { ...raw.proof, package: 'case-compile', slot: 'workbook', warrant_id: `case-compile.workbook_verified@${CASE_COMPILE_PACK.version}` } });
-  executor = (await dispatch().registry.add(bed.hub.admin.principal, configured, 'synthetic-dispatch-key')).id;
+  executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
 });
 after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 

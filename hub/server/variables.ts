@@ -298,7 +298,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                 const resolved = substitute(definition.body, (kind, n) => kind === 'secret' ? '${secret:' + n + '}' : values.get(n));
                 const checked = definition.kind === 'resource' ? ResourceRecord.safeParse(resolved) : ExecutorDefinition.safeParse(resolved);
                 if (!checked.success)
-                    throw new CliError(`变量新值不合部署定义 ${definition.id} 的模式或大小上限；请按该定义期望改正后重跑`);
+                    throw new CliError(`变量新值不合部署定义 ${definition.id} ${definition.references.filter(ref=>ref.kind==='var'&&ref.name===name).map(ref=>ref.at).join('、')} 的模式或大小上限；请按该定义期望改正后重跑`);
             }
             const result = await kit.variables.setVariable(by, name!, value, reason, { notSecret: v['not-secret'] === true, names, validate: async (tx) => { await unchangedDefinitions(kit, definitions, tx); for (const n of names.filter(n => n !== name)) {
                     const page = await kit.store.find({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${n}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
@@ -336,7 +336,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                     do {
                         const page: import('../records/api.ts').Page<import('../records/api.ts').StoredRecord<any>> = await kit.store.find({ key: index, value: v.run as string, kind: 'action', limit: 500, cursor });
                         for (const row of page.items)
-                            uses.push(...(Array.isArray(row.body.variables) ? row.body.variables : []), ...(Array.isArray(row.body.detail?.variables) ? row.body.detail.variables : []));
+                            uses.push(...(Array.isArray(row.body.variables) ? row.body.variables : []), ...(Array.isArray(row.body.detail?.variables) ? row.body.detail.variables : []),...(Array.isArray(row.body.detail?.binding?.variables)?row.body.detail.binding.variables:[]));
                         cursor = page.next;
                     } while (cursor);
                 }

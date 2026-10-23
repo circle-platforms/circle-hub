@@ -108,6 +108,8 @@ export class Redactor {
     return out;
   }
 
+  /** Masks known material without truncating or changing structural whitespace in captured responses. */
+  maskText(value:string):string {let text=value;for(const secret of [...this.#secrets].sort((a,b)=>b.length-a.length))if(text.includes(secret))text=text.split(secret).join(MASK);return text;}
   /** The text with every known secret masked, control characters removed and at most 2000 characters. */
   text(value: unknown): string {
     let text = typeof value === 'string' ? value : String(value);

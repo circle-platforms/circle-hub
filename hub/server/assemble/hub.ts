@@ -187,7 +187,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     adminLog: notes.engine,
   });
   const runs = withCallNotes(engine, notes);
-  const dispatch = leases ? new DispatchService({ records, leases, runs, workflows, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  const dispatch = leases ? new DispatchService({ records, leases, runs, workflows,redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,

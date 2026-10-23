@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from './testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
@@ -36,7 +37,7 @@ test('the verified bytes must occupy the declared artifact slot', async t => {
 
 test('a key cannot be embedded literally in executor definitions or argument templates', async t => {
   const c = await setup(); t.after(() => c.close());
-  await assert.rejects(c.registry.add(c.admin, { ...definition(c.endpoint.endpoint), precheck_context: { marker: 'synthetic-third-key' } }, 'synthetic-third-key'));
+  await assert.rejects(addSyntheticExecutor(c.kit,c.registry,c.admin,{ ...definition(c.endpoint.endpoint), precheck_context: { marker: 'synthetic-third-key' } },'synthetic-third-key'));
   await assert.rejects(c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, precheck_context: { marker: 'synthetic-secret' } }));
 });
 
@@ -53,8 +54,8 @@ test('raw response transformations disclose received-byte hashes and operation t
 test('submission content cannot be replaced by a literal or sent through a read-only role', async t => {
   const c = await setup(); t.after(() => c.close());
   const original = definition(c.endpoint.endpoint);
-  await assert.rejects(c.registry.add(c.admin, { ...original, calls: { ...original.calls, submit: { ...original.calls.submit, arguments: { ...original.calls.submit.arguments, blob: 'different-base64-bytes' } } } }, 'synthetic-new-key'));
-  await assert.rejects(c.registry.add(c.admin, { ...original, calls: { ...original.calls, precheck: { ...original.calls.precheck, arguments: { extra: { $value: 'payload_base64' } } } } }, 'synthetic-new-key'));
+  await assert.rejects(addSyntheticExecutor(c.kit,c.registry,c.admin,{ ...original, calls: { ...original.calls, submit: { ...original.calls.submit, arguments: { ...original.calls.submit.arguments, blob: 'different-base64-bytes' } } } },'synthetic-new-key'));
+  await assert.rejects(addSyntheticExecutor(c.kit,c.registry,c.admin,{ ...original, calls: { ...original.calls, precheck: { ...original.calls.precheck, arguments: { extra: { $value: 'payload_base64' } } } } },'synthetic-new-key'));
 });
 
 test('one artifact proof cannot silently select the first item of a multi-item verification run', async t => {

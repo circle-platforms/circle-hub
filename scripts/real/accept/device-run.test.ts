@@ -89,12 +89,19 @@ test('stage zero hashes parsed defaults and refuses HTTP CA omission digest drif
     execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '1', '-config', join(dir, 'cert.conf'), '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem')], { stdio: 'ignore' });
     const raw: Record<string, unknown> = { ...definition('https://127.0.0.1/mcp'), ca: readFileSync(join(dir, 'cert.pem'), 'utf8') }; delete raw.poll_ms;
     const digest = sha256Hex(canonicalBytes(ExecutorDefinition.parse({ ...raw, id: exe })));
-    const line = `执行器编号 ${exe}；定义摘要 ${digest}；启用 1；具备派发登记 1`;
+    const line = `执行器编号 ${exe}；定义摘要 ${digest}；启用 1；具备派发登记 1；解析后摘要 ${digest}；变量 无`;
     assert.equal(checkedDefinition(raw, exe, line).digest, digest);
     assert.throws(() => checkedDefinition(raw, exe, line.replace(digest, hash)));
     assert.throws(() => checkedDefinition({ ...raw, endpoint: 'http://127.0.0.1/mcp' }, exe, line));
     assert.throws(() => checkedDefinition({ ...raw, ca: '' }, exe, line));
     assert.throws(() => checkedDefinition(raw, exe, line.replace('启用 1', '启用 0')));
+    const {ExecutorSource,resolveExecutorValues}=await import('../../../hub/dispatch/api.ts');
+    const referenced={...raw,target:'${var:DEMO_TARGET}'};const values=new Map([['DEMO_TARGET','synthetic-bed']]);
+    const source=ExecutorSource.parse({...referenced,id:exe});const sourceHash=sha256Hex(canonicalBytes(source));const resolvedHash=sha256Hex(canonicalBytes(resolveExecutorValues(source,values)));
+    const variableLine=`执行器编号 ${exe}；定义摘要 ${sourceHash}；启用 1；具备派发登记 1；解析后摘要 ${resolvedHash}；变量 DEMO_TARGET 第 1 版`;
+    assert.equal(checkedDefinition(referenced,exe,variableLine,values).resolved_digest,resolvedHash);
+    assert.throws(()=>checkedDefinition(referenced,exe,variableLine));
+    assert.throws(()=>checkedDefinition(referenced,exe,variableLine.replace(resolvedHash,'f'.repeat(64)),values));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
