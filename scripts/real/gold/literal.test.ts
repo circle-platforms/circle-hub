@@ -189,9 +189,16 @@ test('review 13: independence guards relative dynamic and transitive target impo
   assert.ok(independentImports(entry, root, file => file === entry ? "import './cases.ts';" : "export * from '../../../hub/fake.ts';").length);
 });
 
-test('review 20: absent null and nonstring raw titles are all empty', () => {
-  for (const value of [undefined, null, 123]) {
+test('review 20: absent and null titles are empty while scalar titles are text', () => {
+  for (const value of [undefined, null]) {
     const node = kase('c1', 'temporary', 'expected'); if (value === undefined) delete node.data.text; else (node.data as Record<string, unknown>).text = value;
     assert.ok(answerOf(doc(group('r', 'synthetic', node)), 'c1').includes(CODE_REQUIRED_EMPTY));
   }
+});
+
+test('closure raw text: all nodes use scalar text and absent expected leaves stay empty', () => {
+ for(const value of [123,456,false]) {const node=kase('c1','temporary','expected');(node.data as Record<string,unknown>).text=value; assert.ok(!answerOf(doc(group('r','synthetic',node)),'c1').includes(CODE_REQUIRED_EMPTY));}
+ const missing=kase('c1','title','expected');delete missing.children![0].data.text;assert.ok(answerOf(doc(group('r','synthetic',missing)),'c1').includes(CODE_REQUIRED_EMPTY));
+ const a=kase('a','temporary','expected'), b=kase('b','temporary','expected');(a.data as Record<string,unknown>).text=123;(b.data as Record<string,unknown>).text=456;
+ const answer=literalGold(doc(group('r','synthetic',a,b)));assert.ok(answer.cases.every(c=>!c.codes.includes(CODE_DUPLICATE_KEY)));
 });

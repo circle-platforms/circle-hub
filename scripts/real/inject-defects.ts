@@ -41,4 +41,4 @@ function main(): number {
   return 0;
 }
 
-if (import.meta.main) { try { process.exitCode = main(); } catch (error) { recordRefusal(arg('out'), error); console.error('拒绝：' + refusalSummary(error)); process.exitCode = 1; } }
+if (import.meta.main) { try { process.exitCode = main(); } catch (error) { const diagnostic = recordRefusal(arg('out'), error); console.error('拒绝：' + refusalSummary(error) + (diagnostic ? '；私有诊断 ' + diagnostic : '；私有诊断未保存，改用 Git 外可写目录后重跑')); process.exitCode = 1; } }

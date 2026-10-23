@@ -373,3 +373,23 @@ test('existing measurement evidence is refused with a fixed reason before any se
   assert.equal(calls,0); assert.equal(readFileSync(join(f.out,'mutated.json'),'utf8'),'original sentinel');
  }
 });
+
+test('closure baseline: a valid empty-plan baseline includes positional duplicate-id cases', t => {
+ const tree=document(3); tree.root.children![0].children![0].data.id='same';tree.root.children![0].children![1].data.id='same';
+ const b=fixtures(tree,[]), f=fixtures(tree,[]);t.after(()=>{rmSync(b.out,{recursive:true,force:true});rmSync(f.out,{recursive:true,force:true});});
+ const driverFor=(out:string)=>fakeDrivers({drafts:[{calls:callLine('rn_baseline','accepted'),run:()=>runDetail({items:3,sources:[{reference:`src:${copyShaOf(out)}`} ]})}]});
+ assert.equal(measureReview({...options(b.out),source:b.source,plan:b.plan},driverFor(b.out),()=>{}),0);
+ assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,baseline:b.out},driverFor(f.out),()=>{}),0);
+});
+
+test('closure startup session validation refuses reserved flags with exit two and a safe exact action', async () => {
+ const {validateSessionStartup}=await import('./measure-review.ts');
+ for(const side of ['--draft','--verify']) for(const flag of ['--prompt','--out','--name']) {
+  const valid=JSON.stringify({args:[],prompt:'synthetic'}), bad=JSON.stringify({args:[flag+'=private-value'],prompt:'synthetic'});
+  const checked=validateSessionStartup(side==='--draft'?bad:valid,side==='--verify'?bad:undefined);
+  assert.equal(checked.code,2); if(checked.code===2) {
+   assert.equal(checked.message,`${side} 的 args 里有 ${flag}：--prompt、--out、--name 由驱动设置，从会话 JSON 里删掉`);
+   assert.ok(!checked.message.includes('private-value'));
+  }
+ }
+});

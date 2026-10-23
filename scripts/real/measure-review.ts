@@ -1,4 +1,4 @@
-import { recordRefusal, refusalSummary } from './lib/inject.ts';
+import { PublicRefusal, type PublicRefusalReason, recordRefusal, refusalSummary } from './lib/inject.ts';
 // Drives the whole injection measurement repeatedly (task gold-review step 4). One pass: write the copy and the gold
 // exactly the way inject-defects.ts does, compute the independent literal answer of the copy, then for each round run
 // a fresh draft session through scripts/real/review-circle.ts (the only reader of the endpoint and the keys), read the
@@ -130,13 +130,31 @@ function arg(name: string): string | undefined {
   return at >= 0 ? process.argv[at + 1] : undefined;
 }
 
-export function parseSession(text: string, where: string): SessionSpec {
-  const value = JSON.parse(text) as { args?: unknown; prompt?: unknown };
-  if (!Array.isArray(value.args) || value.args.some((a) => typeof a !== 'string') || typeof value.prompt !== 'string') {
-    throw new Error(`${where} 的会话 json 要是 { "args": [...], "prompt": "..." }`);
+export class SessionRefusal extends PublicRefusal {
+  constructor(reason: Extract<PublicRefusalReason,'session_shape'|'session_reserved'|'session_json'|'session_unreadable'>, where: string, flag?: string) {
+    super(reason);
+    const side = where === '--verify' || where === 'verify' ? '--verify' : '--draft';
+    this.message = reason === 'session_reserved' ? `${side} 的 args 里有 ${flag}：--prompt、--out、--name 由驱动设置，从会话 JSON 里删掉`
+      : reason === 'session_shape' ? `${side} 会话 JSON 要有字符串 args 数组和 prompt，修正后重跑`
+      : reason === 'session_json' ? `${side} 会话 JSON 无效，重新导出合法 JSON 后重跑`
+      : `${side} 会话文件不可读，补取可读的会话 JSON 后重跑`;
   }
-  if ((value.args as string[]).some(arg => ['--prompt','--out','--name'].some(flag => arg === flag || arg.startsWith(flag + '=')))) throw new Error('会话参数包含驱动保留的标志');
-  return { args: value.args as string[], prompt: value.prompt };
+}
+export function parseSession(text: string, where: string): SessionSpec {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch (error) { if (error instanceof SyntaxError) throw new SessionRefusal('session_json',where); throw error; }
+  if (value === null || typeof value !== 'object') throw new SessionRefusal('session_shape',where);
+  const spec=value as {args?:unknown;prompt?:unknown};
+  if (!Array.isArray(spec.args) || !spec.args.every((a): a is string => typeof a === 'string') || typeof spec.prompt !== 'string') throw new SessionRefusal('session_shape',where);
+  for(const flag of ['--prompt','--out','--name']) if(spec.args.some(arg=>arg===flag || arg.startsWith(flag+'='))) throw new SessionRefusal('session_reserved',where,flag);
+  return {args:spec.args,prompt:spec.prompt};
+}
+export function validateSessionStartup(draftText: string, verifyText?: string): {code:0;draft:SessionSpec;verify?:SessionSpec}|{code:2;message:string;error:SessionRefusal} {
+  try { return {code:0,draft:parseSession(draftText,'--draft'),...(verifyText === undefined ? {} : {verify:parseSession(verifyText,'--verify')})}; }
+  catch(error) { if(error instanceof SessionRefusal) return {code:2,message:error.message,error}; throw error; }
+}
+function readSession(file: string, side: string): string {
+  try { return readFileSync(file,'utf8'); } catch { throw new SessionRefusal('session_unreadable',side); }
 }
 
 /** One round's draft (or verify) run: the call log's accepted runs must be exactly one, and the run must be valid. */
@@ -258,7 +276,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     const copy = join(options.baseline, 'mutated.json');
     if (!existsSync(copy)) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
     const baselineSha = createHash('sha256').update(readFileSync(copy)).digest('hex');
-    const baselineCount = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule }).cases.length;
+    const baselineAnswer = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule });
+    const baselineCount = baselineAnswer.cases.length + baselineAnswer.noUniqueId.length;
     for (const entry of readdirSync(options.baseline, { withFileTypes: true }).filter((e) => e.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const file = join(options.baseline, entry.name, 'draft.run.json');
       if (!existsSync(file) || !existsSync(join(options.baseline, entry.name, 'score.json'))) continue;
@@ -393,6 +412,10 @@ function main(): number {
     return 2;
   }
   const keep = arg('keep');
+  let sessions: ReturnType<typeof validateSessionStartup>;
+  try { sessions = validateSessionStartup(readSession(draftPath,'--draft'),arg('verify') === undefined ? undefined : readSession(arg('verify')!,'--verify')); }
+  catch(error) { const diagnostic=recordRefusal(out,error); console.error('拒绝：'+refusalSummary(error)+(diagnostic?'；私有诊断 '+diagnostic:'')); return error instanceof SessionRefusal ? 2 : 1; }
+  if (sessions.code === 2) { const diagnostic=recordRefusal(out,sessions.error); console.error('拒绝：'+sessions.message+(diagnostic?'；私有诊断 '+diagnostic:'')); return 2; }
   try {
     const code = measureReview(
       {
@@ -401,8 +424,8 @@ function main(): number {
         ...(keep === undefined ? {} : { keep: Number(keep) }),
         ...(arg('manual') === undefined ? {} : { manual: arg('manual') }),
         ...(caseRuleArg === undefined ? {} : { caseRule: caseRuleArg }),
-        draft: parseSession(readFileSync(draftPath, 'utf8'), '--draft'),
-        ...(arg('verify') === undefined ? {} : { verify: parseSession(readFileSync(arg('verify')!, 'utf8'), '--verify') }),
+        draft: sessions.draft,
+        ...(sessions.verify === undefined ? {} : {verify:sessions.verify}),
         repeat,
         ...(arg('baseline') === undefined ? {} : { baseline: arg('baseline') }),
         ...(arg('tree') === undefined ? {} : { tree: arg('tree') }),
@@ -417,8 +440,8 @@ function main(): number {
     );
     return code;
   } catch (error) {
-    recordRefusal(out, error);
-    console.error('拒绝：' + (error instanceof CatalogOutputError ? '输出目录已有证据或路径不可用，请改用 Git 外的新目录后重跑' : refusalSummary(error)));
+    const diagnostic = recordRefusal(out, error);
+    console.error('拒绝：' + (error instanceof CatalogOutputError ? '输出目录已有证据或路径不可用，请改用 Git 外的新目录后重跑' : refusalSummary(error)) + (diagnostic ? '；私有诊断 ' + diagnostic : '；私有诊断未保存，改用 Git 外可写目录后重跑'));
     return 1;
   }
 }
