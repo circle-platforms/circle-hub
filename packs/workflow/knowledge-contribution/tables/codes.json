@@ -52,6 +52,11 @@
       "code": "knowledge-contribution.self_relation",
       "when": "该条目的回注准入约束未满足：self_relation",
       "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.composition_missing",
+      "when": "缺少运行锁定的组成快照或快照与根不一致",
+      "fix": "恢复锁定的组成记录，或重新开运行锁定完整快照；当前条目标为 skipped"
     }
   ]
 }

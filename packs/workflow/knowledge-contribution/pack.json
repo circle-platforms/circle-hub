@@ -68,8 +68,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "72d9febf8bee9a32f965b9c41505cb992fc7ef857c18249550658a13f13c8608",
-      "size": 3064
+      "sha256": "7de8188e1d55b753b58f0f3043891daf85fc7e0384720ca81a92481b7ca43db2",
+      "size": 3323
     },
     {
       "path": "tables/quotes.json",

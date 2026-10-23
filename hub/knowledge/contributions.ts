@@ -8,7 +8,7 @@ import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../re
 import { digestOf, scanForCredentials, sha256Hex } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
 import type { KnowledgeContext } from './context.ts';
-import type { CompositionView } from './composition.ts';
+import { CompositionView } from './composition.ts';
 import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
@@ -16,6 +16,7 @@ import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 export interface ContributionScope {
   root: string | null;
   product: string | null;
+  composition:string|null;
   resolve(reference: string): Promise<{ ok: true; value: { reference: string; text: string | null;
     recordSource?: { sha256: string; record: string; provenance: ProvenanceType; kind:string;schema:string } } } | { ok: false; message: string; code?: ProtocolCode }>;
 }
@@ -72,8 +73,9 @@ export class ContributionLayer {
     if (preparation === undefined) {
       preparation = (async () => {
         if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return refuse('product_unavailable','缺少当前产品的读取权限','请管理员恢复产品读取权限后用新摘要申请核验；本条也可先标为 skipped');
-        const composition = (await this.#reading.compositionsOf(scope.root)).find(c => c.body.product === scope.product);
-        if (composition === undefined) return fail('锁定根的组成不可读，须恢复该根的组成记录后重交', 'SOURCE_UNAVAILABLE');
+        const body=scope.composition===null?null:await this.#context.store.composition(scope.composition);
+        if(body===null||body.product!==scope.product||body.root!==scope.root)return refuse('composition_missing','缺少本次运行锁定的产品、根和组成快照对应事实','恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped');
+        const composition=new CompositionView(this.#context.store,scope.composition!,body);
         const originals = new Map((await composition.sources()).map(source => [source.sha256, source]));
         // Root publication authorizes its readers. The service account only rechecks the effective tier
         // of shared, Hub-owned originals; it is never used for personal sources or scoped resolution.

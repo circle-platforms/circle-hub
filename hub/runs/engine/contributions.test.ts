@@ -134,6 +134,17 @@ test('one outside-root source refutes only its verified requirement and leaves o
   assert.equal(refusal.code,'knowledge-contribution.source_outside_root');assert.equal(refusal.requirement,'verified');assert.match(refusal.fix??'',/skipped/);
 });
 
+test('membership uses the run locked composition when a later build shares the root with different source bytes',async t=>{
+  const w=await setup(t);const secondBuild=build('Rel_ACME_1_2_16');
+  w.external.set(secondBuild.sources.tree,{bytes:catalogXml(BASE_CATALOG)+'\n',mediaType:'application/xml'});
+  const later=await w.knowledge.produceTree({product:w.product,build:secondBuild});
+  assert.ok(later.ok);assert.equal(later.root,w.root);
+  const args=w.args();for(const item of args.items)item.slots.contribution[0].data.source={reference:`src:${w.original}`,quote:'show'};
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
+  for(const entry of await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin))assert.deepEqual(entry.contribution.source.sources,[w.original]);
+});
+
 test('a run-bound session excerpt needs a signature before root membership is considered',async t=>{
   const w=await setup(t);
   const extra=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('show session statement'),mediaType:'text/plain',origin:{upload:{session:'session-only',message:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false}});
