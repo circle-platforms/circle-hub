@@ -15,3 +15,9 @@ test('README distinguishes implemented claim marks and record links from remaini
   assert.ok(text.includes('437cbad5') && text.includes('3086bf44'));
   assert.match(text, /StartRunOutput/); assert.match(text, /PackError/);
 });
+test('README describes exact header comparison and the matched current command universe', () => {
+  const text = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  assert.doesNotMatch(text, /Every node text is normalized|each command present in its admitted index/);
+  assert.match(text, /Node texts are compared exactly as read/);
+  assert.match(text, /For each command named by a matched current case/);
+});

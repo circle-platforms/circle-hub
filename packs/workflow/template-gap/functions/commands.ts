@@ -24,21 +24,19 @@ export function indexedCommands(index: CaseIndex | null, document: string): stri
 }
 export function commandCoverage(template: Template, document: string, cases: CaseCategory[], index: CaseIndex | null, skips: Skip[], uploaded = false, lock: { root?: unknown; build?: unknown } = {}, caseRule: 'marked' | 'tagged' = 'marked', nodes?: CaseRevisionNodes): CommandCoverage {
   const revision = (title: string, labels: string[]): string => JSON.stringify([title, ...labels]);
-  const normal = (text: string): string => text;
-  const forms = nodes?.texts.map(normal) ?? [];
   const rows = new Map<string, { commands: Set<string>; references: Set<string>; revisions: Set<string>; title: string; labels: string[] }>();
   if (index && !uploaded) for (const digest of Object.hasOwn(index.keys, document) ? index.keys[document]! : []) {
     const entry = index.entries[digest]!; const node = entry.data.node as string;
-    let row = rows.get(node); if (!row) { row = { commands: new Set(), references: new Set(), revisions: new Set(), title: normal(entry.data.title as string), labels: (entry.data.path_labels as string[]).map(normal) }; rows.set(node, row); }
+    let row = rows.get(node); if (!row) { row = { commands: new Set(), references: new Set(), revisions: new Set(), title: entry.data.title as string, labels: entry.data.path_labels as string[] }; rows.set(node, row); }
     for (const command of entry.data.commands as string[]) row.commands.add(command);
     row.references.add(entry.reference);
     row.revisions.add(revision(entry.data.title as string, entry.data.path_labels as string[]));
   }
   const sameRevision = (fact: CaseCategory, row: { title: string; labels: string[] }): boolean => {
-    if (!nodes || forms[fact.visit] !== row.title) return false;
+    if (!nodes || nodes.texts[fact.visit] !== row.title) return false;
     let at = nodes.parents[fact.visit]!;
     for (let i = row.labels.length - 1; i >= 0; i--) {
-      if (at < 0 || forms[at] !== row.labels[i]) return false;
+      if (at < 0 || nodes.texts[at] !== row.labels[i]) return false;
       at = nodes.parents[at]!;
     }
     return at === -1;

@@ -48,14 +48,14 @@ require knowledge sync and a new read/run. Multiple index entries for one matchi
 Conflicting revisions under one key are also unmatched, not arbitrarily selected.
 
 A shared parent-pointer graph freezes case headers/ancestors once; expected-result leaf text is omitted from that graph.
-Every node text is normalized once for matching. A long shared title is not copied into every case's path. The existing
+Node texts are compared exactly as read; nothing is normalized. A long shared title is not copied into every case's path. The existing
 long-label/deep-tree tests still run within their original time bounds and the projection's 8 MiB output cap.
 Truncated producer titles/label lists are not accepted by prefix matching: after one sync/re-read still cannot establish
 identity, report the field-fidelity/capability gap. Do not silently guess a command or loop forever on sync.
 
 ## Command facts, evidence and skips
 
-For each document and each command present in its admitted index, fields.command_coverage contains:
+For each command named by a matched current case of the document, fields.command_coverage contains:
 
 - unique matching case count;
 - all nine categories from template-v3.json whose group is command, whether present or absent;
