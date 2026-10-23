@@ -162,7 +162,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   then removed. JSON string values or markup attributes/text fragments of at least eight characters are searched raw and JSON-escaped
   in both outputs, excluding standalone digests and text already in the request key. Only counts and hit locations are
   printed. Completion, intact exports and zero hits are all required; missing, rotated, truncated or unreadable logs,
-  undecodable text artifacts and export failures cannot pass. A log increment over 64 MiB also refuses the check.
+  non-UTF8 text artifacts without encoding-independent ASCII canaries and export failures cannot pass. A log increment over 64 MiB also refuses the check.
   Reads are sequential, never retried; actual connector smoke runs belong to the integrator, not these synthetic tests.
 - **Held-back sources** (B02 R[4]): a read whose bytes the credential scan flags is stored `retain_only`: no function gets its text. `source held` lists scan-hit sources (sha256, size, the external object, detectors), with current effective tier and direct/derived/no acceptance, `source findings <sha256>` shows each finding as a position and the shape of the line around it (letters as x, digits as 9), never the value, `source accept <sha256> --note <why>` records an administrator's acceptance bound to that exact scan (the note may not copy the matched text), and `source withdraw <sha256>` takes it back. An acceptance lifts only bytes the Hub read or made, never an upload, and never a truncated scan; stored tiers remain historical: current acceptance lifts a scan-imposed hold, while an explicit requested retain-only policy stays in force. Derived coverage is established once at admission; ordinary reads validate stored scan facts and live dependency decisions without re-scanning source bytes (records decisions 19–20).
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
@@ -406,8 +406,8 @@ actions (log rotation/size, exports, identity mismatch, decoding, or the missing
 The protocol-code field contains only registered connector/core codes; local checker failures are separate prose.
 Raw CLI errors, response text and paths are never copied into the report line.
 
-Smoke decodes UTF-8 first and falls back to Windows-1252 for single-byte build-site pages.
-NUL-bearing or undecodable originals fail as a checker encoding limit, with the read outcome kept separate.
+Smoke decodes strict UTF-8 first. If that fails, it keeps only wholly ASCII canaries, whose text is invariant under the supported ASCII-compatible encodings; it does not guess a charset.
+NUL-bearing originals or non-UTF8 originals without an ASCII canary fail with a fixed encoding-limit reason and a request for a UTF-8 read. The read outcome stays separate. A non-UTF8 check covers only these ASCII canaries, not the text in other encodings.
 
 ## Needs from connectors
 

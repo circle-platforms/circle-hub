@@ -138,14 +138,16 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
         let bytes: Buffer;
         try { bytes = await readFile(target); } catch { exported = false; fail('导出文件缺失；下一步核对 original export 的输出契约'); continue; }
         if (bytes.length !== artifact.size || createHash('sha256').update(bytes).digest('hex') !== artifact.sha256) { exported = false; fail('原件摘要或大小不符；下一步重新核对导出的原件身份'); continue; }
-        let text: string;
-        if (bytes.includes(0)) { exported = false; fail('原件含 NUL，不能按支持的文本编码核对；下一步选择 UTF-8 或单字节文本读取'); continue; }
+        let text: string; let strictUtf8=true;
+        if (bytes.includes(0)) { exported = false; fail('原件含 NUL，不能按支持的文本编码核对；下一步选择不含 NUL 的 UTF-8 文本读取'); continue; }
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
         catch {
-          try { text = new TextDecoder('windows-1252', { fatal: true }).decode(bytes); }
-          catch { exported = false; fail('原件不能解码；下一步按来源媒体类型补充编码支持'); continue; }
+          // Latin-1 is a one-byte view used only to find ASCII canaries, never a charset guess.
+          strictUtf8=false; text=bytes.toString('latin1');
         }
-        candidates.push(...responseStrings(text, request.key));
+        const eligible=responseStrings(text,request.key).filter(value=>strictUtf8 || /^[\x00-\x7f]+$/.test(value));
+        if(!strictUtf8 && !eligible.length){exported=false;fail('原件不是 UTF-8，没有与编码无关的文字可核对；下一步选择 UTF-8 文本读取');continue;}
+        candidates.push(...eligible);
       }
       const serviceText = (await Promise.all(before.map(appended))).join('\n');
       result.commandLines = lineCount(commandText); result.serviceLines = lineCount(serviceText);

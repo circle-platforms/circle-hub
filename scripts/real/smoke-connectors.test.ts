@@ -111,9 +111,19 @@ test('review 3: preflight rejects missing logs before a read and failures retain
   }
 });
 
-test('review 4: Latin-1 responses remain checkable and their text is never printed', async () => {
+test('review 4: non-UTF8 responses need encoding-independent ASCII canaries', async () => {
   const value = 'synthetic-café-menu'; const body = Buffer.from(`<commands><menu name="${value}"/></commands>`, 'latin1');
-  const clean = await inspectSynthetic(body); assert.equal(clean.result.ok, true); assert.ok(clean.result.candidates > 0);
-  const leak = await inspectSynthetic(body, { stderr: value }); assert.equal(leak.result.ok, false); assert.ok(leak.result.hits.command > 0);
+  const unsupported = await inspectSynthetic(body); assert.equal(unsupported.result.ok,false);assert.equal(unsupported.result.candidates,0);
+  const mixed=Buffer.from('<menu name="synthetic-ascii-canary" help="'+value+'"/>','latin1');
+  const clean=await inspectSynthetic(mixed);assert.equal(clean.result.ok,true);assert.ok(clean.result.candidates>0);
+  const leak=await inspectSynthetic(mixed,{stderr:'synthetic-ascii-canary'});assert.equal(leak.result.ok,false);assert.ok(leak.result.hits.command>0);
   assert.ok(!leak.output.includes(value));
+});
+
+test('closure GBK-only originals cannot pass a canary check against mojibake', async () => {
+ const chinese='合成的合成的合成的';const body=Buffer.concat([Buffer.from('<p>'),Buffer.from('bacfb3c9b5c4'.repeat(3),'hex'),Buffer.from('</p>')]);
+ const checked=await inspectSynthetic(body,{stderr:'连接器：read_failed '+JSON.stringify({reason:chinese})});
+ assert.equal(checked.result.ok,false);assert.equal(checked.result.candidates,0);
+ assert.match(checked.result.reason,/原件不是 UTF-8，没有与编码无关的文字可核对；下一步选择 UTF-8 文本读取/);
+ assert.ok(!checked.output.includes(chinese));
 });
