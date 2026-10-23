@@ -227,8 +227,8 @@ test('admin notes are what records accept: no NUL, no lone surrogate, cut betwee
   const mockError = new Error('simulated failure');
   mockError.stack = [
     'Error: simulated failure',
-    '    at callTool (/Users/jiangyongze/Public/circle-hub/hub/server/tools.ts:163:10)',
-    '    at async guarded (file:///Users/jiangyongze/Public/circle-hub/hub/server/mcp.ts:244:14)',
+    '    at callTool (/synthetic/circle-hub/hub/server/tools.ts:163:10)',
+    '    at async guarded (file:///synthetic/circle-hub/hub/server/mcp.ts:244:14)',
     '    at runScriptInThisContext (node:internal/vm:219:10)',
   ].join('\n');
   const cleaned = cleanStack(mockError);

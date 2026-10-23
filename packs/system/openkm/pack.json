@@ -1,14 +1,14 @@
 {
   "schema": "pack@1",
   "id": "openkm",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "system",
   "title": "文档库 OpenKM（系统包）",
   "description": "文档库的只读系统包（WebDAV、Basic 认证，凭据只在密钥库）：读法与手册库相同",
   "files": [
     {
       "path": "functions/webdav.ts",
-      "sha256": "5992f222895b642cd85920d5ac173f5a2f6ce5bee96281e18b13a45f9cd3cd2b",
+      "sha256": "4571b975a01425e19d456ace7573d0c89fdf4d998ac7c7326c2fb0323bafd0e2",
       "size": 22467
     },
     {

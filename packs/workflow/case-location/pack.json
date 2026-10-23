@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "kind": "workflow",
   "title": "用例定位",
   "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，给出定位到的版本线在两个名称族的构建候选（别名解析到它所依据的构建）并核对目录和标题里写出的构建名，以及标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -28,7 +28,7 @@
     },
     {
       "path": "functions/convention.ts",
-      "sha256": "014228fc70fac3538d7918fba014a46b531c1ca418e1defd8322f3c490e3a9f7",
+      "sha256": "ef65a784338870d3f81352c1a0a61bf9fb6554bd9ac8d524cddc1e689d0263a8",
       "size": 12226
     },
     {

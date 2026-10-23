@@ -24,7 +24,7 @@ describe('projectItems', () => {
   it('projects one item per (line, module) group with the metrics frozen in the fields', () => {
     const out = asItems(
       project([
-        facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18),
+        facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23),
         facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2),
         facetRow({ line: '10.6.1', module: null, has_expected: true, vague_expected: true, negative: false }, 4),
       ]),
@@ -32,7 +32,7 @@ describe('projectItems', () => {
     assert.deepEqual(
       out.items.map((i) => [i.id, i.label, i.summary]),
       [
-        ['10.6.1/SSL', '10.6.1/SSL', '用例 20 个；无期望结果 10.0%；含糊期望 0.0%；负面用例 10.0%'],
+        ['10.6.1/SSL', '10.6.1/SSL', '用例 25 个；无期望结果 8.0%；含糊期望 0.0%；负面用例 8.0%'],
         ['10.6.1/unplaced', '10.6.1/unplaced', '用例 4 个；无期望结果 0.0%；含糊期望 100.0%；负面用例 0.0%'],
       ],
     );
@@ -40,7 +40,7 @@ describe('projectItems', () => {
     assert.deepEqual([ssl.location.slot, ssl.location.parser, ssl.location.selector], ['facets', 'json@1', 'p/rows']);
     const fields = ssl.fields as { line: string; module: string; counts: unknown; ratios: { negative: { num: number; den: number } } };
     assert.deepEqual([fields.line, fields.module], ['10.6.1', 'SSL']);
-    assert.deepEqual(fields.ratios.negative, { num: 2, den: 20 });
+    assert.deepEqual(fields.ratios.negative, { num: 2, den: 25 });
   });
 
   it('freezes the view facts in the run groups', () => {

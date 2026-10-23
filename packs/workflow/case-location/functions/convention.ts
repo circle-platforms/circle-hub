@@ -63,7 +63,7 @@ export function trainOfLabel(label: Label): { train: string; version: string } |
   return notAVersion(label.rest, start, start + match[1].length, match[1]) === null ? { train: label.rest, version: match[1] } : null;
 }
 
-/** The owner's version expression over a whole label (after its prefix code): `10.6.1`, `V10.7.0`, `NSAE_10.5.3`. */
+/** The owner's version expression over a whole label (after its prefix code): `10.6.1`, `V10.7.0`, `NSAE_10.7.3`. */
 const PURE_VERSION = /^[A-Za-z_-]*v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/;
 
 /**

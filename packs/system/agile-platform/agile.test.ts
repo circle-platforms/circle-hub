@@ -75,7 +75,7 @@ describe('the read functions', () => {
         id: 1,
         cases: [11, 12, 13, 14],
         children: [
-          { label: '030：项目', id: 2, cases: [11, 12], children: [{ label: '060：10.4.6', id: 3, cases: [11, 12], children: [{ label: 'bug to case a', id: 11, cases: [], children: [] }, { label: 'bug to case b', id: 12, cases: [], children: [] }] }] },
+          { label: '030：项目', id: 2, cases: [11, 12], children: [{ label: '060：10.7.6', id: 3, cases: [11, 12], children: [{ label: 'bug to case a', id: 11, cases: [], children: [] }, { label: 'bug to case b', id: 12, cases: [], children: [] }] }] },
           { label: '101：客户', id: 4, cases: [14], children: [] },
           { label: '含孤文档的目录', id: 5, cases: [13], children: [] },
         ],
@@ -85,8 +85,8 @@ describe('the read functions', () => {
       const docs = documentsOf({ root: { id: '1', title }, children });
       const where = Object.fromEntries(docs.map((d) => [d.id, d.ancestors.join(' / ')]));
       assert.deepEqual(where, {
-        '11': 'NSAE / 030：项目 / 060：10.4.6',
-        '12': 'NSAE / 030：项目 / 060：10.4.6',
+        '11': 'NSAE / 030：项目 / 060：10.7.6',
+        '12': 'NSAE / 030：项目 / 060：10.7.6',
         '14': 'NSAE / 101：客户',
         '13': 'NSAE / 含孤文档的目录',
       }, `root title ${String(title)}: the root node is the first folder once, not twice`);
@@ -96,7 +96,7 @@ describe('the read functions', () => {
     }
     // A response without the root node takes the root title as the first folder.
     const bare = documentsOf({ root: { id: '1', title: 'NSAE' }, children: children[0].children });
-    assert.deepEqual(bare.find((d) => d.id === '11')?.ancestors, ['NSAE', '030：项目', '060：10.4.6']);
+    assert.deepEqual(bare.find((d) => d.id === '11')?.ancestors, ['NSAE', '030：项目', '060：10.7.6']);
   });
 
   test('the roots listing of the real platform: data is an array and the total is a sibling of it', () => {

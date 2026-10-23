@@ -1,9 +1,9 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "kind": "workflow",
-  "title": "评审终稿（合成示例）",
+  "title": "评审终稿",
   "description": "各块复核都受理后按各块取最差算整体结论与等级，核对初评方写的中文报告",
   "files": [
     {
