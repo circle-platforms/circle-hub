@@ -457,3 +457,12 @@ test('closure honest three-phase driver exercises raw summary string records', (
  const {gold}=goldOf();const run=drive(build(gold));assert.ok(run.checks.every(check=>check.ok));
  assert.ok(run.rawSummaryReads>0,'at least one complete summary uses the real raw-string record layout');
 });
+
+test('c3 every per-category not-done line names a cause-specific recovery',()=>{
+ for(const options of [{},{dropSingleRow:true}]){
+  const {gold}=goldOf();gold.batch=20;const scenario=build(gold);drive(scenario,undefined,options);
+  const lines=scenario.sections?.find(s=>s.title==='没做的副本（按原因）')?.lines ?? [];assert.ok(lines.length);
+  for(const line of lines)assert.ok(line.includes('下一步'),line);
+  for(const line of lines.filter(l=>/^第 \d+ 份文档.*单用例副本答案未知/.test(l))){assert.match(line,/下一步重读或重跑第 2 段/);assert.doesNotMatch(line,/换用/);}
+ }
+});

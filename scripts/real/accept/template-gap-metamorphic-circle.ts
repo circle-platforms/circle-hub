@@ -14,8 +14,15 @@ import { join } from 'node:path';
 import type { Turn } from '../scripted-model.ts';
 import { type Scenario } from '../lib/accept.ts';
 import type { Check, ReportSection } from '../lib/report.ts';
-import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory } from '../gold/gap-metamorphic.ts';
+import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory, type SkipReason } from '../gold/gap-metamorphic.ts';
 import { readCategories } from '../gold/gap-metamorphic.ts';
+
+const skipActions: Record<SkipReason['reason'],string> = {
+  '前提不成立':'下一步换用保持用例边界且满足该变换前提的文档或类别后重新生成副本',
+  'X 在每个最外层用例上都有':'下一步换用该类别满足删除变换前提的文档',
+  '没有单用例副本显示 X':'下一步换用该类别满足供体变换前提的文档',
+  '单用例副本答案未知':'下一步重读或重跑第 2 段缺答案的单用例副本，补齐后重跑第 3 段',
+};
 
 export interface GapCircleGold {
   documents: Array<{ file: string }>;
@@ -199,7 +206,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: misses, ...(other === undefined ? {} : { other }) });
       for (const entry of plan.d) {
         if ('skipped' in entry) {
-          unknown.set(`d-${d}-${entry.category}`, entry.skipped.reason + '；下一步换用满足该变换前提的文档或类别；依赖答案缺失时先重读并核对第2段结果');
+          unknown.set(`d-${d}-${entry.category}`, entry.skipped.reason + '；' + skipActions[entry.skipped.reason]);
           continue;
         }
         const owners = outerIds[d]!.filter((id) => misses.has(id) && !misses.get(id)!.has(entry.category));
@@ -218,7 +225,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       for (const entry of plan.f) {
         if ('skipped' in entry) {
-          unknown.set(`f-${d}-${entry.category}`, entry.skipped.reason + '；下一步换用满足该变换前提的文档或类别；依赖答案缺失时先重读并核对第2段结果');
+          unknown.set(`f-${d}-${entry.category}`, entry.skipped.reason + '；' + skipActions[entry.skipped.reason]);
           continue;
         }
         const bDoc = (d + 1) % trees.length;
@@ -457,7 +464,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     for (const [d, tree] of trees.entries()) {
       const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: singleMissesOf(d), ...(trees.length > 1 ? { other: { tree: trees[(d + 1) % trees.length]!, singleMisses: singleMissesOf((d + 1) % trees.length) } } : {}) });
       for (const entry of [...plan.d, ...plan.f]) {
-        if ('skipped' in entry) skipped.push(`第 ${d + 1} 份文档 ${entry.category}：${entry.skipped.reason}——${entry.skipped.detail}`);
+        if ('skipped' in entry) skipped.push(`第 ${d + 1} 份文档 ${entry.category}：${entry.skipped.reason}——${entry.skipped.detail}；${skipActions[entry.skipped.reason]}`);
       }
     }
     const findingLines = checkFindings.map(f => `第 ${f.document + 1} 份文档，用例 ${outerIds[f.document]!.indexOf(f.caseId) + 1}，副本 ${uploaded.get(f.runKey)?.slice(0, 12) ?? '未上传'} 结果不可核对：${f.why}；依赖副本没有核对；下一步重读并核对该副本，修复差异后重跑依赖段`);
