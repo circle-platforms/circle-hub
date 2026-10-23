@@ -276,7 +276,7 @@ export function renderComparison(comparison: Comparison): string {
   }
   const independent = comparison.quoteOracle;
   lines.push(`引文重判：支持 ${independent.counts.support}；反驳 ${independent.counts.refute}；暂态待补证 ${independent.counts.unknown}；仅必要条件 ${independent.necessaryOnly}`);
-  for (const category of ['fix','defect_other','manual','other','unknown_defect_field']) {
+  for (const category of ['fix','defect_other','manual','other','unknown_defect_field','unknown_target']) {
     const row = independent.targets[category];
     lines.push(`引文来源类别 ${category}：支持 ${row.support}；反驳 ${row.refute}；暂态待补证 ${row.unknown}`);
   }

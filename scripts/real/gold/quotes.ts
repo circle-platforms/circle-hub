@@ -44,11 +44,24 @@ export function parseQuoteReference(reference: string): Target | null {
     const parts = path[0] ? segments(path[0], '/@') : [];
     return parts === null ? null : { scheme: 'tree', digest: tree[1], segments: parts };
   }
-  if (/^(rec|entry):[a-f0-9]{64}(?:#.*)?$/.test(reference)) return { scheme: reference.split(':')[0] };
+  if (/^entry:[a-f0-9]{64}$/.test(reference)) return { scheme: 'entry' };
+  const record = /^rec:[a-f0-9]{64}(?:#(.*))?$/.exec(reference);
+  if (record) {
+    if (record[1] !== undefined) {
+      if (record[1] !== '' && !record[1].startsWith('/')) return null;
+      try {
+        for (const token of record[1].slice(1).split('/')) {
+          const decoded = decodeURIComponent(token);
+          if (escape(decoded, '#') !== token || /~(?![01])/.test(decoded)) return null;
+        }
+      } catch { return null; }
+    }
+    return { scheme: 'rec' };
+  }
   return null;
 }
 export interface QuoteInputs { sources?: ReadonlyMap<string, Uint8Array>; manual?: readonly Uint8Array[]; run?: unknown; fixField?: string }
-export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null; gap?: { fact: string; action: string; owner: string } }
+export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field' | 'unknown_target'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null; gap?: { fact: string; action: string; owner: string } }
 const unknown = (category: QuoteFinding['category'], why: Reason = reason('no_check'), scope: QuoteFinding['scope'] = 'fragment'): QuoteFinding => ({ verdict: UNKNOWN, category, reason: why, scope, expectedVerbatim: null, gap: { fact: why === 'missing_input' ? 'referenced_source_bytes_or_manual' : 'reference_parser_or_fragment_rule', action: why === 'missing_input' ? 'export_original_and_retry' : 'request_parser_rule_from_named_integrator', owner: 'Claude' } });
 function sliceRange(text: string, range?: [number, number]): string | null {
   if (!range) return text;
@@ -108,7 +121,7 @@ export function judgeQuote(reference: string, quote: string, expected: string, i
     const found = texts.find(t => quoteMatches(t, quote));
     return { verdict: found === undefined ? REFUTE : SUPPORT, category, scope, expectedVerbatim: found === undefined ? false : quoteMatches(found, expected) };
   }
-  if (target.scheme !== 'src') return unknown(category);
+  if (target.scheme !== 'src') return { ...unknown('unknown_target'), gap: { fact: 'record_or_entry_original_provenance', action: 'request_referenced_original_provenance', owner: 'Claude' } };
   const bytes = inputs.sources?.get(target.digest!) ?? manuals.find(b => sha256(b) === target.digest);
   if (!bytes) return unknown(category, reason('missing_input'));
   if (sha256(bytes) !== target.digest) throw new Error('source integrity mismatch');
@@ -130,7 +143,7 @@ export function quotesReport(submission: unknown, hub: unknown, inputs: QuoteInp
     return { verdict, comparison: compareStatus(verdict, requirementStatus(hub, item, 'grounded')) };
   });
   return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.verdict === v).length])),
-    targets: Object.fromEntries(['fix','defect_other','manual','other','unknown_defect_field'].map(c => [c, Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.category === c && f.verdict === v).length]))])),
+    targets: Object.fromEntries(['fix','defect_other','manual','other','unknown_defect_field','unknown_target'].map(c => [c, Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.category === c && f.verdict === v).length]))])),
     expectedVerbatim: found.filter(f => f.verdict === SUPPORT && f.expectedVerbatim).length,
     paraphrased: found.filter(f => f.verdict === SUPPORT && f.expectedVerbatim === false).length,
     necessaryOnly: found.filter(f => f.scope === 'necessary').length, items,

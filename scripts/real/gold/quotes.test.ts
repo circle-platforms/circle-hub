@@ -53,3 +53,13 @@ test('JSON selector segments preserve literal tildes and percent-decode slashes 
   assert.equal(judgeQuote(`src:${sha}/json@1/p/a~1b`,'literal','literal',o).verdict,'support');
   assert.equal(judgeQuote(`src:${sha}/json@1/p/a~1b`,'slash','slash',o).verdict,'refute');
 });
+test('record and entry references have an unresolved target class, not a known other-source class',()=>{
+  for(const reference of [`rec:${digest}#/fix`,`entry:${digest}`]){
+    const found=judgeQuote(reference,'text','text',opts);
+    assert.equal(found.verdict,'unknown');assert.equal(found.category,'unknown_target');assert.equal(found.gap?.fact,'record_or_entry_original_provenance');
+  }
+});
+test('missing original bytes remain a missing-input transition with an export action',()=>{
+  const found=judgeQuote(`src:${digest}/json@1/p/fix%2F说明`,'执行成功','执行成功',{...opts,sources:new Map()});
+  assert.equal(found.verdict,'unknown');assert.equal(found.reason,'missing_input');assert.equal(found.gap?.action,'export_original_and_retry');
+});
