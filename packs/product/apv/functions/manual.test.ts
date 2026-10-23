@@ -499,6 +499,41 @@ describe('placement against the build’s command tree', () => {
   });
 
 
+
+  it('splits a cell on the documented comma and slash connectives and never joins two bold runs through a plain character (finding 19)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    for (const joined of ['**demo pool add**, **demo pool mode**', '**demo pool add**，**demo pool mode**', '**demo pool add**/**demo pool mode**', '**demo pool add**／**demo pool mode**', '**demo pool add** / **demo pool mode**']) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| ${joined} | 两步配合 |\n`), null, { catalog: tree });
+      // Two signatures in one cell: the row hangs at the commands' common ancestor, and neither bold run is glued
+      // into one head word (no %2F path, no drift for a placed row).
+      assert.ok(result.entries.some((entry) => String(entry.statement).includes('两步配合') && entry.path === '/commands/demo/pool'), `${joined} hangs the row at the commands' common ancestor`);
+      assert.ok(result.entries.every((entry) => !String(entry.path).includes('%2F')), `${joined} never glues two bold runs into one path`);
+      assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), `${joined} lists no drift: ${result.warnings.join('；')}`);
+    }
+    // A head token joining two bold runs through a plain character is not one command (no add%2Fmode path).
+    const glued = produceManualEntries(markdown('# 章\n\n**demo pool add**/**demo pool mode**\n\n说明。\n'), null, { catalog: tree });
+    assert.ok(glued.entries.every((entry) => !String(entry.path).includes('%2F')), 'no synthetic slash path');
+    assert.ok(glued.entries.every((entry) => entry.path !== '/commands/demo/pool/add%2Fdemo/pool/mode'), 'the glued form never becomes one command');
+  });
+
+  it('hangs signatures at their section nodes when the command tree is unusable (finding 23)', async () => {
+    const producers = await import('./producers.ts');
+    const tree = xml('<commands><scope type="global"><menu name="demo"><item name="present" help_string="p"><arguments></arguments></item></menu></scope></commands>');
+    void tree;
+    const input = {
+      slots: {
+        tree: { parser: 'text@1', model: { lines: ['not xml'] } },
+        cli: { parser: 'markdown@1', model: markdown('# 章\n\n**demo nothing here** *\\<x\\>*\n\n该命令不存在。\n') },
+      },
+      heads: null,
+    };
+    const out = producers.manual(input as never);
+    const signatures = out.entries.filter((entry) => entry.data.form === 'signature');
+    assert.ok(signatures.length > 0, JSON.stringify(out.entries.map((e) => e.data.form)));
+    assert.ok(out.entries.every((entry) => (entry.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
+    assert.ok(out.warnings.some((warning) => warning.includes('命令树不可用') && warning.includes('签名留在章节节点')), out.warnings.join('；'));
+  });
+
   it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
     // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
     // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.

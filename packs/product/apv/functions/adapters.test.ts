@@ -268,10 +268,11 @@ describe('the producers', () => {
       out.warnings.includes('cli：有 5 个命令字面在本构建的命令树里解析不到，是漂移候选：?、demo broken、demo pool create、demo probe、enable'),
       out.warnings.join('\n'),
     );
-    // Without the tree slot the anchors are placed unchecked, and no drift list is computed.
+    // Without the tree slot no /commands path is created: signatures stay at their section nodes, the warning
+    // names the missing fact and the next action, and no drift list is computed.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
-    assert.ok(without.warnings.some((w) => w.includes('没有命令树')), without.warnings.join('\n'));
-    assert.ok(without.entries.some((e) => e.path === '/commands/demo/probe'));
+    assert.ok(without.warnings.some((w) => w.includes('命令树不可用') && w.includes('签名留在章节节点') && w.includes('xml@1')), without.warnings.join('\n'));
+    assert.ok(without.entries.every((e) => (e.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
   });
 
   it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {

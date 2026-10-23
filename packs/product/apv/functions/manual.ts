@@ -164,7 +164,7 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
   let leading = true;
   let keyDone = false;
   for (const token of head) {
-    if (WORD.test(token)) {
+    if (WORD.test(token) && !/[\/]/.test(token)) {
       choices.push([[token]]);
       if (!keyDone) words.push(token);
       leading = false;
@@ -313,6 +313,9 @@ function existingPath(catalog: CommandCatalog, words: readonly string[]): string
 }
 
 /** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
+/** A head word never contains the slash: two bold runs glued by a plain character are two commands, not one. */
+const HEAD_WORD = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
 function resolves(catalog: CommandCatalog, literal: string): boolean {
   let words = literal.split(' ');
   // A leading optional or required group ([no], {no|clear}) is not a word of the tree.
@@ -333,8 +336,10 @@ function resolves(catalog: CommandCatalog, literal: string): boolean {
  * the alternatives as items below it), spelled from a variant's path; without a tree the literal decides, unchecked.
  * Null when the tree lacks the command.
  */
-function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null): string | null {
-  if (catalog === null) return commandPath(anchor.words);
+function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null, options: Pick<ManualOptions, 'noTree'> = {}): string | null {
+  // A direct call without a tree places by the literal, unchecked (the README says so); a production with an
+  // unusable tree passes noTree, which keeps every signature at its section node (no synthetic /commands path).
+  if (catalog === null) return options.noTree === true ? null : commandPath(anchor.words);
   const direct = existingPath(catalog, anchor.words);
   if (direct !== null) return direct;
   if (anchor.variants === null) return null;
@@ -610,7 +615,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (anchor === null) return;
     // Only a node the build's command tree has; without a tree the literal decides, unchecked. A signature whose
     // command is missing stays a definition entry at its section node.
-    const placed = anchorPathOf(anchor, catalog) ?? sectionEntryPath(index);
+    const placed = anchorPathOf(anchor, catalog, options) ?? sectionEntryPath(index);
     headingAnchors.set(index, { anchor, path: placed });
     const entry = signatureEntry(anchor, placed, { parser: MARKDOWN, selector: section.selector as string });
     noteSignature(entry);
@@ -634,11 +639,13 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    */
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
     if (!cell.includes('**')) return [];
-    const parts = cell.split(new RegExp(`(${CJK.source}+)`, 'u'));
+    // The connective runs are CJK connective words and the comma and slash marks (ASCII and full width), so
+    // '**a**, **b**' and '**a**/**b**' split like the CJK forms. A run holding anything else is prose, not a list.
+    const parts = cell.split(new RegExp(`(${CJK.source}|[，,、/／])+`, 'u'));
     const out: Anchor[] = [];
     for (let k = 0; k < parts.length; k++) {
       if (k % 2 === 1) {
-        if (!/^[与和及或、,，/\s]*$/.test(parts[k])) return [];
+        if (!/^[与和及或、,，/／\s]*$/.test(parts[k])) return [];
         continue;
       }
       const piece = parts[k].trim();
@@ -698,7 +705,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (anchor !== null) {
       // A signature whose command is not in the build's tree is still a signature: it hangs at its section node, and
       // the blocks after it follow it there (same data as at a command node: the tree only chooses the path).
-      const placed = anchorPathOf(anchor, catalog) ?? sectionPath(value, block.section);
+      const placed = anchorPathOf(anchor, catalog, options) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
       noteSignature(entry);
       entry.applicability = toApplicability(conditionsOf(text));
@@ -742,7 +749,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const rowText = table.lines[row.line].trimEnd();
           if (found.length === 1) {
             const { cell, anchor: one } = found[0];
-            const path = anchorPathOf(one, catalog) ?? sectionPath(value, block.section);
+            const path = anchorPathOf(one, catalog, options) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
             noteSignature(signature);
             signature.applicability = toApplicability(conditionsOf(rowText));
@@ -752,7 +759,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             continue;
           }
           let placed: string | null = null;
-          const paths = found.map(({ anchor: some }) => anchorPathOf(some, catalog));
+          const paths = found.map(({ anchor: some }) => anchorPathOf(some, catalog, options));
           if (paths.every((path) => path !== null)) {
             const lca = commonPrefix(found.map(({ anchor: some }) => some.words));
             if (lca.length >= 1) placed = (paths[0] as string).split('/').slice(0, 2 + lca.length).join('/');
