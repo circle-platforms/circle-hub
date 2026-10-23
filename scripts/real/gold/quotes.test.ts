@@ -70,3 +70,8 @@ test('missing quotes are refutations while missing expected results are shape fi
   const empty=quotesReport(submit([]),{},opts);
   assert.equal(empty.details.length,0);assert.equal(empty.counts.unknown,0);assert.deepEqual(empty.shapes,[{draft:1,category:'expected_absent'}]);
 });
+for(const terminator of ['\n','\r\n','\r'])test(`final terminator opens no extra text line ${JSON.stringify(terminator)}`,()=>{
+  const bytes=Buffer.from(`alpha${terminator}beta${terminator}`),digest=sha256(bytes),inputs={sources:new Map([[digest,bytes]]),run:{sources:[]}};
+  assert.equal(judgeQuote(`src:${digest}/text@1/l/1-2`,'alpha beta','beta',inputs).verdict,'support');
+  for(const selector of ['1-3','3'])assert.equal(judgeQuote(`src:${digest}/text@1/l/${selector}`,'alpha beta','beta',inputs).verdict,'refute');
+});

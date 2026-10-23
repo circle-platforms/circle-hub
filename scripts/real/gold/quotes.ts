@@ -92,6 +92,7 @@ function sourceText(bytes: Uint8Array, target: Target): string | null | undefine
     const m = /^([1-9]\d*)(?:-([1-9]\d*))?$/.exec(p[1]);
     if (!m) return null;
     const from = Number(m[1]), to = Number(m[2] ?? m[1]), lines = text.split(/\r\n|\r|\n/);
+    if(/(?:\r\n|\r|\n)$/.test(text))lines.pop();
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || to < from || (m[2] && from === to) || to > lines.length) return null;
     text = lines.slice(from - 1, to).join('\n');
   } else if (target.parser === 'markdown@1') {
