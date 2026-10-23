@@ -239,7 +239,7 @@ describe('requested keys missing from narrowed views', () => {
   const draft = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
   const check = (view: unknown) => checkDuplicate(inputOf({ drafts: [draft], indexed_cases: buildCompactIndex(view, undefined, NARROWED) }))[0];
   it('missing keys are unknown and name what must be read again', () => {
-    const result = check({ ...SYNTHETIC_INDEX_VIEW, keys: {}, entries: {}, only: ['show health detail'], cut_keys: [] });
+    const result = check({ ...SYNTHETIC_INDEX_VIEW, keys: {}, entries: {}, only: ['show health detail'], cut_keys: [], truncated: true });
     assert.equal(result.verdict, 'unknown');
     assert.equal(result.reason, 'integrity_unproven');
     assert.match(result.statement, /缺少.*show health detail/);
