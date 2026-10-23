@@ -46,3 +46,12 @@ test('R03 repeated unreadable accepted work escalates to a named disposition req
   assert.equal(third.frozen,true);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
   assert.ok((await c.service.journal.events(first.job)).some(e=>e.body.detail.request_kind==='disposition'));
 });
+
+test('R04 a local post-intent fence refusal proves no submission rather than inventing an unknown remote id',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  const holders=c.leases.holderSnapshot.bind(c.leases);let reads=0;
+  c.leases.holderSnapshot=async keys=>{const values=await holders(keys);return ++reads===3?values.map(v=>({...v,fencing:v.fencing+1,lease:'different-lease'})):values;};
+  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(result.outcome,'not_dispatched');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+  assert.ok((await c.service.journal.events(result.job)).some(e=>e.body.detail.submit_invoked===false && e.body.detail.done===true));
+});

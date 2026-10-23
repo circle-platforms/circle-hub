@@ -5,7 +5,7 @@ import { labelOf, type EffectOutcome, type Disposition } from '../../contracts/g
 import { at, bind, mapped, readDeclaredTime, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { ExecutorRegistry } from './executors.ts';
 import { Journal, digestOfValue, eventOf, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
-import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, object, type Exchange } from './transport.ts';
+import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, object, type Exchange } from './transport.ts';
 import type { BuildKnowledge } from './probes.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition } from './dynamic.ts';
@@ -134,7 +134,7 @@ export class DispatchService {
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const session = this.session(binding, d, secret);
     let remote: RemoteLease | undefined; let stop = async () => {}; let pulse:Heartbeat|undefined;
-    let intended = false;
+    let intended = false;let submitInvoked=false;
     try {
       await session.connect();
       remote = await this.acquire(binding, d, session, this.context(binding));
@@ -171,13 +171,13 @@ export class DispatchService {
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
       intended = true;
-      if (this.now().getTime() >= Date.parse(notAfter)) { await this.unknown(binding, '意图写入后派发窗口已过；未继续发送，需管理员处置'); return await this.status(by, binding.job); }
-      if (!this.sameFences(fresh, await this.options.leases.holderSnapshot(d.resources))) { await this.unknown(binding, '意图后围栏漂移；未继续提交'); return await this.status(by, binding.job); }
+      if (this.now().getTime() >= Date.parse(notAfter)) { await this.notSent(binding,session,remote,stop,'意图后派发窗口已过，尚未调用提交');return this.status(by,binding.job); }
+      if (!this.sameFences(fresh, await this.options.leases.holderSnapshot(d.resources))) { await this.notSent(binding,session,remote,stop,'意图后围栏改变，尚未调用提交');return this.status(by,binding.job); }
       if(!pulse.held()) { await stop();await this.release(binding,session,remote);await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'目标租约确认失效，尚未调用提交',next_action:'恢复目标租约后重新预检与派发'});return this.status(by,binding.job); }
       // Signals must not cancel an in-flight effect; SIGKILL is recovered from the already committed intent.
       const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore);
       let answer: Exchange;
-      try { answer = await session.call('submit', context); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
+      try { submitInvoked=true;answer = await session.call('submit', context); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
       const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
       if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
@@ -198,6 +198,7 @@ export class DispatchService {
       return await this.observe(by, binding, d, session, remoteId, fresh, stop);
     } catch (error) {
       if (intended || eventOf(await this.journal.events(binding.job), 'intent')) {
+        if((!submitInvoked || error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError) && remote) {await this.notSent(binding,session,remote,stop,'当前进程证明未调用提交或未写出请求字节',error instanceof SubmissionNotSentError?[error.source]:[]);return this.status(by,binding.job);}
         if (eventOf(await this.journal.events(binding.job), 'receipt')) await this.pendingRead(binding);
         else if (d.reconciliation && d.calls.query) return await this.reconcileRequest(by,binding,d,session,stop);
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
@@ -278,6 +279,11 @@ export class DispatchService {
     }
   }
 
+  private async notSent(binding:JobBinding,client:RpcClient,lease:RemoteLease,stop:()=>Promise<void>,reason:string,sources:string[]=[]):Promise<void> {
+    await stop();await this.release(binding,client,lease);
+    const intent=eventOf(await this.journal.events(binding.job),'intent');
+    await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:reason,next_action:'当前进程证明未发出；恢复前提后可开启下一请求尝试'},[...(intent?[`rec:${intent.digest}`]:[]),...sources]);
+  }
   private async checkContinuity(binding:JobBinding,d:ExecutorDefinition,client:RpcClient,lease:RemoteLease):Promise<void> {
     try {
       const reply=await this.read(binding,client,'heartbeat',{...this.context(binding),lease_id:lease.id,lease_token:lease.token});

@@ -6,10 +6,11 @@ import { sha256Hex } from '../records/api.ts';
 import type { ExecutorDefinition, CallRole } from './definition.ts';
 import { rpcResponse, toolContent, containsRpcReply } from './observations.ts';
 import { bind } from './definition.ts';
-export interface ResponseMetadata { received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; }
+export interface ResponseMetadata { received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; request_bytes_written?: number; }
 export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean, metadata?: ResponseMetadata) => Promise<string>;
 export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string; tool_error?: boolean };
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+export class SubmissionNotSentError extends Error {readonly source:string;constructor(source:string){super('提交连接未写出请求字节；原件与计数已保存');this.source=source;}}
 export class InvocationDefinitionError extends Error {constructor(){super('调用参数名、必需字段或字节预算不符合目标公开声明；请修正执行器调用模板，尚未调用工具');}}
 export class ToolReplyError extends Error {
   readonly value:unknown;readonly source:string;
@@ -126,12 +127,12 @@ export class RpcClient {
     const body = JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params });
     if (Buffer.byteLength(body) > this.definition.max_bytes * 2) throw new Error('请求超过字节上限');
     const u = new URL(this.definition.endpoint);
-    const received = await new Promise<{ bytes: Buffer; status: number; session?: string; complete: boolean; stream_cut_at_response: boolean }>(resolve => {
-      const chunks: Buffer[] = []; let length = 0; let status = 0; let session: string | undefined; let finished = false; let streamCut = false;
+    const received = await new Promise<{ bytes: Buffer; status: number; session?: string; complete: boolean; stream_cut_at_response: boolean; request_bytes_written:number }>(resolve => {
+      const chunks: Buffer[] = []; let length = 0; let status = 0; let session: string | undefined; let finished = false; let streamCut = false;let socket:{bytesWritten:number}|undefined;
       let timer: ReturnType<typeof setTimeout>;
       const finish = (complete: boolean) => {
         if (finished) return; finished = true; clearTimeout(timer);
-        resolve({ bytes: Buffer.concat(chunks), status, session, complete, stream_cut_at_response: streamCut });
+        resolve({ bytes: Buffer.concat(chunks), status, session, complete, stream_cut_at_response: streamCut,request_bytes_written:socket?.bytesWritten ?? 0 });
       };
       const req = (u.protocol === 'https:' ? httpsRequest : httpRequest)(u, {
         method: 'POST', agent: false, ...(u.protocol === 'https:' ? { ca: this.definition.ca, rejectUnauthorized: true } : {}),
@@ -150,6 +151,7 @@ export class RpcClient {
         res.on('error', () => finish(false)); res.on('aborted', () => finish(false)); res.on('end', () => finish(true));
       });
       timer = setTimeout(() => { finish(false); req.destroy(); }, timeout);
+      req.on('socket',value=>{socket=value;});
       req.on('error', () => finish(false));
       req.end(body);
     });
@@ -159,8 +161,9 @@ export class RpcClient {
     const bytes = new TextEncoder().encode(safe);
     const received_at = this.#now().toISOString();
     let source:string;
-    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response });}
+    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
     catch {throw new ResponseStorageError();}
+    if(operation==='submit' && !received.complete && received.status===0 && received.request_bytes_written===0)throw new SubmissionNotSentError(source);
     if (!received.complete || !validEncoding) throw new Error('目标回答不完整、超时或超限；已有字节先保存，不重试');
     if (received.status < 200 || received.status >= 300) throw new HttpReplyError(received.status);
     if (received.session) { if (/[\r\n]/.test(received.session) || received.session.length > 512) throw new Error('目标会话标识无效'); this.#session = received.session; }
