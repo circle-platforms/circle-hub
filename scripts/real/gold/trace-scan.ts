@@ -11,7 +11,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
   const fixedDir = value('fixed-dir'), casesDir = value('cases-dir'), treePath = value('tree'), out = value('out');
   const missing = [!fixedDir && '--fixed-dir', !casesDir && '--cases-dir', !treePath && '--tree', !out && '--out'].filter((f): f is string => f !== false);
   if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/trace-scan.ts --fixed-dir <目录> --cases-dir <目录> --tree <敏捷树导出> [--docs-dir <目录>] [--plm <文件>…] [--closed-statuses <文件>] [--case-rule marked|tagged] --out <文件>\n`); return 2; }
-  if (!existsSync(fixedDir) || readdirSync(fixedDir).filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).length === 0) {
+  if (!existsSync(fixedDir) || readdirSync(fixedDir!).filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).length === 0) {
     process.stderr.write('没有 Bugs_Fixed_with_<构建>.html：先导出修复缺陷页\n');
     return 1;
   }
@@ -25,7 +25,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const closedPath = value('closed-statuses');
     const closedStatuses = closedPath ? parseClosedStatuses(JSON.parse(readFileSync(closedPath, 'utf8'))) : undefined;
     const docsDir = value('docs-dir');
-    const builds = readdirSync(fixedDir).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
+    const builds = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
       const build = file.replace(/^Bugs_Fixed_with_/i, '').replace(/\.html$/i, '');
       const allowed = docsDir ? parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8')) : undefined;
       const gold = traceGold({ html: readFileSync(join(fixedDir, file), 'utf8'), tree, maps: loadCaseMaps(casesDir, allowed), plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
