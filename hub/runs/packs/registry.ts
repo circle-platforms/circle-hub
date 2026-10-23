@@ -707,6 +707,7 @@ class Registry implements PackRegistry {
           const product = pack.declarations.kind==='product' ? pack.declarations.product : null;
           const committed = await this.#records.store.withTransaction(async tx => {
           if(product){
+            if(product.variables?.length && !this.#options.variableNameAvailable)return refuse([problem('variables.port_missing','product.json','产品变量的部署名字核对端口未接线','请管理员修正装配端口后重新发布')],report);
             await this.#records.store.lock('pack-products',tx);
             for(const name of [...(product.variables??[])].map(v=>v.name).sort())await this.#records.store.lock('variable-name:'+name,tx);
             const previous=await this.variableDeclarations(tx);

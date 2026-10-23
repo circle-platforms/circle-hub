@@ -1,5 +1,5 @@
-import { productVariableProblems } from '../knowledge/api.ts';
-import { packSchema, type PackRegistry } from '../runs/api.ts';
+import { productVariableProblems, variableUsesOfRoot } from '../knowledge/api.ts';
+import type { PackRegistry } from '../runs/api.ts';
 // Administrator-only named deployment commands. Arguments never carry values and diagnostics never quote them.
 import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
@@ -411,7 +411,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
             return 0;
         }
         if (v.run || v.root) {
-            const uses: VariableUse[] = [];
+            const uses: Array<VariableUse & {composition?:string}> = [];
             if (v.run) {
                 if (!RunId.safeParse(v.run).success)
                     throw new UsageError('运行号不合式');
@@ -428,17 +428,16 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
             else {
                 if (!isSha256(v.root))
                     throw new UsageError('根摘要不合式');
-                const root = await kit.store.get<any>(v.root);
-                if (!root || root.kind !== 'tree_root')
-                    throw new CliError('找不到该组成记录');
-                uses.push(...(Array.isArray(root.body.variables) ? root.body.variables : []));
+                const roots=await variableUsesOfRoot(kit.store,v.root);
+                if(!roots.length)throw new CliError('找不到该根或组成记录；请核对同步回执里的摘要');
+                uses.push(...roots.flatMap(root=>root.variables.map(use=>({...use,composition:root.composition}))));
             }
-            for (const use of new Map(uses.map(use => [use.at + '|' + use.decision, use])).values()) {
+            for (const use of new Map(uses.map(use => [(use.composition??'')+'|'+use.at + '|' + use.decision, use])).values()) {
                 const decision = await kit.store.get<any>(use.decision);
                 const kind: VariableKind = decision?.body.object.startsWith('secret:') ? 'secret' : 'var';
                 const version = (await kit.variables.history(by, kind, use.name)).find(v => v.decision.digest === use.decision);
                 if (version)
-                    s.out(`${use.at}；${use.name}；第 ${version.version} 版`);
+                    s.out(`${use.at}；${use.name}；第 ${version.version} 版${use.composition?`；组成 ${use.composition}`:''}`);
             }
             if (!uses.length)
                 s.out('这份记录没有变量版本记录；需要带变量记录的新运行或新组成后再查');
@@ -459,9 +458,12 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
           }
           if(!item)continue;
           if(item.definition?.schema==='variable@1')for(const owner of owners){
-            const declaration=owner.product.variables!.find(v=>v.name===name)!;
-            const compiled=packSchema(declaration.schema);
-            if(!compiled.ok || !compiled.schema.safeParse(item.definition.value).success)notes.push(`值不合包 ${owner.pack} /variables/${owner.product.variables!.indexOf(declaration)}/schema；真实同步会拒绝；下一步 circle-hub var set ${name} --file <JSON文件> --reason <理由>`);
+            const candidate=new Map((owner.product.variables??[]).map(v=>{
+              const current=byName.get(v.name);
+              return [v.name,current?.definition?.schema==='variable@1'&&!current.decision.body.revoked?current.definition.value:v.default];
+            }));
+            const problems=productVariableProblems(owner.product,candidate,undefined,name);
+            if(problems.length)notes.push(...problems.map(p=>`值不合包 ${owner.pack}：${p}；真实同步会拒绝`));
           }
           s.out(versionsLine(item)+'；'+(used.length||owners.length?'使用者 '+[...used,...notes].join('、'):'设置了，没有使用者'));
         }
@@ -561,6 +563,12 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             s.out('下一步：在签发方吊销或换掉旧值；Hub 删掉条目只是自己不再用它，备份里还有');
             return 0;
         }
+        const registry=(await s.hub(false)).registry;
+        const checkProductNames=async(tx?:Transaction)=>{
+          const declarations=await registry.variableDeclarations(tx);
+          if(declarations.some(p=>p.product.variables?.some(v=>mappings.some(m=>m.name===v.name))))throw new CliError('名字不可用；换一个密钥名字并 update 使用者定义后重跑');
+        };
+        await checkProductNames();
         const digests = new Map<string, DigestRule>(), short = new Set<string>();
         for (const [index, input] of (v.digest ?? []).entries()) {
             const at = input.indexOf('='), name = nameInput(input.slice(0, at), index, 'secret'), rule = input.slice(at + 1);
@@ -651,7 +659,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             }
             return 0;
         }
-        const result = await kit.variables.setSecrets(by, inputs, reason, tx => unchangedDefinitions(kit, definitions, tx));
+        const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await unchangedDefinitions(kit, definitions, tx);await checkProductNames(tx);});
         for (const row of result) {
             s.out(versionsLine(row));
             if (row.definition?.schema === 'secret@1')

@@ -63,3 +63,8 @@ test('direct production also refuses unset declarations before reading sources',
  const result=await w.knowledge.produceTree({product:w.product,build:{name:'DemoBuild',family:'ACME',line:'10.6',base:'DemoBuild',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:demo'},root:null}});
  assert.equal(result.ok,false);assert.match(result.reason??'',/DEMO_SYNC_NOTE.*circle-hub var set/);assert.equal(w.external.reads.length,0);
 });
+
+test('an oversized literal option names the pack repair rather than an invented variable',async t=>{
+ const w=await makeWorld(postgres,{pack:{declaration:{sync:{...DEFAULT_SYNC,options:{note:'a'.repeat(40)}}}},knowledge:{sandbox:{requireOsIsolation:false,plan:{inputBytes:20}}}});t.after(()=>w.close());
+ const report=await w.knowledge.syncProduct(w.product);assert.match(report.error??'',/发布新版本/);assert.doesNotMatch(report.error??'',/undefined/);assert.equal(w.external.reads.length,0);
+});

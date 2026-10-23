@@ -225,3 +225,10 @@ test('var set validates product schemas and list includes unset, invalid and unu
  assert.match(f.lines.join('\n'),/DEMO_CHOICES.*不合.*demo-product/);
  assert.match(f.lines.join('\n'),/DEMO_UNUSED.*设置了，没有使用者/);
 });
+
+test('a published ordinary-variable name cannot later be enrolled as a secret',async t=>{
+ const f=await setup(t);await f.definition('DEMO_OWNED_NAME');
+ f.session.hub=async()=>({packs:{} as any,registry:{variableDeclarations:async()=>[{pack:'demo-owner',version:'1.0.0',product:{variables:[{name:'DEMO_OWNED_NAME'}]} as any}]}});
+ await assert.rejects(namedSecretCommand(f.session,['set','--name','DEMO_OWNED_NAME','--reason','合成占名']),/名字不可用/);
+ assert.equal(f.reads,0);assert.equal((await f.kit.variables.history(f.admin,'secret','DEMO_OWNED_NAME')).length,0);
+});

@@ -406,3 +406,10 @@ test('two registries racing for one variable name grant exactly one publication'
  const outcomes=await Promise.all(dirs.map(d=>bed.second({variableNameAvailable:async()=>true}).publish(bed.alice,d.dir)));
  assert.equal(outcomes.filter(o=>o.ok).length,1);
 });
+
+test('an absent deployment-name port reports the missing assembly fact and its repair',async t=>{
+ const bed=await testbed(t);
+ const source=editJson<Json>(productPack(),'product.json',p=>{p.variables=[{name:'DEMO_PORT_CHECK',description:'Synthetic',schema:{type:'integer'},default:1}];p.producers[0].params={n:'${var:DEMO_PORT_CHECK}'};});
+ const outcome=await bed.attempt(bed.alice,source);assert.equal(outcome.ok,false);
+ if(!outcome.ok){assert.match(outcome.problems[0].message,/端口/);assert.match(outcome.problems[0].fix,/装配.*重新发布/);}
+});
