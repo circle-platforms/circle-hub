@@ -8,7 +8,7 @@ const view=(raw:any)=>{const entries=Object.fromEntries(Object.values(raw).map((
 const hub=(doc?:string)=>({partitions:{delivered:[{item:'i',requirements:[{requirement:'not_duplicate',status:'satisfied',claims:doc?[{statement:{code:'defect-to-case.duplicate_case',verdict:'refute',text:'起草用例“Ａ   CASE”与已索引用例重复',data:{duplicate_of:{document:doc,node:'n'}}}}]:[]}]}]}});
 test('two command entries count one case and retain the three filtering stages',()=>{
   const report=recountDuplicates([view({a:entry('a','d1'),b:entry('b','d1'),c:entry('c','d2','different'),d:entry('d','d3','a case',true)})],draft,xml,hub('d1'));
-  assert.deepEqual([report.details[0].sameCommands,report.details[0].sameNegative,report.details[0].sameTitle],[3,2,1]);assert.equal(report.passed,true);
+  assert.deepEqual([report.details[0].sameCommands,report.details[0].sameNegative,report.details[0].sameTitle],[3,2,1]);assert.equal(report.details[0].titleEqual,true);assert.equal(report.passed,false);assert.equal(report.details[0].gap?.fact,'existing_case_expected_text_and_bound_original_identity');
   assert.ok(!renderRecount(report).includes('Ａ   CASE'));
 });
 for(const mode of ['only','cut_keys','truncated'])test(`incomplete ${mode} is unknown`,()=>{
@@ -18,7 +18,8 @@ for(const mode of ['only','cut_keys','truncated'])test(`incomplete ${mode} is un
 test('views merge by entry digest and order cannot change the answer',()=>{
   const one=view({a:entry('a','d1')}),two=view({a:entry('a','d1'),b:entry('b','d2','different')});
   assert.deepEqual(recountDuplicates([one,two],draft,xml,hub('d1')),recountDuplicates([two,one],draft,xml,hub('d1')));
-  assert.equal(recountDuplicates([one,two],draft,xml,hub('d2')).different,1);
+  assert.equal(recountDuplicates([one],draft,xml,hub('d1')).equal,1);
+  assert.equal(recountDuplicates([one],draft,xml,hub('d2')).different,1);
 });
 test('skipped documents are disclosed, and missing Hub evidence is unknown',()=>{
   const v=view({a:entry('a','d1')});v.skipped=2;

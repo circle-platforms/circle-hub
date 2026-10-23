@@ -5,7 +5,13 @@ import { XmlReader, type XmlNode } from './command-diff.ts';
 import { buildCatalog, parseCommandsFromText, normalizeHead, type SplitCommand } from './regression-doc.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
 const NO_CHECK = REASON[0];
-export interface DomainResult { verdict: Verdict; category: 'count' | 'type' | 'range' | 'enum' | 'no_check' | 'valid'; reason?: typeof NO_CHECK }
+/** Decode original command-tree bytes according to their XML declaration, without changing the stored bytes or digest. */
+export function decodeCommandXml(bytes: Uint8Array): string {
+  const header = Buffer.from(bytes).subarray(0, 200).toString('ascii');
+  const encoding = /<\?xml[^>]*encoding=["']([^"']+)["']/i.exec(header)?.[1] ?? 'utf-8';
+  return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+}
+export interface DomainResult { verdict: Verdict; category: 'count' | 'type' | 'range' | 'enum' | 'no_check' | 'valid'; reason?: typeof NO_CHECK; gap?: { fact: string; action: string; owner: string } }
 type Arg = { type: string; optional: boolean; limit: string; length: string; otherForm: boolean };
 export type Domains = Map<string, Arg[][]>;
 const kids = (n: XmlNode) => n.children.flatMap(c => 'element' in c ? [c.element] : []);
@@ -14,7 +20,7 @@ const entity = (s: string) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos)
   const code = e.startsWith('#x') ? parseInt(e.slice(2), 16) : e.startsWith('#') ? Number(e.slice(1)) : null;
   return code === null ? ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e] ?? m) : code <= 0x10ffff ? String.fromCodePoint(code) : m;
 });
-const unknown = (): DomainResult => ({ verdict: UNKNOWN, category: 'no_check', reason: NO_CHECK });
+const unknown = (fact = 'argument_domain_rule'): DomainResult => ({ verdict: UNKNOWN, category: 'no_check', reason: NO_CHECK, gap: { fact, action: 'request_rule_from_named_integrator', owner: 'Claude' } });
 const result = (category: DomainResult['category']): DomainResult => ({ verdict: category === 'valid' ? SUPPORT : REFUTE, category });
 
 export function commandDomains(xml: string): Domains {
@@ -59,7 +65,7 @@ function checkArg(arg: Arg, value: string): DomainResult {
       if (!Number.isSafeInteger(magnitude) || magnitude < 0 || magnitude > (arg.type === 'U16' ? 65535 : 4294967295)) return result('range');
       break;
     case 'DOTTEDIP':
-      if (arg.otherForm || isIP(value) !== 4) return unknown();
+      if (arg.otherForm || isIP(value) !== 4) return unknown('DOTTEDIP_alternative_domain');
       break;
     case 'IPADDR': if (!isIP(value) || value.includes('%')) return result('type'); break;
     case 'IPMASK': {
@@ -72,7 +78,7 @@ function checkArg(arg: Arg, value: string): DomainResult {
       }
       break;
     }
-    default: return unknown();
+    default: return unknown('declared_argument_type_rule');
   }
   if (arg.limit) {
     const range = bounds(arg.limit);
@@ -82,11 +88,11 @@ function checkArg(arg: Arg, value: string): DomainResult {
       if (magnitude < range[0] || magnitude > range[1]) return result('range');
     } else if (enums) {
       if (!enums[1].split(/\s*[|,]\s*/).includes(value)) return result('enum');
-    } else return unknown();
+    } else return unknown('argument_limit_rule');
   }
   if (arg.length) {
     const range = bounds(arg.length);
-    if (!range) return unknown();
+    if (!range) return unknown('argument_length_rule');
     const n = [...value].length;
     if (n < range[0] || n > range[1]) return result('range');
   }
@@ -95,7 +101,7 @@ function checkArg(arg: Arg, value: string): DomainResult {
 
 export function judgeCommand(command: SplitCommand, domains: Domains): DomainResult {
   const overloads = domains.get(normalizeHead(command.head));
-  if (!overloads) return unknown();
+  if (!overloads) return unknown('command_definition');
   const outcomes: DomainResult[] = [];
   for (const args of overloads) {
     let states: DomainResult[] = [];
@@ -106,7 +112,7 @@ export function judgeCommand(command: SplitCommand, domains: Domains): DomainRes
       if (i === args.length) return j === command.parameters.length ? [result('valid')] : [];
       const found: DomainResult[] = args[i].optional ? [...visit(i + 1, j)] : [];
       if (j < command.parameters.length) {
-        const here = cap ? unknown() : checkArg(args[i], command.parameters[j]);
+        const here = cap ? unknown('expanded_overload_domain') : checkArg(args[i], command.parameters[j]);
         for (const tail of visit(i + 1, j + 1)) found.push(here.verdict === REFUTE ? here : tail.verdict === REFUTE ? tail : here.verdict === UNKNOWN || tail.verdict === UNKNOWN ? unknown() : tail);
       }
       // Keep one representative of each classification; optional branches cannot cause exponential work.
@@ -141,7 +147,10 @@ export function parsedDraftCommands(draft: LocatedDraft, xml: string): { command
   const catalog = buildCatalog(xml);
   const commands: SplitCommand[] = [], unrecognized: string[] = [];
   for (const step of draft.data.steps ?? []) if (typeof step.command === 'string') {
-    const parsed = parseCommandsFromText(step.command, catalog); commands.push(...parsed.commands); unrecognized.push(...parsed.unrecognized);
+    for (const line of step.command.split(/\r?\n/).filter(v => v.trim() !== '')) {
+      const parsed = parseCommandsFromText(line, catalog); commands.push(...parsed.commands); unrecognized.push(...parsed.unrecognized);
+      if (parsed.commands.length === 0 && parsed.unrecognized.length === 0) unrecognized.push(line);
+    }
   }
   return { commands, unrecognized };
 }
@@ -150,15 +159,16 @@ export function domainReport(submission: unknown, hub: unknown, xml: string) {
   const details = drafts.map(d => {
     const parsed = parsedDraftCommands(d, xml);
     const outcomes = [...parsed.commands.map(c => judgeCommand(c, domains)), ...parsed.unrecognized.map(() => unknown())];
-    const verdict = outcomes.length === 0 || outcomes.some(o => o.verdict === UNKNOWN) ? UNKNOWN
-      : d.data.expects_refutation === false ? outcomes.every(o => o.verdict === SUPPORT) ? SUPPORT : REFUTE
-      : d.data.expects_refutation === true && d.data.negative === true ? outcomes.some(o => o.verdict === REFUTE) ? SUPPORT : REFUTE : UNKNOWN;
+    const verdict = outcomes.length === 0 ? UNKNOWN
+      : d.data.expects_refutation === false ? outcomes.every(o => o.verdict === SUPPORT) ? SUPPORT : outcomes.some(o => o.verdict === REFUTE) ? REFUTE : UNKNOWN
+      : d.data.expects_refutation === true && d.data.negative === true ? outcomes.some(o => o.verdict === REFUTE) ? SUPPORT : outcomes.every(o => o.verdict === SUPPORT) ? REFUTE : UNKNOWN : UNKNOWN;
     return { draft: d.draft, item: d.item, outcomes, verdict };
   });
   const items = [...new Set(drafts.map(d => d.item))].map(item => {
     const own = details.filter(d => d.item === item);
-    const verdict = own.some(d => d.verdict === UNKNOWN) ? UNKNOWN : own.some(d => d.verdict === REFUTE) ? REFUTE : SUPPORT;
-    return { verdict, comparison: compareStatus(verdict, requirementStatus(hub, item, 'commands')) };
+    const verdict = own.some(d => d.verdict === REFUTE) ? REFUTE : own.some(d => d.verdict === UNKNOWN) ? UNKNOWN : SUPPORT;
+    const hasUnknown = own.some(d => d.verdict === UNKNOWN || d.outcomes.some(o => o.verdict === UNKNOWN));
+    return { verdict, hasUnknown, comparison: compareStatus(verdict, requirementStatus(hub, item, 'commands')) };
   });
   return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, details.flatMap(d => d.outcomes).filter(o => o.verdict === v).length])), items, details: details.map(({ item, ...rest }) => rest) };
 }

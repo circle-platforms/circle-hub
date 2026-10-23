@@ -1,0 +1,124 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { sha256 } from '../gold/quotes.ts';
+import { runBatch, main, type BatchDeps, type Pairings } from './defect-to-case-batch.ts';
+function fixture(){
+  const root=mkdtempSync(join(tmpdir(),'gold-d2c-synthetic-')),out=join(root,'out');
+  const xml='<commands><scope type="global"><menu name="widget"><item name="set"><arguments><arg name="n" type="U16"/></arguments></item><item name="other"/></menu></scope></commands>';
+  const commands=join(root,'commands.xml'),manual=join(root,'manual.txt');writeFileSync(commands,xml);writeFileSync(manual,'SYNTHETIC_MANUAL_TEXT');
+  const originals=new Map<string,Buffer>(),details=new Map<string,any>(),submissions=new Map<string,unknown>(),records:string[]=[],reviews:string[][]=[];
+  const config:Pairings={product:'Demo',prompt:'{product} {build} 缺陷 {defect}',fix_field:'fix',pairings:[]};
+  for(let i=0;i<2;i++){
+    const defect=String(160001+i),document=String(24110+i),run=`run_synthetic_${i}`,source=Buffer.from(JSON.stringify({fix:'SYNTHETIC_FIX_QUOTATION',defect})),sourceSha=sha256(source);
+    const entrySha=(i?'d':'c').repeat(64),index=Buffer.from(JSON.stringify({schema:'index-view@1',product:'Demo',build:{build:'Demo_1',root:'a'.repeat(64)},kind:'case',key:'commands',keys:{'widget other':[entrySha]},entries:{[entrySha]:{entry:entrySha,kind:'case',statement:'',reference:`tree:${'a'.repeat(64)}/commands/widget/set@${entrySha}`,data:{document:'25000',node:'node-synthetic',title:'DIFFERENT_INDEX_TITLE',negative:false,commands:['widget other']}}},total_keys:1,total_entries:1,truncated:false,skipped:0,notes:[]})),indexSha=sha256(index);
+    originals.set(sourceSha,source);originals.set(indexSha,index);
+    const record=(i?'f':'e').repeat(64),validation=(i?'2':'1').repeat(64);
+    submissions.set(record,{run,items:[{item:'item',slots:{cases:[{data:{title:'SYNTHETIC_DRAFT_TITLE',negative:false,expects_refutation:false,steps:[{command:'widget set 5'}],expected:[{text:'SYNTHETIC_FIX_QUOTATION',quote:{text:'SYNTHETIC_FIX_QUOTATION',reference:`src:${sourceSha}/json@1/p/fix`}}]}}]}}]});
+    const requirements=['fields','commands','grounded','not_duplicate','traceability'];
+    const detail={run:{run,pack:'defect-to-case@1.0.0',pack_digest:'b'.repeat(64),root:'a'.repeat(64),sources:[{slot:'defects',reference:`src:${sourceSha}`},{slot:'indexed_cases',reference:`src:${indexSha}`}],requirements:requirements.map(key=>({key,repair_rounds:2}))},submissions:[{record,result:validation,acceptance:'accepted'},{record:'3'.repeat(64),result:null,acceptance:'not_accepted'}],latest:{record:validation,result:{schema:'validation@1',submission:record,rounds:{used:1,max:2},partitions:{delivered:[{item:'item',requirements:requirements.map(requirement=>({requirement,status:'satisfied',claims:[]}))}]}}}};
+    details.set(run,detail);
+    const map=join(root,`map-${i}.json`);writeFileSync(map,JSON.stringify({root:{data:{text:`缺陷${defect} 回归`,id:'root'},children:[{data:{text:'widget set 5',id:'case',resource:['功能']}}]}}));
+    config.pairings.push({defect,build:'Demo_1',commands,manual,regression_map:map,document});
+  }
+  
+  const deps:BatchDeps={now:()=>new Date('2026-10-23T00:00:00Z'),review:async args=>{reviews.push(args);return {complete:true,calls:JSON.stringify({at:'2026-10-23T00:00:00Z',tool:'start_run',run:`run_synthetic_${args[args.indexOf('--prompt')+1].includes('160002')?1:0}`})};},show:async id=>details.get(id),submission:async record=>{records.push(record);return submissions.get(record);},exportOriginal:async(sha,path)=>{const b=originals.get(sha);if(!b)throw new Error('missing synthetic original');writeFileSync(path,b);}};
+  return {root,out,config,deps,records,reviews,details,submissions,originals,close:()=>rmSync(root,{recursive:true,force:true})};
+}
+test('two pairings aggregate counts and select the accepted submission by latest.record, without revealing content',async()=>{
+  const f=fixture();try{
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:['--endpoint-from','circle'],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.deepEqual([report.totals.completed,report.totals.drafts,report.totals.domain_support],[2,2,2]);
+    assert.deepEqual(f.records,['e'.repeat(64),'f'.repeat(64)]);
+    assert.notEqual(f.reviews[0][f.reviews[0].indexOf('--out')+1],f.reviews[1][f.reviews[1].indexOf('--out')+1]);
+    for(const text of ['SYNTHETIC_DRAFT_TITLE','widget set','SYNTHETIC_FIX_QUOTATION','160001','160002','24110','24111'])assert.ok(!report.text.includes(text),text);
+    const detail=readFileSync(join(f.out,'pair-1','details.json'),'utf8');
+    for(const text of ['SYNTHETIC_DRAFT_TITLE','widget set','SYNTHETIC_FIX_QUOTATION','run_synthetic'])assert.ok(!detail.includes(text));
+    assert.equal(statSync(join(f.out,'pair-1','details.json')).mode&0o777,0o600);
+    assert.equal(statSync(f.out).mode&0o777,0o700);
+  }finally{f.close();}
+});
+test('a root title without the pairing defect is refused without launching the client',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);f.config.pairings[0].defect='160009';
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.equal(f.reviews.length,0);assert.match(report.text,/root_defect_mismatch/);
+  }finally{f.close();}
+});
+test('an iteration without a defect-to-case run is reported separately',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);f.details.get('run_synthetic_0').run.pack='other@1.0.0';
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.match(report.text,/no_defect_to_case_run/);assert.equal(f.records.length,0);
+  }finally{f.close();}
+});
+test('the last eligible validation wins, while a later run without a validation does not',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
+    f.deps.review=async()=>({complete:true,calls:['old','run_synthetic_0','later'].map(run=>JSON.stringify({at:'2026-10-23T00:00:00Z',tool:'start_run',run})).join('\n')});
+    f.details.set('old',f.details.get('run_synthetic_1'));f.details.set('later',{run:{pack:'defect-to-case@1.0.0'},latest:null});
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,0);assert.deepEqual(f.records,['e'.repeat(64)]);assert.match(report.text,/运行 3/);
+  }finally{f.close();}
+});
+test('incomplete index coverage cannot pass a batch',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
+    const original=f.deps.exportOriginal;f.deps.exportOriginal=async(sha,path)=>{await original(sha,path);const text=readFileSync(path,'utf8');if(text.includes('index-view@1'))writeFileSync(path,text.replace('"truncated":false','"truncated":true'));};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.match(report.text,/original_export_or_integrity_defect/);
+  }finally{f.close();}
+});
+test('CLI refuses usage errors without touching any external dependency',async()=>{
+  assert.equal(await main(['--home','synthetic']),2);
+});
+test('a corrupted export is automatically reread and verified before comparison',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const original=f.deps.exportOriginal;let calls=0;
+    f.deps.exportOriginal=async(sha,path)=>{if(calls++===0)writeFileSync(path,'synthetic corruption');else await original(sha,path);};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);assert.equal(report.totals.design_gaps,0);
+  }finally{f.close();}
+});
+test('missing expected-result evidence becomes a named-person design-gap request, never a completed unknown',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0'),binding=detail.run.sources.find((s:any)=>s.slot==='indexed_cases');
+    const old=binding.reference.slice(4),index=JSON.parse(f.originals.get(old)!.toString());
+    index.keys={'widget set':Object.keys(index.entries)};for(const e of Object.values(index.entries) as any[])e.data.commands=['widget set'];
+    const bytes=Buffer.from(JSON.stringify(index)),digest=sha256(bytes);f.originals.set(digest,bytes);binding.reference=`src:${digest}`;
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.ok(report.totals.design_gaps>0);
+    const questions=JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8'));
+    assert.ok(questions.some((q:any)=>q.owner==='Claude'&&q.missing_fact==='existing_case_expected_text_and_bound_original_identity'&&q.action_status==='requested'));
+    assert.match(report.text,/设计缺口/);assert.ok(!report.text.includes('没法重算'));
+  }finally{f.close();}
+});
+test('a pending requirement triggers identical resubmission and rejudgment against the current result',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0');
+    const requirement=detail.latest.result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='commands');requirement.status='pending';let replays=0;
+    f.deps.replaySubmission=async body=>{assert.deepEqual(body,f.submissions.get('e'.repeat(64)));replays++;requirement.status='satisfied';};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(replays,1);assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);
+  }finally{f.close();}
+});
+test('a client that skips the task is automatically rerun once rather than left unknown',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const review=f.deps.review;let attempts=0;
+    f.deps.review=async(args,out)=>++attempts===1?{calls:'',complete:true}:review(args,out);
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(attempts,2);assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);
+  }finally{f.close();}
+});
+test('a referenced stored original is exported automatically, then a forbidden source is a definite finding',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const bytes=Buffer.from('ADDITIONAL_SYNTHETIC_SOURCE'),digest=sha256(bytes);f.originals.set(digest,bytes);
+    const submission=f.submissions.get('e'.repeat(64)) as any;
+    submission.items[0].slots.cases[0].data.expected=[{text:'ADDITIONAL_SYNTHETIC_SOURCE',quote:{text:'ADDITIONAL_SYNTHETIC_SOURCE',reference:`src:${digest}`}}];
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.equal(report.totals.quote_unknown,0);assert.equal(report.totals.design_gaps,0);assert.equal(report.totals.defects,1);assert.ok(report.totals.recovery_actions>0);
+  }finally{f.close();}
+});
+test('an unreadable run is not falsely reported as absent after the automatic reread',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);let reads=0;
+    f.deps.show=async()=>{reads++;throw new Error('PRIVATE_TRANSPORT_DETAIL');};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.equal(reads,4);assert.match(report.text,/run_record_read_defect/);assert.doesNotMatch(report.text,/no_defect_to_case_run|PRIVATE_TRANSPORT_DETAIL/);
+  }finally{f.close();}
+});
+test('missing repair-round facts trigger a current-result replay instead of a successful incomplete summary',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0');delete detail.latest.result.rounds;
+    let actions=0;f.deps.replaySubmission=async()=>{actions++;detail.latest.result.rounds={used:0,max:2};};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(actions,1);assert.equal(report.code,0);
+  }finally{f.close();}
+});

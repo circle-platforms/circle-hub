@@ -1,7 +1,7 @@
 // Recount the exported index, not the pack's compact buckets. Expected-result equality cannot be reconstructed from these entries.
 import { readFileSync } from 'node:fs';
 import { VERDICT, REASON } from '../../../contracts/generated/vocabulary.ts';
-import { locatedDrafts, object, parsedDraftCommands } from './command-domains.ts';
+import { locatedDrafts, object, parsedDraftCommands, decodeCommandXml } from './command-domains.ts';
 import { normalizeHead } from './regression-doc.ts';
 const [SUPPORT,REFUTE,UNKNOWN] = VERDICT;
 const INTEGRITY = REASON.find(v => v === 'integrity_unproven')!;
@@ -15,14 +15,14 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
   const entries = new Map<string, any>();
   let identity: string | undefined;
   for (const v of views) {
-    if (!object(v) || v.schema !== 'index-view@1' || v.kind !== 'case' || v.key !== 'commands' || !object(v.build) || typeof v.product !== 'string' || !object(v.keys) || !object(v.entries)
-      || typeof v.truncated !== 'boolean' || !Number.isInteger(v.skipped) || v.skipped < 0 || !Number.isInteger(v.total_keys) || !Number.isInteger(v.total_entries)
+    if (!object(v) || v.schema !== 'index-view@1' || v.kind !== 'case' || v.key !== 'commands' || !object(v.build) || typeof v.product !== 'string' || v.product.trim() === '' || typeof v.build.build !== 'string' || v.build.build.trim() === '' || !/^[a-f0-9]{64}$/.test(v.build.root ?? '') || !object(v.keys) || !object(v.entries)
+      || typeof v.truncated !== 'boolean' || !Number.isInteger(v.skipped) || v.skipped < 0 || !Number.isInteger(v.total_keys) || !Number.isInteger(v.total_entries) || v.total_keys < 0 || v.total_entries < Object.keys(v.entries).length
       || (v.only !== undefined && (!Array.isArray(v.only) || v.only.some((x: unknown)=>typeof x !== 'string'))) || (v.cut_keys !== undefined && (!Array.isArray(v.cut_keys) || v.cut_keys.some((x: unknown)=>typeof x !== 'string')))) throw new Error('invalid index');
     const own = JSON.stringify([v.product,v.build.build,v.build.root]);
     if (identity !== undefined && identity !== own) throw new Error('mixed index identity'); identity = own;
     for (const refs of Object.values(v.keys)) if (!Array.isArray(refs) || refs.some(d=>!Object.hasOwn(v.entries,d))) throw new Error('incomplete index bytes');
     for (const [digest,e] of Object.entries(v.entries)) {
-      if (!object(e) || e.entry !== digest || !object(e.data) || !Array.isArray(e.data.commands) || e.data.commands.some((c:unknown)=>typeof c !== 'string') || typeof e.data.document !== 'string' || typeof e.data.node !== 'string' || typeof e.data.title !== 'string' || typeof e.data.negative !== 'boolean') throw new Error('invalid case entry');
+      if (!/^[a-f0-9]{64}$/.test(digest) || !object(e) || e.kind !== 'case' || e.entry !== digest || !object(e.data) || !Array.isArray(e.data.commands) || e.data.commands.some((c:unknown)=>typeof c !== 'string') || typeof e.data.document !== 'string' || typeof e.data.node !== 'string' || typeof e.data.title !== 'string' || typeof e.data.negative !== 'boolean') throw new Error('invalid case entry');
       if (entries.has(digest) && canonical(entries.get(digest)) !== canonical(e)) throw new Error('conflicting entry'); entries.set(digest,e);
     }
   }
@@ -40,28 +40,36 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
     const sameNegative=candidates.filter(([,v])=>v.negative===(d.data.negative===true));
     const sameTitle=sameNegative.filter(([,v])=>normTitle(v.title)===normTitle(d.data.title??''));
     const own=buckets.filter(b=>b.item===d.item), requirements=own.flatMap(b=>b.requirements??[]).filter(r=>r.requirement==='not_duplicate');
-    const claims=requirements.flatMap(r=>r.claims??[]).filter(c=>c.statement?.code==='defect-to-case.duplicate_case'&&c.statement?.verdict==='refute');
+    const claims=requirements.flatMap(r=>r.claims??[]).filter(c=>c.statement?.code==='defect-to-case.duplicate_case'&&c.statement?.verdict===REFUTE);
     const matching=claims.filter(c=>typeof c.statement?.text==='string'&&c.statement.text.startsWith(`起草用例“${d.data.title??''}”与已索引用例重复`));
     const hub=new Set<string>();let known=requirements.length===1&&drafts.filter(x=>x.item===d.item&&x.data.title===d.data.title).length===1;
     for(const c of matching){const target=c.statement?.data?.duplicate_of??c.data?.duplicate_of; if(!object(target)||typeof target.document!=='string'||typeof target.node!=='string') known=false; else hub.add(pair(target.document,target.node));}
     if(claims.some(c=>!drafts.some(x=>x.item===d.item&&typeof c.statement?.text==='string'&&c.statement.text.startsWith(`起草用例“${x.data.title??''}”与已索引用例重复`)))) known=false;
     const expected=new Set(sameTitle.map(([key])=>key));
-    const equal=covered&&known?expected.size===hub.size&&[...expected].every(k=>hub.has(k)):null;
+    const expectedPending = covered && sameNegative.length > sameTitle.length;
+    const titleEqual=covered&&known?expected.size===hub.size&&[...expected].every(k=>hub.has(k)):null;
+    const unread = views.some((v:any)=>v.skipped>0);
+    const equal=expectedPending||unread?null:titleEqual;
+    const gap = !covered ? { fact: 'complete_command_index', action: 'request_complete_index_export', owner: 'Claude' }
+      : expectedPending ? { fact: 'existing_case_expected_text_and_bound_original_identity', action: 'request_indexed_case_originals', owner: 'Claude' }
+      : unread ? { fact: 'unread_indexed_documents', action: 'retry_source_sync_and_export_complete_index', owner: 'Claude' }
+      : !known ? { fact: 'current_duplicate_claim_set', action: 'replay_submission_and_read_current_result', owner: 'Claude' } : undefined;
     return { draft:d.draft, sameCommands:covered?candidates.length:null, sameNegative:covered?sameNegative.length:null, sameTitle:covered?sameTitle.length:null,
-      verdict:covered&&known?(sameTitle.length>0?REFUTE:SUPPORT):UNKNOWN, reason:covered&&known?undefined:INTEGRITY, equal };
+      verdict:gap?UNKNOWN:(sameTitle.length>0?REFUTE:SUPPORT), reason:gap?INTEGRITY:undefined, equal, titleEqual, gap };
   });
-  return { drafts:details.length, details, skipped:Math.max(...views.map((v:any)=>v.skipped)), expectedBranch:'not_recountable',
+  return { drafts:details.length, details, skipped:Math.max(...views.map((v:any)=>v.skipped)), expectedBranch:details.some(d=>d.gap?.fact==='existing_case_expected_text_and_bound_original_identity')?'requires_originals':'not_needed',
     equal:details.filter(d=>d.equal===true).length,different:details.filter(d=>d.equal===false).length,unknown:details.filter(d=>d.equal===null).length,
     passed:details.length>0&&details.every(d=>d.equal===true) };
 }
 export function renderRecount(report: ReturnType<typeof recountDuplicates>): string {
-  return [...report.details.map(d=>`草稿 ${d.draft}：同命令集合 ${d.sameCommands??'未知'}；同反向标记 ${d.sameNegative??'未知'}；同标题 ${d.sameTitle??'未知'}；比对 ${d.equal===null?'未知':d.equal?'通过':'不通过'}`),
-    `跳过文档 ${report.skipped}；不重复结论只覆盖读到的文档`, '期望结果相同分支：没法重算', `查重：${report.passed?'通过':'不通过'}`].join('\n');
+  return [...report.details.map(d=>`草稿 ${d.draft}：同命令集合 ${d.sameCommands??'待补证'}；同反向标记 ${d.sameNegative??'待补证'}；同标题 ${d.sameTitle??'待补证'}；比对 ${d.equal===null?'设计缺口':d.equal?'通过':'不通过'}`),
+    ...report.details.filter(d=>d.gap).map(d=>`草稿 ${d.draft}：设计缺口；缺事实 ${d.gap!.fact}；下一步 ${d.gap!.action}；责任人 ${d.gap!.owner}`),
+    `跳过文档 ${report.skipped}；不重复结论只覆盖读到的文档`, `期望结果相同分支：${report.expectedBranch==='requires_originals'?'设计缺口；缺已有用例期望文字与锁定原件身份；已请求集成者 Claude 补证':'命令集合或反向标记已排除，或标题已确定全部匹配'}`, `查重：${report.passed?'通过':'不通过'}`].join('\n');
 }
 export function main(argv=process.argv.slice(2)):number{
   const get=(name:string)=>{const i=argv.indexOf('--'+name);return i<0?undefined:argv[i+1];};
   const indexes=argv.flatMap((v,i)=>v==='--index'&&argv[i+1]?[argv[i+1]]:[]);
   if(!indexes.length||!get('drafts')||!get('commands')||!get('result')){process.stderr.write('用法：--index <文件> [--index …] --drafts <文件> --commands <文件> --result <文件>\n');return 2;}
-  try {const report=recountDuplicates(indexes.map(p=>JSON.parse(readFileSync(p,'utf8'))),JSON.parse(readFileSync(get('drafts')!,'utf8')),readFileSync(get('commands')!,'utf8'),JSON.parse(readFileSync(get('result')!,'utf8')));process.stdout.write(renderRecount(report)+'\n');return report.passed?0:1;}catch{process.stderr.write('查重输入：不通过\n');return 1;}
+  try {const report=recountDuplicates(indexes.map(p=>JSON.parse(readFileSync(p,'utf8'))),JSON.parse(readFileSync(get('drafts')!,'utf8')),decodeCommandXml(readFileSync(get('commands')!)),JSON.parse(readFileSync(get('result')!,'utf8')));process.stdout.write(renderRecount(report)+'\n');return report.passed?0:1;}catch{process.stderr.write('查重输入：不通过\n');return 1;}
 }
 if(import.meta.main)process.exitCode=main();

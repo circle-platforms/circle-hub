@@ -1,11 +1,11 @@
 // Synthetic tests of accept/defect-to-case-compare.ts: the head-overlap ratios, the verbatim report read from the
 // Hub's claims (never recomputed), and the duplicate-set comparison in both directions and the equal case.
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { computeComparison, draftsOf, main, renderComparison } from './defect-to-case-compare.ts';
+import { computeComparison, draftsOf, main, renderComparison, outsideGit, writePrivateJson, comparisonDetails } from './defect-to-case-compare.ts';
 
 const docGold = {
   document: '24110',
@@ -246,7 +246,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
       writeFileSync(commandsFile, syntheticXml, 'utf8');
 
       const code = main(['--gold', goldFile, '--drafts', draftsFile, '--result', resultFile, '--commands', commandsFile]);
-      assert.equal(code, 0);
+      assert.equal(code, 1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -264,4 +264,19 @@ test('parameter combinations have all three categories and reverse coverage',()=
   const report=computeComparison(docGold,submissionOf(draft('a','widget health interval pool1 5'),draft('b','widget health interval pool1 6'),draft('c','widget new')),resultWith([]),{commandTreeXml:commands});
   assert.deepEqual([report.parameters!.same,report.parameters!.different,report.parameters!.absent],[1,1,1]);
   assert.equal(report.parameters!.docRatio,1/3);
+});
+
+test('details are positional and private destinations cannot be in this worktree or its Git directory',()=>{
+  assert.throws(()=>outsideGit(join(import.meta.dirname,'forbidden-details.json')));
+  const detail=comparisonDetails(computeComparison(docGold,submissionOf(draft('PRIVATE_TITLE','widget health interval pool1 5')),resultWith([refuteQuoteClaim])));
+  assert.ok(!JSON.stringify(detail).includes('PRIVATE_TITLE'));
+});
+test('private details are written only as positions and categories with restrictive permissions',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-private-details-'));
+  try{
+    const comparison=computeComparison(docGold,submissionOf(draft('PRIVATE_TITLE','widget health interval pool1 5')),resultWith([refuteQuoteClaim]));
+    const path=join(dir,'details.json');writePrivateJson(path,comparisonDetails(comparison));
+    assert.ok(!readFileSync(path,'utf8').includes('PRIVATE_TITLE'));
+    assert.equal(statSync(path).mode&0o777,0o600);
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });

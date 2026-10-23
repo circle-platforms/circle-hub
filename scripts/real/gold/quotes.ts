@@ -48,13 +48,13 @@ export function parseQuoteReference(reference: string): Target | null {
   return null;
 }
 export interface QuoteInputs { sources?: ReadonlyMap<string, Uint8Array>; manual?: readonly Uint8Array[]; run?: unknown; fixField?: string }
-export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null }
-const unknown = (category: QuoteFinding['category'], why: Reason = reason('no_check'), scope: QuoteFinding['scope'] = 'fragment'): QuoteFinding => ({ verdict: UNKNOWN, category, reason: why, scope, expectedVerbatim: null });
+export interface QuoteFinding { verdict: Verdict; category: 'fix' | 'defect_other' | 'manual' | 'other' | 'unknown_defect_field'; reason?: Reason; scope: 'fragment' | 'necessary'; expectedVerbatim: boolean | null; gap?: { fact: string; action: string; owner: string } }
+const unknown = (category: QuoteFinding['category'], why: Reason = reason('no_check'), scope: QuoteFinding['scope'] = 'fragment'): QuoteFinding => ({ verdict: UNKNOWN, category, reason: why, scope, expectedVerbatim: null, gap: { fact: why === 'missing_input' ? 'referenced_source_bytes_or_manual' : 'reference_parser_or_fragment_rule', action: why === 'missing_input' ? 'export_original_and_retry' : 'request_parser_rule_from_named_integrator', owner: 'Claude' } });
 function sliceRange(text: string, range?: [number, number]): string | null {
   if (!range) return text;
   const bytes = Buffer.from(text);
   if (range[1] > bytes.length) return null;
-  try { return new TextDecoder('utf8', { fatal: true }).decode(bytes.subarray(...range)); } catch { return null; }
+  try { return new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(...range)); } catch { return null; }
 }
 function sourceText(bytes: Uint8Array, target: Target): string | null | undefined {
   let text: string;
@@ -65,8 +65,8 @@ function sourceText(bytes: Uint8Array, target: Target): string | null | undefine
     let value: unknown;
     try { value = JSON.parse(text); } catch { return null; }
     for (const raw of p.slice(1)) {
-      if (/~(?![01])/u.test(raw)) return null;
-      const token = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+      // json@1 selectors use percent-escaped member names, not rec-reference JSON Pointer escaping.
+      const token = raw;
       if (!object(value) && !Array.isArray(value)) return null;
       if (Array.isArray(value) && !/^(0|[1-9]\d*)$/.test(token)) return null;
       if (!Object.hasOwn(value as object, token)) return null;
@@ -90,18 +90,19 @@ function sourceText(bytes: Uint8Array, target: Target): string | null | undefine
 }
 export function judgeQuote(reference: string, quote: string, expected: string, inputs: QuoteInputs): QuoteFinding {
   const target = parseQuoteReference(reference);
-  if (!target) return { ...unknown('other'), verdict: REFUTE, reason: undefined };
+  if (!target) return { ...unknown('other'), verdict: REFUTE, reason: undefined, gap: undefined };
   const run = object(inputs.run) && object(inputs.run.run) ? inputs.run.run : object(inputs.run) ? inputs.run : {};
   const defectDigests = new Set((Array.isArray(run.sources) ? run.sources : []).filter((s: any) => s.slot === 'defects').flatMap((s: any) => /^src:([a-f0-9]{64})/.exec(s.reference ?? '')?.[1] ?? []));
   const manuals = inputs.manual ?? [];
   let category: QuoteFinding['category'] = target.scheme === 'tree' && target.digest === run.root ? 'manual' : 'other';
   if (target.scheme === 'src' && defectDigests.has(target.digest!)) {
-    category = !inputs.fixField ? 'unknown_defect_field' : target.parser === 'json@1' && target.segments?.at(-1)?.replace(/~1/g, '/').replace(/~0/g, '~') === inputs.fixField ? 'fix' : 'defect_other';
+    category = !inputs.fixField ? 'unknown_defect_field' : target.parser === 'json@1' && target.segments?.at(-1) === inputs.fixField ? 'fix' : 'defect_other';
   } else if (target.scheme === 'src' && manuals.some(b => sha256(b) === target.digest)) category = 'manual';
   let text: string | null | undefined, scope: QuoteFinding['scope'] = 'fragment';
   if (target.scheme === 'tree') {
     scope = 'necessary';
-    if (target.digest !== run.root) return { ...unknown('other'), verdict: REFUTE, scope, reason: undefined };
+    if (typeof run.root !== 'string' || !/^[a-f0-9]{64}$/.test(run.root)) return { ...unknown(category, reason('missing_input'), scope), gap: { fact: 'locked_run_root', action: 'read_run_show', owner: 'Claude' } };
+    if (target.digest !== run.root) return { ...unknown('other'), verdict: REFUTE, scope, reason: undefined, gap: undefined };
     if (manuals.length === 0) return unknown(category, reason('missing_input'), scope);
     const texts = manuals.map(b => new TextDecoder('utf8', { fatal: true }).decode(b));
     const found = texts.find(t => quoteMatches(t, quote));
@@ -111,10 +112,11 @@ export function judgeQuote(reference: string, quote: string, expected: string, i
   const bytes = inputs.sources?.get(target.digest!) ?? manuals.find(b => sha256(b) === target.digest);
   if (!bytes) return unknown(category, reason('missing_input'));
   if (sha256(bytes) !== target.digest) throw new Error('source integrity mismatch');
+  if (!Array.isArray(run.sources) && category === 'other') return { ...unknown(category, reason('missing_input')), gap: { fact: 'run_source_bindings', action: 'read_run_show', owner: 'Claude' } };
   scope = target.parser === 'markdown@1' ? 'necessary' : 'fragment';
   text = sourceText(bytes, target);
   if (text === undefined) return unknown(category, reason('no_check'), scope);
-  if (text === null) return { ...unknown(category), verdict: REFUTE, reason: undefined, scope };
+  if (text === null) return { ...unknown(category), verdict: REFUTE, reason: undefined, gap: undefined, scope };
   return { verdict: quoteMatches(text, quote) ? SUPPORT : REFUTE, category, scope, expectedVerbatim: quoteMatches(text, expected) };
 }
 export function quotesReport(submission: unknown, hub: unknown, inputs: QuoteInputs) {

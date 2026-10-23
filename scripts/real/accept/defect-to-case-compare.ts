@@ -3,15 +3,9 @@
 // - --gold: the independent gold of the existing regression document (scripts/real/gold/regression-doc.ts);
 // - --drafts: the run's submission (submit_result body; the validation result carries no drafts, so it is a third input);
 // - --result: the run's validation result (validation@1 JSON).
-// The report holds three things, and nothing is recomputed that the Hub already judged:
-// 1. the overlap of command heads: how many of the drafts' heads the existing document uses too, and the reverse
-//    (reported, never a pass/fail);
-// 2. whether every expected result's quotation was judged verbatim by the Hub — read from the `grounded`
-//    requirement's claims in the validation result, never re-judged here;
-// 3. the drafts identical to an existing case (command head and every parameter value equal): the set this script
-//    computes from gold and submission against the set the Hub's duplicate check flagged
-//    (defect-to-case.duplicate_case claims), and whether the two sets are equal.
-//   node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json>
+// Command domains and source quotations are rejudged independently before comparison with Hub requirement statuses.
+// A document overlap is descriptive only; full-index duplicate recounting is a separate oracle.
+// Optional inputs: --commands, --run, --sources, --manual, --fix-field and --details (outside Git).
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, realpathSync, lstatSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
@@ -25,8 +19,10 @@ import {
   type SplitCommand,
 } from '../gold/regression-doc.ts';
 
+import { VERDICT } from '../../../contracts/generated/vocabulary.ts';
+const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
 import { quotesReport, type QuoteInputs } from '../gold/quotes.ts';
-import { domainReport } from '../gold/command-domains.ts';
+import { domainReport, decodeCommandXml } from '../gold/command-domains.ts';
 
 export interface DraftCase {
   title: string;
@@ -187,8 +183,8 @@ function claimsOf(result: unknown): Claim[] {
 
 function quotesReportOf(result: unknown): QuotesReport {
   const claims = claimsOf(result).filter((c) => c.requirement === 'grounded');
-  const support = claims.filter((c) => c.statement?.verdict === 'support').length;
-  const problems = claims.filter((c) => c.statement?.verdict !== 'support').map((c) => `${c.statement?.verdict ?? '?'}：${c.statement?.text ?? ''}`);
+  const support = claims.filter((c) => c.statement?.verdict === SUPPORT).length;
+  const problems = claims.filter((c) => c.statement?.verdict !== SUPPORT).map((c) => `${c.statement?.verdict ?? '?'}：${c.statement?.text ?? ''}`);
   return { claims: claims.length, support, problems, allVerbatim: claims.length > 0 && support === claims.length };
 }
 
@@ -210,7 +206,7 @@ function duplicatesReportOf(
     })
     .map((draft) => draft.title);
   const hubFlagged = claimsOf(result)
-    .filter((c) => c.statement?.code === 'defect-to-case.duplicate_case' && c.statement.verdict === 'refute')
+    .filter((c) => c.statement?.code === 'defect-to-case.duplicate_case' && c.statement.verdict === REFUTE)
     .map((c) => HUB_DUPLICATE.exec(c.statement?.text ?? '')?.[1])
     .filter((title): title is string => typeof title === 'string');
   const onlyGold = goldIdentical.filter((title) => !hubFlagged.includes(title)).sort();
@@ -269,23 +265,25 @@ export function renderComparison(comparison: Comparison): string {
   lines.push('');
   lines.push('3. 与已有用例完全相同（命令头和参数值都相同）的草稿：');
   lines.push(`   gold 集合 ${d.goldIdentical.length}；Hub 集合 ${d.hubFlagged.length}；仅 gold ${d.onlyGold.length}；仅 Hub ${d.onlyHub.length}`);
-  lines.push(`   集合比对：${d.equal ? '通过' : '不通过'}`);
+  lines.push(`   回归文档命令组合对照${d.equal ? '相同' : '不同'}（仅报告，不是全量查重结论）`);
   const p = comparison.parameters;
-  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : '参数：未提供命令树，未比较');
+  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : '参数：设计缺口；缺构建命令树原件，需集成者 Claude 导出');
   if (p) {
     const items = p.domains.items;
-    lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；未知 ${p.domains.counts.unknown}`);
-    lines.push(`命令与参数：${items.length > 0 && items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}；一致 ${items.filter(i => i.comparison === 'equal').length}；不一致 ${items.filter(i => i.comparison === 'different').length}；未知 ${items.filter(i => i.comparison === 'unknown').length}`);
+    lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；暂态待补证 ${p.domains.counts.unknown}`);
+    lines.push(`命令与参数：${items.length > 0 && items.every(i => i.comparison === 'equal' && !i.hasUnknown) ? '通过' : '不通过'}；一致 ${items.filter(i => i.comparison === 'equal').length}；不一致 ${items.filter(i => i.comparison === 'different').length}；待补证条目 ${items.filter(i => i.comparison === 'unknown' || i.hasUnknown).length}`);
   }
   const independent = comparison.quoteOracle;
-  lines.push(`引文重判：支持 ${independent.counts.support}；反驳 ${independent.counts.refute}；未知 ${independent.counts.unknown}；仅必要条件 ${independent.necessaryOnly}`);
+  lines.push(`引文重判：支持 ${independent.counts.support}；反驳 ${independent.counts.refute}；暂态待补证 ${independent.counts.unknown}；仅必要条件 ${independent.necessaryOnly}`);
   for (const category of ['fix','defect_other','manual','other','unknown_defect_field']) {
     const row = independent.targets[category];
-    lines.push(`引文来源类别 ${category}：支持 ${row.support}；反驳 ${row.refute}；未知 ${row.unknown}`);
+    lines.push(`引文来源类别 ${category}：支持 ${row.support}；反驳 ${row.refute}；暂态待补证 ${row.unknown}`);
   }
   lines.push(`期望文字逐字 ${independent.expectedVerbatim}；改写 ${independent.paraphrased}（只报告）`);
   lines.push(`引文：${independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
   lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
+  const questions = evidenceQuestions(comparison);
+  if (questions.length) lines.push(`设计缺口 ${questions.length} 项；补证动作：请求集成者 Claude 按位置补齐事实后重算；不作为已完成的未知`);
   return lines.join('\n');
 }
 
@@ -297,7 +295,7 @@ export function outsideGit(path: string): string {
   if (existsSync(full) && lstatSync(full).isSymbolicLink()) throw new Error('unsafe destination');
   const actual = realpathSync(ancestor);
   const folder = lstatSync(actual).isDirectory() ? actual : dirname(actual);
-  if (spawnSync('git', ['-C', folder, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).stdout.trim() === 'true') throw new Error('repository destination');
+  if (spawnSync('git', ['-C', folder, 'rev-parse', '--is-inside-work-tree', '--is-inside-git-dir'], { encoding: 'utf8' }).stdout.split(/\s+/).includes('true')) throw new Error('repository destination');
   return full;
 }
 
@@ -307,12 +305,24 @@ export function writePrivateJson(path: string, value: unknown): void {
   writeFileSync(full, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 }
 
+export interface EvidenceQuestion { draft?: number; command?: number; expected?: number; item_position?: number; category: string; missing_fact: string; next_action: string; owner: string }
+/** An unresolved observation is a transition: each one names a fact and an executable follow-up, never a terminal verdict. */
+export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
+  const questions: EvidenceQuestion[] = [];
+  if (!comparison.parameters) questions.push({ category: 'design_gap', missing_fact: 'build_command_tree_original', next_action: 'request_command_tree_export', owner: 'Claude' });
+  for (const d of comparison.parameters?.domains.details ?? []) for (const [command, outcome] of d.outcomes.entries()) if (outcome.verdict === UNKNOWN) questions.push({ draft: d.draft, command: command + 1, category: 'design_gap', missing_fact: outcome.gap?.fact ?? 'command_domain_rule', next_action: outcome.gap?.action ?? 'request_rule_from_named_integrator', owner: 'Claude' });
+  for (const d of comparison.quoteOracle.details) if (d.verdict === UNKNOWN || d.category === 'unknown_defect_field') questions.push({ draft: d.draft, expected: d.expected, category: 'design_gap', missing_fact: d.category === 'unknown_defect_field' ? 'fix_field_binding' : d.gap?.fact ?? 'reference_fragment', next_action: d.category === 'unknown_defect_field' ? 'request_fix_field_name' : d.gap?.action ?? 'request_source_export', owner: 'Claude' });
+  for (const [item_position, item] of (comparison.parameters?.domains.items ?? []).entries()) if (item.comparison === 'unknown' && !item.hasUnknown) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_commands_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
+  for (const [item_position, item] of comparison.quoteOracle.items.entries()) if (item.comparison === 'unknown' && comparison.quoteOracle.counts.unknown === 0) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_grounded_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
+  return questions;
+}
+
 /** Details contain positions and explanatory categories only, never input strings. */
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
     ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),
     ...comparison.quoteOracle.details.map(d => ({ draft: d.draft, expected: d.expected, category: [d.category, d.verdict, d.reason ?? '', d.scope, d.expectedVerbatim === false ? 'paraphrased' : ''].filter(Boolean).join('.') })),
-    ...comparison.duplicates.goldIdentical.map((_, draft) => ({ draft: draft + 1, category: 'legacy_document_command_match' })),
+
   ];
 }
 
@@ -330,7 +340,7 @@ export function main(argv: string[]): number {
   let commandTreeXml: string | undefined;
   if (commandsPath) {
     try {
-      commandTreeXml = readFileSync(resolve(commandsPath), 'utf8');
+      commandTreeXml = decodeCommandXml(readFileSync(resolve(commandsPath)));
     } catch (error) {
       process.stderr.write('输入读取：不通过\n');
       return 1;
@@ -345,9 +355,9 @@ export function main(argv: string[]): number {
     const run = value('run') ? JSON.parse(readFileSync(value('run')!, 'utf8')) : undefined;
     const manual = value('manual') ? [readFileSync(value('manual')!)] : undefined;
     const comparison = computeComparison(gold, submission, result, { commandTreeXml, sources, run, manual, fixField: value('fix-field') });
-    if (value('details')) writePrivateJson(value('details')!, comparisonDetails(comparison));
+    if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison).map(q => ({ ...q, action_status: 'requested' })) });
     process.stdout.write(`${renderComparison(comparison)}\n`);
-    return 0;
+    return evidenceQuestions(comparison).length > 0 ? 1 : 0;
   } catch (error) {
     process.stderr.write('输入或明细写入：不通过\n');
     return 1;

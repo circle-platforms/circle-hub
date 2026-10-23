@@ -36,3 +36,9 @@ test('an item the Hub satisfied is a disagreement when the independent domain is
   const hub={partitions:{delivered:[{item:'synthetic-item',requirements:[{requirement:'commands',status:'satisfied'}]}]}};
   assert.equal(domainReport(submission,hub,xml('<arg name="value" type="U16"/>')).items[0].comparison,'different');
 });
+test('a valid negative case needs a refutation and unknown lines are still disclosed separately',()=>{
+  const submission={items:[{item:'i',slots:{cases:[{data:{negative:true,expects_refutation:true,steps:[{command:'widget set 70000\nunrecognized command'}]}}]}}]};
+  const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'satisfied'}]}]}};
+  const report=domainReport(submission,hub,xml('<arg name="value" type="U16"/>'));
+  assert.equal(report.items[0].verdict,'support');assert.equal(report.items[0].hasUnknown,true);assert.equal(report.counts.unknown,1);
+});
