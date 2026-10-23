@@ -110,3 +110,10 @@ test('review 3: preflight rejects missing logs before a read and failures retain
     assert.doesNotMatch(checked.output, /PRIVATE-SYNTHETIC-REASON|失败（检查未完成）/);
   }
 });
+
+test('review 4: Latin-1 responses remain checkable and their text is never printed', async () => {
+  const value = 'synthetic-café-menu'; const body = Buffer.from(`<commands><menu name="${value}"/></commands>`, 'latin1');
+  const clean = await inspectSynthetic(body); assert.equal(clean.result.ok, true); assert.ok(clean.result.candidates > 0);
+  const leak = await inspectSynthetic(body, { stderr: value }); assert.equal(leak.result.ok, false); assert.ok(leak.result.hits.command > 0);
+  assert.ok(!leak.output.includes(value));
+});

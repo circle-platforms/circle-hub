@@ -402,3 +402,6 @@ Smoke validates every --read and both regular log files before any CLI read. Fai
 actions (log rotation/size, exports, identity mismatch, decoding, or the missing CLI read line with its exit code).
 The protocol-code field contains only registered connector/core codes; local checker failures are separate prose.
 Raw CLI errors, response text and paths are never copied into the report line.
+
+Smoke decodes UTF-8 first and falls back to Windows-1252 for single-byte build-site pages.
+NUL-bearing or undecodable originals fail as a checker encoding limit, with the read outcome kept separate.

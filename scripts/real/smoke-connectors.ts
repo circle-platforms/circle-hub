@@ -139,8 +139,12 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
         try { bytes = await readFile(target); } catch { exported = false; fail('导出文件缺失；下一步核对 original export 的输出契约'); continue; }
         if (bytes.length !== artifact.size || createHash('sha256').update(bytes).digest('hex') !== artifact.sha256) { exported = false; fail('原件摘要或大小不符；下一步重新核对导出的原件身份'); continue; }
         let text: string;
+        if (bytes.includes(0)) { exported = false; fail('原件含 NUL，不能按支持的文本编码核对；下一步选择 UTF-8 或单字节文本读取'); continue; }
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
-        catch { exported = false; fail('原件不能按 UTF-8 解码；下一步按来源媒体类型补充编码支持'); continue; }
+        catch {
+          try { text = new TextDecoder('windows-1252', { fatal: true }).decode(bytes); }
+          catch { exported = false; fail('原件不能解码；下一步按来源媒体类型补充编码支持'); continue; }
+        }
         candidates.push(...responseStrings(text, request.key));
       }
       const serviceText = (await Promise.all(before.map(appended))).join('\n');
