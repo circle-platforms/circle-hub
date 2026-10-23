@@ -39,13 +39,15 @@ export function escapeTableText(value:string):string {
 export function caseText(model:TableModel,index:number,cases:ReadonlySet<number>,preconditionPriority:number|null):string {
   const source=model.nodes[index],tags=Array.isArray(source.data.resource)?source.data.resource.filter((value):value is string=>typeof value==='string'):[];
   let out=source.text+(tags.length?'；标签：'+tags.join('，'):'');
+  // Inside a case, every tagged node is an independent nested case under both review rules.
+  const boundary=(at:number)=>cases.has(at)||Array.isArray(model.nodes[at].data.resource)&&(model.nodes[at].data.resource as unknown[]).length>0;
   let step=0;
   const descendants=(at:number):string[]=>{
-    if(cases.has(at))return [];
+    if(boundary(at))return [];
     return [model.nodes[at].text,...model.nodes[at].children.flatMap(descendants)];
   };
   for(const child of source.children){
-    if(cases.has(child))continue;
+    if(boundary(child))continue;
     const node=model.nodes[child];
     if(node.children.length===0)out+='；'+(preconditionPriority!==null&&node.data.priority===preconditionPriority?'前置：':'期望：')+node.text;
     else out+='；步骤 '+String(++step)+'：'+descendants(child).join(' → ');

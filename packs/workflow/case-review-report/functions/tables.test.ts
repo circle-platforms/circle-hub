@@ -164,3 +164,10 @@ test('subitem notes begin after a blank line outside the GFM case table',()=>{
   const lines=reviewTables(input(small(),[b])).markdown.split('\n');const at=lines.findIndex(line=>line.startsWith('子项上的发现：'));
   assert.ok(at>1);assert.equal(lines[at-1],'');assert.match(lines[at-2],/^\| 1 \|/);
 });
+
+test('an undelivered nested case and its expected subtree never enter the outer original cell',()=>{
+  const model=parse({root:node('root','合成嵌套',[node('group','子项',[node('outer','外层用例',[node('expected','外层期望'),node('inner','未交付内层',[node('inner-e','内层期望')],{resource:['Functional'],priority:2}),node('step','普通步骤',[node('step-e','步骤期望')],{priority:2})],{resource:['Functional'],priority:2})])])});
+  for(const caseRule of ['marked','tagged']){const original=projectItems({documents:[{documentId:'synthetic',model}],parameters:{caseRule},limits:{outputBytes:Infinity}});assert.ok('items'in original);assert.ok(original.items.some(item=>item.location.selector==='n/inner'));}
+  const result=reviewTables({...input(model,[block(['outer'])]),foldEmpty:false});const row=result.markdown.split('\n').find(line=>line.startsWith('| 1 |'))!;
+  assert.ok(!row.includes('未交付内层'));assert.ok(!row.includes('内层期望'));assert.ok(row.includes('普通步骤'));assert.ok(row.includes('步骤期望'));assert.equal(result.counts.total.cases,1);
+});
