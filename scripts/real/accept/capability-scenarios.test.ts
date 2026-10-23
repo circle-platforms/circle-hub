@@ -288,3 +288,15 @@ test('truncated, skipped, duplicate null groups and wrong source pages cannot pr
   const logs = turnsOf('运行 run_synthetic', 4); logs[2].toolResults[0].text = logs[2].toolResults[0].text.replace(FACET_SOURCE, `src:${'c'.repeat(64)}`);
   assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
 });
+test('scope and sweep answers are never supplied or contaminated by placed facet rows', () => {
+  const path = '/commands/widget/add'; const id = 'synthetic-doc:case';
+  const scope = regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [path], removed: [], inScope: [{ id, path }], outOfScope: [], caseCommandsUnplaced: 0 });
+  const sweep = maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [{ id, path, removed: false }], caseCommandsUnplaced: 0 });
+  const logs = turnsOf(`运行 run_synthetic。条目 ${id} ${path} 有字段差异。`);
+  const facet = { ...facetValue(), rows: [{ values: { commands: '/commands/widget/other' }, count: 1 }], total: 1, notes: [`${id} ${path} 有字段差异`] };
+  logs[2].toolResults[0].text = sourceResult(facet);
+  assert.ok(allOk(scope, logs)); assert.ok(allOk(sweep, logs));
+  logs[1].toolResults[0].text = `运行 run_synthetic。条目 ${id} 没有原因。\n- 线索 ${FACET_SOURCE}（输入 facets）`;
+  assert.ok(scope.check(logs).some((v) => !v.ok && v.name.includes('范围里的用例')));
+  assert.ok(sweep.check(logs).some((v) => !v.ok && v.name.includes('命令已改')));
+});

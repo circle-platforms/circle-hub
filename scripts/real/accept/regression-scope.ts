@@ -45,7 +45,8 @@ export default function scenario(gold: ScopeGold): Scenario {
         ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.later}?kind=case&by=commands` } } } }]
         : readFacets(turn, '对比完成。'),
     check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
+      const answerTurns = withoutFacetPages(turns);
+      const text = resultTexts(answerTurns).join('\n');
       const hubPaths = [...text.matchAll(/\/commands\/[a-z0-9_.\-/]+/gi)].map((m) => m[0]);
       const unique = [...new Set(hubPaths)];
       const changedChecks = pathSetMatches(area, '变更路径（范围里的原因路径加未覆盖的路径）', gold.changed, unique.filter((p) => !gold.removed.includes(p)));
@@ -72,7 +73,7 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
         ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
       }));
-      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
 }
@@ -147,4 +148,10 @@ export function facetCountCheck(area: string, expected: number, turns: readonly 
     }
   } catch { valid = false; }
   return { area, name: '分面未归位数与独立抽取相符', expected: String(expected), actual: valid && actual !== null ? String(actual) : '输入不全', ok: valid && actual !== null && Number.isSafeInteger(expected) && expected >= 0 && actual === expected };
+}
+
+/** Hint source pages are observations for the numeric check, never the scope answer being judged. */
+export function withoutFacetPages(turns: readonly LoggedTurn[]): LoggedTurn[] {
+  const reference = boundFacetReference(resultTexts(turns));
+  return turns.map((turn) => ({ ...turn, toolResults: turn.toolResults.filter((r) => !reference || !r.text.startsWith(`内容 ${reference}`)) }));
 }

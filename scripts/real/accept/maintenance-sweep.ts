@@ -3,7 +3,7 @@
 // marked command-changed sits on a modified path, and the changed ones show a field difference.
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
-import { facetReader, facetCountCheck } from './regression-scope.ts';
+import { facetReader, facetCountCheck, withoutFacetPages } from './regression-scope.ts';
 import { lengthBounded, runStarted } from './checks.ts';
 
 export interface SweepCaseGold {
@@ -37,8 +37,9 @@ export default function scenario(gold: SweepGold): Scenario {
         ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.earlier}?kind=case&by=commands` } } } }]
         : readFacets(turn, '巡检完成。'),
     check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
-      const checks: Check[] = [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns)];
+      const answerTurns = withoutFacetPages(turns);
+      const text = resultTexts(answerTurns).join('\n');
+      const checks: Check[] = [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, answerTurns)];
       for (const c of gold.cases) {
         const at = text.indexOf(c.id);
         const near = at >= 0 ? text.slice(Math.max(0, at - 400), at + 400) : '';
