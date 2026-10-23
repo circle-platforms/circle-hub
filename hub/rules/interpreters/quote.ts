@@ -41,6 +41,7 @@ export const quoteInterpreter = defineInterpreter({
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'retain_only') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件含凭据，原文不可读；缺管理员接受这份来源的事实，请请求管理员接受，接受后自动重评`, { pointer, grounds: [ref] }));
           else if (why === 'too_large') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段超过大小上限，请改引更小的片段`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'integrity_unproven') outcomes.push(unknown(base, 'integrity_unproven', `引用 ${ref} 的完整性未证明；缺与摘要一致的可信原文，请管理员从可信备份恢复记录或原始字节后重新核验`, { pointer, grounds: [ref], data: { why } }));
           else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件暂时取不回；缺该片段的可读原文，请重读后重评`, { pointer, grounds: [ref] }));
           else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段尚未读到；缺片段原文，请重新读取并重评`, { pointer, grounds: [ref] }));
           continue;

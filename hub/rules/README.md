@@ -309,3 +309,6 @@ model's T04 `fragment_read` axis. Resolution state, unknown reason and read tier
 as a substitute for the fragment read state. Authority and the refined grades are recorded in [progress decision 36](../../docs/hub-r4-progress.md).
 
 The boundary applies B01 R[4] to quotation references and grounds, including cross-item grounds. Record targets and locations remain resolvable without being promoted to grounds. Its cache separates those uses.
+
+片段读取 integrity_unproven 沿用原因轴同码标签“完整性未证明”（决定 36 的模型负责人补充）。
+这类未知须由管理员从可信备份恢复记录或原始字节后重新核验；unavailable 只表示暂时读取故障。

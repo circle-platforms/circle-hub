@@ -24,8 +24,9 @@ after(async function afterHook() {
 const EXPECTED: Record<string, string> = { c1: '3 区开始浇灌，15 分钟后停止', c2: '列出 8 个分区的状态' };
 
 /** A run whose c4 findings slot carries the quote deep in data (data.expected_quote); returns the findings requirement. */
-const quoteRun = async (h: Harness, map: string, quote: { text: string; reference: string }, notes?: string) => {
+const quoteRun = async (h: Harness, map: string, quote: { text: string; reference: string }, notes?: string, afterBind?: () => void) => {
   const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map }, ...(notes ? { notes: [{ reference: notes }] } : {}) } }, h.call())).run!;
+  afterBind?.();
   const reference = quote.reference === '@c2expected'
     ? expectedRef(map, run).replace('c1aaaaaaaaaae0','c2bbbbbbbbbbe0')
     : quote.reference === '@c1expected' ? expectedRef(map, run) : quote.reference;
@@ -310,4 +311,24 @@ test('valid data-only references longer than 600 characters use the boundary len
   const result=await quoteRun(h,map,{text:'知识树',reference});
   assert.equal(result.claims.filter(c=>c.statement.verdict==='support' && c.statement.text.includes('逐字一致')).length,2);
   assert.ok(!result.claims.some(c=>c.statement.verdict==='refute'||c.statement.verdict==='unknown'));
+});
+
+test('a corrupted bound record retains the integrity grade and requests trusted restoration', { skip }, async t => {
+  const { h, map } = await open(); t.after(() => h.close());
+  h.review.workflow.inputs.find(i => i.slot === 'notes')!.accepts.push('application/json');
+  const owner = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, h.call())).run!;
+  const action = await h.kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { run: owner.run, text: '合成记录片段' } });
+  const original = h.kit.store.get.bind(h.kit.store);
+  let tampered = false;
+  t.mock.method(h.kit.store, 'get', async (digest: string) => {
+    const record = await original(digest);
+    return tampered && record !== null && digest === action.digest ? { ...record, body: { ...(record.body as object), text: '被改动的合成字节' } } : record;
+  });
+  const findings = await quoteRun(h, map, { text: '合成记录片段', reference: `rec:${action.digest}#/text` }, `rec:${action.digest}`, () => { tampered = true; });
+  const claim = findings.claims.find(c => c.statement.verdict === 'unknown')!;
+  assert.ok(claim);
+  assert.equal(claim.statement.reason, 'integrity_unproven');
+  assert.equal(claim.statement.data?.why, 'integrity_unproven');
+  assert.match(claim.statement.text, /管理员.*可信备份.*恢复.*重新核验/);
+  assert.doesNotMatch(claim.statement.text, /暂时|重读/);
 });
