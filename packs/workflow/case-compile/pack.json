@@ -123,13 +123,13 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "8c0aced4d3c3e26489e14cbb76ea33c5a3071450939b9c7ea79e8fa47d364837",
-      "size": 16051
+      "sha256": "a2e6549cbd005c739386a648438b18adcdf3f6e3fb47d24a7f904c592d36ac52",
+      "size": 16891
     },
     {
       "path": "functions/xlsx-model.ts",
-      "sha256": "f93462bd0dc2eccf600ba4cba6a6a0125432678365a4084322d2c1ffc92e75c5",
-      "size": 2236
+      "sha256": "814e83be1b42f8b0314c068b17d96b7f78ddbaf2e1d22bc42576f0e8d74a290b",
+      "size": 2358
     },
     {
       "path": "functions/zip-store.ts",
