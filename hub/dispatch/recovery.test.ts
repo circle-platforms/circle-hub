@@ -106,3 +106,10 @@ test('a compatible observation policy repair lets an administrator reconcile the
   const result=await c.service.dispose(c.admin,original.job,{choice:'reconcile',remote_id:'synthetic-remote'});
   assert.equal(result.outcome,'effective');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
+
+test('R15 terminal hangup during the one submission does not cancel it',{timeout:30000},async t=>{
+  let child:ChildProcess|undefined;
+  const c=await setup({onSubmit:async()=>{child!.kill('SIGHUP');await new Promise(resolve=>setTimeout(resolve,30));}});t.after(()=>c.close());
+  const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
+  const exit=await w.exited;assert.equal(exit.code,0);assert.equal(exit.signal,null);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+});

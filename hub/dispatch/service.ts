@@ -185,9 +185,9 @@ export class DispatchService {
       if (!this.sameFences(fresh, await this.options.leases.holderSnapshot(d.resources))) { await this.notSent(binding,session,remote,stop,'意图后围栏改变，尚未调用提交');return this.status(by,binding.job); }
       if(!pulse.held() || this.now().getTime()>=Date.parse(notAfter)) { await stop();await this.release(binding,session,remote);await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'目标租约确认失效，尚未调用提交',next_action:'恢复目标租约后重新预检与派发'});return this.status(by,binding.job); }
       // Signals must not cancel an in-flight effect; SIGKILL is recovered from the already committed intent.
-      const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore);
+      const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore); process.on('SIGHUP',ignore);
       let answer: Exchange;
-      try { submitInvoked=true;answer = await session.call('submit', context,Math.max(1,Date.parse(notAfter)-this.now().getTime())); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
+      try { submitInvoked=true;answer = await session.call('submit', context,Math.max(1,Date.parse(notAfter)-this.now().getTime())); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP',ignore); }
       const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
       if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
