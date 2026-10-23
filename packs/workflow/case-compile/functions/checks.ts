@@ -4,7 +4,7 @@
 import { isRecord, markers, type Outcome } from './text.ts';
 import { isForbidden, lookupMethod, orderedParams, paramProblem, parseContract, type Contract } from './contract.ts';
 import { parseManifest, type ManifestBed } from './manifest.ts';
-import { bedFacts, isBackend, isBlind, listenerOf, readAddress, type BedFacts } from './bed.ts';
+import { bedFacts, isBlind, isServerInterface, listenerOf, readAddress, type BedFacts } from './bed.ts';
 import { generatePlanJson, diffPlan, parsePlan, readSlots, sha256Hex } from './plan.ts';
 
 /** The subject as the checks read it: the item, its plan data, and the raw contract and manifest documents re-parsed here. */
@@ -49,12 +49,12 @@ function support(subject: CheckSubject, statement: string, data?: { [key: string
   return { verdict: 'support', statement: `${statement}${mark(subject)}`, grounds: groundsOf(subject), tier: TIER, item: subject.item, ...(data === undefined ? {} : { data }) };
 }
 
-function refute(subject: CheckSubject, code: string, statement: string, data?: { [key: string]: unknown }): Outcome {
-  return { verdict: 'refute', code: `case-compile.${code}`, statement: `${statement}${mark(subject)}`, grounds: groundsOf(subject), tier: TIER, item: subject.item, ...(data === undefined ? {} : { data }) };
+function refute(subject: CheckSubject, code: string, statement: string, pointer: string, data?: { [key: string]: unknown }): Outcome {
+  return { verdict: 'refute', code: `case-compile.${code}`, statement: `${statement}${mark(subject)}`, grounds: groundsOf(subject), tier: TIER, item: subject.item, pointer, ...(data === undefined ? {} : { data }) };
 }
 
-function unknown(subject: CheckSubject, reason: NonNullable<Outcome['reason']>, statement: string): Outcome {
-  return { verdict: 'unknown', reason, statement: `${statement}${mark(subject)}`, grounds: [], tier: TIER, item: subject.item };
+function unknown(subject: CheckSubject, reason: NonNullable<Outcome['reason']>, statement: string, pointer?: string): Outcome {
+  return { verdict: 'unknown', reason, statement: `${statement}${mark(subject)}`, grounds: [], tier: TIER, item: subject.item, ...(pointer === undefined ? {} : { pointer }) };
 }
 
 function noContract(subject: CheckSubject): Outcome[] {
@@ -62,7 +62,7 @@ function noContract(subject: CheckSubject): Outcome[] {
 }
 
 function unreadableSlots(subject: CheckSubject): Outcome[] {
-  return [unknown(subject, 'missing_input', '槽位形状读不出来（形状问题由合约检查报告），本项无法核对')];
+  return [unknown(subject, 'missing_input', '槽位形状读不出来（形状问题由合约检查报告），本项无法核对', '/data')];
 }
 
 /** (object, method) in the contract, not forbidden, parameter count and types right. */
@@ -74,7 +74,7 @@ export function checkContractShape(input: unknown): Outcome[] {
   if (!read.ok) {
     return read.problems.slice(0, MAX_PROBLEMS).map((problem) => {
       const code = problem.pointer.startsWith('/blocks/') ? 'block_unknown' : 'slots_invalid';
-      return refute(subject, code, `槽位 ${problem.pointer === '' ? '整体' : problem.pointer}：${problem.message}`);
+      return refute(subject, code, `槽位 ${problem.pointer === '' ? '整体' : problem.pointer}：${problem.message}`, `/data${problem.pointer}`);
     });
   }
   const slots = read.slots;
@@ -83,22 +83,22 @@ export function checkContractShape(input: unknown): Outcome[] {
     const at = `第 ${i + 1} 步（${step.object}.${step.method}）`;
     const method = lookupMethod(contract, step.object, step.method);
     if (method === null) {
-      out.push(refute(subject, 'method_unknown', `${at} 不在合约里`));
+      out.push(refute(subject, 'method_unknown', `${at} 不在合约里`, `/data/steps/${i}`));
       continue;
     }
     if (isForbidden(contract, step.object, step.method)) {
-      out.push(refute(subject, 'method_forbidden', `${at} 是合约禁用的组合`));
+      out.push(refute(subject, 'method_forbidden', `${at} 是合约禁用的组合`, `/data/steps/${i}`));
       continue;
     }
     const undeclared = Object.keys(step.params).filter((name) => !method.params.some((param) => param.name === name));
-    if (undeclared.length > 0) out.push(refute(subject, 'param_arity', `${at} 写了合约没有声明的参数 ${undeclared.join('、')}`));
+    if (undeclared.length > 0) out.push(refute(subject, 'param_arity', `${at} 写了合约没有声明的参数 ${undeclared.join('、')}`, `/data/steps/${i}/params/${undeclared[0]}`));
     const missing = method.params.filter((param) => !param.optional && param.default === null && step.params[param.name] === undefined);
-    if (missing.length > 0) out.push(refute(subject, 'param_arity', `${at} 缺必填参数 ${missing.map((param) => param.name).join('、')}`));
+    if (missing.length > 0) out.push(refute(subject, 'param_arity', `${at} 缺必填参数 ${missing.map((param) => param.name).join('、')}`, `/data/steps/${i}`));
     for (const param of method.params) {
       const value = step.params[param.name];
       if (value === undefined) continue;
       const problem = paramProblem(param, value);
-      if (problem !== null) out.push(refute(subject, problem.kind === 'range' ? 'param_range' : 'param_type', `${at}：${problem.text}`));
+      if (problem !== null) out.push(refute(subject, problem.kind === 'range' ? 'param_range' : 'param_type', `${at}：${problem.text}`, `/data/steps/${i}/params/${param.name}`));
     }
     if (out.length >= MAX_PROBLEMS) break;
   }
@@ -114,7 +114,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   if (!read.ok) return unreadableSlots(subject);
   const slots = read.slots;
   const bed = subject.beds.find((candidate) => candidate.name === slots.bucket);
-  if (bed === undefined) return [refute(subject, 'bed_unknown', `桶 ${slots.bucket} 不是清单里的台架名（清单有 ${subject.beds.map((candidate) => candidate.name).join('、') || '（无）'}）`)];
+  if (bed === undefined) return [refute(subject, 'bed_unknown', `桶 ${slots.bucket} 不是清单里的台架名（清单有 ${subject.beds.map((candidate) => candidate.name).join('、') || '（无）'}）`, '/data/bucket')];
   const facts: BedFacts = bedFacts(bed);
   const out: Outcome[] = [];
   let addresses = 0;
@@ -129,18 +129,21 @@ export function checkAddresses(input: unknown): Outcome[] {
       if (typeof value !== 'string') continue;
       addresses++;
       const role = param.address;
+      const pointer = `/data/steps/${i}/params/${param.name}`;
       const reading = readAddress(bed, subject.leases, subject.now, value);
       if (reading.kind === 'off_bed') {
-        out.push(refute(subject, 'address_off_bed', `${at} 的地址 ${value} 不是台架 ${bed.name} 上的设备接口地址，也不是这次运行血缘里分配到的地址`));
+        out.push(refute(subject, 'address_off_bed', `${at} 的地址 ${value} 不是台架 ${bed.name} 上的设备接口地址，也不是这次运行血缘里分配到的地址`, pointer));
         continue;
       }
       if (role === 'listen') {
-        if (reading.kind !== 'interface' || reading.type !== 'load-balancer') out.push(refute(subject, 'listen_not_dut', `${at} 的监听地址 ${value} 不是被测设备的接口地址`));
-        else if (listenerOf(facts, value) === undefined) out.push(refute(subject, 'listen_blind', `${at} 的监听地址 ${value} 所在的网段上没有触发设备（盲地址）`));
+        if (reading.kind !== 'interface' || reading.type !== 'load-balancer') out.push(refute(subject, 'listen_not_dut', `${at} 的监听地址 ${value} 不是被测设备的接口地址`, pointer));
+        else if (listenerOf(facts, value) === undefined) out.push(refute(subject, 'listen_blind', `${at} 的监听地址 ${value} 所在的网段上没有触发设备（盲地址）`, pointer));
       } else if (role === 'backend') {
-        if (!isBackend(facts, value)) out.push(refute(subject, 'backend_not_server', `${at} 的后端地址 ${value} 不是服务器设备的接口地址`));
+        // The compile rule (design section 2): only a type=server device's interface address; the declared services
+        // do not count, intentionally stricter than the bed-facts backend candidates (README, decision 2).
+        if (!isServerInterface(bed, value)) out.push(refute(subject, 'backend_not_server', `${at} 的后端地址 ${value} 不是服务器设备的接口地址`, pointer));
       } else if (role === 'virtual') {
-        if (isBlind(facts, value)) out.push(refute(subject, 'address_blind', `${at} 的虚拟地址 ${value} 是盲地址（所在网段没有触发设备）`));
+        if (isBlind(facts, value)) out.push(refute(subject, 'address_blind', `${at} 的虚拟地址 ${value} 是盲地址（所在网段没有触发设备）`, pointer));
       }
     }
     if (out.length >= MAX_PROBLEMS) break;
@@ -149,19 +152,32 @@ export function checkAddresses(input: unknown): Outcome[] {
   return out.slice(0, MAX_PROBLEMS);
 }
 
-/** Every expected result carries an explicit verbatim source. */
+/** Whitespace folded to one space and trimmed (the quote@1 rule): the form an expected text and its quote compare in. */
+function foldText(text: string): string {
+  return text.replace(/[\p{White_Space}]+/gu, ' ').trim();
+}
+
+/** Every expected result carries an explicit verbatim source, and its text is a fragment of that source. */
 export function checkExpectedSources(input: unknown): Outcome[] {
   const subject = subjectOf(input);
   const read = readSlots(subject.data);
   if (!read.ok) return unreadableSlots(subject);
   const expects = read.slots.expects;
-  if (expects.length === 0) return [refute(subject, 'expect_without_source', '这份执行计划一个期望结果都没有')];
+  if (expects.length === 0) return [refute(subject, 'expect_without_source', '这份执行计划一个期望结果都没有', '/data/expects')];
   const out: Outcome[] = [];
   for (const [i, expect] of expects.entries()) {
-    if (expect.quote.reference === '' || expect.quote.text === '') out.push(refute(subject, 'expect_without_source', `第 ${i + 1} 个期望结果「${expect.text}」没有逐字来源`));
+    const pointer = `/data/expects/${i}`;
+    if (expect.quote.reference === '' || expect.quote.text === '') {
+      out.push(refute(subject, 'expect_without_source', `第 ${i + 1} 个期望结果「${expect.text}」没有逐字来源`, pointer));
+      continue;
+    }
+    // The expected text itself (whitespace folded) must be a fragment of its quote: never written by the model.
+    if (!foldText(expect.quote.text).includes(foldText(expect.text))) {
+      out.push(refute(subject, 'expect_not_in_quote', `第 ${i + 1} 个期望结果「${expect.text}」不是它的引文「${expect.quote.text}」的片段`, pointer));
+    }
     if (out.length >= MAX_PROBLEMS) break;
   }
-  if (out.length === 0) out.push(support(subject, `${expects.length} 个期望结果都带有逐字来源`));
+  if (out.length === 0) out.push(support(subject, `${expects.length} 个期望结果都带有逐字来源且文字出自引文`));
   return out;
 }
 
@@ -171,16 +187,16 @@ export function checkDeterministic(input: unknown): Outcome[] {
   if (subject.contract === null) return noContract(subject);
   // The restricted structure holds no plan of the model's own: a plan_json in the slots is the model playing generator.
   if (isRecord(subject.data) && subject.data.plan_json !== undefined) {
-    return [refute(subject, 'plan_in_slots', '槽位里写了 plan_json：执行计划由 Hub 从槽位生成，不由模型写或改写')];
+    return [refute(subject, 'plan_in_slots', '槽位里写了 plan_json：执行计划由 Hub 从槽位生成，不由模型写或改写', '/data/plan_json')];
   }
   const read = readSlots(subject.data);
   if (!read.ok) return unreadableSlots(subject);
   const generated = generatePlanJson(subject.item, read.slots, subject.contract);
-  if (generated === null) return [unknown(subject, 'output_failed', '从槽位生成执行计划失败，出件失败（步骤或必填参数的问题由合约检查报告）')];
+  if (generated === null) return [unknown(subject, 'output_failed', '从槽位生成执行计划失败，出件失败（步骤或必填参数的问题由合约检查报告）', '/data')];
   const digest = sha256Hex(generated);
   const reread = parsePlan(generated);
-  if (reread === null) return [unknown(subject, 'output_failed', `生成的执行计划回读解析失败，出件失败（sha256 ${digest}）`)];
+  if (reread === null) return [unknown(subject, 'output_failed', `生成的执行计划回读解析失败，出件失败（sha256 ${digest}）`, '/data')];
   const diffs = diffPlan(read.slots, reread, subject.contract);
-  if (diffs.length > 0) return [unknown(subject, 'output_failed', `生成的执行计划与槽位回读不一致，出件失败（sha256 ${digest}）：${diffs.slice(0, 3).join('；')}`)];
+  if (diffs.length > 0) return [unknown(subject, 'output_failed', `生成的执行计划与槽位回读不一致，出件失败（sha256 ${digest}）：${diffs.slice(0, 3).join('；')}`, '/data')];
   return [support(subject, `执行计划由槽位确定性生成并回读一致（sha256 ${digest}）`, { plan: generated, sha256: digest })];
 }

@@ -127,6 +127,17 @@ export function addressValue(family: 'ipv4' | 'ipv6', text: string): bigint | nu
   return family === 'ipv4' ? parseV4(text) : parseV6(text);
 }
 
+/**
+ * An address text as a numeric key (`<family>:<value>`), whatever its notation: 2001:DB8::10 and 2001:db8:0:0::10
+ * key the same. Null when the text is no address. Every address comparison in this pack is by this key, never by string.
+ */
+export function addressKey(text: string): string | null {
+  const v4 = addressValue('ipv4', text);
+  if (v4 !== null) return `ipv4:${v4.toString(16)}`;
+  const v6 = addressValue('ipv6', text);
+  return v6 === null ? null : `ipv6:${v6.toString(16)}`;
+}
+
 function parseDevice(raw: unknown, at: string, problems: Problem[]): ManifestDevice | null {
   if (!isRecord(raw)) {
     problems.push(problem(at, '设备不是对象', '设备写成对象：name、type、ipv4、ipv6，按需 product、installed'));

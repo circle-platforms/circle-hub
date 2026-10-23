@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "用例编译",
   "description": "模型按受限结构把评审过的用例编成执行计划，Hub 在边界上核对：步骤的（对象，方法）对合约、字面地址对台架、命令和参数对构建的命令目录、期望结果有逐字来源、执行计划确定性重读一致。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "cf0ebc8c56f9a9f7d0e4ba0741a9b73908990905384f1438ea715e8310551c3d",
-      "size": 4269
+      "sha256": "bcaa564259d16ce306971668cf1dc5c3594c1929e9aa4b8d4dd9f073ce9a9fab",
+      "size": 4510
     },
     {
       "path": "checks.json",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/bed.ts",
-      "sha256": "080fd4b0e80cf7d58726b8bf855333815cb79e8d1a473d7263ee424f60859c00",
-      "size": 5685
+      "sha256": "0225688abcde7ce1f9dff5ee3b6ffeae8911b03852a86ab14b71d14a531ee12c",
+      "size": 6776
     },
     {
       "path": "functions/cases.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "4ca03fee0bd43ca9b435f8e6ec3bae690983f554ff6620e2d632ad23cc224a92",
-      "size": 10810
+      "sha256": "dde1ce2e90928bbfb1fefb8528f7c6b6bfdd68b06dd91f016874b06574b98c7c",
+      "size": 12240
     },
     {
       "path": "functions/contract.ts",
@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/manifest.ts",
-      "sha256": "6a8575cbda6396c40050c34f47d63a0933f3292401d00ec502ed4cd90733aef4",
-      "size": 14373
+      "sha256": "c6bd2edb0e4824750ca4a64eaf0de33371dbef1043aaae8deacf49942c353d85",
+      "size": 14871
     },
     {
       "path": "functions/plan.ts",
@@ -78,13 +78,18 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "eae60b2fc26e3aebf0c3910d781e4636a12c03b3ebea2da4e81fd5aba4562575",
-      "size": 2165
+      "sha256": "710a2334549ab3248f35851a31cf7e109cae3647e8d44c2479ab33ea07c92337",
+      "size": 2301
     },
     {
       "path": "requirements.json",
-      "sha256": "bd6ef950b33813239e1120e2ce0c3b52622448920c312b46b8fd5f1b22f0cc4d",
-      "size": 3415
+      "sha256": "08e6a5385e4ab66f354897bcd499ed962f6cd4184307ac060f0de644c403dd83",
+      "size": 3454
+    },
+    {
+      "path": "samples/negative/backend-not-server.json",
+      "sha256": "dcdfea9c54a8d927b7beb2b85945446c6338755cf57d3f11256478f010ecdbc0",
+      "size": 5986
     },
     {
       "path": "samples/negative/commands-out-of-range.json",
@@ -92,19 +97,24 @@
       "size": 1365
     },
     {
+      "path": "samples/negative/expect-not-in-quote.json",
+      "sha256": "88a0f419f28156b4b653d5b7acf0d63b13d60741a4e0ab1e7a73004724c9e582",
+      "size": 6401
+    },
+    {
       "path": "samples/negative/expect-without-source.json",
-      "sha256": "8be455370f60b5e42e415b32b2ea24daeb90ac9f32f6611939b0358fb397ebfe",
-      "size": 6365
+      "sha256": "2d6b7651851b240d3a2d9bbce272d883824a5431b13becddd8e84b469bbb22ae",
+      "size": 6518
     },
     {
       "path": "samples/negative/listen-blind.json",
-      "sha256": "8ebb7812af52d9408815578d2a2815fc9270652f426269bedf695c7faf11e240",
-      "size": 6223
+      "sha256": "b945042d10e7177f61a2284e3421abfb85fe27478aba4bd5ac88a83a2d5db247",
+      "size": 6376
     },
     {
       "path": "samples/negative/method-forbidden.json",
-      "sha256": "714c363df5fbddd4997fd3dba59b01c6c10df47da995bafeccd76b8d1506d2c0",
-      "size": 6152
+      "sha256": "e848866412e88fdebe34be283e29ae00b8af19880dd0a1f59077ed8845679358",
+      "size": 6305
     },
     {
       "path": "samples/negative/plan-in-slots.json",
@@ -118,8 +128,8 @@
     },
     {
       "path": "samples/positive/addresses-valid.json",
-      "sha256": "9ca9389f6130a70b48f8cb796e94dc7ec36e519dca98cc711654e26740d73049",
-      "size": 6168
+      "sha256": "2f2e12b90576b07c1b86cfeeff472119d8ee23b1a030cde5030511da540fcc4a",
+      "size": 6321
     },
     {
       "path": "samples/positive/commands-valid.json",
@@ -128,18 +138,18 @@
     },
     {
       "path": "samples/positive/contract-valid.json",
-      "sha256": "50a6bdc7fcbff137331ea3759a2d2a44ecbef8174c0acc9354262e410cbe15b4",
-      "size": 6186
+      "sha256": "9d81b6824eb4791598f463a44027768e118d6b06f64a2a1db09eadb9eb5dd8e8",
+      "size": 6339
     },
     {
       "path": "samples/positive/expects-sourced.json",
-      "sha256": "c7197b4ec6b5f8f01b5a042dafd27e0af2bcc8e297715bddce001cd6d48da372",
-      "size": 6159
+      "sha256": "d71faf4064421e0ea64888e4624277997edd07e513d6c9c6d17e2d9a34450592",
+      "size": 6333
     },
     {
       "path": "samples/positive/plan-deterministic.json",
-      "sha256": "47b233c518efb544aeac44b098952d27f5d2eb7f45776e4ba97dd8455d60d4b8",
-      "size": 6202
+      "sha256": "e8b29a7e28db6706a128b620ec034c57c9135ef9902f959604ad5fc2f3e16620",
+      "size": 6355
     },
     {
       "path": "samples/positive/quotes-verbatim.json",
@@ -153,8 +163,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "e6b4aac809ff0685974c3de8add688d08a7b6e45c0ba1789f0105ad6935b37f3",
-      "size": 6398
+      "sha256": "1c216219915ad2dd4133ac285217ca6fa1ea0227aa6e6af33e43c6cd2ef23580",
+      "size": 6769
     },
     {
       "path": "tables/commands.json",

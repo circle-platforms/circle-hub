@@ -49,7 +49,10 @@ export const MANIFEST_DOC = {
         { name: 'server0', type: 'server', product: null, ipv4: ['192.0.2.90/26'], ipv6: [] },
         { name: 'console0', type: 'console', product: null, ipv4: ['192.0.2.140/26'], ipv6: [] },
       ],
-      services: [{ host: 'server0', ip: '192.0.2.90', proto: 'tcp', port: 80 }],
+      services: [
+        { host: 'server0', ip: '192.0.2.90', proto: 'tcp', port: 80 },
+        { host: 'client0', ip: '192.0.2.80', proto: 'tcp', port: 9000 },
+      ],
       reserved: [],
     },
   ],

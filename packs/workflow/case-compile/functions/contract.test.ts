@@ -54,6 +54,7 @@ describe('contract_shape 检查', () => {
     const [outcome] = checkContractShape(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.method_unknown']);
     assert.match(outcome.statement, /reset.*不在合约里/);
+    assert.equal(outcome.pointer, '/data/steps/0');
     assert.ok(outcome.statement.endsWith(MARK));
   });
 

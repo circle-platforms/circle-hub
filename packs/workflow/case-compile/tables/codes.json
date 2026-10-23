@@ -14,9 +14,10 @@
     { "code": "case-compile.address_off_bed", "when": "字面地址不是台架上的设备接口地址，也不是这次运行血缘里分配到的地址", "fix": "地址写台架清单里的设备接口地址，或先经 test-bed 预订分配" },
     { "code": "case-compile.listen_not_dut", "when": "监听地址不是被测设备（load-balancer）的接口地址", "fix": "监听地址写被测设备的接口地址" },
     { "code": "case-compile.listen_blind", "when": "监听地址所在的网段上没有触发设备（盲地址）", "fix": "换同网段有触发设备的被测设备接口，或在清单里补触发设备（所有者改清单）" },
-    { "code": "case-compile.backend_not_server", "when": "后端地址不是服务器设备的接口地址（也不是清单 services 里的服务地址）", "fix": "后端地址写服务器设备的接口地址或清单 services 的服务地址" },
+    { "code": "case-compile.backend_not_server", "when": "后端地址不是服务器设备（type=server）的接口地址；清单 services 里声明的服务不算后端（编译规则有意比 bed-facts 的后端候选严）", "fix": "后端地址写 type=server 设备的接口地址" },
     { "code": "case-compile.address_blind", "when": "盲地址（所在网段没有触发设备）被当成虚拟地址", "fix": "盲地址不能当监听或虚拟地址；换同网段有触发设备的地址或分配到的地址" },
     { "code": "case-compile.expect_without_source", "when": "期望结果没有逐字引文（quote 缺 reference 或 text），或一份计划一个期望结果都没有", "fix": "每个期望结果都带 quote：reference 指到用例原文、缺陷修复说明或手册的片段，text 是逐字内容" },
+    { "code": "case-compile.expect_not_in_quote", "when": "期望结果的文字（空白折叠后）不是它的引文（quote.text）的片段——引文是真的，期望文字却是模型自己写的", "fix": "期望文字写引文里的逐字片段（可以截取，不能改写）；要换说法就先换引文来源" },
     { "code": "case-compile.plan_in_slots", "when": "槽位里写了 plan_json：执行计划由 Hub 从槽位生成，模型只填槽（bucket、blocks、steps、expects 和 quotes）", "fix": "把 plan_json 从提交里删掉；执行计划由 Hub 生成，支持结论的 data.plan 里有它" }
   ],
   "refusals": [
