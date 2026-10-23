@@ -22,6 +22,7 @@ import {
 import { VERDICT } from '../../../contracts/generated/vocabulary.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
 import { quotesReport, sha256, type QuoteInputs } from '../gold/quotes.ts';
+import {commandCatalogDeclaration,type CommandCatalogDeclaration} from '../gold/compile-check.ts';
 import { domainReport, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
 
 export interface DraftCase {
@@ -216,10 +217,11 @@ function duplicatesReportOf(
 
 export interface CompareOptions extends QuoteInputs {
   commandTreeXml?: string;
+  commandCatalog?:CommandCatalogDeclaration;
   catalog?: Set<string>;
 }
 
-function parametersReport(drafts: DraftCase[], gold: unknown, submission: unknown, hub: unknown, xml: string) {
+function parametersReport(drafts: DraftCase[], gold: unknown, submission: unknown, hub: unknown, xml: string,declaration?:CommandCatalogDeclaration) {
   const catalog = buildCatalog(xml);
   const doc = docCasesOf(gold).flatMap(c => c.commands);
   const draft = drafts.flatMap(d => parseDraftSteps(d.steps, catalog).commands);
@@ -230,7 +232,7 @@ function parametersReport(drafts: DraftCase[], gold: unknown, submission: unknow
   const different = draft.filter(c => !docPairs.has(pair(c)) && heads.has(normalizeHead(c.head))).length;
   const absent = draft.filter(c => !heads.has(normalizeHead(c.head))).length;
   const shared = [...docPairs].filter(p => draftPairs.has(p)).length;
-  return { same, different, absent, draftPairs: draftPairs.size, docPairs: docPairs.size, shared, docRatio: docPairs.size ? shared / docPairs.size : null, domains: domainReport(submission, hub, xml) };
+  return { same, different, absent, draftPairs: draftPairs.size, docPairs: docPairs.size, shared, docRatio: docPairs.size ? shared / docPairs.size : null, domains: domainReport(submission, hub, xml,declaration) };
 }
 
 export function computeComparison(
@@ -243,7 +245,7 @@ export function computeComparison(
   const drafts = draftsOf(submission);
   return {
     headOverlap: overlapOf(drafts, gold, catalog),
-    ...(options.commandTreeXml ? { parameters: parametersReport(drafts, gold, submission, result, options.commandTreeXml) } : {}),
+    ...(options.commandTreeXml ? { parameters: parametersReport(drafts, gold, submission, result, options.commandTreeXml,options.commandCatalog) } : {}),
     quotes: quotesReportOf(result),
     quoteOracle: quotesReport(submission, result, options),
     duplicates: duplicatesReportOf(drafts, gold, result, catalog),
@@ -284,7 +286,7 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`引文：${independent.shapes.length===0 && independent.details.length > 0 && independent.counts.refute === 0 && independent.counts.unknown === 0 && independent.items.every(i => i.comparison === 'equal') ? '通过' : '不通过'}`);
   lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
   const questions = evidenceQuestions(comparison);
-  if(questions.length)lines.push(`待补证 ${questions.length} 项；可补输入 --commands、--sources、--run、--manual、--fix-field`);
+  if(questions.length)lines.push(`待补证 ${questions.length} 项；可补输入 --commands、--sources、--run、--manual、--fix-field、--product`);
   for(const question of questions)lines.push(`缺事实 ${question.missing_fact}；下一步 ${question.next_action}；责任人 ${question.owner}`);
   return lines.join('\n');
 }
@@ -371,8 +373,9 @@ export function main(argv: string[]): number {
     }
     activeInput='--run';const run=value('run')?JSON.parse(readFileSync(value('run')!,'utf8')):undefined;
     activeInput='--manual';const manual=value('manual')?[readFileSync(value('manual')!)]:undefined;
+    activeInput='--product';const commandCatalog=value('product')?commandCatalogDeclaration(JSON.parse(readFileSync(value('product')!,'utf8'))):undefined;
     activeInput='比较输入';
-    const comparison = computeComparison(gold, submission, result, { commandTreeXml, sources, run, manual, fixField: value('fix-field') });
+    const comparison = computeComparison(gold, submission, result, { commandTreeXml, commandCatalog,sources, run, manual, fixField: value('fix-field') });
     activeInput='--details';
     if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison).map(q => ({ ...q, action_status: 'requested' })) });
     process.stdout.write(`${renderComparison(comparison)}\n`);

@@ -1,7 +1,7 @@
 // Independent value-domain oracle. Only the original XML reader and command tokenizer are shared with other gold scripts.
 import { isIP } from 'node:net';
 import { VERDICT, REASON, REQUIREMENT_STATUS, type Verdict, type RequirementStatus } from '../../../contracts/generated/vocabulary.ts';
-import { parseCommandTree } from './compile-check.ts';
+import { parseCommandTree, type CommandCatalogDeclaration } from './compile-check.ts';
 import { XmlReader, type XmlNode } from './command-diff.ts';
 import { buildCatalog, commandTokens, matchCatalogCommands, normalizeHead, type SplitCommand } from './regression-doc.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
@@ -14,7 +14,7 @@ export function decodeCommandXml(bytes: Uint8Array): string {
 }
 export interface DomainResult { verdict: Verdict; category: 'count' | 'type' | 'range' | 'enum' | 'no_check' | 'valid' | 'not_member'; reason?: typeof NO_CHECK; gap?: { fact: string; action: string; owner: string } }
 type Arg = { type: string; optional: boolean; limit: string; length: string; otherForm: boolean };
-export type Domains = Map<string, Arg[][]>;
+export type Domains = Map<string, Arg[][]> & {case_sensitive?:boolean};
 const kids = (n: XmlNode) => n.children.flatMap(c => 'element' in c ? [c.element] : []);
 const text = (n: XmlNode): string => n.children.map(c => 'text' in c ? c.text : text(c.element)).join(' ');
 const entity = (s: string) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e: string) => {
@@ -24,7 +24,7 @@ const entity = (s: string) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos)
 const unknown = (fact = 'argument_domain_rule'): DomainResult => ({ verdict: UNKNOWN, category: 'no_check', reason: NO_CHECK, gap: { fact, action: 'request_rule_from_named_integrator', owner: 'Claude' } });
 const result = (category: DomainResult['category']): DomainResult => ({ verdict: category === 'valid' ? SUPPORT : REFUTE, category });
 
-export function commandDomains(xml: string): Domains {
+export function commandDomains(xml: string,declaration?:CommandCatalogDeclaration): Domains {
   const parsed = parseCommandTree(xml);
   const out: Domains = new Map();
   // The shared format reader omits text immediately before a closing tag; retain arg bodies independently for exception disclosure.
@@ -50,7 +50,7 @@ export function commandDomains(xml: string): Domains {
     for (const child of kids(node)) if (!['arguments', 'arg', 'results'].includes(child.name)) walk(child, words);
   };
   for (const root of XmlReader.read(xml)) walk(root, []);
-  const domains: Domains = new Map();
+  const domains: Domains = new Map();domains.case_sensitive=declaration?.case_sensitive;
   for (const entry of parsed) {
     const head = normalizeHead(entry.words.join(' '));
     domains.set(head, entry.overloads.map((args, overload) => args.map((arg, position) => ({
@@ -66,7 +66,7 @@ function bounds(raw: string): [number, number] | null {
   const m = /^[\[(]?\s*(-?\d{1,15})\s*(?:-|~|\.\.|to)\s*(-?\d{1,15})\s*[\])]?$/.exec(raw);
   return m && Number(m[1]) <= Number(m[2]) ? [Number(m[1]), Number(m[2])] : null;
 }
-function checkArg(arg: Arg, value: string): DomainResult {
+function checkArg(arg: Arg, value: string,caseSensitive?:boolean): DomainResult {
   let magnitude: number | undefined;
   switch (arg.type) {
     case 'STRING': case 'XSTRING': magnitude = [...value].length; break;
@@ -99,7 +99,12 @@ function checkArg(arg: Arg, value: string): DomainResult {
       if (magnitude === undefined) return unknown();
       if (magnitude < range[0] || magnitude > range[1]) return result('range');
     } else if (enums) {
-      if (!enums[1].split('|').map(part=>part.trim()).includes(value)) return result('enum');
+      const values=enums[1].split('|').map(part=>part.trim());
+      if(!values.includes(value)){
+        const folded=values.some(choice=>choice.toLowerCase()===value.toLowerCase());
+        if(folded&&caseSensitive===undefined)return {...unknown('catalog_case_sensitivity'),gap:{fact:'catalog_case_sensitivity',action:'supply_product_declaration_and_rerun',owner:'Claude'}};
+        if(!folded||caseSensitive!==false)return result('enum');
+      }
     } else return unknown('argument_limit_rule');
   }
   if (arg.length) {
@@ -124,7 +129,7 @@ export function judgeCommand(command: SplitCommand, domains: Domains): DomainRes
       if (i === args.length) return j === command.parameters.length ? [result('valid')] : [];
       const found: DomainResult[] = args[i].optional ? [...visit(i + 1, j)] : [];
       if (j < command.parameters.length) {
-        const here = cap ? unknown('expanded_overload_domain') : checkArg(args[i], command.parameters[j]);
+        const here = cap ? unknown('expanded_overload_domain') : checkArg(args[i], command.parameters[j],domains.case_sensitive);
         for (const tail of visit(i + 1, j + 1)) found.push(here.verdict === REFUTE ? here : tail.verdict === REFUTE ? tail : here.verdict === UNKNOWN ? here : tail);
       }
       // Keep one representative of each classification; optional branches cannot cause exponential work.
@@ -203,8 +208,8 @@ function simplifiedStep(raw: string, domains: Domains): boolean {
   }
   return false;
 }
-export function domainReport(submission: unknown, hub: unknown, xml: string) {
-  const domains = commandDomains(xml), drafts = locatedDrafts(submission);
+export function domainReport(submission: unknown, hub: unknown, xml: string,declaration?:CommandCatalogDeclaration) {
+  const domains = commandDomains(xml,declaration), drafts = locatedDrafts(submission);
   const details = drafts.map(d => {
     const parsed = parsedDraftCommands(d, xml);
     const outcomes = parsed.located.map(position => ({ ...(position.command ? judgeCommand(position.command, domains) : result('not_member')), step: position.step, line: position.line }));

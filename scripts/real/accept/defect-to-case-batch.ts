@@ -1,10 +1,12 @@
 // Integrator-only driver. Pairing JSON: {product,prompt,fix_field,pairings:[{defect,build,commands,manual,regression_map,document,indexes?}]}.
+// Optional product_declaration names an exported product@1 JSON file; compare CLI uses --product for the same input.
 // Original files, pairing lists, client evidence and positional reports stay outside every Git worktree.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, readdirSync, chmodSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { REQUIREMENT_STATUS, VERDICT } from '../../../contracts/generated/vocabulary.ts';
+import {commandCatalogDeclaration} from '../gold/compile-check.ts';
 import { regressionDocGold } from '../gold/regression-doc.ts';
 import { object, locatedDrafts, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
 import { sha256 } from '../gold/quotes.ts';
@@ -16,7 +18,7 @@ const ROOT=fileURLToPath(new URL('../../../',import.meta.url));
 const HEX=/^[a-f0-9]{64}$/;
 const validRounds=(result:any)=>object(result.rounds)&&Number.isInteger(result.rounds.used)&&Number.isInteger(result.rounds.max)&&result.rounds.used>=0&&result.rounds.used<=result.rounds.max;
 export interface Pairing {defect:string;build:string;commands:string;manual:string;regression_map:string;document:string;indexes?:string[]}
-export interface Pairings {product:string;prompt:string;fix_field:string;pairings:Pairing[]}
+export interface Pairings {product:string;prompt:string;fix_field:string;pairings:Pairing[];product_declaration?:string}
 export interface BatchOptions {out:string;endpointArgs:string[];token:string;url?:string}
 export interface BatchDeps {
   assertAdmin(evidenceDir:string):Promise<void>;
@@ -28,6 +30,7 @@ export interface BatchDeps {
 }
 export function validatePairings(value:unknown):Pairings {
   if(!object(value)||!['product','prompt','fix_field'].every(k=>typeof value[k]==='string'&&value[k].trim()!=='')||!Array.isArray(value.pairings)||value.pairings.length===0)throw new Error('invalid pairings');
+  if(value.product_declaration!==undefined&&(typeof value.product_declaration!=='string'||!value.product_declaration.trim()))throw new Error('invalid product declaration path');
   if(!['{defect}','{product}','{build}'].every(k=>value.prompt.includes(k)))throw new Error('missing template placeholders');
   for(const p of value.pairings)if(!object(p)||!['defect','build','commands','manual','regression_map','document'].every(k=>typeof p[k]==='string'&&p[k].trim()!=='')||!/^\d+$/.test(p.defect)||!/^\d+$/.test(p.document)||(p.indexes!==undefined&&(!Array.isArray(p.indexes)||p.indexes.some((s:unknown)=>typeof s!=='string'))))throw new Error('invalid pairing');
   return value as Pairings;
@@ -50,12 +53,14 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
     let field='commands',cause='pairing_input_invalid';
     try{
       const commandBytes=readFileSync(outsideGit(pair.commands)),xml=decodeCommandXml(commandBytes);commandDomains(xml);
+      field='product_declaration';const declarationBytes=config.product_declaration?readFileSync(outsideGit(config.product_declaration)):undefined;
+      const commandCatalog=declarationBytes?commandCatalogDeclaration(JSON.parse(declarationBytes.toString('utf8'))):undefined;
       field='manual';const manual=readFileSync(outsideGit(pair.manual));
       field='regression_map';const mapBytes=readFileSync(outsideGit(pair.regression_map)),map=JSON.parse(mapBytes.toString('utf8'));
       const gold=regressionDocGold(pair.document,map,{commandTreeXml:xml});
       if(!gold.defects.includes(pair.defect)){cause='root_defect_mismatch';throw new Error();}
       field='indexes';for(const path of pair.indexes??[])JSON.parse(readFileSync(outsideGit(path),'utf8'));
-      prepared.push({commandBytes,xml,manual,mapBytes,gold});
+      prepared.push({commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes});
     }catch{return {code:2,text:`配对 ${position+1}/${config.pairings.length}：输入不通过；字段 ${field}；${cause}`,totals:{pairs:config.pairings.length,completed:0,failed:1,defects:0}};}
   }
   const out=outsideGit(options.out);mkdirSync(out,{recursive:true,mode:0o700});
@@ -70,7 +75,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
     const actions:{position:number;attempt:number;category:string}[]=[],requests:EvidenceQuestion[]=[];
     const performed=(category:string,attempt:number)=>{actions.push({position:actions.length+1,attempt,category});totals.recovery_actions++;};
     try {
-      const {commandBytes,xml,manual,mapBytes,gold}=prepared[position];
+      const {commandBytes,xml,manual,mapBytes,gold,commandCatalog,declarationBytes}=prepared[position];
       const prompt=config.prompt.replace(/\{(defect|product|build)\}/g,(_,key:string)=>key==='product'?config.product:pair[key as 'defect'|'build']);
       let selected:any;
       const allRuns=new Map<string,any>();
@@ -155,7 +160,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       for(const path of pair.indexes??[])indexes.push(JSON.parse(readFileSync(outsideGit(path),'utf8')));
       if(indexes.some(v=>!object(v)||!object(v.build)||v.build.root!==run.root)){category='index_root_mismatch';throw new Error(category);}
       category='comparison_unavailable';
-      const inputs={commandTreeXml:xml,manual:[manual],sources,run,fixField:config.fix_field};
+      const inputs={commandTreeXml:xml,commandCatalog,manual:[manual],sources,run,fixField:config.fix_field};
       let comparison=computeComparison(gold,submission,result,inputs);
       category='index_view_schema_or_identity_defect';
       let duplicates=recountDuplicates(indexes,submission,xml,result);
@@ -182,7 +187,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       const buckets=object(result.partitions)?Object.values(result.partitions).flatMap(v=>Array.isArray(v)?v:[]):[],requirements=Array.isArray(run.requirements)?run.requirements:[];
       const satisfied=requirements.filter((r:any)=>buckets.length>0&&buckets.every(b=>(b.requirements??[]).some((v:any)=>v.requirement===r.key&&v.status===REQUIREMENT_STATUS[0]))).length;
       const rounds=validRounds(result)?`${result.rounds.used}/${result.rounds.max}`:'输出缺失';
-      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；提交 ${selected.submissions.length}；受理 ${selected.submissions.filter((s:any)=>s.acceptance==='accepted').length}；修复轮 ${rounds}；要求项 ${satisfied}/${requirements.length}；任务包 ${run.pack}；摘要 ${run.pack_digest}；输入摘要 ${[sha256(commandBytes),sha256(manual),sha256(mapBytes),...sources.keys()].join(' ')}；${ok?'通过':'不通过'}`);
+      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；提交 ${selected.submissions.length}；受理 ${selected.submissions.filter((s:any)=>s.acceptance==='accepted').length}；修复轮 ${rounds}；要求项 ${satisfied}/${requirements.length}；任务包 ${run.pack}；摘要 ${run.pack_digest}；输入摘要 ${[sha256(commandBytes),sha256(manual),sha256(mapBytes),...(declarationBytes?[sha256(declarationBytes)]:[]),...sources.keys()].join(' ')}；${ok?'通过':'不通过'}`);
 
       writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:ok?'passed':requests.length?'design_gap':'comparison_defect',positions:[...comparisonDetails(comparison),...(hubOutputMissing?[{category:'hub_output_missing'}]:[])],duplicates:duplicates.details});
     }catch{

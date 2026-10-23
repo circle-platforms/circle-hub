@@ -195,3 +195,13 @@ test('client and export failures keep their own causes without claiming integrit
     assert.equal(report.code,1);assert.equal(report.totals.defects,0);assert.match(report.text,mode==='client'?/client_run_failed/:/export_refused/);assert.doesNotMatch(report.text,/PRIVATE/);
   }finally{f.close();}}
 });
+test('batch consumes an exported product declaration for enum case matching and records its digest',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
+    writeFileSync(f.config.pairings[0].commands,'<commands><menu name="widget"><item name="set"><arguments><arg name="" type="STRING" limit="{on|off}"/></arguments></item></menu></commands>');
+    (f.submissions.get('e'.repeat(64)) as any).items[0].slots.cases[0].data.steps=[{command:'widget set ON'}];
+    const declaration=Buffer.from(JSON.stringify({schema:'product@1',catalogs:[{id:'commands@1',complete:true,case_sensitive:false}]}));
+    f.config.product_declaration=join(f.root,'product.json');writeFileSync(f.config.product_declaration,declaration);
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.equal(report.totals.domain_unknown,0);assert.ok(report.text.includes(sha256(declaration)));
+  }finally{f.close();}
+});

@@ -100,3 +100,9 @@ test('overload traversal preserves the precise missing fact and its follow-up',(
   const domains=commandDomains(xml('<arg name="" type="STRING"/><arg name="" type="CUSTOM"/>'));
   assert.equal(judgeCommand({head:'widget set',parameters:['ok','x']},domains).gap?.fact,'declared_argument_type_rule');
 });
+test('enumerations follow declared case sensitivity and missing declarations never create false refutations',()=>{
+  const tree=xml('<arg name="" type="STRING" limit="{on|off}"/>'),command={head:'widget set',parameters:['ON']};
+  assert.equal(judgeCommand(command,commandDomains(tree,{complete:true,case_sensitive:false})).verdict,'support');
+  assert.equal(judgeCommand(command,commandDomains(tree,{complete:true,case_sensitive:true})).category,'enum');
+  assert.equal(judgeCommand(command,commandDomains(tree)).gap?.fact,'catalog_case_sensitivity');
+});
