@@ -853,3 +853,8 @@ unreadable roots remain neutral. Listing parser failures carry a determined fail
 计划可用 sync-plan-output@1 的可选 failed_builds 把来源、原始构建资料、注册原因码和修复动作交给核心。
 同步把它记为失败 generate 动作和无根构建（已有成功构建及其根不被替换）；store.buildFailures 可按产品、
 构建和根查询，未产根使用 root:null。失败计入同步计数，dryRun 不写记录。原因码在产品计划构造处确定。
+
+读树条目的有效性同时列出 unevaluated：缺读者组成/当前根、原件核验事实或声明的目标适用事实时，
+不能给 valid。原件按锁定的来源记录重新核验档位，确定的撤回或凭据不可读照实列出；未能评估的条件
+带缺失事实、补取动作、具名管理员、请求引用和期限，核对请求去重存成动作。负面条件仍优先于
+not_evaluated，只有适用检查全已评估且没有失效事实才给 valid。没有 expiry 字段的树条目不虚构到期条件。
