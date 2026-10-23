@@ -344,3 +344,10 @@ it('the final procedure reads and preserves every table page before the accepted
   assert.match(skill,/一个字不改/);assert.match(skill,/## 评审意见/);
   assert.doesNotMatch(skill,/不需要这个包|每条建议另立|grounds.*一条不漏/);
 });
+
+it('the user guide includes the mandatory table report and its raw-field continuation protocol',()=>{
+  const guide=readFileSync(new URL('../../../../docs/hub-r4-guide.md',import.meta.url),'utf8');
+  const section=guide.split('## 用例评审')[1].split('\n## ')[0];
+  assert.match(section,/case-review-report/);assert.match(section,/#\/items\/0\/fields\/review_tables/);
+  assert.match(section,/不分块也/);assert.match(section,/有下一页.*读完/);
+});

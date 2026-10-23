@@ -18,18 +18,20 @@ nav_order: 5
 - **用户令牌**：Hub 只监听本机，调用带 Bearer 令牌；钥匙和操作令牌在钥匙串里，由管理员用 `circle-hub key …` 等命令管理。没有分配给你的任务包，和不存在看起来一样（对你不可用）。
 - **模型家族**：初评和复核要用不同家族的模型（现在只有千问家族的端点时，Hub 不把名字里带共同词的模型认作独立；复核要换另一个家族的端点，由所有者配置）。这决定复核能不能成立。
 
-## 用例评审（case-review 加 case-review-verify）
+## 用例评审（case-review、case-review-verify、case-review-report）
 
-模型按团队的评审方法评审一份测试脑图：初评写出每个用例的发现和整份等级，另一个会话、另一个家族的模型用复核包独立复核，给出 PASS、PARTIAL 或 FAIL 和最终等级。
+模型按团队方法初评一份测试脑图；另一个会话、另一个家族的模型独立复核。每次评审最后都开终稿运行，不分块也一样，由 Hub 按已受理记录排出逐例对照表，模型只写简短总体意见和等级理由。
 
 - **输入与参数**：
-  - `case-review`（初评，当前版本 `1.0.1`）：输入槽 `subject`（必填，单项，绑定 `agile:mindmap:<文档编号>` 或上传文件的 `src:<sha256>`）；分块参数 `block`（按分组块名称或编号）或 `slice`（按顺序切片范围 `[start, end]`）；辅助参数 `stories`、`bugs`、`id_ranges`、`bare_ids` 等。
-  - 用例节点规则参数 `case_rule`：默认 `marked`，认带标签（resource 不为空）或按团队模板带标记（没有标签、带用例优先级、有子节点、下面没有别的用例）的节点；`case_rule: "tagged"` 限制为只认带标签的节点。评审摘要里有一行规则说明（`用例规则：标签或标记` 或 `只认标签`），并给出只靠标记识别（没有标签）的计数 `marked_only`。
-  - `case-review-verify`（复核，当前版本 `1.0.1`）：输入槽 `target`（必填，初评判定的同一源脑图）与 `draft`（必填，初评回执里的 `rec:<摘要>`）；运行时前驱参数 `predecessor` 必填（指定初评运行编号）。
-- **提示这样写**（编号都是占位）：「用 Hub 评审敏捷平台的脑图 `<文档编号>`，先初评；完成后另起会话换模型复核。」
-- **Hub 自己核对**：字面问题（重复、空字段等）、引文逐字核对（`quote@1`）、用例位置存在性、命令与参数按锁定构建的目录核对（`catalog@1`）、复核独立性（不同会话与不同模型家族）；**模型判断**：发现的内容与严重程度（critical、major、minor）、整份等级（P0-P7）、复核结论（PASS、PARTIAL、FAIL）。
-- **已知限制**：一次运行最多 100 个条目，更多时按 `block` 或 `slice` 分块，各块独立评审、整份取最差等级；命令的已验证测试事实（足迹）这一版没有，算证据缺口；初评漏审靠独立复核补（真实测量见[进度](hub-r4-progress.md)）。
-- 详见两个包的 README：[case-review](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review/README.md)、[case-review-verify](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review-verify/README.md)。
+  - `case-review`（初评，版本以当前分配为准）：必填 `subject`，绑定 `agile:mindmap:<文档编号>` 或上传文件的 `src:<sha256>`；超过 100 例用 `block` 分子树，或 `slice: {"from": 1, "to": 100}` 分段，辅助参数有 stories、bugs、id_ranges、bare_ids 等。
+  - `case_rule` 默认 marked，认带标签或团队标记的用例；tagged 只认带标签。摘要写出规则及只靠标记识别的数量 marked_only。
+  - `case-review-verify`（独立复核）：target 绑定初评的同一源脑图，draft 为初评已受理结果的 rec: 引用，predecessor 指定初评运行。处置写问题本身及原因；建议按“补：<用例>；因为：<原因>；期望：<结果>”写全，grounds 指向目标用例或测试子项，否则退回修复。
+  - `case-review-report`（终稿）：verifications 每块给一条复核已受理结果的 rec: 引用，target 必填且与各块源摘要相同，precondition_priority 与初评一致（默认 3，null 关闭）。
+- **提示这样写**（编号是占位）：「用 Hub 评审脑图 <文档编号>，先初评，换会话和模型家族独立复核；最后开终稿运行，把 Hub 排出的表原样贴出，再写简短评审意见。」
+- **读表与最终回答**：终稿条目固定在序号 0；从回答“完整的槽位模式”一行复制运行记录引用，用 get_nodes 读 `<运行记录>#/items/0/fields/review_tables`。有下一页就接着读完；每页只取“原文…”之后、页末说明及追踪之前的内容，原样逐页贴出，不改字、不合并格。然后写“## 评审意见”，贴已提交并受理的简短正文及证据缺口，最后一行给控制台运行页。终稿不再另写建议或逐条转录发现。
+- **表的范围与性质**：按用例上一层的测试子项分表，嵌套用例跟随外层用例的子项；没有发现的子项折成一行，有问题或建议的保留整表。完整表在 review_tables_full 和控制台运行页的通用字符串字段区。原文来自目标脑图，模型发现与建议原样列出且标明未经平台验证；“Hub 核对”另列已存、归责作者输入的字面与目录事实。
+- **已知边界与下一步**：只排各块已交付用例，不等于整份脑图都覆盖。缺块结论、等级、条目或 Hub 快照时不排表；先按摘要指示补齐、重新初评或复核，再开终稿，不在未完成状态交出结论。实际业务执行事实（足迹）不由这份评审证明；真实 Circle 展示由集成者验收。
+- 详见：[case-review](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review/README.md)、[case-review-verify](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review-verify/README.md)、[case-review-report](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review-report/README.md)。
 
 ## 模板缺口（template-gap）
 
