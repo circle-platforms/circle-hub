@@ -103,6 +103,48 @@ test('an AsciiDoc signature paragraph is a signature, in bold and italic or as o
   assert.ok(!result.entries.some((entry) => entry.path === '/commands/demo/probe'), 'an example listing places no command');
 });
 
+test('an example is reference only: its paragraphs, tables and signature blocks anchor no command', async () => {
+  const result = await entriesOf({
+    'book.adoc': [
+      '= Book',                                       // 1
+      '',                                             // 2
+      '== 配置命令',                                    // 3
+      '',                                             // 4
+      '.示例',                                         // 5
+      '====',                                         // 6
+      '*demo probe run* _<target>_',                  // 7
+      '',                                             // 8
+      '输出如下。',                                     // 9
+      '',                                             // 10
+      '|===',                                          // 11
+      '| *demo probe show* _<target>_ | 显示探测结果',   // 12
+      '|===',                                          // 13
+      '',                                             // 14
+      '[role=signature]',                              // 15
+      '----',                                          // 16
+      'demo probe reset <target>',                     // 17
+      '----',                                          // 18
+      '====',                                          // 19
+      '',                                             // 20
+      '后面的普通段落。',                                // 21
+      '',                                             // 22
+      '[role=example]',                                // 23
+      '----',                                          // 24
+      'demo probe list <target>',                      // 25
+      '----',                                          // 26
+      '',                                             // 27
+    ].join('\n'),
+  });
+  assert.deepEqual(result.entries.filter((entry) => entry.data.form === 'signature'), [], JSON.stringify(result.entries.map((entry) => [entry.data.form, entry.statement])));
+  assert.ok(result.entries.every((entry) => String(entry.path) === '/manual/cli/配置命令'), JSON.stringify(result.entries.map((entry) => entry.path)));
+  // The example's own words stay in the knowledge at their section node, and the paragraph after the example does not
+  // follow a command from inside it.
+  const statements = result.entries.map((entry) => String(entry.statement));
+  for (const text of ['demo probe run', '输出如下', '显示探测结果', 'demo probe reset', '后面的普通段落', 'demo probe list']) {
+    assert.ok(statements.some((statement) => statement.includes(text)), `${text} is missing from ${JSON.stringify(statements)}`);
+  }
+});
+
 test('command-table rows are signatures under a header that names commands; value rows are not (K1 rules apply)', async () => {
   const result = await entriesOf({
     'book.adoc': [

@@ -374,8 +374,9 @@ third-party engine bytes and the sandbox import allowlist are unmodified.
 `model.expanded_text` is the include-expanded text with NUL removed and line endings normalized to LF, keeping the
 conditional directives; `line_map` keeps each line's original file and line number. `blocks` come only from the AST after
 condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path,
-`raw`/`expanded` and, for a paragraph, the engine's own inline output of that text (`converted`); a table keeps its head,
-body and foot cells. Nothing here promotes a listing, a bold run, a title or a role into a command rule.
+`raw`/`expanded` and, for a paragraph, the engine's own inline output of that text (`converted`); a block that is an
+example or sits inside one is marked (`example`), and a table keeps its head, body and foot cells. Nothing here promotes
+a listing, a bold run, a title or a role into a command rule.
 
 Every sourcemap line number is only a candidate. The locator tries a verbatim match in a fixed neighbourhood and then
 re-reads the original file's lines independently; only a single match emits `src:<digest>/text@1/l/<a>-<b>` (`l/a` for one
@@ -488,8 +489,13 @@ accepted.
   the words before the first parameter group are the command head and every group after it is a parameter, while an
   alternative group (`{add|del}`) and an optional group that words follow (`[no] demo pool add`) stay in the head because
   K1 reads them as alternatives of the command itself. A line that rule does not read, or that K1 would not accept, is not
-  emitted with invented marks. A title, ordinary bold prose and an example are never a signature, and an example block is
-  reference only (K1 records its lines as code literals and never hangs a command on them).
+  emitted with invented marks.
+- A title, ordinary bold prose and an example are never a signature. Step one marks every block that is an example or sits
+  inside one (the `====` block, or a block whose role or style says example, and all their children), and the mapping hands
+  K1 such a block as reference content: never as a paragraph, the one kind K1 reads anchors from, and never as a table,
+  which K1 would split into row signatures. A listing stays code, which K1 never anchors either, so a `[role=signature]`
+  block inside an example stays the reference text it is and the paragraph after the example follows no command from
+  inside it.
 - A version line with an adoc source stops the transitional `catalog.json` reading:
   `produceManualEntries(..., { adocSource: true })` refuses an `ist.manual-command-catalog` input outright and names the
   next step; a line without an adoc source reads it as before.

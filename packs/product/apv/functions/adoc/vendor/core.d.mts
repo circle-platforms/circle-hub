@@ -1,6 +1,8 @@
 // Types of the pinned browser engine API used by this adapter; no runtime code.
 export interface AstNode {
   context: string; level?: number; parent?: AstNode | null; attributes: Record<string, unknown>;
+  /** The block style the author's declaration or the delimiter gives (`example`, `listing`, `arabic`, …). */
+  style?: string | null;
   sourceLocation?: { lineno: number }; title?: string | null; text?: string;
   rows?: { head: AstNode[][]; body: AstNode[][]; foot: AstNode[][] };
   getSource?(): string; getId(): string | undefined; getRole(): string | undefined;

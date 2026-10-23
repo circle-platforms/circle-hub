@@ -100,6 +100,16 @@ export const K1_KINDS: Readonly<Record<string, string>> = {
 
 const kindOf = (block: Block): string => K1_KINDS[block.kind] ?? block.kind;
 
+/**
+ * The kind K1 reads this block as. An example is reference only and takes no part in judgment (task item 6), so its own
+ * content is never a paragraph — the one kind K1 reads anchors from — and never a table, which K1 would split into row
+ * signatures; a listing inside an example stays code, which K1 never anchors either.
+ */
+function mappedKind(block: Block): string {
+  const kind = kindOf(block);
+  return block.example && kind !== 'code_block' ? 'example_block' : kind;
+}
+
 /** A group token of a signature line: `<name>`, `[weight]`, `{add|del}`. */
 const GROUP = /^([<[{])[\s\S]*[>\]}]$/;
 /** A word of a command head, spelled as K1's anchor grammar reads it. */
@@ -362,7 +372,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
   for (let at = 0; at < model.blocks.length; at++) {
     const block = model.blocks[at]!;
     if (block.kind === 'section') continue;
-    if (block.kind === 'listing' && block.role === 'signature') {
+    if (block.kind === 'listing' && block.role === 'signature' && !block.example) {
       // The explicit signature structure: each line becomes one paragraph anchor (a bare line gains the bold marks
       // the role declares; a marked line stays as written), citing the line's own verified origin.
       const origin = block.origins[0] ?? null;
@@ -385,7 +395,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     if (block.kind === 'list_item' && block.listAt !== null && model.blocks[block.listAt]?.kind === 'dlist') {
       const entry = describedEntry(block, model.blocks[at + 1]);
       if (entry !== null) {
-        emit(block, kindOf(block), entry.text, citationOf(entry.origin));
+        emit(block, mappedKind(block), entry.text, citationOf(entry.origin));
         at++;
         continue;
       }
@@ -401,7 +411,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     for (const row of table?.misaligned ?? []) {
       misaligned.push(`${placeOf(model, block)} 的表格第 ${row.row + 1} 行（按引擎的行模型数）有 ${row.cells} 格，表头有 ${row.header} 格`);
     }
-    emit(block, kindOf(block), text, cite, table === null ? undefined : table.rowCites);
+    emit(block, mappedKind(block), text, cite, table === null ? undefined : table.rowCites);
   }
   const warnings: string[] = [];
   if (misaligned.length > 0) {

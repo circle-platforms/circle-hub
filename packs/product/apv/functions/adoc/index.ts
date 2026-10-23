@@ -92,6 +92,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
     const blocks: Block[] = [];
     const paths = new Map<AstNode, Section[]>();
     const indexOf = new Map<AstNode, number>();
+    const inExample = new Map<AstNode, boolean>();
     const nodes = doc.findBy();
     if (nodes.length > limits.blocks) fail('block_budget', '结构节点数量超过限制');
     for (const node of nodes) {
@@ -106,12 +107,16 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const raw = rawOf(node, expanded.lines);
       const verify = { originals, expand: (text: string): string => doc.subAttributes(text) };
       const verified = verifyOrigin(raw, node.context, node.sourceLocation?.lineno, expanded.lines, visible, input, verify);
+      // An example is what the author declared: the `====` block, or a block whose role or style says example. Its own
+      // children inherit it, so a signature-shaped paragraph inside an example stays reference only.
+      const example = node.context === 'example' || node.getRole() === 'example' || node.style === 'example' || (node.parent != null && inExample.get(node.parent) === true);
+      inExample.set(node, example);
       const listAt = node.context === 'list_item' && node.parent !== null && node.parent !== undefined && LISTS.has(node.parent.context) ? indexOf.get(node.parent) ?? null : null;
       const block: Block = {
         kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw,
         expanded: node.subAttributes(raw), converted: await inlineOutput(node),
         origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
-        reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt,
+        reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt, example,
       };
       // A container with no text of its own has nothing to verify: its content is carried by the blocks the engine gives
       // for its children, each verified on its own. Reporting one as unverified would name a gap that is not there.
