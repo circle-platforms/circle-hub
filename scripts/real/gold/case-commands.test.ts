@@ -92,3 +92,7 @@ test('case-only command definitions retain all original paths', () => {
   const scan = commandScanner('<commands><menu name="widget"><item name="SSL"/><item name="ssl"/></menu></commands>');
   assert.deepEqual(scan('widget ssl').map((v) => v.path), ['/commands/widget/SSL', '/commands/widget/ssl']);
 });
+test('apostrophes inside English contractions cannot quote an intervening lone command', () => {
+  assert.deepEqual(paths("don't ping it's fine"), []); assert.deepEqual(paths("we'll ping you've asked"), []);
+  assert.deepEqual(paths("执行 'ping'"), ['ping']);
+});

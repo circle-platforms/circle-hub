@@ -88,6 +88,7 @@ export function commandScanner(xml: string): (text: string) => Match[] {
     const pairs: Record<string, string> = { '"': '"', "'": "'", '`': '`', '“': '”', '‘': '’', '「': '」', '『': '』' };
     const stack: Array<{ close: string; start: number }> = [];
     for (let k = 0; k < folded.length; k++) {
+      if (folded[k] === "'" && /[A-Za-z]/.test(folded[k - 1] ?? '') && /[A-Za-z]/.test(folded[k + 1] ?? '')) continue;
       if (stack.at(-1)?.close === folded[k]) { const open = stack.pop()!; quoteRanges.push([open.start, k]); }
       else if (pairs[folded[k]]) stack.push({ close: pairs[folded[k]], start: k });
     }
