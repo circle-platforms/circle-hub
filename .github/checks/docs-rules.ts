@@ -177,7 +177,8 @@ const LOCAL_PATH = new RegExp([
   '/' + 'home/[^/\\s`"\'<>),;:]+',
   ROOT_BOUNDARY + '(?:/' + 'root/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+|(?:/private)?/' + 'var/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+)',
   ROOT_BOUNDARY + '~' + '/(?=[A-Za-z0-9])',
-  "(?<![A-Za-z0-9_.+-])[A-Za-z]:(?:\\\\{1,2}|/)" + "[Uu][Ss][Ee][Rr][Ss](?:\\\\{1,2}|/)",
+  "[A-Za-z]:\\\\{1,2}" + "[Uu][Ss][Ee][Rr][Ss](?:\\\\{1,2}|/)",
+  "(?<![A-Za-z0-9_.+-])[A-Za-z]:/" + "[Uu][Ss][Ee][Rr][Ss](?:\\\\{1,2}|/)",
 ].join('|'), 'g');
 
 // Exact synthetic home roots are permitted only in the named test files. No directory-wide exemptions.

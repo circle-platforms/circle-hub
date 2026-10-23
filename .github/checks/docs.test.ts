@@ -280,6 +280,11 @@ describe('no machine paths in repository text', () => {
     for(const value of ['访问https://example.com/后在'+'/'+'home/synthetic/repo'+'下运行','打开http://192.0.2.1:8000/再看'+'/'+'Users/synthetic/project'])assert.equal(localPathProblems('docs/example.md',value).length,1,value);
   });
 
+  it('detects Windows homes attached to compiler and archive switches', () => {
+    const slash=String.fromCharCode(92),home='C:'+slash+'Users'+slash+'synthetic'+slash;
+    for(const value of ['gcc -I'+home+'include a.c','7z x a.7z -o'+home+'out','cl /Fo'+home+'obj'+slash+' a.c'])assert.equal(localPathProblems('hub/example.test.ts',value).length,1,value);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
