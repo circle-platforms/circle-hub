@@ -189,3 +189,11 @@ test('literal links accept only the generated matching modes and declared normal
   assert.ok(!ProductDeclaration.safeParse({...declaration,links:[rule,rule]}).success);
   assert.ok(ProductDeclaration.safeParse({...declaration,links:[{...rule,match:'exact',entry_kind:undefined,normalize:undefined}]}).success);
 });
+
+test('link producer scopes refer only to declared product producers',()=>{
+  const producer=declaration.producers[0].id;
+  const rule={id:'scoped',field:'mentions',namespace:'/terms',match:'exact',target_producers:[producer],source_producers:[producer]};
+  assert.ok(ProductDeclaration.safeParse({...declaration,links:[rule]}).success);
+  assert.equal(ProductDeclaration.safeParse({...declaration,links:[{...rule,target_producers:['absent']}]}).success,false);
+  assert.equal(ProductDeclaration.safeParse({...declaration,links:[{...rule,source_producers:['absent']}]}).success,false);
+});

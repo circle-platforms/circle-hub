@@ -122,3 +122,16 @@ test('unplaced occurrences retain directly resolvable entry references rather th
   assert.equal((await f.w.knowledge.store.entry(occurrence.reference.slice(6)))?.statement,'Unplaced note');
   assert.equal(view.totals?.drift_occurrences,4);
 });
+
+test('a malformed scoped literal is diagnosed without failing production and its count survives pagination',async t=>{
+  const bad={...content('/notes/bad','behaviour','Malformed synthetic source'),data:{mentions:17}};
+  const f=await fixture(t,[{...rule,target_producers:['entities'],source_producers:['entities']}],undefined,[...entries,bad]);
+  assert.ok(f.first.warnings.some(warning=>warning.includes('字面字段 mentions 不符合')));
+  const pages:LinksView[]=[];let cursor:string|null=null;
+  do{
+    const page:LinksView=(await f.json(await f.read('limit=1'+(cursor?'&cursor='+cursor:'')))).view;
+    assert.equal(page.totals?.diagnosed_entries,1);pages.push(page);cursor=page.next;
+  }while(cursor);
+  const diagnostics=pages.flatMap(page=>page.diagnostics??[]);
+  assert.equal(diagnostics.length,1);assert.equal(diagnostics[0].path,'/notes/bad');assert.equal(diagnostics[0].reason,'no_check');
+});

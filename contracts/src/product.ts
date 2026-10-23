@@ -271,6 +271,8 @@ export const LinkDeclaration = z.strictObject({
   namespace: TreePath,
   match: LinkMatchSchema,
   entry_kind: EntryKindSchema.optional().describe('required by longest-prefix matching; optional restriction for exact matching'),
+  target_producers:z.array(z.string().min(1)).min(1).max(32).optional(),
+  source_producers:z.array(z.string().min(1)).min(1).max(32).optional(),
   normalize: z.strictObject({ lowercase: z.boolean().optional(), nfc: z.boolean().optional(), nfkc: z.boolean().optional(), strip_nul: z.boolean().optional() }).optional(),
 }).superRefine((value, ctx) => {
   if (value.match === LINK_MATCH[1] && value.entry_kind === undefined) ctx.addIssue({code:'custom',path:['entry_kind'],message:'longest-prefix matching needs a declared entry kind'});
@@ -306,6 +308,10 @@ export const ProductDeclaration = z
     const ids = (p.links ?? []).map(rule => rule.id);
     if (new Set(ids).size !== ids.length) ctx.addIssue({code:'custom',path:['links'],message:'link ids must be unique'});
     const producers = new Set(p.producers.map((x) => x.id));
+    for(const [index,rule] of (p.links??[]).entries())for(const field of ['target_producers','source_producers'] as const){
+      for(const id of rule[field]??[])if(!producers.has(id))ctx.addIssue({code:'custom',path:['links',index,field],message:'a scoped producer must be declared by this product'});
+    }
+
     p.catalogs.forEach((c, i) => {
       if (c.producer !== undefined && !producers.has(c.producer)) {
         ctx.addIssue({ code: 'custom', path: ['catalogs', i, 'producer'], message: `catalog ${c.id} names the producer ${c.producer}, which the pack does not declare` });

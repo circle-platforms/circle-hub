@@ -18,3 +18,15 @@ test('drift equivalence groups retain all written spellings and occurrence count
   assert.equal(facts.drift.length,1);assert.equal(facts.drift[0].total,2);
   assert.deepEqual(facts.drift[0].spellings,['DEMO gone','demo gone']);
 });
+test('producer filters prevent a source definition from satisfying its own target namespace',()=>{
+  const scoped=LinkDeclaration.parse({...rule,target_producers:['definitions'],source_producers:['notes']});
+  const owned=(kind:string,producer:string)=>Object.assign(new Set([kind]),{producersByKind:new Map([[kind,new Set([producer])]])});
+  const graph=new Map<string,ReadonlySet<string>>([['/',new Set()],['/terms',new Set()],['/terms/demo',owned('definition','notes')],['/terms/demo/real',owned('definition','definitions')]]);
+  assert.equal(resolveLiteral(scoped,'demo missing',graph).target,null);
+  assert.equal(resolveLiteral(scoped,'demo real Arg',graph).target,'/terms/demo/real');
+  const source=(producer:string,value:unknown,index:number)=>({path:'/notes',entry:String(index).repeat(64),producers:[producer],content:{kind:'behaviour' as const,statement:'Synthetic note',data:{mentions:value},applicability:null}});
+  const facts=relationFacts('a'.repeat(64),[scoped],graph,[source('foreign',17,1),source('notes',17,2),source('notes',['demo real Arg'],3)]);
+  assert.equal(facts.links.length,1);assert.equal(facts.diagnostics.length,1);
+  assert.equal(facts.diagnostics[0].reference.includes('2'.repeat(64)),true);
+  assert.equal(facts.diagnostics[0].reason,'no_check');assert.match(facts.diagnostics[0].next_action,/重新生产/);
+});

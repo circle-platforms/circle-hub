@@ -68,7 +68,7 @@ import {
   type ListedIds,
   type ProduceDetail,
 } from './store.ts';
-import { relationFacts } from './links.ts';
+import { relationFacts,relationNode } from './links.ts';
 import { TreeBuilder, flatten, type BuiltNode } from './tree.ts';
 import { checkPath, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
 
@@ -492,6 +492,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const configured=product.product.links===undefined?undefined:LinkDeclaration.array().max(32).safeParse(product.product.links);
   if(configured&&!configured.success)return fail('产品链接声明无效，修正声明后重新生产');
   const links=configured?.success?configured.data:undefined;
+  if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
   if(links&&new Set(links.map(rule=>rule.id)).size!==links.length)return fail('产品链接声明编号重复，修正后重新生产');
 
   if (build.base !== build.name) return fail(`构建 ${build.name} 是 ${build.base} 的别名，没有自己的树`);
@@ -793,9 +794,11 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   if(links!==undefined){
     try {
-      const kinds=new Map(nodes.map(node=>[node.path,new Set(node.entries.map(id=>contents.get(id)!.kind))]));
-      const sources=[...composition.map(row=>({path:row.path,entry:row.entry,content:contents.get(row.entry)!})),...unplacedRows.map(row=>({path:'/',entry:row.entry,content:contents.get(row.entry)!,unplaced:true}))];
+      const ownership=new Map(composition.map(row=>[row.path+"\0"+row.entry,row.producers]));
+      const kinds=new Map(nodes.map(node=>[node.path,relationNode(node.entries.map(id=>({kind:contents.get(id)!.kind,producers:ownership.get(node.path+"\0"+id)??[]})))]));
+      const sources=[...composition.map(row=>({path:row.path,entry:row.entry,content:contents.get(row.entry)!,producers:row.producers})),...unplacedRows.map(row=>({path:'/',entry:row.entry,content:contents.get(row.entry)!,producers:row.producers,unplaced:true}))];
       const facts=relationFacts(root.digest,links,kinds,sources);
+      for(const diagnostic of facts.diagnostics)problems.warn(diagnostic.message+"；"+diagnostic.reference+"；下一步："+diagnostic.next_action);
       for(const rule of links){const groups=facts.drift.filter(group=>group.rule===rule.id);if(groups.length)problems.warn(`链接声明 ${rule.id}：有 ${groups.length} 个字面在此根没有可匹配目标（漂移事实）：${cutText(groups.map(g=>g.literal).join('、'),800)}`);}
     }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}
   }
