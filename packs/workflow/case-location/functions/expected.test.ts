@@ -27,15 +27,11 @@ describe('expected sources', () => {
         ['plm:story:20931', 'expected'],
         ['plm:bug:118000', 'expected'],
         ['plm:bug:118001', 'expected'],
+        ['plm:bug:90101', 'expected'],
       ],
     );
     assert.ok(out.sources.every((s) => /\p{Script=Han}/u.test(s.reason)));
-    // The unmarked 90101 is neither read as a story nor as a bug: a guessed read would show a false evidence gap, or bind an
-    // unrelated record of the other numbering.
-    assert.deepEqual(
-      out.warnings.map((w) => [w.code, w.data?.ids]),
-      [['case-location.id_kind_unknown', ['90101']]],
-    );
+    assert.deepEqual(out.warnings, []);
   });
 
   it('binds the kind the declared id ranges give an unmarked id, and says it is a declaration', () => {
@@ -50,9 +46,9 @@ describe('expected sources', () => {
     const alone = sourcesFor(['33001-证书', 'bug to case 74001'], { id_ranges: { story: { min: 10000, max: 49999 } } });
     assert.deepEqual(
       alone.sources.map((s) => s.external),
-      ['plm:story:33001'],
+      ['plm:story:33001', 'plm:bug:74001'],
     );
-    assert.deepEqual(alone.warnings.map((w) => w.data?.ids), [['74001']]);
+    assert.deepEqual(alone.warnings, []);
   });
 
   it('binds the ids folders below the version level name', () => {
@@ -79,4 +75,11 @@ describe('expected sources', () => {
       assert.ok(ExpectedSourcesOutput.safeParse(out).success, `hostile ${k}`);
     }
   });
+});
+
+it('binds bug-to-case identifiers as defects and states the convention without unknown-kind warnings', () => {
+  const out = sourcesFor(['bug to case 90101 合成标题', 'bug to case-需求20931 合成标题', 'PLM90102 合成标题']);
+  assert.deepEqual(out.sources.map(source => source.external), ['plm:bug:90101', 'plm:story:20931']);
+  assert.match(out.sources[0].reason, /标题里“bug to case”后面的编号.*按缺陷号读/);
+  assert.deepEqual(out.warnings.map(warning => warning.data?.ids), [['90102']]);
 });

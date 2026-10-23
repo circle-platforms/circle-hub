@@ -15,7 +15,7 @@ import type { FoundId } from './types.ts';
 const MAX_SCAN = 2000;
 
 /**
- * Markers on NFKC, lower-cased text. Alternatives in order: the "bug to case" family (unmarked), bug words (defect), story
+ * Markers on NFKC, lower-cased text. Alternatives in order: the "bug to case" family (defect), bug words (defect), story
  * words (requirement), plm (unmarked), then the Chinese words. ASCII markers must not continue a word (debug, history).
  */
 const MARKER = /(?<![a-z0-9])(?:(bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})|(bugs?)|(stor(?:y|ies))|(plm))|(缺陷)|(需求单?)/gu;
@@ -81,31 +81,34 @@ function idList(text: string, at: number, min: number, max: number, bare = false
   return { ids, end, ends };
 }
 
-/** The kind of a marker: null for the "bug to case" family and PLM. */
+/** The kind of a marker: null only for PLM. */
 function kindOf(groups: RegExpExecArray | RegExpMatchArray): FoundId['kind'] {
-  if (groups[1] !== undefined || groups[4] !== undefined) return null;
+  if (groups[4] !== undefined) return null;
+  if (groups[1] !== undefined) return 'bug';
   if (groups[2] !== undefined || groups[5] !== undefined) return 'bug';
   return 'story';
 }
 
 /** Ids after a marker word anywhere in the text. */
-export function markedIds(text: string): FoundId[] {
+export function markedIds(text: string, fromBugToCase?: (id: string) => void): FoundId[] {
   const lower = nfkc(text.slice(0, MAX_SCAN)).toLowerCase();
   const out: FoundId[] = [];
   MARKER.lastIndex = 0;
   for (let match = MARKER.exec(lower); match !== null; match = MARKER.exec(lower)) {
     let kind = kindOf(match);
+    let family = match[1] !== undefined;
     let position = match.index + match[0].length;
     position += (sticky(GLUE, lower, position) ?? '').length;
     INNER.lastIndex = position;
     const inner = INNER.exec(lower);
     if (inner !== null) {
+      family = false;
       kind = inner[1] !== undefined || inner[3] !== undefined ? 'story' : 'bug';
       position += inner[0].length;
       position += (sticky(GLUE, lower, position) ?? '').length;
     }
     const { ids, end } = idList(lower, position, 2, 9);
-    for (const id of ids) out.push({ kind, id });
+    for (const id of ids) { out.push({ kind, id }); if (family) fromBugToCase?.(id); }
     if (ids.length > 0) MARKER.lastIndex = Math.max(MARKER.lastIndex, end);
   }
   return out;
@@ -150,4 +153,11 @@ export function extractIds(text: string, options: { leading?: boolean } = {}): F
 /** Whether a text carries an id (a folder that does is a document folder, not a module). */
 export function hasIds(text: string): boolean {
   return extractIds(text).length > 0;
+}
+
+/** Defect ids explicitly introduced by this title convention, excluding an intervening story/bug marker. */
+export function bugToCaseIds(text: string): string[] {
+  const ids: string[] = [];
+  markedIds(text, id => ids.push(id));
+  return ids;
 }

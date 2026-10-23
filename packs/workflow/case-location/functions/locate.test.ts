@@ -59,7 +59,7 @@ const NESTED = [P0, '010：9.8', '020：10.6', '101：10.6-主线-2026/01', 'SLB
 
 const ROWS: Row[] = [
   // The convention held fully, partly, and with its variants.
-  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, unclassified: ['90101'], from: { '?:90101': ['title'] } } },
+  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, defects: ['90101'], from: { 'bug:90101': ['title'] } } },
   {
     id: 'customer-train',
     root: 'NSAE',
@@ -155,7 +155,7 @@ const ROWS: Row[] = [
     root: 'APV',
     ancestors: [],
     title: 'bug to case 90220 告警',
-    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', unclassified: ['90220'] },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', defects: ['90220'] },
   },
   // Build dates and patches count only at the version level (the version's label, the labels above it, the release train).
   {
@@ -261,7 +261,7 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'bug to case 61001'],
     title: '会话保持',
-    expect: { ...LOCATED, module: null, unclassified: ['61001'], from: { '?:61001': ['folders'] }, note: '不是模块名' },
+    expect: { ...LOCATED, module: null, defects: ['61001'], from: { 'bug:61001': ['folders'] }, note: '不是模块名' },
   },
   {
     id: 'document-folder-with-a-leading-id',
@@ -362,8 +362,8 @@ const ROWS: Row[] = [
       source: 'folders',
       confidence: 'high',
       verdict: 'support',
-      unclassified: ['90101', '33001'],
-      ranged: { requirements: ['33001'], defects: ['90101'] },
+      defects: ['90101'], unclassified: ['33001'],
+      ranged: { requirements: ['33001'], defects: [] },
     },
   },
   {
@@ -372,7 +372,7 @@ const ROWS: Row[] = [
     ancestors: FULL,
     title: '33001-SSL证书链 bug to case 74001',
     id_ranges: { story: { min: 10000, max: 49999 } },
-    expect: { ...LOCATED, unclassified: ['74001', '33001'], ranged: { requirements: ['33001'], defects: [] } },
+    expect: { ...LOCATED, defects: ['74001'], unclassified: ['33001'], ranged: { requirements: ['33001'], defects: [] } },
   },
   {
     id: 'inner-marker-wins',
@@ -636,7 +636,7 @@ describe('the attribution scheme on invented ancestor paths', () => {
       const { answer, judgment } = locateItem(inputOf(ROWS.find((r) => r.id === id)!, overrides));
       return summaryOf(answer, judgment);
     };
-    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；未分类编号 90101');
+    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 90101');
     assert.match(summary('title-only'), /^不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10\.6\.2\.31（标题，置信度低）/);
     assert.match(summary('declared-line-conflict'), /^与声明矛盾（声明的版本线 10\.7\.3 与目录的 10\.6\.1 矛盾）：产品线 apv（NSAE）/);
     assert.match(summary('other-root'), /^不确定（根“合成平台”不是产品名称）：产品 合成平台（产品线未定）；版本 10\.6\.1/);
@@ -647,7 +647,7 @@ describe('the attribution scheme on invented ancestor paths', () => {
     assert.equal(summary('title-build-date-beside-a-title-version'), '不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10.6.2.31（标题，置信度低）；构建日期 20260315（标题，参考）');
     assert.equal(summary('older-line-build-name'), '产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37');
     assert.equal(summary('requirement-in-a-deeper-folder'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931（目录）');
-    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；未分类编号 74001、33001（声明的范围：需求）');
+    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 74001；未分类编号 33001（声明的范围：需求）');
   });
 });
 

@@ -4,6 +4,7 @@
 // plm:story:<id>, a defect id as plm:bug:<id>, an unmarked id as the kind the caller's id ranges give it (a declaration, said
 // in the reason). An unmarked id whose kind nothing decides is not read: stories and bugs are separate numberings, so a guess
 // would show a false evidence gap for the kind that does not exist, or bind an unrelated record of the other numbering.
+import { bugToCaseIds } from './ids.ts';
 import { locate, locateInputOf } from './locate.ts';
 import { PACK, guarded, isRecord } from './text.ts';
 import type { IdSource, LinkedId, PackWarning } from './types.ts';
@@ -40,9 +41,11 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
   };
   for (const item of Array.isArray(raw.items) ? raw.items : []) {
     if (!isRecord(item) || typeof item.id !== 'string') continue;
-    const answer = locate(locateInputOf(item.id, item.fields, { ...context, parameters }));
+    const locatedInput = locateInputOf(item.id, item.fields, { ...context, parameters });
+    const answer = locate(locatedInput);
+    const titleBugs = new Set(bugToCaseIds(locatedInput.title ?? ''));
     for (const [kind, ids] of [['story', answer.requirements], ['bug', answer.defects]] as const) {
-      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, kind)}里标明的${KIND[kind]} ${id}`);
+      for (const id of ids) bind(`plm:${kind}:${id}`, kind === 'bug' && titleBugs.has(id) ? `条目 ${item.id} 的标题里“bug to case”后面的编号 ${id}，按缺陷号读` : `条目 ${item.id} 的${whereOf(answer.id_sources, id, kind)}里标明的${KIND[kind]} ${id}`);
     }
     for (const [kind, ids] of [['story', answer.ranged.requirements], ['bug', answer.ranged.defects]] as const) {
       for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${id} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);

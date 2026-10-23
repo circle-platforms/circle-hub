@@ -17,9 +17,9 @@ describe('ids in titles', () => {
     assert.deepEqual(ids('Bug-to-Case-缺陷71001'), ['bug:71001']);
   });
 
-  it('leaves the numbers after "bug to case" and PLM unmarked, misspellings included', () => {
-    for (const title of ['bug to case 90101 会话', 'Bug2case 90101', 'bugtocase90101', 'but-to-case 90101', 'Butocase 90101', 'bug ro case 90101', 'Bug-to-Case-90101', 'bugt-to-case 90101', 'PLM90101-导出']) {
-      assert.deepEqual(ids(title), ['?:90101'], title);
+  it('reads bug-to-case numbers as defects, including misspellings', () => {
+    for (const title of ['bug to case 90101 会话', 'Bug2case 90101', 'bugtocase90101', 'but-to-case 90101', 'Butocase 90101', 'bug ro case 90101', 'Bug-to-Case-90101', 'bugt-to-case 90101']) {
+      assert.deepEqual(ids(title), ['bug:90101'], title);
     }
   });
 
@@ -49,7 +49,7 @@ describe('ids in titles', () => {
     assert.deepEqual(ids('61001-会话保持', { leading: false }), []);
     assert.deepEqual(ids('10000 并发握手', { leading: false }), []);
     assert.deepEqual(ids('bug 61001 会话保持', { leading: false }), ['bug:61001']);
-    assert.deepEqual(ids('bug to case 61001', { leading: false }), ['?:61001']);
+    assert.deepEqual(ids('bug to case 61001', { leading: false }), ['bug:61001']);
     assert.deepEqual(ids('需求20931 证书', { leading: false }), ['story:20931']);
   });
 
@@ -100,3 +100,5 @@ describe('ids in titles', () => {
     assert.deepEqual(ids('\ud800 bug 61001 \udfff'), ['bug:61001']);
   });
 });
+
+it('PLM remains unmarked', () => { assert.deepEqual(ids('PLM90101-导出'), ['?:90101']); });
