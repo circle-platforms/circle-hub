@@ -265,3 +265,16 @@ describe('refusals and bad input', () => {
     assert.equal(sha256('x').length, 64);
   });
 });
+
+for (const granularity of ['document', 'case']) it(`a directory identifier belongs to both sibling documents at ${granularity} granularity`, () => {
+  const tree = { ...TREE, ancestors: [...TREE.ancestors, '需求20931 合成目录'] };
+  const a = doc('synthetic-a', smallMap('synthetic-a', '合成文档甲'), { title: '合成文档甲', ...tree });
+  const b = doc('synthetic-b', smallMap('synthetic-b', '合成文档乙'), { title: '合成文档乙', ...tree });
+  const projected = items(run([a, b], { granularity })).items;
+  assert.deepEqual(new Set(projected.map(item => (item.fields as ItemFields).document)), new Set(['synthetic-a', 'synthetic-b']));
+  for (const item of projected) {
+    const { answer } = locateItem(locateInputOf(item.id, item.fields, BOUND));
+    assert.deepEqual(answer.requirements, ['20931']);
+    assert.deepEqual(answer.id_sources.find(id => id.id === '20931')?.from, ['folders']);
+  }
+});
