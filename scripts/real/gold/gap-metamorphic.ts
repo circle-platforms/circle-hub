@@ -80,21 +80,11 @@ export function outerCases(tree: MindTree): MindNode[] {
 
 /** The mind-node a parsed node came from (same tree, by path): re-walked because GoldNode keeps no reference. */
 function originalNode(tree: MindTree, wanted: GoldNode): MindNode {
-  // The parsed table lists nodes in walk order (children in order, at most 1000 kept each): the n-th node of the
-  // table is the n-th node of the same walk over the mind tree, so one walk finds the original node by index.
-  let at = -1;
-  const walk = (node: MindNode): MindNode | null => {
-    at += 1;
-    if (at === wanted.index) return node;
-    for (const child of node.children ?? []) {
-      const hit = walk(child);
-      if (hit !== null) return hit;
-    }
-    return null;
-  };
-  const found = walk(tree.root);
-  if (found === null) throw new Error('the parsed table and the mind tree do not line up');
-  return found;
+  const map = mapOf(tree); const path: number[] = [];
+  for (let at = wanted.index; map.nodes[at]!.parent !== null; at = map.nodes[at]!.parent!) path.unshift(map.nodes[map.nodes[at]!.parent!]!.children.indexOf(at));
+  let current = tree.root;
+  for (const slot of path) { const child = current.children?.[slot]; if (!child) throw new Error('解析节点路径不完整'); current = child; }
+  return current;
 }
 
 const maps = new WeakMap<MindTree, GoldMap>();
@@ -128,7 +118,7 @@ export function reversed(tree: MindTree, seed: string): MindTree {
  * case's whole subtree; the root id is renewed. */
 export function singleCase(tree: MindTree, caseId: string, seed: string): MindTree {
   const map = mapOf(tree);
-  const caseNode = map.nodes.find((n) => n.id === caseId);
+  const caseNode = map.nodes[Number(caseId)];
   if (caseNode === undefined) throw new Error(`没有这个用例 ${caseId}`);
   const chain: number[] = [];
   for (let at = caseNode.index; map.nodes[at]!.parent !== null; at = map.nodes[at]!.parent!) chain.unshift(map.nodes[at]!.parent!);
@@ -150,31 +140,26 @@ const metaOf = (tree: MindTree): Record<string, unknown> => {
 
 /** The ids of the outermost cases of a copy, in document order. */
 export const outerCaseIdsOf = (tree: MindTree): string[] => outerCases(tree).map(idOf);
+/** Stable case keys inside one original document; raw node ids may repeat or be absent. */
+export const outerCaseKeysOf = (tree: MindTree): string[] => outerCaseNodes(tree).map(node => String(node.index));
 
 /** d: remove every outermost case whose single-case copy has X present (with its subtree). */
 export function withoutCategory(tree: MindTree, singleCaseMisses: ReadonlyMap<string, ReadonlySet<string>>, category: string, seed: string): MindTree {
-  const copy = clone(tree);
-  copy.root.data.id = renewedId(tree, seed);
-  const drop = new Set(
-    outerCaseIdsOf(tree)
-      .filter((id) => !(singleCaseMisses.get(id) ?? new Set()).has(category))
-      .filter((id) => singleCaseMisses.has(id)),
-  );
-  prune(copy.root, drop);
-  return copy;
+  const copy = clone(tree); const map = mapOf(tree);
+  const drop = new Set(outerCaseKeysOf(tree).filter(key => singleCaseMisses.has(key) && !singleCaseMisses.get(key)!.has(category)));
+  const prune = (node: MindNode, index: number): boolean => {
+    if (drop.has(String(index))) return false;
+    if (node.children) node.children = node.children.filter((child, slot) => { const childIndex = map.nodes[index]?.children[slot]; return childIndex === undefined || prune(child, childIndex); });
+    return true;
+  };
+  prune(copy.root, 0); copy.root.data.id = renewedId(tree, seed); return copy;
 }
-
-const prune = (node: MindNode, drop: ReadonlySet<string>): boolean => {
-  if (drop.has(idOf(node))) return false; // the whole subtree goes with the case
-  if (node.children !== undefined) node.children = node.children.filter((child) => prune(child, drop));
-  return true;
-};
 
 /** e: on the d copy, put the document-order-first removed case back under its original parent. */
 export function withRestored(tree: MindTree, removed: readonly string[], caseId: string, original: MindTree, seed: string): MindTree {
   const copy = clone(tree);
   const map = mapOf(original);
-  const caseNode = map.nodes.find((n) => n.id === caseId);
+  const caseNode = map.nodes[Number(caseId)];
   if (caseNode === undefined) throw new Error(`没有这个用例 ${caseId}`);
   const parent = caseNode.parent === null ? null : map.nodes[caseNode.parent]!;
   const node = clone(originalNode(original, caseNode));
@@ -184,9 +169,12 @@ export function withRestored(tree: MindTree, removed: readonly string[], caseId:
   }
   let parentInCopy: MindNode = copy.root; let originalParent = original.root;
   const dropped = new Set(removed);
+  let originalIndex = 0;
   for (const slot of path) {
     const siblings = originalParent.children ?? [];
-    const keptSlot = siblings.slice(0, slot).filter(child => !dropped.has(idOf(child))).length;
+    const childIndexes = map.nodes[originalIndex]!.children;
+    const keptSlot = childIndexes.slice(0, slot).filter(index => !dropped.has(String(index))).length;
+    originalIndex = childIndexes[slot]!;
     const next = parentInCopy.children?.[keptSlot];
     if (!next || !siblings[slot]) throw new Error('放不回去：缺少原始父节点路径');
     parentInCopy = next; originalParent = siblings[slot]!;
@@ -201,9 +189,9 @@ export function withRestored(tree: MindTree, removed: readonly string[], caseId:
 export function withJoined(a: MindTree, b: MindTree, category: string, singleCaseMissesOfB: ReadonlyMap<string, ReadonlySet<string>>, seed: string): MindTree {
   const copy = clone(a);
   const bMap = mapOf(b);
-  const first = outerCaseIdsOf(b).find((id) => !(singleCaseMissesOfB.get(id) ?? new Set()).has(category) && singleCaseMissesOfB.has(id));
+  const first = outerCaseKeysOf(b).find((id) => !(singleCaseMissesOfB.get(id) ?? new Set()).has(category) && singleCaseMissesOfB.has(id));
   if (first === undefined) throw new Error(`B 里没有单用例副本显示 ${category} 为有的用例`);
-  const caseNode = bMap.nodes.find((n) => n.id === first)!;
+  const caseNode = bMap.nodes[Number(first)]!;
   const chain: number[] = [];
   for (let at = caseNode.index; bMap.nodes[at]!.parent !== null; at = bMap.nodes[at]!.parent!) chain.unshift(bMap.nodes[at]!.parent!);
   let hung: MindNode = clone(originalNode(b, caseNode));
@@ -232,9 +220,9 @@ export function typeNamePresent(tree: MindTree, categories: readonly TemplateCat
     for (const name of TYPE_NAMES) {
       const id = name.toLowerCase();
       if (typeIds.has(id) && tags.includes(id)) {
-        const set = out.get(node.id) ?? new Set<string>();
+        const set = out.get(String(node.index)) ?? new Set<string>();
         set.add(id);
-        out.set(node.id, set);
+        out.set(String(node.index), set);
       }
     }
   }
@@ -264,7 +252,7 @@ export interface CopyPlan {
 
 export interface PlanOptions {
   categories: readonly TemplateCategory[];
-  /** The single-case copies' missing sets, by outer case id — the only Hub answers the plan is built on. */
+  /** The single-case copies' missing sets, by original parsed case index — the only Hub answers the plan is built on. */
   singleMisses: ReadonlyMap<string, ReadonlySet<string>>;
   /** The other document (B) for the join copies: its outer cases' single-case missing sets. */
   other?: { tree: MindTree; singleMisses: ReadonlyMap<string, ReadonlySet<string>> };
@@ -273,7 +261,7 @@ export interface PlanOptions {
 /** Builds every copy of one document from the original and the single-case answers. */
 export function planCopies(tree: MindTree, seed: string, options: PlanOptions): CopyPlan {
   const { categories, singleMisses } = options;
-  const ids = outerCaseIdsOf(tree);
+  const ids = outerCaseKeysOf(tree);
   const known = ids.filter((id) => singleMisses.has(id));
   const unknown = ids.filter((id) => !singleMisses.has(id));
   const undecided: SkipReason[] = unknown.map((id) => ({ reason: '单用例副本答案未知', detail: id }));
@@ -308,7 +296,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
 
   const f: CopyPlan['f'] = [];
   if (options.other !== undefined) {
-    const bIds = outerCaseIdsOf(options.other.tree);
+    const bIds = outerCaseKeysOf(options.other.tree);
     const bKnown = bIds.filter((id) => options.other!.singleMisses.has(id));
     const bMissing = expectedMissing(bKnown.map(id => options.other!.singleMisses.get(id)!));
     const aMissingSet = new Set(originalMissing);

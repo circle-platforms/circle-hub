@@ -5,13 +5,22 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { MindNode, MindTree } from './gap-metamorphic.ts';
-import { TYPE_NAMES, expectedMissing, outerCases, outerCaseIdsOf, planCopies, premiseOf, readCategories, reversed, singleCase, typeNamePresent, withJoined, withRestored, withoutCategory } from './gap-metamorphic.ts';
+import { TYPE_NAMES, expectedMissing, outerCases, outerCaseIdsOf, planCopies as planByKey, premiseOf, readCategories, reversed, singleCase as singleByKey, typeNamePresent, withJoined as joinByKey, withRestored as restoreByKey, withoutCategory as withoutByKey } from './gap-metamorphic.ts';
 import { caseNodesOf, parseMindMap } from './cases.ts';
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
 const kase = (id: string, text: string, expected: string, tag = 'configuration'): MindNode => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
 const group = (id: string, text: string, ...children: MindNode[]): MindNode => ({ data: { id, text }, children });
 const doc = (root: MindNode): MindTree => ({ root, template: 'default' });
+
+// Readable unique-id fixture aliases; the implementation and scenario use parsed indices exclusively.
+const keyOf = (tree: MindTree, id: string): string => String(parseMindMap(tree).nodes.find(node => node.id === id)!.index);
+const keyed = (tree: MindTree, values: ReadonlyMap<string, ReadonlySet<string>>) => new Map([...values].map(([id, set]) => [keyOf(tree, id), set]));
+const singleCase = (tree: MindTree, id: string, seed: string) => singleByKey(tree, keyOf(tree, id), seed);
+const withoutCategory = (tree: MindTree, values: ReadonlyMap<string, ReadonlySet<string>>, category: string, seed: string) => withoutByKey(tree, keyed(tree, values), category, seed);
+const withRestored = (tree: MindTree, removed: readonly string[], id: string, original: MindTree, seed: string) => restoreByKey(tree, removed.map(id => keyOf(original, id)), keyOf(original, id), original, seed);
+const withJoined = (a: MindTree, b: MindTree, category: string, values: ReadonlyMap<string, ReadonlySet<string>>, seed: string) => joinByKey(a, b, category, keyed(b, values), seed);
+const planCopies = (tree: MindTree, seed: string, options: import('./gap-metamorphic.ts').PlanOptions) => planByKey(tree, seed, { ...options, singleMisses: keyed(tree, options.singleMisses), ...(options.other ? { other: { tree: options.other.tree, singleMisses: keyed(options.other.tree, options.other.singleMisses) } } : {}) });
 
 /** A synthetic table: two type-label categories and two keyword categories. */
 const CATEGORIES = [
@@ -118,8 +127,8 @@ test('expectedMissing intersects and typeNamePresent names the six type names ca
   assert.deepEqual([...expectedMissing([])], []);
   const tree = doc(group('r', '根', group('g', '组', { data: { id: 'c1', text: '甲', resource: ['FUNCTIONAL'], priority: 2 }, children: [leaf('c1e', '成功')] }, kase('c2', '乙', '成功', 'Stress'))));
   const present = typeNamePresent(tree, CATEGORIES);
-  assert.deepEqual([...(present.get('c1') ?? [])], ['functional']);
-  assert.deepEqual([...(present.get('c2') ?? [])], ['stress']);
+  assert.deepEqual([...(present.get(keyOf(tree, 'c1')) ?? [])], ['functional']);
+  assert.deepEqual([...(present.get(keyOf(tree, 'c2')) ?? [])], ['stress']);
   assert.equal(TYPE_NAMES.length, 6);
 });
 
@@ -165,4 +174,10 @@ test('review 12: a root child is restored after the copy root is renewed', () =>
   const d = withoutCategory(original, new Map([['c1', new Set<string>()], ['c2', new Set(['security'])]]), 'security', 'review12-d');
   const e = withRestored(d, ['c1'], 'c1', original, 'review12-e');
   assert.deepEqual(outerCaseIdsOf(e), ['c2', 'c1']);
+});
+
+test('review 13: duplicate and missing node ids produce four distinct single-case copies', () => {
+  const tree = doc(group('r', '合成', kase('dup', '第一', '成功'), kase('dup', '第二', '成功'), kase('', '第三', '成功'), kase('', '第四', '成功')));
+  const plan = planCopies(tree, 'review13', { categories: CATEGORIES, singleMisses: new Map() });
+  assert.deepEqual(plan.c.map(copy => outerCases(copy)[0]?.data.text), ['第一', '第二', '第三', '第四']);
 });

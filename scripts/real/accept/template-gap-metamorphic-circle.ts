@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { Turn } from '../scripted-model.ts';
 import { type Scenario } from '../lib/accept.ts';
 import type { Check, ReportSection } from '../lib/report.ts';
-import { TYPE_NAMES, expectedMissing, outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory } from '../gold/gap-metamorphic.ts';
+import { TYPE_NAMES, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory } from '../gold/gap-metamorphic.ts';
 import { readCategories } from '../gold/gap-metamorphic.ts';
 
 export interface GapCircleGold {
