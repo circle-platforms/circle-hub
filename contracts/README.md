@@ -267,3 +267,8 @@ branch does not rewrite it. Besides the explicitly approved label/source note it
 The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
 still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
 runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
+
+History rendering is connected through `readStoredValidationResult` and `StoredPartitionItem`: `get_nodes` retains
+counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as
+“出口未写” and “缺失事实未写”, including partition/item pointers and paged results. Reading never backfills those fields
+or changes stored bytes; current admission remains strict.
