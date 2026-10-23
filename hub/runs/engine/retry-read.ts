@@ -34,3 +34,14 @@ export async function retryRead<T>(read: () => Promise<T>, classify: (value: T) 
     await setTimeout(delayMs);
   }
 }
+
+/** A Hub failure to check a bound source, never a defect in the submitted value. */
+export class HubReadFailure extends Error {
+  readonly reference: string;
+  readonly reason: ReadFailureReason;
+  readonly attempts: Array<Record<string, unknown>>;
+  constructor(reference: string, reason: ReadFailureReason, attempts: Array<Record<string, unknown>>) {
+    super('Hub could not check a bound source after bounded retries');
+    this.reference = reference; this.reason = reason; this.attempts = [...attempts];
+  }
+}

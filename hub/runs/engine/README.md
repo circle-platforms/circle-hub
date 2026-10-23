@@ -428,3 +428,16 @@ repeat identical reads. Free-text diagnostics go only to the admin log. Every af
 unread list into its fact claim's statement.data.unread_sources even if the pack omits it. This is not a new top-level
 validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Exit ownership,
 requests, deadlines and whether unread_sources belongs at top level await hub-unknown-model.
+
+Exact-value resolution retries only SOURCE_UNAVAILABLE carrying an internal check_error or integrity_unproven reason
+(and thrown read failures), using the same three-attempt 50/100 ms policy. Genuine absent/forbidden references and invalid
+selectors keep their existing model-side treatment; source bounds and integrity checks are never bypassed. On exhausted
+Hub failure, validation records a validate action with hub_error, the fixed source reason, retry_attempts, repair: [] and
+no validation result. The public code/message stays neutral SOURCE_UNAVAILABLE, with an administrator-restore fix and no
+requirement/rounds_left. The raw submission is still stored once. Hub-failure actions do not mark the digest as a consumed
+repair attempt, so the identical body can be checked after restoration; genuine errors then consume their normal round.
+A completed result still replays idempotently. The model-facing resolver keeps its neutral return rather than throwing.
+
+Pending hub-unknown-model: explicit exit/request ownership and deadlines after retry exhaustion; automatic routing to a
+named administrator or pack author; top-level unread_sources and a storage location on not-accepted results that have no
+fact claims. This change adds no exit field, request contract, split, automatic re-evaluation or interpreter policy change.

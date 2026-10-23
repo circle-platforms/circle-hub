@@ -17,7 +17,7 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, LimitError, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
-import { recReference } from '../../refs/api.ts';
+import { UNAVAILABLE_MESSAGE, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { describe, protocolError, unavailableError } from './errors.ts';
 import { evaluate } from './evaluate.ts';
@@ -25,6 +25,7 @@ import { buildScope, createResolver, resolveSubmission } from './exact.ts';
 import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 import { authorOriginOf, packIdOf } from './lineage.ts';
 import { canSeeRun } from './readers.ts';
+import { HubReadFailure } from './retry-read.ts';
 import { carriedItems } from './reuse.ts';
 import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
 import {
@@ -86,6 +87,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
+    if (action.body.detail.hub_error === true) continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -207,11 +209,20 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
   let outcome: Validated;
-  if (early !== null) {
-    const errors = withRounds(workflow, args, [early], roundsUsed);
-    outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
-  } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
-  else outcome = await validatePartial(base, args, parsed?.error ?? null);
+  try {
+    if (early !== null) {
+      const errors = withRounds(workflow, args, [early], roundsUsed);
+      outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
+    } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
+    else outcome = await validatePartial(base, args, parsed?.error ?? null);
+  } catch (error) {
+    if (!(error instanceof HubReadFailure)) throw error;
+    await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null,
+      extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts } });
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', UNAVAILABLE_MESSAGE, {
+      fix: '由管理员恢复 Hub 的来源核对能力后原样重交；本次不计修复轮数',
+    })] };
+  }
   const saved = await keepResult(base, outcome);
   await action({
     acceptance: saved.result.body.acceptance,
@@ -382,7 +393,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const structure = slotProblems(workflow, run.items, submission);
   const scope = await buildScope(ctx, run, workflow, user, 'function');
-  const resolver = createResolver(ctx, scope, 'function');
+  const exactAttempts: Array<Record<string, unknown>> = [];
+  const resolver = createResolver(ctx, scope, 'function', exactAttempts);
   const carried = await carriedItems(ctx, scope, resolver, workflow, run, submission);
   for (const p of carried.problems) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', p.message, { path: p.path, item: p.item }));
   const exact = await resolveSubmission(scope, resolver, workflow, run.items, submission);
@@ -404,7 +416,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: evaluation.retryAttempts };
+    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts] };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);
@@ -413,6 +425,6 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   return {
     result: notAccepted(base, [...rejection, ...notes]),
     problems: new Set([...requirementsOf(rejection), ...evaluation.problems]),
-    retryAttempts: evaluation.retryAttempts,
+    retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],
   };
 }

@@ -30,6 +30,7 @@ import {
 } from '../../refs/api.ts';
 import type { CatalogView } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
+import { HubReadFailure, retryRead } from './retry-read.ts';
 import { protocolError } from './errors.ts';
 import { recordReader, sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
@@ -158,7 +159,7 @@ function scopeProblem(ref: Reference, scope: RunScope): string | null {
   }
 }
 
-export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'function' | 'model'): Resolver {
+export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'function' | 'model', attempts: Array<Record<string, unknown>> = []): Resolver {
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
@@ -190,7 +191,20 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
         const problem = scopeProblem(ref, scope);
         if (problem !== null) return { ok: false, message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
-      const result = await resolveReference(ref, context);
+      let result: Awaited<ReturnType<typeof resolveReference>>;
+      try {
+        result = await retryRead(() => resolveReference(ref, context), result => !result.resolved
+          && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
+          attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push({ operation: 'exact_source', reference: canonical, ...attempt }); });
+      } catch (error) {
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: 'bound source read threw after retries' });
+        if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
+        return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
+      }
+      if (!result.resolved && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined) {
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: `bound source ${canonical}: ${result.reason}` });
+        if (consumer === 'function') throw new HubReadFailure(canonical, result.reason, attempts);
+      }
       if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
