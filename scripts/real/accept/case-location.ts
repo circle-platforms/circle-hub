@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { writePrivateJson } from '../gold/builds.ts';
 // Capability 3, case location, through the real client (architecture 6b):
 // The model starts the production run for a document or a list of documents (at least 5, covering different lines and modules).
 // The Hub's answers are compared with the gold file: version line, release train, module, build candidates,
@@ -337,7 +339,7 @@ export function checkCandidateBuilds(
   return checks;
 }
 
-export default function scenario(gold: LocationGold): Scenario {
+export default function scenario(gold: LocationGold, detailsOut?: string): Scenario {
   const area = '用例定位', pagerState = createPagerState();
   const docs = 'documents' in gold ? gold.documents : [gold];
   const manualSections = buildManualPlmSections(docs, docs.length > 1);
@@ -349,6 +351,9 @@ export default function scenario(gold: LocationGold): Scenario {
     check(turns) {
       const lines = reassembleResultLines(turns), text = lines.join('\n');
       const checks: Check[] = [];
+      const at = process.argv.indexOf('--out');
+      const destination = detailsOut ?? (at >= 0 ? process.argv[at + 1] : undefined);
+      const audits: Array<{ document: string; requirement: string; statement: string | null; next_action: string }> = [];
       const add = (name: string, ok: boolean, expected = '一致', actual = ok ? '一致' : '不一致'): void => { checks.push({ area, name, expected, actual, ok }); };
       add('模型拿到了运行结果，不是错误', text.includes('运行 run_') && !turns.some(t => t.toolResults.some(r => r.isError)) && !text.includes('出错：'), '可用结果 1 份', text.includes('运行 run_') ? '结果 1 份' : '结果 0 份；下一步：重跑定位运行');
       if ('documents' in gold) {
@@ -358,13 +363,17 @@ export default function scenario(gold: LocationGold): Scenario {
       docs.forEach((doc, i) => {
         const prefix = `第 ${i + 1} 份文档：`;
         const owned = ownLocationText(lines, doc.document);
+        const claims = ownClaimTexts(lines, doc.document, 'location');
+        const fact = claims.length === 1 && /，支持$/.test(claims[0]);
+        add(prefix + '定位结论是事实', fact, '本份支持主张 1 条', fact ? '支持主张 1 条' : '支持主张 0 条；下一步：重读本份 location 主张，按私有详情中的 Hub 原因核对产品名称和目录树输入，再单独重跑');
+        audits.push({ document: doc.document, requirement: 'location', statement: claims.length === 1 ? claims[0] : null, next_action: fact ? '' : 'Hub 原因：' + (claims[0] ?? '缺本份 location 主张') + '；据此核对原件产品名称及目录树，重读完整主张或修正输入后重跑本份文档' });
         add(prefix + '定位数据可用', owned !== null, '本份数据 1 份', owned === null ? '本份数据 0 份；下一步：翻页读取本份 location 主张；仍缺则重跑本份文档' : '本份数据 1 份');
         if (owned !== null) {
           const exactField = (label: string, value: string): boolean => new RegExp('(?:^|[；|：])' + label + '\\s+' + escaped(value) + '(?=[；|]|，(?:支持|未知|反驳)|$)').test(owned);
           add(prefix + '版本线与独立依据一致', owned.includes(`版本 ${doc.line}（目录，置信度高）`));
           if (doc.train !== undefined) add(prefix + '发布火车与独立依据一致', exactField('发布火车', doc.train));
           if (doc.module !== undefined) add(prefix + '模块与独立依据一致', exactField('模块', doc.module));
-          if (doc.product !== undefined) add(prefix + '产品线', owned.toLowerCase().includes(`产品线 ${doc.product.toLowerCase()}`));
+          add(prefix + '产品线', owned.toLowerCase().includes(`产品线 ${(doc.product ?? gold.product ?? 'apv').toLowerCase()}`));
         }
         const reported = extractReportedDocumentData(doc.document, turns);
         const stories = new Set(doc.stories ?? []), bugs = new Set(doc.bugs ?? []);
@@ -379,6 +388,7 @@ export default function scenario(gold: LocationGold): Scenario {
         }
         checks.push(...checkCandidateBuilds(area, ownClaimTexts(lines, doc.document, 'build_candidates').join('\n'), doc.buildCandidates, doc.writtenBuilds, prefix));
       });
+      if (destination !== undefined) { try { writePrivateJson(join(destination, 'case-location-details.json'), audits); } catch { add('定位私有明细已保存', false, '新明细文件 1 份', '明细文件 0 份；下一步：改用 Git 外新 --out 目录后重跑，不覆盖旧证据'); } }
       const compared = docs.flatMap(doc => ownClaimTexts(lines, doc.document, 'build_candidates').filter(line => !/，未知(?:，|；|$)/.test(line)).flatMap(parseReportedCandidates));
       for (const [name, ok] of [['APV 名称族', compared.some(c => c.family === 'APV')], ['NSAE 名称族', compared.some(c => c.family === 'NSAE')], ['别名', compared.some(c => c.baseMention)]] as const) add('候选覆盖：' + name, ok, '至少 1 个', ok ? '至少 1 个' : '0 个；下一步：选择前 12 项覆盖两个名称族和别名的版本线后重跑');
       const longest = Math.max(0, ...resultTexts(turns).map(t => t.length));

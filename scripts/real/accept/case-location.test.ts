@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 // Synthetic renderer-shaped answers exercise document ownership, candidate fields, IDs, paging and redacted reports.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -159,4 +162,17 @@ test('location review 1: real problem rows and result item blocks do not hide th
   const d = doc();
   const text = `运行 run_synthetic\n问题与未知（条目 | 名称 | 分区 | 要求项）：\n- ${d.document} | 合成标题 | 未知 | location | 输入缺少\n条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n内容 rec:${'a'.repeat(64)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n  · build_candidates 构建候选：满足\n${position(d.document, 'build_candidates', statement(builds(), d.line))}`;
   assert.ok(allOk(d, text), JSON.stringify(checks(d, text).filter(c => !c.ok)));
+});
+
+test('location review 3: unknown location values cannot pass as facts and private reasons remain private', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'location-fact-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const d = doc({ product: undefined });
+  const text = answer(d).replace(position(d.document, 'location', row(d).split(' | ').slice(2).join(' | ')), position(d.document, 'location', '定位不确定：根 private-root 不是产品名称；已知：' + row(d).split(' | ').slice(2).join(' | ')).replace('，支持；性质', '，未知；性质'));
+  const rows = caseLocation(d, directory).check(turnsOf('运行 run_synthetic\n' + text));
+  assert.ok(rows.some(c => c.name.includes('定位结论是事实') && !c.ok));
+  assert.ok(!JSON.stringify(rows).includes('private-root'));
+  assert.ok(readFileSync(join(directory, 'case-location-details.json'), 'utf8').includes('private-root'));
+  assert.equal(statSync(join(directory, 'case-location-details.json')).mode & 0o777, 0o600);
+  const list = caseLocation({ product: 'apv', documents: [d] }).check(turnsOf('运行 run_synthetic\n' + answer(d).replaceAll('产品线 apv', '产品线 wrong-product')));
+  assert.ok(list.some(c => c.name.includes('产品线') && !c.ok));
 });
