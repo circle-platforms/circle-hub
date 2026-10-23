@@ -43,7 +43,8 @@ Circle 现在怎么接技能和密钥（不改 Circle）：
 - 技能目录里的 `hooks.json` 在本会话载入这个技能以后生效；`before_tool` 钩子回 `ask` 时，auto 模式下也出确认卡片（`docs/hooks.md`）。钩子在工作目录里跑，Circle 不给技能目录的路径。
 - 按名字的密钥（`docs/security.md`）：所有者用 `/secrets 名字` 或桌面设置存；模型只写 `%名字%`，执行时 Circle 代入，输出里出现的值换回 `%名字%`；带密钥的命令在手动模式下每次都问。命令的环境里，名字带 KEY、TOKEN、SECRET、PASS 这类词的变量都被去掉（`src/sandbox.ts` 的 shellEnvironment），脚本拿不到环境里的密钥。
 - MCP 结果只把文本给模型（`src/mcp_loader.ts`，hub-mcp-client 分支也一样）：Hub 的结构化应答模型看不到，也就没法把精确的 JSON 交给脚本。
-- 专用评审目录（`scripts/real/circle-home.ts`）：Hub 令牌存成密钥 `HUB_TOKEN`，默认 auto 模式，钩子只放行 Hub 的六个工具和待办清单，`execute` 被拒。
+- 专用评审目录（`scripts/real/circle-home.ts`）：Hub 令牌存成密钥 `HUB_TOKEN`，默认 auto 模式，钩子只放行 Hub 的六个工具和待办清单，`execute` 被拒。这个技能不装在这里。
+- 技能装在另一个主目录，上机和技能都用它，由集成者另备，评审目录不动。它的数据目录钩子放行这几样：Hub 的六个工具、待办清单、技能工具，`execute` 跑 `node <技能目录>/jev.ts …`，以及用例编译包的 `node <技能目录>/tools/*.ts`。第 4 条的 `--send` ask 钩子也装进它自己的 `hooks.json`：数据目录的钩子总是生效，技能目录里那份要等技能载入以后才生效。
 
 ## 要做的
 
@@ -52,13 +53,15 @@ Circle 现在怎么接技能和密钥（不改 Circle）：
 1. **技能目录。**新目录 `packs/workflow/knowledge-contribution/tools/jev/`。`tools/` 是包合约里本地工具的位置（`contracts/generated/protocol.ts` 的 PACK_FILE_PATHS），`packs/workflow/case-review/packaging.ts` 签名时会把它算进 pack.json，`*.test.ts` 不算。
    - 内容：`SKILL.md`（第 11 条）、入口 `jev.ts`、`lib/*.ts`、`hooks.json`、`egress.json`、`generated.json`、`examples/`（合成的 ask 输入和提议样例）。
    - 自成一体：只用 Node 内置模块和全局 fetch，只导入本目录的文件；可擦除的 TypeScript，Node 24 直接跑。包的 `functions/` 不导入 `tools/`。这样 `script-distribution.md` 给 `tools/` 加的发布检查也能过。
-   - `generated.json` 由 `pack-files.ts` 写：包号，加 entry_kind、document_output_kind、relation_kind 的码和标签（取自 `contracts/generated/vocabulary.ts`）；`--check` 比对。脚本里不手写枚举。
-   - `pack-files.ts --verify-install <目录>`：逐个比对目录里的文件和 pack.json 里 `tools/jev/` 各项的 sha256 和大小，多一个、少一个、改过一个都报。集成者照决定 35 上台架第 12 问的做法，把 pack.json 里列着的 `tools/jev/` 文件（测试不在里面）装到所有者 Circle 数据目录的 `skills/jev/`，再跑这条核对。
+   - `generated.json` 由 `pack-files.ts` 写，`--check` 比对，脚本里不手写枚举。内容：
+     - 包的 id 和版本，不写包号。generated.json 自己列在 pack.json 的清单里，写不进它所在那个包的摘要。
+     - entry_kind、document_output_kind、relation_kind、read_tier 的码和标签，取自 `contracts/generated/vocabulary.ts`。
+   - `pack-files.ts --verify-install <目录>`：逐个比对目录里的文件和 pack.json 里 `tools/jev/` 各项的 sha256 和大小，多一个、少一个、改过一个都报。集成者照决定 35 上台架第 12 问的做法，把 pack.json 里列着的 `tools/jev/` 文件（测试不在里面）装到上面那个上机和技能用主目录的 `skills/jev/`，再跑这条核对。
    - Circle 只认 `skills/` 下一层（或下两层、中间那层没有 SKILL.md）的技能目录。`script-distribution.md` 的 `local-tools install` 把整个包装成 `<目录>/<包>@<版本>/`，顶上是回注包自己的 SKILL.md，`tools/jev/` 在那里不会被认出来；所以下发做好以后，也是把装好的 `tools/jev/` 放到 `skills/jev/`，照样跑上面这条核对。
    - 包升一个次版本（接在前面已有的版本后面），用 `node packs/workflow/knowledge-contribution/pack-files.ts` 重签。
 
 2. **密钥和配置只在 Circle 一侧。**
-   - 所有者在 Circle 里存密钥 `JEV_API_KEY` 和 Hub 令牌（专用目录里已经叫 `HUB_TOKEN`），再存普通变量 `JEV_MODEL`（确切版本）和 `HUB_URL`（Hub 的 MCP 地址）。脚本不读 Circle 的任何文件。
+   - 所有者在上机和技能用的主目录里存密钥 `JEV_API_KEY` 和 Hub 令牌 `HUB_TOKEN`（和评审目录同名），再存普通变量 `JEV_MODEL`（确切版本）和 `HUB_URL`（Hub 的 MCP 地址）。SKILL.md 写明是哪个主目录。脚本不读 Circle 的任何文件。
    - 命令只有一种写法，密钥从标准输入进：
 
      ```
@@ -85,6 +88,7 @@ Circle 现在怎么接技能和密钥（不改 Circle）：
    - 片段的文字和种类一律取自 Hub 的应答，不信请求文件里写的。
    - 问题文字是模型写的，脚本证明不了里面没有用例或缺陷文字：限长（instructions 2,000 字，每个选项说明 160 字），原样记进判断记录；SKILL.md 写明不许这样写。
    - `hooks.json`：一条 `before_tool` 钩子，只管 `execute`。命令里跑 `jev.ts` 又带 `--send` 时回 `{"decision":"ask"}`，由所有者在卡片上点头；读不懂输入也回 ask；其余回 `{}`。命令用 `node --input-type=module -e` 内联写，不依赖安装路径，摘要核对照样成立。
+   - 技能目录里这份钩子只在会话载入技能以后生效；模型不载入技能、直接跑 `jev.ts --send` 时，拦它的是主目录自己 `hooks.json` 里的同一条钩子，由集成者装（见“先知道的”）。SKILL.md 和 README 都写明这一点。
    - 发出记录 `requests.jsonl`，每次请求一行：时间、请求摘要、发出的片段（引用、种类或 src、sha256、字节数）、这次选择加入的类别、题目标识、尝试次数、HTTP 状态、对方的请求号、结果。不记文字，不记密钥。
 
 5. **`ask`：一次类型化判断。**
@@ -123,7 +127,10 @@ Circle 现在怎么接技能和密钥（不改 Circle）：
    - `submit --proposals <文件> --product <产品> --build <构建> [--skip <条目>=<理由>]`：
      - 上传清单，每条提议一个条目（id 是 `p_<条目摘要前 16 位>`，title 写序号和路径）；提议只引 tree: 条目，`originals` 不用绑；start_run 带 client_key（清单、产品、构建的摘要），重跑拿回同一个运行。
      - 新运行锁定的根和提议里的根不同就停，写明：place 读的是 X，这次锁定的是 Y；下一步用 Y 重跑 place 和 submit。
-     - 再上传这批提议用到的判断记录（JSON），把它的 src: 写进 notes，让 K04 R[5] 的“归类判断记录可查”在 Hub 里也成立；submit_result 的 model 写 `<确切版本>（Circle 技能 jev，knowledge-contribution@<包号>）`。
+     - 再上传这批提议用到的判断记录（JSON），把它的 src: 写进 notes。
+       - notes 是不核对的字符串，上传也只有上传者和管理员能读，所以 K04 R[5] 的“归类判断记录可查”只对提交者和管理员成立。
+       - README 把这一点写成限制。
+     - submit_result 的 model 写 `<确切版本>（Circle 技能 jev，knowledge-contribution@<包号>）`，包号取 start_run 回答里运行摘要的 `pack_digest`。
      - 回执的文字原样打出来，结构化回执存 `receipt.json`。整份不受理时，打出回执点名的条目和修正说明，不自己改；下一步写清：重跑 place，或用 `--skip` 把它们标成跳过、写明理由后再交。
 
 10. **第二步的测试。**
