@@ -10,6 +10,45 @@ export interface PageMetrics {
   sha256: string;
 }
 
+/** HTML syntax only: ignore displayed URLs, comments and raw-text bodies, and inspect whole attribute values. */
+function externalAddresses(body:string):number {
+  const attributes=new Set(['href','src','srcset','action','formaction','poster','data']);
+  const decode=(value:string)=>value.replace(/&#(x[0-9a-f]+|[0-9]+);?|&(colon|sol|Tab|NewLine|amp|quot|apos);/gi,(all,numeric:string|undefined,named:string|undefined)=>{
+    if(numeric!==undefined){const n=numeric[0].toLowerCase()==='x'?Number.parseInt(numeric.slice(1),16):Number.parseInt(numeric,10);return n>0&&n<=0x10ffff&&!(n>=0xd800&&n<=0xdfff)?String.fromCodePoint(n):'\ufffd';}
+    return ({colon:':',sol:'/',Tab:'\t',NewLine:'\n',amp:'&',quot:'"',apos:"'"} as Record<string,string>)[named!]??all;
+  });
+  const external=(value:string)=>{
+    const address=value.replace(/[\t\r\n]/g,'').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g,'');
+    return /^[a-z][a-z0-9+.-]*:/i.test(address)||address.startsWith('//');
+  };
+  const candidates=(value:string):string[]=>{
+    const urls:string[]=[];let at=0;
+    while(at<value.length){
+      while(at<value.length&&/[\t\n\f\r ,]/.test(value[at]))at++;
+      const start=at;while(at<value.length&&!/[\t\n\f\r ]/.test(value[at]))at++;
+      const token=value.slice(start,at);if(!token)break;
+      urls.push(token.replace(/,+$/,''));
+      if(token.endsWith(','))continue;
+      let depth=0;
+      while(at<value.length){const c=value[at++];if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);else if(c===','&&depth===0)break;}
+    }
+    return urls;
+  };
+  const tags=/<!--[\s\S]*?(?:-->|$)|<![^>]*>|<(script|style|textarea|title)\b((?:"[^"]*"|'[^']*'|[^'">])*)>[\s\S]*?(?:<\/\1\s*>|$)|<([a-z][a-z0-9:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
+  let count=0;
+  for(const tag of body.matchAll(tags)){
+    const text=tag[2]??tag[4];if(text===undefined)continue;
+    const seen=new Set<string>();
+    for(const attribute of text.matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)){
+      const name=attribute[1].toLowerCase();if(seen.has(name))continue;seen.add(name);
+      if(!attributes.has(name))continue;
+      const value=decode(attribute[2]??attribute[3]??attribute[4]??'');
+      count+=(name==='srcset'?candidates(value):[value]).filter(external).length;
+    }
+  }
+  return count;
+}
+
 /** Counts markup only, without interpreting stored case names as executable HTML. */
 export function summarizePage(body: string): PageMetrics {
   // Session nonces are not page content; leave every other byte in the evidence digest unchanged.
@@ -17,7 +56,7 @@ export function summarizePage(body: string): PageMetrics {
     ? tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i,(_all,prefix:string,quote:string)=>`${prefix}${quote}[csrf]${quote}`) : tag);
   return {
     scripts: (body.match(/<script\b/gi) ?? []).length,
-    externalAddresses: (body.match(/https?:\/\/[^\s"'<>]+|(?:href|src|action)\s*=\s*["']\/\/[^"']+/gi) ?? []).length,
+    externalAddresses: externalAddresses(body),
     tableRows: [...body.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)].map((match) => {
       const content = match[1].replace(/<thead\b[^>]*>[\s\S]*?<\/thead>/gi, '');
       return [...content.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].filter((row) => /<td\b/i.test(row[1])).length;
