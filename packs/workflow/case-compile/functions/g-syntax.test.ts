@@ -35,13 +35,148 @@ test('literal assertions are unsplit and waiting accepts one ASCII duration', ()
   round(['a,b\n"c"'], {}, { literalAssertion: true });
   round(['001'], {}, { wait: true }); assert.throws(() => round(['-1'], {}, { wait: true }));
 });
-for (const [name, args, keywords, options] of [
-  ['zero arguments', [], {}, {}], ['empty positional', [''], {}, {}], ['edge whitespace', [' a'], {}, {}], ['CR', ['a\rb'], {}, {}],
-  ['mixed quotes requiring wrapping', ['a,b"c\'d'], {}, {}], ['quoted trailing slash', ['a,b\\'], {}, {}], ['equals positional', ['k=value'], {}, {}],
-  ['newline with another argument', ['a\nb', 'c'], {}, {}], ['folded newline', ['a\nb'], {}, { foldNewlines: true }],
-  ['numeric text keyword', [], { k: '007' }, {}], ['unicode numeric text', [], { k: '１２' }, {}], ['negative keyword', [], { k: -1 }, {}], ['fraction keyword', [], { k: 1.5 }, {}],
-  ['unknown keyword', [], { k: 'text' }, { keywordNames: [] }], ['empty assertion', [''], {}, { literalAssertion: true }],
-] as const) test(`encoding refusal names the failing rule: ${name}`, () => assert.throws(() => encodeG({ args: [...args], keywords: { ...keywords } }, { keywordNames: Object.keys(keywords), ...options }), (e: unknown) => e instanceof GSyntaxError && e.rule.length > 0));
+for (const [name, args, keywords, options, rule] of [
+  [
+    "zero arguments",
+    [],
+    {},
+    {},
+    "empty_cell"
+  ],
+  [
+    "empty positional",
+    [
+      ""
+    ],
+    {},
+    {},
+    "positional_text"
+  ],
+  [
+    "edge whitespace",
+    [
+      " a"
+    ],
+    {},
+    {},
+    "positional_text"
+  ],
+  [
+    "CR",
+    [
+      "a\rb"
+    ],
+    {},
+    {},
+    "positional_text"
+  ],
+  [
+    "mixed quotes requiring wrapping",
+    [
+      "a,b\"c'd"
+    ],
+    {},
+    {},
+    "mixed_quotes"
+  ],
+  [
+    "quoted trailing slash",
+    [
+      "a,b\\"
+    ],
+    {},
+    {},
+    "quoted_backslash"
+  ],
+  [
+    "equals positional",
+    [
+      "k=value"
+    ],
+    {},
+    {},
+    "positional_keyword"
+  ],
+  [
+    "newline with another argument",
+    [
+      "a\nb",
+      "c"
+    ],
+    {},
+    {},
+    "newline_single"
+  ],
+  [
+    "folded newline",
+    [
+      "a\nb"
+    ],
+    {},
+    {
+      "foldNewlines": true
+    },
+    "newline_single"
+  ],
+  [
+    "numeric text keyword",
+    [],
+    {
+      "k": "007"
+    },
+    {},
+    "keyword_numeric_text"
+  ],
+  [
+    "unicode numeric text",
+    [],
+    {
+      "k": "１２"
+    },
+    {},
+    "keyword_numeric_text"
+  ],
+  [
+    "negative keyword",
+    [],
+    {
+      "k": -1
+    },
+    {},
+    "keyword_integer"
+  ],
+  [
+    "fraction keyword",
+    [],
+    {
+      "k": 1.5
+    },
+    {},
+    "keyword_integer"
+  ],
+  [
+    "unknown keyword",
+    [],
+    {
+      "k": "text"
+    },
+    {
+      "keywordNames": []
+    },
+    "keyword_name"
+  ],
+  [
+    "empty assertion",
+    [
+      ""
+    ],
+    {},
+    {
+      "literalAssertion": true
+    },
+    "assertion_literal"
+  ]
+] as const) test(`encoding refusal names the failing rule: ${name}`, () => assert.throws(() => encodeG({ args: [...args], keywords: { ...keywords } }, { keywordNames: Object.keys(keywords), ...options }), (e: unknown) => e instanceof GSyntaxError && e.rule === rule));
 test('fixed-seed supported argument corpus roundtrips', () => {
   let seed = 173;
   const alphabet = 'abcXYZ09,=_- \\"';
@@ -50,3 +185,7 @@ test('fixed-seed supported argument corpus roundtrips', () => {
     round([text], { limit: i, label: `value${i}` });
   }
 });
+
+for(const [text,rule]of [['k='+ '9'.repeat(20),'integer_range'],['k=²','unicode_numeric']] as const)test(`decoding names ${rule}`,()=>assert.throws(()=>decodeG(text),(error:unknown)=>error instanceof GSyntaxError&&error.rule===rule));
+test('keyword text and final roundtrip have exact refusal rules',()=>{for(const [value,rule]of [[{args:[],keywords:{k:' x'}},'keyword_text'],[{args:['a"b','c"d'],keywords:{}},'roundtrip']] as const)assert.throws(()=>encodeG({args:[...value.args],keywords:{...value.keywords}},{keywordNames:['k']}),(error:unknown)=>error instanceof GSyntaxError&&error.rule===rule);});
+test('expanded deterministic corpus either roundtrips exactly or reports its codec rule',()=>{let seed=173;const alphabet=Array.from("abc09,=_- \\\"'\u3000\u0085\n");const known=new Set(['positional_text','positional_keyword','newline_single','mixed_quotes','quoted_backslash','keyword_text','keyword_numeric_text','roundtrip']);for(let i=0;i<500;i++){let value='';for(let n=0;n<12;n++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;value+=alphabet[seed%alphabet.length];}try{round([value],{label:i%2?'value'+i:value});}catch(error){assert.ok(error instanceof GSyntaxError);assert.ok(known.has(error.rule),error.rule);}}});
