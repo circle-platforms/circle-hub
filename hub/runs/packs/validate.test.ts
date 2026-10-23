@@ -462,3 +462,8 @@ test('publication rejects static facts without checks and dynamic facts without 
 test('publication accepts explicitly observed dynamic facts without requiring a static check',async()=>{
   for(const target of ['item','run'])await accepted(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],observation:'synthetic.observe@1',error_handling:[]});}));
 });
+
+test('publication refuses reject by reason even when an artifact blocking check is installed',async()=>{
+  const pack=checks(file=>{file.checks[0].judges='artifact_under_verification';});
+  await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
+});

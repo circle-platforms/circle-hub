@@ -123,8 +123,9 @@ export const ErrorHandlingRow = z
   })
   .superRefine((r, ctx) => {
     if((r.code===undefined)===(r.reason===undefined))ctx.addIssue({code:'custom',path:['code'],message:'select exactly one code or reason'});
+    if (r.reason !== undefined && r.action === 'reject') ctx.addIssue({code:'custom',path:['action'],message:'reject selects a blocking artifact check code, never an unknown reason'});
     if ((r.action === 'repair') !== (r.max_rounds !== undefined)) ctx.addIssue({ code: 'custom', path: ['max_rounds'], message: 'a repair row names its rounds and only a repair row does' });
-  });
+  }).meta({not:{required:['reason','action'],properties:{reason:{},action:{const:'reject'}}}});
 export type ErrorHandlingRow = z.infer<typeof ErrorHandlingRow>;
 
 /**

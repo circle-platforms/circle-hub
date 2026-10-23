@@ -364,6 +364,10 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       r.error_handling.forEach((row, k) => {
         const field = `/requirements/${i}/error_handling/${k}/${row.reason!==undefined?'reason':'code'}`;
         const selector=row.reason!==undefined?'原因 '+labelOf('reason',row.reason):row.code;
+        if(row.reason!==undefined && row.action==='reject'){
+          c.add(problem('requirements.reject_scope','requirements.json','原因行不能处理为进已拒收；进已拒收只用于待判定产物上的阻断检查码','按原因声明修复或其他允许动作，按检查码声明已拒收',{field:'/requirements/'+i+'/error_handling/'+k+'/action'}));
+          return;
+        }
         if (row.action === 'reject' && !r.checks.some((id) => blockingOnArtifact.has(id))) {
           const artifact = labelOf('source_role', 'artifact_under_verification');
           const others = ERROR_HANDLING.filter((a) => a !== 'reject').map((a) => labelOf('error_handling', a));

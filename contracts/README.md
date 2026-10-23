@@ -121,6 +121,11 @@ Rules for a stub:
 
 ## Needs from other packages
 
+- **hub-unknown-exits (codex-b), review item 5:** connect reason selectors in terminals.ts routeOf and evaluate.ts routing,
+  and make repairRounds match the reachable routes. Currently reasons do not route but may raise the repair budget;
+  contract/publication validation is not a substitute for that runtime work. Define and test exact-code/reason/wildcard
+  precedence there. This repair intentionally does not edit terminals.ts or any unknown producer.
+
 - **records**: `hub/records/store.ts` accepts only `/^[a-z_]+@[0-9]+$/` as a schema name, so storing a body registered as `catalog-entry@1`, `check-outcome@1`, `run-summary@1`, `pack-summary@1` or `submission-received@1` throws `schema must be name@major`. Please validate schema names with contracts' `SchemaId` (which also refuses leading-zero majors).
 - **rules**: `CheckOutcome.grounds` in `contracts/src/tables.ts` should be `z.array(Ground)` (import it from `./reference.ts`), so an outcome never rests on a bare `entry:` (B01 R[5]); `JsonPointer` can be imported from `./common.ts` instead of declared twice; give `JsonPath` its `.max(512, { abort: true })` and `JsonPointer` a length cap the same way, since their patterns overflow on megabytes. Then run `npm run gen:contracts` or ask here.
 - **rules, refs, packs, records**: the reference grammar is tighter (decision 3) and every shape is strict (decision 5); please rerun your tests against this version. The contracts owner ran only `contracts/**` tests.

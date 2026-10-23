@@ -171,3 +171,18 @@ test('item 10 catalogs declare host unions and address roles with resolved scala
   assert.ok(CatalogParam.safeParse({name:'mode',type:'enum',values:['synthetic_one']}).success);
   assert.equal(CatalogParam.safeParse({name:'raw',type:'int',limit:7}).success,false,'the core must not guess a product-specific scalar limit mode');
 });
+
+test('reason selectors cannot reject an artifact and the generated boundary agrees',()=>{
+  const invalid={reason:'check_error',action:'reject'};
+  const result=ErrorHandlingRow.safeParse(invalid);
+  assert.equal(result.success,false);
+  if(!result.success)assert.ok(result.error.issues.some(issue=>issue.path.join('/')==='action'));
+  assert.ok(ErrorHandlingRow.safeParse({code:'core.structure.required_empty',action:'reject'}).success);
+  assert.ok(ErrorHandlingRow.safeParse({reason:'check_error',action:'repair',max_rounds:2}).success);
+  const validate=new AjvJsonSchemaValidator().getValidator(JSON.parse(readFileSync(new URL('../generated/schemas/requirements.v1.schema.json',import.meta.url),'utf8')));
+  const fact={key:'test',name:'合成要求',description:'合成事实',target:'item',required:true,done_rule:'gating',layers:['static'],accepted_producer:'fact',checks:['check']};
+  for(const row of [invalid,{code:'core.structure.required_empty',action:'reject'},{reason:'check_error',action:'repair',max_rounds:2}]){
+    const body={schema:'requirements@1',requirements:[{...fact,error_handling:[row]}]};
+    assert.equal(validate(body).valid,pack.RequirementsFile.safeParse(body).success);
+  }
+});
