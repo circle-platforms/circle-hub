@@ -128,13 +128,8 @@
     },
     {
       "path": "tools/jev/lib/api.ts",
-      "sha256": "3f554059a0586dca009db429beedf0097be28e8e3fb5402d3d79f70903882244",
-      "size": 4338
-    },
-    {
-      "path": "tools/jev/lib/batch.ts",
-      "sha256": "21bb26876138a386e86a1eb709b857debc8abaa3f1b6b81962f606e9ebdc2a0d",
-      "size": 14041
+      "sha256": "d105f21a8d7cc9ce6cd70003a646ac7f8174e2d0eebdb90b0d8c3af1f983e641",
+      "size": 3854
     },
     {
       "path": "tools/jev/lib/calibration.ts",
@@ -168,8 +163,8 @@
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "75a1fada20d40fb8f77b8452c6fc3e0a850d2cc333a76890ccaf2297eff65c62",
-      "size": 9894
+      "sha256": "47cbdaef5667adaefc39d6b36cff3c1df1e3339a8259afd34eae92d80152ef88",
+      "size": 10460
     },
     {
       "path": "tools/jev/lib/local.ts",

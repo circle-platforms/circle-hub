@@ -112,22 +112,6 @@ export type { CheckedRequest, RequestLimits, ResponseContext } from './validate.
 
 export { estimateJsonTokens, estimateTokens } from './tokens.ts';
 
-export {
-  CONTEXT_TOKENS_PER_QUESTION,
-  CONTEXT_TOKENS_PER_REQUEST,
-  DEFAULT_CONCURRENCY,
-  DEFAULT_MAX_ESTIMATED_TOKENS,
-  DEFAULT_MAX_QUESTIONS_PER_REQUEST,
-  DEFAULT_MAX_QUESTION_TOKENS,
-  QUESTION_OVERHEAD_TOKENS,
-  REQUEST_OVERHEAD_TOKENS,
-  UNAVAILABLE_STREAK_LIMIT,
-  askAll,
-  batchRequest,
-  planBatches,
-} from './batch.ts';
-export type { JevAnswered, JevAskAllOptions, JevAskAllResult, JevBatch, JevBatchItem, JevOversized, JevPlan, JevPlanOptions } from './batch.ts';
-
 export { candidatesOf, inputDigest, judgmentRecord, reuseKey } from './record.ts';
 export type { JevCandidate, JevJudgmentRecord, JudgmentInput, ReuseKeyInput } from './record.ts';
 
