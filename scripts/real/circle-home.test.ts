@@ -422,3 +422,11 @@ test('padded delegated decisions retain their deny and ask strength while empty 
     skillHooks(f,[{source:'process.stdout.write("   ");'}]);assert.equal(f.decide(f.input()).decision,'deny');
   }finally{f.close();}
 });
+
+test('here document separators use shell spaces and tabs rather than JavaScript whitespace',()=>{
+  const f=skillsFixture();
+  try{
+    for(const separator of ['\u00a0','\v','\f','\r','\u3000','\u2028','\ufeff'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'deny',JSON.stringify(separator));
+    for(const separator of [' ','\t'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'allow');
+  }finally{f.close();}
+});

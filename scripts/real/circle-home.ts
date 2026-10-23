@@ -147,7 +147,7 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     let line = command;
     if (command.includes('\n')) {
       const lines = command.split('\n'); if (lines.at(-1) === '') lines.pop();
-      const head = /^(.*?)\s+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(lines.shift() ?? '');
+      const head = /^(.*?)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(lines.shift() ?? '');
       if (!head || lines.pop() !== head[2] || lines.some(row => !/^%[A-Z][A-Z0-9_]*%$/.test(row))) return null;
       line = head[1];
     }
