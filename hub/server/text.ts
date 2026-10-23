@@ -825,6 +825,18 @@ function startText(v: StartOut, context: TextContext): string {
         more: (from) => `跨条目主张：${resultWay(production.reference, layout.crossAt + from, ['cross_item', String(from)], paging)}`,
       });
     }
+    const supported = itemsOf(full.partitions).flatMap(({partition, index, item}) =>
+      item.requirements.flatMap((requirement, r) => requirement.claims.flatMap((claim, c) =>
+        claim.qualifier.nature === 'fact' && claim.statement.verdict === 'support' && claim.warrant.producer === 'function' && claim.validity.status === 'valid'
+          ? [{claim, tokens:['partitions',partition,String(index),'requirements',String(r),'claims',String(c)]}] : [])));
+    if (supported.length > 0) pushCapped(blocks, {
+      priority: 3, head: [`生产运行说明（条目检查的支持事实，${supported.length} 条）：`],
+      entries: supported.map(({claim, tokens}) => {
+        const clip = new Clip(`${production.reference}#/${tokens.join('/')}`);
+        return clip.entry(`- ${clip.field(claim.item ?? '', CLIP.name, '条目编号的超出部分')}：${claimText(claim, clip, CLIP.field)}`);
+      }),
+      unit:'支持事实',measure:'条',more:from => `其余支持事实：${resultWay(production.reference, 0, supported[from].tokens, false)}`,
+    }, 4);
     const problems = problemLines(full, production.reference, null);
     pushCapped(
       blocks,

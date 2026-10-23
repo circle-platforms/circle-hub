@@ -6,7 +6,8 @@
 // under the same key is IDEMPOTENCY_MISMATCH. Arguments the records cannot hold are refused before anything is read, and
 // nothing is stored that a record could not hold.
 import { z } from 'zod';
-import { isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
@@ -18,6 +19,8 @@ import { parseReference, recReference, resolveReference } from '../../refs/api.t
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
 import { evaluate, type Evaluation } from './evaluate.ts';
+import { factClaim, rootDigest, strongestRole } from './claims.ts';
+import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
@@ -565,7 +568,7 @@ async function startFresh(
   if (runTooLarge !== null) throw runTooLarge;
   // A production result names the run record digest; it is computed and sized before anything is stored.
   const runDigest = runRecordDigest(record, startedAt);
-  const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId) : null;
+  const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
   if (production !== null) {
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
     if (resultTooLarge !== null) throw resultTooLarge;
@@ -619,7 +622,7 @@ async function startFresh(
 }
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
-async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string): Promise<{ evaluation: Evaluation; startedAt: string }> {
+async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
   const startedAt = ctx.now().toISOString();
   const evaluation = await evaluate(ctx, {
     run,
@@ -633,6 +636,38 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
     author: null,
     traceId,
   });
+  const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
+  if (notes.length === 0) return {evaluation, startedAt};
+  const noteSchema = z.object({
+    nature: NatureSchema.extract(['fact']), verdict: VerdictSchema.extract(['support']),
+    message: z.string().refine(value => value.trim().length > 0), grounds: z.array(Ground).min(1), data: z.record(z.string(), z.unknown()).optional(),
+  });
+  const scope = await buildScope(ctx, run, workflow, user, 'function');
+  const resolver = createResolver(ctx, scope, 'function');
+  // Ordinary warnings, guesses and grouping metadata are not promoted into facts.
+  for (const {group, i} of notes) {
+    const at = pointerOf('groups', i);
+    const note = noteSchema.safeParse(group);
+    if (!note.success) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包的确定说明 ${at} 不合格：需要 message 和非空 grounds`, {path:at,fix:'请任务包维护人修正投影函数的事实说明后重开运行'})]);
+    const grounds: string[] = [];
+    const roles: Array<SourceRole | null> = [];
+    for (const reference of note.data.grounds) {
+      const resolved = await resolver.resolve(reference);
+      if (!resolved.ok) throw new Refusal([protocolError(resolved.code ?? 'REFERENCE_UNRESOLVED', `任务包的确定说明 ${at} 的根据解析不出：${resolved.message}`, {
+        path:`${at}/grounds`,
+        fix:resolved.code === 'SOURCE_UNAVAILABLE'
+          ? `请 ${user.name} 先重读该引用并核对权限、读取档位和解析器；恢复可读后重开运行，不能恢复时把追踪号交给管理员核查`
+          : '按本次运行绑定的源文件和锁定根修正投影函数的引用，再重开运行',
+      })]);
+      grounds.push(resolved.value.reference);
+      roles.push(resolved.value.role);
+    }
+    evaluation.result.cross_item.push({...factClaim({
+      outcome:{verdict:'support',statement:note.data.message,grounds,tier:'advisory',...(note.data.data === undefined ? {} : {data:note.data.data})},
+      rule:`${workflow.pack.id}.projection@${workflow.pack.version}`,judges:strongestRole(roles) ?? 'subject',
+      overClaims:false,discrimination:false,bound:[runDigest, workflow.pack.digest, ...(run.root === undefined ? [] : [run.root]), ...grounds.flatMap(ref => {const digest = rootDigest(ref); return digest === null ? [] : [digest];})],
+    }),pointer:at});
+  }
   return { evaluation, startedAt };
 }
 

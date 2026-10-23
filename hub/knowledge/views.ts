@@ -552,6 +552,7 @@ export class KnowledgeViews {
     const composition = await this.#reading.compositionOf(at.root);
     const seen = new Set<string>();
     const counts = new Map<string, { values: FacetValue[]; count: number }>();
+    const empty = Object.fromEntries(by.map(field => [field, 0]));
     const odd = { count: 0 };
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
@@ -562,6 +563,8 @@ export class KnowledgeViews {
         seen.add(row.entry);
         if (row.unplaced) unplacedCount++;
         const lists = by.map((field) => facetValues(row.content.data, field, odd));
+        // Count membership of each null group before collecting combinations or applying any row limit.
+        lists.forEach((values, i) => { if (values.includes(null)) empty[by[i]]++; });
         if (lists.reduce((n, list) => n * list.length, 1) > MAX_FACET_COMBINATIONS) {
           cut++;
           continue;
@@ -616,6 +619,7 @@ export class KnowledgeViews {
       by: [...by],
       rows,
       total: seen.size,
+      totals: { empty },
       truncated: rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
       skipped: skippedCount(composition),
       notes,

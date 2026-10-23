@@ -103,9 +103,20 @@ export const FacetView = z.strictObject({
     .max(MAX_FACET_ROWS)
     .describe('one row per distinct combination, sorted by the values in code-unit order'),
   total: z.number().int().nonnegative().describe('entries of the kind in the root, whatever the fields'),
+  totals: z.strictObject({
+    empty: z.record(DataFieldName, z.number().int().nonnegative()).describe('Entries in the null group of each by field, once per entry per field; includes rows omitted by every truncation limit; zero is explicit'),
+  }),
   truncated: z.boolean(),
   skipped: z.number().int().nonnegative().describe('listed sources the producers could not use in this root: the counts do not cover what they would have given'),
   notes: z.array(z.string()),
+}).superRefine((view, ctx) => {
+  for (const field of view.by) {
+    if (!Object.hasOwn(view.totals.empty, field)) ctx.addIssue({code:'custom',path:['totals','empty',field],message:'every by field has an explicit empty count'});
+  }
+  for (const [field, count] of Object.entries(view.totals.empty)) {
+    if (!view.by.includes(field)) ctx.addIssue({code:'custom',path:['totals','empty',field],message:'only requested by fields have empty counts'});
+    if (count > view.total) ctx.addIssue({code:'custom',path:['totals','empty',field],message:'an empty count cannot exceed the entry total'});
+  }
 });
 export type FacetView = z.infer<typeof FacetView>;
 
