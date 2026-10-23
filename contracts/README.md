@@ -190,3 +190,13 @@ field in the record. Consumers must switch history rendering to this reader; no 
 The new conditional requirements are also emitted in JSON Schema, not only Zod refinements. The generator's full-snapshot
 symlink test now sizes its capture buffer from the actual serialized expected snapshot; no production or timeout limit is
 changed. hub-unknown-exits must derive actions/create requests, preserve gaps, and use the strict writer after binding exits.
+
+### Table absence and empty aggregates (task item 6)
+
+The required flags describe a verified refutation (`core.structure.required_empty`, `data.missing`) attributed to whoever
+provided the subject. They never convert a mandatory absent location into unknown. Optional absence is distinct from an
+empty selected collection. `range@1` min/max thresholds accept `empty: fail|pass`, omission meaning fail; count and sum
+keep their defined empty numeric value and do not accept the min/max-only option. This is a table-format selector derived
+from generated terminal codes. Interpreter execution/attribution remains hub-retry-split's work. Complete catalog absence
+is a refutation; an incomplete catalog needs its missing sources and recovery, not a fabricated complete scope. View scope
+fields are deliberately left to the owner of views.ts.

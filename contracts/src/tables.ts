@@ -10,7 +10,7 @@
 // mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
 // "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, DynamicTerminalSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
 import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
 import { ReferenceUri } from './reference.ts';
 
@@ -163,7 +163,7 @@ export const CatalogTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a commands location that is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
     claims: z
       .strictObject({
         select: JsonPath.describe('Statements that a command exists or does not exist; a missing location means no statements'),
@@ -257,7 +257,7 @@ export const MembershipTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a missing location is unknown (missing input); otherwise it is nothing to check and listed in data.missing. An empty list is nothing to check either way'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({ title: 'membership@1', description: 'Membership table: values must belong to a closed set. Code: core.membership.not_in_set' });
 export type MembershipTable = z.infer<typeof MembershipTable>;
@@ -302,7 +302,7 @@ export const PatternTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a rule whose location is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({ title: 'pattern@1', description: 'Pattern table: values must (or must not) match declared patterns. Code: core.pattern.no_match' });
 export type PatternTable = z.infer<typeof PatternTable>;
@@ -334,7 +334,8 @@ export const RangeCheck = z
     z.strictObject({
       values: JsonPath,
       threshold: z
-        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds })
+        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds, empty:DynamicTerminalSchema.extract(['fail','pass']).optional().meta({default:'fail'}).describe('Only min/max on an empty set: pass or fail, omission means fail; count and sum keep their defined numeric zero') })
+        .superRefine((value,ctx)=>{if(value.empty!==undefined&&value.measure!=='min'&&value.measure!=='max')ctx.addIssue({code:'custom',path:['empty'],message:'empty is declared only for min and max'});})
         .describe('The aggregate of all selected values must lie in the bounds'),
     }),
   ])
@@ -349,7 +350,7 @@ export const RangeTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a check whose location is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({
     title: 'range@1',
@@ -365,9 +366,9 @@ export const CoverageTable = z
     schema: z.literal('coverage@1'),
     ...common,
     required: z
-      .union([ClosedSet, z.strictObject({ select: JsonPath.describe('Members taken from the subject itself; a missing location is unknown (missing input)') })])
+      .union([ClosedSet, z.strictObject({ select: JsonPath.describe('Members taken from the subject itself; a missing required location refutes core.structure.required_empty and names it in data.missing') })])
       .describe('The members that must be covered'),
-    covered: z.array(JsonPath).min(1).describe('Subject locations listing the covered members; when every one is missing the check is unknown (missing input)'),
+    covered: z.array(JsonPath).min(1).describe('Subject locations listing the covered members; missing required locations refute core.structure.required_empty with data.missing'),
     skipped: z
       .strictObject({
         select: JsonPath.describe('Declared skips'),

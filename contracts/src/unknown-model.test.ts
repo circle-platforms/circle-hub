@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {AjvJsonSchemaValidator} from '@modelcontextprotocol/sdk/validation/ajv';
 import {accepted,copy} from './fixtures.ts';
+import {RangeTable} from './tables.ts';
 import {CheckOutcome} from './tables.ts';
 import {LayerResult} from './validation.ts';
 import * as validation from './validation.ts';
@@ -63,4 +64,13 @@ test('item 3 publishes the same recovery admission constraints in JSON Schema',(
   const result=validation.ValidationResult.parse(copy(accepted));result.partitions.delivered[0].requirements[0].layers=[{layer:'static',terminal:'unchecked',reason:'timeout'}];
   const validate=ajv.getValidator(JSON.parse(readFileSync(new URL('../generated/schemas/validation.v1.schema.json',import.meta.url),'utf8')));
   assert.equal(validate(result).valid,false);Object.assign(result.partitions.delivered[0].requirements[0].layers[0],gap);assert.equal(validate(result).valid,true);
+});
+
+
+test('item 6 declares empty threshold behavior while omission means failure',()=>{
+  const table={schema:'range@1',origin:'Synthetic threshold rule',checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'pass'}}]};
+  assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1}}]}).success);
+  assert.ok(RangeTable.safeParse(table).success);
+  assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'fail'}}]}).success);
+  assert.equal(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',empty:'unknown'}}]}).success,false);
 });
