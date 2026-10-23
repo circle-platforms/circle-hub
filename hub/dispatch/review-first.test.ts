@@ -204,3 +204,11 @@ test('R27 a completed fence check records its observed drift and continuity limi
   const drift=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='fencing')!;
   assert.equal(drift.body.result,'completed');assert.equal(drift.body.detail.drift,true);assert.ok(drift.body.detail.missing_fact && drift.body.detail.next_action);
 });
+
+test('R28 failed preconditions identify their pointers without publishing observed values',async t=>{
+  const c=await setup({mode:'build'});t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const events=await c.service.journal.events(state.job);
+  const check=events.find(e=>e.body.detail.phase==='precheck.evaluated')!;
+  const failed=(check.body.detail.conditions as any[]).filter(v=>!v.matched);
+  assert.equal(failed[0].pointer,'/build');assert.equal(failed[0].operator,'equals');assert.equal(failed[0].actual,undefined);
+  assert.ok(state.failed_conditions?.some(v=>v.pointer==='/build'));
+});
