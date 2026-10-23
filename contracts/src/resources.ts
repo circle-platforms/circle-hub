@@ -713,7 +713,7 @@ export const ReadResponse = z.strictObject({
   json: z.unknown().optional().describe('the parsed answer of a json route'),
   text: z.string().optional().describe('the decoded answer of a text, xml or html route (or of a json route that did not parse)'),
   model: z.unknown().optional().describe('the model of the core parser the route names'),
-  error: z.strictObject({ code: z.string(), message: z.string() }).nullable(),
+  error: z.strictObject({ code: z.string(), message: z.string(), retry_at:IsoTime.optional(), attempts:z.number().int().positive().optional() }).nullable(),
 });
 export type ReadResponse = z.infer<typeof ReadResponse>;
 
@@ -806,6 +806,8 @@ export type ReadProjectionOutput = z.infer<typeof ReadProjectionOutput>;
 // ---------------------------------------------------------------- read-manifest@1 (a B05 read action)
 
 export const ReadRequestEntry = z.strictObject({
+  attempt:z.number().int().positive().optional().describe('Physical attempt within this planned request, including the single login replay'),
+  retry_at:IsoTime.optional().describe('Earliest scheduled retry time; long Retry-After values end the bounded wait instead of being shortened'),
   key: RequestKey,
   round: z.number().int().min(1).max(MAX_READ_ROUNDS),
   route: RouteId,

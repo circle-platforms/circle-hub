@@ -12,6 +12,7 @@
 // at retain_only gives nested readers no content. A planned request that would carry a sent credential value is refused.
 // Visibility of what a read stores (B02 R[3], D01 R[4]; milestone 1 has shared service credentials only): the reader and
 // admins, never shareable.
+import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry} from './read-retry.ts';
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, PackHandle } from '../ports.ts';
@@ -81,9 +82,10 @@ export type ReadOutcome =
       content: unknown;
       meta: unknown;
     }
-  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; manifest: string | null };
+  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; manifest: string | null;retry?:ReadRetry };
 
 export interface ReadEngineOptions {
+  readRetrySleep?:(ms:number)=>Promise<void>;
   store: RecordStore;
   artifacts: Artifacts;
   principals: Principals;
@@ -111,6 +113,7 @@ const JSON_MEDIA = /^application\/(?:[a-z0-9.+-]*\+)?json\s*(?:;|$)/i;
 const RETAIN_ONLY = 'retain_only' as const;
 
 interface ResponseState {
+  failure?:ConnectorError;
   view: ReadResponse;
   url: string | null;
   artifact: SourceArtifact | null;
@@ -395,11 +398,14 @@ export class ReadEngine {
         entries.push(refusedEntry(failed.code, false));
         throw failed;
       }
+      let attempts=0,retries=0,waited=0;
       const attempt = async (credential: { name: string; value: string } | null, afterLogin: boolean): Promise<void> => {
+        attempts++;
         const started = this.#o.now().toISOString();
         let received: { exchange: HttpExchange; stored: Stored } | null = null;
         const entry = (ok: boolean, error: string | null): ReadRequestEntry => ({
           key: planned.key,
+          attempt:attempts,
           round,
           route: route.id,
           method: route.method,
@@ -450,9 +456,28 @@ export class ReadEngine {
           throw failed;
         }
       };
+      const retryAttempt=async(credential:{name:string;value:string}|null,afterLogin:boolean):Promise<void>=>{
+        for(;;) {
+          try {return await attempt(credential,afterLogin);}
+          catch(error) {
+            const failed=asConnectorError(error,'SOURCE_UNREACHABLE','transport');
+            const delay=readRetryDelay(failed,retries);
+            if(delay===null)throw failed;
+            const at=new Date(this.#o.now().getTime()+delay).toISOString();
+            const final=new ConnectorError(failed.code,failed.message,{layer:failed.layer,detail:{...failed.detail,retry_at:at,attempts},cause:failed});
+            const state=responses.get(planned.key);
+            if(state){state.failure=final;if(state.view.error)Object.assign(state.view.error,{retry_at:at,attempts});}
+            const entry=entries.findLast(value=>value.key===planned.key && value.attempt===attempts);
+            if(entry)entry.retry_at=at;
+            if(retries>=READ_TRANSPORT_RETRIES || delay+waited>READ_RETRY_WAIT_MS)throw final;
+            retries++;waited+=delay;
+            await (this.#o.readRetrySleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms))))(delay);
+          }
+        }
+      };
       if (!carries) {
         try {
-          await attempt(null, false);
+          await retryAttempt(null, false);
         } catch (error) {
           if (FATAL_READ_ERRORS.has((error as ConnectorError).code)) throw error;
         }
@@ -464,7 +489,7 @@ export class ReadEngine {
         const header: StaticHeader = await credential.acquire();
         let accepted = false;
         try {
-          await attempt(header, false);
+          await retryAttempt(header, false);
           accepted = true;
         } catch (error) {
           const failed = error as ConnectorError;
@@ -483,7 +508,7 @@ export class ReadEngine {
       /** Sends with `token`; true when the answer said "login expired". Any other answer confirms the token. */
       const sendWith = async (token: string, afterLogin: boolean): Promise<boolean> => {
         try {
-          await attempt(header(token), afterLogin);
+          await retryAttempt(header(token), afterLogin);
         } catch (error) {
           const failed = error as ConnectorError;
           if (failed.code === 'SOURCE_LOGIN_EXPIRED') return true;
@@ -569,6 +594,7 @@ export class ReadEngine {
       const first = responses.get(original)!;
       if (!first.view.ok || first.artifact === null) {
         const code: ConnectorErrorCode = isConnectorErrorCode(first.view.error?.code) ? first.view.error.code : 'SOURCE_MALFORMED';
+        if(first.failure)throw first.failure;
         throw new ConnectorError(code, `原件请求 ${original} 没有成功：${first.view.error?.message ?? '无应答'}`, { layer: 'transport' });
       }
       artifacts = [{ name: 'original', artifact: first.artifact }];
@@ -719,7 +745,7 @@ export class ReadEngine {
     });
     if (failure !== null || digest === null) {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
-      return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest };
+      return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
     return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta };
   }

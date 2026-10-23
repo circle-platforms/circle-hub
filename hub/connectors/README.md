@@ -583,3 +583,9 @@ External-id size advice in core is deliberately generic (缩短读取键后重�
 Counted identity refusals carry a typed inputError only for an active Hub reader. The engine exposes this deterministic
 caller-input fact only after workflow access checks, using its existing input-schema code and a shortening instruction.
 Other read failures stay neutral; neither the supplied key nor resource existence/permission is disclosed by this field.
+
+## 有界读重试（hub-read-absence 第 4 条）
+
+仅重试 SOURCE_TIMEOUT、SOURCE_UNREACHABLE 和 HTTP 429/5xx。每个已规划请求共享两次传输重试，退避从 100 ms 起；有效 Retry-After（秒或 HTTP-date）是不得提前的时刻，累计等待至多 30 秒，超过预算便返回 retry 的原码、最早时间与实际尝试数，不缩短服务器要求。非法或不可表示的 Retry-After 是确定的格式故障。每次完整应答先存为原件；读清单逐次记录 attempt 和 retry_at，逻辑覆盖数不因重试重复累计，所有完整应答仍共用原字节预算。
+
+max_requests 继续约束规划请求槽位。每槽位最多三次传输尝试；原有的明确登录失效再发一次沿用同一传输重试预算，物理读尝试最多四次。路由许可与原有登录停止规则保留：登录交换本身不重试，401/403/404/410、格式、凭据或本地存储故障不进入传输重试。ExternalRead 保留 retry 元数据；对外中性码/可重试码分类与登录请求记录，按任务依赖后接，不在这里臆造新协议码。

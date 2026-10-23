@@ -115,9 +115,11 @@ export interface ExternalArtifact {
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
  * while other failures show the neutral SOURCE_UNAVAILABLE.
  */
+export interface ExternalReadRetry {code:string;at:string;attempts:number}
+
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
+  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */

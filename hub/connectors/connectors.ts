@@ -25,6 +25,7 @@ export interface ConnectorsOptions {
   packs: PacksPort;
   /** Injectable for tests; default the global fetch. */
   fetch?: FetchLike;
+  readRetrySleep?:(ms:number)=>Promise<void>;
   now?: () => Date;
   /** Admin log sink. Every string it receives has been redacted. */
   log?: ConnectorLog;
@@ -258,6 +259,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     redactor,
     now,
     log: options.log,
+    readRetrySleep:options.readRetrySleep,
     nestedCacheMs: options.nestedCacheMs,
     nestedCacheBytes: options.nestedCacheBytes,
   });
@@ -304,7 +306,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         }
         const [{ runtime, read }] = candidates;
         const outcome = await engine.top(runtime, read, subject, context);
-        if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}` };
+        if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}`,...(outcome.retry?{retry:outcome.retry}:{}) };
         return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');

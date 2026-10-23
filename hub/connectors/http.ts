@@ -1,3 +1,4 @@
+import {retryAfterMs} from './read-retry.ts';
 // HttpSource: the only way the connectors reach an external system. Per request, before any network I/O: the route allow-list
 // (routes.ts), the same-origin rule (the URL is the role's base URL plus the route-space path, and parsing it must change
 // nothing), and the plaintext rule (a credential goes over plain HTTP only to an origin the resource declares allow_plaintext).
@@ -79,6 +80,8 @@ export interface HttpExchange {
   startedAt: number;
   endedAt: number;
   credentialSent: boolean;
+  retryAfterInvalid?:boolean;
+  retryAfterMs?:number;
 }
 
 export interface HttpReply extends HttpExchange {
@@ -219,6 +222,7 @@ class Limiter {
 }
 
 interface RawAnswer {
+  retryAfterMs?:number;
   status: number;
   mediaType: string;
   etag: string | null;
@@ -344,6 +348,7 @@ export class HttpSource {
       status: raw.status,
       mediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
       etag: raw.etag,
+      ...(raw.retryAfterMs===undefined?{}:Number.isNaN(raw.retryAfterMs)?{retryAfterInvalid:true}:{retryAfterMs:raw.retryAfterMs}),
       bytes: raw.bytes,
       sha256: createHash('sha256').update(raw.bytes).digest('hex'),
       startedAt,
@@ -502,6 +507,7 @@ export class HttpSource {
       const contentType = response.headers.get('content-type');
       const etag = response.headers.get('etag');
       return {
+        retryAfterMs:retryAfterMs(response.headers.get('retry-after'),this.#now()),
         status: response.status,
         mediaType: contentType !== null && MEDIA_TYPE.test(contentType.trim()) ? contentType.trim() : '',
         etag: etag !== null && ETAG.test(etag) ? etag : null,
@@ -514,9 +520,10 @@ export class HttpSource {
 
   #interpret(exchange: HttpExchange): HttpReply {
     const { route, status } = exchange;
-    const detail = { route: route.id, status };
+    const detail = { route: route.id, status,...(exchange.retryAfterMs===undefined?{}:{retry_after_ms:exchange.retryAfterMs}) };
     const error = (code: ConstructorParameters<typeof ConnectorError>[0], message: string, layer: ErrorLayer, extra: Record<string, unknown> = {}): ConnectorError =>
       new ConnectorError(code, message, { layer, detail: { ...detail, ...extra } });
+    if(exchange.retryAfterInvalid && (status===429 || status>=500 && status<=599))throw error('SOURCE_MALFORMED','来源 Retry-After 不是可表示的合法时间；请来源管理员修正该退避声明','transport');
     if (status >= 300 && status < 400) throw error('SOURCE_REDIRECT_REFUSED', `路由 ${route.id} 的应答要求重定向（HTTP ${status}），Hub 不跟随`, 'transport');
     if (status === 401) throw error('SOURCE_LOGIN_EXPIRED', `路由 ${route.id} 的应答是 HTTP 401`, 'transport');
     if (status === 403) throw error('SOURCE_FORBIDDEN', `路由 ${route.id} 的应答是 HTTP 403`, 'transport');
