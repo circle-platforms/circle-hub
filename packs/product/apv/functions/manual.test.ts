@@ -405,6 +405,15 @@ describe('author-marked command literals', () => {
     assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
   });
 
+  it('extracts literals in linear time over unmatched marks', () => {
+    const text = `# 章\n\n${'“'.repeat(80_000)}\n`;
+    const start = performance.now();
+    const result = produceManualEntries(markdown(text));
+    const ms = performance.now() - start;
+    assert.ok(ms < 3000, `took ${ms} ms`);
+    assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
+  });
+
   it('dedupes a repeated literal and caps one block’s literals at 100', () => {
     const mention = `${Array.from({ length: 120 }, (_, k) => `**demo c${k}**`).join('，')}，**demo c0** 再提一次。`;
     const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`));

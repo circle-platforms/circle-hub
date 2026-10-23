@@ -268,7 +268,10 @@ function proseLiterals(text: string): string[] {
     for (const [open, close] of SPAN_MARKS) {
       if (!text.startsWith(open, i)) continue;
       matched = true;
-      const at = text.indexOf(close, i + open.length);
+      // The closer is searched only within the span's bound, so unmatched openers cost a bounded window each.
+      const window = text.slice(i + open.length, i + open.length + MAX_LITERAL + close.length + 1);
+      const found = window.indexOf(close);
+      const at = found < 0 ? -1 : i + open.length + found;
       if (at >= 0 && at - i - open.length <= MAX_LITERAL) {
         const literal = commandLiteral(text.slice(i + open.length, at));
         if (literal !== null) {

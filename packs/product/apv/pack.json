@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "7d6afa0945680c6c6c66da9784678639d4734d7b8812285854f6aa4b129fa4cc",
-      "size": 46050
+      "sha256": "2c1e778bf30d758791e345b7f97bd1c25e4ab1a3a169af263b702fe4936a3745",
+      "size": 46308
     },
     {
       "path": "functions/naming.ts",
