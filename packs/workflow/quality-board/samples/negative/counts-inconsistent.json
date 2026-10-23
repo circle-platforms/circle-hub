@@ -49,6 +49,12 @@
       "parameters": {},
       "groups": [
         {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:05f8f5c738660a3a59f9da95632304bfd73d37c8f5d3fb777c63ed57f4e04e87",
+            "skipped": 0,
+            "truncated": false
+          },
           "product": "apv",
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",

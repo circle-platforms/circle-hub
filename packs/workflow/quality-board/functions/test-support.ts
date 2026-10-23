@@ -112,3 +112,13 @@ export function randomOf(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/** A complete synthetic placement view for tests whose focus is the metric view. */
+export function placementFor(view: Record<string, unknown>, unplaced = 0): BoundInput {
+  const build = view.build as { build: string; root: string };
+  const total = view.total as number;
+  return boundView('placement', facetViewOf([
+    ...(unplaced > 0 ? [facetRow({ commands: null }, unplaced)] : []),
+    ...(total > unplaced ? [facetRow({ commands: '/synthetic' }, total - unplaced)] : []),
+  ], { by: ['commands'], product: view.product as string, build: build.build, root: build.root, total }));
+}

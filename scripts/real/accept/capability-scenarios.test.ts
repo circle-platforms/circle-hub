@@ -100,7 +100,7 @@ describe('traceability scenario', () => {
     product: 'apv',
     build: 'Rel_APV_10_6_1_57',
     defects: [
-      { bug: '7300', status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }, { id: '9001:c-2', title: '证书查看' }] },
+      { bug: '7300', closed: true, status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }, { id: '9001:c-2', title: '证书查看' }] },
       { bug: '7402', status: 'known', cases: [] },
     ],
   };
@@ -125,6 +125,7 @@ describe('traceability scenario', () => {
       '- 7300 | 缺陷 7300 | 已修复；2 个用例',
       '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
     const missing = good.replace('9001:c-1', '9001:wrong-case');
@@ -296,4 +297,81 @@ test('scope and sweep answers are never supplied or contaminated by placed facet
   logs[1].toolResults[0].text = `运行 run_synthetic。条目 ${id} 没有原因。\n- 线索 ${FACET_SOURCE}（输入 facets）`;
   assert.ok(scope.check(logs).some((v) => !v.ok && v.name.includes('范围里的用例')));
   assert.ok(sweep.check(logs).some((v) => !v.ok && v.name.includes('命令已改')));
+});
+
+test('a quality-board item-2 gold binds only the 1.0.1 facets slot (placement waits for the gold that asks for it)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z' });
+  const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start = reply.find((r) => r.tool === 'hub_start_run');
+  assert.ok(start !== undefined);
+  assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets'], 'no placement before items 3 and 4 are published');
+  const withTypes = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z', types: true });
+  const reply2 = (await withTypes.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start2 = reply2.find((r) => r.tool === 'hub_start_run');
+  assert.deepEqual(Object.keys(start2!.input!.inputs ?? {}).sort(), ['facets', 'placement']);
+});
+
+test('a one-group board with the appended location column parses the types coverage correctly', async () => {
+  const { default: qualityBoard, parseGroups } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Rel_APV_10_6_1_57', types: true, unplaced: 3 });
+  const text = [
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%；未打标签 3 个；没有用例带这些类型的标签：压力测试、兼容性测试 | 位置 src:aaaa/json@1/p/rows',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。3 个用例没有解析出命令。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n');
+  const parsed = parseGroups(text);
+  const summary = parsed.get('10.6/SSL') ?? '';
+  const missing = /没有用例带这些类型的标签：([^；|\n]+)/.exec(summary)?.[1]?.trim();
+  assert.equal(missing, '压力测试、兼容性测试', 'the location column must not be captured into the summary');
+  void scenario;
+});
+
+test('when placement is bound the unplaced-count sentence is always checked, gold number or not', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Rel_APV_10_6_1_57', types: true });
+  const withSentence = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。2 个用例没有解析出命令。',
+  ].join('\n')));
+  const unplacedWith = withSentence.find((c) => c.name.includes('未归位'));
+  assert.ok(unplacedWith !== undefined && unplacedWith.ok, JSON.stringify(unplacedWith));
+  const withoutSentence = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。',
+  ].join('\n')));
+  const unplaced = withoutSentence.find((c) => c.name.includes('未归位'));
+  assert.ok(unplaced !== undefined, 'the check exists whenever placement is bound');
+  assert.ok(!unplaced.ok, 'a missing sentence is a mismatch, not a skip');
+});
+
+test('a gold with placement but no types still binds both facets and placement (board.ts --placement, the 1.1.0 slot)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z', placement: true, unplaced: 0 });
+  const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start = reply.find((r) => r.tool === 'hub_start_run');
+  assert.ok(start !== undefined);
+  assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets', 'placement'], 'quality-board 1.1.0 requires the placement slot');
+});
+
+test('a correct one-group board with the location column passes the scenario group check end to end (closure item 9)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({
+    product: 'apv',
+    build: 'Rel_APV_10_6_1_57',
+    types: true,
+    unplaced: 1,
+    totals: { cases: 20, missing: 1, vague: 1, negative: 1 },
+    groups: [{ label: '10.6/SSL', cases: 20, missing: 1, vague: 1, negative: 1, coverage: { present: [], missing: ['兼容性测试', '压力测试'], untagged: 3 } }],
+  });
+  const checks = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）；未打标签 3 个；没有用例带这些类型的标签：压力测试、兼容性测试 | 位置 src:aaaa/json@1/p/rows',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。1 个用例没有解析出命令。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n')));
+  const group = checks.find((c) => c.name === '#1 分组指标一致');
+  assert.ok(group !== undefined, JSON.stringify(checks.map((c) => c.name)));
+  assert.ok(group.ok, JSON.stringify(group));
 });
