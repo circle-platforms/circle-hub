@@ -15,7 +15,7 @@ export class Hub {
   async call(name: string, args: unknown): Promise<any> {
     if (!this.initialized) { await this.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'jev-skill', version: GENERATED.version } }); this.initialized = true; }
     const result = await this.rpc('tools/call', { name, arguments: args }); this.lastText=(result.content??[]).filter((v:any)=>v.type==='text'&&typeof v.text==='string').map((v:any)=>v.text); const value = result.structuredContent;
-    need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); if(value.call_result==='error')throw new Refusal(`${name}：${JSON.stringify(value.errors)}`); return value;
+    need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); if(value.call_result==='error'&&name!=='submit_result')throw new Refusal(`${name}：${JSON.stringify(value.errors)}`); return value;
   }
   async nodes(root: string, paths: string[], depth = 1): Promise<any[]> {
     const all: any[] = []; let cursor: string | undefined; const seen = new Set<string>();
