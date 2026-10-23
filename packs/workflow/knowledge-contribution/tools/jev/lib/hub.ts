@@ -4,10 +4,10 @@ export class Hub {
   url: URL; token: string; guard: (v: unknown) => void; id = 0; initialized = false; lastText: string[] = [];
   constructor(url: string, token: string, guard: (v: unknown) => void) { this.url = secureUrl(url); this.token = token; this.guard = guard; }
   async rpc(method: string, params: unknown): Promise<any> {
-    const id = ++this.id; const response = await fetch(this.url, { method: 'POST', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    const id = ++this.id; const mutation=method==='tools/call'&&['upload_file','start_run','submit_result'].includes((params as any)?.name);let response:Response;try{response = await fetch(this.url, { method: 'POST', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), redirect: 'manual', signal: AbortSignal.timeout(60_000) });}catch(error){const timeout=error instanceof Error&&(error.name==='TimeoutError'||error.name==='AbortError');const tag=(error as any)?.cause?.code??(error as any)?.code??(error instanceof Error?error.name:'Unknown');throw new Refusal(timeout?'Hub 60 秒内没有回答；本地超时不证明 Hub 没受理，用同一命令重跑取回原回执':`连不上 Hub（${tag}）；核对连接，用同一命令重跑取回原回执`,mutation?3:1);}
     if(response.status!==200)throw new Refusal(`Hub HTTP ${response.status}；${response.status===401||response.status===403?'Hub 令牌被拒；所有者用 /secrets HUB_TOKEN 更新':'核对 Hub 端点和服务状态后重跑'}`);
     need(response.headers.get('content-type')?.split(';')[0] === 'application/json','Hub 应答不是 JSON；核对 Hub 端点后重跑');
-    const raw = await response.text(); need(Buffer.byteLength(raw) <= 16 * 1024 * 1024, 'Hub 回答过大；缩小读取路径后重跑'); this.guard(raw); const reply = JSON.parse(raw); this.guard(reply);
+    let raw:string;try{raw=await response.text();}catch{throw new Refusal('Hub 应答中断；本地中断不证明 Hub 没受理，用同一命令重跑取回原回执',mutation?3:1);} need(Buffer.byteLength(raw) <= 16 * 1024 * 1024, 'Hub 回答过大；缩小读取路径后重跑'); this.guard(raw); let reply:any;try{reply=JSON.parse(raw);}catch{throw new Refusal('Hub JSON 应答格式不对；核对服务，用同一命令重跑取回原回执',mutation?3:1);}this.guard(reply);
     if(record(reply.error))throw new Refusal(`Hub JSON-RPC ${reply.error.code}：${reply.error.message}；修正 RPC 参数后重跑`);
     need(reply.id === id && reply.jsonrpc === '2.0' && record(reply.result), 'Hub RPC 未成功；核对参数和权限后重跑'); return reply.result;
   }

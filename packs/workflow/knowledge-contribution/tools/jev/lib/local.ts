@@ -45,3 +45,8 @@ export class LocalStore {
   }
   async records(name: string): Promise<any[]> { const file = resolve(this.directory, name); const stat = await lstat(file).catch(() => null); if (!stat) return []; need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, '记录文件不能是链接；核对输出目录'); const text = await readFile(file, 'utf8'); this.guard(text); return text.trim() === '' ? [] : text.trimEnd().split('\n').map((line) => JSON.parse(line)); }
 }
+
+export async function readJsonFile(name:string,cwd:string,guard:(value:unknown)=>void){
+ let raw:string;try{raw=await readFile(resolve(cwd,name),'utf8');}catch(error){const code=(error as NodeJS.ErrnoException).code??'UNKNOWN';throw new Refusal(`${name}：读取失败（${code}）；补齐可读文件后重跑`);}
+ guard(raw);try{return JSON.parse(raw);}catch(error){throw new Refusal(`${name}：JSON 格式不对（${(error as Error).message}）；修正该文件后重跑`);}
+}
