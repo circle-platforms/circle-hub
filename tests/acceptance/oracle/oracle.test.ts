@@ -122,17 +122,17 @@ describe('oracle', () => {
 
   it('a skipped item is incomplete at every declared layer; only a required requirement makes the item incomplete (W07 R[2], V05 R[3])', () => {
     const skipped: SubmissionDescription = { ...handled, items: { i1: { handling: 'skipped' } } };
-    const e = expected(run(), skipped, support);
+    const e = expected(run({requirements:[req({producer:'judgment'})]}), skipped, support);
     assert.deepEqual(e.items[0].requirements[0].layers, [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed' }]);
     assert.equal(e.items[0].partition, 'incomplete');
     assert.equal(e.items[0].reason, 'declared_skip');
-    const optional = expected(run({ requirements: [req({ required: false })] }), skipped, support);
+    const optional = expected(run({ requirements: [req({ required: false,producer:'judgment' })] }), skipped, support);
     assert.equal(optional.items[0].partition, 'delivered');
   });
 
   it('a missing item is not covered, named in errors, and the submission stays accepted (W07 R[3])', () => {
     const missing: SubmissionDescription = { ...handled, items: {} };
-    const e = expected(run(), missing, support);
+    const e = expected(run({requirements:[req({producer:'judgment'})]}), missing, support);
     assert.equal(e.acceptance, 'accepted');
     assert.deepEqual(e.items[0].requirements[0].layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'unattributed' }]);
     assert.equal(e.items[0].partition, 'incomplete');
@@ -239,10 +239,10 @@ describe('oracle', () => {
     ]);
   });
 
-  it('a missing item is incomplete even when every requirement is optional (W07 R[3], V05 R[3])', () => {
-    const e = expected(run({ requirements: [req({ required: false })] }), { ...handled, items: {} }, support);
-    assert.equal(e.items[0].partition, 'incomplete');
-    assert.equal(e.items[0].reason, 'not_covered');
+  it('optional requirements alone do not force an item into incomplete (W07 R[3], V05 R[3])', () => {
+    const e = expected(run({ requirements: [req({ required: false,producer:'judgment' })] }), { ...handled, items: {} }, support);
+    assert.equal(e.items[0].partition, 'delivered');
+    assert.equal(e.items[0].reason, undefined);
     assert.equal(e.errors[0].kind, 'not_covered');
   });
 
@@ -288,7 +288,7 @@ describe('oracle', () => {
             const got = expected(description, submission, checks);
             const layer = got.items[0].requirements[0].layers[0];
             const where = `${producer}/${handling}/${outcome}/${negative ? 'negative' : 'plain'}`;
-            if (handling !== 'handled') {
+            if (handling !== 'handled' && (producer !== 'fact' || outcome === 'incomplete')) {
               assert.equal(layer.terminal, 'incomplete', where);
               assert.equal(layer.reason, handling === 'skipped' ? 'declared_skip' : 'not_covered', where);
               assert.equal(layer.attribution, 'unattributed', where);

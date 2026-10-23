@@ -283,8 +283,9 @@ function incomplete(r: RequirementDescription, reason: Reason, extra: Partial<Ex
 
 function evaluate(run: RunDescription, submission: SubmissionDescription, r: RequirementDescription, item: RunDescription['items'][number], outcomes: CheckOutcomes): Evaluation {
   const handling = submission.items[item.id];
-  if (handling === undefined) return { result: incomplete(r, 'not_covered'), repair: null, reject: null };
-  if (handling.handling === 'skipped') return { result: incomplete(r, 'declared_skip'), repair: null, reject: null };
+  const needsArtifact = r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification'));
+  if (needsArtifact && handling === undefined) return { result: incomplete(r, 'not_covered'), repair: null, reject: null };
+  if (needsArtifact && handling?.handling === 'skipped') return { result: incomplete(r, 'declared_skip'), repair: null, reject: null };
 
   const checks = new Map(run.checks.map((c) => [c.id, c]));
   const listed: { outcome: Outcome; check: CheckDescription }[] = [];
@@ -463,11 +464,12 @@ export function expected(run: RunDescription, submission: SubmissionDescription,
     let partition: Partition = 'delivered';
     let code: string | undefined;
     let reason: Reason | undefined;
-    if (submission.items[item.id] === undefined) {
+    const omitted = submission.items[item.id] === undefined && run.requirements.some(r => r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification')));
+    if (omitted) errors.push({ kind: 'not_covered', item: item.id, rounds_left: Math.max(0, max - rounds.used) });
+    if (submission.items[item.id] === undefined && run.requirements.some(r => r.required && (r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification'))))) {
       // Step 4 and W07 R[3]: the submission does not cover the item; named in errors (CHOICE-12: with the run's rounds left).
       partition = 'incomplete';
       reason = 'not_covered';
-      errors.push({ kind: 'not_covered', item: item.id, rounds_left: Math.max(0, max - rounds.used) });
     } else {
       const stopped = run.requirements
         .map((r, i) => ({ r, layers: requirements[i].layers }))

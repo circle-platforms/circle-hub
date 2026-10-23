@@ -555,3 +555,7 @@ The workflow port reads the recorded pack owner; the records account port select
 Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
 Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
 The following commits connect these exits to durable requests and automatic maintenance.
+
+W07 R[2]–R[3]: skipped/omitted handling changes only judgment requirements and facts that judge the missing
+item artifact. Target-only facts retain the Hub-computed pass/violation, including fact-only workflows.
+A required incomplete requirement still takes the item into the incomplete partition (V05 R[3]).

@@ -701,7 +701,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         outcomes,
         // A missing item artifact is a coverage gap even when its requirement accepts only facts. Pure target
         // checks keep their existing handling rules; production evaluation has no submitted artifact to omit.
-        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' || ((hasItemJudgments || (submission !== null && artifactRequirements.has(t.key))) && handling === 'not_covered') ? handling : null,
+        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
@@ -787,7 +787,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
-    const notCovered = submission !== null && (hasItemJudgments || artifactRequirements.size > 0) && handling === 'not_covered';
+    const notCovered = submission !== null && handling === 'not_covered' && itemTemplates.some(t => t.required && (isJudgment(t) || artifactRequirements.has(t.key)));
     if (notCovered) {
       const judged = itemTemplates.filter((t) => isJudgment(t) && itemSlotKeys.has(t.key));
       for (const t of judged) uncovered.add(t.key);
