@@ -22,10 +22,10 @@ The identity is SHA-256 of sorted compact UTF-8 JSON, without escaping non-ASCII
 | workbook | sheet, nine distinct header strings, identity_marker, range_name, nine-cell closing_row, anchored autoid_pattern |
 | seats | [{object, device, ordinal}], unique runner objects, DUT devices and nonnegative gateway ordinals |
 | hosts | [{object, method, device}], enabled combinations mapped to manifest test hosts |
-| allowed | [{object, method, parameters:{parameterName:role}}], role metadata for enabled calls, not a second authorization whitelist (decision 35) |
+| allowed | [{object, method, parameters:{parameterName:role}}], the opened subset of enabled calls with verified parameter-role coverage (decision 35) |
 | denied | device and host command rejection lists |
 
-Parameter roles and external manifest values live only in `tables/runtime-profile-format.json`. Role mappings must reference signature parameters; credential parameters cannot be assigned roles. Device CLI roles require seats and host shell roles require host-method mappings. Decision 35 opens all contract-enabled combinations; parameter roles, signature/value screening and rejection tables still apply. All profile problems are reported together with pointers. Source/profile identity changes require a new run.
+Parameter roles and external manifest values live only in `tables/runtime-profile-format.json`. Role mappings must reference signature parameters; credential parameters cannot be assigned roles. Device CLI roles require seats and host shell roles require host-method mappings. Decision 35 considers every contract-enabled combination: only combinations covered by the declared roles and checks are opened; the others stay unopened. Signature/value screening and rejection tables still apply. All profile problems are reported together with pointers. Source/profile identity changes require a new run.
 
 ## Restricted slots and checks
 
@@ -39,7 +39,7 @@ Replacements are a one-to-one numeric address mapping and targets must be on the
 
 ## Runner G behavior and workbook boundary
 
-G is a cell interpreted according to the original dispatch behavior, not a new typed protocol. Direct method calls use positional/keyword text separated by commas with balanced quoting; an empty G cell becomes the positional string None; zero-value calls cannot be expressed. A comma inside a value must remain protected by matching quotes. Ordinary single-line G is split at commas outside paired quotes; only LF-containing values are passed whole, except explicitly configured newline-folding methods. Multi-command cells are closed this round. A literal checkpoint uses G as the literal expected value with previous-result semantics when the register cells are empty. Waiting uses the numeric-seconds cell. The natural-language registry and the three-argument occurrence checkpoint are not opened here. g_syntax/h_semantics/i_semantics are explanatory text, not a grammar to execute or evaluate.
+G is a cell interpreted according to the original dispatch behavior, not a new typed protocol. Direct method calls use positional/keyword text separated by commas with balanced quoting; an empty G cell becomes the positional string None; zero-value calls cannot be expressed. A comma inside a value must remain protected by matching quotes. Ordinary single-line G is split at commas outside paired quotes; only LF-containing values are passed whole, except explicitly configured newline-folding methods. Multi-command cells are closed this round. A literal checkpoint uses G as the literal expected value with previous-result semantics when the register cells are empty. Waiting uses the numeric-seconds cell. The current dispatch-role table has no supported roles for the natural-language registry or three-argument occurrence checkpoint; extending either needs roles and checks on a separate task page. g_syntax/h_semantics/i_semantics are explanatory text, not a grammar to execute or evaluate.
 
 Header text, sheet/marker/range names, closing row and autoid shape belong to the published profile. No real values are hardcoded here. The integrator's task-2 annex now defines escape retention, paired/unpaired quote behavior, keyword conversion and LF folding. That published behavior governs the client codec; the plan additionally rejects malformed quoting, trailing escapes and unsupported cell values through repairable codes. Task 2 must then implement client workbook generation and an independent reader using those confirmed rules. This version neither writes nor verifies XLSX bytes and cannot authorize dispatch. The integrator explicitly approved removal of the old Hub-side exec-plan@1 generator and plan_deterministic requirement.
 
@@ -90,3 +90,7 @@ Runtime review receipt: 19 numbered synthetic regressions each failed before the
 allowed 是合约启用集合中、经角色和检查覆盖的已开放子集；其余组合未开。method_not_allowed 的模型修复是换用已开放组合，并保留 unassigned_parameters；param_unassigned 专指开放组合中无角色的参数，修复为去掉该参数或换组合。管理员扩展角色须另开页、重新发布并开始新运行，不能要求模型修改冻结配置。
 
 主机文字中的 0.x 小数按选项值保留；非零开头的两段小数仍可能是 inet_aton 地址，因此不能区分用途时拒绝。模型可改用更小单位的整数或明确等待步骤；若确实是地址则改用规范四段点分。此处不证明任意 shell 参数的语义。
+
+派发角色每行依据集成者对运行器机制的只读核对，详见 dispatch-roles.json 的 basis。cmd_primitive（设备和主机的 cmd_config/cmds_config）仅支持 device_cli、host_shell，继续做目录及各自拒绝表核验；checkpoint_two_argument 仅支持 literal_assertion，builtin_special_case 仅支持 wait。注册动作和三参数检查点没有可用角色。direct_method_call 参数可使用四角色，但内部动作未被拒绝表核过，必须集成者逐个只读审阅、显式在 allowed 项设 reviewed:true 才开放；零参数方法同样要求此显式决定。草稿应列待定并保留表中 missing/next，不从参数角色自动推断已审阅。reviewed 是配置作者的开通决定，不是 Hub 证明内部动作安全；模型不能修改冻结配置。
+
+主机 shell 没有命令目录，只靠主机拒绝表和语法、地址核对；设备命令行另须通过锁定构建命令目录及设备拒绝表，不把 curl、ping 送入设备目录。

@@ -27,7 +27,7 @@ export function isHostLiteral(token: LiteralAddress, text: string, bed: import('
   if (known.some((v) => addressKey(v.address) === token.key)) return true;
   const tail = text.slice(token.at + token.text.length); const before = text.slice(0, token.at);
   const prefix=/^\/([0-9]{1,3})(?![0-9])/.exec(tail);
-  if(prefix){const family=token.key.startsWith('ipv4:')?'ipv4':'ipv6';const bits=family==='ipv4'?32:128;const parsed=parseInterface(family,token.text+'/'+prefix[1]);if(parsed&&parsed.prefix<bits){const host=(1n<<BigInt(bits-parsed.prefix))-1n;if((parsed.value&host)===0n)return false;}}
+  if(prefix){const family=token.text.includes(':')?'ipv6':'ipv4';const bits=family==='ipv4'?32:128;const parsed=parseInterface(family,token.text+'/'+prefix[1]);if(parsed&&parsed.prefix<bits){const host=(1n<<BigInt(bits-parsed.prefix))-1n;if((parsed.value&host)===0n)return false;}return true;}
   if (token.key.startsWith('ipv4:')) {
     const value = BigInt('0x' + token.key.slice('ipv4:'.length)); const all = 0xffffffffn;
     if ((value & (value + 1n)) === 0n || (((all ^ value) & ((all ^ value) + 1n)) === 0n)) return false;

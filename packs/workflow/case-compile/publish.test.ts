@@ -37,13 +37,13 @@ describe('publishing the case-compile pack', { skip }, () => {
     if (!outcome.ok) return;
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [80, 80, 0, 80]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [82, 82, 0, 82]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
       report.checks.map((check) => [check.check, check.positive, check.negative]),
       [
-        ['contract_shape', 20, 20],
+        ['contract_shape', 21, 21],
         ['bed_addresses', 12, 12],
         ['commands_catalog', 2, 2],
         ['expected_sources', 5, 5],

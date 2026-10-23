@@ -5,7 +5,7 @@ import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
 import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
-import { bindArguments, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
+import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
 import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasNoncanonicalDottedQuad, hasAmbiguousIpv4 } from './addresses.ts';
 interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
@@ -47,7 +47,7 @@ export function checkContractShape(input: unknown): Outcome[] {
       if (role === 'wait' && (!/^[0-9]+$/.test(v.value) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
       if (role === 'device_cli' && !hasBalancedCommandText(v.value.normalize('NFKC')) && !bound.problems.some((problem) => problem.code === 'param_value' && problem.pointer === v.pointer)) out.push(refute(s, 'param_value', '命令目录正规化后的引号必须成对，不能以反斜杠结尾；先修正命令文字', v.pointer));
       if (role === 'device_cli' && deniedCommand(v.value, s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
-      if (role === 'host_shell' && /[$`*?\[\]{}~;|&<>]/.test(v.value)) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
+      if (role === 'host_shell' && hasShellDynamicSyntax(v.value)) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
       if (role === 'host_shell' && deniedCommand(v.value, s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
   }

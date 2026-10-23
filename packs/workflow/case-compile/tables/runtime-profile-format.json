@@ -22,5 +22,6 @@
   "trigger_types": [
     "router",
     "client"
-  ]
+  ],
+  "method_review_field": "reviewed"
 }

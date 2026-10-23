@@ -18,9 +18,9 @@ export function runtimeDocument() {
 }
 export function profileDocument(contract = runtimeDocument()) {
   return { schema: 'runtime-profile@1', synthetic: true, max_wait_seconds: 300, runtime: { minimum_version: contract.runtime.minimum_version, contract_sha256: contract.contract_sha256 }, bed: 'bed-a', workbook: { sheet: 'FixtureSheet', header: ['FixtureId', 'FixturePriority', 'FixtureType', 'FixtureDescription', 'FixtureObject', 'FixtureMethod', 'FixtureData', 'FixtureOutput', 'FixtureInput'], identity_marker: 'FixtureIdentity', range_name: 'FixtureRange', closing_row: ['FixtureEnd', '', '', '', '', '', '', '', ''], autoid_pattern: '^\\d{18}$' }, seats: [{ object: 'widget-seat', device: 'dut0', ordinal: 0 }], hosts: [{ object: 'widget-host', method: 'shell', device: 'client0' }], allowed: [
-    { object: 'widget-seat', method: 'configure', parameters: { line: 'device_cli' } },
-    { object: 'widget-host', method: 'shell', parameters: { command: 'host_shell' } },
-    { object: 'widget-check', method: 'literal', parameters: { expected: 'literal_assertion' } },
-    { object: 'widget-clock', method: 'pause', parameters: { seconds: 'wait' } },
+    { object: 'widget-seat', method: 'configure', parameters: { line: 'device_cli' },reviewed:true },
+    { object: 'widget-host', method: 'shell', parameters: { command: 'host_shell' },reviewed:true },
+    { object: 'widget-check', method: 'literal', parameters: { expected: 'literal_assertion' },reviewed:true },
+    { object: 'widget-clock', method: 'pause', parameters: { seconds: 'wait' },reviewed:true },
   ], denied: { device: ['system cycle', 'system erase'], host: ['reboot', 'shutdown', 'poweroff', 'halt', 'init 0', 'init 6', 'mkfs', 'dd', 'rm -rf /'] } };
 }

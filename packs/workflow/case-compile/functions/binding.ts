@@ -49,3 +49,22 @@ export function hasBalancedCommandText(text: string): boolean {
 export function hasSingleLineValue(value: unknown): value is string {
   return typeof value === 'string' && value.isWellFormed() && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029\u0000-\u0008\u000e-\u001f\uFFFE\uFFFF]/.test(value) && !/\{(?:0)?\}/.test(value) && !value.startsWith('=');
 }
+
+/** POSIX expansions are active outside single quotes; glob and control syntax only outside quotes. */
+export function hasShellDynamicSyntax(text:string):boolean {
+  let quote:string|null=null;
+  for(let i=0;i<text.length;i++){
+    const char=text[i];
+    if(quote==="'"){if(char==="'")quote=null;continue;}
+    if(char==='\\'){
+      const next=text[i+1];if(next===undefined)return true;
+      if(quote==='"'&&!['$','`','"','\\','\n'].includes(next))continue;
+      i++;continue;
+    }
+    if(char==='"'){quote=quote==='"'?null:'"';continue;}
+    if(char==="'"&&quote===null){quote="'";continue;}
+    if(char==='$'||char==='`')return true;
+    if(quote===null&&'*?[]{}~;|&<>'.includes(char))return true;
+  }
+  return false;
+}
