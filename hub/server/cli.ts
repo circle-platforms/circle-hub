@@ -20,6 +20,7 @@ import { jsonSafe, terminalSafe } from './assemble/terminal.ts';
 import type { OperatorAct } from './cli-admin.ts';
 import { AssemblyMissingError, CliError, UsageError, isAssemblyMissing } from './errors.ts';
 import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
+import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { countsLine } from './text.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -33,7 +34,7 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
 export const RESERVED_COMMANDS: readonly string[] = ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token'];
-const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run']);
+const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools']);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();
@@ -62,6 +63,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  token revoke <令牌编号>                        撤销令牌（立即生效）',
     '  token list [<用户>]                           列出令牌（不显示令牌值）',
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
+    `  ${LOCAL_TOOLS_USAGE}`,
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...RESERVED_COMMANDS.filter((name) => !extra.some((command) => command.name === name)).map((name) => `  ${name.padEnd(44)} 由装配模块注册；这个装配模块没有注册它`),
@@ -364,6 +366,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
 }
 
 const BUILT_IN_HANDLERS: Record<string, (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>> = {
+  'local-tools': (args, ctx) => localToolsCommand(args, ctx.io),
   user: userCommand,
   token: tokenCommand,
   logs: logsCommand,

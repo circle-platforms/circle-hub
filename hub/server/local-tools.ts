@@ -28,7 +28,7 @@ export async function readPublishedFile(directory: string, path: string): Promis
 export async function handleLocalTools(request: IncomingMessage, response: ServerResponse, deps: ServerDeps, log: (line: string) => void): Promise<void> {
   const started = performance.now(); const raw = rawPath(request.url ?? ''); const rest = raw.slice(PREFIX.length); const slash = rest.indexOf('/');
   const ref = slash < 0 ? rest : rest.slice(0, slash); const path = slash < 0 ? '' : rest.slice(slash + 1);
-  let principal: Principal | null = null; let status = 500; let bytes = Buffer.from('Hub 内部错误\n'); let note = '内部错误'; let digest: string | null = null;
+  let principal: Principal | null = null; let status = 500; let bytes: Buffer = Buffer.from('Hub 内部错误\n'); let note = '内部错误'; let digest: string | null = null;
   const headers: Record<string, string> = {};
   request.resume();
   try {
