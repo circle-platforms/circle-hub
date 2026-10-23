@@ -231,6 +231,24 @@ function mergedCitation(origins: readonly VerifiedRange[], digestOf: (file: stri
   return { file, sha256: digestOf(file), selector: from === to ? `l/${from}` : `l/${from}-${to}` };
 }
 
+/** A cell that holds words and cites no line: the row's text carries them, so the row cannot cite only its other cells. */
+const missingCell = (row: ReadonlyArray<{ raw: string; origins: VerifiedRange[] }>): boolean =>
+  row.some((cell) => cell.raw.trim() !== '' && cell.origins.length === 0);
+
+/** Why one engine row cites nothing. */
+function rowReason(row: ReadonlyArray<{ raw: string; origins: VerifiedRange[] }>): string {
+  if (cellOrigins(row).length === 0) return '没有已核对的单元格';
+  if (missingCell(row)) return '有单元格回核不到原文行，不能只按另一部分单元格给整行发引用';
+  return '自己的单元格之间隔着不是空行的行，给不出这一行的来源范围';
+}
+
+/** Where the engine put a line of the expanded text: the chapter file and that file's own line number. */
+function placeOfLine(model: ExpandedModel, expandedLine: number | null): { file: string | null; line: number | null; place: string } {
+  if (expandedLine === null || expandedLine < 1 || expandedLine > model.line_map.length) return { file: null, line: null, place: '行号不明' };
+  const row = model.line_map[expandedLine - 1]!;
+  return { file: row.file, line: row.line, place: `${row.file}:${row.line}` };
+}
+
 /** The distinct verified ranges of one engine row's cells. */
 function cellOrigins(row: ReadonlyArray<{ origins: VerifiedRange[] }>): VerifiedRange[] {
   const parts: VerifiedRange[] = [];
@@ -246,7 +264,7 @@ function cellOrigins(row: ReadonlyArray<{ origins: VerifiedRange[] }>): Verified
 interface Table {
   text: string;
   rowCites: RowCite[];
-  dropped: Array<{ index: number; reason: string }>;
+  dropped: Array<{ index: number; reason: string; line: number | null }>;
   cite: Citation | null;
   /** Why the table as a whole cites nothing, when it does not; '' when it cites. */
   reason: string;
@@ -270,14 +288,13 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
   const rows = engineRows.map((row, index) => {
     const origins = cellOrigins(row);
     for (const origin of origins) if (!verified.includes(origin)) verified.push(origin);
-    return { index, cells: row.map(cellText), cite: mergedCitation(origins, digestOf, blank) };
+    // A row whose text holds a cell that cites no line is not cited at all: its own cells' lines do not contain that
+    // cell's words, so citing them would cite a line that does not hold what the entry says.
+    // The line the report names: the cell that cites nothing when there is one, else the row's first cell.
+    const offending = row.find((cell) => cell.raw.trim() !== '' && cell.origins.length === 0) ?? row.find((cell) => cell.reportedLine !== null);
+    return { index, cells: row.map(cellText), cite: missingCell(row) ? null : mergedCitation(origins, digestOf, blank), firstLine: offending?.reportedLine ?? null };
   });
-  const dropped = rows
-    .filter((row) => row.cite === null)
-    .map((row) => ({
-      index: row.index,
-      reason: cellOrigins(engineRows[row.index]!).length === 0 ? '没有已核对的单元格' : '自己的单元格之间隔着不是空行的行，给不出这一行的来源范围',
-    }));
+  const dropped = rows.filter((row) => row.cite === null).map((row) => ({ index: row.index, reason: rowReason(engineRows[row.index]!), line: row.firstLine }));
   const header = block.rows.head.length > 0 ? rows[0]! : null;
   const cited = header !== null && header.cite !== null;
   const body = (header === null ? rows : rows.slice(1)).filter((row) => row.cite !== null);
@@ -579,7 +596,8 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       continue;
     }
     for (const row of table?.dropped ?? []) {
-      uncited.push(uncitedOf(model, block, `表格的第 ${row.index + 1} 行（按引擎的行模型数）${row.reason}，这一行没有进映射，也没有借用别的行的来源行`));
+      const place = placeOfLine(model, row.line);
+      uncited.push(uncitedOf(model, block, `表格的第 ${row.index + 1} 行（按引擎的行模型数，${place.place}）${row.reason}，这一行没有进映射，也没有借用别的行的来源行`));
     }
     for (const row of table?.misaligned ?? []) {
       misaligned.push(`${placeOf(model, block)} 的表格第 ${row.row + 1} 行（按引擎的行模型数）有 ${row.cells} 格，表头有 ${row.header} 格`);

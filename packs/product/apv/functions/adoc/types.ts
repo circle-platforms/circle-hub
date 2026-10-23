@@ -28,7 +28,7 @@ export interface Block {
   /** True when this block is an example, or sits inside one: an author-declared example is reference only and never a
    * command rule (task item 6), so the mapping keeps K1 from anchoring it. */
   example: boolean;
-  rows?: Record<string, Array<Array<{ raw: string; expanded: string; origins: VerifiedRange[] }>>>;
+  rows?: Record<string, Array<Array<{ raw: string; expanded: string; origins: VerifiedRange[]; reportedLine: number | null }>>>;
 }
 export interface SourceRange { file: string; from: number; to: number; lines: number }
 export interface Condition {

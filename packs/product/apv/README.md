@@ -511,10 +511,12 @@ accepted.
   rows, not on one gap-free range over all of them: the range that covers the whole table is used for the fallback entry
   and for a produced empty header, and when it cannot be built the first cited row's own range is used instead. A row
   entry therefore cites the line the row is written on, never the header's line and never a byte range inside the mapped
-  text. A row that cites nothing — no verified cell, or cells separated by a line that holds something else — is left out
-  of the mapped table and reported with the table's file and line, saying which of the two it is; a table with no cited row
-  at all is reported the same way, and the two reasons are kept apart ("no cell verified" is not said of a table whose
-  cells verified). Nothing borrows another row's source line.
+  text. A row that cites nothing is left out of the mapped table and reported with the table's file and line, the row's own
+  line, and which of three things happened: no cell verified, a cell that holds words verified on no line (so the row's
+  text cannot be cited on the lines of its other cells — a line that does not hold what the entry says is no citation), or
+  the row's own cells are separated by a line that holds something else. A table with no cited row at all is reported the
+  same way, and the reasons are kept apart ("no cell verified" is not said of a table whose cells verified). Nothing
+  borrows another row's source line.
 - A statement carries what the source says under the family's own attribute set: every block gives its attribute-expanded
   text, except a listing or literal block, which the engine leaves verbatim and which stays verbatim here. A brand word
   written `{product}` therefore reaches each copy with that family's value, while the fragment stays on the verified

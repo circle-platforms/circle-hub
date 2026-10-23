@@ -179,22 +179,20 @@ test('a table whose rows the engine reads with unequal cell counts is mapped as 
     ].join('\n'),
   });
   const mapped = toK1Model(out.model, out.composition, 'cli-apv');
-  // The row the engine reads with two cells for three columns is neither regrouped nor padded: it stays as the engine
-  // gives it, and the mapping says the counts differ. The cell that carries the span marker verifies on no source line
-  // (step one reports it); the row itself is cited on the line its other cell was verified on.
-  assert.ok(mapped.warnings.some((warning) => warning.includes('格数与表头不一致') && warning.includes('book.adoc:4')), mapped.warnings.join('；'));
-  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  // The row the engine reads with two cells for three columns is neither regrouped nor padded, and the mapping says the
+  // counts differ. The cell that carries the span marker verifies on no source line (step one reports it), so the whole
+  // row is left out and reported: its text would otherwise be cited on a line that holds only part of it.
+  assert.ok(mapped.warnings.some((warning) => warning.includes('格数与表头不一致') && warning.includes('book.adoc:')), mapped.warnings.join('；'));
+  assert.equal(mapped.uncited.length, 1, JSON.stringify(mapped.uncited));
+  assert.equal(mapped.uncited[0]!.kind, 'table');
+  assert.ok(mapped.uncited[0]!.reason.includes('有单元格回核不到原文行'), JSON.stringify(mapped.uncited[0]));
+  assert.ok(mapped.uncited[0]!.reason.includes('book.adoc:6'), 'the report names the line of the cell that cites nothing');
   assert.ok(out.report.unverified.some((one) => one.kind === 'table_cell' && one.reported_line === 6), JSON.stringify(out.report.unverified));
-  assert.deepEqual(tableLines(mapped), [
-    '| 命令 | 说明 | 备注 |',
-    '| --- | --- | --- |',
-    '| **demo pool add** *<name>* | 添加成员，见备注 |',
-  ]);
+  assert.deepEqual(tableLines(mapped), ['| 命令 | 说明 | 备注 |', '| --- | --- | --- |'], 'the head row stays, the uncited row does not');
   const produced = produceAdocEntries(mapped, { name: 'cli-apv', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
-  const row = produced.entries.find((entry) => String(entry.statement).includes('添加成员'));
-  assert.ok(row !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
-  assert.equal(row.fragments[0]!.selector, 'l/6', 'the row cites the source line it is written on');
+  assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), []);
+  assert.ok(produced.entries.every((entry) => !String(entry.statement).includes('添加成员')), JSON.stringify(produced.entries.map((entry) => entry.statement)));
 });
 
 test('a blank line among the rows costs nothing: the implicit header and blank lines between rows are mapped and cited', async () => {
@@ -334,7 +332,7 @@ test('a table that cannot be cited says which of the two it is, not one reason f
   row[0]!.origins[0]!.selector = 'l/4';
   row[0]!.origins[0]!.verbatim = '';
   const second = toK1Model(gapped, out.composition, 'cli-apv');
-  assert.deepEqual(second.uncited.map((one) => [one.kind, one.line, one.reason]), [['table', 6, '表格的第 3 行（按引擎的行模型数）自己的单元格之间隔着不是空行的行，给不出这一行的来源范围，这一行没有进映射，也没有借用别的行的来源行']], JSON.stringify(second.uncited));
+  assert.deepEqual(second.uncited.map((one) => [one.kind, one.reason.includes('自己的单元格之间隔着不是空行的行'), one.reason.includes('book.adoc:')]), [['table', true, true]], JSON.stringify(second.uncited));
   const produced = produceAdocEntries(second, { name: 'cli-apv', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(
@@ -342,4 +340,38 @@ test('a table that cannot be cited says which of the two it is, not one reason f
     [['demo pool add <name>', 'l/8']],
     'the row that still cites its own line stays',
   );
+});
+
+test('a row with a cell that verified on no line is left out and reported, not cited on its other cells\' lines', async () => {
+  const out = await compile({
+    'book.adoc': [
+      '= Synthetic',                       // 1
+      '',                                  // 2
+      '[cols="1,1",options="header"]',      // 3
+      '|===',                               // 4
+      '| 命令',                              // 5
+      '| 说明',                              // 6
+      '| *demo pool add* _<name>_',        // 7
+      '| 已启用 footnote:[见附录]',           // 8
+      '|===',                               // 9
+      '',                                  // 10
+    ].join('\n'),
+  });
+  // The engine renders a footnote as a numbered link, which no source line folds to: that cell cites nothing.
+  assert.deepEqual(out.report.unverified.map((one) => [one.kind, one.reported_line]), [['table_cell', 8]]);
+  const mapped = toK1Model(out.model, out.composition, 'cli-apv');
+  assert.equal(mapped.uncited.length, 1, JSON.stringify(mapped.uncited));
+  const uncited = mapped.uncited[0]!;
+  assert.equal(uncited.kind, 'table');
+  assert.equal(uncited.file, 'book.adoc');
+  assert.ok(uncited.reason.includes('有单元格回核不到原文行'), JSON.stringify(uncited));
+  assert.ok(uncited.reason.includes('book.adoc:8'), `the report names the row's own line: ${uncited.reason}`);
+  assert.notEqual(uncited.next_action, '');
+  // The row is not placed on the line its other cell verified on, and the rest of the table stays.
+  const produced = produceAdocEntries(mapped, { name: 'cli-apv', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.ok(produced.entries.every((entry) => !String(entry.statement).includes('已启用')), JSON.stringify(produced.entries.map((entry) => entry.statement)));
+  assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), []);
+  assert.deepEqual(tableLines(mapped).slice(0, 2), ['| 命令 | 说明 |', '| --- | --- |'], 'the head row is still mapped and cited');
+  assert.ok(produced.warnings.some((warning) => warning.includes('回核不到原文行')), produced.warnings.join('；'));
 });

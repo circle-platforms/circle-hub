@@ -135,7 +135,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
           const source = verifyOrigin(raw, 'table_cell', cell.sourceLocation?.lineno, expanded.lines, visible, input, verify);
           if (!source.origins.length) noteUnverified({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, reason: source.reason, next_action: '已自动回读候选行但不能逐字唯一核对；本单元格不生成引用，修复定位器后重跑' });
           else if (source.chosenAmong > 1) noteDisambiguated({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, candidates: source.chosenAmong });
-          return { raw, expanded: cell.subAttributes(raw), origins: source.origins };
+          return { raw, expanded: cell.subAttributes(raw), origins: source.origins, reportedLine: cell.sourceLocation?.lineno ?? null };
         }));
       }
       indexOf.set(node, at);
