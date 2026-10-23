@@ -7,7 +7,22 @@
       "interpreter": "coverage@1",
       "table": "tables/template-v3-coverage.json",
       "applies": "item",
-      "subject": { "module": "functions/subject.ts" },
+      "subject": {
+        "module": "functions/subject.ts"
+      },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "command_coverage",
+      "title": "按命令的模板类别覆盖",
+      "function": {
+        "module": "functions/command-check.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/command-subject.ts"
+      },
       "judges": "subject",
       "tier": "advisory"
     }
