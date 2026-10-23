@@ -255,3 +255,9 @@ test('review 11: invalid or empty baselines refuse startup and valid rounds are 
   assert.equal(measureReview({ ...options(empty.out), source: empty.source, plan: empty.plan, baseline: fixtures(document(1), []).out }, fakeDrivers({ drafts: [] }), l => lines.push(l)), 2);
   assert.ok(lines.some(l => l.includes('--baseline') && l.includes('空计划基线')));
 });
+
+test('review 14: an invalid draft leaves verification explicitly unrun', () => {
+  const f = fixtures(document(1), []), lines: string[] = [];
+  measureReview({ ...options(f.out), source: f.source, plan: f.plan, verify: { args: [], prompt: 'verify' } }, fakeDrivers({ drafts: [{ calls: '', run: () => '{}' }] }), line => lines.push(line));
+  assert.ok(lines.some(line => line.includes('复核 未跑（初评无效）'))); assert.ok(!lines.join('').includes('undefined'));
+});

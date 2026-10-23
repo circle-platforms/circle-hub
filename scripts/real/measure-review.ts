@@ -135,7 +135,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
     const verdict = (ok: boolean, reason?: string): string => (ok ? '有效' : `无效（${reason}）`);
     void verdict;
     lines.push(
-      `第 ${round.n} 次：初评 ${round.draftPack || '未取得'} ${verdict(round.draftValid, round.draftReason)}${options.hasVerify ? `；复核 ${round.verifyPack || '未取得'} ${verdict(round.verifyValid, round.verifyReason)}` : ''}`,
+      `第 ${round.n} 次：初评 ${round.draftPack || '未取得'} ${verdict(round.draftValid, round.draftReason)}${options.hasVerify ? !round.draftValid ? '；复核 未跑（初评无效）' : `；复核 ${round.verifyPack || '未取得'} ${verdict(round.verifyValid, round.verifyReason)}` : ''}`,
     );
   }
   for (const kind of options.totals.kinds) {
