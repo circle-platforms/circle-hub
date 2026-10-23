@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import scenario from './story-traceability.ts';
 import type { StoryGold } from '../gold/trace-stories.ts';
 import type { LoggedTurn } from '../lib/accept.ts';
-const gold: StoryGold = { product: 'synthetic', build: 'Synthetic_10_6', scope: '需求范围由用户提供', documents: 1, missing_documents: [], traced: 1, untraced: 1, plm_unread: 1, statuses: [{ status: 'synthetic-state', count: 1 }], stories: [
+const gold: StoryGold = { product: 'synthetic', build: 'Synthetic_10_6', scope: '需求范围由用户提供', documents: 1, documents_without_cases: 0, missing_documents: [], traced: 1, untraced: 1, plm_unread: 1, statuses: [{ status: 'synthetic-state', count: 1 }], stories: [
   { story: '21', status: 'synthetic-state', stage: 'synthetic-stage', plm_returned: true, cases: [{ id: '91:c1', title: '合成用例' }] },
   { story: '22', status: null, stage: null, plm_returned: false, cases: [] },
 ] };

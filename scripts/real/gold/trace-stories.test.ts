@@ -56,3 +56,10 @@ test('zero-prefix compatibility ignores structural ids and has room for ordinary
     assert.equal(gold.stories[0].cases.length, 0);
   }
 });
+
+test('notes-only documents contribute a count without aborting the scoped answer, malformed maps still fail', () => {
+  const notes = { root: node('合成说明', 'notes', [node('仅说明内容', 'leaf')]) };
+  const gold = storyGold({ ids: ['21'], plm: [], maps: [{ document: '90', map: notes }, { document: '91', map }], tree, product: 'synthetic', build: 'Synthetic_10_6' });
+  assert.equal(gold.documents, 2); assert.equal(gold.documents_without_cases, 1); assert.equal(gold.stories[0].cases.length, 2);
+  assert.throws(() => storyGold({ ids: ['21'], plm: [], maps: [{ document: '91', map: null }], tree, product: 'synthetic', build: 'Synthetic_10_6' }));
+});
