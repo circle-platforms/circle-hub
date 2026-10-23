@@ -23,5 +23,5 @@ export function readFacets(input: { inputs: unknown[] }, target: { product: stri
   return { unplaced, build: v.build.build };
 }
 export function unplacedMessage(count: FacetCount): string {
-  return `构建 ${count.build} 的较早构建用例索引里有 ${count.unplaced} 个用例没有解析出命令（未归位），没算进巡检范围。${count.unplaced > 0 ? '客户端接下来列出这些用例供用户查看；它们的命令是否删除或修改，需要查看用例取得命令归属事实。' : '索引中没有未归位的用例。'}`;
+  return `构建 ${count.build} 的较早构建用例索引里有 ${count.unplaced} 个用例没有解析出命令（未归位），没算进巡检范围。${count.unplaced > 0 ? '客户端下一步自动提取最多一页用例样例及继续引用，供人工查看；它们的命令是否删除或修改，需要查看用例取得命令归属事实。' : '索引中没有未归位的用例。'}`;
 }

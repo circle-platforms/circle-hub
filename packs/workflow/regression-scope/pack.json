@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "e305f9418705e15c2a4eecf0ec34f7ad696c672c38564b453a499e62fe9bf1ec",
-      "size": 3914
+      "sha256": "6dccb9e519bc435b19c8366e003e8fdddf84d5c5e536f5aa51057ca21f9347c4",
+      "size": 3864
     },
     {
       "path": "checks.json",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/facets.ts",
-      "sha256": "2057f466df137bbe3beaffbb35b1a7f1f39bcd9164af62c6724191bf87de85df",
-      "size": 3140
+      "sha256": "aca68182cda3787ad22e2445d0639349a7dabad67436d402e4092e6f8e30a259",
+      "size": 3176
     },
     {
       "path": "functions/generated/vocabulary.ts",

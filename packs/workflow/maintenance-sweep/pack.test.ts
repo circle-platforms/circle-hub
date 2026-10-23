@@ -131,3 +131,8 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     );
   });
 });
+
+import { test } from 'node:test';
+test('unplaced followup is bounded and never demands enumeration to the facet total', () => {
+  assert.match(text('SKILL.md'), /最多展示一页/); assert.match(text('SKILL.md'), /下一页引用或游标/); assert.ok(!text('SKILL.md').includes('列出的去重数量必须与披露计数一致'));
+});
