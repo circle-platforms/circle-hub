@@ -184,6 +184,11 @@
       "code": "case-compile.internal_error",
       "when": "投影函数内部出错",
       "fix": "将输入交给任务包维护人，修复后重新开始运行"
+    },
+    {
+      "code": "case-compile.autoid_imprecise",
+      "when": "case autoid 是超出安全整数范围的 JSON 数值",
+      "fix": "从原文以文本重新导出编号或请求核心的无损数字解析，不从已舍入数值猜编号"
     }
   ],
   "warnings": [

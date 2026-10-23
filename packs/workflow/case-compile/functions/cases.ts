@@ -33,6 +33,7 @@ export interface ExtractedCase {
 
 export interface Extraction {
   cases: ExtractedCase[];
+  impreciseAutoids: Array<{ node: string; selector: string | null }>;
   /** Cases identified by the mark alone (no tags), counted for the summary. */
   markedOnly: number;
   /** Nodes that are marked but carry no tags, not projected under the tagged rule. */
@@ -90,6 +91,7 @@ export function documentIdOf(external: string | null, meta: { [key: string]: unk
 export function extractCases(model: unknown, rule: CaseRule): Extraction {
   const nodes = nodesOf(model);
   const cases: ExtractedCase[] = [];
+  const impreciseAutoids: Extraction['impreciseAutoids'] = [];
   let markedOnly = 0;
   let candidates = 0;
   const visit = (index: number): void => {
@@ -99,6 +101,7 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
     const priority = priorityOf(node.data);
     const isCase = tags.length > 0 || priority === CASE_PRIORITY;
     if (isCase) {
+      if (typeof node.data.autoid === 'number' && !Number.isSafeInteger(node.data.autoid)) impreciseAutoids.push({ node: typeof node.data.id === 'string' ? node.data.id : `n${index}`, selector: node.selector });
       if (tags.length === 0) {
         if (rule === 'tagged') {
           candidates++;
@@ -148,5 +151,5 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
   };
   if (nodes.length > 0) for (const childIndex of nodes[0].children) visit(childIndex);
   const ruleSummary = `用例规则：${rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${markedOnly} 个只靠标记识别（没有标签）`;
-  return { cases, markedOnly, candidates, ruleSummary };
+  return { cases, impreciseAutoids, markedOnly, candidates, ruleSummary };
 }

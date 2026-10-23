@@ -53,3 +53,9 @@ test('review 08 rejection matching uses the same NFKC text as the command catalo
 test('review 09 noncanonical IPv4 notations cannot hide a host target', () => {
   for (const text of ['ping -c 1 3221226234', 'ping -c 1 0xc00002fa', 'ping -c 1 192.0.762', 'curl http://0300.0.02.0372/']) { const data = goodData(); data.steps[1].args = [text]; assert.ok(codes(checkAddresses(subjectOf(data))).includes('case-compile.address_notation'), text); }
 });
+function projectionInput(model: unknown) { return { inputs: [{ slot: 'subject', parser: 'kityminder@1', sha256: 'a'.repeat(64), model }, { slot: 'contract', model: CONTRACT_DOC }, { slot: 'profile', model: PROFILE_DOC }, { slot: 'inventory', model: MANIFEST_DOC }], parameters: { autoid: AUTOID } }; }
+test('review 10 unsafe numeric autoids diagnose missing original precision rather than not found', () => {
+  const model = structuredClone(MINDMAP_MODEL); (model.nodes[2].data as Record<string, unknown>).autoid = Number(AUTOID);
+  const result = projectItems(projectionInput(model)) as { error: { code: string; message: string; fix: string } };
+  assert.equal(result.error.code, 'case-compile.autoid_imprecise'); assert.match(result.error.message, /安全|精度/); assert.match(result.error.fix, /文本.*重新|文本.*重.*导出/);
+});

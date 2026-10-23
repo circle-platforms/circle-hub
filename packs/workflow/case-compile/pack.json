@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "d6563bf8bef8fb1a3f02659f3f714a4565fd46383fc2f0bb4c07abe14581d726",
-      "size": 6137
+      "sha256": "b23da4f103b65cbabd203aaad1ca2ec549c30b82ed0b1134d1c967341efb97b7",
+      "size": 6500
     },
     {
       "path": "functions/checks.ts",
@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "f94d28807b26e12e4ad466565d6eaf91428d034ab05359e4f47fc1cf74604ec9",
-      "size": 8395
+      "sha256": "df5ec9c7bb112215f57bd8c523875302b6b4231503371bf772a2d4aa5409c9e4",
+      "size": 8792
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -378,8 +378,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "74074ecee7968f492532802a2d66646c288921deb7fd579bb5c21225b6d14cdb",
-      "size": 7925
+      "sha256": "db8c49efa6a873bb8ee4f87a01f72dd15278a4c4cb71584f989ea558c25ef6dc",
+      "size": 8178
     },
     {
       "path": "tables/commands.json",
