@@ -108,3 +108,9 @@ test('exhausted transient sandbox availability schedules reevaluation', () => {
   const outcome = unknown({ tier: 'advisory', grounds: [] }, 'check_error', '可用的沙箱', { data: { sandbox: 'SANDBOX_UNAVAILABLE' } });
   assert.equal(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'check_error' }, [outcome], context).exit?.action, 'reevaluate');
 });
+test('a matched check failure retains the concrete missing fact and the repair procedure', () => {
+  const outcome = unknown({ tier: 'advisory', grounds: [] }, 'check_error', '检查甲没有返回结果');
+  const layer = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'check_error' }, [outcome], context);
+  assert.match(layer.missing!, /检查甲/);
+  assert.match(layer.missing!, /发布.*重跑/);
+});

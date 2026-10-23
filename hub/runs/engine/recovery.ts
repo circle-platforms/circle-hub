@@ -29,7 +29,7 @@ export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome
   const matching = outcomes.filter(outcome => outcome.verdict === 'unknown');
   const gaps = matching.map(outcome => {
     if (!outcome.reason || !outcome.missing) throw new Error('An unknown producer must name its reason and missing fact');
-    return { reason: outcome.reason, missing: outcome.missing, exit: outcome.exit ?? outcomeExit(outcome, context) };
+    return { reason: outcome.reason, missing: `${outcome.missing}；${procedureOf(outcome, context)}`, exit: outcome.exit ?? outcomeExit(outcome, context) };
   });
   if (!gaps.some(gap => gap.reason === layer.reason)) {
     gaps.unshift({ reason: layer.reason, missing: RULES[layer.reason].missing, exit: requestExit(RULES[layer.reason], context) });
@@ -55,4 +55,17 @@ function outcomeExit(outcome: CheckOutcome, context: RecoveryContext): UnknownEx
     return requestExit({ ...RULES[outcome.reason!], request: 'disposition', audience: 'admin' }, context);
   }
   return requestExit(RULES[outcome.reason!], context);
+}
+
+/** Keep the procedure alongside the specific fact, even when a check supplied its own explanation. */
+function procedureOf(outcome: CheckOutcome, context: RecoveryContext): string {
+  if (outcome.exit !== undefined) return `下一步：按已声明出口 ${outcome.exit.action} 取得该事实后自动重评`;
+  const exit = outcomeExit(outcome, context);
+  if (exit.action === 'reevaluate') return '下一步：Hub 在沙箱恢复后自动重评';
+  if (exit.action === 'reread') return '下一步：Hub 重读已绑定的来源片段后自动重评';
+  if (outcome.reason === 'integrity_unproven' && outcome.data?.why === 'integrity_unproven') return '下一步：具名管理员从可信备份恢复与摘要一致的字节后重新核验，不重读损坏的原件';
+  if (outcome.reason === 'awaiting_step' && Array.isArray(outcome.data?.unread_sources)) return '下一步：具名管理员接受这份普通来源后 Hub 自动重评';
+  const rule = RULES[outcome.reason!];
+  if (context[rule.audience] === null) return '下一步：运行者澄清缺少的具名责任账号和发布信息后自动重评';
+  return rule.missing;
 }
