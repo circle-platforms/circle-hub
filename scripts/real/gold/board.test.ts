@@ -168,3 +168,21 @@ test('--case-commands counts the Hub definition: every case of the listed docume
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('--placement sends both facets and placement without needing --types or --case-commands (quality-board 1.1.0 requires the slot)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-board-placement-'));
+  try {
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
+    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F', '--placement', '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
+    assert.equal(report.placement, true, 'the gold asks the scenario to bind placement');
+    assert.equal(report.unplaced, 0, 'no independent measurement was supplied, so the count the Hub must state is 0');
+    assert.ok(!('types' in report) || report.types !== true, 'no --types was given');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

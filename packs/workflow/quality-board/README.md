@@ -110,7 +110,9 @@ node --test --test-concurrency=1 "packs/workflow/quality-board/**/*.test.ts"
   functions verify bound inputs; they cannot fetch more inputs themselves. Source omissions require source sync before retry.
 - **Acceptance gold**: `gold/board.ts --types` reads raw exported mindmaps/tree/documents, copies declarations only and
   independently classifies raw tags. It verifies attribution/counts, not the build's document selection. `BoardGold.unplaced`
-  may carry the independent command-index measurement; the scenario always binds placement and checks that number when supplied.
+  may carry the independent command-index measurement. A run against quality-board 1.1+ must bind the required
+  placement slot: `gold/board.ts` does that with one of `--placement`, `--case-commands <json>` or `--types`, and the
+  scenario checks the number whenever the gold supplies it.
 - The integrator confirmed (2026-10-23) that test types are team-template content, not a core vocabulary axis.
 - No new vocabulary axis or violation code is needed: the six types are pack table content; existing refusals are reused.
 

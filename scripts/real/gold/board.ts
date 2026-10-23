@@ -75,7 +75,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const tree = value('tree'), cases = value('cases-dir'), docs = value('docs'), product = value('product'), build = value('build'), out = value('out');
   const missing = [!tree && '--tree', !cases && '--cases-dir', !docs && '--docs', !product && '--product', !build && '--build', !out && '--out'].filter((f): f is string => f !== false);
-  if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/board.ts --tree <敏捷树导出> --cases-dir <目录> --docs <文档清单> --product <产品> --build <构建> [--case-rule marked|tagged] [--types] --out <文件>\n`); return 2; }
+  if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/board.ts --tree <敏捷树导出> --cases-dir <目录> --docs <文档清单> --product <产品> --build <构建> [--case-rule marked|tagged] [--types] [--placement | --case-commands <case-commands.json>] --out <文件>\n`); return 2; }
   try {
     const listed = parseDocumentList(readFileSync(docs!, 'utf8'));
     if (listed.size === 0) { process.stderr.write('文档清单是空的：补上这个构建的文档清单\n'); return 1; }
@@ -101,6 +101,12 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
       // title and labels only, so step-placed and id-less cases are unplaced too — count every case with no path.
       const unplaced = casesOfBuild.filter((c) => c.paths.length === 0).length;
       (gold as { unplaced?: number }).unplaced = unplaced;
+      (gold as { placement?: boolean }).placement = true;
+    }
+    // --placement (quality-board 1.1.0 requires the slot): bind it without an independent count. A run against
+    // 1.1+ needs one of --placement, --case-commands or --types.
+    if (argv.includes('--placement') && !('placement' in gold)) {
+      (gold as { unplaced?: number }).unplaced = 0;
       (gold as { placement?: boolean }).placement = true;
     }
     writeFileSync(out!, `${JSON.stringify(gold, null, 2)}\n`);

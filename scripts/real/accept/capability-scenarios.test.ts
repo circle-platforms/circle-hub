@@ -285,3 +285,12 @@ test('when placement is bound the unplaced-count sentence is always checked, gol
   assert.ok(unplaced !== undefined, 'the check exists whenever placement is bound');
   assert.ok(!unplaced.ok, 'a missing sentence is a mismatch, not a skip');
 });
+
+test('a gold with placement but no types still binds both facets and placement (board.ts --placement, the 1.1.0 slot)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z', placement: true, unplaced: 0 });
+  const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start = reply.find((r) => r.tool === 'hub_start_run');
+  assert.ok(start !== undefined);
+  assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets', 'placement'], 'quality-board 1.1.0 requires the placement slot');
+});
