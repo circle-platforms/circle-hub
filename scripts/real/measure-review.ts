@@ -1,3 +1,4 @@
+import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Drives the whole injection measurement repeatedly (task gold-review step 4). One pass: write the copy and the gold
 // exactly the way inject-defects.ts does, compute the independent literal answer of the copy, then for each round run
 // a fresh draft session through scripts/real/review-circle.ts (the only reader of the endpoint and the keys), read the
@@ -40,16 +41,18 @@ export interface Drivers {
 export const realDrivers: Drivers = {
   review: (spec, prompt, out, name) => {
     const run = spawnSync('node', [resolve(import.meta.dirname, 'review-circle.ts'), ...spec.args, '--prompt', prompt, '--out', out, '--name', name], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env });
+    writeFileSync(join(out, name + '.stdout.txt'), run.stdout ?? '', { mode: 0o600 });
+    writeFileSync(join(out, name + '.stderr.txt'), run.stderr ?? '', { mode: 0o600 });
     return { code: run.status ?? 1, calls: existsSync(join(out, `${name}.calls.jsonl`)) ? readFileSync(join(out, `${name}.calls.jsonl`), 'utf8') : '' };
   },
   show: (run) => {
-    const shown = spawnSync('node', ['bin/circle-hub', 'run', 'show', run, '--json'], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env });
+    const shown = spawnSync('node', ['bin/circle-hub', 'run', 'show', run, '--json'], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env, maxBuffer: 64 * 1024 * 1024 });
     return { code: shown.status ?? 1, json: shown.stdout };
   },
 };
 
 /** The fixed invalid reasons (task step 4): nothing else may be said on the screen. */
-export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对';
+export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对' | '取不到运行' | '启动参数不完整';
 
 interface RunLike {
   run: { run: string; pack: string; predecessor?: string; items: Array<{ item: string }>; sources: Array<{ role?: string; reference?: string }> };
@@ -99,6 +102,7 @@ export function parseSession(text: string, where: string): SessionSpec {
   if (!Array.isArray(value.args) || value.args.some((a) => typeof a !== 'string') || typeof value.prompt !== 'string') {
     throw new Error(`${where} 的会话 json 要是 { "args": [...], "prompt": "..." }`);
   }
+  if ((value.args as string[]).some(arg => ['--prompt','--out','--name'].some(flag => arg === flag || arg.startsWith(flag + '=')))) throw new Error('会话参数包含驱动保留的标志');
   return { args: value.args as string[], prompt: value.prompt };
 }
 
@@ -108,7 +112,7 @@ export function judgeRun(
   shown: string,
   expect: { packPrefix: string; subjectSha?: string; caseCount?: number; predecessor?: string },
 ): { ok: true; run: string; detail: RunLike; result: ResultLike } | { ok: false; reason: InvalidReason; run?: string; detail?: RunLike } {
-  const accepted = [...new Set(parseCallLog(calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))];
+  const accepted = [...new Set(parseCallLog(calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))];
   if (accepted.length === 0) return { ok: false, reason: '没有受理' };
   if (accepted.length > 1) return { ok: false, reason: '不止一个运行' };
   const run = accepted[0]!;
@@ -116,8 +120,9 @@ export function judgeRun(
   try {
     detail = JSON.parse(shown) as RunLike;
   } catch {
-    return { ok: false, reason: '没有受理', run };
+    return { ok: false, reason: '取不到运行', run };
   }
+  if (!detail?.run || typeof detail.run.pack !== 'string') return { ok: false, reason: '取不到运行', run };
   if (!detail.run?.pack?.startsWith(expect.packPrefix)) return { ok: false, reason: '任务包不对', run, detail };
   if (detail.latest == null || detail.latest.result?.acceptance !== 'accepted') return { ok: false, reason: '没有受理', run, detail };
   if (expect.predecessor !== undefined && detail.run.predecessor !== expect.predecessor) return { ok: false, reason: '前驱不对', run, detail };
@@ -138,7 +143,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
     const verdict = (ok: boolean, reason?: string): string => (ok ? '有效' : `无效（${reason}）`);
     void verdict;
     lines.push(
-      `第 ${round.n} 次：初评 ${round.draftPack || '未取得'} ${verdict(round.draftValid, round.draftReason)}${options.hasVerify ? `；复核 ${round.verifyPack || '未取得'} ${verdict(round.verifyValid, round.verifyReason)}` : ''}`,
+      `第 ${round.n} 次：初评 ${round.draftPack || '未取得'} ${verdict(round.draftValid, round.draftReason)}${options.hasVerify ? !round.draftValid ? '；复核 未跑（初评无效）' : `；复核 ${round.verifyPack || '未取得'} ${verdict(round.verifyValid, round.verifyReason)}` : ''}`,
     );
   }
   for (const kind of options.totals.kinds) {
@@ -153,15 +158,15 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
     : `目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；缺 --tree，下一步补锁定根的命令树原件后重跑`;
 
   lines.push(
-    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.total) : 0)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.fresh) : 0)}）；${catalogText}；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
+    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.total) : 0)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.fresh) : 0)}）；${catalogText}；各次相同 ${options.totals.structureStable === null ? '没跑（有效运行少于 2 次，补足有效运行后比较）' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
   );
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
   );
-  const mechanicalAllFound = options.totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
+  const mechanicalAllFound = scores.every(s => s.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0) && (!options.catalogProvided || catalogs.length === valid.length && catalogs.every(r => !r.requests.length && !r.missed.length && !r.extra.length));
   lines.push(
-    `通过：Hub 看得见的注入缺陷全部查出 ${mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
+    `通过：Hub 看得见的注入缺陷全部查出 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
   );
   if (options.repeat < 3) lines.push('不构成统计：重复次数少于 3');
   return lines;
@@ -170,7 +175,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
 export function measureReview(options: MeasureOptions, drivers: Drivers, say: (line: string) => void = () => {}): number {
   // 1. The copy, the gold and the independent answer — always computed, never skipped.
   let tree = JSON.parse(readFileSync(options.source, 'utf8')) as MindTree;
-  if (options.keep !== undefined) tree = firstCases(tree, options.keep);
+  if (options.keep !== undefined) tree = firstCases(tree, options.keep, { caseRule: options.caseRule });
   let manual: ManualFragment | undefined;
   if (options.manual !== undefined) {
     const bytes = readFileSync(options.manual);
@@ -187,7 +192,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   writeFileSync(join(options.out, 'literal.json'), `${JSON.stringify(answer, null, 2)}\n`);
   const caseCount = answer.cases.length + answer.noUniqueId.length;
   if (caseCount > MAX_CASES) {
-    say(`拒绝：副本有 ${caseCount} 个用例，超过一次运行的 ${MAX_CASES} 个上限`);
+    say(`拒绝：按 ${options.caseRule ?? 'marked'} 规则副本有 ${caseCount} 个用例，超过一次运行的 ${MAX_CASES} 个上限：减小 --keep 后重跑`);
     return 2;
   }
 
@@ -212,14 +217,24 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   // 2. The baseline rounds (an earlier empty-plan --out): their draft results mark what the unchanged review already had.
   const baselineResults: ResultLike[] = [];
   if (options.baseline !== undefined) {
+    const copy = join(options.baseline, 'mutated.json');
+    if (!existsSync(copy)) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
+    const baselineSha = createHash('sha256').update(readFileSync(copy)).digest('hex');
+    const baselineCount = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule }).cases.length;
     for (const entry of readdirSync(options.baseline, { withFileTypes: true }).filter((e) => e.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const file = join(options.baseline, entry.name, 'draft.run.json');
-      if (!existsSync(file)) continue;
+      if (!existsSync(file) || !existsSync(join(options.baseline, entry.name, 'score.json'))) continue;
       const detail = JSON.parse(readFileSync(file, 'utf8')) as RunLike;
-      if (detail.latest !== null) baselineResults.push(detail.latest.result as unknown as ResultLike);
+      if (detail.latest?.result.acceptance === 'accepted' && detail.run.pack.startsWith('case-review@') && detail.run.items.length === baselineCount && detail.run.sources.some(s => s.reference?.startsWith('src:' + baselineSha))) baselineResults.push(detail.latest.result as unknown as ResultLike);
     }
   }
-  const baseline = baselineResults.at(-1);
+  if (options.baseline !== undefined && !baselineResults.length) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
+  const baselineItems = new Map<string, ResultLike['partitions'][string][number]>();
+  for (const result of baselineResults) for (const items of Object.values(result.partitions)) for (const item of items) {
+    const previous = baselineItems.get(item.item);
+    baselineItems.set(item.item, { ...item, requirements: [...(previous?.requirements ?? []), ...item.requirements] });
+  }
+  const baseline: ResultLike | undefined = baselineResults.length ? { partitions: { delivered: [...baselineItems.values()] } } : undefined;
 
   // 3. The rounds.
   const gold = injected.gold;
@@ -229,7 +244,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const draftPrompt = options.draft.prompt.replaceAll('{copy}', join(options.out, 'mutated.json'));
     const draft = drivers.review(options.draft, draftPrompt, dir, 'draft');
-    const draftJudged = judgeRun(draft.calls, draft.code === 0 && draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    writeFileSync(join(dir, 'draft.client-status.json'), JSON.stringify({ code: draft.code }), { mode: 0o600 });
+    const draftJudged: ReturnType<typeof judgeRun> = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
     let round: RoundOutcome;
     if (draftJudged.ok) {
       writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
@@ -239,7 +255,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       } else {
         const verifyPrompt = options.verify.prompt.replaceAll('{copy}', join(options.out, 'mutated.json')).replaceAll('{draft_run}', draftJudged.run);
         const verifyRun = drivers.review(options.verify, verifyPrompt, dir, 'verify');
-        const verifyJudged = judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
+        writeFileSync(join(dir, 'verify.client-status.json'), JSON.stringify({ code: verifyRun.code }), { mode: 0o600 });
+        const verifyJudged: ReturnType<typeof judgeRun> = verifyRun.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
         if (verifyJudged.ok) {
           writeFileSync(join(dir, 'verify.run.json'), JSON.stringify(verifyJudged.detail, null, 2));
           round = { n, draftPack: packOf(draftJudged.detail), draftValid: true, draftRun: draftJudged.run, verifyPack: packOf(verifyJudged.detail), verifyValid: true, verifyRun: verifyJudged.run };
@@ -281,7 +298,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   const lines = summaryLines({ copySha, goldSha: createHash('sha256').update(goldBytes).digest('hex'), manualSha: manual?.sha256 ?? null, cases: caseCount, injected: gold.length, repeat: options.repeat, hasVerify: options.verify !== undefined, rounds, totals, untouched, catalogProvided: options.tree !== undefined });
   for (const line of lines) say(line);
   const validRounds = rounds.filter((r) => r.draftValid && (options.verify === undefined ? true : r.verifyValid));
-  const mechanicalAllFound = totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
+  const mechanicalAllFound = validRounds.every(r => r.score!.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const scores = validRounds.map((r) => r.score).filter((s): s is Score => s !== undefined);
   const structureClean = scores.length > 0 && scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0) && (options.tree === undefined || validRounds.every(r => r.catalog !== undefined && !r.catalog.requests.length && !r.catalog.missed.length && !r.catalog.extra.length));
   return validRounds.length === rounds.length && rounds.length > 0 && mechanicalAllFound && structureClean ? 0 : 1;
@@ -289,7 +306,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
 
 const packOf = (detail: RunLike): string => detail.run.pack;
 const draftRunJson = (drivers: Drivers, review: { calls: string }, dir: string): string | null => {
-  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))][0];
+  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))][0];
   if (run === undefined) return null;
   const shown = drivers.show(run);
   if (shown.code !== 0) return null;
@@ -297,7 +314,7 @@ const draftRunJson = (drivers: Drivers, review: { calls: string }, dir: string):
   return shown.json;
 };
 const verifyCodeJson = (drivers: Drivers, review: { calls: string }, dir: string): string | null => {
-  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))][0];
+  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))][0];
   if (run === undefined) return null;
   const shown = drivers.show(run);
   if (shown.code !== 0) return null;
@@ -313,6 +330,7 @@ export function outAllowed(out: string): boolean {
 }
 
 function main(): number {
+  if (!process.env.HUB_REAL_TOKEN) { console.error('缺少 HUB_REAL_TOKEN：由集成者提供令牌后再启动，评审未运行'); return 2; }
   const [source, plan, out] = [arg('source'), arg('plan'), arg('out')];
   const draftPath = arg('draft');
   const repeat = Number(arg('repeat') ?? 3);
@@ -352,7 +370,8 @@ function main(): number {
     );
     return code;
   } catch (error) {
-    console.error(`失败：${(error as Error).message.split('\n')[0]}`);
+    recordRefusal(out, error);
+    console.error('拒绝：' + refusalSummary(error));
     return 1;
   }
 }

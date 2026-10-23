@@ -170,12 +170,13 @@ export interface ScoreOptions {
 }
 
 export function score(gold: readonly GoldEntry[], result: ResultLike, options: ScoreOptions = {}): Score {
-  for (const entry of gold) {
+  for (const [index, entry] of gold.entries()) {
     if (typeof (entry as { kind?: unknown }).kind !== 'string') {
-      throw new Error(`标准答案里的“${entry.label}”没有 kind：用现在的 inject-defects.ts 重新注入`);
+      throw new Error(`标准答案第 ${index + 1} 条没有 kind：用现在的 inject-defects.ts 重新注入`);
     }
   }
   const seen = seenOn(result);
+  const documentGaps = [...seen.values()].filter(s => s.reviewed).flatMap(s => s.findings.filter(code => code === 'negative_gap' || code === 'coverage_gap'));
   const eligible = options.literal === undefined ? undefined : new Set(options.literal.cases.map(c => c.id));
   // Hub gives missing/duplicate ids positional or suffixed identities. Only exact unique raw ids are scoreable;
   // do not guess fallback identities, which may collide with real ids in the same document.
@@ -200,8 +201,8 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     if (entry.deletedCases !== undefined && entry.deletedCases.length > 0) {
       const nodes = [entry.node, ...entry.deletedCases];
       const here = nodes.map(at).filter((s): s is Seen => s !== undefined);
-      const findings = [...new Set(here.flatMap((s) => s.findings))];
-      const groupGap = here.some((s) => s.findings.some((code) => code === 'negative_gap' || code === 'coverage_gap'));
+      const findings = [...new Set([...here.flatMap((s) => s.findings), ...documentGaps])];
+      const groupGap = documentGaps.length > 0;
       const draft = findings.length > 0;
       const confirmNodes = nodes.map((n) => verified.get(n)).filter((v): v is NonNullable<typeof v> => v !== undefined);
       const vNew = confirmNodes.some((v) => v.newFindings.length > 0) || verifyGapProbes.length > 0;
@@ -229,7 +230,14 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       modelStatementRefutes: here.flatMap((s) => s.modelStatementRefutes),
       literalUnscored: here.some((s) => s.literalUnscored),
     };
-    const mechanical = merged.marks.length > 0;
+    const mechanical = entry.seen_by === 'mechanical' && nodes.every(node => {
+      const marks = at(node)?.marks ?? [];
+      if (entry.kind === 'delete_expected') return marks.includes('core.structure.required_empty');
+      if (entry.kind === 'duplicate') return marks.includes('core.structure.duplicate_key');
+      if (entry.kind === 'replace_command_word') return marks.some(code => code.startsWith('core.catalog.'));
+      const codes = options.literal?.cases.find(c => c.id === node)?.codes ?? [];
+      return codes.length > 0 && codes.every(code => marks.includes(code));
+    });
     const draft = merged.findings.length > 0;
     const verifyRecord = nodes.map((n) => verified.get(n)).find((v): v is NonNullable<typeof v> => v !== undefined);
     const vNew = verifyRecord?.newFindings.length !== undefined && verifyRecord.newFindings.length > 0;
@@ -249,7 +257,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
 
   const recallOf = (kind: GoldEntry['seen_by']): [number, number] => {
     const own = detections.filter((d) => d.entry.seen_by === kind);
-    return [own.filter((d) => d.detected).length, own.length];
+    return [own.filter((d) => kind === 'judgment' ? d.draft : d.mechanical).length, own.length];
   };
 
   // The untouched cases: the Hub's structure marks against the independent answer, everything else counted only.
@@ -258,8 +266,10 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   let literalUnscored = 0;
   for (const [node, s] of seen) {
     if (touched.has(node)) continue;
-    if (s.literalUnscored) literalUnscored += 1;
+    if (s.literalUnscored) { literalUnscored += 1; continue; }
+    const structureCodes = new Set<string>();
     for (const code of s.marks) {
+      if (isStructure(code)) { if (structureCodes.has(code)) continue; structureCodes.add(code); }
       if (!isStructure(code)) {
         const inBaseline = (before.get(node)?.marks ?? []).includes(code);
         otherMarks.total += 1;
@@ -279,7 +289,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   }
   if (options.literal !== undefined) {
     for (const answer of options.literal.cases) {
-      if (touched.has(answer.id)) continue;
+      if (touched.has(answer.id) || seen.get(answer.id)?.literalUnscored) continue;
       for (const code of answer.codes) {
         if (!isStructure(code)) continue;
         const hub = [...seen.get(answer.id)?.marks ?? []].includes(code);
@@ -347,7 +357,7 @@ export function aggregate(gold: readonly GoldEntry[], runs: readonly AggregateRu
   const kinds: KindAggregate[] = [...new Set(gold.map((g) => g.kind))].map((kind) => {
     const entries = gold.filter((g) => g.kind === kind && (g.deletedCases !== undefined || eligible.has(g.node) || !excluded.has(g.node)));
     const count = (channel: 'mechanical' | 'draft' | 'verify' | 'combined'): number =>
-      scores.reduce((sum, s) => sum + s.detections.filter((d) => d.entry.kind === kind && d[channel]).length, 0);
+      scores.reduce((sum, s) => sum + s.detections.filter((d) => d.entry.kind === kind && (channel !== 'mechanical' || d.entry.seen_by === 'mechanical') && d[channel]).length, 0);
     return {
       kind,
       title: KIND_TITLES[kind] ?? kind,
@@ -372,7 +382,7 @@ export function render(s: Score): string[] {
   const pct = ([found, total]: [number, number]): string => (total === 0 ? '无' : `${found}/${total}`);
   const lines = [
     `Hub 自己的字面检查看得见的缺陷：查出 ${pct(s.recall.mechanical)}`,
-    `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
+    `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，合起来 ${pct([s.detections.filter(d => d.entry.seen_by === 'judgment' && d.combined).length, s.detections.filter(d => d.entry.seen_by === 'judgment').length])}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
     '',
     s.structureCompared
       ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；目录类标记还没有独立答案 ${s.otherMarks.catalog.total} 条（未改动评审里没有的 ${s.otherMarks.catalog.fresh} 条）；不计分 ${s.literalUnscored + s.noUniqueId}（data.id 缺失或重复 ${s.noUniqueId} 个）`

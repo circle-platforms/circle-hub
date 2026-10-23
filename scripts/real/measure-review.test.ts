@@ -1,13 +1,16 @@
+import type { Attribution, StaticTerminal, Reason } from '../../contracts/generated/vocabulary.ts';
 // Tests of the repeated measurement driver (task gold-review step 4) with fake sessions and a fake `run show`: no
 // real client, no real model, no real Hub. The fixtures are synthetic mind maps and run details.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { MindNode, MindTree, Planned } from './lib/inject.ts';
-import { judgeRun, measureReview, outAllowed, type Drivers, type MeasureOptions, type SessionSpec } from './measure-review.ts';
+import { judgeRun, measureReview, outAllowed, parseSession, type Drivers, type MeasureOptions, type SessionSpec } from './measure-review.ts';
+
+const staticFixture = (terminal: StaticTerminal, attribution?: Attribution, reason?: Reason) => ({ terminal, ...(attribution === undefined ? {} : { attribution }), ...(reason === undefined ? {} : { reason }) });
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
 const kase = (id: string, text: string, expected: string, tag = 'configuration'): MindNode => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
@@ -85,7 +88,7 @@ const copyShaOf = (out: string): string => createHash('sha256').update(readFileS
 test('three valid rounds with the Hub finding everything: exit 0, scores written, screen clean', () => {
   const { out, source, plan: planPath } = fixtures(document(3), plan);
   const delivered = [
-    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'subject' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] },
+    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] },
     { item: 'run:x:case:c2', requirements: [] },
     { item: 'run:x:case:c3', requirements: [] },
   ];
@@ -190,7 +193,7 @@ test('node-id refutations on fallback identities are disclosed without failing t
     kase('healthy', '健康用例', '合成期望丁'),
   )) };
   const { out, source, plan: planPath } = fixtures(tree, []);
-  const delivered = ['same#1', 'same#2', '@6'].map(id => ({ item: `doc:${id}`, requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }));
+  const delivered = ['same#1', 'same#2', '@6'].map(id => ({ item: `doc:${id}`, requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }));
   delivered.push({ item: 'doc:healthy', requirements: [] });
   const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 4, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
   const lines: string[] = [];
@@ -201,12 +204,73 @@ test('node-id refutations on fallback identities are disclosed without failing t
 
 test('measurement reports each catalog mark as lacking an independent answer without judging it', () => {
   const { out, source, plan: planPath } = fixtures(document(1), []);
-  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: ['core.catalog.not_member', 'core.catalog.param_out_of_range'].map(code => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } })) }] }];
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation', 'author_input')], claims: ['core.catalog.not_member', 'core.catalog.param_out_of_range'].map(code => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } })) }] }];
   const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 1, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
   const lines: string[] = [];
   assert.equal(measureReview({ ...options(out), source, plan: planPath }, drivers, line => lines.push(line)), 0);
   assert.ok(lines.some(l => l.includes('目录类标记还没有独立答案 2 条')));
   assert.ok(!lines.join('\n').includes('core.catalog'));
+});
+
+test('review 1: judgment-only injections never fail the mechanical exit gate', () => {
+  const planned: Planned[] = [...plan, { label: '含糊期望', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c2', text: '正常' } }];
+  const f = fixtures(document(3), planned), lines: string[] = [];
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+  const drivers = fakeDrivers({ drafts: Array.from({ length: 3 }, () => ({ calls: callLine('rn_mixed', 'accepted'), run: () => runDetail({ run: 'rn_mixed', items: 3, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered }) })) });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, repeat: 3 }, drivers, line => lines.push(line)), 0);
+  assert.ok(lines.some(line => line.includes('Hub 看得见的注入缺陷全部查出 是')));
+});
+
+test('review 5: refused runs do not shadow the one accepted run in a repaired session', () => {
+  const f = fixtures(document(1), []), calls = callLine('rn_abandoned', 'not_accepted') + '\n' + callLine('rn_final', 'accepted');
+  const detail = () => runDetail({ run: 'rn_final', items: 1, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: [{ item: 'doc:c1', requirements: [] }] });
+  const driver = fakeDrivers({ drafts: [{ calls, run: detail }] });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, driver, () => {}), 0);
+  assert.equal(judgeRun(calls, detail(), { packPrefix: 'case-review@' }).ok, true);
+});
+
+test('review 6: accepted evidence survives a nonzero client exit and failed retrieval has its own reason', () => {
+  const f = fixtures(document(1), []), calls = callLine('rn_timeout', 'accepted');
+  const driver: Drivers = { review: () => ({ code: 1, calls }), show: () => ({ code: 0, json: runDetail({ run: 'rn_timeout', items: 1, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: [{ item: 'doc:c1', requirements: [] }] }) }) };
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, driver, () => {}), 0);
+  const g = fixtures(document(1), []), lines: string[] = [];
+  assert.equal(measureReview({ ...options(g.out), source: g.source, plan: g.plan }, { ...driver, show: () => ({ code: 1, json: '' }) }, s => lines.push(s)), 1);
+  assert.ok(lines.some(l => l.includes('取不到运行'))); assert.ok(!lines.some(l => l.includes('任务包不对')));
+});
+
+test('review 10: endpoint session arguments cannot override driver prompt or output flags', () => {
+  for (const flag of ['--prompt', '--out', '--name']) assert.throws(() => parseSession(JSON.stringify({ args: [flag, 'private-value'], prompt: 'synthetic' }), 'draft'), /驱动/);
+});
+
+test('review 11: invalid or empty baselines refuse startup and valid rounds are unioned', () => {
+  const f = fixtures(document(2), []), baseline = fixtures(document(2), []).out;
+  writeFileSync(join(baseline, 'mutated.json'), JSON.stringify(document(2)));
+  const sha = createHash('sha256').update(readFileSync(join(baseline, 'mutated.json'))).digest('hex');
+  const before = [
+    [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }],
+    [{ item: 'doc:c2', requirements: [{ requirement: 'findings', layers: [], claims: [{ statement: { code: 'synthetic-finding' }, qualifier: { nature: 'judgment' } }] }] }],
+  ];
+  before.forEach((delivered, i) => { const dir = join(baseline, `r${i + 1}`); mkdirSync(dir); writeFileSync(join(dir, 'score.json'), '{}'); writeFileSync(join(dir, 'draft.run.json'), runDetail({ items: 2, sources: [{ reference: `src:${sha}` }], delivered })); });
+  const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_current', 'accepted'), run: () => runDetail({ run: 'rn_current', items: 2, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: before.flat() }) }] });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, baseline }, drivers, () => {}), 0);
+  const scored = JSON.parse(readFileSync(join(f.out, 'r1/score.json'), 'utf8')); assert.equal(scored.otherMarks.fresh, 0); assert.equal(scored.extras[0].inBaseline, true);
+  const empty = fixtures(document(1), []); const lines: string[] = [];
+  assert.equal(measureReview({ ...options(empty.out), source: empty.source, plan: empty.plan, baseline: fixtures(document(1), []).out }, fakeDrivers({ drafts: [] }), l => lines.push(l)), 2);
+  assert.ok(lines.some(l => l.includes('--baseline') && l.includes('空计划基线')));
+});
+
+test('review 14: an invalid draft leaves verification explicitly unrun', () => {
+  const f = fixtures(document(1), []), lines: string[] = [];
+  measureReview({ ...options(f.out), source: f.source, plan: f.plan, verify: { args: [], prompt: 'verify' } }, fakeDrivers({ drafts: [{ calls: '', run: () => '{}' }] }), line => lines.push(line));
+  assert.ok(lines.some(line => line.includes('复核 未跑（初评无效）'))); assert.ok(!lines.join('').includes('undefined'));
+});
+
+test('review 15: no valid rounds cannot claim that checks passed vacuously', () => {
+  const f = fixtures(document(1), []), lines: string[] = [];
+  measureReview({ ...options(f.out), source: f.source, plan: f.plan }, fakeDrivers({ drafts: [{ calls: '', run: () => '{}' }] }), line => lines.push(line));
+  const pass = lines.find(line => line.startsWith('通过：'))!;
+  assert.ok(!pass.includes('全部查出 是')); assert.ok(!pass.includes('没有误报和漏标 是')); assert.match(pass, /没有有效.*重跑/);
+  assert.ok(lines.some(line => line.includes('有效运行少于 2') && line.includes('补足')));
 });
 
 const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmission?: boolean; code?: string | null } = {}) => {
@@ -222,7 +286,7 @@ const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmi
       const body = Buffer.from(JSON.stringify({ run: 'rn_catalog', items: [{ item: 'doc:c1', handling: 'handled', slots: { findings: [{ text: '合成引用', commands: [{ command: 'widget port 21' }] }] } }] }));
       if (over.provideSubmission !== false) writeFileSync(original.replace('{n}', String(round)), body);
       const code = over.code === undefined ? 'core.catalog.param_out_of_range' : over.code;
-      const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', attribution: 'author_input' }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+      const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', ...staticFixture('violation', 'author_input') }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
       const value = JSON.parse(runDetail({ run: 'rn_catalog', items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered }));
       value.run.root = 'a'.repeat(64); value.run.sources[0].role = 'subject';
       value.latest.result.run = 'rn_catalog'; value.latest.result.submission = createHash('sha256').update(body).digest('hex');

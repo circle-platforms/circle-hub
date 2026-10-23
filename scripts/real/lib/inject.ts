@@ -2,6 +2,8 @@
 // can be scored against an answer that is independent of the Hub (brief section 6b, review). The source is never changed; the
 // copy and the gold hold real content and belong outside Git.
 import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '../gold/cases.ts';
 
 export interface MindNode {
@@ -74,26 +76,22 @@ export function caseNodes(tree: MindTree): MindNode[] {
 const clone = <T>(value: T): T => structuredClone(value);
 
 /** The document up to and including the n-th case: everything after it is cut, groups that start before it stay. */
-export function firstCases(tree: MindTree, n: number): MindTree {
-  const copy = clone(tree);
-  let seen = 0;
-  let done = false;
-  const cut = (node: MindNode): void => {
-    if (isCase(node)) {
-      seen += 1;
-      if (seen >= n) done = true;
-      return;
-    }
-    const kept: MindNode[] = [];
-    for (const child of node.children ?? []) {
-      if (done) break;
-      kept.push(child);
-      cut(child);
-    }
-    if (node.children !== undefined) node.children = kept;
+export function firstCases(tree: MindTree, n: number, options: { caseRule?: 'marked' | 'tagged' } = {}): MindTree {
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error('--keep 必须为正整数');
+  const copy = clone(tree), parsed = parseMindMap(copy), cases = caseNodesOf(parsed, options);
+  if (cases.length <= n) return copy;
+  const selected = new Set(cases.slice(0, n).map(node => node.index)), caseIndices = new Set(cases.map(node => node.index));
+  const positions = new Map<MindNode, number>(), ends = new Map<number, number>(); let ordinal = 0;
+  const visit = (node: MindNode): void => { const at = ordinal++; positions.set(node, at); for (const child of (node.children ?? []).slice(0, 1000)) visit(child); ends.set(at, ordinal - 1); };
+  visit(copy.root);
+  const boundary = ends.get(cases[n - 1].index)!;
+  const prune = (node: MindNode): boolean => {
+    const index = positions.get(node);
+    if (index === undefined || index > boundary || caseIndices.has(index) && !selected.has(index)) return false;
+    if (node.children) node.children = node.children.filter(prune);
+    return true;
   };
-  cut(copy.root);
-  return copy;
+  prune(copy.root); return copy;
 }
 
 const idOf = (node: MindNode): string => String(node.data.id ?? '');
@@ -150,7 +148,7 @@ const expectedLeaves = (caseNode: MindNode): MindNode[] => {
   const out: MindNode[] = [];
   const walk = (node: MindNode): void => {
     for (const child of node.children ?? []) {
-      if (Array.isArray(child.data.resource) && child.data.resource.length > 0) continue;
+      if (Array.isArray(child.data.resource) && child.data.resource.some(tag => typeof tag === 'string' && tag.trim() !== '')) continue;
       if ((child.children ?? []).length === 0) {
         if (child.data.priority === 3) continue;
         out.push(child);
@@ -174,7 +172,8 @@ const noWhiteSpace = (text: string): string => text.replace(/\s+/gu, '');
 export function inject(tree: MindTree, plan: readonly Planned[], options: InjectOptions = {}): { tree: MindTree; gold: GoldEntry[] } {
   const copy = clone(tree);
   const gold: GoldEntry[] = [];
-  for (const { label, seen_by, op } of plan) {
+  for (const [index, { label, seen_by, op }] of plan.entries()) {
+    try {
     const { node, parent } = locate(copy, op.node);
 
     if (op.kind === 'delete_negative_group') {
@@ -200,6 +199,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
     }
 
     if (op.kind === 'contradict_manual') {
+      if ([op.from, op.to, op.quote].some(text => typeof text !== 'string' || !text.trim())) throw new Error('from、to、quote 必须是非空文本');
       if (seen_by !== 'judgment') throw new Error('contradict_manual 只有模型判断才看得见，seen_by 必须是 judgment');
       if (options.manual === undefined) throw new Error('计划里有 contradict_manual，却没有给手册片段（inject-defects.ts 的 --manual）');
       if (!noWhiteSpace(options.manual.text).includes(noWhiteSpace(op.quote))) {
@@ -225,6 +225,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       });
       continue;
     } else if (op.kind === 'vague_expected') {
+      if (typeof op.text !== 'string' || !op.text.trim()) throw new Error('text 必须是非空文本');
       if (seen_by !== 'judgment') throw new Error('vague_expected 只有模型判断才看得见，seen_by 必须是 judgment');
       if (!vague(op.text)) throw new Error(`text（${op.text}）不在含糊期望词表里`);
       if (!caseIdsOf(copy, options.caseRule ?? 'marked').has(op.node)) {
@@ -238,7 +239,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       const after = vagueCasesOf(copy, options.caseRule ?? 'marked');
       const flipped = [...after].filter((id) => !before.has(id));
       if (flipped.length !== 1 || flipped[0] !== op.node) {
-        throw new Error(`注入后从不含糊变成含糊的用例不止这一个：${flipped.join('、')}`);
+        throw new Error(flipped.length === 0 ? '注入后这个用例没有变成含糊（没有可确认的新增身份）' : `注入后从不含糊变成含糊的用例不止这一个：${flipped.join('、')}`);
       }
       gold.push({ label, seen_by, kind: op.kind, node: op.node, note: `每条期望结果都换成了同一句含糊的“${op.text}”` });
       continue;
@@ -291,6 +292,30 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       target.children = [...(target.children ?? []), node];
       gold.push({ label, seen_by, kind: 'move', node: op.node, note: `用例挪到了分组 ${op.to} 下` });
     }
+    } catch (error) { throw new InjectionRefusal(index + 1, op.kind, error); }
   }
   return { tree: copy, gold };
+}
+
+export class InjectionRefusal extends Error {
+  detail: string;
+  constructor(index: number, kind: string, error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const safeKind = ['delete_expected','replace_expected','duplicate','move','replace_command_word','delete_negative_group','contradict_manual','vague_expected'].includes(kind) ? kind : '未识别种类';
+    const reason = /quote/.test(detail) ? 'quote 不在片段里或格式不合法' : /seen_by/.test(detail) ? 'seen_by 不符合可见性' : /手册|manual/.test(detail) ? '缺少 --manual 输入' : /contains|from/.test(detail) ? '期望中找不到 from' : /to（|矛盾/.test(detail) ? 'to 不构成矛盾' : '目标或输入不满足注入条件';
+    super(`计划第 ${index} 条（${safeKind}）：${reason}`);
+    this.detail = detail;
+  }
+}
+export function refusalSummary(error: unknown): string { return error instanceof InjectionRefusal ? error.message : '输入或计分条件不满足；请按私有诊断补齐输入后重跑'; }
+export function recordRefusal(out: string | undefined, error: unknown): void {
+  if (!out) return;
+  const path = resolve(out);
+  const check = (start: string) => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new Error('拒绝写入 Git'); if (dirname(at) === at) break; } };
+  try {
+    check(path); let parent = path; while (!existsSync(parent)) parent = dirname(parent);
+    check(resolve(realpathSync(parent), relative(parent, path)));
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+    writeFileSync(join(path, 'refusal.txt'), error instanceof InjectionRefusal ? error.detail : error instanceof Error ? error.stack ?? error.message : String(error), { flag: 'wx', mode: 0o600 });
+  } catch { /* Never expose the original error when its private record cannot be written. */ }
 }

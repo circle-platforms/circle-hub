@@ -15,6 +15,7 @@ export const CODE_DUPLICATE_KEY = 'core.structure.duplicate_key';
 
 /** The raw fields the folded GoldMap loses: a priority that is present but malformed, and blank tags. */
 interface RawNode {
+  text: unknown;
   priorityPresent: boolean;
   /** The raw priority value, whatever it is. */
   priority: unknown;
@@ -32,7 +33,7 @@ function rawWalk(root: unknown, map: GoldMap): RawNode[] {
       return;
     }
     const record = ((value as { data?: unknown }).data ?? {}) as Record<string, unknown>;
-    raw.push({ priorityPresent: 'priority' in record && record.priority !== null && record.priority !== undefined, priority: record.priority, resource: record.resource });
+    raw.push({ text: record.text, priorityPresent: 'priority' in record && record.priority !== null && record.priority !== undefined, priority: record.priority, resource: record.resource });
     const list = Array.isArray((value as { children?: unknown }).children) ? ((value as { children?: unknown[] }).children as unknown[]) : [];
     for (const child of list.slice(0, 1000)) walk(child);
   };
@@ -114,7 +115,9 @@ export interface LiteralAnswer {
 export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagged' } = {}): LiteralAnswer {
   const parsed = parseMindMap(map);
   const raw = rawWalk((map as { root?: unknown }).root, parsed);
-  const cases = caseNodesOf(parsed, { caseRule: options.caseRule ?? 'marked' });
+  // Preserve raw tag-array presence for recognition; validity is checked separately below.
+  const recognized: GoldMap = { nodes: parsed.nodes.map((node, i) => ({ ...node, resource: Array.isArray(raw[i].resource) ? (raw[i].resource as unknown[]).map(tag => typeof tag === 'string' ? tag : '') : [] })) };
+  const cases = caseNodesOf(recognized, { caseRule: options.caseRule ?? 'marked' });
 
   const idsSeen = new Map<string, number>();
   for (const node of parsed.nodes) idsSeen.set(node.id, (idsSeen.get(node.id) ?? 0) + 1);
@@ -124,7 +127,8 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   const readings = new Map<string, CaseReading>();
   for (const node of cases) {
     const id = node.id;
-    const reading = readCase(parsed, node);
+    const reading = readCase(recognized, node);
+    reading.title = typeof raw[node.index].text === 'string' ? raw[node.index].text as string : '';
     readings.set(`${node.index}`, reading);
     if (id === '' || (idsSeen.get(id) ?? 0) > 1) {
       noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0, reason: id === '' ? 'data.id 缺失' : 'data.id 重复' });
@@ -147,11 +151,10 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
     answers.set(id, [...codes]);
   }
 
-  // duplicate_key: under one path (the same parent), everything compared — title, steps, expected, preconditions.
-  const byParent = new Map<number, GoldNode[]>();
+  // duplicate_key: the folded ancestor label path, not the parent node identity, everything compared — title, steps, expected, preconditions.
+  const byParent = new Map<string, GoldNode[]>();
   for (const node of cases) {
-    const parent = node.parent;
-    if (parent === null) continue;
+    const parent = JSON.stringify(node.ancestors.map(duplicateFold));
     const list = byParent.get(parent) ?? [];
     list.push(node);
     byParent.set(parent, list);

@@ -1,3 +1,4 @@
+import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Writes a copy of a KityMinder export with known defects injected, and the gold that names them.
 //   node scripts/real/inject-defects.ts --source <mindmap.json> --plan <plan.json> --out <dir> [--keep <n>]
 // The plan is a JSON list of { label, seen_by, op } (scripts/real/lib/inject.ts); --keep cuts the copy after its n-th case so a
@@ -20,12 +21,12 @@ function main(): number {
   }
   let tree = JSON.parse(readFileSync(source, 'utf8')) as MindTree;
   const keep = arg('keep');
-  if (keep !== undefined) tree = firstCases(tree, Number(keep));
   const caseRuleArg = arg('case-rule');
   if (caseRuleArg !== undefined && caseRuleArg !== 'marked' && caseRuleArg !== 'tagged') {
     console.error('--case-rule 只认 marked 或 tagged');
     return 2;
   }
+  if (keep !== undefined) tree = firstCases(tree, Number(keep), { caseRule: caseRuleArg === 'tagged' ? 'tagged' : 'marked' });
   let manual: ManualFragment | undefined;
   const manualPath = arg('manual');
   if (manualPath !== undefined) {
@@ -40,4 +41,4 @@ function main(): number {
   return 0;
 }
 
-process.exitCode = main();
+if (import.meta.main) { try { process.exitCode = main(); } catch (error) { recordRefusal(arg('out'), error); console.error('拒绝：' + refusalSummary(error)); process.exitCode = 1; } }
