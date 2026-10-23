@@ -534,6 +534,22 @@ describe('placement against the build’s command tree', () => {
     assert.ok(out.warnings.some((warning) => warning.includes('命令树不可用') && warning.includes('签名留在章节节点')), out.warnings.join('；'));
   });
 
+
+  it('a command-header cell splits two bold runs joined by a slash into two signatures (each placed by its own rule)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    for (const slash of ['/', '／', ' / ']) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add**${slash}**demo pool mode** | 两步配合 |\n`), null, { catalog: tree });
+      // Two signature-shaped runs: the row is a multi-command row and hangs at the commands' placement (never one
+      // glued head word, never a synthetic %2F path), with no drift for a placed row.
+      assert.ok(result.entries.some((entry) => String(entry.statement).includes('两步配合') && entry.path === '/commands/demo/pool'), `${slash} hangs the row at the commands' common ancestor`);
+      assert.ok(result.entries.every((entry) => !String(entry.path).includes('%2F')), `${slash} never glues two bold runs into one path`);
+      assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), `${slash} lists no drift: ${result.warnings.join('；')}`);
+    }
+    // Without the command header the glued cell stays one remainder row (finding 19 keeps its rule).
+    const noHeader = produceManualEntries(markdown('# 章\n\n## 配置\n\n| 步骤 | 说明 |\n|---|---|\n| **demo pool add**/**demo pool mode** | 两步配合 |\n'), null, { catalog: tree });
+    assert.ok(noHeader.entries.every((entry) => entry.data.form !== 'signature'), 'no signature outside a command header');
+  });
+
   it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
     // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
     // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.

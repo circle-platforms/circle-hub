@@ -167,7 +167,9 @@ Producers (K02, K04, C07)
   every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
   itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
   section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
-  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／); a bold span inside
+  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／; under a header that
+  names commands a slash between two signature-shaped runs splits them, elsewhere a plain-character join is one value
+  or term cell); a bold span inside
   prose is a mention, recorded in `command_literals` only. A cell holding one bare bold word is a value, a parameter
   name or a term, never a signature (unless the table header names commands): such rows keep the table's remainder
   and the word is recorded in `command_literals` only. The header and the rows without a signature make one remainder

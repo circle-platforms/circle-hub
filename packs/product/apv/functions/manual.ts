@@ -644,7 +644,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (!cell.includes('**')) return [];
     // The connective runs are CJK connective words and the comma and slash marks (ASCII and full width), so
     // '**a**, **b**' and '**a**/**b**' split like the CJK forms. A run holding anything else is prose, not a list.
-    const parts = cell.split(new RegExp(`(${CJK.source}|[，,、/／])+`, 'u'));
+    // Two bold runs glued by a slash split only under a header that names commands (finding 19's rule stays for
+    // every other table: a plain-character join is one value or term cell, never one glued command).
+        const parts = cell.split(new RegExp(`(${CJK.source}|[，,、]+${headerNamesCommands ? '|[/／]+' : ''})+`, 'u'));
     const out: Anchor[] = [];
     for (let k = 0; k < parts.length; k++) {
       if (k % 2 === 1) {
