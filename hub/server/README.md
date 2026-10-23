@@ -233,7 +233,8 @@ links are fixed paths with encoded query parameters).
 
 - **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
   newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
-  the page empty. `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
+  the page empty. A filtered or paginated scan is marked 部分, and an empty page says how many runs it examined;
+  it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
   record digest. Later accepted commentary cannot replace its record, counts or claims. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
   status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
