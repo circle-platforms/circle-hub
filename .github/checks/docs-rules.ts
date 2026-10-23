@@ -170,14 +170,14 @@ export function decisionSourceProblems(markdown: string): string[] {
 }
 
 // Build sensitive shapes from pieces so the checker does not match its own source.
-const LOCAL_PATH = new RegExp('(?:(?<=file://)|(?<![A-Za-z0-9_./\\\\-]))(?:' + [
+const ROOT_BOUNDARY = '(?:(?<=file://)|(?<![A-Za-z0-9_./\\-]))';
+const LOCAL_PATH = new RegExp([
   '/' + 'Users/[^/\\s`"\'<>),;:]+',
   '/' + 'home/[^/\\s`"\'<>),;:]+',
-  '/' + 'root/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+',
-  '/' + 'var/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+',
-  '~' + '/(?=[A-Za-z0-9])',
-  '[A-Z]:\\\\' + 'Users\\\\',
-].join('|') + ')', 'g');
+  ROOT_BOUNDARY + '(?:/' + 'root/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+|(?:/private)?/' + 'var/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+)',
+  ROOT_BOUNDARY + '~' + '/(?=[A-Za-z0-9])',
+  '[A-Za-z]:\\\\{1,2}' + 'Users\\\\{1,2}',
+].join('|'), 'g');
 
 // Exact synthetic home roots are permitted only in the named test files. No directory-wide exemptions.
 const SYNTHETIC_PATHS: Readonly<Record<string, readonly string[]>> = {

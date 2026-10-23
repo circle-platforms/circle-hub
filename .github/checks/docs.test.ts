@@ -191,6 +191,17 @@ describe('no machine paths in repository text', () => {
     }
   });
 
+  it('finds mounted homes, macOS private variable paths and escaped Windows homes', () => {
+    const slash = String.fromCharCode(92);
+    const paths = [
+      '/' + 'mnt/c/' + 'Users/operator/project', '/' + 'c/' + 'Users/operator/project',
+      '/' + 'System/Volumes/Data/' + 'Users/operator/project', '/' + 'mnt/' + 'home/operator/project',
+      '/' + 'private/' + 'var/folders/ab/synthetic/T/tmp',
+      ...['C:', 'c:'].flatMap(drive => [1, 2].map(n => drive + slash.repeat(n) + 'Users' + slash.repeat(n) + 'operator')),
+    ];
+    for (const path of paths) assert.equal(localPathProblems('hub/example.ts', path).length, 1, path);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
