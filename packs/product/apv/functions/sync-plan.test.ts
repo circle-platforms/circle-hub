@@ -114,7 +114,7 @@ describe('planSync', () => {
 
   it('takes page names from links of every shape', () => {
     assert.equal(pageNameOf('http://192.0.2.10/builds/rel_apv_10_6.html?x=1#top'), 'rel_apv_10_6');
-    assert.equal(pageNameOf('apv_10_0_0_special.html.html'), 'apv_10_0_0_special');
+    assert.equal(pageNameOf('apv_10_6_0_special.html.html'), 'apv_10_6_0_special');
     assert.equal(pageNameOf('rel%5Fapv_10_6.HTM'), 'rel_apv_10_6');
     assert.equal(pageNameOf('rel%E0%A4.html'), 'rel%E0%A4');
     assert.equal(pageNameOf('http://192.0.2.10/builds/'), null);

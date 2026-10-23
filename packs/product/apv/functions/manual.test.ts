@@ -173,7 +173,7 @@ describe('entries from the converted manual', () => {
       words: ['demo', 'route', 'static'],
       form: 'signature',
       signature: '[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]',
-      command_literals: ['demo route static', 'no demo route static'],
+      command_literals: ['demo route static'],
       params: [
         { name: 'network', required: true },
         { name: 'netmask|prefix', required: true },
@@ -190,15 +190,15 @@ describe('entries from the converted manual', () => {
     assert.deepEqual(fromMarkdown.unplaced, []);
     const hung = fromMarkdown.entries.filter((entry) => entry.path?.startsWith('/manual/'));
     assert.deepEqual(
-      hung.map((entry) => [entry.kind, entry.path, entry.fragments[0].selector, entry.data.section]),
+      hung.map((entry) => [entry.kind, entry.path, entry.fragments[0].selector]),
       [
-        ['behaviour', '/manual/manual/引言', 'b/0/引言', '引言'],
-        ['behaviour', '/manual/manual/引言', 'b/1/引言', '引言'],
-        ['behaviour', '/manual/manual/基本配置', 'b/0/基本配置', '基本配置'],
-        ['behaviour', '/manual/manual/基本配置', 'b/1/基本配置', '基本配置'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
+        ['behaviour', '/manual/manual/引言', 'b/0/引言'],
+        ['behaviour', '/manual/manual/引言', 'b/1/引言'],
+        ['behaviour', '/manual/manual/基本配置', 'b/0/基本配置'],
+        ['behaviour', '/manual/manual/基本配置', 'b/1/基本配置'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
       ],
     );
     // "**demo broken** *\<name*" is written as a signature but its brackets do not close: it hangs at its section,
@@ -209,10 +209,18 @@ describe('entries from the converted manual', () => {
   });
 
   it('gives fragments the markdown@1 document locates, with the same text', () => {
+    const decoder = new TextDecoder();
     for (const entry of fromMarkdown.entries) {
-      const located = md.locate(entry.fragments[0].selector);
-      assert.ok(located, entry.fragments[0].selector);
-      if (entry.data.form === 'text') assert.equal(located.text.trim(), entry.statement);
+      // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
+      const located = entry.fragments
+        .map((fragment) => {
+          const text = md.locate(fragment.selector)?.text ?? '';
+          const range = (fragment as { range?: [number, number] }).range;
+          return range === undefined ? text : decoder.decode(new TextEncoder().encode(text).slice(range[0], range[1]));
+        })
+        .join('\n');
+      assert.ok(located !== '', entry.fragments[0].selector);
+      if (entry.data.form === 'text') assert.equal(located.replace(/\n+$/, '').trim(), entry.statement.trim());
     }
     for (const item of fromMarkdown.unplaced) assert.equal(md.locate(item.fragment.selector)?.text.trim(), item.text);
   });
@@ -344,11 +352,8 @@ describe('manual section placement', () => {
   it('hangs the preamble at the manual namespace root and names the manual by options.name', () => {
     const result = produceManualEntries(markdown('前言一段，标题之前。\n\n# 章\n\n正文。\n'), null, { name: 'cli' });
     assert.deepEqual(
-      result.entries.map((entry) => [entry.path, entry.data.section]),
-      [
-        ['/manual/cli', ''],
-        ['/manual/cli/章', '章'],
-      ],
+      result.entries.map((entry) => [entry.path]),
+      [['/manual/cli'], ['/manual/cli/章']],
     );
     assert.deepEqual(result.unplaced, []);
   });
@@ -461,6 +466,112 @@ describe('placement against the build’s command tree', () => {
     );
     const without = produceManualEntries(markdown(text));
     assert.ok(without.entries.every((entry) => entry.path?.startsWith('/commands/')), 'without a tree the literal decides (unchecked)');
+  });
+
+
+  it('a bold single-word cell is a value, parameter or term, not a row signature (findings 4, 8, 13 of the second review)', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="state" help_string="s"><arguments></arguments></item>' +
+      '<item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const withEnable = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="state" help_string="s"><arguments></arguments></item></menu></menu><item name="enable" help_string="e"><arguments></arguments></item></scope></commands>')).catalog;
+    const catalog = commandCatalog(xml(tree)).catalog;
+    // A value table under demo pool state: the rows stay in the table entry at their command; no definitions of enable/disable.
+    const values = produceManualEntries(markdown('**demo pool state** *\\<value\\>*\n\n| 取值 | 说明 |\n|---|---|\n| **enable** | 启用成员池 |\n| **disable** | 停用成员池 |\n'), null, { catalog });
+    assert.ok(values.entries.every((entry) => entry.data.form !== 'signature' || entry.path === '/commands/demo/pool/state'), JSON.stringify(values.entries.map((e) => [e.data.form, e.path])));
+    assert.ok(values.entries.some((entry) => String(entry.statement).includes('启用成员池') && entry.path === '/commands/demo/pool/state'), 'the rows stay with their command');
+    // Even when the tree HAS a top-level enable: the value row never becomes a definition at /commands/enable.
+    const withEnableTree = produceManualEntries(markdown('**demo pool state** *\\<value\\>*\n\n| 取值 | 说明 |\n|---|---|\n| **enable** | 启用成员池 |\n'), null, { catalog: withEnable });
+    assert.ok(!withEnableTree.entries.some((entry) => entry.path === '/commands/enable'), JSON.stringify(withEnableTree.entries.map((e) => [e.data.form, e.path])));
+    // A bold parameter table under demo pool add: the rows stay in the remainder at the command.
+    const params = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| **name** | 成员名 |\n| **weight** | 权重 |\n'), null, { catalog });
+    assert.deepEqual(params.entries.map((e) => [e.data.form, e.path]), [
+      ['signature', '/commands/demo/pool/add'],
+      ['text', '/commands/demo/pool/add'],
+    ], 'the parameter rows stay in the table remainder at their command');
+    assert.ok(params.entries.some((entry) => String(entry.statement).includes('成员名') && entry.path === '/commands/demo/pool/add'), 'the parameter rows stay with their command');
+    assert.ok(params.entries.some((entry) => ((entry.data.command_literals ?? []) as string[]).includes('name')), 'the words are recorded as literals');
+    // A glossary row outside any command stays in the table entry at its section.
+    const glossary = produceManualEntries(markdown('# 术语\n\n| 术语 | 说明 |\n|---|---|\n| **VIP** | 虚拟服务地址 |\n'), null, { catalog });
+    assert.ok(glossary.entries.every((entry) => entry.data.form !== 'signature'), JSON.stringify(glossary.entries.map((e) => [e.data.form, e.path])));
+    // A header that names commands (命令) keeps single-word command rows as signatures.
+    const commandHeader = produceManualEntries(markdown('## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **enable** | 进入特权级 |\n'), null, { catalog });
+    assert.ok(commandHeader.entries.some((entry) => entry.data.form === 'signature' && entry.statement.startsWith('enable')), JSON.stringify(commandHeader.entries.map((e) => [e.data.form, e.path])));
+  });
+
+
+
+  it('splits a cell on the documented comma and slash connectives and never joins two bold runs through a plain character (finding 19)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    for (const joined of ['**demo pool add**, **demo pool mode**', '**demo pool add**，**demo pool mode**', '**demo pool add**/**demo pool mode**', '**demo pool add**／**demo pool mode**', '**demo pool add** / **demo pool mode**']) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| ${joined} | 两步配合 |\n`), null, { catalog: tree });
+      // Two signatures in one cell: the row hangs at the commands' common ancestor, and neither bold run is glued
+      // into one head word (no %2F path, no drift for a placed row).
+      assert.ok(result.entries.some((entry) => String(entry.statement).includes('两步配合') && entry.path === '/commands/demo/pool'), `${joined} hangs the row at the commands' common ancestor`);
+      assert.ok(result.entries.every((entry) => !String(entry.path).includes('%2F')), `${joined} never glues two bold runs into one path`);
+      assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), `${joined} lists no drift: ${result.warnings.join('；')}`);
+    }
+    // A head token joining two bold runs through a plain character is not one command (no add%2Fmode path).
+    const glued = produceManualEntries(markdown('# 章\n\n**demo pool add**/**demo pool mode**\n\n说明。\n'), null, { catalog: tree });
+    assert.ok(glued.entries.every((entry) => !String(entry.path).includes('%2F')), 'no synthetic slash path');
+    assert.ok(glued.entries.every((entry) => entry.path !== '/commands/demo/pool/add%2Fdemo/pool/mode'), 'the glued form never becomes one command');
+  });
+
+  it('hangs signatures at their section nodes when the command tree is unusable (finding 23)', async () => {
+    const producers = await import('./producers.ts');
+    const tree = xml('<commands><scope type="global"><menu name="demo"><item name="present" help_string="p"><arguments></arguments></item></menu></scope></commands>');
+    void tree;
+    const input = {
+      slots: {
+        tree: { parser: 'text@1', model: { lines: ['not xml'] } },
+        cli: { parser: 'markdown@1', model: markdown('# 章\n\n**demo nothing here** *\\<x\\>*\n\n该命令不存在。\n') },
+      },
+      heads: null,
+    };
+    const out = producers.manual(input as never);
+    const signatures = out.entries.filter((entry) => entry.data.form === 'signature');
+    assert.ok(signatures.length > 0, JSON.stringify(out.entries.map((e) => e.data.form)));
+    assert.ok(out.entries.every((entry) => (entry.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
+    assert.ok(out.warnings.some((warning) => warning.includes('命令树不可用') && warning.includes('签名留在章节节点')), out.warnings.join('；'));
+  });
+
+
+  it('a command-header cell splits two bold runs joined by a slash into two signatures (each placed by its own rule)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    for (const slash of ['/', '／', ' / ']) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add**${slash}**demo pool mode** | 两步配合 |\n`), null, { catalog: tree });
+      // Two signature-shaped runs: the row is a multi-command row and hangs at the commands' placement (never one
+      // glued head word, never a synthetic %2F path), with no drift for a placed row.
+      assert.ok(result.entries.some((entry) => String(entry.statement).includes('两步配合') && entry.path === '/commands/demo/pool'), `${slash} hangs the row at the commands' common ancestor`);
+      assert.ok(result.entries.every((entry) => !String(entry.path).includes('%2F')), `${slash} never glues two bold runs into one path`);
+      assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), `${slash} lists no drift: ${result.warnings.join('；')}`);
+    }
+    // Without the command header the glued cell stays one remainder row (finding 19 keeps its rule).
+    const noHeader = produceManualEntries(markdown('# 章\n\n## 配置\n\n| 步骤 | 说明 |\n|---|---|\n| **demo pool add**/**demo pool mode** | 两步配合 |\n'), null, { catalog: tree });
+    assert.ok(noHeader.entries.every((entry) => entry.data.form !== 'signature'), 'no signature outside a command header');
+  });
+
+  it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
+    // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
+    // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.
+    const treeWithPool =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool" help_string="p"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const extendsTree = commandCatalog(xml(treeWithPool)).catalog;
+    const missing = produceManualEntries(markdown('# 章\n\n**demo pool mode** *\\<name\\>*\n\n该命令用于设置。\n'), null, { catalog: extendsTree });
+    assert.ok(missing.warnings.some((warning) => /漂移候选：demo pool mode/.test(warning)), missing.warnings.join('；'));
+    // A variant signature whose key node exists: only the missing variants are drift, never the bare key.
+    const treeWithDemoRoute = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="route"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const variant = produceManualEntries(markdown('# 章\n\n**demo {pool\\|route} add** *\\<name\\>*\n\n该命令用于添加。\n'), null, { catalog: treeWithDemoRoute });
+    assert.ok(variant.warnings.some((warning) => /漂移候选：demo pool add/.test(warning)), variant.warnings.join('；'));
+    assert.ok(!variant.warnings.some((warning) => /漂移候选[^：]*：demo（|demo、|、demo[^ ]/.test(warning) && /：demo/.test(warning)), 'the bare key demo is never a drift candidate');
+    // A leading [no] group places at the key like resolves(): both variants existing is enough.
+    const bothTcpUdp = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="health"><item name="tcp" help_string="t"><arguments></arguments></item><item name="udp" help_string="u"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const noGroup = produceManualEntries(markdown('# 章\n\n**[no] demo health {tcp\\|udp}**\n\n该命令用于探测。\n'), null, { catalog: bothTcpUdp });
+    assert.equal(noGroup.entries[0].path, '/commands/demo/health', 'a leading [no] group places at the key when its positive variants exist');
+    assert.ok(!noGroup.warnings.some((warning) => warning.includes('漂移候选')), noGroup.warnings.join('；'));
+    // A multi-command row that the placement check placed lists no drift literal of its own.
+    const rowTree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="add" help_string="a2"><arguments></arguments></item><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const row = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo {pool\\|route} add** 与 **demo route static** | 配合 |\n'), null, { catalog: rowTree });
+    assert.ok(!row.warnings.some((warning) => warning.includes('漂移候选')), row.warnings.join('；'));
   });
 
   it('hangs a variant signature at the common node of its variants when every variant exists', () => {
@@ -615,10 +726,10 @@ describe('command tables split by row', () => {
   it('never splits a table that is not a pipe table, or a pipe table without a resolvable signature row', () => {
     const grid = ['# 章', '', '+-----+-----+', '| a   | b   |', '+-----+-----+', '| **demo pool add** | x |', '+-----+-----+'].join('\n');
     const fromGrid = produceManualEntries(markdown(grid), null, { catalog });
-    assert.deepEqual(fromGrid.entries.map((entry) => [entry.path, entry.data.block]), [['/manual/manual/章', 'table']]);
+    assert.deepEqual(fromGrid.entries.map((entry) => [entry.path]), [['/manual/manual/章']]);
     const plain = ['# 章', '', '| 命令 | 说明 |', '| --- | --- |', '| 添加成员 | 用池命令 |'].join('\n');
     const fromPlain = produceManualEntries(markdown(plain), null, { catalog });
-    assert.deepEqual(fromPlain.entries.map((entry) => [entry.path, entry.data.block]), [['/manual/manual/章', 'table']]);
+    assert.deepEqual(fromPlain.entries.map((entry) => [entry.path]), [['/manual/manual/章']]);
   });
 });
 
@@ -691,6 +802,74 @@ describe('applicability from explicit conditions', () => {
     assert.deepEqual(model.applicability, { models: ['X9000'] });
     assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'a start build ("自…起") is not a manual-entry condition');
     assert.equal(builds.applicability, null, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
+  });
+
+
+  it('reads no negated, hedged, inclusive or partly listed condition, and no exception list (second review findings 3 and 6)', () => {
+    const sentences = [
+      '不会适用于 hg-k 平台。',
+      '不可适用于 hg-k 平台。',
+      '未适用于 hg-k 平台。',
+      '尚未适用于 hg-k 平台。',
+      '不一定仅 hg-k 平台支持。',
+      '未必仅 hg-k 平台支持。',
+      '不完全仅 hg-k 平台支持。',
+      '并不总是仅 hg-k 平台支持。',
+      '不是仅 hg-k 平台支持。',
+      '也适用于 hg-k 平台。',
+      '同样适用于 hg-k 平台。',
+      '适用于 hg-k 平台以及其他平台。',
+      '适用于 hg-k 平台等。',
+      '适用于 hg-k 平台等环境。',
+      '适用于 hg-k 平台、ft-kylinv10 平台等。',
+      '适用于 hg-k 平台和 ft-kylinv10 平台以外的所有平台。',
+      '适用于 hg-k 平台和 ft-kylinv10 平台之外的环境。',
+      '适用于虚拟平台和物理平台以外的环境。',
+      '适用于 X9000 系列和 X8000 系列以外的机型。',
+      '该命令用于添加成员。',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      assert.equal(behaviour?.applicability, null, `${sentence} 不该读出条件`);
+    }
+    // The readable forms still read: a coordinated list counts only when every item of it is readable.
+    const readable = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n该命令仅适用于 hg-k 平台与 zx-neokylin 平台。\n'));
+    assert.deepEqual(readable.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'every item of a closed coordinated list still reads');
+    for (const join of ['与', '及', '以及', '或']) {
+      const closed = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n适用于 hg-k 平台${join} ft-kylinv10 平台。\n`));
+      assert.deepEqual(closed.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['ft-kylinv10', 'hg-k'] }, `${join} joins a closed list: both items read, never only the first`);
+    }
+    const modelsClosed = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n适用于 X9000 系列及 X8000 系列。\n'));
+    assert.deepEqual(modelsClosed.entries.find((entry) => entry.data.form === 'text')?.applicability, { models: ['X8000', 'X9000'] }, 'a coordinated model list reads every item');
+  });
+
+  it('stays linear on Han runs full of 和 (no exponential backtracking)', () => {
+    const hostile = `适用于${'和平'.repeat(40)}。`;
+    const started = Date.now();
+    produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${hostile}\n`));
+    assert.ok(Date.now() - started < 500, 'a hostile clause must not backtrack exponentially');
+  });
+
+
+  it('a table row states its own condition only: conditioned rows become their own entries, unconditioned rows stay undeclared (second review findings 2 and 5)', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const catalog = commandCatalog(xml(tree)).catalog;
+    // A split command table: the ft row states nothing, the hg-k row states its own condition.
+    const split = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* | 添加成员 |\n| hg-k | 仅 hg-k 平台支持硬件加速 |\n| ft | 软件实现 |\n'), null, { catalog });
+    const conditioned = split.entries.find((entry) => String(entry.statement).includes('硬件加速'));
+    assert.deepEqual(conditioned?.applicability, { platforms: ['hg-k'] }, 'the conditioned row reads its own condition');
+    const unconditioned = split.entries.find((entry) => String(entry.statement).includes('软件实现'));
+    assert.ok(unconditioned !== undefined, JSON.stringify(split.entries.map((e) => String(e.statement).slice(0, 24))));
+    assert.equal(unconditioned.applicability, null, 'the unconditioned row states nothing');
+    // An unsplit parameter table under an anchor: the weight row states its own condition, the name row stays null.
+    const params = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| name | 成员名 |\n| weight | 权重，仅 hg-k 平台支持 |\n'), null, { catalog });
+    const weightRow = params.entries.find((entry) => String(entry.statement).includes('权重'));
+    assert.deepEqual(weightRow?.applicability, { platforms: ['hg-k'] }, 'the weight row is its own entry with its own condition');
+    const nameRow = params.entries.find((entry) => String(entry.statement).includes('成员名'));
+    assert.ok(nameRow !== undefined, JSON.stringify(params.entries.map((e) => String(e.statement).slice(0, 24))));
+    assert.equal(nameRow.applicability, null, 'the name row inherits nothing');
   });
 
   it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {

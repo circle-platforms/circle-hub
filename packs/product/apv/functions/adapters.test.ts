@@ -268,10 +268,11 @@ describe('the producers', () => {
       out.warnings.includes('cli：有 5 个命令字面在本构建的命令树里解析不到，是漂移候选：?、demo broken、demo pool create、demo probe、enable'),
       out.warnings.join('\n'),
     );
-    // Without the tree slot the anchors are placed unchecked, and no drift list is computed.
+    // Without the tree slot no /commands path is created: signatures stay at their section nodes, the warning
+    // names the missing fact and the next action, and no drift list is computed.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
-    assert.ok(without.warnings.some((w) => w.includes('没有命令树')), without.warnings.join('\n'));
-    assert.ok(without.entries.some((e) => e.path === '/commands/demo/probe'));
+    assert.ok(without.warnings.some((w) => w.includes('命令树不可用') && w.includes('签名留在章节节点') && w.includes('xml@1')), without.warnings.join('\n'));
+    assert.ok(without.entries.every((e) => (e.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
   });
 
   it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {
@@ -301,7 +302,7 @@ describe('the version lines of documents', () => {
     assert.equal(folderLine('rel_apv_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_nsae_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
-    assert.equal(folderLine('rel_other_10_5'), null);
+    assert.equal(folderLine('rel_other_10_9'), null);
     assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
     assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
     assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);
