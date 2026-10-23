@@ -16,7 +16,7 @@ import { createPool, Database } from '../records/db.ts';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
@@ -1144,7 +1144,7 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
     for(const reg of registrations)if(!view.entries.some(row=>row.key.startsWith(reg.prefix)))session.out([reg.prefix,name(reg.owner),'空闲','—','—','—'].join('\t'));
     return 0;
   }
-  if(sub==='register'||sub==='unregister'){
+  if(isLeaseOp(sub)&&(sub==='register'||sub==='unregister')){
     const {positionals,values}=parse(rest,{owner:{type:'string'},reason:{type:'string'},as:{type:'string'}},1);
     const prefix=positionals[0]??'';
     if(!values.reason?.trim())throw new UsageError('登记或注销须写 --reason <理由>');

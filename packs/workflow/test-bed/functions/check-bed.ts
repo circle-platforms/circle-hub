@@ -133,7 +133,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         out.push(support(id, at, plan.conclusion, item.location, { bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, conclusion: plan.conclusion }));
         continue;
       }
-      if(action==='register'||action==='unregister'||action==='force_release'){
+      if(isAction(action)&&(action==='register'||action==='unregister'||action==='force_release')){
         const plan=ownershipPlan(manifest.beds,{action:frozen.action,need:frozen.need,bed:frozen.bed,addresses:frozen.addresses,booking:frozen.booking,reason:frozen.reason,devices:frozen.devices},frozen.leases);
         const code='test-bed.'+action+'_mismatch';
         if(!plan.ok){out.push(refute(id,at,code,plan.failure.message,item.location,{failure:plan.failure.code}));continue;}
