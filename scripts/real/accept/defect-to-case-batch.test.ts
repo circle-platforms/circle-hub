@@ -74,16 +74,14 @@ test('a corrupted export is automatically reread and verified before comparison'
     assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);assert.equal(report.totals.design_gaps,0);
   }finally{f.close();}
 });
-test('missing expected-result evidence becomes a named-person design-gap request, never a completed unknown',async()=>{
+test('the absent expected-text branch is a definite pack to-do and title recount remains the gate',async()=>{
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0'),binding=detail.run.sources.find((s:any)=>s.slot==='indexed_cases');
     const old=binding.reference.slice(4),index=JSON.parse(f.originals.get(old)!.toString());
     index.keys={'widget set':Object.keys(index.entries)};for(const e of Object.values(index.entries) as any[])e.data.commands=['widget set'];
     const bytes=Buffer.from(JSON.stringify(index)),digest=sha256(bytes);f.originals.set(digest,bytes);binding.reference=`src:${digest}`;
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
-    assert.equal(report.code,1);assert.ok(report.totals.design_gaps>0);
-    const questions=JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8'));
-    assert.ok(questions.some((q:any)=>q.owner==='Claude'&&q.missing_fact==='existing_case_expected_text_and_bound_original_identity'&&q.action_status==='requested'));
-    assert.match(report.text,/设计缺口/);assert.ok(!report.text.includes('没法重算'));
+    assert.equal(report.code,0);assert.equal(report.totals.design_gaps,0);
+    assert.match(report.text,/没法重算.*影响草稿 1.*requirements.json:70/);
   }finally{f.close();}
 });
 test('a pending requirement fails without writing or replacing the observed Hub result',async()=>{

@@ -50,14 +50,13 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
     const expectedPending = covered && sameNegative.length > sameTitle.length;
     const titleEqual=covered?!hubOutputMissing&&expected.size===hub.size&&[...expected].every(k=>hub.has(k)):null;
     const unread = views.some((v:any)=>v.skipped>0);
-    const equal=expectedPending||unread?null:titleEqual;
+    const equal=unread?null:titleEqual;
     const gap = !covered ? { fact: 'complete_command_index', action: 'request_complete_index_export', owner: 'Claude' }
-      : expectedPending ? { fact: 'existing_case_expected_text_and_bound_original_identity', action: 'request_indexed_case_originals', owner: 'Claude' }
       : unread ? { fact: 'unread_indexed_documents', action: 'retry_source_sync_and_export_complete_index', owner: 'Claude' } : undefined;
     return { draft:d.draft, sameCommands:covered?candidates.length:null, sameNegative:covered?sameNegative.length:null, sameTitle:covered?sameTitle.length:null,
-      verdict:gap?UNKNOWN:(sameTitle.length>0?REFUTE:SUPPORT), reason:gap?INTEGRITY:undefined, equal, titleEqual, hubOutputMissing, gap };
+      verdict:gap?UNKNOWN:(sameTitle.length>0?REFUTE:SUPPORT), reason:gap?INTEGRITY:undefined, equal, titleEqual, hubOutputMissing, expectedAffected:expectedPending, gap };
   });
-  return { commandOwnership:'hub_index_input', drafts:details.length, details, skipped:Math.max(...views.map((v:any)=>v.skipped)), expectedBranch:details.some(d=>d.gap?.fact==='existing_case_expected_text_and_bound_original_identity')?'requires_originals':'not_needed',
+  return { commandOwnership:'hub_index_input', drafts:details.length, details, skipped:Math.max(...views.map((v:any)=>v.skipped)), expectedBranch:'not_reconstructible',expectedBranchAffected:details.filter(d=>d.expectedAffected).length,
     equal:details.filter(d=>d.equal===true).length,different:details.filter(d=>d.equal===false).length,unknown:details.filter(d=>d.equal===null).length,
     passed:details.length>0&&details.every(d=>d.equal===true) };
 }
@@ -65,7 +64,7 @@ export function renderRecount(report: ReturnType<typeof recountDuplicates>): str
   return [...report.details.map(d=>`草稿 ${d.draft}：同命令集合 ${d.sameCommands??'待补证'}；同反向标记 ${d.sameNegative??'待补证'}；同标题 ${d.sameTitle??'待补证'}；比对 ${d.equal===null?'设计缺口':d.equal?'通过':'不通过'}`),
     ...report.details.filter(d=>d.gap).map(d=>`草稿 ${d.draft}：设计缺口；缺事实 ${d.gap!.fact}；下一步 ${d.gap!.action}；责任人 ${d.gap!.owner}`),
     '输入边界：用例的命令归属取自 Hub 导出的 index-view@1；这里独立重算查重，原件到命令归属的核验由回归范围用例验收另行负责',
-    `跳过文档 ${report.skipped}；不重复结论只覆盖读到的文档`, `期望结果相同分支：${report.expectedBranch==='requires_originals'?'设计缺口；缺已有用例期望文字与锁定原件身份；已请求集成者 Claude 补证':'命令集合或反向标记已排除，或标题已确定全部匹配'}`, `查重：${report.passed?'通过':'不通过'}`].join('\n');
+    `跳过文档 ${report.skipped}；不重复结论只覆盖读到的文档`, `期望结果相同分支：没法重算；影响草稿 ${report.expectedBranchAffected}；索引没有期望文字，包只比标题；包待修项 requirements.json:70`, `查重：${report.passed?'通过':'不通过'}`].join('\n');
 }
 export function main(argv=process.argv.slice(2)):number{
   const get=(name:string)=>{const i=argv.indexOf('--'+name);return i<0?undefined:argv[i+1];};

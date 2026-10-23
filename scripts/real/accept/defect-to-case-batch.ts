@@ -46,7 +46,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
   validatePairings(config);
   const out=outsideGit(options.out);mkdirSync(out,{recursive:true,mode:0o700});
   if(readdirSync(out).length!==0)throw new Error('output is not empty');chmodSync(out,0o700);
-  const lines:string[]=[],totals:Record<string,number>={pairs:config.pairings.length,completed:0,known_step_rule_items:0,known_simplified_match_items:0,command_gate_pass:0,quote_gate_pass:0,origin_gate_pass:0,duplicate_gate_pass:0,design_gaps:0,defects:0,failed:0,recovery_actions:0,drafts:0,commands:0,domain_support:0,domain_refute:0,domain_unknown:0,quote_support:0,quote_refute:0,quote_unknown:0,paraphrased:0,head_draft:0,head_doc:0,head_shared:0,pair_draft:0,pair_doc:0,pair_shared:0,parameter_same:0,parameter_different:0,parameter_absent:0,expected_verbatim:0,necessary_only:0};
+  const lines:string[]=[],totals:Record<string,number>={pairs:config.pairings.length,completed:0,known_step_rule_items:0,known_simplified_match_items:0,command_gate_pass:0,quote_gate_pass:0,origin_gate_pass:0,duplicate_gate_pass:0,design_gaps:0,defects:0,failed:0,recovery_actions:0,drafts:0,commands:0,domain_support:0,domain_refute:0,domain_unknown:0,quote_support:0,quote_refute:0,quote_unknown:0,paraphrased:0,head_draft:0,head_doc:0,head_shared:0,pair_draft:0,pair_doc:0,pair_shared:0,parameter_same:0,parameter_different:0,parameter_absent:0,expected_verbatim:0,necessary_only:0,expected_branch_affected:0};
   for(const [position,pair] of config.pairings.entries()) {
     const ordinal=position+1,dir=join(out,`pair-${ordinal}`);mkdirSync(dir,{mode:0o700});
     const pairLine=lines.length;
@@ -154,6 +154,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       totals.known_step_rule_items+=comparison.parameters!.domains.items.filter(i=>i.differenceCategories.includes('negative_step_rule')).length;
       totals.known_simplified_match_items+=comparison.parameters!.domains.items.filter(i=>i.differenceCategories.includes('simplified_refutation_match')).length;
       totals.design_gaps+=requests.length;
+      totals.expected_branch_affected+=duplicates.expectedBranchAffected;
       totals.drafts+=locatedDrafts(submission).length;
       const params=comparison.parameters!;
       totals.commands+=Object.values(params.domains.counts).reduce((n,v)=>n+v,0);
@@ -192,6 +193,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
   lines.push(`引文来源：${totals.origin_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.origin_gate_pass}/${totals.pairs}`);
   lines.push(`查重：${totals.duplicate_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.duplicate_gate_pass}/${totals.pairs}`);
   lines.push('输入边界：用例的命令归属取自 Hub 导出的 index-view@1；本批独立重算查重，原件到命令归属由回归范围用例验收另行核验');
+  lines.push(`期望结果相同分支：没法重算；影响草稿 ${totals.expected_branch_affected}；索引没有期望文字，包只比标题；包待修项 requirements.json:70`);
   const code=totals.completed===totals.pairs&&totals.failed===0&&totals.design_gaps===0&&totals.defects===0?0:1;
   lines.push(`批跑：${code===0?'通过':'不通过（缺陷或设计缺口，未完成）'}`);writePrivateJson(join(out,'summary.json'),totals);
   return {code,text:lines.join('\n'),totals};
