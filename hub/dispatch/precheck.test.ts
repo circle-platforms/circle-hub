@@ -19,3 +19,45 @@ test('failed read-only precheck releases the lease and records not-dispatched, n
   assert.ok(c.calls.includes('close_slot'));
   assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.readonly_verified === false));
 });
+
+test('bootstrap collection needs no invented manifest or resource keys, but dispatch remains forbidden', async t => {
+  const c = await setup(); t.after(() => c.close());
+  const input = { ...c.executor.definition, manifest_sha256: null, resources: [] };
+  const draft = await c.registry.update(c.admin, c.executor.id, input);
+  assert.equal(draft.definition.manifest_sha256, null);
+  const state = await c.service.precheck(c.admin, c.executor.id);
+  assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('close_slot'));
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /先 precheck.*update/);
+  assert.equal(c.calls.includes('send_blob'), false);
+  await c.registry.disable(c.admin, c.executor.id);
+  await assert.rejects(c.service.precheck(c.admin, c.executor.id));
+});
+
+test('multiple registered read-only sources are checked in order; a cache mismatch prevents intent', async t => {
+  const { canonicalBytes, sha256Hex } = await import('../records/api.ts');
+  for (const mismatch of [false, true]) {
+    const c = await setup({ extraTools: ['peek_cache'], alter: (name, value) => name === 'peek_cache' ? { cached: { stable: !mismatch } } : value }); t.after(() => c.close());
+    await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, allowed_tools: [...c.executor.definition.allowed_tools, 'peek_cache'], precheck_reads: [{ tool: 'peek_cache', arguments: { refresh: false }, conditions: [{ pointer: '/cached', sha256: sha256Hex(canonicalBytes({ stable: true })) }] }] });
+    const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.ok(c.calls.indexOf('peek_cache') > c.calls.indexOf('inspect_slot'));
+    assert.equal(state.outcome, mismatch ? 'not_dispatched' : 'effective');
+    assert.equal(c.calls.includes('send_blob'), !mismatch);
+  }
+});
+
+test('missing fields do not satisfy explicit-null checks', async t => {
+  const c = await setup(); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, conditions: [{ pointer: '/missing', equals: null }] });
+  const state = await c.service.precheck(c.admin, c.executor.id);
+  assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.readonly_verified === false));
+});
+
+test('capture-only cached sources can bootstrap expectations but never make dispatch ready', async t => {
+  const c = await setup({ extraTools: ['peek_cache'], alter: (name, value) => name === 'peek_cache' ? { cached: [1, 2] } : value }); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: null, resources: [], conditions: [], capture_pointers: ['/build'], allowed_tools: [...c.executor.definition.allowed_tools, 'peek_cache'], precheck_reads: [{ tool: 'peek_cache', arguments: { refresh: false }, conditions: [], capture_pointers: ['/cached'] }] });
+  const state = await c.service.precheck(c.admin, c.executor.id);
+  assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('peek_cache'));
+  assert.match(state.next_action!, /转换脚本.*update/);
+  assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.registration_ready === false));
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
+});

@@ -12,10 +12,14 @@ test('normal lifecycle stores intent before the one submission, observes twice, 
   const events = await c.service.journal.events(outcome.job);
   const intent = events.find(e => e.body.detail.phase === 'intent')!;
   assert.ok(intent.body.detail.intent_key);
+  assert.equal(intent.body.detail.initiated_by, c.admin.id);
+  assert.equal(intent.body.detail.on_behalf_of, c.owner.id);
   assert.equal(intent.body.detail.effect_class, 'job'); assert.equal(intent.body.detail.retry_safety, 'unsafe');
   assert.match(outcome.result!, /^src:[a-f0-9]{64}$/);
   assert.ok(events.findIndex(e => e.body.detail.phase === 'intent') < events.findIndex(e => e.body.detail.phase === 'receipt'));
   assert.ok(c.sawIntentAtSubmit);
+  assert.equal((await import('../records/api.ts')).sha256Hex(c.submitted[0]), c.payload.body.sha256);
+  assert.equal(new TextDecoder().decode(c.submitted[0]), 'synthetic verified bytes');
 });
 
 test('preflight refuses unmet package requirements, incorrect manifest, wrong lineage and short expiry without submitting', async t => {
@@ -59,4 +63,25 @@ test('plan_run must equal the verification predecessor and cannot be omitted', a
     await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /用计划运行作 predecessor 重开核验运行/);
     assert.equal(c.calls.includes('send_blob'), false);
   }
+});
+
+test('wrapped artifact storage proves raw precheck bytes are committed before conditions run', async t => {
+  const c = await setup(); t.after(() => c.close());
+  let committed = false; const ingest = c.kit.artifacts.ingest.bind(c.kit.artifacts);
+  c.kit.artifacts.ingest = async input => {
+    const source = await ingest(input);
+    if ('read' in input.origin && input.origin.read.object.endsWith(':precheck')) {
+      assert.ok(await c.kit.store.get(source.digest)); committed = true;
+    }
+    return source;
+  };
+  const conditions = (c.service as any).conditions.bind(c.service);
+  (c.service as any).conditions = (...args: unknown[]) => { assert.equal(committed, true); return conditions(...args); };
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
+});
+
+test('dispatch uses the latest accepted validation without relabeling an unrelated rejected submission', async t => {
+  const c = await setup(); t.after(() => c.close());
+  c.detail.submissions.push({ record: 'f'.repeat(64), received_at: c.now().toISOString(), acceptance: 'not_accepted', errors: [], result: null });
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
 });

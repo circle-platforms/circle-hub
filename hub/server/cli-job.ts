@@ -2,13 +2,13 @@
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
-import { ExecutorRegistry, type DispatchService, type JobStatus } from '../dispatch/api.ts';
+import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { readSecret } from './assemble/secret-input.ts';
 import { UsageError } from './errors.ts';
 export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> [--secret] | list | disable <执行器>（密钥只从标准输入读）';
-export const JOB_USAGE = 'precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects]';
+export const JOB_USAGE = 'precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -23,6 +23,7 @@ async function service(s: JobCommandSession, requireKey = true): Promise<Dispatc
 }
 function output(s: JobCommandSession, state: JobStatus): void {
   s.out(`阶段 ${state.phase}；码 ${state.outcome}（${labelOf('effect_outcome', state.outcome)}）；作业摘要 ${state.job}；冻结 ${Number(state.frozen)}；动作 ${state.events}`);
+  if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
   if (state.result) s.out(`结果引用 ${state.result}`);
   if (state.next_action) s.out(`下一步：${state.next_action}`);
 }
@@ -38,7 +39,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
   if (sub === 'list' && !parsed.positionals.length) {
     const entries = await registry.list(by);
-    for (const e of entries) s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}`);
+    for (const e of entries) s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`);
     s.out(`执行器 ${entries.length}`); return 0;
   }
   if (sub === 'disable' && parsed.positionals.length === 1) {
@@ -47,12 +48,13 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   if (sub === 'add' && parsed.positionals.length === 1) {
     const input = await readDefinition(s, parsed.positionals[0]);
     const secret = await (s.options.readSecret ?? readSecret)('执行器调用密钥');
-    const e = await registry.add(by, input, secret); s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}`); return 0;
+    const e = await registry.add(by, input, secret); s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`); return 0;
   }
   if (sub === 'update' && parsed.positionals.length === 2) {
-    const [id, file] = parsed.positionals; const e = await registry.update(by, id, await readDefinition(s, file));
-    if (parsed.values.secret) await registry.setSecret(by, id, await (s.options.readSecret ?? readSecret)('执行器调用密钥'));
-    s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}`); return 0;
+    const [id, file] = parsed.positionals; const definition = await readDefinition(s, file);
+    const secret = parsed.values.secret ? await (s.options.readSecret ?? readSecret)('执行器调用密钥') : undefined;
+    const e = await registry.update(by, id, definition, secret);
+    s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`); return 0;
   }
   throw new UsageError(`executor 的子命令：${EXECUTOR_USAGE}`);
 }
@@ -65,13 +67,29 @@ async function exportPrecheck(s: JobCommandSession, dispatch: DispatchService, j
     if (dirname(dir) === dir) break;
   }
   await mkdir(target, { recursive: true, mode: 0o700 });
-  const refs = [...new Set((await dispatch.journal.events(job)).filter(e => e.body.detail.phase === 'precheck.response').flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
-  const by = await s.admin(); const records = await s.records(); let count = 0;
+  const events = await dispatch.journal.events(job);
+  const binding = await dispatch.journal.binding(job);
+  const definitionBytes = await (await s.records()).objects.get(binding.executor_digest);
+  if (!definitionBytes) throw new Error('冻结的执行器定义不可读取');
+  const { ExecutorDefinition } = await import('../dispatch/api.ts');
+  const definition = ExecutorDefinition.parse(JSON.parse(new TextDecoder().decode(definitionBytes)));
+  const refs = [...new Set(events.filter(e => /^precheck(?:\.[0-9]+)?\.response$/.test(String(e.body.detail.phase))).flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
+  const by = await s.admin(); const records = await s.records(); let count = 0; const hashes: Array<Record<string, unknown>> = [];
   for (const reference of refs) {
     const source = await records.artifacts.source(by, reference.slice(4), { consumer: 'function' });
     if (!source?.bytes) throw new Error('预检原件的读取策略未放行，不能导出');
-    await writeFile(join(target, `observation-${++count}.json`), source.bytes, { mode: 0o600, flag: 'wx' });
+    const file = `observation-${++count}.json`;
+    await writeFile(join(target, file), source.bytes, { mode: 0o600, flag: 'wx' });
+    const phase = String(events.find(e => e.body.inputs.includes(reference) && /^precheck(?:\.[0-9]+)?\.response$/.test(String(e.body.detail.phase)))?.body.detail.phase);
+    const step = /^precheck\.([0-9]+)\.response$/.exec(phase);
+    const config = step ? definition.precheck_reads[Number(step[1]) - 1] : definition;
+    const pointers = [...new Set([...(config?.capture_pointers ?? []), ...(config?.conditions ?? []).map(c => c.pointer)])];
+    for (const pointer of pointers) {
+      try { hashes.push({ file, reference, ...observationHashes(source.bytes, pointer) }); }
+      catch { hashes.push({ file, reference, pointer, missing_fact: '该指针缺少有效工具回答或字段，不能计算内容摘要' }); }
+    }
   }
+  await writeFile(join(target, 'checksums.json'), JSON.stringify({ definition_sha256: binding.executor_digest, observations: hashes }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
   return count;
 }
 export async function jobCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
@@ -79,10 +97,10 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   let parsed;
   try { parsed = parseArgs({ args: [...rest], allowPositionals: true, strict: true, options: {
     executor: { type: 'string' }, booking: { type: 'string' }, save: { type: 'string' }, run: { type: 'string' }, reconcile: { type: 'string' },
-    'keep-unknown': { type: 'boolean' }, 'mark-failed': { type: 'boolean' }, reason: { type: 'string' }, 'accept-possible-duplicate-effects': { type: 'boolean' },
+    'keep-unknown': { type: 'boolean' }, 'mark-failed': { type: 'boolean' }, reason: { type: 'string' }, 'accept-possible-duplicate-effects': { type: 'boolean' }, 'numeric-id': { type: 'boolean' },
   } }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   const { positionals, values } = parsed;
-  const flags: Record<string, Record<string, boolean>> = { precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true } };
+  const flags: Record<string, Record<string, boolean>> = { precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
   if (!sub || !Object.hasOwn(flags, sub) || Object.keys(values).some(key => !Object.hasOwn(flags[sub], key))) throw new UsageError('该子命令不能使用这些参数');
   const by = await s.admin(); const dispatch = await service(s, sub !== 'status');
   try {
@@ -92,7 +110,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     const events = await dispatch.journal.events(state.job); return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
   }
   if (sub === 'dispatch' && values.run && values.executor && positionals.length === 0) {
-    const state = await dispatch.dispatch(by, values.run, values.executor); output(s, state); return state.outcome === 'effective' && !state.frozen ? 0 : 1;
+    const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.outcome === 'effective' && !state.frozen ? 0 : 1;
   }
   if ((sub === 'status' || sub === 'resume') && positionals.length === 1) {
     const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state); return state.outcome === 'unknown' ? 1 : 0;
@@ -101,7 +119,8 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     if (Number(values.reconcile !== undefined) + Number(values['keep-unknown'] === true) + Number(values['mark-failed'] === true) !== 1) throw new UsageError('处置必须且只能选择一个选项');
     if (values['mark-failed'] && !values.reason?.trim()) throw new UsageError('标记失败必须写 --reason');
     if (values['accept-possible-duplicate-effects'] && !values['mark-failed']) throw new UsageError('风险确认只用于标记失败');
-    const state = await dispatch.dispose(by, positionals[0], { choice: values.reconcile !== undefined ? 'reconcile' : values['keep-unknown'] ? 'keep_unknown' : 'mark_failed', remote_id: values.reconcile, reason: values.reason, acceptPossibleDuplicateEffects: values['accept-possible-duplicate-effects'] === true });
+    if (values['numeric-id'] && (values.reconcile === undefined || !/^-?(?:0|[1-9][0-9]*)$/.test(values.reconcile) || !Number.isSafeInteger(Number(values.reconcile)))) throw new UsageError('--numeric-id 要求可精确表示的十进制整数对账编号');
+    const state = await dispatch.dispose(by, positionals[0], { choice: values.reconcile !== undefined ? 'reconcile' : values['keep-unknown'] ? 'keep_unknown' : 'mark_failed', remote_id: values['numeric-id'] ? Number(values.reconcile) : values.reconcile, reason: values.reason, acceptPossibleDuplicateEffects: values['accept-possible-duplicate-effects'] === true });
     output(s, state); return state.frozen ? 1 : 0;
   }
   throw new UsageError(`job 的子命令：${JOB_USAGE}`);

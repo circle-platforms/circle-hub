@@ -62,3 +62,19 @@ test('secrets are absent from every record, object, file, and reply projection e
     do { const page: Page<StoredRecord> = await c.kit.store.list({ kind, limit: 500, ...(cursor ? { cursor } : {}) }); assert.ok(!JSON.stringify(page.items).includes('synthetic-secret')); cursor = page.next; } while (cursor);
   }
 });
+
+test('a fence change during result retrieval is recorded before publishing the result', async t => {
+  const c = await setup({ mode: 'fencing-result' }); t.after(() => c.close());
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal((await report(c, state.result!)).lease_drift, true);
+});
+
+test('deployment-specific limitations are copied as executor declarations rather than inferred by the core', async t => {
+  const c = await setup(); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, limitations: ['合成运行环境使用实时文件，内容一致性未认证'] });
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const result = await report(c, state.result!);
+  assert.equal(result.executor_declarations.provenance, 'declared');
+  assert.deepEqual(result.executor_declarations.limitations, ['合成运行环境使用实时文件，内容一致性未认证']);
+  assert.ok(result.executor_declarations.definition_sha256);
+});

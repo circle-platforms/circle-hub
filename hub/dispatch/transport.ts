@@ -2,27 +2,43 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/sdk/types.js';
+import { sha256Hex } from '../records/api.ts';
 import type { ExecutorDefinition, CallRole } from './definition.ts';
+import { rpcResponse, toolContent, containsRpcReply } from './observations.ts';
 import { bind } from './definition.ts';
-export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean) => Promise<string>;
-export type Exchange = { value: Record<string, unknown>; source: string; received_at: string };
+export interface ResponseMetadata { received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; }
+export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean, metadata?: ResponseMetadata) => Promise<string>;
+export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string };
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 export class RpcClient {
   readonly definition: ExecutorDefinition;
   readonly #secret: string;
   readonly #job: string;
   readonly #save: SaveResponse;
+  readonly #now: () => Date;
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
-  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse) {
-    this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save;
+  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date()) {
+    this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save; this.#now = now;
     if (!secret || /[\r\n]/.test(secret)) throw new Error('执行器密钥缺失或无效');
   }
   redact(text: string): string {
-    let safe = text;
-    for (const spelling of [this.#secret, JSON.stringify(this.#secret).slice(1, -1), encodeURIComponent(this.#secret)]) safe = safe.split(spelling).join('[已隐藏]');
-    return safe;
+    const spellings = [...new Set([this.#secret, JSON.stringify(this.#secret).slice(1, -1), encodeURIComponent(this.#secret)])];
+    const direct = (value: string) => spellings.reduce((v, spelling) => v.split(spelling).join('[已隐藏]'), value);
+    const scrub = (value: string, depth: number): string => {
+      const first = direct(value);
+      if (depth >= 8) return first;
+      return first.replace(/"(?:[^"\\]|\\.)*"/g, token => {
+        try {
+          const decoded: unknown = JSON.parse(token);
+          if (typeof decoded !== 'string') return token;
+          const cleaned = scrub(decoded, depth + 1);
+          return cleaned === decoded ? token : JSON.stringify(cleaned);
+        } catch { return token; }
+      });
+    };
+    return scrub(text, 0);
   }
   async connect(): Promise<void> {
     const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } });
@@ -42,28 +58,30 @@ export class RpcClient {
     if (this.definition.allowed_tools.some(name => !seen.has(name))) throw new Error('目标缺少允许清单中的工具；未提交');
   }
   async call(role: CallRole, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
-    const declaration = this.definition.calls[role];
-    if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
-    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false,
-      role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms, role);
-    const result = response.value;
-    if (result.isError === true) throw new Error('目标工具报告错误；回答已保存');
-    if (object(result.structuredContent)) return { ...response, value: result.structuredContent };
-    const text = Array.isArray(result.content) ? result.content.filter(object).filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
-    try { const value: unknown = JSON.parse(text); if (object(value)) return { ...response, value }; } catch { /* Stored verbatim before semantic parsing. */ }
-    throw new Error('目标工具回答不是 JSON 对象；回答已保存');
+    return this.invoke(this.definition.calls[role], context, role, role === 'submit' ? this.definition.submit_timeout_ms : this.definition.calls[role].timeout_ms);
   }
-  private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange> {
+  async precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
+    const declaration = this.definition.precheck_reads[index];
+    if (!declaration) throw new Error('只读核对没有登记');
+    return this.invoke(declaration, context, `precheck.${index + 1}`, declaration.timeout_ms);
+  }
+  private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
+    if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
+    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false, timeout, operation);
+    return { ...response, value: toolContent(response.value) };
+  }
+  private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
     const id = ++this.#id;
+    const started_at = this.#now().toISOString();
     const body = JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params });
     if (Buffer.byteLength(body) > this.definition.max_bytes * 2) throw new Error('请求超过字节上限');
     const u = new URL(this.definition.endpoint);
-    const received = await new Promise<{ bytes: Buffer; status: number; session?: string; complete: boolean }>(resolve => {
-      const chunks: Buffer[] = []; let length = 0; let status = 0; let session: string | undefined; let finished = false;
+    const received = await new Promise<{ bytes: Buffer; status: number; session?: string; complete: boolean; stream_cut_at_response: boolean }>(resolve => {
+      const chunks: Buffer[] = []; let length = 0; let status = 0; let session: string | undefined; let finished = false; let streamCut = false;
       let timer: ReturnType<typeof setTimeout>;
       const finish = (complete: boolean) => {
         if (finished) return; finished = true; clearTimeout(timer);
-        resolve({ bytes: Buffer.concat(chunks), status, session, complete });
+        resolve({ bytes: Buffer.concat(chunks), status, session, complete, stream_cut_at_response: streamCut });
       };
       const req = (u.protocol === 'https:' ? httpsRequest : httpRequest)(u, {
         method: 'POST', agent: false, ...(u.protocol === 'https:' ? { ca: this.definition.ca, rejectUnauthorized: true } : {}),
@@ -71,11 +89,13 @@ export class RpcClient {
           'mcp-protocol-version': this.#protocol, ...(this.#session ? { 'mcp-session-id': this.#session } : {}) },
       }, res => {
         status = res.statusCode ?? 0;
+        const eventStream = String(res.headers['content-type'] ?? '').toLowerCase().startsWith('text/event-stream');
         session = typeof res.headers['mcp-session-id'] === 'string' ? res.headers['mcp-session-id'] : undefined;
         res.on('data', (data: Buffer) => {
           const remaining = this.definition.max_bytes - length;
           if (remaining > 0) chunks.push(data.subarray(0, remaining)); length += data.length;
           if (length > this.definition.max_bytes) { finish(false); res.destroy(); req.destroy(); }
+          else if (!notification && eventStream && containsRpcReply(Buffer.concat(chunks).toString('utf8'), id)) { streamCut = true; finish(true); res.destroy(); req.destroy(); }
         });
         res.on('error', () => finish(false)); res.on('aborted', () => finish(false)); res.on('end', () => finish(true));
       });
@@ -83,21 +103,16 @@ export class RpcClient {
       req.on('error', () => finish(false));
       req.end(body);
     });
-    const bytes = new TextEncoder().encode(this.redact(received.bytes.toString('utf8')));
-    const source = await this.#save(bytes, received.status, operation, received.complete);
-    const received_at = new Date().toISOString();
-    if (!received.complete) throw new Error('目标回答不完整、超时或超限；已有字节先保存，不重试');
+    let textInput: string; let validEncoding = true;
+    try { textInput = new TextDecoder('utf-8', { fatal: true }).decode(received.bytes); } catch { textInput = received.bytes.toString('utf8'); validEncoding = false; }
+    const safe = this.redact(textInput);
+    const bytes = new TextEncoder().encode(safe);
+    const received_at = this.#now().toISOString();
+    const source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response });
+    if (!received.complete || !validEncoding) throw new Error('目标回答不完整、超时或超限；已有字节先保存，不重试');
     if (received.status < 200 || received.status >= 300) throw new Error('目标 HTTP 回答不成功；原文已保存，不跟随重定向');
     if (received.session) { if (/[\r\n]/.test(received.session) || received.session.length > 512) throw new Error('目标会话标识无效'); this.#session = received.session; }
-    if (notification) return { value: {}, source, received_at };
-    const text = new TextDecoder().decode(bytes);
-    let value: unknown;
-    try { value = JSON.parse(text); } catch {
-      // An SSE response may contain notifications before the one JSON-RPC reply.
-      const frames = text.split(/\r?\n\r?\n/).map(frame => frame.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n'));
-      for (const frame of frames) try { const candidate: unknown = JSON.parse(frame); if (object(candidate) && candidate.id === id) { value = candidate; break; } } catch { /* Ignore non-response SSE frames. */ }
-    }
-    if (!object(value) || value.jsonrpc !== '2.0' || value.id !== id || value.error !== undefined || !object(value.result)) throw new Error('目标 JSON-RPC 回答无效；原文已保存');
-    return { value: value.result, source, received_at };
+    if (notification) return { value: {}, source, received_at, started_at };
+    return { value: rpcResponse(new TextDecoder().decode(bytes), id), source, received_at, started_at };
   }
 }

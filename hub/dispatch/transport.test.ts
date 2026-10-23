@@ -12,7 +12,7 @@ test('tools are checked before calling, extra management tools are never called,
   const client = new RpcClient(ExecutorDefinition.parse(definition(server.endpoint)), 'synthetic-secret', 'synthetic-job', async bytes => { saved.push(new TextDecoder().decode(bytes)); return 'src:' + 'a'.repeat(64); });
   await client.connect();
   const result = await client.call('precheck', {});
-  assert.equal(result.value.echo, 'Bearer [已隐藏]');
+  assert.equal((result.value as any).echo, 'Bearer [已隐藏]');
   assert.ok(saved.some(s => s.includes('echo')));
   assert.ok(saved.every(s => !s.includes('synthetic-secret')));
   assert.ok(server.calls.every(c => c.headers.authorization === 'Bearer synthetic-secret' && c.headers['x-circle-hub-operator'] === 'synthetic-job'));
@@ -42,7 +42,7 @@ test('TLS trusts exactly the configured CA and verifies the endpoint identity', 
   const cert = await readFile(join(dir, 'one.pem'), 'utf8');
   const endpoint = await startEndpoint(definition('x').allowed_tools, () => ({ ok: true }), { key: await readFile(join(dir, 'one.key')), cert }); t.after(() => endpoint.close());
   const make = (ca: string) => new RpcClient(ExecutorDefinition.parse({ ...definition(endpoint.endpoint), ca }), 'synthetic-secret', 'synthetic-job', async () => 'src:' + 'a'.repeat(64));
-  const right = make(cert); await right.connect(); assert.equal((await right.call('precheck', {})).value.ok, true);
+  const right = make(cert); await right.connect(); assert.equal(((await right.call('precheck', {})).value as any).ok, true);
   await assert.rejects(make(await readFile(join(dir, 'two.pem'), 'utf8')).connect());
 });
 
@@ -53,5 +53,37 @@ test('bounded SSE replies are saved before their matching JSON-RPC result is dec
   }); t.after(() => endpoint.close());
   let saved = false;
   const client = new RpcClient(ExecutorDefinition.parse(definition(endpoint.endpoint)), 'synthetic-secret', 'synthetic-job', async bytes => { if (new TextDecoder().decode(bytes).startsWith('event:')) saved = true; return 'src:' + 'a'.repeat(64); });
-  await client.connect(); assert.equal((await client.call('precheck', {})).value.ok, true); assert.equal(saved, true);
+  await client.connect(); assert.equal(((await client.call('precheck', {})).value as any).ok, true); assert.equal(saved, true);
+});
+
+test('JSON-escaped and nested escaped key echoes are redacted before source storage', async t => {
+  const endpoint = await startEndpoint(definition('x').allowed_tools, (_name, _args, res, id) => {
+    const encoded = [...'synthetic-secret'].map(c => String.fromCharCode(92) + 'u' + c.charCodeAt(0).toString(16).padStart(4, '0')).join('');
+    const body = JSON.stringify({ jsonrpc: '2.0', id, result: { structuredContent: { debug: 'synthetic-secret', nested: JSON.stringify({ debug: 'synthetic-secret' }) }, content: [] } }).replaceAll('synthetic-secret', encoded);
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(body);
+  }); t.after(() => endpoint.close());
+  const client = new RpcClient(ExecutorDefinition.parse(definition(endpoint.endpoint)), 'synthetic-secret', 'synthetic-job', async bytes => { assert.ok(!new TextDecoder().decode(bytes).includes('synthetic-secret')); return 'src:' + 'a'.repeat(64); });
+  await client.connect(); const result = await client.call('precheck', {});
+  assert.equal((result.value as any).debug, '[已隐藏]'); assert.equal(JSON.parse(String((result.value as any).nested)).debug, '[已隐藏]');
+});
+
+test('a storage refusal takes precedence over interpreting an invalid remote reply', async t => {
+  const endpoint = await startEndpoint(definition('x').allowed_tools, (_name, _args, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('synthetic invalid JSON'); }); t.after(() => endpoint.close());
+  let saved = false;
+  const client = new RpcClient(ExecutorDefinition.parse(definition(endpoint.endpoint)), 'synthetic-secret', 'synthetic-job', async (_bytes, _status, operation) => {
+    if (operation === 'precheck') { saved = true; throw new Error('synthetic storage refusal'); }
+    return 'src:' + 'a'.repeat(64);
+  });
+  await client.connect(); await assert.rejects(client.call('precheck', {}), /synthetic storage refusal/); assert.equal(saved, true);
+});
+
+test('a complete matching SSE response is accepted even when the server keeps its stream open', async t => {
+  const endpoint = await startEndpoint(definition('x').allowed_tools, (_name, _args, res, id) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id, result: { structuredContent: { ok: true }, content: [] } })}\n\n`);
+  }); t.after(() => endpoint.close());
+  const cfg = definition(endpoint.endpoint); cfg.calls.precheck = { ...cfg.calls.precheck, timeout_ms: 50 } as any;
+  let boundary = false;
+  const client = new RpcClient(ExecutorDefinition.parse(cfg), 'synthetic-secret', 'synthetic-job', async (_bytes, _status, role, _complete, metadata) => { if (role === 'precheck') boundary = metadata?.stream_cut_at_response === true; return 'src:' + 'a'.repeat(64); });
+  await client.connect(); assert.equal(((await client.call('precheck', {})).value as any).ok, true); assert.equal(boundary, true);
 });

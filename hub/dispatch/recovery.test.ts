@@ -65,3 +65,25 @@ test('an accepted job resumes status reads after restart without a new submissio
   assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
+
+test('transient status and result read failures retry only reads and do not turn an accepted submission into unknown', async t => {
+  for (const mode of ['transient-status', 'transient-result']) {
+    const c = await setup({ mode }); t.after(() => c.close());
+    const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(state.outcome, 'effective', mode); assert.equal(state.frozen, false, mode);
+    assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+  }
+});
+
+test('a committed intent with a lost database acknowledgement is conservatively frozen without submitting', async t => {
+  const c = await setup(); t.after(() => c.close());
+  const transaction = c.kit.store.withTransaction.bind(c.kit.store); let injected = false;
+  c.kit.store.withTransaction = async (fn, outer) => {
+    const value = await transaction(fn, outer);
+    if (!injected && await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}`)) { injected = true; throw new Error('synthetic commit acknowledgement loss'); }
+    return value;
+  };
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
+  assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
+});

@@ -55,3 +55,32 @@ test('invalid or misplaced flags never echo argument values and commands close o
   await assert.rejects(jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]));
   assert.equal(closed, 1);
 });
+
+test('new update keys are checked before any definition is authorized', async t => {
+  const c = await setup(); t.after(() => c.close()); const s = session(c);
+  const file = join(c.kit.dataDir, 'bad-key-definition.json');
+  await writeFile(file, JSON.stringify({ ...c.executor.definition, precheck_context: { marker: 'synthetic-second-key' } }));
+  await assert.rejects(executorCommand(s, ['update', c.executor.id, file, '--secret']));
+  assert.equal((await c.registry.get(c.executor.id))!.digest, c.executor.digest);
+  assert.equal(await c.kit.vault.getText(`executor.${c.executor.id}.bearer`), 'synthetic-secret');
+});
+
+test('exported audit metadata contains configured pointers and both byte and shared canonical hashes', async t => {
+  const c = await setup(); t.after(() => c.close()); const s = session(c);
+  const saved = join(c.kit.dataDir, 'hashed-precheck');
+  await jobCommand(s, ['precheck', '--executor', c.executor.id, '--save', saved]);
+  const meta = JSON.parse(await readFile(join(saved, 'checksums.json'), 'utf8'));
+  assert.ok(meta.observations.length);
+  const first = meta.observations.find((o: any) => o.pointer === '/build');
+  assert.match(first.original_sha256, /^[a-f0-9]{64}$/); assert.match(first.canonical_content_sha256, /^[a-f0-9]{64}$/);
+  const { observationHashes } = await import('./api.ts');
+  assert.deepEqual(observationHashes(await readFile(join(saved, first.file)), first.pointer), { pointer: first.pointer, original_sha256: first.original_sha256, canonical_content_sha256: first.canonical_content_sha256 });
+});
+
+test('numeric audit ids require an explicit flag and unsafe integers are rejected', async t => {
+  const c = await setup({ mode: 'reject', alter: (name, value) => name === 'read_blob' || name === 'send_blob' ? { ...value, key: 17 } : value }); t.after(() => c.close()); const s = session(c);
+  const job = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  await assert.rejects(jobCommand(s, ['dispose', job.job, '--reconcile', '9007199254740993', '--numeric-id']));
+  assert.equal(await jobCommand(s, ['dispose', job.job, '--reconcile', '17', '--numeric-id']), 0);
+  assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+});

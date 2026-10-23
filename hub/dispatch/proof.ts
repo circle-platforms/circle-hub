@@ -14,14 +14,13 @@ function validClaim(c: Claim, now: Date): boolean {
 export async function verifyInput(by: Principal, id: string, d: ExecutorDefinition, records: RecordsKit, runs: VerificationPort, workflows: Pick<WorkflowStore, 'byDigest'>, now: Date): Promise<VerifiedInput> {
   const detail = await runs.getRun(by, id);
   if (!detail?.run.runner || detail.run.pack.split('@')[0] !== d.proof.package || detail.latest?.result.acceptance !== 'accepted') throw new Error('派发前提未满足：要求指定包的最近受理核验运行');
-  const latestSubmission = detail.submissions.at(-1);
-  if (latestSubmission && (latestSubmission.acceptance !== 'accepted' || latestSubmission.result !== detail.latest.record)) throw new Error('最新提交未受理；请修正并重新核验');
   const workflow = await workflows.byDigest(detail.run.pack_digest);
   if (!workflow || `${workflow.pack.id}@${workflow.pack.version}` !== detail.run.pack || workflow.pack.digest !== detail.run.pack_digest) throw new Error('核验运行锁定的任务包不可用');
   const result = detail.latest.result;
   if (result.run !== id || result.errors.length || Object.entries(result.partitions).some(([key, list]) => key !== 'delivered' && list.length)) throw new Error('运行没有完整满足派发前提');
   const projected = detail.run.items.map(i => i.id).sort();
-  if (!projected.length || canonicalize(projected) !== canonicalize(result.partitions.delivered.map(i => i.item).sort())) throw new Error('核验结果未覆盖全部条目');
+  if (projected.length !== 1) throw new Error('本轮核验运行必须明确一个目标条目；请按目标条目重开核验运行');
+  if (canonicalize(projected) !== canonicalize(result.partitions.delivered.map(i => i.item).sort())) throw new Error('核验结果未覆盖全部条目');
   const required = workflow.requirements.filter(r => r.required);
   for (const r of required) {
     if (r.target === 'item') {
@@ -43,8 +42,9 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
   const manifest = at(data, d.proof.manifest_sha256); const build = at(data, d.proof.build); const generator = at(data, d.proof.generator);
   if (typeof sha256 !== 'string' || !isSha256(sha256) || !Array.isArray(ids) || ids.length !== 1 || ids.some(v => typeof v !== 'string' || !v || v.length > 200) || new Set(ids).size !== ids.length || typeof target !== 'string' || typeof manifest !== 'string' || !isSha256(manifest) || typeof build !== 'string' || !build || generator === undefined || generator === null) throw new Error('核验事实的派发身份字段不完整；本轮只允许一个条目');
   const sourceHas = (sha: string) => detail.run.sources.some(s => new RegExp(`^src:${sha}(?:/|$)`).test(s.reference));
+  if (!detail.run.sources.some(s => s.slot === d.proof.slot && s.role === 'artifact_under_verification' && new RegExp(`^src:${sha256}(?:/|$)`).test(s.reference))) throw new Error('核验字节不在执行器声明的待判定产物槽位；请重开核验运行');
   if (!sourceHas(sha256) || !sourceHas(manifest)) throw new Error('核验事实的字节或清单没有绑定到该运行');
-  if (target !== d.target || manifest !== d.manifest_sha256) throw new Error(`核验清单 ${manifest} 与执行器期望 ${d.manifest_sha256} 不符；下一步：用当前清单重跑核验运行`);
+  if (target !== d.target || manifest !== d.manifest_sha256) throw new Error(`台架名或清单身份不符：核验清单 ${manifest}，执行器期望 ${d.manifest_sha256} 不符；下一步：用当前清单重跑核验运行`);
   if (detail.run.build !== undefined && detail.run.build !== build) throw new Error('核验事实构建与运行锁定构建不符；请重跑核验');
   const owner = await records.principals.get(detail.run.runner);
   if (!owner || owner.disabled) throw new Error('核验运行的发起用户不可用');
