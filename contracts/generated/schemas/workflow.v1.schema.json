@@ -167,16 +167,21 @@
       "additionalProperties": false
     },
     "contribution": {
-      "description": "a dedicated knowledge-contribution run; the named slot contains the document artifact",
+      "description": "a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification",
       "type": "object",
       "properties": {
         "slot": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "requirement": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         }
       },
       "required": [
-        "slot"
+        "slot",
+        "requirement"
       ],
       "additionalProperties": false
     },

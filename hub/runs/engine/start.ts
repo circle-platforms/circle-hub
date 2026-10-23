@@ -380,6 +380,10 @@ async function authorizedStart(
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  const contribution=workflow.workflow.contribution;
+  if(contribution!==undefined&&(!workflow.slots.item[contribution.slot]||!workflow.requirements.some(r=>r.key===contribution.requirement&&r.target==='item'&&r.accepted_producer==='fact'))){
+    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包缺少回注槽位或对应的逐条目事实核验要求项',{path:'/pack',fix:'请任务包维护人修正 workflow.contribution 的 slot 和 requirement 声明，再重开运行'})]);
+  }
   if (mode.host === 'hub' && !isProduction(workflow)) {
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '含模型槽位的任务包不能由 Hub 执行（W09 R[3]：常设义务只许确定性函数）', { path: '/pack', fix: '改用只含事实要求项的任务包' })]);
   }

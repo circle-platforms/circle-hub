@@ -1,4 +1,5 @@
-import { KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
+import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
+import type { CheckOutcome } from '../../rules/api.ts';
 import type { Acceptance } from '../../../contracts/generated/vocabulary.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
@@ -244,6 +245,7 @@ interface Validated {
   /** Requirements whose problems in this submission count as a repair round. */
   problems: Set<string>;
   prepared?: Map<string, PreparedContribution>;
+  refusals?:Map<string,string>;
   model?: string;
 }
 
@@ -314,7 +316,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
     const save = async () => {
       if (outcome.prepared === undefined || outcome.result.acceptance !== 'accepted') return putResult(store, outcome.result, ctx.now().toISOString());
       return store.withTransaction(async tx => {
-        const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size, stored: [], not_stored: [] };
+        const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size+(outcome.refusals?.size??0), stored: [], not_stored: [...(outcome.refusals??new Map())].map(([item,reason])=>({item,reason})) };
         const eligible = new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
         const layer = ctx.deps.knowledge.layers!.contributions;
         for (const [item, prepared] of outcome.prepared!) {
@@ -404,12 +406,19 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
 
 async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
-  const structure = slotProblems(workflow, run.items, submission);
+  const capability=workflow.workflow.contribution;
+  const attribute=(errors:ProtocolError[])=>errors.map(error=>{
+    const tokens=error.path?.split('/');
+    return capability!==undefined&&tokens?.[1]==='items'&&tokens[3]==='slots'&&tokens[4]===capability.slot?{...error,requirement:capability.requirement}:error;
+  });
+  const structure = attribute(slotProblems(workflow, run.items, submission));
   const scope = await buildScope(ctx, run, workflow, user, 'function');
   const resolver = createResolver(ctx, scope, 'function');
   const carried = await carriedItems(ctx, scope, resolver, workflow, run, submission);
   for (const p of carried.problems) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', p.message, { path: p.path, item: p.item }));
   const prepared = workflow.workflow.contribution === undefined ? undefined : new Map<string, PreparedContribution>();
+  const refusals=new Map<string,string>();
+  const admission=capability===undefined?undefined:{requirement:capability.requirement,outcomes:new Map<string,CheckOutcome[]>()};
   const contributionScope: ContributionScope = {
           root:run.root ?? null, product:run.product ?? null, resolve:async reference => {
             const resolved = await resolver.resolve(reference);
@@ -418,7 +427,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
             if (ref.scheme !== 'rec') return resolved;
             const record = await ctx.deps.records.store.get(ref.record);
             const bytes = record === null ? null : recordBytes(record, ref.pointer);
-            return record === null || bytes === null ? resolved : {ok:true as const,value:{...resolved.value,recordSource:{sha256:sha256Hex(bytes),record:record.digest,provenance:record.provenance}}};
+            return record === null || bytes === null ? resolved : {ok:true as const,value:{...resolved.value,recordSource:{sha256:sha256Hex(bytes),record:record.digest,provenance:record.provenance,kind:record.kind,schema:record.schema}}};
           },
   };
   if (prepared !== undefined) {
@@ -437,18 +446,25 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
         const value = await layer.prepare(user, { ...(isObject(claim.data) ? claim.data : {}), kind:claim.code, statement:claim.text }, contributionScope);
         prepared.set(item.item, value);
       } catch(error) {
+        if(error instanceof ContributionRefusal){
+          const statement=`${error.message}；${error.fix}`;
+          refusals.set(item.item,statement);
+          admission!.outcomes.set(item.item,[{verdict:'refute',code:`${workflow.pack.id}.${error.rule}`,statement,grounds:[],tier:'blocking',pointer:`/slots/${slot}/0`,data:{fix:error.fix}}]);
+          ctx.log({traceId:call.traceId,run:run.run,what:'contribution.admission',detail:JSON.stringify({rule:error.rule,...error.detail})});
+          continue;
+        }
         if (!(error instanceof KnowledgeError)) throw error;
-        structure.push(protocolError(error.code ?? 'SUBMISSION_SCHEMA_VIOLATION', error.message, {path:at,item:item.item,fix:error.message}));
+        structure.push(protocolError(error.code ?? 'SUBMISSION_SCHEMA_VIOLATION', error.message, {path:at,item:item.item,fix:error.message,requirement:capability!.requirement}));
       }
     }
   }
   const declarations = new Set((run.outputs?.tasks ?? []).map(output => output.id));
-  for (const [i, output] of (submission.task_outputs ?? []).entries()) if (!declarations.has(output.output)) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', '按任务的产出未在任务包里声明', {path:pointerOf('task_outputs',i,'output')}));
+  for (const [i, output] of (submission.task_outputs ?? []).entries()) if (!declarations.has(output.output)) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', '按任务的产出未在任务包里声明', {path:pointerOf('task_outputs',i,'output'),fix:'请任务包维护人在 workflow.outputs.tasks 声明该产出，或从 task_outputs 移除后重交'}));
   const exact = await resolveSubmission(scope, resolver, workflow, run.items, submission);
   const origin: ProducerOrigin = { sessions: [run.session ?? null, sessionOf(call)], model: submission.model };
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
-  const rejection = [...before, ...moved(withRounds(workflow, submission, [...structure, ...exact.errors], roundsUsed))];
+  const rejection = [...withRounds(workflow,submission,attribute(before),roundsUsed), ...moved(withRounds(workflow, submission, attribute([...structure, ...exact.errors]), roundsUsed))];
   const input = {
     run,
     workflow,
@@ -460,10 +476,11 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     origin,
     author,
     traceId: call.traceId,
+    ...(admission===undefined?{}:{admission}),
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), ...(prepared === undefined ? {} : {prepared, model:submission.model}) };
+    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);

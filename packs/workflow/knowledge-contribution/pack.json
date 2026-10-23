@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5fd27205dacc84d0a37d570858df1b24c29b22611538c5a29693f1e14c061952",
-      "size": 1663
+      "sha256": "5a8f9ad7679d00edd339635686606774c54ee4c0157e50affaeb36d46eb21ede",
+      "size": 2057
     },
     {
       "path": "checks.json",
@@ -67,6 +67,11 @@
       "size": 2050
     },
     {
+      "path": "tables/codes.json",
+      "sha256": "72d9febf8bee9a32f965b9c41505cb992fc7ef857c18249550658a13f13c8608",
+      "size": 3064
+    },
+    {
       "path": "tables/quotes.json",
       "sha256": "e93b3bed11c503a6ac42de1fa4c9f2d38b8bdc11b2787a143c3f8e71c327c524",
       "size": 414
@@ -78,8 +83,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "513c860ed6418e3b075ed3662695b7a9f7e9c75fd781a88bfe79f85c3912ade9",
-      "size": 887
+      "sha256": "17330de391d5b3845e6a2263b9fec9d5c97560163c0a99dd702499c1a7483ed5",
+      "size": 1013
     }
   ]
 }

@@ -5,8 +5,8 @@ import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../records/api.ts';
-import { digestOf, sha256Hex } from '../records/api.ts';
-import { parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
+import { digestOf, scanForCredentials, sha256Hex } from '../records/api.ts';
+import { ReferenceSyntaxError, parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
 import type { KnowledgeContext } from './context.ts';
 import type { CompositionView } from './composition.ts';
 import { KnowledgeError } from './errors.ts';
@@ -17,7 +17,7 @@ export interface ContributionScope {
   root: string | null;
   product: string | null;
   resolve(reference: string): Promise<{ ok: true; value: { reference: string; text: string | null;
-    recordSource?: { sha256: string; record: string; provenance: ProvenanceType } } } | { ok: false; message: string; code?: ProtocolCode }>;
+    recordSource?: { sha256: string; record: string; provenance: ProvenanceType; kind:string;schema:string } } } | { ok: false; message: string; code?: ProtocolCode }>;
 }
 export interface ContributionOrigin {
   run: string; submission: string; session: string | null; model: string;
@@ -35,6 +35,16 @@ const SIGNATURE = '需要负责人署名，署名流程以后做';
 const fail = (message: string, code: ProtocolCode = 'SUBMISSION_SCHEMA_VIOLATION'): never => {
   throw new KnowledgeError(message, { code });
 };
+
+/** A known admission-policy refutation. It is not a malformed submission or an unresolved exact value. */
+export class ContributionRefusal extends KnowledgeError {
+  readonly rule:string;
+  override readonly fix:string;
+  constructor(rule:string,message:string,fix:string,detail:Record<string,unknown>={}){
+    super(message,{detail});this.rule=rule;this.fix=fix;
+  }
+}
+const refuse=(rule:string,message:string,fix='本条先标为 skipped 并写明缺少的根据，其余条目照常提交',detail:Record<string,unknown>={}):never=>{throw new ContributionRefusal(rule,message,fix,detail);};
 
 export class ContributionLayer {
   readonly #context: KnowledgeContext;
@@ -61,7 +71,7 @@ export class ContributionLayer {
     let preparation = readers.get(reader.id);
     if (preparation === undefined) {
       preparation = (async () => {
-        if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return fail('产品不可读', 'SOURCE_UNAVAILABLE');
+        if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return refuse('product_unavailable','缺少当前产品的读取权限','请管理员恢复产品读取权限后用新摘要申请核验；本条也可先标为 skipped');
         const composition = (await this.#reading.compositionsOf(scope.root)).find(c => c.body.product === scope.product);
         if (composition === undefined) return fail('锁定根的组成不可读，须恢复该根的组成记录后重交', 'SOURCE_UNAVAILABLE');
         const originals = new Map((await composition.sources()).map(source => [source.sha256, source]));
@@ -77,26 +87,28 @@ export class ContributionLayer {
 
   async prepare(reader: Principal, raw: unknown, scope: ContributionScope): Promise<PreparedContribution> {
     const checked = ContributionInput.safeParse(raw);
-    if (!checked.success) return fail('回注结构不合格：只收产出种类、陈述、根、路径、原文引文和关系；不得自报来源类型、依据等级或适用条件');
+    if (!checked.success) return fail('回注结构不合格：只收产出种类、陈述、根、路径、原文引文和关系；不得自报来源类型、依据等级或适用条件；按 start_run 的槽位 schema 修正后重交');
     const input = checked.data;
-    if (scope.root !== input.root || scope.product === null) return fail('回注必须使用本次运行锁定的产品和根');
+    if (scope.root !== input.root || scope.product === null) return fail('回注必须使用本次运行锁定的产品和根；缺少与锁定根的对应关系，按 start_run 的 root 原样填写，或为目标根另开运行','REFERENCE_UNRESOLVED');
     const {composition, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader);
-    const node = await this.#reading.nodeAt(input.root, pathSegments(input.path));
-    if (node === null) return fail(`归位路径在锁定的根里解析不出：${input.path}`);
+    let segments:string[];
+    try{segments=pathSegments(input.path);}catch(error){if(error instanceof ReferenceSyntaxError)return fail(`归位路径不是规范写法：${error.message}；按 get_nodes 返回的 path 原样填写后重交`,'REFERENCE_UNRESOLVED');throw error;}
+    const node = await this.#reading.nodeAt(input.root, segments);
+    if (node === null) return fail(`归位路径在锁定的根里解析不出：${input.path}；缺少这个路径的节点，按 get_nodes 返回的现有 path 修正后重交`,'REFERENCE_UNRESOLVED');
     const inspect = async (record: SourceArtifact, seen: ReadonlySet<string> = new Set()): Promise<void> => {
-      if (seen.has(record.digest)) return fail('来源血缘成环，须修复生成记录的输入引用后重交', 'REFERENCE_UNRESOLVED');
-      if (seen.size >= 64) return fail('来源血缘超过 64 环的核验上限，须缩短生成链后重交');
+      if (seen.has(record.digest)) return refuse('lineage_unproven','来源血缘成环，缺少可追溯的 Hub 原件','修复生成记录的输入引用后重新生成并开运行；本条先标为 skipped');
+      if (seen.size >= 64) return refuse('lineage_unproven','来源血缘超过 64 环的核验上限，缺少可完整核验的生成链','缩短生成链并重新生成资料后重交；本条先标为 skipped');
       const body = record.body;
-      if (body.author.user !== null || 'upload' in body.origin || body.provenance_type === 'declared') return fail(SIGNATURE);
-      if (!body.visibility.admins) return fail('个人来源不能通过回注放宽可见范围');
+      if (body.author.user !== null || 'upload' in body.origin || body.provenance_type === 'declared' || body.provenance_type === 'candidate') return refuse('signature_required',SIGNATURE,'缺少负责人署名；本版保留在 Circle，本条标为 skipped（待负责人署名），其余条目照常提交');
+      if (!body.visibility.admins) return refuse('personal_source','个人来源不能通过回注放宽可见范围，缺少可发布的原文根据','改引锁定根中的非个人 Hub 原件；本条先标为 skipped，其余条目照常提交');
       const readable = await this.#context.records.artifacts.source(custodian, body.sha256, { consumer: 'model', record: record.digest });
-      if (readable?.bytes === null || readable === null) return fail(`所引原文此刻不可读，须由管理员 ${custodian.name} 恢复读取档位或权限后重交`, 'SOURCE_UNAVAILABLE');
+      if (readable?.bytes === null || readable === null) return refuse('source_unavailable','所引原文当前不可供模型核验，缺少可读原文事实','请管理员核查并恢复原文读取条件后用新摘要重交；本条也可先标为 skipped',{principal:custodian.id,record:record.digest,read_tier:readable?.readTier??null});
       if ('read' in body.origin && body.provenance_type === 'observed') return;
-      if (!('generated' in body.origin) || body.provenance_type !== 'projected' || body.origin.generated.inputs.length === 0) return fail('来源没有可追溯的 Hub 原件', 'SOURCE_UNAVAILABLE');
+      if (!('generated' in body.origin) || body.provenance_type !== 'projected' || body.origin.generated.inputs.length === 0) return refuse('lineage_unproven','来源没有可追溯的 Hub 原件','补齐生成器输入与原件记录后重新生成资料；本条先标为 skipped');
       const next = new Set(seen).add(record.digest);
       for (const reference of body.origin.generated.inputs) {
         let ref;
-        try { ref = parseReference(reference); } catch { return fail('生成来源的输入引用格式有误，须修复生成记录后重交'); }
+        try { ref = parseReference(reference); } catch { return refuse('lineage_unproven','生成来源的输入引用格式有误，缺少可追溯的原件定位','修复生成记录并重新生成资料；本条先标为 skipped'); }
         let parent: StoredRecord | null = null;
         if (ref.scheme === 'rec') parent = await this.#context.records.store.get(ref.record);
         else if (ref.scheme === 'src') {
@@ -108,8 +120,8 @@ export class ContributionLayer {
           const hub = candidates.filter(r => r.body.author.user === null && !('upload' in r.body.origin));
           parent = (hub.length > 0 ? hub : candidates).at(-1) ?? null;
         }
-        if (parent?.kind !== 'source_artifact') return fail('生成记录的输入没有对应的源文件记录，须修复输入引用后重交', 'REFERENCE_UNRESOLVED');
-        if (next.has(parent.digest)) return fail('来源血缘成环，须修复生成记录的输入引用后重交', 'REFERENCE_UNRESOLVED');
+        if (parent?.kind !== 'source_artifact') return refuse('lineage_unproven','生成记录的输入没有对应的源文件记录','修复输入引用并重新生成资料；本条先标为 skipped');
+        if (next.has(parent.digest)) return refuse('lineage_unproven','来源血缘成环，缺少可追溯的原件','修复生成记录的输入引用后重新生成资料；本条先标为 skipped');
         let pending = lineage.get(parent.digest);
         if (pending === undefined) { pending = inspect(parent as SourceArtifact, next); lineage.set(parent.digest, pending); }
         await pending;
@@ -117,14 +129,20 @@ export class ContributionLayer {
     };
     const quote = async (quoted: ContributionInput['source']): Promise<KnowledgeContributionBody['source']> => {
       const resolved = await scope.resolve(quoted.reference);
-      if (!resolved.ok) return fail(resolved.message, resolved.code ?? 'REFERENCE_UNRESOLVED');
+      if (!resolved.ok) return fail(`${resolved.message}；缺少可核对的运行内原文。恢复读取条件后重交；未绑定该源或根时另开运行绑定它，片段不存在时用 get_nodes 返回的引用修正`, resolved.code ?? 'REFERENCE_UNRESOLVED');
       if (resolved.value.text === null || !quoteMatches(resolved.value.text, quoted.quote)) return fail(`引文没有逐字出自所引片段 ${resolved.value.reference}；用 get_nodes 重新读取这个引用，逐字修正引文后重交`, 'QUOTE_MISMATCH');
       const ref = parseReference(resolved.value.reference);
       let shas: string[] = [];
-      if (ref.scheme === 'src') shas = [ref.sha256];
-      else if (ref.scheme === 'rec' && resolved.value.recordSource !== undefined) {
-        shas = [resolved.value.recordSource.sha256];
-        if (resolved.value.recordSource.provenance === 'declared' || resolved.value.recordSource.provenance === 'candidate') return fail(SIGNATURE);
+      if (ref.scheme === 'src') {
+        const actual=await this.#context.records.artifacts.readable(reader,ref.sha256);
+        if(actual===null)return fail('引用的原件当前不可读；恢复读取权限后重交','SOURCE_UNAVAILABLE');
+        await inspect(actual); // distinguish a session declaration from an outside-root Hub original
+        shas = [ref.sha256];
+      }
+      else if (ref.scheme === 'rec') {
+        const record=resolved.value.recordSource;
+        if(record?.kind==='submission'||(record?.kind==='source_artifact'&&(record.provenance==='declared'||record.provenance==='candidate')))return refuse('signature_required',SIGNATURE,'缺少负责人署名；本版保留在 Circle，本条先标为 skipped');
+        return refuse('record_not_original','记录转述或回注条目不能作回注根据，缺少锁定根中的原文片段','改引锁定根里原文的 src: 或 tree: 引用；本条先标为 skipped');
       }
       else if (ref.scheme === 'tree' && ref.root === input.root) {
         const rows = await composition.rowsAt(ref.path);
@@ -134,12 +152,12 @@ export class ContributionLayer {
         }
       }
       // A run-bound record not in the root is not silently attached to a root node.
-      if (shas.length === 0) return fail(OUTSIDE);
+      if (shas.length === 0) return refuse('source_not_original','这个节点没有原文条目，读到的只是子节点名单，缺少原文片段','改引叶节点条目或它在锁定根中的源文件；本条先标为 skipped');
       shas = [...new Set(shas)].sort();
       const records: string[] = [];
       for (const sha of shas) {
         const source = originals.get(sha);
-        if (source === undefined) return fail(OUTSIDE);
+        if (source === undefined) return refuse('source_outside_root',OUTSIDE,'缺少锁定根中的原文；本条标为 skipped（来源未入锁定根），其余条目照常提交；来源入根后重新开回注运行');
         const record = await this.#context.records.store.get(source.artifact);
         if (record?.kind !== 'source_artifact') return fail('来源记录不可读', 'SOURCE_UNAVAILABLE');
         let promise = lineage.get(record.digest);
@@ -154,6 +172,11 @@ export class ContributionLayer {
     };
     const source = await quote(input.source);
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
+    for(const text of [input.statement,source.quote,...(relation===undefined?[]:[relation.other.quote])]){
+      const scan=scanForCredentials(new TextEncoder().encode(text));
+      if(!scan.inspected||scan.truncated||scan.findings.length>0)return refuse('sensitive_text','回注文字未通过完整凭据扫描，缺少可安全公开的文本','去掉明文凭据并缩短到可完整扫描的文本后重交；凭据保留在 Circle 本地，本条也可先标为 skipped');
+    }
+    if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse('self_relation','关系双方指向同一片段或重叠引文，缺少两个独立的原文端点','改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped');
     if (!fragments.has(input.path)) fragments.set(input.path, (async () => {
       const fragment = await this.#reading.treeReader({composition:composition.record}).read(input.root, input.path, null, { user: reader.id, role: reader.role });
       return fragment === null ? null : sha256Hex(fragment.text);
@@ -164,7 +187,7 @@ export class ContributionLayer {
       cited_fragment: fragment, kind: input.kind, statement: input.statement, source,
       ...(relation === undefined ? {} : { relation }), submitted_by: reader.id,
       // Semantic integration is attributed to Circle, not promoted into a Hub observation by a matching quote.
-      basis_rank: parseReference(source.reference).scheme === 'rec' || (relation !== undefined && parseReference(relation.other.reference).scheme === 'rec') ? 'relay' : 'judgment', applicability: null };
+      basis_rank: 'judgment', applicability: null };
   }
 
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */

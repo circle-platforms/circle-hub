@@ -49,7 +49,7 @@ test('contribution retries return the stored receipt without actions or effects,
 test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{
   const w=await setup(t,{acceptedRoot:true});const args=w.args();
   await w.kit.artifacts.revokeFindings(w.admin,w.original,'合成撤回');
-  const first=await w.service.submitResult(w.admin,args,call);assert.equal(first.acceptance,'not_accepted');
+  const first=await w.service.submitResult(w.admin,args,call);assert.equal(first.result?.contributions?.stored.length,0);assert.equal(first.result?.contributions?.not_stored.length,4);
   await w.kit.artifacts.acceptFindings(w.admin,w.original,'合成恢复');
   assert.deepEqual(await w.service.submitResult(w.admin,args,{...call,sessionId:'new-session'}),first);
   const changed=await w.service.submitResult(w.admin,{...args,notes:'读取条件已恢复，申请重新核验'},call);
@@ -84,8 +84,8 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:bool
     pack.readJson=path=>path==='tables/shape.json'?{...previous(path) as object,rules:[{fields:[{path:'/not_present',required:true}]}]}:previous(path);
   }
   if(options.task) {
-    // Test a declared task output on an ordinary run; no contribution capability.
-    pack.workflow = {...pack.workflow,contribution:undefined,product:{id:w.product.product.id,catalogs:[]},outputs:{tasks:TASK_OUTPUT_KIND.map(kind=>({id:kind,kind}))}};
+    // Per-task outputs coexist with document contributions, but must never enter the knowledge layer.
+    pack.workflow = {...pack.workflow,product:{id:w.product.product.id,catalogs:[]},outputs:{tasks:TASK_OUTPUT_KIND.map(kind=>({id:kind,kind}))}};
   }
   const service = createRunsService({records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});
   const manifest = await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(JSON.stringify({items:DOCUMENT_OUTPUT_KIND.map(kind=>({id:kind,title:kind}))})),mediaType:'application/json',origin:{upload:{session:'integration-session',message:null}},author:{user:w.admin.id},visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false},provenanceType:'declared'});
@@ -95,6 +95,96 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:bool
   const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:'/commands/system/show',source:{reference:`tree:${root}/commands/system/show`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
   return {...w,root,b,run,service,args,original};
 }
+
+async function withOriginal(w:Awaited<ReturnType<typeof setup>>,sha256:string){
+  return withReference(w,`src:${sha256}`);
+}
+async function withReference(w:Awaited<ReturnType<typeof setup>>,reference:string){
+  const started=await w.service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:w.b.name,inputs:{subject:{reference:w.run.sources.find(s=>s.slot==='subject')!.reference},originals:[{reference:`src:${w.original}`},{reference}] }},call);
+  assert.equal(started.call_result,'ok',JSON.stringify(started.errors));return started.run!;
+}
+
+test('branch listings and bound records name the missing original rather than claiming outside-root membership',async t=>{
+  const w=await setup(t);const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`tree:${w.root}/commands/system`,quote:'reboot'};
+  const branch=await w.service.submitResult(w.admin,args,call);
+  assert.ok(branch.errors.some(e=>e.code==='knowledge-contribution.source_not_original'&&e.message.includes('子节点名单')));
+  const record=(await w.kit.store.find({key:'runs.id',value:w.run.run,kind:'run'})).items[0];
+  const run=await withReference(w,`rec:${record.digest}#/pack`);const quoted={...w.args(),run:run.run};
+  quoted.items[0].slots.contribution[0].data.source={reference:`rec:${record.digest}#/pack`,quote:'knowledge-contribution'};
+  const relay=await w.service.submitResult(w.admin,quoted,call);
+  assert.equal(relay.acceptance,'accepted');assert.equal(relay.result?.contributions?.stored.length,3);
+  assert.ok(relay.errors.some(e=>e.code==='knowledge-contribution.record_not_original'&&e.message.includes('原文片段')));
+  await w.service.submitResult(w.admin,w.args(),call);
+  const submission=(await w.kit.store.find({key:'runs.submission.run',value:w.run.run,kind:'submission'})).items[0];
+  const human=await withReference(w,`rec:${submission.digest}#/model`);const humanArgs={...w.args(),run:human.run};
+  humanArgs.items[0].slots.contribution[0].data.source={reference:`rec:${submission.digest}#/model`,quote:'integration-synthetic'};
+  const declared=await w.service.submitResult(w.admin,humanArgs,call);
+  assert.ok(declared.errors.some(e=>e.code==='knowledge-contribution.signature_required'));
+});
+
+test('one outside-root source refutes only its verified requirement and leaves other entries admissible',async t=>{
+  const w=await setup(t);
+  const extra=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('show outside'),mediaType:'text/plain',origin:{read:{object:'site:document:outside'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+  const run=await withOriginal(w,extra.body.sha256);const args={...w.args(),run:run.run};
+  args.items[0].slots.contribution[0].data.source={reference:`src:${extra.body.sha256}`,quote:'show'};
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.acceptance,'accepted',JSON.stringify(result.errors));
+  assert.equal(result.result?.contributions?.stored.length,3);assert.equal(result.result?.contributions?.not_stored.length,1);
+  const refusal=result.errors.find(e=>e.item==='classification')!;
+  assert.equal(refusal.code,'knowledge-contribution.source_outside_root');assert.equal(refusal.requirement,'verified');assert.match(refusal.fix??'',/skipped/);
+});
+
+test('a run-bound session excerpt needs a signature before root membership is considered',async t=>{
+  const w=await setup(t);
+  const extra=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('show session statement'),mediaType:'text/plain',origin:{upload:{session:'session-only',message:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false}});
+  const run=await withOriginal(w,extra.body.sha256);const args={...w.args(),run:run.run};
+  args.items[0].slots.contribution[0].data.source={reference:`src:${extra.body.sha256}`,quote:'show'};
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.acceptance,'accepted');assert.equal(result.result?.contributions?.stored.length,3);
+  assert.ok(result.errors.some(e=>e.code==='knowledge-contribution.signature_required'&&e.message.includes('需要负责人署名')));
+});
+
+test('sensitive contribution text is refused before it reaches the product layer',async t=>{
+  const w=await setup(t);const args=w.args();const secret='https://demo:synthetic-secret@192.0.2.8/path';args.items[0].slots.contribution[0].text=secret;
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.result?.contributions?.stored.length,3);
+  assert.ok(result.errors.some(e=>e.code==='knowledge-contribution.sensitive_text'));
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  assert.ok(!JSON.stringify(page).includes(secret));
+});
+
+test('credential scanning also covers both quote fields and prevents self relations',async t=>{
+  const secret='https://demo:synthetic-secret@192.0.2.8/path';
+  for(const other of [false,true]){
+    const w=await setup(t,{acceptedRoot:true});const args=w.args();
+    const quote={reference:`src:${w.original}`,quote:secret};
+    if(other)args.items[3].slots.contribution[0].data.relation!.other=quote;else args.items[0].slots.contribution[0].data.source=quote;
+    const result=await w.service.submitResult(w.admin,args,call);
+    assert.equal(result.result?.contributions?.stored.length,3,JSON.stringify(result.errors));
+    assert.ok(result.errors.some(e=>e.code==='knowledge-contribution.sensitive_text'));
+    assert.ok(!JSON.stringify(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin)).includes(secret));
+  }
+  const w=await setup(t);const args=w.args();args.items[3].slots.contribution[0].data.relation!.other={...args.items[3].slots.contribution[0].data.source};
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.result?.contributions?.stored.length,3);assert.ok(result.errors.some(e=>e.code==='knowledge-contribution.self_relation'));
+});
+
+test('a noncanonical target path still receives a stored boundary receipt with a repair action',async t=>{
+  const w=await setup(t);const args=w.args();args.items[0].slots.contribution[0].data.path='/commands/system/sh%6Fw';
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.acceptance,'not_accepted');assert.ok(result.errors.some(e=>e.code==='REFERENCE_UNRESOLVED'&&e.message.includes('规范写法')&&e.item==='classification'));
+  assert.ok((await w.service.getRun(w.admin,w.run.run))?.latest===null);
+  assert.equal((await w.kit.store.find({key:'runs.result.run',value:w.run.run,kind:'validation_result'})).items.length,1);
+});
+
+test('layer boundary errors consume the verified diagnostic budget and expose zero rounds after two repairs',async t=>{
+  const w=await setup(t);
+  for(let i=0;i<3;i++){
+    const args=w.args();args.items[0].slots.contribution[0].data.source.quote=`not present ${i}`;
+    const result=await w.service.submitResult(w.admin,args,call);const error=result.errors.find(e=>e.code==='QUOTE_MISMATCH')!;
+    assert.equal(error.requirement,'verified');assert.equal(error.rounds_left,Math.max(0,2-i));
+  }
+});
 
 test('all four document outputs enter only after requirements pass, remain outside the root and are product-readable',async t=>{
   const w = await setup(t);
@@ -158,7 +248,7 @@ test('a bound Hub source outside the locked root is rejected with the version bo
   const start=await w.service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:w.b.name,inputs:{subject:{reference:manifest.sources.find(s=>s.slot==='subject')!.reference},originals:[{reference:`src:${w.original}`},{reference:`src:${extra.body.sha256}`}] }},call);
   assert.equal(start.call_result,'ok',JSON.stringify(start.errors));
   const outside=await w.service.submitResult(w.admin,{...args,run:start.run!.run},call);
-  assert.equal(outside.acceptance,'not_accepted');assert.match(JSON.stringify(outside.errors),/来源不在锁定的根里，这一版不收/);
+  assert.equal(outside.acceptance,'accepted');assert.equal(outside.result?.contributions?.stored.length,3);assert.match(JSON.stringify(outside.errors),/来源不在锁定的根里，这一版不收/);
 });
 
 test('new root annotates changed fragments, while the contribution remains valid at its original root',async t=>{
@@ -170,12 +260,15 @@ test('new root annotates changed fragments, while the contribution remains valid
   assert.ok((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).every(v=>v.status==='valid'));
 });
 
-test('declared task outputs remain in ordinary run records and never populate the contribution layer',async t=>{
+test('declared task outputs stay out of an actual contribution run layer',async t=>{
   const w=await setup(t,{task:true});
-  const args={...w.args(),task_outputs:TASK_OUTPUT_KIND.map(output=>({output,value:{synthetic:output}}))};
+  const args={...w.args(),task_outputs:TASK_OUTPUT_KIND.map(output=>({output,value:'only-task-'+output}))};
   const result=await w.service.submitResult(w.admin,args,call);
-  assert.equal(result.acceptance,'accepted',JSON.stringify(result.errors));assert.equal(result.result?.contributions,undefined);
-  assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,0);
+  assert.equal(result.acceptance,'accepted',JSON.stringify(result.errors));assert.equal(result.result?.contributions?.stored.length,4);
+  const entries=await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user);
+  assert.equal(entries.length,4);for(const output of TASK_OUTPUT_KIND)assert.ok(!JSON.stringify(entries).includes('only-task-'+output));
+  const rejected=await w.service.submitResult(w.admin,{...args,task_outputs:[{output:'not_declared',value:'only-task-invalid'}]},call);
+  assert.equal(rejected.acceptance,'not_accepted');assert.ok(rejected.errors.some(e=>(e.fix??'').includes('workflow.outputs.tasks')));
   const stored=(await w.kit.store.find({key:'runs.submission.run',value:w.run.run,kind:'submission'})).items[0];
   assert.equal(canonicalize(stored.body),canonicalize(args));
 });
@@ -184,7 +277,7 @@ test('session declarations, including a generated wrapper, require a signature a
   for (const options of [{declaredRoot:true},{wrappedDeclaration:true}]) {
     const w=await setup(t,options);
     const answer=await w.service.submitResult(w.admin,w.args(),call);
-    assert.equal(answer.acceptance,'not_accepted',JSON.stringify(answer));
+    assert.equal(answer.acceptance,'accepted',JSON.stringify(answer));assert.equal(answer.result?.contributions?.stored.length,0);
     assert.match(JSON.stringify(answer.errors),/需要负责人署名，署名流程以后做/);
     assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,0);
   }

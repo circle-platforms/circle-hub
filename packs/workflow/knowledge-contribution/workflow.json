@@ -14,7 +14,7 @@
     {
       "slot": "originals",
       "role": "expected",
-      "description": "回注引用的锁定根已有原文；src: 和 rec: 引用须绑定本槽，tree: 已由锁定根约束",
+      "description": "回注引用的锁定根已有原文；src: 须绑定本槽，tree: 由锁定根约束。rec: 只用于定位输入记录，本版不能作为回注原文根据，应改引原始源文件或树片段",
       "accepts": [
         "text/plain",
         "text/markdown",
@@ -34,6 +34,7 @@
     "module": "functions/project.ts"
   },
   "contribution": {
-    "slot": "contribution"
+    "slot": "contribution",
+    "requirement": "verified"
   }
 }

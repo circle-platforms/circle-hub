@@ -1,0 +1,57 @@
+{
+  "schema": "knowledge-contribution.codes@1",
+  "origin": "K03 R[4]-R[6] 和独立复核的回注准入约束",
+  "description": "逐条目拒绝入层的规则码；结构、引用和逐字引文错误仍使用核心边界码",
+  "violations": [
+    {
+      "code": "knowledge-contribution.product_unavailable",
+      "when": "该条目的回注准入约束未满足：product_unavailable",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.signature_required",
+      "when": "该条目的回注准入约束未满足：signature_required",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.personal_source",
+      "when": "该条目的回注准入约束未满足：personal_source",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.source_unavailable",
+      "when": "该条目的回注准入约束未满足：source_unavailable",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.lineage_unproven",
+      "when": "该条目的回注准入约束未满足：lineage_unproven",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.source_outside_root",
+      "when": "该条目的回注准入约束未满足：source_outside_root",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.source_not_original",
+      "when": "该条目的回注准入约束未满足：source_not_original",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.record_not_original",
+      "when": "该条目的回注准入约束未满足：record_not_original",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.sensitive_text",
+      "when": "该条目的回注准入约束未满足：sensitive_text",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    },
+    {
+      "code": "knowledge-contribution.self_relation",
+      "when": "该条目的回注准入约束未满足：self_relation",
+      "fix": "按回执补齐所缺事实；当前无法补齐时将本条标为 skipped 并写明原因，其余条目照常提交"
+    }
+  ]
+}

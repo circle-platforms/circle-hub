@@ -412,7 +412,7 @@ export const WorkflowFile = z
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
-    contribution: z.strictObject({slot:Key}).optional().describe('a dedicated knowledge-contribution run; the named slot contains the document artifact'),
+    contribution: z.strictObject({slot:Key,requirement:Key}).optional().describe('a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification'),
     outputs: WorkflowOutputs.optional().describe('task-specific outputs stay in ordinary run submissions'),
     leases: z
       .strictObject({
