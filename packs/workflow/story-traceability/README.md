@@ -37,3 +37,5 @@
 复核 8（本分支部分）：build_id 与应答记录编号都去首尾空白和前导零再比较；缺构建记录、没有可用数组和空数组分别拒绝。投影未提供原始字段名时不猜字段名。buildsProject 的需求数组元素规范化留给 plm-fields，本分支未修改该函数。
 
 复核 9：独立答案只接受 code 为数值 1000 且 data 为数组的 PLM 原件信封。裸数组、Hub 的 stories/unread 投影、无 code 或失败 code 都拒绝，避免把投影结果当作独立输入核对自身。
+
+Closure review 1: projection refusals carry warnings: [] as projection-output@1 requires. Known input refusals are typed at their throw sites with their own corrective action; unexpected exceptions are pack defects, never guessed from message text. Production-start coverage verifies the original pack code, message and fix survive the engine boundary. Version 1.0.2 is re-signed.

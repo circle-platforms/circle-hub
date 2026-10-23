@@ -49,3 +49,18 @@ describe('synthetic story production run', { skip }, () => {
   });
 
 });
+
+test('projection refusal code message and fix survive the production start boundary', { skip }, async () => {
+  const { default: project } = await import('./functions/project.ts');
+  const { boundView } = await import('../traceability/functions/test-support.ts');
+  const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
+  const view = indexViewOf('case', 'stories', [], { skipped: 1, truncated: true }, ['document', 'node', 'title']);
+  const stories = { stories: [{ id: '23', status: 'synthetic', stage: null }], unread: [] };
+  const expected = project({ inputs: [boundView('stories', stories, 'plm:stories:23'), boundView('cases', view)] }) as any;
+  hub.views.put(casesId, view); hub.views.put('plm:stories:23', stories);
+  const result = await hub.service.startRun(hub.alice, { pack: 'story-traceability', inputs: { stories: [{ external: 'plm:stories:23' }], cases: { external: casesId } } }, call());
+  assert.equal(result.call_result, 'error');
+  const refusal = result.errors[0];
+  assert.deepEqual([refusal.code, refusal.message, refusal.fix], [expected.error.code, expected.error.message, expected.error.fix]);
+  assert.notEqual(refusal.message, '任务包的投影函数给出的结果不符合 projection-output@1');
+});

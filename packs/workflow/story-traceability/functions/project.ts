@@ -11,7 +11,11 @@ export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: 
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
 export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
-const fail = (message: string, fix: string) => ({ error: { code: 'story-traceability.invalid_input', message, fix } });
+class ProjectionRefusal extends Error {
+  readonly fix: string;
+  constructor(message: string, fix: string) { super(message); this.fix = fix; }
+}
+const fail = (message: string, fix: string) => ({ error: { code: 'story-traceability.invalid_input', message, fix }, warnings: [] });
 
 export function projectItems(input: unknown): unknown {
   if (!isRecord(input) || !Array.isArray(input.inputs)) return fail('输入缺少绑定来源', '绑定 stories 和 cases；需求号向用户索取，不猜');
@@ -29,14 +33,14 @@ export function projectItems(input: unknown): unknown {
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
   const scope: ProvenanceType = storyInputs.length > 0 ? 'declared' : 'observed';
   function add(raw: string, record: unknown, source: BoundInput, selector: string) {
-    if (!validId(raw)) throw new Error('需求编号应为最多 15 位正整数');
+    if (!validId(raw)) throw new ProjectionRefusal('需求编号应为最多 15 位正整数', '请用户提供有效的需求编号后重新绑定');
     const id = normalizeId(raw);
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
       status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
       plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
-    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');
+    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new ProjectionRefusal('同一需求的 PLM 原件内容冲突', '请重新导出一致原件并重新绑定需求来源');
     if (!previous || (!previous.plm_returned && next.plm_returned)) { rows.set(id, next); locations.set(id, { source: source.sha256, selector, slot: source.slot }); }
   }
   if (storyInputs.length > 0) {
@@ -97,5 +101,7 @@ export function projectItems(input: unknown): unknown {
   return result;
 }
 export default function project(input: unknown): unknown {
-  try { return projectItems(input); } catch { return fail('需求原件无效或内容冲突', '核对需求编号和 PLM 原件；请管理员修正来源后重跑'); }
+  try { return projectItems(input); } catch (error) {
+    return error instanceof ProjectionRefusal ? fail(error.message, error.fix) : fail('投影函数内部出错', '请任务包维护人修复投影后重跑');
+  }
 }

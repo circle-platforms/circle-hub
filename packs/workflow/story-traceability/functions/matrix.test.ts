@@ -177,3 +177,16 @@ test('build ids compare after normalization and refusal names an empty array rat
   const missing = project({ inputs: [...cases, build], parameters: { build_id: '8' } }) as any;
   assert.match(missing.error.message, /未包含.*8/); assert.doesNotMatch(missing.error.message, /没有需求字段/);
 });
+
+test('every projection refusal conforms to projection-output and retains its own cause', async () => {
+  const { ProjectionOutput } = await import('../../../../contracts/src/pack.ts');
+  const invalid = project({ inputs: [] }) as any;
+  assert.equal(ProjectionOutput.safeParse(invalid).success, true);
+  assert.deepEqual(invalid.warnings, []);
+  const conflicting = input(['21']);
+  const source = conflicting.inputs[0];
+  const second = structuredClone(source); (second.model as any).stories[0].status = 'different';
+  const refusal = project({ inputs: [...conflicting.inputs, second] }) as any;
+  assert.match(refusal.error.message, /同一需求的 PLM 原件内容冲突/);
+  assert.match(refusal.error.fix, /一致原件/);
+});
