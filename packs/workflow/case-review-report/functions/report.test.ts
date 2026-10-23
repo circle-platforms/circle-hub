@@ -4,6 +4,7 @@
 // synthetic two-block shape the samples use. Pure functions, no Hub, no database.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import {kityminderParser} from '../../../../hub/refs/api.ts';
 import type { ProjectedItem } from '../../../../contracts/src/pack.ts';
 import projection from './projection.ts';
 import { overallCheck, reportCheck } from './checks.ts';
@@ -22,8 +23,8 @@ function block(spec: Block): Record<string, unknown> {
     label: `用例 ${entry.item}`,
     location: `src:${DIGEST}/kityminder@1/n/${entry.item}`,
     requirements: [
-      { key: 'verification', claims: [{ statement: { code: entry.kind ?? 'verified', text: entry.text ?? `发现 ${entry.item}`, rank: entry.rank ?? 'minor' }, data: {} }] },
-      { key: 'final', claims: [] },
+      { requirement: 'verification', claims: [{ qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1'},statement: { code: entry.kind ?? 'verified', text: entry.text ?? `发现 ${entry.item}`, rank: entry.rank ?? 'minor' }, data: {} }] },
+      { requirement: 'final', claims: [] },
     ],
   }));
   // The real-data shape: a block that carries entries it did not deliver lists them unfinished (the first half), the
@@ -33,7 +34,7 @@ function block(spec: Block): Record<string, unknown> {
   const partitions: Record<string, unknown[]> = { delivered: spec.partition !== undefined && spec.partition !== 'delivered' ? delivered.slice(halved.length) : delivered };
   if (unfinished.length > 0) partitions[spec.partition as string] = unfinished;
   return {
-    schema: 'validation@1',
+    schema: 'validation@1',acceptance:'accepted',
     locks: { pack: 'case-review-verify@1.0.3', pack_digest: '0'.repeat(64), subject: { digest: DIGEST } },
     partitions,
     ...(spec.verdict === null
@@ -42,17 +43,21 @@ function block(spec: Block): Record<string, unknown> {
           cross_item: [
             // 存储的真实形状：模型的结论主张 pointer 在顶层、code/rank 在 statement 里；Hub 的事实主张可能排在它
             // 前面，所以按 pointer 对照；Hub 的 final 事实主张带 requirement、pointer 和 statement.verdict。
-            { nature: 'judgment', statement: { code: spec.verdict, rank: spec.level, text: '结论' }, grounds: [], pointer: '/cross_item/0', requirement: 'final' },
+            { qualifier:{nature:'judgment'},warrant:{producer:'model',id:'synthetic-verifier@1'},statement: { code: spec.verdict, rank: spec.level, text: '结论' }, grounds: [], pointer: '/cross_item/0', requirement: 'final' },
             { requirement: 'final', pointer: '/cross_item/0', statement: { verdict: spec.hub ?? 'support', text: '与处置一致', data: {} }, grounds: [] },
           ],
         }),
   };
 }
 
-function run(blocks: Array<{ result: Record<string, unknown> }>): { items?: ProjectedItem[]; error?: { code?: string; message?: string } } {
-  // The BoundInput shape the Hub really gives: the rec: value parsed into `model` (the record or the result itself).
-  let n = 0;
-  return projection({ inputs: blocks.map((b) => ({ slot: 'verifications', external: null, sha256: '0'.repeat(64), media_type: 'application/json', parser: 'json@1', model: { kind: 'validation_result', schema: 'record@1', body: b.result }, meta: { record: `${String(++n).repeat(64)}`.slice(0, 64) } })), parameters: {}, context: {} }) as { items?: ProjectedItem[]; error?: { code?: string; message?: string } };
+type ProjectionAnswer={items?:ProjectedItem[];error?:{code?:string;message?:string;fix?:string}};
+function run(blocks:Array<{result:Record<string,unknown>}>,options:{omitTarget?:boolean;parser?:string;digest?:string;priority?:number|null;model?:unknown}={}):ProjectionAnswer{
+  let n=0;
+  const ids=[...new Set(blocks.flatMap(block=>Object.values((block.result.partitions??{}) as Record<string,any[]>).flatMap(entries=>entries.map(entry=>String(entry.item)))))];
+  const source=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成文档'},children:ids.map(id=>({data:{id,text:'用例 '+id,priority:2,resource:['Functional']},children:[{data:{id:id+'-pre',text:'准备',priority:3}},{data:{id:id+'-e',text:'成功'}}]}))}}))).model;
+  const inputs:unknown[]=blocks.map(block=>({slot:'verifications',external:null,sha256:'0'.repeat(64),media_type:'application/json',parser:'json@1',model:{kind:'validation_result',schema:'record@1',body:block.result},meta:{record:String(++n).repeat(64)}}));
+  if(!options.omitTarget)inputs.push({slot:'target',external:null,sha256:options.digest??DIGEST,media_type:'application/json',parser:options.parser??'kityminder@1',model:options.model??source,meta:null});
+  return projection({inputs,parameters:options.priority===undefined?{}:{precondition_priority:options.priority},context:{}}) as ProjectionAnswer;
 }
 
 const reportItemOf = (out: { items?: ProjectedItem[]; error?: { code?: string; message?: string } }): { summary?: string; fields: Record<string, unknown> } => {
@@ -69,7 +74,7 @@ describe('the projection of case-review-report', () => {
     ]);
     const report = reportItemOf(out);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5', reference: `rec:${'2'.repeat(64)}#/cross_item/0` });
-    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P5（最差那块的，照抄）');
+    assert.match(report.summary??'', /^整体结论码 PARTIAL、等级 P5（最差那块的，照抄）；评审表/);
     assert.deepEqual((out.items ?? []).filter((i) => i.id !== 'report').map((i) => i.id), ['c1', 'c2', 'c3']);
     const c1 = out.items?.find((i) => i.id === 'c1');
     assert.match(c1?.summary ?? '', /^证实 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
@@ -136,7 +141,7 @@ describe('the projection of case-review-report', () => {
       { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'refute', entries: [{ item: 'c2' }] }) },
     ]);
     assert.equal(reportItemOf(out).fields.overall, null, '被 Hub 驳回的结论不采信');
-    assert.equal(reportItemOf(out).summary, '整体结论未知（各块没有可读结论）');
+    assert.match(reportItemOf(out).summary??'', /第 2 块.*结论.*下一步/);
     const unknownHub = run([
       { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
       { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'unknown', entries: [{ item: 'c2' }] }) },
@@ -151,7 +156,7 @@ describe('the projection of case-review-report', () => {
     ]);
     const report = reportItemOf(out);
     assert.equal(report.fields.overall, null);
-    assert.equal(report.summary, '整体结论未知（各块没有可读结论）');
+    assert.match(report.summary??'', /第 2 块.*结论.*下一步/);
   });
 
   it('real shape (two blocks, 45 findings, 1 refuted): summaries expose all citable references and overall, checks pass on first attempt', () => {
@@ -175,7 +180,7 @@ describe('the projection of case-review-report', () => {
 
     const report = reportItemOf(out);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: `rec:${'1'.repeat(64)}#/cross_item/0` });
-    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+    assert.match(report.summary??'', /^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
 
     // Parse overall verdict and level from report summary
     const overallMatch = /整体结论码\s+(\w+)、等级\s+(\w+)/.exec(report.summary ?? '');
@@ -294,5 +299,26 @@ describe('the checks of case-review-report', () => {
     assert.ok(reportCheck({ subject: partial }).some((o) => o.code === 'case-review-report.suggestion_incomplete'));
     const whole = subjectWith([verdictClaim('PARTIAL', 'P5', refs), { nature: 'judgment', statement: '补：反向用例；因为：边界未覆盖；期望：非法输入被拒绝', grounds: [], code: 'suggestion' }]);
     assert.equal(reportCheck({ subject: whole })[0]!.verdict, 'support');
+  });
+});
+
+describe('the table projection binding',()=>{
+  const blocks=()=>[{result:block({verdict:'PARTIAL',level:'P5',entries:[{item:'c1'}]})}];
+  it('refuses missing, non-map and different-byte targets with the required source reference',()=>{
+    for(const options of [{omitTarget:true},{parser:'json@1'},{digest:'b'.repeat(64)}]){
+      const out=run(blocks(),options);assert.ok(out.error);assert.match(out.error.fix??'',new RegExp('src:'+DIGEST));
+    }
+  });
+  it('puts the report first, retains full and folded strings and counts, and distinguishes preconditions',()=>{
+    const out=run(blocks()),report=out.items![0];
+    assert.equal(report.id,'report');assert.equal(typeof report.fields.review_tables,'string');assert.equal(typeof report.fields.review_tables_full,'string');
+    assert.ok(report.fields.review_counts);assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
+    assert.match(String(report.fields.review_tables_full),/；前置：准备/);
+    const noPriority=run(blocks(),{priority:null});assert.match(String(noPriority.items![0].fields.review_tables_full),/；期望：准备/);assert.doesNotMatch(String(noPriority.items![0].fields.review_tables_full),/；前置：/);
+  });
+  it('does not produce tables until missing conclusions and undelivered items are repaired',()=>{
+    for(const entries of [[{result:block({verdict:null,level:null,entries:[{item:'c1'}]})}],[{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}],partition:'incomplete'})}]]){
+      const report=reportItemOf(run(entries));assert.equal(report.fields.overall,null);assert.equal(report.fields.review_tables,undefined);assert.match(report.summary??'',/下一步.*复核.*终稿/);
+    }
   });
 });

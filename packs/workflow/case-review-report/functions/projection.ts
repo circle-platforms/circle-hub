@@ -1,6 +1,6 @@
 // The projection of the review report (workflow@1 projection, ProjectionInput -> ProjectionOutput). Inputs:
 // `verifications` (many), the rec: references of the verification runs' results (json@1: a validation result per block),
-// and the optional `target`, the same mind map every block reviewed (only to check the blocks sit on one source).
+// and the required `target`, the same mind map every block reviewed (only to check the blocks sit on one source).
 //
 // The items are the blocks' delivered entries merged per item: an item delivered in one block and unfinished in another
 // counts as delivered (that block wins); an item delivered in two blocks is a hard refusal (the run may not start).
@@ -9,6 +9,8 @@
 // verified, partial and new findings by their rec: references; the checks make sure none is missing and none refuted.
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord } from './common.ts';
+import {reviewTables,type TableModel} from './tables.ts';
+import labels from '../tables/labels.json' with {type:'json'};
 
 export const VERIFICATIONS_SLOT = 'verifications';
 export const TARGET_SLOT = 'target';
@@ -16,9 +18,9 @@ export const VERIFY_PACK = 'case-review-verify';
 export const MAX_BLOCKS = 50;
 export const MAX_ITEMS = 500;
 
-const VERDICT_ORDER = { PASS: 0, PARTIAL: 1, FAIL: 2 } as const;
-export type Verdict = keyof typeof VERDICT_ORDER;
-export type Disposition = 'verified' | 'refuted' | 'partial' | 'new_finding';
+const VERDICT_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalCodes.map((code,index)=>[code.code,index]));
+export type Verdict=string;
+export type Disposition=string;
 
 /** The validation result inside the bound rec: value and the pointer it sits at (the verify pack's own reading). */
 function resultOf(model: unknown, meta: Record<string, unknown>): { result: Record<string, unknown>; base: string } | null {
@@ -43,7 +45,7 @@ export function finalOf(result: Record<string, unknown>, record: string): { verd
   if (pointer === null) return null;
   // The model's final claim carries the same pointer itself (the submission's cross_item index); the Hub's facts may
   // sit before it in the stored list, so match by pointer, never by position. Its code and rank sit inside `statement`.
-  const claim = cross.find((c) => c.pointer === pointer && isRecord(c.statement) && typeof c.statement.code === 'string' && c.statement.code in VERDICT_ORDER);
+  const claim = cross.find((c) => c.pointer === pointer && isRecord(c.statement) && typeof c.statement.code === 'string' && Object.hasOwn(VERDICT_ORDER,c.statement.code));
   if (claim === undefined || !isRecord(claim.statement)) return null;
   const statement = claim.statement as { code: Verdict; rank?: unknown };
   return {
@@ -56,12 +58,7 @@ export function finalOf(result: Record<string, unknown>, record: string): { verd
 
 export type BlockDisposition = { kind: Disposition; reference: string; itemId: string | null; text: string; rank: string | null };
 
-const KIND_LABEL: Record<Disposition, string> = {
-  verified: '证实',
-  partial: '部分正确',
-  new_finding: '新增',
-  refuted: '推翻',
-};
+const KIND_LABEL:Readonly<Record<string,string>>=Object.fromEntries(labels.dispositions.map(row=>[row.code,row.display]));
 
 /** One short line the model reads about the item: finding references to cite, and how many were refuted. */
 export function itemSummaryOf(dispositions: readonly BlockDisposition[]): string {
@@ -90,7 +87,7 @@ export function dispositionsOf(result: Record<string, unknown>, block: { record:
           const claim = requirement.claims[c];
           if (!isRecord(claim) || !isRecord(claim.statement)) continue;
           const code = typeof claim.statement.code === 'string' ? claim.statement.code : null;
-          if (code !== 'verified' && code !== 'refuted' && code !== 'partial' && code !== 'new_finding') continue;
+          if (code===null||!labels.dispositions.some(disposition=>disposition.code===code)) continue;
           out.push({
             kind: code,
             // A rec: pointer addresses the record's body (valueAt(record.body, pointer)), never the envelope.
@@ -124,6 +121,7 @@ export default function project(input: unknown): unknown {
       if (record === null) return failure('block_unreadable', `第 ${String(b + 1)} 块不是复核验证结果`, '每条 verifications 给 case-review-verify 运行 submit_result 回执里的 rec: 引用');
       const sha256 = typeof bound.sha256 === 'string' ? bound.sha256 : '';
       const digest = typeof meta.record === 'string' ? meta.record : '';
+      if(!/^[a-f0-9]{64}$/.test(digest)||record.result.acceptance!=='accepted')return failure('block_invalid','复核结果不是已受理的原始记录','先完成复核，再用其已受理 validation_result 的 rec: 引用，不用上传的 JSON 或子指针');
       blocks.push({ result: record.result, sha256, base: record.base, record: digest });
     }
 
@@ -137,17 +135,16 @@ export default function project(input: unknown): unknown {
         return failure('block_invalid', `第 ${String(b + 1)} 块来自任务包 ${locked ?? '（未知）'}，不是复核任务包 ${VERIFY_PACK}`, `每条 verifications 给 ${VERIFY_PACK} 运行 submit_result 回执里的 rec: 引用`);
       }
     }
-    const sourceOf = (result: Record<string, unknown>): string | null => {
-      for (const entry of entriesOf(result)) {
-        const found = /src:([0-9a-f]{64})\//.exec(String(entry.location));
-        if (found !== null) return found[1]!;
-      }
-      return null;
-    };
-    const sources = new Set(blocks.map((b) => sourceOf(b.result)));
-    if (sources.has(null) || sources.size > 1) {
-      return failure('sources_differ', '各块复核不是同一份源文件（条目位置指向不同构建），不能合成一份终稿', '各块用同一份被评审脑图重新复核，或分别出终稿');
-    }
+    const sources=new Set(blocks.flatMap(block=>entriesOf(block.result).map(entry=>/^src:([a-f0-9]{64})\/kityminder@1\//.exec(entry.location)?.[1]??null)));
+    if(sources.size!==1||sources.has(null))return failure('sources_differ','各块复核条目位置不是同一份源文件，不能合成终稿','逐个核对各块条目位置的 src: 摘要，改用同一份脑图重新复核后再开终稿');
+    const source=[...sources][0]!;
+    const target=inputs.find(bound=>bound.slot===TARGET_SLOT);
+    const fixTarget='把 target 绑定为各块评审的同一份脑图：src:'+source;
+    if(!target||target.parser!=='kityminder@1'||!isRecord(target.model)||!Array.isArray(target.model.nodes)||target.model.nodes.length===0)return failure('target_invalid','没有绑定可读的目标脑图',fixTarget);
+    if(target.sha256!==source)return failure('target_mismatch','target 的字节摘要与各块条目位置的源文件不同',fixTarget);
+    const params=isRecord(model.parameters)?model.parameters:{};
+    const priority=params.precondition_priority===undefined?3:params.precondition_priority;
+    if(priority!==null&&(!Number.isInteger(priority)||Number(priority)<1||Number(priority)>9))return failure('invalid_input','precondition_priority 应为 1 到 9 的整数或 null','改正参数后重新开始终稿运行');
 
     // Per-item delivery, merged over the blocks: delivered wins over anything not delivered; delivered twice is a refusal.
     const deliveredIn = new Map<string, string[]>();
@@ -215,26 +212,32 @@ export default function project(input: unknown): unknown {
     }
 
     const unfinishedAnywhere = unfinishedIds.filter((u) => !deliveredIn.has(u.item));
-    const missing = unfinishedAnywhere.map((u) => u.item);
+    const missing=[...new Set(unfinishedAnywhere.map(u=>u.item))];
     // 有缺漏条目时整体记未知（覆盖不完整），列出缺漏条目，不给结论码。
-    const reportSummary = missing.length > 0
-      ? `覆盖不完整：${missing.length} 个条目任何一块都没交付（${missing.slice(0, 10).join('、')}），整体结论未知`
-      : verdict === null
-        ? '整体结论未知（各块没有可读结论）'
-        : `整体结论码 ${verdict}、等级 ${level ?? '未给'}（最差那块的，照抄）`;
+    const missingBlocks=finals.flatMap((final,index)=>final===null||final.level===null?[index+1]:[]);
+    const complete=missing.length===0&&missingBlocks.length===0&&verdict!==null;
+    const reportSummary=missing.length>0
+      ? '覆盖不完整：'+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'）；下一步：把缺的条目重新初评、复核后，再开终稿运行'
+      : missingBlocks.length>0
+        ? '第 '+missingBlocks.join('、')+' 块缺少可读的结论或等级；下一步：把这些块复核完成后，再开终稿运行'
+        : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
+    const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null}):null;
+    const full=rendered?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null,foldEmpty:false}):null;
     const reportItem: ProjectedItem = {
       id: 'report',
       label: '评审终稿',
-      summary: reportSummary,
+      summary:reportSummary+(rendered?'；评审表 '+rendered.counts.subitems.length+' 张：get_nodes 读运行记录的 #/items/0/fields/review_tables，原样贴进最终回答':''),
       location: items[0]?.location ?? { slot: VERIFICATIONS_SLOT, parser: 'json@1', selector: `p/${blocks[0]?.base ?? 'body'}/locks/pack` },
       fields: {
         blocks: blocks.length,
-        overall: missing.length > 0 || verdict === null ? null : { verdict, level, reference },
+        overall:complete?{verdict,level,reference}:null,
+        ...(rendered&&full?{review_tables:rendered.markdown,review_tables_full:full.markdown,review_counts:rendered.counts}:{}),
         findings: collectFindings(blocks),
-        missing_items: missing,
+        missing_items:missing,
+        missing_blocks:missingBlocks,
       },
     };
-    return { items: [...items, reportItem], warnings: [] };
+    return { items:[reportItem,...items],warnings:[] };
   });
 }
 
