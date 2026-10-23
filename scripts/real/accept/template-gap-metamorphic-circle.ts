@@ -422,6 +422,16 @@ export default function scenario(gold: GapCircleGold): Scenario {
 
   // The sections are computed lazily (accept-circle.ts reads them after check()); the counts come from the scored
   // copies check() left behind.
+  const reasonCounts = (): Map<string, number> => {
+    const reasons = new Map<string, number>();
+    for (const [key, reason] of unknown) {
+      const weight = key.startsWith('phase2-') ? outerIds[Number(key.split('-')[1])]?.length ?? 1 : 1;
+      reasons.set(reason, (reasons.get(reason) ?? 0) + weight);
+    }
+    for (const finding of checkFindings) if (!unknown.has(finding.runKey)) reasons.set('单用例副本结果不可核对', (reasons.get('单用例副本结果不可核对') ?? 0) + 1);
+    return reasons;
+  };
+  const phaseLines = () => uploadsOfPhase.map((uploads, phase) => `第 ${phase + 1} 段：上传 ${uploads}，运行 ${runsOfPhase[phase]}`);
   const sectionsOf = (): ReportSection[] => {
     const kindOf = (key: string): string => key.replace(/^([a-z])-.*/, '$1');
     const lines: string[] = [];
@@ -434,9 +444,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
       });
       lines.push(`${category.id}（${category.group === 'test_type' ? '类型标签' : '关键词'}）：${parts.join('；')}；当目标 ${targeted} 次`);
     }
-    const sections: ReportSection[] = [{ title: '按类别的计数', lines }];
-    const reasons = new Map<string, number>();
-    for (const reason of unknown.values()) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    const sections: ReportSection[] = [{ title: '分段计数', lines: phaseLines() }, { title: '按类别的计数', lines }];
+    const reasons = reasonCounts();
     const skipped: string[] = [];
     for (const [d, tree] of trees.entries()) {
       const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: singleMissesOf(d), ...(trees.length > 1 ? { other: { tree: trees[(d + 1) % trees.length]!, singleMisses: singleMissesOf((d + 1) % trees.length) } } : {}) });
@@ -459,6 +468,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
       '按命令的覆盖（架构 6a）没核：等产品包的命令抽取（功能缺口，等手册和用例的命令都进树以后再排）',
       '副本作为上传的源文件留在已部署的 Hub 里（只有本人和管理员可见）',
     ],
+    get countLines(): string[] {
+      return [...phaseLines(), ...sectionsOf().find(section => section.title === '按类别的计数')!.lines, ...[...reasonCounts()].map(([reason, count]) => `没做：${reason}：${count} 份`)];
+    },
     get sections(): ReportSection[] {
       return sectionsOf();
     },

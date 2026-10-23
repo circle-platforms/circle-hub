@@ -420,3 +420,17 @@ test('review 21: a real preparation failure removes its isolated token home befo
   assert.ok(!(child.stdout + child.stderr).includes(token));
   assert.deepEqual(readdirSync(temp), []);
 });
+
+test('review 22: explicit screen count lines include phases, categories and not-done reasons', async () => {
+  const { gold } = goldOf(); gold.batch = 4; const scenario = build(gold); const result = drive(scenario);
+  const lines = (scenario as typeof scenario & { countLines?: string[] }).countLines ?? [];
+  assert.ok(lines.includes('第 1 段：上传 4，运行 1'));
+  assert.ok(lines.includes('第 2 段：上传 4，运行 1'));
+  assert.ok(lines.includes('第 3 段：上传 16，运行 4'));
+  assert.equal(lines.filter(line => CATEGORIES.some(category => line.startsWith(category.id + '（'))).length, 24);
+  assert.ok(lines.some(line => line.startsWith('没做：')));
+  const { summaryLines } = await import('../accept-circle.ts');
+  const output = summaryLines(result.checks, lines).join('\n');
+  assert.match(output, /共 [0-9]+ 项核对/); assert.doesNotMatch(output, /合成文档甲|合成甲一|\ba1\b/);
+  assert.deepEqual(summaryLines([{ area: '合成', name: '合成核对', ok: true, expected: 'PRIVATE-SYNTHETIC', actual: 'PRIVATE-SYNTHETIC' }]), ['相符：合成核对', '共 1 项核对，1 项相符，0 项不符']);
+});
