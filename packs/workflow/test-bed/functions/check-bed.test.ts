@@ -30,7 +30,7 @@ function inputOf(parameters: Record<string, unknown>, options: { manifest?: unkn
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
-    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [] } },
+    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] } },
   };
 }
 
@@ -48,7 +48,7 @@ function subjectOf(parameters: Record<string, unknown>, options: { manifest?: un
 
 describe('bedOutcomes support', () => {
   it('search: every item supports with its conclusion', () => {
-    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'client', count: 1 }], hours: 2 } }));
+    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'client', count: 1 }] } }));
     assert.equal(outcomes.length, 1);
     assert.equal(outcomes[0].verdict, 'support');
     assert.equal(outcomes[0].item, 'bed-a');
@@ -65,12 +65,12 @@ describe('bedOutcomes support', () => {
   });
 
   it('acquire: support with the plan, the keys sorted by the projection', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 } }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] } }));
     assert.equal(outcomes[0].verdict, 'support');
     assert.match(outcomes[0].statement, /^预订 bed-a/);
     const data = outcomes[0].data as { keys: string[]; ttl_seconds: number };
     assert.deepEqual(data.keys, ['bed/bed-a/apv0', 'bed/bed-a/client0']);
-    assert.equal(data.ttl_seconds, 7200);
+    assert.equal(Object.hasOwn(data,'ttl_seconds'),false);
   });
 
   const HELD = [
@@ -80,13 +80,13 @@ describe('bedOutcomes support', () => {
   ];
 
   it('extend: support with the held keys and the extension length', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 3 }, { leases: HELD }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD }));
     assert.equal(outcomes.length, 1);
     assert.equal(outcomes[0].verdict, 'support');
-    assert.equal(outcomes[0].statement, '续期 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70，延长 3 小时');
+    assert.equal(outcomes[0].statement, '释放 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70');
     const data = outcomes[0].data as { keys: string[]; ttl_seconds: number };
     assert.deepEqual(data.keys, ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70']);
-    assert.equal(data.ttl_seconds, 10800);
+    assert.equal(Object.hasOwn(data,'ttl_seconds'),false);
   });
 
   it('release: support naming the booking and the keys', () => {
@@ -98,7 +98,7 @@ describe('bedOutcomes support', () => {
 
 describe('bedOutcomes refute and unknown', () => {
   it('refutes a search item whose frozen conclusion contradicts the frozen lease view', () => {
-    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'client', count: 1 }], hours: 2 } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }], edit: (fields) => void (fields.earliest_free = null) }));
+    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'client', count: 1 }] } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }], edit: (fields) => void (fields.earliest_free = null) }));
     assert.equal(outcomes[0].verdict, 'refute');
     assert.equal(outcomes[0].code, 'test-bed.search_mismatch');
     assert.match(outcomes[0].statement, /earliest_free/);
@@ -112,7 +112,7 @@ describe('bedOutcomes refute and unknown', () => {
   });
 
   it('refutes an acquire item with tampered keys and a recomputed plan beside it', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 } }, { edit: (fields) => void (fields.keys = ['bed/bed-a/apv0']) }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] } }, { edit: (fields) => void (fields.keys = ['bed/bed-a/apv0']) }));
     assert.equal(outcomes[0].verdict, 'refute');
     assert.equal(outcomes[0].code, 'test-bed.acquire_mismatch');
     assert.match(outcomes[0].statement, /keys/);
@@ -132,9 +132,9 @@ describe('bedOutcomes refute and unknown', () => {
   ];
 
   it('refutes an extend item with tampered keys', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD, edit: (fields) => void (fields.keys = ['bed/bed-a/apv0']) }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD, edit: (fields) => void (fields.keys = ['bed/bed-a/apv0']) }));
     assert.equal(outcomes[0].verdict, 'refute');
-    assert.equal(outcomes[0].code, 'test-bed.extend_mismatch');
+    assert.equal(outcomes[0].code, 'test-bed.release_mismatch');
     assert.match(outcomes[0].statement, /keys/);
   });
 
@@ -146,13 +146,13 @@ describe('bedOutcomes refute and unknown', () => {
   });
 
   it('refutes an extend item when the frozen view holds nothing any more', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD, edit: (fields) => void (fields.conclusion = fields.conclusion) }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD, edit: (fields) => void (fields.conclusion = fields.conclusion) }));
     assert.equal(outcomes[0].verdict, 'support', 'the unchanged item supports');
-    const tampered = subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD }) as { items: unknown[]; context: { groups: Array<{ leases: { entries: unknown[] } }> } };
+    const tampered = subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD }) as { items: unknown[]; context: { groups: Array<{ leases: { entries: unknown[] } }> } };
     tampered.context.groups[0].leases.entries = [];
     const after = bedOutcomes(tampered);
     assert.equal(after[0].verdict, 'refute');
-    assert.equal(after[0].code, 'test-bed.extend_mismatch');
+    assert.equal(after[0].code, 'test-bed.release_mismatch');
     assert.match(after[0].statement, /没有持有/);
   });
 
@@ -169,7 +169,7 @@ describe('bedOutcomes refute and unknown', () => {
   };
 
   it('search with a build requirement: support naming 声明，未核对, refute on a tampered build verdict', () => {
-    const parameters = { need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 } };
+    const parameters = { need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8' } };
     const good = bedOutcomes(subjectOf(parameters, { manifest: DECLARED }));
     assert.equal(good[0].verdict, 'support');
     assert.match(good[0].statement, /声明，未核对/);

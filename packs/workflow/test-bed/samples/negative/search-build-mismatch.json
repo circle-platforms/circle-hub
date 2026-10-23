@@ -2,7 +2,7 @@
   "id": "search_build_mismatch",
   "source": "author",
   "check": "bed",
-  "note": "合成反例：条目把构建判定写成 unknown（清单里 apv0 明明声明了装机记录，重算应为 match、来源 declared）；检查重算反驳（search_mismatch，differing build_ok、build_source）",
+  "note": "合成反例：search 按冻结清单和租约重算；没有时长上限",
   "subject": {
     "items": [
       {
@@ -14,10 +14,10 @@
           "devices_ok": true,
           "missing": [],
           "earliest_free": null,
-          "build_ok": "unknown",
-          "build_source": "none",
+          "build_ok": "match",
+          "build_source": "declared",
           "spare_devices": 0,
-          "conclusion": "Hub 记录里空闲（未排除本地操作）；构建一致（Rel_APV_10_6_1_8，声明，未核对）"
+          "conclusion": "被改过的搜索结论"
         }
       }
     ],
@@ -25,27 +25,58 @@
       "groups": [
         {
           "action": "search",
-          "need": { "devices": [{ "type": "load-balancer", "count": 1 }], "build": "Rel_APV_10_6_1_8", "hours": 2 },
+          "need": {
+            "devices": [
+              {
+                "type": "load-balancer",
+                "count": 1
+              }
+            ],
+            "build": "Rel_APV_10_6_1_8"
+          },
           "bed": null,
           "addresses": null,
           "booking": null,
+          "reason": "",
+          "devices": null,
           "manifest": {
             "schema": "test-bed-manifest@1",
             "beds": [
               {
                 "name": "bed-a",
                 "devices": [
-                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26"], "ipv6": [], "installed": { "build": "Rel_NSAE_10_6_1_8", "base": "Rel_APV_10_6_1_8" } }
+                  {
+                    "name": "apv0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": [],
+                    "installed": {
+                      "build": "Rel_NSAE_10_6_1_8",
+                      "base": "Rel_APV_10_6_1_8"
+                    }
+                  }
                 ],
                 "services": [],
                 "reserved": []
               }
             ]
           },
-          "leases": { "now": "2026-10-22T02:00:00.000Z", "entries": [] }
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          }
         }
       ]
     }
   },
-  "expect": [{ "verdict": "refute", "code": "test-bed.search_mismatch", "tier": "advisory" }]
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.search_mismatch",
+      "tier": "advisory"
+    }
+  ]
 }
