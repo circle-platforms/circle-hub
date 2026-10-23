@@ -1,3 +1,4 @@
+import type {Environment} from '../../../contracts/generated/vocabulary.ts';
 // The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
 // (the token stored, never printed; a token it cannot store is revoked or said to be live), the operator token from
 // CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
@@ -1331,8 +1332,8 @@ async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'publish', packs.agile]);
   return addImportResource(admin);
 }
-async function addImportResource(admin: Admin): Promise<string> {
-  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api']);
+async function addImportResource(admin: Admin,environment:Environment='test'): Promise<string> {
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', environment, '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api']);
   return /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
 }
 async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<string> {
@@ -1343,7 +1344,7 @@ const importArgs = (file: string, id: string) => ['secret', 'import', '--env-fil
 
 describe('secret import', () => {
   test('imports grouped credentials, hashes the password, shares a key across resources and supports dry run', async () => {
-    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
+    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin,'production');
     const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
     const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
     const args = [...importArgs(file, id), '--key', `PORTAL_USER=${second}/username`];
@@ -1362,7 +1363,7 @@ describe('secret import', () => {
   });
 
   test('review 5: an invalid later resource value is refused before any credential is written', async () => {
-    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin,'production');
     const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
     const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`]);
@@ -1519,7 +1520,7 @@ test('review 1: resource read exposes connector diagnostics only with the explic
 
 
 test('review 5: dry-run and real import validate every value before the first write', async () => {
-  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin,'production');
   for (const value of ['SensitiveCtlPrivate95\tValue', 'X'.repeat(4097)]) {
     secrets.add(value); secrets.add(value.slice(0, 12));
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${value}`);
