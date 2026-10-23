@@ -66,11 +66,13 @@ export function validateChangeReason(reason: unknown, values: readonly string[] 
     if (typeof reason !== 'string' || !reason.trim() || [...reason].length > 500 || scanForCredentials(Buffer.from(reason)).findings.length)
         throw new VariableError('理由必填、至多 500 个字符且不能含凭据；请重写理由');
     for (const value of values)
-        for (const form of secretForms(value))
+        for (const form of secretForms(value)) {
+            if(form.length>0&&reason.includes(form))throw new VariableError('理由不能含密钥或其片段；请重写理由');
             if (form.length >= 8)
                 for (let at = 0; at <= form.length - 8; at++)
                     if (reason.includes(form.slice(at, at + 8)))
                         throw new VariableError('理由不能含密钥或其片段；请重写理由');
+        }
     return reason;
 }
 export class RecordVariables {

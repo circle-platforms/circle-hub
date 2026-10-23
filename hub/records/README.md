@@ -537,3 +537,5 @@ Secret bytes never enter these objects, records or their hashes. Current and pre
 Synthetic regressions include fifty concurrent writers, cross-kind races, coherent two-secret reads, rotation and exact consumer binding, orphan age, missing/altered vault entries and caller-transaction rollback. No schema migration or deployed history is changed.
 
 Secret withdrawal deletes only entries named by grant decisions preceding its revocation. A concurrently prepared or later committed version is not removed. A post-commit cleanup failure explicitly reports that revocation is effective and instructs the administrator to repair storage and repeat the withdrawal. Reversible spellings can be requested from `secretForms(value, {hashes:false})`; general reason redaction also includes digest spellings.
+
+短密钥的理由检查先排除每种写法的完整值，再检查长度至少 8 的连续片段；`--short` 的脱敏提示不豁免完整值检查。拒绝不写决定或密钥条目，也不引用原始理由。
