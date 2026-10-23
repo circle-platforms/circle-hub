@@ -206,7 +206,11 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
  */
 export function looksLikeSignature(text: string): boolean {
   const s = stripNul(text).trim();
-  return s.startsWith('**') && !/[\r\n]/.test(s) && !CJK.test(s) && /[<>{}[\]|]/.test(s);
+  if (!s.startsWith('**') || /[\r\n]/.test(s) || CJK.test(s)) return false;
+  // A bold paragraph with parameter or group syntax, or with a slash inside or between its bold runs (a head the
+  // tree cannot name: ip/ipv6, or two glued commands), is written as a signature: it ends the current command and
+  // hangs at its section (closure finding 18).
+  return /[<>{}[\]|]/.test(s) || /\*\*[^*]+\*\*[/／]+/.test(s) || /\*\*[^*/]*[/／][^*]*\*\*/.test(s);
 }
 
 function commandPath(words: readonly string[]): string | null {

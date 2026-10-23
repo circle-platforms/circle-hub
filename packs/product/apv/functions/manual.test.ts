@@ -611,6 +611,21 @@ describe('placement against the build’s command tree', () => {
     assert.ok(!mentionCell.warnings.some((w) => w.includes('漂移候选')), mentionCell.warnings.join('；'));
   });
 
+
+  it('a bold paragraph with a slash in its head ends the current command and hangs at its section (closure finding 18)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    for (const paragraph of ['**show ip/ipv6 route**', '**demo pool add**/**demo pool mode**']) {
+      const result = produceManualEntries(markdown(`# 章\n\n**demo pool add** *\\<name\\>*\n\n添加成员。\n\n${paragraph}\n\n显示路由信息。\n`), null, { catalog: tree });
+      // The paragraph and the text after it hang at the section node, never at demo pool add.
+      const after = result.entries.filter((entry) => String(entry.statement).includes('显示路由信息'));
+      assert.ok(after.length > 0, paragraph);
+      assert.ok(after.every((entry) => (entry.path ?? '').startsWith('/manual/')), `${paragraph}: ${JSON.stringify(after.map((e) => e.path))}`);
+      const added = result.entries.filter((entry) => String(entry.statement) === '添加成员。');
+      assert.equal(added.length, 1);
+      assert.equal(added[0]!.path, '/commands/demo/pool/add');
+    }
+  });
+
   it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
     // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
     // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.
