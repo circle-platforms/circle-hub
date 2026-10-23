@@ -168,7 +168,7 @@ case-review-verify@1.0.4 改用生成词表的类型及包内运行时快照。�
 suggestion_targets 是判待判定产物的运行级阻断检查，挂在第一个已处理条目，保留 /cross_item/<k> 指针；
 verification 路由两轮修复，suggestions 同时列出这项检查。
 
-初评已受理结果中，qualifier 为 fact、source_role 为 subject、warrant 为 function 的反驳，
-以完整原声明和原 rec: 引用放进投影的 draft_source_facts。处置检查的支持事实把它们原样保存在
+初评已受理结果中，qualifier 为 fact、source_role 为 subject、warrant 为 function，且静态层明确归责 author_input 的反驳，
+以完整原声明、原层结果和原 rec: 引用放进投影的 draft_source_facts。处置检查的支持事实把它们原样保存在
 data.source_facts 并列原引用为根据；不重判、不改生产者或归责。终稿据此单列“Hub 核对”。
 没有这样的反驳时明确保存空列表；缺少此字段的旧复核结果不能当作“没有 Hub 问题”，需用新版复核后重开终稿。

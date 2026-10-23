@@ -79,7 +79,7 @@ describe('the projection of case-review-report', () => {
     assert.match(report.summary??'', /^整体结论码 PARTIAL、等级 P5（最差那块的，照抄）；评审表/);
     assert.deepEqual((out.items ?? []).filter((i) => i.id !== 'report').map((i) => i.id), ['c1', 'c2', 'c3']);
     const c1 = out.items?.find((i) => i.id === 'c1');
-    assert.match(c1?.summary ?? '', /^证实 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
+    assert.match(c1?.summary??'',/^复核发现 1 条；推翻 0 条/);assert.doesNotMatch(c1?.summary??'',/rec:/);
   });
 
   it('joins by the submission pointer but cites the model final at its stored index after Hub facts', () => {
@@ -194,11 +194,11 @@ describe('the projection of case-review-report', () => {
 
     const refutedItem = items.find((i) => i.id === 'case-2-1');
     assert.ok(refutedItem !== undefined);
-    assert.equal(refutedItem.summary, '没有要引用的发现；推翻 1 条');
+    assert.match(refutedItem.summary??'',/^复核发现 0 条；推翻 1 条/);
 
     const partialItem = items.find((i) => i.id === 'case-2-2');
     assert.ok(partialItem !== undefined);
-    assert.match(partialItem.summary ?? '', /^部分正确 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
+    assert.match(partialItem.summary??'',/^复核发现 1 条；推翻 0 条/);
 
     // Extract all citable references from items' summaries
     const citedRefs: string[] = [];
@@ -207,7 +207,8 @@ describe('the projection of case-review-report', () => {
       citedRefs.push(...matches);
     }
     // 45 findings total - 1 refuted = 44 citable references
-    assert.equal(citedRefs.length, 44);
+    assert.equal(citedRefs.length,0,'the final reporter reads the deterministic table instead of retranscribing 44 finding references');
+    assert.equal((report.fields.review_counts as any).total.findings,44);assert.equal((report.fields.review_counts as any).total.refuted,1);
 
     // Verify against overallCheck and reportCheck: passes on first attempt!
     const subject = {
@@ -334,4 +335,12 @@ it('the initial reviewer procedure ends both single-block and multi-block review
   assert.match(skill.split('## 2.')[0],/不分块也.*case-review-report/);
   assert.match(final,/case-review-report/);assert.match(final,/review_tables/);assert.match(final,/原样/);
   assert.doesNotMatch(final,/每条已证实和新增的发现（位置、说明、引文）/);
+});
+
+it('the final procedure reads and preserves every table page before the accepted overall prose',()=>{
+  const skill=readFileSync(new URL('../SKILL.md',import.meta.url),'utf8');
+  assert.match(skill,/不分块也/);assert.match(skill,/#\/items\/0\/fields\/review_tables/);
+  assert.match(skill,/有下一页.*读完/);assert.match(skill,/原文.*追踪/);
+  assert.match(skill,/一个字不改/);assert.match(skill,/## 评审意见/);
+  assert.doesNotMatch(skill,/不需要这个包|每条建议另立|grounds.*一条不漏/);
 });

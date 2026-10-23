@@ -5,8 +5,8 @@
 // The items are the blocks' delivered entries merged per item: an item delivered in one block and unfinished in another
 // counts as delivered (that block wins); an item delivered in two blocks is a hard refusal (the run may not start).
 // The run item is the overall: the worst verdict of the blocks (FAIL > PARTIAL > PASS), the level of the block that gave
-// the worst verdict, unknown when any block's final is missing or unreadable. The report writer cites the blocks'
-// verified, partial and new findings by their rec: references; the checks make sure none is missing and none refuted.
+// the worst verdict; a missing final names the block and the required next action. The report exposes the blocks'
+// findings as a deterministic table; final prose only declares the computed verdict and level.
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord } from './common.ts';
 import {reviewTables,type TableModel} from './tables.ts';
@@ -60,14 +60,10 @@ export type BlockDisposition = { kind: Disposition; reference: string; itemId: s
 
 const KIND_LABEL:Readonly<Record<string,string>>=Object.fromEntries(labels.dispositions.map(row=>[row.code,row.display]));
 
-/** One short line the model reads about the item: finding references to cite, and how many were refuted. */
-export function itemSummaryOf(dispositions: readonly BlockDisposition[]): string {
-  const citable = dispositions.filter((d) => d.kind === 'verified' || d.kind === 'partial' || d.kind === 'new_finding');
-  const refuted = dispositions.filter((d) => d.kind === 'refuted');
-  const citedText = citable.length > 0
-    ? citable.map((d) => `${KIND_LABEL[d.kind]} ${d.reference}`).join('、')
-    : '没有要引用的发现';
-  return `${citedText}；推翻 ${refuted.length} 条`;
+/** One short count line; individual findings are read from the deterministic table, not retranscribed as references. */
+export function itemSummaryOf(dispositions:readonly BlockDisposition[]):string {
+  const refuted=dispositions.filter(disposition=>KIND_LABEL[disposition.kind]==='推翻').length;
+  return '复核发现 '+(dispositions.length-refuted)+' 条；推翻 '+refuted+' 条；逐条内容见评审表';
 }
 
 /** One item claim of a block: a disposition (verified/refuted/partial, data.finding names the draft finding) or a new finding. */
