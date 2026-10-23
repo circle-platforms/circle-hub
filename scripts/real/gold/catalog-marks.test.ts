@@ -338,3 +338,14 @@ test('missing submission identity asks for its canonical digest rather than an u
  const report=catalogMarks({packManifest,tableBytes,argumentTypes:[],treeXml:tree,sourceBytes,run:shown,submissionBytes:bytes,table});
  const gap=report.requests.find(r=>r.pointer==='/latest/result/submission')!;assert.match(gap.fact,/规范 JSON/);assert.ok(!gap.fact.includes('原件字节'));
 });
+
+test('closure B2 a boundary gap leaves the entire item comparison unscored in either citation order', async () => {
+ const {compareCatalogMarks}=await import('./catalog-marks.ts');
+ for(const reverse of [false,true]) {
+  const own=structuredClone(source);own.root.children[0].data.text='配置 widget port 21 后检查\nwidget port 25';
+  const submitted=structuredClone(submission);const commands=[{command:'widget port 21'},{command:'widget port 25'}];if(reverse)commands.reverse();submitted.items[0].slots.findings[0].commands=commands;
+  const report=compareCatalogMarks({treeXml:tree,source:own,submission:submitted,run:run([hubMark('widget port 25',undefined,undefined,reverse?'/phrases/0':'/phrases/1')])});
+  assert.equal(report.missed.length,0);assert.equal(report.extra.length,0);assert.equal(report.expected.length,0);
+  assert.equal(report.summary.not_compared,1);assert.equal(report.not_compared[0].expected.length,1);assert.equal(report.not_compared[0].hub.length,1);
+ }
+});

@@ -242,9 +242,10 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
 
 export interface Mark { item: string; node: string; command: string; code: string; pointer: string; output_error?: string }
 export interface CatalogComparison {
+  not_compared: Array<{item:string;expected:Mark[];negative_expected:Mark[];hub:unknown[]}>;
   expected: Mark[]; observed: Mark[]; supported: Mark[]; missed: Mark[]; extra: Mark[];
   negative_expected: Mark[]; negative_observed: Mark[]; requests: EvidenceRequest[];
-  summary: { cases: number; cited: number; not_quoted: number; unresolved_heads: number; ignored_hub_claims: number; supported: number; missed: number; extra: number; design_gaps: number };
+  summary: { not_compared: number; cases: number; cited: number; not_quoted: number; unresolved_heads: number; ignored_hub_claims: number; supported: number; missed: number; extra: number; design_gaps: number };
 }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -268,7 +269,7 @@ function parseCatalogSource(value: unknown): ReturnType<typeof parseMindMap> {
 
 /** Comparison uses the submitted phrases as its population, never the Hub's refutations as the oracle. */
 export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged'; argumentTypes?: readonly DeclaredArgumentType[] }): CatalogComparison {
-  const report: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
+  const report: CatalogComparison = { not_compared: [], expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { not_compared: 0, cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
   const catalog = readCatalog(input.treeXml, input.argumentTypes), parsed = parseCatalogSource(input.source);
   const cases = caseNodesOf(parsed, { caseRule: input.caseRule }), indices = new Set(cases.map(c => c.index));
   const unique = new Map<string, number>(); parsed.nodes.forEach(node => unique.set(node.id, (unique.get(node.id) ?? 0) + 1));
@@ -353,12 +354,19 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
       }
     });
   });
+  for (const item of boundaryGaps) {
+    report.not_compared.push({item, expected:report.expected.filter(m=>m.item===item), negative_expected:report.negative_expected.filter(m=>m.item===item), hub:[]});
+  }
+  report.expected = report.expected.filter(m=>!boundaryGaps.has(m.item));
+  report.negative_expected = report.negative_expected.filter(m=>!boundaryGaps.has(m.item));
+  report.summary.not_compared = report.not_compared.length;
   const latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
   if (!object(result.partitions)) report.requests.push(request({ input: 'run', pointer: '/latest/result/partitions' }, '最新结构化评审结果', '重新执行 circle-hub run show <本次运行> --json 导出完整结果后重跑'));
   for (const [partition, values] of Object.entries(object(result.partitions) ? result.partitions : {})) array(values).forEach((value, i) => {
     if (!object(value) || typeof value.item !== 'string') return;
     const target = identify(value.item, { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/item` });
-    if (!target || boundaryGaps.has(value.item)) return;
+    if (!target) return;
+    if (boundaryGaps.has(value.item)) { report.not_compared.find(row=>row.item===value.item)!.hub.push(value); return; }
     array(value.requirements).forEach((requirement, j) => {
       if (!object(requirement) || requirement.requirement !== 'catalog') return;
       const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === CATALOG_VALUES.static);
@@ -428,7 +436,7 @@ export function acceptedSubmissionReference(value: unknown): string | null {
 
 /** Receipt checks precede every adjudication. Submission identity uses the declared canonical JSON digest; raw source bytes retain byte identity. */
 export function catalogMarks(input: CatalogInputs): CatalogReport {
-  const empty: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
+  const empty: CatalogComparison = { not_compared: [], expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { not_compared: 0, cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
   const run = object(input.run) ? input.run : {}, record = object(run.run) ? run.run : {}, latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
   const wanted = typeof result.submission === 'string' && /^[0-9a-f]{64}$/.test(result.submission) ? result.submission : null;
   const inputs = { tree_sha256: sha256(input.treeBytes ?? input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : (() => { try { return sha256(canonicalJson(parseJson(input.submissionBytes))); } catch { return null; } })(), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
@@ -500,11 +508,11 @@ export function writeCatalogReport(out: string, report: CatalogReport): void {
   writeFileSync(join(directory, names[1]), JSON.stringify(report.requests, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 }
 export function catalogSummary(report: CatalogComparison): string {
-  return `目录独立核对：一致 ${report.supported.length}，Hub 漏了 ${report.missed.length}，Hub 多了 ${report.extra.length}；反向预期反驳 ${report.negative_expected.length}，反向无归责反驳 ${report.negative_observed.length}；设计缺口 ${report.requests.length}`;
+  return `目录独立核对：一致 ${report.supported.length}，Hub 漏了 ${report.missed.length}，Hub 多了 ${report.extra.length}；未比较条目 ${report.not_compared.length}；反向预期反驳 ${report.negative_expected.length}，反向无归责反驳 ${report.negative_observed.length}；设计缺口 ${report.requests.length}`;
 }
 function emptyGap(at: Position, fact: string, next_action: string): CatalogReport {
   const requests = [request(at, fact, next_action)];
-  return { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests, summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 1 }, inputs: { tree_sha256: null, source_sha256: null, submission_sha256: null, expected_submission_sha256: null, locked_root: null } };
+  return { not_compared: [], expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests, summary: { not_compared: 0, cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 1 }, inputs: { tree_sha256: null, source_sha256: null, submission_sha256: null, expected_submission_sha256: null, locked_root: null } };
 }
 
 export function main(argv: string[], say: (line: string) => void = line => process.stdout.write(line + '\n')): number {
