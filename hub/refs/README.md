@@ -418,3 +418,8 @@ is not interpreted by this model, so hiddenRows is not a statement about column 
 
 Each sheet preserves `relationshipId` and literal `relationshipType`; an empty chartsheet or another opaque part is
 therefore distinguishable from an empty worksheet without guessing from its filename or dropping its identity.
+
+XLSX rejection locations are assigned before central/local member checks. Central framing failures use that central
+record's offset until a validated local header is known; archive-level checks clear member context. The archive retains
+private member-location metadata for part/schema failures. Sheet/row context is selected before interpreting its values;
+boolean checks name the actual attribute. No public filename or source value is needed to locate the failure.

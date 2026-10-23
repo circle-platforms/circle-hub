@@ -439,3 +439,52 @@ test('accepted escaped-value models stay below the full JSON byte budget', () =>
   const document = parseWorkbook({ shared, sheet });
   assert.ok(Buffer.byteLength(JSON.stringify(document.model)) < XLSX_MODEL_BYTE_LIMIT);
 });
+
+function centralRecords(bytes: Buffer): { position: number; local: number; name: string }[] {
+  const records = []; let position = bytes.readUInt32LE(bytes.length - 6);
+  for (let i = 0; i < bytes.readUInt16LE(bytes.length - 12); i++) {
+    const nameLength = bytes.readUInt16LE(position + 28);
+    records.push({ position, local: bytes.readUInt32LE(position + 42), name: bytes.subarray(position + 46, position + 46 + nameLength).toString() });
+    position += 46 + nameLength + bytes.readUInt16LE(position + 30) + bytes.readUInt16LE(position + 32);
+  }
+  return records;
+}
+test('ZIP framing failures identify the current member before reading its header', () => {
+  const base = zip(['a.xml', 'b.xml', 'c.xml'].map(name => ({ name, text: '<x/>' })));
+  const records = centralRecords(base);
+  for (const i of [1, 2]) {
+    const changed = Buffer.from(base); changed.writeUInt32LE(0, records[i]!.position);
+    assert.throws(() => readXlsxArchive(changed), (e: unknown) => e instanceof ParseError && e.offset === records[i]!.position && e.message.includes(`成员 ${i + 1}`));
+  }
+  const end = Buffer.from(base.subarray(-22)); end.writeUInt32LE(end.readUInt32LE(12) + 1, 12);
+  const directory = Buffer.concat([base.subarray(0, -22), Buffer.alloc(1), end]);
+  assert.throws(() => readXlsxArchive(directory), (e: unknown) => e instanceof ParseError && !e.message.includes('成员 3') && e.offset === null);
+  const shifted = Buffer.concat([Buffer.alloc(1), base]); shifted.writeUInt32LE(base.readUInt32LE(base.length - 6) + 1, shifted.length - 6);
+  for (const record of records) shifted.writeUInt32LE(record.local + 1, record.position + 1 + 42);
+  assert.throws(() => readXlsxArchive(shifted), (e: unknown) => e instanceof ParseError && e.offset === 1 && e.message.includes('成员 1'));
+  const encrypted = zip([{ name: 'a.xml', zip64: true, flags: 0x801 }]);
+  assert.throws(() => readXlsxArchive(encrypted), (e: unknown) => e instanceof ParseError && e.offset === centralRecords(encrypted)[0]!.position && e.offset < encrypted.length);
+  refuses(zip([{ name: '/absolute.xml' }]), /绝对路径/);
+});
+test('part and cell refusals carry safe member and sheet-row context', () => {
+  for (const [sheet, reason, row] of [
+    [`<worksheet xmlns="${MAIN}"><sheetData><row r="7"><c r="invalid"/></row></sheetData></worksheet>`, /A1/, 7],
+    [`<worksheet xmlns="${MAIN}"><sheetData><row r="1" customHeight="yes"/></sheetData></worksheet>`, /customHeight/, 1],
+  ] as const) {
+    const bytes = workbook({ sheet }); const record = centralRecords(bytes).find(r => r.name.endsWith('sheet1.xml'))!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && reason.test(e.message) && e.message.includes('成员 5') && e.message.includes('工作表 1') && e.message.includes(`行 ${row}`) && e.offset === record.local);
+  }
+  const bytes = workbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r=1/></sheetData></worksheet>` });
+  const record = centralRecords(bytes).find(r => r.name.endsWith('sheet1.xml'))!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && e.message.includes('成员 5') && e.offset === record.local);
+});
+
+test('workbook and shared-string errors select their own part instead of the last parsed worksheet', () => {
+  for (const options of [
+    { book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet sheetId="1" r:id="sheet"/></sheets></workbook>`, member: 'xl/workbook.xml', ordinal: 3 },
+    { shared: `<sst xmlns="${MAIN}"><si><t>_xD800_</t></si></sst>`, member: 'xl/sharedStrings.xml', ordinal: 6 },
+  ]) {
+    const bytes = workbook(options); const record = centralRecords(bytes).find(r => r.name === options.member)!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && e.offset === record.local && e.message.includes(`成员 ${options.ordinal}`));
+  }
+});
