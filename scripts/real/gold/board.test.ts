@@ -186,3 +186,23 @@ test('--placement sends both facets and placement without needing --types or --c
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the board locator keeps the pack label limits and the pack no-ids rule (closure item 7 probes)', () => {
+  const probe = (labels: string[]): { line: string | null; module: string | null } => { const { line, module } = boardLocate(labels); return { line, module }; };
+  // The pack cuts labels at 1000, not 40: a 45-character module under the train is a module in both.
+  const longModule = '合'.repeat(45);
+  assert.deepEqual(probe(['10.7', '10.7-R1', longModule]), { line: '10.7', module: longModule });
+  // A prefixed name (the prefix carries a digit, as the pack requires) longer than 36 characters keeps its tail.
+  assert.deepEqual(probe(['10.7', '10.7-R1', `A1B-CD2: ${longModule}`]), { line: '10.7', module: longModule });
+  // A bare version-like number is a name for the pack (idsFromTitle finds no id under 4 digits): accepted.
+  assert.deepEqual(probe(['10.7', '10.7-R1', '12']), { line: '10.7', module: '12' });
+  assert.deepEqual(probe(['10.7', '10.7-R1', '1.2.3.4.5']), { line: '10.7', module: '1.2.3.4.5' });
+  // The no-ids rule is ids.ts, not a digit-run: a bug marker with a short id leaves it unplaced.
+  assert.deepEqual(probe(['10.7', '10.7-R1', '缺陷12']), { line: '10.7', module: null });
+  // Story and PLM markers with ids are ids too.
+  assert.deepEqual(probe(['10.7', '10.7-R1', 'story 9001']), { line: '10.7', module: null });
+  assert.deepEqual(probe(['10.7', '10.7-R1', 'PLM 910012']), { line: '10.7', module: null });
+  // A leading 4-7 digit number is an id (a leading year is not).
+  assert.deepEqual(probe(['10.7', '10.7-R1', '1234 合成']), { line: '10.7', module: null });
+  assert.deepEqual(probe(['10.7', '10.7-R1', '2025 计划']), { line: '10.7', module: '2025 计划' });
+});

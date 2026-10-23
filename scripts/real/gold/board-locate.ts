@@ -1,3 +1,4 @@
+import { bugIdsOf } from './cases.ts';
 // The board-side locator of a document's line and module, written from packs/product/apv/README.md 177-180 (the
 // rule the Hub's own grouping follows) — not the case-location rule of locations.ts, whose line/version mismatch
 // and module conventions differ. The labels above a document, outermost first, are scanned only up to the first
@@ -8,7 +9,8 @@ const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
 const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
 const NOT_MODULE = /测试|回归|用例|需求|bug|case|patch|story|plm|提测/i;
 const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*:\s*/;
-const MAX_LABEL = 40;
+// The pack cuts labels at 1000 (locate.ts MAX_LABEL); this gold follows the same limit.
+const MAX_LABEL = 1000;
 
 const squeeze = (text: string): string => text.trim().replace(/\s+/g, ' ');
 
@@ -19,11 +21,29 @@ export function stripPrefix(label: string): string {
   return match ? text.slice(match[0].length).trim() : text;
 }
 
-/** A plain module name: no ids of any kind (a bare number would be one), no version shape, no test-activity word. */
+/** A bug, story or PLM marker followed by its id glue — the marker family of ids.ts. */
+const STORY_MARKER = /(?<![A-Za-z])(?:stor(?:y|ies)|需求单?)/gi;
+const PLM_MARKER = /(?<![A-Za-z])plm/gi;
+const GLUE = /^[\s_\-–—:#.]*/;
+
+/** Ids of one text after one marker family, digit runs 2..9 (the shape bugIdsOf reads). */
+function idsAfterMarker(text: string, marker: RegExp): number {
+  let count = 0;
+  for (const match of text.matchAll(marker)) {
+    let at = (match.index ?? 0) + match[0].length;
+    at += GLUE.exec(text.slice(at))![0].length;
+    if (/^\d{2,9}/.test(text.slice(at))) count += 1;
+  }
+  return count;
+}
+
+/** No ids of any kind, the ids.ts rule: a bug, story or PLM marker followed by 2-9 digits, or a leading 4-7 digit
+ * number (a leading four-digit year is not one). A bare short number is a name for the pack — never an id. */
 function isModuleName(text: string): boolean {
-  if (text === '' || text.length > 40 || NOT_MODULE.test(text) || LINE.test(text) || TRAIN.test(text)) return false;
-  if (/[0-9]{4,}/.test(text)) return false;
-  if (/^[0-9]+(?:\.[0-9]+)*$/.test(text)) return false; // a bare version-like number is not a name
+  if (text === '' || text.length > MAX_LABEL || NOT_MODULE.test(text) || LINE.test(text) || TRAIN.test(text)) return false;
+  if (bugIdsOf(text).length > 0 || idsAfterMarker(text, STORY_MARKER) > 0 || idsAfterMarker(text, PLM_MARKER) > 0) return false;
+  const leading = /^(\d{4,7})/.exec(text);
+  if (leading !== null && !(leading[1]!.length === 4 && Number(leading[1]) >= 1900 && Number(leading[1]) <= 2099)) return false;
   return true;
 }
 
