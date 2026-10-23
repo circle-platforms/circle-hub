@@ -680,6 +680,18 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
         if (described === null) throw new CliError(`没有资源 ${resource.slice(0, 80)}`, '用 circle-hub resource list 查看资源号');
         const credential = described.credentials.find((credential) => credential.name === entry);
         if (credential === undefined) throw new CliError(`资源 ${resource} 没有凭据项 ${entry.slice(0, 80)}`, `它的凭据项是 ${described.credentials.map(item => item.name).join('、') || '（无）'}`);
+        if (basic) {
+          // Inspect the bound system declaration, never infer an authorization target from its display name.
+          const ref = parsePackRef(described.system_pack);
+          const version = ref?.version ? await hub.registry.getVersion(ref.id, ref.version) : null;
+          const declaration = version ? await hub.registry.declarations(version.digest) : null;
+          const auth = declaration?.kind === 'system' ? declaration.system.auth : null;
+          if (credential.digest !== 'plain' || auth?.kind !== 'static_header' || auth.credential !== entry
+            || auth.header.name.toLowerCase() !== 'authorization' || auth.header.scheme !== 'raw') {
+            throw new CliError('Basic 只可写入原样存储整个 Authorization 头的静态凭据项；未写入任何凭据',
+              '用 resource show 核对系统包声明的静态 Authorization 凭据项，再修正 --basic 的目标');
+          }
+        }
         mappings.push({ keys, resource, entry, rule: credential.digest });
       }
     }

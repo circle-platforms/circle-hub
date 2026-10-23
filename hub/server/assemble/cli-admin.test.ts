@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
-import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
+import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
 import { keychainKeyProvider, keychainStore, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
@@ -1321,7 +1321,7 @@ async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<str
 const importArgs = (file: string, id: string) => ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${id}/username`, '--key', `PORTAL_PASSWORD=${id}/password`];
 
 describe('secret import', () => {
-  test('imports grouped credentials, hashes the password, shares a key across resources and supports Basic and dry run', async () => {
+  test('imports grouped credentials, hashes the password, shares a key across resources and supports dry run', async () => {
     const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
     const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
     const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
@@ -1337,10 +1337,7 @@ describe('secret import', () => {
       const by = (await kit.principals.findByName('根管理员'))!;
       assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成导入核对' })).ok, true);
     });
-    const basic = `Basic ${Buffer.from(`reader:${PASSWORD}`).toString('base64')}`; secrets.add(basic); secrets.add(basic.slice(6));
-    // A raw synthetic credential uses the same whole-header storage rule as an authorization credential.
-    await expectOk(admin, ['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${second}/username`]);
-    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.username`)), basic);
+
   });
 
   test('review 5: an invalid later resource value is refused before any credential is written', async () => {
@@ -1534,4 +1531,47 @@ test('review 6: missing and empty keys refuse explicitly with corrective hints a
   assert.match(resource.text, /resource list/);
   const credential = await admin.run(['secret', 'import', '--env-file', missing, '--key', `USER=${id}/absent`]);
   assert.match(credential.text, /它的凭据项是/); assert.doesNotMatch(credential.text, /环境文件/);
+});
+
+
+test('review 8: Basic targets refuse before file access and a static authorization header reaches the stub', async () => {
+  const admin = await setup(); const agileId = await importResource(admin);
+  for (const entry of ['password', 'username']) {
+    const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${agileId}/${entry}`]);
+    assert.equal(refused.code, 1); assert.match(refused.text, /Basic.*原样.*Authorization/);
+    assert.doesNotMatch(refused.text, /环境文件/);
+  }
+  const username = 'SyntheticBasicUser'; const password = 'SyntheticBasicPassword92';
+  const header = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  for (const value of [username, password, header, header.slice(6)]) secrets.add(value);
+  const stub = await startStub((request) => {
+    assert.equal(request.headers.authorization, header);
+    return { headers: { 'content-type': 'text/plain' }, body: 'synthetic read response' };
+  });
+  try {
+    const profile = {
+      schema: 'system@1', title: '合成头值认证', roles: [{ name: 'repository' }],
+      auth: { kind: 'static_header', header: { name: 'Authorization', scheme: 'raw' }, roles: ['repository'], credential: 'authorization' },
+      routes: [{ id: 'document', role: 'repository', method: 'GET', path: '/{id}',
+        params: { id: { type: 'string', maxLength: 40, pattern: '^[a-z0-9-]+$' } }, response: 'text', max_bytes: 4096, read: true }],
+      reads: [{ name: 'document', external: 'synthetic-repo:document', request: { route: 'document', params: { id: '{id}' } } }],
+    };
+    const pack = await writePack(join(packRoot, 'synthetic-basic'), { id: 'demo-basic', version: '1.0.0', kind: 'system',
+      title: '合成头值认证', description: '合成只读认证核对', files: { 'system.json': profile } });
+    await expectOk(admin, ['pack', 'publish', pack.dir]);
+    const added = await expectOk(admin, ['resource', 'add', 'demo-basic', '--name', '合成认证', '--environment', 'test',
+      '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository']);
+    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    const args = (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${id}/authorization`];
+    const colonFile = await importFile(admin, `USER=has:colon\nPASS=${password}`); secrets.add('has:colon');
+    const colon = await admin.run(args(colonFile)); assert.equal(colon.code, 1); assert.match(colon.text, /用户名含冒号/);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    const file = await importFile(admin, `USER=${username}\nPASS=${password}`);
+    await expectOk(admin, [...args(file), '--dry-run']);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    await expectOk(admin, args(file));
+    assert.equal(await withKit(admin, kit => kit.vault.getText(`connector.${id}.authorization`)), header);
+    await expectOk(admin, ['resource', 'read', id, 'document', 'synthetic-file', '--events']);
+    assert.equal(stub.requests.length, 1);
+  } finally { await stub.close(); }
 });

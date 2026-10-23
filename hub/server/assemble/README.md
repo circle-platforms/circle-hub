@@ -128,6 +128,9 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   and duplicate requested active keys, ignores comments/section markers and retains only named keys. Errors disclose no
   path or line content. Each key is reported only as found/absent and length; a missing or empty key prevents every write.
   Basic combines the two named values into the whole authorization header (a colon in the username is refused).
+  Before opening the file it requires the bound system declaration to name that credential as a plain, raw static
+  Authorization header; hashed passwords, login usernames and bearer-prefixed headers are refused. A synthetic
+  static-header pack and loopback stub verify the actual Authorization header on a successful read.
   Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
   credentials are stored. Resources are independent writes: each completed resource is reported immediately, so a later
   resource failure cannot hide an earlier write. Neither raw values, fragments nor digests of values appear in output.
