@@ -117,6 +117,20 @@
         "pattern": "^[a-z][a-z0-9_]{0,40}$"
       }
     },
+    "only": {
+      "description": "the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cut_keys": {
+      "description": "listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "total_keys": {
       "type": "integer",
       "minimum": 0,

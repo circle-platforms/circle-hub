@@ -303,12 +303,19 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     const c2 = b.get('[cmd: net ping] 连通 #100 #200') as string;
     const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects`))).value);
     assert.deepEqual(view.keys, { '100': sorted(c1, c2), '200': [c2] });
+    assert.equal(Object.hasOwn(view, 'only'), false);
+    assert.deepEqual(view.cut_keys, []);
     assert.deepEqual(Object.keys(view.entries), sorted(c1, c2));
     assert.equal(view.entries[c2].reference, `tree:${f.roots.b}/commands/net/ping@${c2}`);
     assert.deepEqual([view.total_keys, view.total_entries, view.truncated], [2, 2, false]);
     assert.equal(view.notes.some((note) => note.startsWith('未归位')), false);
-    const only = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=999,200`))).value);
+    const only = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=999,200,999`))).value);
     assert.deepEqual(only.keys, { '200': [c2] });
+    assert.deepEqual(only.only, ['200', '999']);
+    assert.deepEqual(only.cut_keys, []);
+    const repeated = await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=999,200,999`));
+    const reordered = await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=200,999`));
+    assert.deepEqual(repeated.bytes, reordered.bytes);
     assert.deepEqual([only.total_keys, only.total_entries], [1, 1]);
     assert.ok(only.notes.some((note) => note === '这些取值没有条目：999'));
     const byModule = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=module`))).value);
@@ -463,6 +470,8 @@ export default function many(input: any): unknown {
     assert.deepEqual(Object.keys(index.keys), ['fixed', 'known']);
     assert.equal(index.keys.fixed.length, 2_000);
     assert.equal(index.keys.known.length, 2_000);
+    assert.deepEqual(index.cut_keys, ['fixed', 'known']);
+    assert.ok(index.notes.includes('2 个取值的条目超过 2000 个，只列出按摘要排序的前 2000 个'));
     assert.equal(index.truncated, true);
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
@@ -476,6 +485,7 @@ export default function many(input: any): unknown {
     const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=module`))).value);
     assert.equal(view.truncated, true);
     assert.equal(view.total_keys, 2);
+    assert.deepEqual(view.cut_keys, [], 'whole-key byte-budget omissions are not per-key cuts');
     assert.ok(Object.keys(view.keys).length < 2);
     assert.ok(view.notes.some((note) => /之前为止/.test(note)));
   });

@@ -353,6 +353,12 @@ catalogs, grounds and provenance.
     text of each value (strings as they are, other values as canonical JSON, null and missing never), only the `only`
     values when given (those without entries are noted), keys in code-unit order, built from pairs (a key is always an own
     member), at most MAX_INDEX_PER_KEY digests per key and MAX_INDEX_ENTRIES entries or the byte budget, cut before a key.
+    The optional `only` response field echoes the requested values, deduplicated and sorted in UTF-16 code-unit order;
+    it is absent without the parameter. Generated views always include `cut_keys`: the listed keys cut by the per-key
+    cap, sorted in the same order, or `[]` when none were cut. Whole keys omitted by the byte or entry budget are not
+    per-key cuts. Existing notes about missing requested values and per-key cuts remain. Consumer follow-up:
+    `packs/workflow/defect-to-case` should read these fields instead of parsing the URI or inferring cuts from list length;
+    that consumer change is outside this task.
     With `fields=<name,…>` (only this view) the entries carry only those data fields and an empty statement, the byte
     accounting uses the slimmed size, and the answer records the fields it carries (`fields`) and says so in a note, so a
     big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
@@ -575,7 +581,7 @@ no truncated scan, and remain model-readable. The view's own truncation flag and
 
 | Operation | Database queries | Credential-scanner calls | Credential-scanner bytes |
 | --- | ---: | ---: | ---: |
-| Generate view | 42 | 224 | 219402 |
+| Generate view | 42 | 224 | 219430 |
 | Read stored view | 7 | 0 | 0 |
 
 The 224 scans are 20 accepted sources (45910 bytes, collected once), 200 entries, one index key, the fixed skeleton,

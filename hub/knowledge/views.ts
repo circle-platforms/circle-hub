@@ -677,11 +677,11 @@ export class KnowledgeViews {
       listed: string[];
       /** Entries this key names first. */
       fresh: string[];
+      cut: boolean;
     }
     const kept: Kept[] = [];
     const listedAll = new Set<string>();
     let bytes = 0;
-    let perKeyCut = 0;
     let stoppedAt: string | null = null;
     let proto = 0;
     for (const value of [...keys.keys()].sort(compareText)) {
@@ -698,8 +698,7 @@ export class KnowledgeViews {
         stoppedAt = value;
         break;
       }
-      if (all.length > listed.length) perKeyCut++;
-      kept.push({ value, listed, fresh });
+      kept.push({ value, listed, fresh, cut: all.length > listed.length });
       for (const digest of fresh) listedAll.add(digest);
       bytes += size;
     }
@@ -721,6 +720,7 @@ export class KnowledgeViews {
         const absent = only.filter((value) => !keys.has(value));
         if (absent.length > 0 && keys.size > 0) out.push(`这些取值没有条目：${cutText(absent.slice(0, 20).join('、'), 500)}${absent.length > 20 ? ` 等 ${absent.length} 个` : ''}`);
       }
+      const perKeyCut = kept.slice(0, count).filter((item) => item.cut).length;
       if (perKeyCut > 0) out.push(`${perKeyCut} 个取值的条目超过 ${MAX_INDEX_PER_KEY} 个，只列出按摘要排序的前 ${MAX_INDEX_PER_KEY} 个`);
       if (fields !== null) out.push(`条目只带字段 ${fields.join('、')}（fields 参数），陈述为空`);
       const stop = count < kept.length ? kept[count].value : stoppedAt;
@@ -748,9 +748,11 @@ export class KnowledgeViews {
         // Built from pairs: a key is always an own member, never an assignment to a prototype.
         keys: Object.fromEntries(items.map((item) => [item.value, item.listed])),
         entries,
+        ...(only !== null ? { only: [...new Set(only)].sort(compareText) } : {}),
+        cut_keys: items.filter((item) => item.cut).map((item) => item.value),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: count < kept.length || perKeyCut > 0 || stoppedAt !== null || proto > 0 || excluded.size > 0,
+        truncated: count < kept.length || items.some((item) => item.cut) || stoppedAt !== null || proto > 0 || excluded.size > 0,
         skipped: skippedCount(composition),
         notes: notes(count),
       };
