@@ -36,13 +36,14 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   const authority = html`<p>${link(`/console/runs/${runId}`, '查看运行（权威视图）')}</p>`;
   if (detail.production === null) return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}<p class="empty">还没有校验结果</p>`) };
   const result = detail.production.result;
-  const items = PARTITION.flatMap((p) => result.partitions[p]);
-  const filtered = terminal === undefined ? items : items.filter((item) => item.requirements.some((r) => r.layers.some((l) => l.layer === 'static' && l.terminal === terminal)));
+  const items = PARTITION.flatMap((partition) => result.partitions[partition].map(item=>({partition,item})));
+  const filtered = terminal === undefined ? items : items.filter(({item}) => item.requirements.some((r) => r.layers.some((l) => l.layer === 'static' && l.terminal === terminal)));
   const offset = Number(rawOffset);
   const projections = new Map(detail.run.items.map((item) => [item.id, item]));
   const names = new Map(detail.run.requirements.map((r) => [r.key, r.name]));
-  const rows = filtered.slice(offset, offset + 500).map((item) => [
+  const rows = filtered.slice(offset, offset + 500).map(({partition,item}) => [
     code(item.item), item.label, projections.get(item.item)?.summary ?? '',
+    html`${labelOf('partition',partition)}${'code' in item ? html`：${code(item.code)}` : 'reason' in item ? html`：${labelOf('reason',item.reason)}` : ''}`,
     html`${item.requirements.map((r) => {
       const layer = r.layers.find((l) => l.layer === 'static');
       return html`<div>${r.requirement} ${names.get(r.requirement) ?? ''}：${layer === undefined ? NOT_APPLICABLE : html`<span class="t-${terminalKind(layer)}">${terminalText(layer)}</span>`}${r.claims.map(claimBlock)}</div>`;
@@ -55,5 +56,5 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
 ${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['校验结果记录', code(detail.production.record)]])}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(claimBlock))}
 ${filter}<p>筛选后 ${filtered.length} 个；本页 ${Math.min(offset + 1, filtered.length)}–${Math.min(offset + 500, filtered.length)}</p>
-${table(['编号', '名称', '摘要', '要求项的静态层终态与主张'], rows, '没有条目')}${nav}`) };
+${table(['编号', '名称', '摘要', '分区及原因', '要求项的静态层终态与主张'], rows, '没有条目')}${nav}`) };
 }

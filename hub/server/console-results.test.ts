@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import { after, before, test } from 'node:test';
-import { PARTITION, STATIC_TERMINAL } from '../../contracts/generated/vocabulary.ts';
+import { PARTITION, STATIC_TERMINAL, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';
@@ -46,6 +46,22 @@ test('result page keeps the production record and counts after accepted model co
   assert.match(result.body,new RegExp(original.record));
   assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions)));
   assert.ok(!result.body.includes(stored.latest!.record));assert.ok(!result.body.includes('模型评论独立标记'));
+});
+
+test('each result row retains its partition and partition code or reason',async()=>{
+  const user=await server.createUser('分区');const id=await start(user,'facts',4);const cookie=await login(user);
+  const parts=server.fakes.runs.runs.get(id)!.production!.result.partitions;
+  parts.rejected.push({...parts.delivered.pop()!,code:'synthetic.<reject>'});
+  parts.quarantined.push({...parts.delivered.pop()!,reason:'missing_input'});
+  parts.incomplete.push({...parts.delivered.pop()!,reason:'not_covered'});
+  const result=await send(`/console/results/${id}`,cookie);
+  const rows=[...result.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>match[1]);
+  for(const partition of PARTITION){
+    const item=parts[partition][0];const row=rows.find(row=>row.includes(`<code>${item.item}</code>`))!;
+    assert.ok(row.includes(labelOf('partition',partition)),partition);
+    if('code'in item)assert.match(row,/synthetic\.&lt;reject&gt;/);
+    if('reason'in item)assert.ok(row.includes(labelOf('reason',item.reason)));
+  }
 });
 
 test('production visibility, neutral refusals, admin and list filters', async () => {
