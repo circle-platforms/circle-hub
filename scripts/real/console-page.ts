@@ -13,7 +13,7 @@ export interface PageMetrics {
 
 /** Inspect resource-bearing HTML and CSS syntax, including embedded documents, without following a URL. */
 function externalAddresses(body:string):number {
-  const attributes=new Set(['href','src','srcset','action','formaction','poster','data','ping','background','cite','manifest','icon']);
+  const attributes=new Set(['href','src','srcset','imagesrcset','action','formaction','poster','data','ping','background','cite','manifest','icon']);
   const external=(value:string)=>{
     const address=value.replace(/[\t\r\n]/g,'').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g,'');
     return /^[a-z][a-z0-9+.-]*:/i.test(address)||address.startsWith('//');
@@ -36,19 +36,22 @@ function externalAddresses(body:string):number {
     return newline===undefined?char??'':'';
   });
   const cssTargets=(css:string):string[]=>{
-    const urls:string[]=[];let at=0;
+    const urls:string[]=[];let at=0;const functions:string[]=[];
     const escapeEnd=(start:number)=>{const match=/^\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|\r\n|[\s\S])/i.exec(css.slice(start));return start+(match?.[0].length??1);};
     const skip=()=>{while(at<css.length){if(/\s/u.test(css[at])){at++;continue;}if(css.startsWith('/*',at)){const end=css.indexOf('*/',at+2);at=end<0?css.length:end+2;continue;}break;}};
     const quoted=()=>{const quote=css[at++],start=at;while(at<css.length&&css[at]!==quote)at=css[at]==='\\'?escapeEnd(at):at+1;const value=css.slice(start,at);if(at<css.length)at++;return cssDecode(value);};
     while(at<css.length){
       skip();if(at>=css.length)break;
-      if(css[at]==='"'||css[at]==="'"){quoted();continue;}
+      if(css[at]==='"'||css[at]==="'"){const target=quoted();if(functions.at(-1)==='image-set'||functions.at(-1)==='-webkit-image-set')urls.push(target);continue;}
+      if(css[at]==='('){functions.push('');at++;continue;}
+      if(css[at]===')'){functions.pop();at++;continue;}
       const importing=css[at]==='@';if(importing)at++;
       const word=/^(?:[a-z_-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\r\n\f]))(?:[a-z0-9_-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\r\n\f]))*/i.exec(css.slice(at));
       if(!word){at++;continue;}
       at+=word[0].length;const name=cssDecode(word[0]).toLowerCase();skip();
       if(importing&&name==='import'&&(css[at]==='"'||css[at]==="'")){urls.push(quoted());continue;}
-      if(name!=='url'||css[at]!=='(')continue;
+      if(css[at]!=='(')continue;
+      if(name!=='url'){functions.push(name);at++;continue;}
       at++;skip();
       if(css[at]==='"'||css[at]==="'"){urls.push(quoted());skip();if(css[at]===')')at++;continue;}
       const start=at;while(at<css.length&&css[at]!==')')at=css[at]==='\\'?escapeEnd(at):at+1;
@@ -56,8 +59,22 @@ function externalAddresses(body:string):number {
     }
     return urls;
   };
+  // HTML shared-declarative-refresh-steps: delay, optional separator and URL=, then optional quotes.
+  const refreshTarget=(value:string):string|null=>{
+    let at=0;const skip=()=>{while(at<value.length&&/[\t\n\f\r ]/.test(value[at]))at++;};skip();
+    const start=at;while(at<value.length&&/[0-9]/.test(value[at]))at++;
+    if(at===start&&value[at]!=='.')return null;
+    while(at<value.length&&/[0-9.]/.test(value[at]))at++;
+    if(at<value.length&&!/[;,\t\n\f\r ]/.test(value[at]))return null;
+    skip();if(value[at]===';'||value[at]===',')at++;skip();
+    if(at===value.length)return null;
+    let target=value.slice(at);const prefix=/^url[\t\n\f\r ]*=[\t\n\f\r ]*/i.exec(target);
+    if(prefix)target=target.slice(prefix[0].length);
+    if(target[0]==='"'||target[0]==="'"){const quote=target[0];target=target.slice(1);const end=target.indexOf(quote);if(end>=0)target=target.slice(0,end);}
+    return target;
+  };
   let count=0;
-  const pending:DefaultTreeAdapterMap['node'][]=[parse(body)];
+  const pending:DefaultTreeAdapterMap['node'][]=[parse(body,{scriptingEnabled:false})];
   while(pending.length){
     const node=pending.pop()!;
     if('childNodes' in node)for(const child of node.childNodes)pending.push(child);
@@ -71,12 +88,13 @@ function externalAddresses(body:string):number {
     for(const attribute of node.attrs){
       const name=attribute.name.toLowerCase().split(':').at(-1)!,value=attribute.value;
       if(name==='style')count+=cssTargets(value).filter(external).length;
-      else if(name==='srcdoc')pending.push(parse(value));
-      else if(attributes.has(name))count+=(name==='srcset'?candidates(value):name==='ping'?value.split(/\s+/u):[value]).filter(external).length;
+      else if(name==='srcdoc')pending.push(parse(value,{scriptingEnabled:false}));
+      else if(attributes.has(name))count+=(name==='srcset'||name==='imagesrcset'?candidates(value):name==='ping'?value.split(/\s+/u):[value]).filter(external).length;
+      else if(/url\s*\(/i.test(cssDecode(value)))count+=cssTargets(value).filter(external).length;
     }
     if(node.tagName==='meta'&&values.get('http-equiv')?.trim().toLowerCase()==='refresh'){
-      const target=/(?:^|;)\s*url\s*=\s*([\s\S]*)/i.exec(values.get('content')??'')?.[1].trim().replace(/^["']|["']$/g,'');
-      if(target!==undefined&&external(target))count++;
+      const target=refreshTarget(values.get('content')??'');
+      if(target!==null&&external(target))count++;
     }
   }
   return count;

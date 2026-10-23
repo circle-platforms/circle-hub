@@ -259,13 +259,15 @@ links are fixed paths with encoded query parameters).
   origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
   script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
   values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
-  remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/action/formaction/poster/data,
-  ping/background/cite/manifest/icon, CSS url() and @import in style attributes and style bodies, meta refresh targets,
-  and recursively parsed srcdoc documents. Values with a scheme or protocol-relative address count, including srcset
-  and ping candidates. Displayed text, comments and non-style raw-text bodies are not resource references. Page content,
+  remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/imagesrcset/action/formaction/poster/data,
+  ping/background/cite/manifest/icon, CSS url(), @import and image-set() image strings in styles, SVG presentation url() attributes, meta refresh targets (bare or URL= targets after a semicolon, comma or whitespace),
+  and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address count, including srcset
+  and ping candidates. Displayed text, comments, CSS content/type strings and raw-text bodies such as textarea and script are not resource references. Noscript content is explicitly parsed with scripting disabled. The CSP field reports header presence, as required by the task, and does not validate directive values. Page content,
   paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
   makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
   and real-data checks belong to the integrator.
+
+The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
 
 ## CLI
 

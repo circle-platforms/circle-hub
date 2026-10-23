@@ -54,3 +54,27 @@ test('srcdoc documents are inspected through multiple entity-encoded nesting lev
   assert.equal(summarizePage('<iframe srcdoc="'+attribute(inner)+'"></iframe>').externalAddresses,1);
   assert.equal(summarizePage('<iframe srcdoc="'+attribute('<p>https://192.0.2.1/displayed</p>')+'"></iframe>').externalAddresses,0);
 });
+
+for(const markup of [
+  '<meta http-equiv="refresh" content="0; https://192.0.2.1/">',
+  '<meta http-equiv="refresh" content="0,url=https://192.0.2.1/">',
+  '<meta http-equiv="refresh" content="0 https://192.0.2.1/">',
+  '<meta http-equiv="refresh" content=".5, URL = &quot;//192.0.2.1/a&quot; ignored">',
+  '<link rel="preload" as="image" imagesrcset="/local 1x, https://192.0.2.1/a.png 2x">',
+  `<div style="background-image:image-set('https://192.0.2.1/a.png' 1x)"></div>`,
+  `<style>p{background:-webkit-image-set("https://192.0.2.1/a.png" 2x)}</style>`,
+  '<svg><rect fill="url(https://192.0.2.1/p.svg#g)"/></svg>',
+  '<svg><rect filter="url(https://192.0.2.1/p.svg#g)"/></svg>',
+  '<svg><rect mask="url(https://192.0.2.1/p.svg#g)"/></svg>',
+  '<noscript><img src="https://192.0.2.1/a.png"></noscript>',
+  '<noscript><style>@import "https://192.0.2.1/a.css";</style></noscript>',
+])test('the third review resource form is counted '+markup,()=>{
+  assert.equal(summarizePage(markup).externalAddresses,1);
+});
+
+test('refresh syntax and nested CSS strings distinguish targets from non-resource text',()=>{
+  assert.equal(summarizePage('<meta http-equiv="refresh" content="bad;url=https://192.0.2.1/">').externalAddresses,0);
+  assert.equal(summarizePage(`<style>p{content:"image-set('https://192.0.2.1/a')";background:image-set('/local' 1x type('https://192.0.2.2/not-a-resource'))}</style>`).externalAddresses,0);
+  assert.equal(summarizePage(`<style>p{background:image-set('https://192.0.2.1/a' 1x,url(https://192.0.2.2/b) 2x)}</style>`).externalAddresses,2);
+  assert.equal(summarizePage('<svg><rect fill="url(#local)" filter="u\\72l(https://192.0.2.1/a)"/></svg>').externalAddresses,1);
+});
