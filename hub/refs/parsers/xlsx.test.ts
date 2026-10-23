@@ -281,3 +281,11 @@ test('resolved shared-string text has a separate aggregate cell-model budget bef
   const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(400)}</row></sheetData></worksheet>`;
   badWorkbook({ shared, sheet }, /模型.*单元格文本.*上限/);
 });
+
+test('decoded NULs are removed and counted once at their source in cells, sheet names and defined names', () => {
+  const document = parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="S_x0000_" sheetId="1" r:id="sheet"/></sheets><definedNames><definedName name="N_x0000_">S!A1</definedName></definedNames></workbook>`, sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a_x0000_b</t></is></c></row></sheetData></worksheet>` });
+  assert.equal(document.model.sheets[0].name, 'S'); assert.equal(document.model.definedNames[0].name, 'N');
+  assert.equal(document.model.sheets[0].rows[0].cells[0].text, 'ab');
+  assert.equal(document.model.nulRemoved, 3); assert.equal(document.summary().nulRemoved, 3);
+  assert.ok(!JSON.stringify(document.model).includes('\\u0000'));
+});

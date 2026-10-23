@@ -338,7 +338,7 @@ The generic workbook model is JSON data, independent of any workflow:
   value `text`, `formula` flag and numeric `style` (null when absent). Numbers, booleans, errors and dates stay as text;
   formulas are never evaluated and their value is only the stored cache. A missing cache gives empty text. Inline and
   shared rich-text runs are joined without phonetic annotations; SpreadsheetML escaped strings are decoded once,
-  including escaped underscores. Decoded control characters stay in the value; repaired XML (including raw NUL) is
+  including escaped underscores. Decoded U+0000 is removed and counted in nulRemoved; other decoded control characters stay in the value; repaired XML (including raw NUL) is
   refused rather than silently changed. A decoded unpaired surrogate is an encoding error.
 - `sharedStrings[]`: decoded strings in table order. A missing table or out-of-range referenced index is refused.
 - `definedNames[]`: `name`, `scope` (null for workbook scope, otherwise the zero-based `localSheetId`) and literal
@@ -382,3 +382,6 @@ refused before optional metadata can hide them. Invalid or contradictory path me
 XLSX cell value text has an additional aggregate 32 MiB UTF-8 budget: every resolved shared-string use, inline value
 and v-value is charged before insertion into the model. The shared-string dictionary remains under the ZIP expansion
 cap. A small dictionary referenced many times cannot defer a huge-model failure to sandbox input serialization.
+
+For xlsx@1, nulRemoved counts escaped U+0000 removed once per decoded source string (including shared-string entries,
+sheet names and defined names), rather than once per shared-string use. Raw NUL in XML still refuses as repaired XML.

@@ -286,6 +286,7 @@ export type XlsxSheet = {
   lastRow: number;
 };
 export type XlsxModel = {
+  nulRemoved: number;
   members: {
     name: string;
     size: number;
@@ -338,11 +339,14 @@ function required(element: Element, name: string): string {
   return value!;
 }
 /** SpreadsheetML escaped strings, decoded once so an escaped underscore remains literal. */
-function xstring(value: string): string {
+function decodeXstring(value: string, onNul: (count: number) => void): string {
   const text = value.replace(/_x([0-9A-Fa-f]{4})_/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   if (!text.isWellFormed())
     throw new ParseEncodingError(KEY, 'XLSX 转义字符串含不成对的代理字符');
-  return text;
+  let removed = 0;
+  const clean = text.replace(/\u0000/g, () => { removed++; return ''; });
+  if (removed) onNul(removed);
+  return clean;
 }
 function integer(value: string, what: string, minimum = 0): number {
   if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < minimum)
@@ -412,6 +416,8 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   const limits = effectiveLimits(LIMITS, options);
   checkSize(KEY, bytes, limits);
   const archive = readXlsxArchive(bytes);
+  let nulRemoved = 0;
+  const xstring = (value: string): string => decodeXstring(value, (count) => { nulRemoved += count; });
   if (!archive.has('[Content_Types].xml') || !archive.has('_rels/.rels'))
     syntax('XLSX 缺少工作簿必需部件');
   const cache = new Map<string, Element>();
@@ -638,7 +644,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     }
     sheets.push({ name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
   }
-  const model: XlsxModel = { members, relationships, sheets, sharedStrings, definedNames };
+  const model: XlsxModel = { nulRemoved, members, relationships, sheets, sharedStrings, definedNames };
   const fragments = new Map<string, Fragment>();
   let selectorChars = 0;
   const add = (segments: string[], text: string, data: XlsxCell | XlsxModel['definedNames'][number]): void => {
@@ -670,7 +676,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (selector.startsWith(prefix))
         output.push(selector);
     } return output; },
-    summary() { const cells = sheets.flatMap((sheet) => sheet.rows.flatMap((row) => row.cells)); return { parser: KEY, members: members.length, sheets: sheets.length, rows: sheets.reduce((n, sheet) => n + sheet.rows.length, 0), cells: cells.length, sharedStrings: sharedStrings.length, definedNames: definedNames.length, hiddenSheets: sheets.filter((sheet) => sheet.state === 'hidden' || sheet.state === 'veryHidden').length, hiddenRows: sheets.reduce((n, sheet) => n + sheet.rows.filter((row) => row.hidden).length, 0), formulas: cells.filter((cell) => cell.formula).length, externalRelationships: relationships.filter((relationship) => relationship.external).length }; },
+    summary() { const cells = sheets.flatMap((sheet) => sheet.rows.flatMap((row) => row.cells)); return { parser: KEY, nulRemoved, members: members.length, sheets: sheets.length, rows: sheets.reduce((n, sheet) => n + sheet.rows.length, 0), cells: cells.length, sharedStrings: sharedStrings.length, definedNames: definedNames.length, hiddenSheets: sheets.filter((sheet) => sheet.state === 'hidden' || sheet.state === 'veryHidden').length, hiddenRows: sheets.reduce((n, sheet) => n + sheet.rows.filter((row) => row.hidden).length, 0), formulas: cells.filter((cell) => cell.formula).length, externalRelationships: relationships.filter((relationship) => relationship.external).length }; },
   };
 }
 export const xlsxParser: Parser<XlsxModel> = { id: 'xlsx', version: 1, mediaTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel.sheet.macroEnabled.12'], limits: LIMITS, parse };
