@@ -8,6 +8,8 @@ import { goodData, subjectOf, QUOTE, CATALOG_SPEC } from '../functions/test-supp
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
+  {name:'ipv4-mapped-off-bed',check:'bed_addresses',code:'address_off_bed',change:v=>{v.steps[0].args=['widget address ::ffff:192.0.2.250'];}},
+  {name:'leading-zero-address',check:'bed_addresses',code:'address_notation',change:v=>{v.steps[0].args=['widget address 192.000.002.250'];}},
   {name:'cidr-source-replacement',check:'bed_addresses',code:'replacement_missing',change:v=>{v.steps[0].args=['widget address 192.0.2.200/26'];v.replacements=[{case:'192.0.2.200',bed:'192.0.2.90'}];v.expects[0].quote.text='原文 192.0.2.200 健康检查间隔设置成功';}},
   {name:'cidr-interface',check:'bed_addresses',code:'address_off_bed',change:v=>{v.steps[0].args=['widget address 192.0.2.250/26'];}},
   {name:'cidr-url-path',check:'bed_addresses',code:'address_off_bed',change:v=>{v.steps[1].args=['curl 192.0.2.250/1'];}},

@@ -6,7 +6,7 @@ import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
-import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasAmbiguousIpv4 } from './addresses.ts';
+import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasNoncanonicalDottedQuad, hasAmbiguousIpv4 } from './addresses.ts';
 interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -69,7 +69,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
   }
   const examine = (value: string, pointer: string, device: string | null, role?: string): void => {
-    if (role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '主机命令含非标准 IPv4 数字记法，无法唯一核对目标；如为地址请写标准点分四段，如非地址请拆出并明确用途', pointer));
+    if (hasNoncanonicalDottedQuad(value) || role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '主机命令含非标准 IPv4 数字记法，无法唯一核对目标；如为地址请写标准点分四段，如非地址请拆出并明确用途', pointer));
     for (const address of literalAddresses(value)) {
       if (!isHostLiteral(address, value, bed)) continue;
       count++;

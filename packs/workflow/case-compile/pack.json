@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "ce1424e949a1020f85fc1b590c32e559882da1a4932107bab3035df3de439c14",
-      "size": 4094
+      "sha256": "f9f28fc8f6bb13fea6058aed926e681ca21ffd5b501f87a9877be8835091188d",
+      "size": 4441
     },
     {
       "path": "functions/bed.ts",
@@ -68,13 +68,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "9dd533b692e477c5791ccc42fe619e4d8f1b7c4807ac9d6e5b5d724af607c12b",
-      "size": 13368
+      "sha256": "9a00d1760b54293da79f06e6287ffa661c8c9d0c78216be19b12eca2b46b3caf",
+      "size": 13431
     },
     {
       "path": "functions/manifest.ts",
-      "sha256": "eda6882c4970e596e5ac55ee341450343579525a7f10bf0c29d49e1547728ccb",
-      "size": 15803
+      "sha256": "759f8ee74fe08c227d9c91be549f19895af7b8b449deb2cb4a284fd7e64fc2bd",
+      "size": 16132
     },
     {
       "path": "functions/profile.ts",
@@ -215,6 +215,16 @@
       "path": "samples/negative/indexed-placeholder.json",
       "sha256": "34d3a100326423c8268566318c473199482b2406f40babb8210ca294cea6a4cc",
       "size": 14579
+    },
+    {
+      "path": "samples/negative/ipv4-mapped-off-bed.json",
+      "sha256": "e176ca740de6fb2829dcf114b524a3090c0602161b19080d20fff5f8c765e420",
+      "size": 14605
+    },
+    {
+      "path": "samples/negative/leading-zero-address.json",
+      "sha256": "3d2d9804ecd9f4ddaaad24aa084b55b5d7fabca7f0981040fc5ef223c78d3603",
+      "size": 14605
     },
     {
       "path": "samples/negative/method-forbidden.json",
@@ -400,6 +410,16 @@
       "path": "samples/positive/indexed-placeholder.json",
       "sha256": "9c8df921f1cd03f58225637ef0bec07648720d2328e0a84818fd86254d53ece9",
       "size": 14553
+    },
+    {
+      "path": "samples/positive/ipv4-mapped-off-bed.json",
+      "sha256": "10e43920c3723abed5547ba9be641fd16515ae1d2dd9b047fcce8bcaa88a774c",
+      "size": 14552
+    },
+    {
+      "path": "samples/positive/leading-zero-address.json",
+      "sha256": "abaad62e080983a4fe867fdb420a7bc4823fe05ba3a5f5c4e747478ac455b310",
+      "size": 14554
     },
     {
       "path": "samples/positive/method-forbidden.json",
