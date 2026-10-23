@@ -1300,3 +1300,73 @@ describe('help', () => {
     assert.match(help.text, /operator-token\s+set   从标准输入读一个启用中的管理员的令牌/);
   });
 });
+
+async function importResource(admin: Admin): Promise<string> {
+  await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+  await expectOk(admin, ['pack', 'publish', packs.agile]);
+  return addImportResource(admin);
+}
+async function addImportResource(admin: Admin): Promise<string> {
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api']);
+  return /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+}
+async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<string> {
+  const path = join(admin.deployment.dataDir, 'synthetic.env');
+  await writeFile(path, bytes, { mode: 0o600 }); return path;
+}
+const importArgs = (file: string, id: string) => ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${id}/username`, '--key', `PORTAL_PASSWORD=${id}/password`];
+
+describe('secret import', () => {
+  test('imports grouped credentials, hashes the password, shares a key across resources and supports Basic and dry run', async () => {
+    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
+    const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
+    const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
+    const args = [...importArgs(file, id), '--key', `PORTAL_USER=${second}/username`];
+    const dry = await expectOk(admin, [...args, '--dry-run']); assert.match(dry.text, /PORTAL_USER：找到，长度 6/);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    const result = await expectOk(admin, args); assert.match(result.text, /Base64\(SHA-512\)/);
+    await withKit(admin, async (kit) => {
+      assert.equal(await kit.vault.getText(`connector.${id}.password`), passwordDigest(PASSWORD));
+      assert.equal(await kit.vault.getText(`connector.${second}.username`), 'reader');
+      for (const name of await kit.vault.list()) assert.ok(!(await kit.vault.getText(name))?.includes(unrelated));
+      const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
+      const by = (await kit.principals.findByName('根管理员'))!;
+      assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成导入核对' })).ok, true);
+    });
+    const basic = `Basic ${Buffer.from(`reader:${PASSWORD}`).toString('base64')}`; secrets.add(basic); secrets.add(basic.slice(6));
+    // A raw synthetic credential uses the same whole-header storage rule as an authorization credential.
+    await expectOk(admin, ['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${second}/username`]);
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.username`)), basic);
+  });
+
+  test('missing and commented keys write nothing, malformed files disclose no values or paths', async () => {
+    const admin = await setup(); const id = await importResource(admin);
+    const value = 'SyntheticMalformedValue58'; secrets.add(value); secrets.add(value.slice(0, 12));
+    for (const bytes of [`PORTAL_USER=${value}\n# PORTAL_PASSWORD=${value}\n`, `PORTAL_USER=${value}\nPORTAL_USER=${value}\n`, `PORTAL_USER=${value}\0\n`, Buffer.from([0xff, 0xfe]), `PORTAL_USER=${value}\n${'x'.repeat(65536)}`]) {
+      const file = await importFile(admin, bytes); const result = await admin.run(importArgs(file, id));
+      assert.equal(result.code, 1); assert.ok(!result.text.includes(file)); assert.ok(!result.text.includes(value.slice(0, 12)));
+      assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    }
+    const file = await importFile(admin, `PORTAL_USER=has:colon\nPORTAL_PASSWORD=${value}`); secrets.add('has:colon');
+    assert.equal((await admin.run(['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${id}/username`])).code, 1);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+  });
+
+  test('authorization, vault and every target are checked before opening the environment file', async () => {
+    const admin = await setup(); const id = await importResource(admin); const missingFile = join(admin.deployment.dataDir, 'must-not-open');
+    for (const mapping of [`PORTAL_USER=res_00000000000000000000000000/username`, `PORTAL_USER=${id}/absent`]) {
+      const refused = await admin.run(['secret', 'import', '--env-file', missingFile, '--key', mapping]);
+      assert.equal(refused.code, 1); assert.doesNotMatch(refused.text, /环境文件/);
+    }
+    const duplicate = await admin.run([...importArgs(missingFile, id), '--key', `OTHER=${id}/username`]);
+    assert.notEqual(duplicate.code, 0); assert.doesNotMatch(duplicate.text, /环境文件/);
+    const user = await userWithToken(admin, '导入普通用户');
+    assert.match((await admin.run(importArgs(missingFile, id), { [OPERATOR_TOKEN_VARIABLE]: user })).text, /管理员/);
+    admin.tokens!.value = null;
+    assert.match((await admin.run(importArgs(missingFile, id))).text, /没有找到/);
+    const noKey = await setup({ deployment: { key: false } }); const noKeyId = await importResource(noKey);
+    assert.match((await noKey.run(importArgs(missingFile, noKeyId))).text, /主密钥不可用/);
+    const dry = await noKey.run([...importArgs(missingFile, noKeyId), '--dry-run']);
+    assert.match(dry.text, /环境文件/); assert.doesNotMatch(dry.text, /主密钥不可用/);
+  });
+});

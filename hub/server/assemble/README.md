@@ -114,13 +114,23 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Cutting off one's own token.** `token revoke` of the operator token's own token and `user disable` of its own account
   are carried out (revocation must stay possible for a leak); afterwards the command says on stderr that the operator token
   no longer works and how to get a new one (`operator-token reissue`, after deleting the dead item).
-- **Secrets** come from stdin only (a terminal reads without echo: special keys such as arrows, function keys and the
+- **Secrets**: `secret set` reads from stdin only (a terminal reads without echo: special keys such as arrows, function keys and the
   bracketed-paste markers are not text, backspace deletes, Ctrl-U clears, a terminal that closes first refuses; a pipe or
   file is read whole, one trailing line break removed). The resource and the credential are checked before a value is
   asked for (`ResourceAdmin.describe`: the credential names and digest rules, never a value). A credential is stored by
   `ResourceAdmin.setCredential`, which keeps a `sha512_base64` credential (the agile portal's password) as
   Base64(SHA-512(value)) only; the output names the rule, never the value.
   `secret list` prints entry names and what they are, never a value, a length or a digest.
+  The plan's “secrets import” is implemented as `secret import` (no plural alias):
+  `secret import --env-file <file> --key <KEY>=<resource>/<credential>… [--basic <USER_KEY>:<PASSWORD_KEY>=<resource>/<credential>] [--dry-run]`.
+  It requires an admin token and, except for dry run, a usable vault key before opening the file. All resource/credential
+  targets and duplicate targets are checked first. The reader accepts only a plain UTF-8 file up to 64 KiB, rejects NUL
+  and duplicate requested active keys, ignores comments/section markers and retains only named keys. Errors disclose no
+  path or line content. Each key is reported only as found/absent and length; a missing or empty key prevents every write.
+  Basic combines the two named values into the whole authorization header (a colon in the username is refused).
+  Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
+  credentials are stored. Neither raw values, fragments nor digests of values appear in output.
+
 - **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
   the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
   when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
