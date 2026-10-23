@@ -11,7 +11,7 @@ export interface TableInput {
   overall:{verdict:string;level:string|null};preconditionPriority:number|null;foldEmpty?:boolean;
 }
 export interface ReviewCount {cases:number;affectedCases:number;findings:number;severity:Record<string,number>;suggestions:number;refuted:number;hubChecks:number}
-export interface ReviewCounts {total:ReviewCount;subitems:Array<{selector:string;name:string;counts:ReviewCount}>;cross:ReviewCount}
+export interface ReviewCounts {characters:{total:number;subitems:Array<{selector:string;start:number;end:number}>};total:ReviewCount;subitems:Array<{selector:string;name:string;counts:ReviewCount}>;cross:ReviewCount}
 type Kind='finding'|'suggestion'|'refuted'|'hub';
 interface Note {kind:Kind;node:number;owner:number;order:number;record:string;text:string;rank:string|null;code:string|null;disposition:string|null;probe:string|null;unlocated?:boolean}
 interface Place {row:number|null;group:number|null}
@@ -153,7 +153,7 @@ export function reviewTables(input:TableInput):TableResult {
     const parts:string[]=[];for(let at:number|null=group;at!==null&&at!==0;at=model.nodes[at].parent)parts.unshift(model.nodes[at].text);return parts.join(' › ');
   };
   const subitems=[...groups].sort(([a],[b])=>a-b).map(([group,rows])=>({selector:model.nodes[group].selector,name:nameOf(group),counts:count(rows,notes.filter(note=>note.group===group))}));
-  const cross=notes.filter(note=>note.group===null),counts:ReviewCounts={total:count(ordered,notes),subitems,cross:count([],cross)};
+  const cross=notes.filter(note=>note.group===null),counts={total:count(ordered,notes),subitems,cross:count([],cross)};
   const models=[...new Set(input.blocks.flatMap(block=>records(block.result.cross_item).filter(claim=>claim.qualifier?.nature===JUDGMENT&&claim.warrant?.producer===MODEL&&labels.finalCodes.some(code=>code.code===claim.statement?.code)).map(claim=>text(claim.warrant.id))))].sort(byText);
   const lines=[
     '## 用例评审结果：'+escapeTableText(model.nodes[0].text),
@@ -161,9 +161,11 @@ export function reviewTables(input:TableInput):TableResult {
     '- '+summary(counts.total)+'；初评发现被复核推翻 '+counts.total.refuted+' 条',
     '- 用例原文逐字取自 src:'+digest+'，原文的换行显示为 ↵；发现和建议是复核方（'+escapeTableText(models.join('、')||'结论未声明模型，须补交声明后重新复核')+'）的判断，原样列出，内容未经平台验证；Hub 核对列为已存的字面和目录事实，位置、引文和处置已由 Hub 核对',
   ];
+  const headings:Array<{selector:string;title:string}>=[];
   for(const [ordinal,group] of [...groups.keys()].sort((a,b)=>a-b).entries()){
     const rows=groups.get(group)!,own=notes.filter(note=>note.group===group),groupCount=subitems[ordinal].counts;
     const heading='### '+(ordinal+1)+'. '+escapeTableText(nameOf(group));
+    headings.push({selector:model.nodes[group].selector,title:heading});
     if(input.foldEmpty!==false&&!own.some(note=>note.kind!=='refuted')){lines.push('',heading+' —— 用例 '+rows.length+' 个，无发现');continue;}
     lines.push('',heading,summary(groupCount),'','| 序号 | 用例原文 | Hub 核对 | 评审发现 | 改进建议 |','| --- | --- | --- | --- | --- |');
     for(const [row,index] of rows.entries()){
@@ -177,5 +179,9 @@ export function reviewTables(input:TableInput):TableResult {
     if(sub.some(note=>note.kind==='suggestion'))lines.push('子项上的建议：'+list(sub,'suggestion'));
   }
   lines.push('','### 跨子项（落在文档或更上层的节点上）','- 发现：'+list(cross,'finding'),'- Hub 核对：'+list(cross,'hub'),'- 建议：'+list(cross,'suggestion'));
-  return {markdown:lines.join('\n')+'\n',counts};
+  const markdown=lines.join('\n')+'\n';let search=0;
+  const starts=headings.map(heading=>{const start=markdown.indexOf('\n'+heading.title,search)+1;search=start+heading.title.length;return {selector:heading.selector,start};});
+  const crossStart=markdown.lastIndexOf('\n### 跨子项')+1;
+  const ranges=starts.map((entry,index)=>({...entry,end:starts[index+1]?.start??crossStart}));
+  return {markdown,counts:{...counts,characters:{total:markdown.length,subitems:ranges}}};
 }

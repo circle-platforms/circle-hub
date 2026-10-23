@@ -29,6 +29,7 @@ nav_order: 5
   - `case-review-report`（终稿）：verifications 每块给一条复核已受理结果的 rec: 引用，target 必填且与各块源摘要相同，precondition_priority 与初评一致（默认 3，null 关闭）。
 - **提示这样写**（编号是占位）：「用 Hub 评审脑图 <文档编号>，先初评，换会话和模型家族独立复核；最后开终稿运行，把 Hub 排出的表原样贴出，再写简短评审意见。」
 - **读表与最终回答**：终稿条目固定在序号 0；从回答“完整的槽位模式”一行复制运行记录引用，用 get_nodes 读 `<运行记录>#/items/0/fields/review_tables`。有下一页就接着读完；每页只取“原文…”之后、页末说明及追踪之前的内容，原样逐页贴出，不改字、不合并格；排除“接上页”协议提示，行中续读不要额外换行。然后写“## 评审意见”，贴已提交并受理的简短正文及证据缺口，最后一行给控制台运行页。终稿不再另写建议或逐条转录发现。
+- **回答放不下时**：按冻结的 review_counts.characters 边界只贴可容纳的完整子项，明确“部分：已贴 X/N 张子项表，C/T 个原文字符”，空行结束表格并给控制台运行页及完整原记录；不要静默丢掉其余内容，也不要声称未读页已读完。
 - **表的范围与性质**：按用例上一层的测试子项分表，嵌套用例跟随外层用例的子项；没有发现的子项折成一行，有问题或建议的保留整表。完整表与折叠表不同时另存 review_tables_full；否则 review_tables 本身即完整表。两者都可从控制台运行页的通用字符串字段区读取。原文来自目标脑图，模型发现与建议原样列出且标明未经平台验证；“Hub 核对”另列已存、归责作者输入的字面与目录事实。
 - **已知边界与下一步**：只排各块已交付用例，不等于整份脑图都覆盖。缺块结论、等级、条目或 Hub 快照时不排表；先按摘要指示补齐、重新初评或复核，再开终稿，不在未完成状态交出结论。实际业务执行事实（足迹）不由这份评审证明；真实 Circle 展示由集成者验收。
 - 详见：[case-review](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review/README.md)、[case-review-verify](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review-verify/README.md)、[case-review-report](https://github.com/circle-platforms/circle-hub/blob/main/packs/workflow/case-review-report/README.md)。

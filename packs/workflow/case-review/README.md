@@ -452,3 +452,5 @@ node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 
 评审最后一步（决定 35，集成者 2026-10-23）：不分块也开 case-review-report，target 与各块一致，precondition_priority 沿用初评。
 按终稿包说明逐页读取并原样贴出 review_tables，再写简短评审意见、等级理由和证据缺口，不逐条转录发现或另写建议。
+
+评审最后一步照终稿包的容量协议：放不下整表时依据冻结字符边界标明部分、已贴范围，并给权威运行页与完整记录，不能静默截断。

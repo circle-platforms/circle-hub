@@ -409,3 +409,11 @@ it('records the authorization provenance of the generic core string field render
   const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');assert.match(readme,/决定 42/);assert.match(readme,/7010ab84/);assert.match(readme,/ea5328d1/);
   const source=readFileSync(new URL('../../../../hub/server/console/pages.ts',import.meta.url),'utf8');assert.doesNotMatch(source,/review_tables|case-review-report/);
 });
+
+it('final answer capacity limits disclose pasted table and character counts with authoritative recovery links',()=>{
+  const skill=readFileSync(new URL('../SKILL.md',import.meta.url),'utf8');assert.match(skill,/部分：已贴.*子项表.*原文字符/);assert.match(skill,/review_counts\.characters/);assert.match(skill,/review_tables_full/);assert.match(skill,/一张完整表也放不下.*0\//);assert.match(skill,/控制台运行页/);
+});
+
+it('the initial reviewer final step also marks capacity-limited tables as partial',()=>{
+  const skill=readFileSync(new URL('../../case-review/SKILL.md',import.meta.url),'utf8').split('## 7. 报告')[1].split('## 参数')[0];assert.match(skill,/部分/);assert.match(skill,/review_counts\.characters/);
+});

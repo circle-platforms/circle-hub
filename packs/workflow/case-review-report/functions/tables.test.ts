@@ -171,3 +171,13 @@ test('an undelivered nested case and its expected subtree never enter the outer 
   const result=reviewTables({...input(model,[block(['outer'])]),foldEmpty:false});const row=result.markdown.split('\n').find(line=>line.startsWith('| 1 |'))!;
   assert.ok(!row.includes('未交付内层'));assert.ok(!row.includes('内层期望'));assert.ok(row.includes('普通步骤'));assert.ok(row.includes('步骤期望'));assert.equal(result.counts.total.cases,1);
 });
+
+test('frozen character boundaries identify complete subitem prefixes for partial final answers',()=>{
+  const result=reviewTables({...input(),foldEmpty:false});const characters=result.counts.characters;
+  assert.ok(characters);assert.equal(characters.total,result.markdown.length);assert.equal(characters.subitems.length,result.counts.subitems.length);
+  for(const [index,range]of characters.subitems.entries()){
+    assert.equal(range.selector,result.counts.subitems[index].selector);assert.ok(result.markdown.slice(range.start,range.end).startsWith(`### ${index+1}.`));
+    assert.ok(result.markdown.slice(0,range.end).endsWith('\n'));
+    assert.ok(result.markdown.slice(range.end).startsWith(index+1<characters.subitems.length?`### ${index+2}.`:'### 跨子项'));
+  }
+});
