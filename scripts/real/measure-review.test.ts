@@ -410,3 +410,11 @@ test('closure B1 untouched negative expected refutation has no attribution and i
  const report=JSON.parse(readFileSync(join(f.out,'r1/catalog/catalog-marks.json'),'utf8'));
  assert.equal(report.negative_observed.length,1);assert.equal(report.extra.length,0);
 });
+
+test('closure B8 another checkout is refused before output or sessions exist',t=>{
+ const f=catalogFixture(t);const checkout=join(f.out,'another-checkout');mkdirSync(join(checkout,'.git'),{recursive:true});
+ const target=join(checkout,'new-output');assert.equal(outAllowed(target),false);
+ let calls=0;const driver={...f.driver,review:()=>{calls++;throw new Error('must not start');}};
+ assert.throws(()=>measureReview({...options(target),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes},driver,()=>{}),e=>e instanceof Error && 'reason' in e && e.reason==='path_in_git');
+ assert.equal(calls,0);assert.throws(()=>statSync(target));
+});

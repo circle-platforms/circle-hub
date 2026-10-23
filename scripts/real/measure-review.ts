@@ -16,11 +16,11 @@ import { PublicRefusal, type PublicRefusalReason, recordRefusal, refusalSummary 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
-import { readArgumentTypes, acceptedSubmissionReference, CatalogInputError, CatalogOutputError, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport, type DeclaredArgumentType } from './gold/catalog-marks.ts';
+import { outsideGit, readArgumentTypes, acceptedSubmissionReference, CatalogInputError, CatalogOutputError, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport, type DeclaredArgumentType } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -227,6 +227,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
 }
 
 export function measureReview(options: MeasureOptions, drivers: Drivers, say: (line: string) => void = () => {}): number {
+  outsideGit(options.out);
   if (existsSync(options.out) && readdirSync(options.out).some(name => /^r[0-9]+$/.test(name) || ['catalog-preflight','mutated.json','gold.json','literal.json'].includes(name))) throw new CatalogOutputError('output_exists');
   // 1. The copy, the gold and the independent answer — always computed, never skipped.
   let tree = JSON.parse(readFileSync(options.source, 'utf8')) as MindTree;
@@ -388,9 +389,8 @@ const verifyCodeJson = (drivers: Drivers, review: { calls: string }, dir: string
 
 /** Refuses an --out inside the repository: the copy, the gold and the run evidence hold real content. */
 export function outAllowed(out: string): boolean {
-  const absolute = isAbsolute(out) ? resolve(out) : resolve(process.cwd(), out);
-  const repo = resolve(import.meta.dirname, '../..');
-  return !(absolute === repo || absolute.startsWith(`${repo}/`));
+  try { outsideGit(out); return true; }
+  catch (error) { if (error instanceof CatalogOutputError) return false; throw error; }
 }
 
 function main(): number {

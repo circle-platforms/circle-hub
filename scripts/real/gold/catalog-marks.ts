@@ -508,7 +508,7 @@ export function readDeclaration(file?: string, manifestFile?: string): { table: 
   return { table: parseJson(bytes), bytes, manifest: parseJson(readKnownInput(manifestFile ?? new URL('../../../packs/workflow/case-review/pack.json', import.meta.url))) };
 }
 
-function outsideGit(path: string): string {
+export function outsideGit(path: string): string {
   const absolute = resolve(path);
   const check = (start: string): void => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new CatalogOutputError('path_in_git'); if (dirname(at) === at) break; } };
   check(absolute);
