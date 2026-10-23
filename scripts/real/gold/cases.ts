@@ -23,6 +23,8 @@ export interface GoldNode {
   resource: string[];
   /** The raw tag entries as text (blank strings kept, finite numbers and booleans as text) — what the index keeps. */
   rawTags: string[];
+  /** The pack's isTagged: a non-empty resource array, whatever the entries are (null and object entries included). */
+  tagged: boolean;
   priority: number | null;
   /** The text labels of the ancestors of this node, outermost (the root) first. */
   ancestors: string[];
@@ -53,7 +55,7 @@ export function parseMindMap(value: unknown): GoldMap {
     const priority = typeof record.priority === 'number' && Number.isInteger(record.priority) ? record.priority : null;
     const childrenRaw = (raw as { children?: unknown }).children;
     const index = nodes.length;
-    nodes.push({ index, id, text, resource, rawTags: resourceTags, priority, ancestors, children: [], parent });
+    nodes.push({ index, id, text, resource, rawTags: resourceTags, tagged: resourceRaw.length > 0, priority, ancestors, children: [], parent });
     const list = Array.isArray(childrenRaw) ? childrenRaw : [];
     for (const child of list.slice(0, 1000)) {
       nodes[index].children.push(walk(child, index, [...ancestors, text]));
@@ -178,7 +180,8 @@ export function caseNodesOf(
   const holds = new Uint8Array(n);
   for (let v = n - 1; v > 0; v--) {
     const node = nodes[v];
-    const isTagged = node.resource.length > 0;
+    // The same shared rule as the role pass (closure item 10): never the filtered non-blank list here.
+    const isTagged = node.tagged;
     if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
       if (node.parent !== null) holds[node.parent] = 1;
     }
@@ -191,7 +194,7 @@ export function caseNodesOf(
     const parent = node.parent;
     const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
     within[v] = inside;
-    if (node.rawTags.length > 0) {
+    if (node.tagged) {
       const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
       role[v] = isGroup ? GROUP : CASE;
     } else if (inside !== -1) {
@@ -226,8 +229,8 @@ export function caseGold(
     const holds = new Uint8Array(n);
     for (let v = n - 1; v > 0; v--) {
       const node = nodes[v];
-      // Tagged means a non-empty raw resource array (the pack's isTagged), blanks included.
-      const isTagged = node.rawTags.length > 0;
+      // One shared rule: the pack's isTagged is a non-empty resource array (closure item 10).
+      const isTagged = node.tagged;
       if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
         if (node.parent !== null) holds[node.parent] = 1;
       }
@@ -241,7 +244,7 @@ export function caseGold(
       const parent = node.parent;
       const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
       within[v] = inside;
-      if (node.rawTags.length > 0) {
+      if (node.tagged) {
         const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
         role[v] = isGroup ? GROUP : CASE;
       } else if (inside !== -1) {

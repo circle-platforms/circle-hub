@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { bugIdsOf, caseGold, foldKey, main, parseMindMap } from './cases.ts';
+import { bugIdsOf, caseGold, caseNodesOf, foldKey, main, parseMindMap } from './cases.ts';
 
 const node = (text: string, data: Record<string, unknown>, children: unknown[] = []): unknown => ({ data: { text, ...data }, children });
 
@@ -273,4 +273,22 @@ test('bugIdsOf reads ids the way the pack ids.ts does: full-width colons, full-w
   // The pack runs per text; a joined run would pick up 101 — the union of per-label calls does not.
   assert.deepEqual([...new Set(['回归 bug 910013', '101：合成模块'].flatMap((label) => bugIdsOf(label)))], ['910013'], 'per-label union never runs into the next label');
   assert.deepEqual(bugIdsOf('缺陷910014、910015'), ['910014', '910015'], 'id lists still read');
+});
+
+test('tagged is a non-empty resource array, shared by caseGold and caseNodesOf, null and object entries included', () => {
+  // A case whose only entry is null: the pack counts one tagged case with tags []; the gold must see it too.
+  const nullTag = { root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: '合成用例', resource: [null] }, children: [] }] } };
+  const gold = caseGold([{ document: 'doc-a', map: nullTag }]);
+  assert.equal(gold.documents[0]!.items.length, 1, 'resource [null] is a tagged case');
+  assert.deepEqual(gold.documents[0]!.items[0]!.tags, [], 'the tag list itself stays empty');
+  const objectTag = { root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: '合成用例', resource: [{}] }, children: [] }] } };
+  assert.equal(caseGold([{ document: 'doc-a', map: objectTag }]).documents[0]!.items.length, 1, 'resource [{}] is tagged too');
+  // A tagged group-priority node over a blank-tag case: one shared rule returns only the inner case.
+  const nested = { root: { data: { text: '合成' }, children: [{ data: { text: '合成分组', resource: [null], priority: 1 }, children: [{ data: { id: 'c2', text: '空白标签用例', resource: [''] }, children: [] }] }] } };
+  const nodes = caseNodesOf(parseMindMap(nested), { caseRule: 'tagged' });
+  assert.equal(nodes.length, 1, 'only the inner case is a case node');
+  assert.equal(nodes[0]!.text, '空白标签用例');
+  const nestedGold = caseGold([{ document: 'doc-a', map: nested }]);
+  assert.equal(nestedGold.documents[0]!.items.length, 1, 'caseGold agrees');
+  assert.equal(nestedGold.documents[0]!.items[0]!.title, '空白标签用例');
 });
