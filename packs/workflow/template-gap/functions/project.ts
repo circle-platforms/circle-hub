@@ -6,6 +6,7 @@
 // Refusals of the whole call: an input that is not a parsed mind map, a document listed twice, a skip the pack cannot apply
 // (the caller's own parameter, never dropped silently), a document with no case, documents whose root nodes cannot be told
 // apart, and a result above the output limit.
+import { readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
 import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts';
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
@@ -213,6 +214,10 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   }
   if (documents.length === 0) return failure('invalid_input', `输入槽 ${SUBJECT_SLOT} 里没有要检查的脑图`, '在 inputs.documents 里给出至少一份脑图', warnings.list());
 
+  const agileDocuments = input.inputs.filter(isRecord).filter(raw => raw.slot === SUBJECT_SLOT && typeof raw.external === 'string' && raw.external.startsWith('agile:mindmap:')).map(raw => documentIdOf(raw) as string);
+  const caseIndex = readCaseIndex(input, agileDocuments);
+  if (caseIndex !== null && 'error' in caseIndex) return { ...caseIndex, warnings: warnings.list() };
+
   const skips = readSkips(parameters.skipped, template, documents);
   if (!Array.isArray(skips)) return { ...skips, warnings: warnings.list() };
 
@@ -280,6 +285,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     rule_summary: `用例规则：${item.fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${item.fields.marked_only} 个只靠标记识别（没有标签）`,
     data: item.fields.data,
   }));
+  if (caseIndex !== null) groups.push({ kind: 'case_index', view: caseIndex });
   const result = { items, groups, warnings: warnings.list() };
   const bytes = utf8Length(JSON.stringify(result));
   if (bytes > outputBytes) {

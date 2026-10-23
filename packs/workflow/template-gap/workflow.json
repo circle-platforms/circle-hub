@@ -5,9 +5,22 @@
       "slot": "documents",
       "role": "subject",
       "description": "要检查的测试脑图：敏捷平台的脑图（agile:mindmap:<文档编号>）或上传的 KityMinder 导出（application/json）；可以给多份，每份是一个条目。一次最多约 30 份，文档很大（几千个节点）时更少：再多时回答太长模型读不全，或者输入超过 Hub 的上限，分几次运行",
-      "accepts": ["agile:mindmap", "application/json"],
+      "accepts": [
+        "agile:mindmap",
+        "application/json"
+      ],
       "required": true,
       "many": true
+    },
+    {
+      "slot": "case_index",
+      "role": "expected",
+      "description": "与锁定构建同根的用例索引；only 只列本次敏捷平台文档，fields=document,node,commands；上传文件不在索引里",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": false,
+      "many": false
     }
   ],
   "parameters": [
@@ -23,12 +36,48 @@
           "properties": {
             "category": {
               "type": "string",
-              "enum": ["functional", "configuration", "integration", "compatibility", "negative", "stress", "command_add", "command_delete", "command_modify", "command_query", "show_at_maximum", "no_command", "clear_command", "operation_log", "audit_log", "configuration_sync", "configuration_save", "configuration_restore", "configuration_clear", "upgrade_new_to_new", "upgrade_old_to_new", "upgrade_new_to_old", "security", "database"]
+              "enum": [
+                "functional",
+                "configuration",
+                "integration",
+                "compatibility",
+                "negative",
+                "stress",
+                "command_add",
+                "command_delete",
+                "command_modify",
+                "command_query",
+                "show_at_maximum",
+                "no_command",
+                "clear_command",
+                "operation_log",
+                "audit_log",
+                "configuration_sync",
+                "configuration_save",
+                "configuration_restore",
+                "configuration_clear",
+                "upgrade_new_to_new",
+                "upgrade_old_to_new",
+                "upgrade_new_to_old",
+                "security",
+                "database"
+              ]
             },
-            "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
-            "document": { "type": "string", "minLength": 1, "maxLength": 120 }
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "document": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
           },
-          "required": ["category", "reason"],
+          "required": [
+            "category",
+            "reason"
+          ],
           "additionalProperties": false
         }
       }
@@ -37,10 +86,21 @@
       "name": "case_rule",
       "description": "哪些节点是用例：marked（默认）认带标签或带标记（没有标签、带用例优先级 2、有子节点、下面没有别的用例）的节点；tagged 限制为只认标签（resource 不为空）",
       "required": false,
-      "schema": { "enum": ["tagged", "marked"] }
+      "schema": {
+        "enum": [
+          "tagged",
+          "marked"
+        ]
+      }
     }
   ],
-  "product": { "catalogs": [] },
+  "product": {
+    "catalogs": [
+      "commands@1"
+    ]
+  },
   "subject": "documents",
-  "projection": { "module": "functions/project.ts" }
+  "projection": {
+    "module": "functions/project.ts"
+  }
 }
