@@ -315,7 +315,7 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
   and never needs stripping.
 - **rules**: none; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
 
-## xlsx@1 container limits
+## xlsx@1
 
 The in-memory container decoder uses Node zlib and CRC-32, without extraction or network access. Hard caps are
 16 MiB input, 256 members, 16 MiB per expanded member, 32 MiB total expanded bytes and a 100:1 expansion ratio per
@@ -325,3 +325,41 @@ paths, links, malformed records and broken streams reject the whole source with 
 STORE and Deflate, ZIP64 sizes/directories, data descriptors, comments and ordinary extra fields are supported.
 This is a generic format boundary; workbook visibility, formulas, string storage and extra package parts are data,
 not workflow-specific reasons to reject a workbook.
+
+The generic workbook model is JSON data, independent of any workflow:
+
+- `members[]`: ZIP member `name`, uncompressed `size`, declared `contentType` (null when none is declared).
+- `relationships[]`: source part (empty for package relationships), `id`, `type`, literal `target`, and `external`.
+  Every internal target must exist; package-relative paths and root-relative part URIs are resolved inside the package.
+  External targets are listed only, never fetched. Styles, themes, document properties, macros and link parts are listed
+  without interpretation. XML parts are still checked by xml@1 for syntax, namespace correctness and repair markers.
+- `sheets[]`: `name`, literal visibility `state` (default `visible`), part path, ordered `rows[]` and `lastRow`.
+  Each row has `number`, `hidden` and ordered `cells[]`. Cells have A1 `reference`, literal `type` (default `n`), decoded
+  value `text`, `formula` flag and numeric `style` (null when absent). Numbers, booleans, errors and dates stay as text;
+  formulas are never evaluated and their value is only the stored cache. A missing cache gives empty text. Inline and
+  shared rich-text runs are joined without phonetic annotations; SpreadsheetML escaped strings are decoded once,
+  including escaped underscores. Decoded control characters stay in the value; repaired XML (including raw NUL) is
+  refused rather than silently changed. A decoded unpaired surrogate is an encoding error.
+- `sharedStrings[]`: decoded strings in table order. A missing table or out-of-range referenced index is refused.
+- `definedNames[]`: `name`, `scope` (null for workbook scope, otherwise the zero-based `localSheetId`) and literal
+  `reference`. Name references and formulas are not interpreted or followed; repeated names in different scopes stay
+  distinct.
+
+Rows and cells with omitted coordinates use the format's sequential defaults. `lastRow` is the largest row coordinate
+of any cell, including an empty style-only cell; empty row declarations and worksheet `dimension` do not inflate it.
+Multi-sheet workbooks, hidden/very-hidden sheets, hidden rows, formulas and values beginning with `=` are accepted as
+structure. No workflow-specific subset is enforced here.
+
+Selectors are `c/<zero-based sheet index>/<A1 reference>` and `n/<zero-based defined-name index>`. If a coordinate occurs
+more than once, each occurrence instead has `i/<sheet index>/<row index>/<cell index>`, all indices zero-based; no
+occurrence is silently discarded. Each fragment's data is the corresponding cell/name object. `byteRange` is null:
+fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
+order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
+paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also
+apply. The same bytes and options produce the same model and deterministic ParseError reasons on rejection.
+
+References for format fields: [PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT),
+[SpreadsheetML structure](https://learn.microsoft.com/en-us/office/open-xml/spreadsheet/structure-of-a-spreadsheetml-document),
+and [escaped strings](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/d34ae755-c53f-4a44-a363-c6dd3ee018a4).
+Tests generate every archive/workbook at runtime, including one interoperability case from the already-installed
+ExcelJS writer; production uses only Node zlib and the existing xml@1 parser, with no added dependency.
