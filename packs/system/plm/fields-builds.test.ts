@@ -29,7 +29,8 @@ const builds = [{ id: 8, name: 'Synthetic_10_7_A', synthetic_links: [21, '00022'
 test('numeric build keys retain one request and merge all story-trace content fields', () => {
   assert.deepEqual(buildsPlan(request('410')), { requests: [{ key: 'builds', route: 'builds', query: { product: '410' } }], original: 'builds', done: true });
   const out = content(buildsProject({ ...request('410'), original: 'builds', settings: { build_story_field: 'synthetic_links' }, responses: { builds: { ok: true, json: builds } } }));
-  assert.deepEqual(out, { product: { id: '410', name: null }, product_resolution: 'resolved', builds: [
+  assert.match(out.note, /没有对照产品列表/);
+  assert.deepEqual(out, { note: out.note, product: { id: '410', name: null }, product_resolution: 'resolved', builds: [
     { id: '8', name: 'Synthetic_10_7_A', fields: { id: 8, name: 'Synthetic_10_7_A' }, stories: ['21', '22'], scope_note: '需求范围取自构建记录' },
     { id: '9', name: 'Synthetic_10_7_B', fields: { id: '9', name: 'Synthetic_10_7_B' }, stories: null, scope_note: '构建记录里没有需求字段，请给出需求编号；字段 synthetic_links 缺失或不是需求编号数组' },
   ] });

@@ -28,3 +28,10 @@ test('whole product names normalize before slash splitting, while requested alia
     const out = buildsProject(input) as any; assert.equal(out.error.code, 'plm.invalid_key'); assert.match(out.error.message, /不能有.*\//);
   }
 });
+
+test('numeric keys disclose declared identity separately from a verified product lookup', () => {
+  const out = buildsProject({ external: { type: 'builds', key: '999999999' }, original: 'builds', responses: { builds: { ok: true, json: [] } } }) as any;
+  assert.match(out.note, /编号取自读取键/); assert.match(out.note, /没有对照产品列表/); assert.match(out.note, /为空不证明产品存在/);
+  assert.equal(out.artifacts[0].json.note, out.note);
+  assert.deepEqual(buildsPlan({ external: { type: 'builds', key: '999999999' } }).requests, [{ key: 'builds', route: 'builds', query: { product: '999999999' } }]);
+});

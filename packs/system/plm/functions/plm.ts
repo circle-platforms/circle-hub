@@ -269,5 +269,6 @@ export function buildsProject(input: unknown): unknown {
     const fields = Object.fromEntries(Object.entries(record).filter(([, value]) => value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)));
     return { id: idText(record.id), name: typeof record.name === 'string' ? record.name : null, fields, stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
   });
-  return { artifacts: [{ name: 'content', media_type: 'application/json', json: { product: choice.product, product_resolution: choice.resolution, builds } }] };
+  const note = 'id' in key ? '产品编号取自读取键，没有对照产品列表核对；构建列表为空不证明产品存在。下一步如需核实产品身份，请对照产品列表或按名字读取' : undefined;
+  return { ...(note ? { note } : {}), artifacts: [{ name: 'content', media_type: 'application/json', json: { product: choice.product, product_resolution: choice.resolution, builds, ...(note ? { note } : {}) } }] };
 }
