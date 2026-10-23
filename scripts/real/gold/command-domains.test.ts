@@ -79,3 +79,8 @@ test('no forms have argument domains only when the original tree declares them',
   assert.equal(domainReport(submission,{},tree).notMember,1);
   assert.equal(judgeCommand({head:'no widget set',parameters:['5']},commandDomains(tree.replace('name="widget"','name="no widget"'))).verdict,'support');
 });
+for(const command of ['show widget set 5','widgte foo; widget set 5','widget set 5; widgte foo; widget set 6'])test(`unmatched command tokens cannot disappear: ${command}`,()=>{
+  const submission={items:[{item:'i',slots:{cases:[{data:{steps:[{command}]}}]}}]};
+  const report=domainReport(submission,{},xml('<arg name="" type="U16"/>'));
+  assert.equal(report.items[0].verdict,'refute');assert.ok(report.notMember>0);
+});

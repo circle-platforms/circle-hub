@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 import { VERDICT, REASON, REQUIREMENT_STATUS, type Verdict, type RequirementStatus } from '../../../contracts/generated/vocabulary.ts';
 import { parseCommandTree } from './compile-check.ts';
 import { XmlReader, type XmlNode } from './command-diff.ts';
-import { buildCatalog, parseCommandsFromText, normalizeHead, type SplitCommand } from './regression-doc.ts';
+import { buildCatalog, commandTokens, matchCatalogCommands, normalizeHead, type SplitCommand } from './regression-doc.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
 const NO_CHECK = REASON[0];
 /** Decode original command-tree bytes according to their XML declaration, without changing the stored bytes or digest. */
@@ -158,10 +158,22 @@ export function parsedDraftCommands(draft: LocatedDraft, xml: string): { command
   const commands: SplitCommand[] = [], unrecognized: string[] = [], located: { step: number; line: number; command: SplitCommand | null }[] = [];
   for (const [step, raw] of (draft.data.steps ?? []).entries()) if (typeof raw.command === 'string') {
     for (const [line, text] of raw.command.split(/\r?\n/).entries()) if (text.trim()) {
-      const parsed = parseCommandsFromText(text, catalog);
-      commands.push(...parsed.commands);unrecognized.push(...parsed.unrecognized);
-      for (const command of parsed.commands) located.push({ step: step + 1, line: line + 1, command });
-      if (parsed.commands.length === 0) { if (parsed.unrecognized.length === 0) unrecognized.push(text); located.push({ step: step + 1, line: line + 1, command: null }); }
+      const tokens=commandTokens(text).flatMap(token=>token.quoted?[token]:token.text.split(/([;；])/u).filter(Boolean).map(part=>({...token,text:part,junk:token.junk||/^[;；]$/u.test(part)})));
+      const parsed=matchCatalogCommands(tokens,catalog);
+      commands.push(...parsed);
+      let at=0,missed=false;
+      for(const command of parsed){
+        const words=command.head.split(' ');
+        while(at<tokens.length&&!words.every((word,index)=>!tokens[at+index]?.junk&&tokens[at+index]?.text===word)){
+          if(!tokens[at].junk)missed=true;
+          at++;
+        }
+        at+=words.length+command.parameters.length;
+        located.push({step:step+1,line:line+1,command});
+      }
+      if(tokens.slice(at).some(token=>!token.junk))missed=true;
+      if(missed||parsed.length===0){unrecognized.push(text);located.push({step:step+1,line:line+1,command:null});}
+
     }
   }
   return { commands, unrecognized, located };
