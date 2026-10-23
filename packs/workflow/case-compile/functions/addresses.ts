@@ -29,7 +29,9 @@ export function isHostLiteral(token: LiteralAddress, text: string, bed: import('
   if (/^\/[0-9]{1,3}(?![0-9])/.test(tail) && !/https?:\/\/$/i.test(before)) return false;
   if (token.key.startsWith('ipv4:')) {
     const value = BigInt('0x' + token.key.slice('ipv4:'.length)); const all = 0xffffffffn;
-    if ((value & (value + 1n)) === 0n || (((all ^ value) & ((all ^ value) + 1n)) === 0n)) return false;
+    const previous=literalAddresses(before).at(-1);
+    const maskPosition=previous?.key?.startsWith('ipv4:')===true&&/^\s+$/.test(before.slice(previous.at+previous.text.length));
+    if (maskPosition&&((value & (value + 1n)) === 0n || (((all ^ value) & ((all ^ value) + 1n)) === 0n))) return false;
     for (const iface of known.filter((v) => v.family === 'ipv4')) {
       const host = (1n << BigInt(32 - iface.prefix)) - 1n; const network = iface.value & (all ^ host);
       if (value === network || value === (network | host)) return false;

@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "60f5f10ee595397e05176f92b361bf8ab88cd96bf833220bcf15207775eab32a",
-      "size": 3827
+      "sha256": "20ac50f4bd7c2bd699e5a5f4df6c5f61cb7a9ed368c5fca1100f9dbb0bd35b26",
+      "size": 4023
     },
     {
       "path": "functions/bed.ts",
@@ -237,6 +237,11 @@
       "size": 14631
     },
     {
+      "path": "samples/negative/mask-as-host.json",
+      "sha256": "dd7ad2c885360b28255d12cbcb8607cb1641c5e5b2281885189474d6fae6ee3c",
+      "size": 14639
+    },
+    {
       "path": "samples/negative/method-forbidden.json",
       "sha256": "a83e1dd814cd7066d5278409db7b971449d5c929ecb30d63db9b9137a5153403",
       "size": 14645
@@ -265,6 +270,11 @@
       "path": "samples/negative/positional-keyword.json",
       "sha256": "1524bfa42faef1425887df8f3ede3dc477d24ec2c57458dadd9fdb1bc9480643",
       "size": 14654
+    },
+    {
+      "path": "samples/negative/prefix-shaped-host.json",
+      "sha256": "f91c7d41a62f35d54791351ad5d966368b6780d195e075433180e56ab6f49962",
+      "size": 14646
     },
     {
       "path": "samples/negative/quote-mismatch.json",
@@ -412,6 +422,11 @@
       "size": 14605
     },
     {
+      "path": "samples/positive/mask-as-host.json",
+      "sha256": "92b75d2b4abf7b42cedbe81a5da4b8d8bbde8aecdaf4178864264188ebc95fad",
+      "size": 14590
+    },
+    {
       "path": "samples/positive/method-forbidden.json",
       "sha256": "e992dc70b115e3451ef74a5bf97c849818b220e430ecd374feffd399816230d5",
       "size": 14599
@@ -440,6 +455,11 @@
       "path": "samples/positive/positional-keyword.json",
       "sha256": "1a5ba52411dbaffa782530591798dd4909632df4ea648282308a7658a247567d",
       "size": 14603
+    },
+    {
+      "path": "samples/positive/prefix-shaped-host.json",
+      "sha256": "9e6c46070e33d8053bb799a6c88733f18f405af06d176f0039c7a66b1c4e4ad8",
+      "size": 14602
     },
     {
       "path": "samples/positive/quote-mismatch.json",

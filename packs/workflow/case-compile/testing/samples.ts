@@ -11,6 +11,8 @@ import { workbookCheckInput } from './workbook-model.ts';
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
+  { name: 'mask-as-host', check:'bed_addresses',code:'address_off_bed',change:v=>{v.steps[1].args=['ping 63.255.255.255'];}},
+  { name: 'prefix-shaped-host', check:'bed_addresses',code:'address_off_bed',change:v=>{v.steps[1].args=['ping 224.0.0.0'];}},
   { name: 'g-positional-keyword', check: 'contract_shape', code: 'param_value', change: (v) => { v.steps[1].args = ['FOO=1 echo 192.0.2.90']; } },
   { name: 'quote-unpaired', check: 'contract_shape', code: 'param_value', change: (v) => { v.steps[0].args = ['widget health interval "60']; } },
   { name: 'wait-limit', check: 'contract_shape', code: 'wait_value', change: (v) => { v.steps[2].args = ['99999999']; } },
