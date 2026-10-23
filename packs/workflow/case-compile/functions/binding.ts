@@ -26,5 +26,19 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) if (typeof v.value !== 'string' || v.value.trim() !== v.value || /[\r\n\v\f\u0085\u2028\u2029]/.test(v.value) || /\{(?:0)?\}/.test(v.value) || v.value.startsWith('=')) issue('param_value', v.pointer, '参数值必须是单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+  for (const v of values) if (typeof v.value === 'string' && !hasBalancedCommandText(v.value)) issue('param_value', v.pointer, '引号必须成对，值不能以反斜杠结尾；修正该值后重新提交');
   return { values, problems };
+}
+
+/** The catalog tokenizer cannot consume unmatched quoting or a final escape. Reject before its unknown path. */
+export function hasBalancedCommandText(text: string): boolean {
+  if (text.endsWith('\\')) return false;
+  let quote: string | null = null; let escaped = false;
+  for (const char of text) {
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+    if (quote !== null) { if (char === quote) quote = null; }
+    else if (char === '"' || char === "'") quote = char;
+  }
+  return quote === null;
 }

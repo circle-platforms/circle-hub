@@ -36,7 +36,7 @@
     {
       "code": "case-compile.param_value",
       "when": "参数不是单行最终文字、含占位符、首尾空白或以等号开头",
-      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀"
+      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀；引号必须成对，不以反斜杠结尾"
     },
     {
       "code": "case-compile.device_command_denied",

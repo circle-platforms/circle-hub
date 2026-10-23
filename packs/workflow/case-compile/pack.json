@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "f0723500f71fd0cf83bceb77f35fa3f1e625cfc160d92f2881562623b163a7b8",
-      "size": 2568
+      "sha256": "f6c3595ffd35b8e97b44eac7491e556101f1b93926e4c0bc824d83f0e1f4033d",
+      "size": 3333
     },
     {
       "path": "functions/cases.ts",
@@ -378,8 +378,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "e0f09ad36cecc525f532d51920280f62a29a12cea52d76c803ac9256f070fe82",
-      "size": 7079
+      "sha256": "2ea8e16b14e0168c6232ac1c4a046bdb2e7903cd78fed9bf6c1110f0dd58493f",
+      "size": 7124
     },
     {
       "path": "tables/commands.json",

@@ -26,3 +26,8 @@ test('review 02 netmasks wildcard masks and network prefixes are not off-bed hos
     const data = goodData(); data.steps[0].args = [text]; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support', text);
   }
 });
+test('review 03 unpaired quotes and final backslashes produce a repairable value refutation', () => {
+  for (const text of ['widget health interval "60', 'widget health interval 60\\', "widget description it's"]) {
+    const data = goodData(); data.steps[0].args = [text]; const result = checkContractShape(subjectOf(data)); assert.ok(codes(result).includes('case-compile.param_value')); assert.ok(result.some((v) => v.statement.includes('引号') || v.statement.includes('反斜杠')));
+  }
+});
