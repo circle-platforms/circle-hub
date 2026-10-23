@@ -1,11 +1,14 @@
 // Read functions of the PLM query service system pack (pure, run in the Hub sandbox). Every answer is HTTP 200 with an
 // envelope {code, msg, data}; reads use GET and POST, so the profile lists every read route one by one and no write route.
 // Ids are numbers in some answers and strings in others, and steps and specs are HTML: the projection of a bug or a story
-// gives content {id, kind, title, fields, html_fields} with every HTML field as plain text (the original keeps the answer),
+// gives content {id, kind, title, fields, html_fields} with every HTML field as plain text (the original keeps the answer);
+// bugs additionally echo the configured fix_field, without guessing or checking its presence in the record,
 // and meta {id, kind, title, status}. An id the service does not know is a failed read (shown to callers as unavailable).
 
-type Planned = { key: string; route: string; body?: unknown };
-type PlanOutput = { requests: Planned[]; done: boolean };
+import type { Resolution } from '../../../../contracts/generated/vocabulary.ts';
+
+type Planned = { key: string; route: string; body?: unknown; query?: Record<string, string> };
+type PlanOutput = { requests: Planned[]; done: boolean; original?: string };
 type Response = { ok?: boolean; json?: unknown };
 
 const ID = /^[1-9][0-9]{0,14}$/;
@@ -112,10 +115,12 @@ export function detailProject(input: unknown): unknown {
     } else fields[name] = name === 'id' ? key : value;
   }
   const title = typeof record.title === 'string' ? record.title : typeof record.name === 'string' ? record.name : null;
+  const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};
+  const fixField = typeof settings.bug_fix_field === 'string' && settings.bug_fix_field.trim() !== '' ? settings.bug_fix_field : null;
   const status = typeof record.status === 'string' ? record.status : typeof record.stage === 'string' ? record.stage : null;
   return {
     artifacts: [
-      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html } },
+      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField } : {}) } },
       { name: 'meta', media_type: 'application/json', json: { id: key, kind, title: title === null ? `${KINDS[kind].label} ${key}` : `${KINDS[kind].label} ${key} ${title}`, status } },
     ],
   };
@@ -187,11 +192,57 @@ export function storiesProject(input: unknown): unknown {
   ] };
 }
 
+type Product = { id: string; name: string | null };
+type BuildKey = { id: string } | { names: string[] };
+const PRODUCT_ID = /^[0-9]{1,9}$/;
+const nameKey = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
+
+/** Split before decoding: a percent-encoded plus belongs to one name. */
+function buildKey(key: string): BuildKey | null {
+  if (/^[0-9]+$/.test(key)) return PRODUCT_ID.test(key) ? { id: key } : null;
+  if (!key || key.length > 4096) return null;
+  try {
+    const names = [...new Set(key.split('+').map((part) => nameKey(decodeURIComponent(part))))];
+    return names.length && names.every((name) => name !== '') ? { names } : null;
+  } catch { return null; }
+}
+
+type ProductChoice = { product: Product | null; resolution: Resolution };
+/** The caller's numeric identity is explicit; names need exactly one matching product row. */
+function chooseProduct(key: BuildKey, responses: Record<string, Response>): ProductChoice | null {
+  if ('id' in key) return { product: { id: key.id, name: null }, resolution: 'resolved' };
+  const response = responses.products;
+  const data = isRecord(response?.json) ? response.json.data : undefined;
+  if (response?.ok === false || !Array.isArray(data) || data.some((item) => !isRecord(item) || typeof item.name !== 'string')) return null;
+  const matches = data.filter((item) => isRecord(item) && typeof item.name === 'string' &&
+    key.names.every((name) => (item.name as string).normalize('NFKC').split('/').map(nameKey).includes(name)));
+  if (matches.length !== 1) return { product: null, resolution: matches.length ? 'ambiguous' : 'unresolved' };
+  const id = idText(matches[0].id);
+  if (id === null || !PRODUCT_ID.test(id)) return null;
+  return { product: { id, name: matches[0].name as string }, resolution: 'resolved' };
+}
+
+/** Numeric keys read one build list; name keys first resolve the product, with at most two requests. */
+export function buildsPlan(input: unknown): PlanOutput {
+  const { type, key: raw, responses } = partsOf(input);
+  const key = type === 'builds' ? buildKey(raw) : null;
+  if (key === null) return { requests: [], done: true };
+  if ('names' in key && !Object.hasOwn(responses, 'products')) return { requests: [{ key: 'products', route: 'products' }], done: false };
+  const choice = chooseProduct(key, responses);
+  if (!choice?.product) return { requests: [], original: 'products', done: true };
+  return { requests: Object.hasOwn(responses, 'builds') ? [] : [{ key: 'builds', route: 'builds', query: { product: choice.product.id } }], original: 'builds', done: true };
+}
+
 /** Build scope is deployment configuration, never a guessed field or free-text parsing. */
 export function buildsProject(input: unknown): unknown {
-  const { responses, original } = partsOf(input);
+  const { type, key: rawKey, responses, original } = partsOf(input);
+  const key = type === 'builds' ? buildKey(rawKey) : null;
+  if (key === null) return { error: { code: 'plm.invalid_key', message: '构建列表标识无效：提供产品编号，或逐个 URI 编码后以 + 连接的产品名字' } };
+  const choice = chooseProduct(key, responses);
+  if (choice === null) return { error: { code: 'plm.no_products', message: '产品列表不能证明产品身份；重新读取产品列表并核实 id 和 name 字段' } };
+  if (choice.product === null) return { artifacts: [{ name: 'content', media_type: 'application/json', json: { product: null, product_resolution: choice.resolution, builds: [] } }] };
   const data = responses[original]?.json;
-  if (!Array.isArray(data)) return { error: { code: 'plm.no_records', message: '构建列表不是数组' } };
+  if (responses[original]?.ok === false || !Array.isArray(data)) return { error: { code: 'plm.no_records', message: '构建列表不是数组；重新读取该产品的构建原件' } };
   const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};
   const field = typeof settings.build_story_field === 'string' && settings.build_story_field !== '' ? settings.build_story_field : null;
   const builds = data.filter(isRecord).map(record => {
@@ -200,7 +251,7 @@ export function buildsProject(input: unknown): unknown {
       const text = idText(id); return text !== null && ID.test(text.replace(/^0+/, '') || '0');
     });
     const stories = valid ? [...new Set((raw as unknown[]).map(id => String(id).replace(/^0+/, '') || '0'))].sort((a, b) => Number(a) - Number(b)) : null;
-    return { id: idText(record.id), stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
+    return { id: idText(record.id), name: typeof record.name === 'string' ? record.name : null, stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
   });
-  return { artifacts: [{ name: 'content', media_type: 'application/json', json: { builds } }] };
+  return { artifacts: [{ name: 'content', media_type: 'application/json', json: { product: choice.product, product_resolution: choice.resolution, builds } }] };
 }

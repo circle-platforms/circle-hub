@@ -191,7 +191,7 @@
     {
       "name": "bug",
       "external": "plm:bug",
-      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）",
+      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段",
       "plan": {
         "module": "functions/plm.ts",
         "export": "detailPlan"
@@ -256,17 +256,15 @@
     {
       "name": "builds",
       "external": "plm:builds",
-      "description": "一个产品的构建列表（编号写产品编号）",
-      "request": {
-        "route": "builds",
-        "query": {
-          "product": "{id}"
-        }
-      },
-      "max_requests": 1,
+      "description": "一个产品的构建列表：数字键直接读取；名字键将各名字分别 URI 编码后以 + 连接，先按 NFKC、首尾空白和大小写折叠匹配产品名的 / 分隔别名，唯一匹配才读构建。settings.build_story_field 指定构建需求字段，不猜字段名",
+      "max_requests": 2,
       "project": {
         "module": "functions/plm.ts",
         "export": "buildsProject"
+      },
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "buildsPlan"
       }
     }
   ]
