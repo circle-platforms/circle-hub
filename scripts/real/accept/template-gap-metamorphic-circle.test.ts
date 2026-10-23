@@ -397,3 +397,12 @@ test('review 19: only documents with matching original counts enter the single-c
   assert.ok(result.infos.some(info => info.document === 1 && info.kind === 'c'));
   assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('原件') && line.includes('独立计数'))));
 });
+
+test('review 20: nested tagged cases contribute types and counts inside the outer single-case copy', () => {
+  const { gold } = goldOf(); const path = gold.documents[0].file; const tree = JSON.parse(readFileSync(path, 'utf8'));
+  tree.root.children[0].children[0].children.push(kase('nested-private', '合成嵌套', '成功', 'Negative')); writeFileSync(path, JSON.stringify(tree));
+  const honest = drive(build(gold)); assert.ok(honest.checks.every(check => check.ok), JSON.stringify(honest.checks.filter(check => !check.ok)));
+  const wrong = drive(build(gold), undefined, { hide: 'negative' });
+  assert.equal(wrong.checks.find(check => check.name.startsWith('第 1 份') && check.name.endsWith('类型名标签'))?.ok, false);
+  assert.equal(wrong.checks.filter(check => !check.ok).length, 1);
+});

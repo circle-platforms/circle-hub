@@ -215,7 +215,7 @@ export function typeNamePresent(tree: MindTree, categories: readonly TemplateCat
   // names (functional, configuration, integration, compatibility, negative, stress), so the match is by id.
   const typeIds = new Set(categories.filter((c) => c.group === 'test_type').map((c) => c.id));
   const out = new Map<string, Set<string>>();
-  for (const node of mapOf(tree).nodes) {
+  for (const node of caseNodesOf(mapOf(tree), { caseRule: 'marked' })) {
     const tags = node.resource.map((tag) => tag.trim().toLowerCase());
     for (const name of TYPE_NAMES) {
       const id = name.toLowerCase();
@@ -225,6 +225,15 @@ export function typeNamePresent(tree: MindTree, categories: readonly TemplateCat
         out.set(String(node.index), set);
       }
     }
+  }
+  return out;
+}
+
+export const caseCountOf = (tree: MindTree): number => caseNodesOf(mapOf(tree), { caseRule: 'marked' }).length;
+export function typeNamesInCase(tree: MindTree, key: string, categories: readonly TemplateCategory[]): Set<string> {
+  const map = mapOf(tree); const present = typeNamePresent(tree, categories); const out = new Set<string>();
+  for (const [nodeKey, types] of present) for (let at: number | null = Number(nodeKey); at !== null; at = map.nodes[at]!.parent) {
+    if (String(at) === key) { types.forEach(type => out.add(type)); break; }
   }
   return out;
 }
@@ -320,9 +329,9 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
 
 /** The premise check of one copy, run by the independent rule: its case count equals the sum of the single-case
  * counts it contains (outermost cases in document order, named by their original ids). */
-export function premiseOf(copy: MindTree, containedOriginalIds: readonly string[]): { ok: boolean; actual: number; expected: number } {
-  const actual = outerCases(copy).length;
-  const expected = containedOriginalIds.length;
+export function premiseOf(copy: MindTree, containedOriginalIds: readonly string[], counts?: ReadonlyMap<string, number>): { ok: boolean; actual: number; expected: number } {
+  const actual = caseCountOf(copy);
+  const expected = containedOriginalIds.reduce((sum, id) => sum + (counts?.get(id) ?? 1), 0);
   return { ok: actual === expected, actual, expected };
 }
 

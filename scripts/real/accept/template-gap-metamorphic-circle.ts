@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type { Turn } from '../scripted-model.ts';
 import { type Scenario } from '../lib/accept.ts';
 import type { Check, ReportSection } from '../lib/report.ts';
-import { TYPE_NAMES, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory } from '../gold/gap-metamorphic.ts';
+import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory } from '../gold/gap-metamorphic.ts';
 import { readCategories } from '../gold/gap-metamorphic.ts';
 
 export interface GapCircleGold {
@@ -144,17 +144,22 @@ export default function scenario(gold: GapCircleGold): Scenario {
   void pendingOf;
 
   const plans = trees.map((tree, d) => planCopies(tree, `doc${d + 1}`, { categories, singleMisses: new Map() }));
+  const singleCounts = plans.map((plan, document) => new Map(outerIds[document]!.map((key, at) => [key, caseCountOf(plan.c[at]!)])));
+  const copyPremise = (tree: MindTree, contains: ReadonlyArray<{ document: number; caseId: string }>) => {
+    const actual = caseCountOf(tree); const expected = contains.reduce((sum, item) => sum + singleCounts[item.document]!.get(item.caseId)!, 0);
+    return { actual, expected, ok: actual === expected };
+  };
   const queuePhase = (which: 1 | 2): void => {
     const list: Pending[] = [];
     for (const [d, plan] of plans.entries()) {
       if (which === 1) {
-        list.push({ key: `a-${d}`, name: `d${d}-a.json`, tree: plan.a, kind: 'a', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.a, outerIds[d]!) });
-        list.push({ key: `b-${d}`, name: `d${d}-b.json`, tree: plan.b, kind: 'b', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.b, outerIds[d]!) });
+        list.push({ key: `a-${d}`, name: `d${d}-a.json`, tree: plan.a, kind: 'a', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.a, outerIds[d]!, singleCounts[d]) });
+        list.push({ key: `b-${d}`, name: `d${d}-b.json`, tree: plan.b, kind: 'b', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.b, outerIds[d]!, singleCounts[d]) });
       } else {
         const original = answerOf.get(`a-${d}`);
-        if (!original || unknown.has(`a-${d}`) || original.caseCount !== outerIds[d]!.length) { unknown.set(`phase2-${d}`, `第 ${d + 1} 份原件用例数未与独立计数核对一致；没有运行单用例副本`); continue; }
+        if (!original || unknown.has(`a-${d}`) || original.caseCount !== caseCountOf(trees[d]!)) { unknown.set(`phase2-${d}`, `第 ${d + 1} 份原件用例数未与独立计数核对一致；没有运行单用例副本`); continue; }
         for (const [i, id] of outerIds[d]!.entries()) {
-          list.push({ key: `c-${d}-${i}`, name: `d${d}-c${i}.json`, tree: plan.c[i]!, kind: 'c', contains: [{ document: d, caseId: id }], premise: premiseOf(plan.c[i]!, [id]) });
+          list.push({ key: `c-${d}-${i}`, name: `d${d}-c${i}.json`, tree: plan.c[i]!, kind: 'c', contains: [{ document: d, caseId: id }], premise: premiseOf(plan.c[i]!, [id], singleCounts[d]) });
         }
       }
     }
@@ -174,12 +179,12 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const out = new Map<string, ReadonlySet<string>>();
     for (const [i, id] of outerIds[d]!.entries()) {
       const answer = answerOf.get(`c-${d}-${i}`);
-      if (answer !== undefined && answer.caseCount === 1) out.set(id, answer.missing);
+      if (answer !== undefined && answer.caseCount === singleCounts[d]!.get(id)) out.set(id, answer.missing);
     }
     return out;
   };
 
-  const requiredTypes = (document: number, key: string): ReadonlySet<string> => typeNamePresent(trees[document]!, categories).get(key) ?? new Set();
+  const requiredTypes = (document: number, key: string): ReadonlySet<string> => typeNamesInCase(trees[document]!, key, categories);
 
   const queuePhaseThree = (): void => {
     const list: Pending[] = [];
@@ -195,13 +200,13 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const owners = outerIds[d]!.filter((id) => misses.has(id) && !misses.get(id)!.has(entry.category));
         const kept = owners.length === outerIds[d]!.length ? [] : outerIds[d]!.filter((id) => misses.has(id) && misses.get(id)!.has(entry.category));
         const contains = [...kept.map((caseId) => ({ document: d, caseId })), ...outerIds[d]!.filter((id) => !misses.has(id)).map((caseId) => ({ document: d, caseId }))];
-        const dCopy: Pending = { key: `d-${d}-${entry.category}`, name: `d${d}-x-${entry.category}.json`, tree: entry.copy, kind: 'd', category: entry.category, contains, premise: premiseOf(entry.copy, contains.map(() => '')) };
-        dCopy.premise = { ok: outerCaseIdsOf(entry.copy).length === contains.length, actual: outerCaseIdsOf(entry.copy).length, expected: contains.length };
+        const dCopy: Pending = { key: `d-${d}-${entry.category}`, name: `d${d}-x-${entry.category}.json`, tree: entry.copy, kind: 'd', category: entry.category, contains, premise: copyPremise(entry.copy, contains) };
+        dCopy.premise = copyPremise(entry.copy, contains);
         dCopy.premiseBroken = !dCopy.premise.ok;
         if (dCopy.premiseBroken) unknown.set(dCopy.key, '前提不成立'); else list.push(dCopy);
         if (entry.restored !== undefined) {
           const eContains = [...contains, { document: d, caseId: owners[0]! }];
-          const eCopy: Pending = { key: `e-${d}-${entry.category}`, name: `d${d}-r-${entry.category}.json`, tree: entry.restored, kind: 'e', category: entry.category, contains: eContains, premise: { ok: outerCaseIdsOf(entry.restored).length === eContains.length, actual: outerCaseIdsOf(entry.restored).length, expected: eContains.length } };
+          const eCopy: Pending = { key: `e-${d}-${entry.category}`, name: `d${d}-r-${entry.category}.json`, tree: entry.restored, kind: 'e', category: entry.category, contains: eContains, premise: copyPremise(entry.restored, eContains) };
           eCopy.premiseBroken = !eCopy.premise.ok;
           if (eCopy.premiseBroken) unknown.set(eCopy.key, '前提不成立'); else list.push(eCopy);
         }
@@ -214,7 +219,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const bDoc = (d + 1) % trees.length;
         const bCase = outerCaseIdsOf(trees[bDoc]!).find((id) => singleMissesOf(bDoc).has(id) && !singleMissesOf(bDoc).get(id)!.has(entry.category));
         const contains = [...outerIds[d]!.filter((id) => misses.has(id)).map((caseId) => ({ document: d, caseId })), ...(bDoc !== d && bCase !== undefined ? [{ document: bDoc, caseId: bCase }] : [])];
-        const fCopy: Pending = { key: `f-${d}-${entry.category}`, name: `d${d}-j-${entry.category}.json`, tree: entry.copy, kind: 'f', category: entry.category, contains, premise: { ok: outerCaseIdsOf(entry.copy).length === contains.length, actual: outerCaseIdsOf(entry.copy).length, expected: contains.length } };
+        const fCopy: Pending = { key: `f-${d}-${entry.category}`, name: `d${d}-j-${entry.category}.json`, tree: entry.copy, kind: 'f', category: entry.category, contains, premise: copyPremise(entry.copy, contains) };
         fCopy.premiseBroken = !fCopy.premise.ok;
         if (fCopy.premiseBroken) unknown.set(fCopy.key, '前提不成立'); else list.push(fCopy);
       }
