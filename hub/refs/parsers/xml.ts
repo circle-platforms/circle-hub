@@ -386,8 +386,21 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
       else if (value[i] === ']' && inside) { inside = false; closed = true; }
       else if (inside && !isXmlSpace(value.charCodeAt(i))) {
         if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
-        if (value.startsWith('<!ATTLIST', i)) throw new ParseForbiddenError(KEY, '当前解析器不处理 DOCTYPE 内部属性声明，不能核实默认属性；请提供显式属性且不依赖内部声明的 XML 导出', here());
-        throw new ParseForbiddenError(KEY, 'DOCTYPE 内部子集只支持注释和处理指令，不处理其他内部声明或参数引用；请提供不依赖内部声明的 XML 导出', here());
+        if (/^<!(?:ELEMENT|NOTATION)[ \t\r\n]/.test(value.slice(i, i + 12))) {
+          let quote = ''; let end = -1;
+          for (let j = i + 2; j < value.length; j++) {
+            const c = value[j]!;
+            if (quote) { if (c === quote) quote = ''; }
+            else if (c === '"' || c === "'") quote = c;
+            else if (c === '%') throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 参数实体引用', here(), null, '展开参数实体引用后重新上传不依赖实体的 XML');
+            else if (c === '>') { end = j; break; }
+          }
+          if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部声明没有结束', here());
+          i = end;
+          continue;
+        }
+        if (value.startsWith('<!ATTLIST', i)) throw new ParseForbiddenError(KEY, '当前解析器不处理 DOCTYPE 内部属性声明，不能核实默认属性', here(), null, '提供显式属性且不依赖内部属性声明的 XML 导出后重新上传');
+        throw new ParseForbiddenError(KEY, 'DOCTYPE 内部子集含不支持的内部声明或参数引用', here(), null, '提供不依赖这些内部声明或参数引用的 XML 导出后重新上传');
       }
     }
     if (inside) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部子集没有结束', here());

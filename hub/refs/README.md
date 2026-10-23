@@ -472,7 +472,8 @@ production quotation implementation imports the other. Shared vectors are the in
 HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.
 
 DTD capability boundary: xml@1 does not implement DTD attribute defaults or tokenized-attribute normalization. It
-refuses internal ATTLIST and other markup declarations rather than silently showing incomplete attributes; no defaults
+accepts entity-free ELEMENT/NOTATION declarations without validation or fetching, and refuses internal ATTLIST
+and parameter references rather than silently showing incomplete attributes; no defaults
 are invented. This is a format capability refusal, not a claim that such XML is invalid. External identifiers are never
 fetched, and doctype metadata discloses that policy. See [XML 1.0 section 5.1](https://www.w3.org/TR/REC-xml/#proc-types).
 

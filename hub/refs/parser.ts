@@ -140,8 +140,8 @@ export class ParseSyntaxError extends ParseError {
 
 /** The input uses a construct the Hub refuses on principle (DOCTYPE, entity declarations). */
 export class ParseForbiddenError extends ParseError {
-  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null) {
-    super(parser, message, offset, detail);
+  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix) {
+    super(parser, message, offset, detail, fix);
     this.name = 'ParseForbiddenError';
   }
 }

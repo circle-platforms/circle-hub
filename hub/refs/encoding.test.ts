@@ -90,7 +90,7 @@ test('DTD processing instructions cannot hide declarations or create false ENTIT
 
 test('XML refuses uninterpreted internal declarations instead of losing defaulted attributes', () => {
   assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE cmd [<!ATTLIST cmd mode CDATA "disabled">]><cmd name="x"/>')), (error: unknown) => error instanceof ParseForbiddenError && /属性声明/.test(error.message));
-  assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE cmd [<!ELEMENT cmd EMPTY>]><cmd/>')), ParseForbiddenError);
+  assert.equal(xmlParser.parse(Buffer.from('<!DOCTYPE cmd [<!ELEMENT cmd EMPTY>]><cmd/>')).model.root.name, 'cmd');
 });
 test('DOCTYPE presence and unread external-subset policy are explicit model structure', () => {
   const doc = xmlParser.parse(Buffer.from('<!DOCTYPE x SYSTEM "http://192.0.2.1/never.dtd" [<!-- synthetic --><?pi synthetic?>]><x/>'));
@@ -115,4 +115,14 @@ for (const media of ['text/html', 'application/xhtml+xml']) for (const charset o
 test('HTML meta UTF-16 prescan still uses UTF-8', () => {
   const parsed = htmlParser.parse(Buffer.from('<meta charset="utf-16le"><p>中文</p>'));
   assert.equal(parsed.model.charset, 'utf-8');
+});
+
+test('entity-free ELEMENT and NOTATION declarations are retained without fetching external data', () => {
+  for (const declaration of ['<!ELEMENT x ANY>', '<!NOTATION n SYSTEM "synthetic>notation">', '<!ELEMENT x EMPTY><!NOTATION n PUBLIC "synthetic" "identifier">']) {
+    const doc = xmlParser.parse(Buffer.from(`<!DOCTYPE x [${declaration}]><x/>`));
+    assert.equal(doc.model.root.name, 'x'); assert.equal(doc.model.doctype?.internalSubset, true);
+    assert.equal(doc.model.doctype?.externalSubsetRead, false);
+  }
+  assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE x [<!ELEMENT x %part;>]><x/>')), ParseForbiddenError);
+  assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE x [<!ATTLIST x a CDATA "d">]><x/>')), (e: unknown) => e instanceof ParseForbiddenError && /显式属性/.test(e.fix));
 });
