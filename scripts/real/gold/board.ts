@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { BoardGold, BoardGroupGold } from '../accept/quality-board.ts';
 import { caseGold } from './cases.ts';
 import { locationsGold, lineKey } from './locations.ts';
-import { cleanDocId, loadCaseMaps, missingMapDocuments, parseDocumentList } from './trace.ts';
+import { cleanDocId, GoldRefusal, loadCaseMaps, missingMapDocuments, parseDocumentList } from './trace.ts';
 import { boardLocate } from './board-locate.ts';
 
 // Independent normalization over a copied declaration, never a pack-computed result.
@@ -89,10 +89,17 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     // item (its out JSON: comparable cases with no parsed path; only cases of THIS build's documents count).
     const caseCommandsPath = value('case-commands');
     if (caseCommandsPath !== undefined) {
-      const commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: Array<{ document: string; comparable: boolean; paths: unknown[]; steps: unknown[] }> };
+      const commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: unknown };
+      // The input is validated before anything is counted: a {} file must not read as 0 unplaced cases.
+      if (!Array.isArray(commands.cases)) throw new GoldRefusal('case-commands 独立答案里 cases 不是数组：按这个构建的清单重跑 case-commands.ts');
       const listed2 = new Set([...listed].map((d) => d.replace(/^.*:/, '')));
-      const casesOfBuild = (commands.cases ?? []).filter((c) => listed2.has(c.document.replace(/^.*:/, '')));
-      const unplaced = casesOfBuild.filter((c) => c.comparable && c.paths.length === 0 && c.steps.length === 0).length;
+      const casesOfBuild = (commands.cases as Array<{ document: string; paths: unknown[] }>).filter((c) => listed2.has(c.document.replace(/^.*:/, '')));
+      const covered = new Set(casesOfBuild.map((c) => c.document.replace(/^.*:/, '')));
+      const missingDocs = [...listed2].filter((d) => !covered.has(d));
+      if (missingDocs.length > 0) throw new GoldRefusal(`case-commands 独立答案缺 ${missingDocs.length} 份文档：按这个构建的清单重跑 case-commands.ts`);
+      // The Hub's 'N cases with no parsed command' is the null row of by=commands: commands come from the case
+      // title and labels only, so step-placed and id-less cases are unplaced too — count every case with no path.
+      const unplaced = casesOfBuild.filter((c) => c.paths.length === 0).length;
       (gold as { unplaced?: number }).unplaced = unplaced;
       (gold as { placement?: boolean }).placement = true;
     }
@@ -101,6 +108,13 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     print(`分组 ${gold.groups!.length} 组；用例 ${gold.totals!.cases}；无期望 ${gold.totals!.missing}；含糊 ${gold.totals!.vague}；负面 ${gold.totals!.negative}`);
     print(`指标计数 SHA-256 ${createHash('sha256').update(JSON.stringify(gold.groups!.map(({ cases, missing, vague, negative }) => ({ cases, missing, vague, negative })).sort((a, b) => a.cases - b.cases || a.missing - b.missing || a.vague - b.vague || a.negative - b.negative))).digest('hex').slice(0, 12)}`);
     return 0;
-  } catch { process.stderr.write('生成看板独立答案失败：检查原始文件与文档清单\n'); return 1; }
+  } catch (error) {
+    if (error instanceof GoldRefusal) {
+      process.stderr.write(`${error.line}\n`);
+      return 1;
+    }
+    process.stderr.write('生成看板独立答案失败：检查原始文件与文档清单\n');
+    return 1;
+  }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2));

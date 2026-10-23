@@ -134,3 +134,37 @@ test('--case-commands writes the independent unplaced count into the gold', () =
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('--case-commands counts the Hub definition: every case of the listed documents with no parsed path, and the input is validated', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-board-cc2-'));
+  try {
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
+    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
+    const base = ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F'];
+    // A plain unplaced case, a step-placed case and an id-less unplaced case: the Hub's null row counts all three
+    // (commands come from the title and labels only; steps never place a case).
+    const cases = [
+      { key: 'doc-a#c1', document: 'doc-a', node: 'c1', comparable: true, paths: [], steps: [] },
+      { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [], steps: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }] },
+      { key: 'doc-a#c3', document: 'doc-a', node: 'c3', comparable: false, paths: [], steps: [] },
+    ];
+    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a'], cases }));
+    const run = spawnSync(process.execPath, [...base, '--case-commands', join(dir, 'cc.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')).unplaced, 3);
+    // A {} file (cases not an array) is refused, not counted as 0.
+    writeFileSync(join(dir, 'empty.json'), '{}');
+    const notArray = spawnSync(process.execPath, [...base, '--case-commands', join(dir, 'empty.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(notArray.status, 1);
+    assert.match(notArray.stderr, /case-commands 独立答案里 cases 不是数组：按这个构建的清单重跑 case-commands\.ts/);
+    // A file that covers none of the listed documents is refused with the missing count.
+    writeFileSync(join(dir, 'other.json'), JSON.stringify({ cases: [{ key: 'doc-b#c9', document: 'doc-b', node: 'c9', comparable: true, paths: [], steps: [] }] }));
+    const none = spawnSync(process.execPath, [...base, '--case-commands', join(dir, 'other.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(none.status, 1);
+    assert.match(none.stderr, /case-commands 独立答案缺 1 份文档：按这个构建的清单重跑 case-commands\.ts/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
