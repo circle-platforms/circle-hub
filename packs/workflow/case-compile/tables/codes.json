@@ -1,39 +1,186 @@
 {
   "schema": "case-compile.codes@1",
-  "origin": "决定：case-compile 在 Hub 边界重跑编译核对（编译设计第 2 节）；结论都是事实或未知，带“按合成合约核对”（合约是合成的时）和“不证明在真实设备上跑得通”",
-  "description": "任务包函数给出的反驳码、拒绝码和警告码。函数代码里的标签与这里一致（pack.test.ts 核对）。解释器给出的码（core.catalog.*、QUOTE_MISMATCH）属核心，不在这里列",
+  "origin": "编译包 2.0：只核验原运行器合约、发布配置与受限槽位",
+  "description": "模型可修复的反驳码均有修复行，最多两轮；文档和身份错误拒绝开始运行",
   "violations": [
-    { "code": "case-compile.slots_invalid", "when": "提交的槽位形状不对：bucket 不是字符串、blocks 或 steps 或 expects 不是数组、步骤缺对象或方法、参数不是对象", "fix": "按 SKILL.md 的受限结构填槽；执行计划由 Hub 从槽位生成，不由模型写" },
-    { "code": "case-compile.block_unknown", "when": "blocks 里有有限集（setup、teardown）之外的块", "fix": "块只写 setup 或 teardown" },
-    { "code": "case-compile.method_unknown", "when": "步骤的（对象，方法）不在合约里", "fix": "只用合约声明的对象和方法；要新的（对象，方法）先改合约文档（所有者发布）" },
-    { "code": "case-compile.method_forbidden", "when": "步骤用了合约禁用的（对象，方法）组合（例如重启类）", "fix": "换合约不禁用的组合；禁用的组合不能出现在执行计划里" },
-    { "code": "case-compile.param_arity", "when": "参数个数不对：缺了必填参数，或写了合约没有声明的参数", "fix": "按合约的参数表写：必填的一个不少，未声明的一个不写" },
-    { "code": "case-compile.param_type", "when": "参数值的类型和合约声明的类型不符（int 要整数、enum 要在取值里、keyword 要是那个字面词、地址族要对）", "fix": "按合约声明的类型改参数值" },
-    { "code": "case-compile.param_range", "when": "参数值越界：int 或 port 超出 minimum/maximum，字符串长度超出 minLength/maxLength", "fix": "把取值改回合约声明的范围" },
-    { "code": "case-compile.bed_unknown", "when": "bucket 不是清单里的台架名", "fix": "bucket 写清单（doc:doc:bed-topology）里的台架名" },
-    { "code": "case-compile.address_off_bed", "when": "字面地址不是台架上的设备接口地址，也不是这次运行血缘里分配到的地址", "fix": "地址写台架清单里的设备接口地址，或先经 test-bed 预订分配" },
-    { "code": "case-compile.listen_not_dut", "when": "监听地址不是被测设备（load-balancer）的接口地址", "fix": "监听地址写被测设备的接口地址" },
-    { "code": "case-compile.listen_blind", "when": "监听地址所在的网段上没有触发设备（盲地址）", "fix": "换同网段有触发设备的被测设备接口，或在清单里补触发设备（所有者改清单）" },
-    { "code": "case-compile.backend_not_server", "when": "后端地址不是服务器设备（type=server）的接口地址；清单 services 里声明的服务不算后端（编译规则有意比 bed-facts 的后端候选严）", "fix": "后端地址写 type=server 设备的接口地址" },
-    { "code": "case-compile.address_blind", "when": "盲地址（所在网段没有触发设备）被当成虚拟地址", "fix": "盲地址不能当监听或虚拟地址；换同网段有触发设备的地址或分配到的地址" },
-    { "code": "case-compile.expect_without_source", "when": "期望结果没有逐字引文（quote 缺 reference 或 text），或一份计划一个期望结果都没有", "fix": "每个期望结果都带 quote：reference 指到用例原文、缺陷修复说明或手册的片段，text 是逐字内容" },
-    { "code": "case-compile.expect_not_in_quote", "when": "期望结果的文字（空白折叠后）不是它的引文（quote.text）的片段——引文是真的，期望文字却是模型自己写的", "fix": "期望文字写引文里的逐字片段（可以截取，不能改写）；要换说法就先换引文来源" },
-    { "code": "case-compile.plan_in_slots", "when": "槽位里写了 plan_json：执行计划由 Hub 从槽位生成，模型只填槽（bucket、blocks、steps、expects 和 quotes）", "fix": "把 plan_json 从提交里删掉；执行计划由 Hub 生成，支持结论的 data.plan 里有它" }
+    {
+      "code": "case-compile.slots_invalid",
+      "when": "槽位形状不符合 slots.schema.json",
+      "fix": "按完整形状填写 bucket、空 blocks、steps、expects、replacements，删除旧字段"
+    },
+    {
+      "code": "case-compile.method_forbidden",
+      "when": "组合不是合约启用条目",
+      "fix": "只用合约启用且非内部、非认证候选的组合"
+    },
+    {
+      "code": "case-compile.method_not_allowed",
+      "when": "组合没有被本轮配置允许",
+      "fix": "换成本轮配置允许的组合，不通过工作簿或计划申请授权"
+    },
+    {
+      "code": "case-compile.param_arity",
+      "when": "多余、缺失或重复参数",
+      "fix": "按原始签名给齐必填参数，删去未声明或重复参数，不补默认值"
+    },
+    {
+      "code": "case-compile.param_keyword",
+      "when": "仅位置参数使用了关键字",
+      "fix": "把该参数放在 args 中正确的位置"
+    },
+    {
+      "code": "case-compile.param_sensitive",
+      "when": "计划给出了默认值被脱敏的凭据参数",
+      "fix": "删除凭据参数；需要密码的步骤本轮不开放"
+    },
+    {
+      "code": "case-compile.param_value",
+      "when": "参数不是单行最终文字、含占位符、首尾空白或以等号开头",
+      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀"
+    },
+    {
+      "code": "case-compile.device_command_denied",
+      "when": "设备命令命中配置拒绝表",
+      "fix": "删除该命令，换为本轮允许的设备单行命令"
+    },
+    {
+      "code": "case-compile.host_command_denied",
+      "when": "主机 shell 命中配置拒绝表",
+      "fix": "删除拒绝表中的主机命令，不执行重启或清除类动作"
+    },
+    {
+      "code": "case-compile.bed_unknown",
+      "when": "bucket 不是配置选定的清单台架",
+      "fix": "bucket 写配置的 bed"
+    },
+    {
+      "code": "case-compile.address_off_bed",
+      "when": "字面地址或替换目标不在台架或本血缘分配中",
+      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行"
+    },
+    {
+      "code": "case-compile.address_wrong_device",
+      "when": "设备命令使用了其他非服务器设备地址",
+      "fix": "换成该座位设备的接口地址、本血缘分配地址或服务器地址"
+    },
+    {
+      "code": "case-compile.replacement_invalid",
+      "when": "替换表不是一一对应的有效地址映射",
+      "fix": "每个原地址和目标地址各出现一次，按数值去重"
+    },
+    {
+      "code": "case-compile.replacement_missing",
+      "when": "槽位仍有应替换的原用例地址",
+      "fix": "在客户端将步骤或期望改成替换后的最终文字"
+    },
+    {
+      "code": "case-compile.expect_without_source",
+      "when": "没有期望或缺逐字引文",
+      "fix": "至少一条期望带 quote.reference、quote.text 和 after"
+    },
+    {
+      "code": "case-compile.expect_not_in_quote",
+      "when": "期望不是套用替换表后原引文的片段",
+      "fix": "从替换后的原引文复制逐字片段，不改写结论"
+    },
+    {
+      "code": "case-compile.expect_after",
+      "when": "期望没有判断设备命令行或主机 shell 步骤",
+      "fix": "after 写对应命令步骤从 1 开始的编号，不指向等待或断言"
+    }
   ],
   "refusals": [
-    { "code": "case-compile.no_subject", "when": "输入槽 subject 里没有用例文档", "fix": "在 inputs.subject 里绑定评审过的用例脑图（agile:mindmap 或 application/json）" },
-    { "code": "case-compile.subject_not_mindmap", "when": "用例文档不是 kityminder@1 解析的脑图", "fix": "绑定敏捷平台导出的 KityMinder 脑图" },
-    { "code": "case-compile.no_contract", "when": "输入槽 contract 里没有合约文档", "fix": "在 inputs.contract 里写命名文档 {\"external\": \"doc:doc:compile-contract\"}（管理员用 circle-hub doc put 发布）" },
-    { "code": "case-compile.contract_invalid", "when": "合约文档有问题（形状不是 compile-contract@1），整份拒绝并列出问题", "fix": "按合约的形状（compile-contract@1）改正后重新发布" },
-    { "code": "case-compile.no_inventory", "when": "输入槽 inventory 里没有台架清单", "fix": "在 inputs.inventory 里写命名文档 {\"external\": \"doc:doc:bed-topology\"}" },
-    { "code": "case-compile.manifest_invalid", "when": "台架清单有问题（形状不是 test-bed-manifest@1），整份拒绝并列出问题", "fix": "按清单的形状（test-bed-manifest@1）改正后重新发布" },
-    { "code": "case-compile.invalid_parameter", "when": "case_rule 不是 tagged 或 marked", "fix": "case_rule 写 tagged 或 marked（默认 marked）" },
-    { "code": "case-compile.internal_error", "when": "投影函数内部出错（任务包缺陷）", "fix": "把输入交给任务包维护人" }
+    {
+      "code": "case-compile.no_subject",
+      "when": "没有用例文档",
+      "fix": "绑定用例脑图"
+    },
+    {
+      "code": "case-compile.subject_not_mindmap",
+      "when": "用例未由 kityminder@1 解析",
+      "fix": "绑定脑图源"
+    },
+    {
+      "code": "case-compile.no_contract",
+      "when": "没有运行器原格式合约",
+      "fix": "绑定发布的合约命名文档"
+    },
+    {
+      "code": "case-compile.contract_invalid",
+      "when": "原合约形状或重算身份不符",
+      "fix": "按逐条 JSON 指针修正并重新发布"
+    },
+    {
+      "code": "case-compile.no_inventory",
+      "when": "没有台架清单",
+      "fix": "绑定发布的台架清单"
+    },
+    {
+      "code": "case-compile.manifest_invalid",
+      "when": "台架清单不合式",
+      "fix": "按指针修正清单并重新发布"
+    },
+    {
+      "code": "case-compile.no_profile",
+      "when": "没有运行环境配置",
+      "fix": "绑定 runtime-profile@1 命名文档"
+    },
+    {
+      "code": "case-compile.profile_invalid",
+      "when": "配置形状、身份、座位或允许集合不符",
+      "fix": "按指针修正配置并重新发布"
+    },
+    {
+      "code": "case-compile.invalid_parameter",
+      "when": "case_rule 无效",
+      "fix": "case_rule 写 marked 或 tagged"
+    },
+    {
+      "code": "case-compile.autoid_invalid",
+      "when": "autoid 不是配置要求的原始文字",
+      "fix": "复制完整原始 autoid 字符串"
+    },
+    {
+      "code": "case-compile.autoid_not_found",
+      "when": "autoid 没有匹配的用例",
+      "fix": "核对文档及 case_rule 后重新开始运行"
+    },
+    {
+      "code": "case-compile.autoid_ambiguous",
+      "when": "autoid 重复",
+      "fix": "作者修正原文重复编号后重新绑定"
+    },
+    {
+      "code": "case-compile.internal_error",
+      "when": "投影函数内部出错",
+      "fix": "将输入交给任务包维护人，修复后重新开始运行"
+    }
   ],
   "warnings": [
-    { "code": "case-compile.no_cases", "when": "文档里按规则取不到用例", "fix": "无。空范围是合法的空结果；确认文档里的用例节点带标签或标记" },
-    { "code": "case-compile.candidate_only", "when": "case_rule 为 tagged 时，只靠标记识别的节点只计数不投影", "fix": "要这些节点成为用例，给它们加标签（resource），或改用默认规则" },
-    { "code": "case-compile.contract_problem", "when": "合约文档的一个问题（contract_invalid 整份拒绝的逐条列表）", "fix": "照各条的指出的位置和改法修正合约文档" },
-    { "code": "case-compile.manifest_problem", "when": "台架清单的一个问题（manifest_invalid 整份拒绝的逐条列表）", "fix": "照各条的指出的位置和改法修正清单文档" }
+    {
+      "code": "case-compile.no_cases",
+      "when": "文档没有用例",
+      "fix": "核对用例标记"
+    },
+    {
+      "code": "case-compile.candidate_only",
+      "when": "只靠标记的节点被 tagged 规则排除",
+      "fix": "补标签或使用 marked"
+    },
+    {
+      "code": "case-compile.contract_problem",
+      "when": "原格式合约的逐条问题",
+      "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.manifest_problem",
+      "when": "台架清单逐条问题",
+      "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.profile_problem",
+      "when": "运行环境配置逐条问题",
+      "fix": "按指针处理"
+    }
   ]
 }

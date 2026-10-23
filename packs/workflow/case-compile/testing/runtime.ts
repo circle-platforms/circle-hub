@@ -6,7 +6,7 @@ export function entry(object: string, method: string, parameters: Array<{ name: 
 export function signRuntime<T extends Record<string, unknown>>(value: T): T & { contract_sha256: string } { return { ...value, contract_sha256: runtimeDigest(value) }; }
 export function runtimeDocument() {
   return signRuntime({ schema: 'ist.excel.function-contract', complete: true, runtime: { minimum_version: 'synthetic-runtime-v2', runner_source: 'fixture/runtime.py', runner_sha256: 'a'.repeat(64), found_times_supported: false }, source_hashes: { 'fixture/runtime.py': 'a'.repeat(64) }, objects: [{ name: 'widget-seat', status: 'enabled' }, { name: 'widget-host', status: 'enabled' }, { name: 'widget-check', status: 'enabled' }, { name: 'widget-clock', status: 'enabled' }, { name: 'widget-disabled', status: 'disabled' }], entries: [
-    entry('widget-seat', 'configure', [{ name: 'line', kind: 'positional_only', required: true, default: null }]),
+    entry('widget-seat', 'configure', [{ name: 'line', kind: 'positional_only', required: true, default: null }, { name: 'auth_token', kind: 'positional_or_keyword', required: false, default: '<redacted>' }]),
     entry('widget-host', 'shell', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }]),
     entry('widget-check', 'literal', [{ name: 'expected', kind: 'positional_or_keyword', required: true, default: null }]),
     entry('widget-clock', 'pause', [{ name: 'seconds', kind: 'positional_or_keyword', required: true, default: null }]),

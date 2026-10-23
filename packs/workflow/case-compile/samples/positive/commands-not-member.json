@@ -1,11 +1,11 @@
 {
-  "id": "commands_valid",
+  "id": "commands_not_member_positive",
   "source": "author",
   "check": "commands_catalog",
-  "note": "合成正例：命令行在目录里，参数在范围内",
+  "note": "合成正例：commands-not-member",
   "subject": {
     "item": "doc-1:c-1",
-    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "phrases": [
       "widget health interval 60"
     ],
