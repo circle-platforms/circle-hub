@@ -97,3 +97,9 @@ executor@1 对旧缺 warrant_id 的定义按显式未登记状态读出；list�
 已由 559e23f1 限制所有处置选择只能回答冻结的未知请求。accepted/read_pending 不得用 keep_unknown 创造未知，也不得用 mark_failed 释放尚无终态的占用；三轮读失败才有明确升级入口。
 
 验证：R03 三种选择及升级测试复用，不重复生产修复。
+
+## 17 — 与第 4 条重复，现已不成立
+
+c63439fa 已把本进程能证明没调用 sender 的窗口/围栏/提交确认丢失路径记为未发出，附 submit_invoked:false 及证据，释放而不冻结。预算检查已前移。跨进程断点仍不凭缺日志伪造未执行。
+
+验证：R04 及 lost acknowledgement 测试复用。
