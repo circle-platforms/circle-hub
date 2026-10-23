@@ -155,7 +155,7 @@ test('1200 items have three pages, stable whole-result counts, summaries, claims
   assert.equal((await send(`/console/results/${id}?terminal=bogus`, cookie)).status, 400);
   stored.latest = null;
   stored.production = null;
-  assert.match((await send(`/console/results/${id}`, cookie)).body, /没有 start_run 留下的校验结果记录/);
+  assert.match((await send(`/console/results/${id}`, cookie)).body, /没有找到 start_run 留下的校验结果记录/);
 });
 
 test('a filtered empty list page retains the service cursor', async () => {
@@ -195,13 +195,15 @@ test('independent probe sessions print the same digest for the same synthetic re
   assert.equal((await probeConsole(options)).sha256,(await probeConsole(options)).sha256);
 });
 
-test('a missing production record is a definite gap with a new-run action even when commentary exists',async()=>{
+test('a missing production record requires a reread before suggesting a new run even when commentary exists',async()=>{
   const user=await server.createUser('缺生产记录');const id=await start(user),cookie=await login(user),stored=server.fakes.runs.runs.get(id)!;
   const submitted=await server.fakes.runs.submitResult(user.principal,{run:id,model:'synthetic-commentary',items:stored.record.items.map(item=>({item:item.id,handling:'handled',slots:{findings:[{text:'合成评论',code:'literal_issue'}]}}))},{traceId:'3'.repeat(32),sessionId:null});
   assert.equal(submitted.acceptance,'accepted');const commentary=stored.latest!.record;assert.notEqual(commentary,stored.production!.record);stored.production=null;
   for(const path of [`/console/results/${id}`,`/console/runs/${id}`]){
     const response=await send(path,cookie);assert.equal(response.status,200);
-    assert.match(response.body,/没有 start_run 留下的校验结果记录/);assert.match(response.body,/submission 等于运行记录摘要的 validation_result/);
+    assert.match(response.body,/没有找到 start_run 留下的校验结果记录/);assert.match(response.body,/submission 等于运行记录摘要的 validation_result/);
+    assert.match(response.body,/刷新本页再看/);assert.match(response.body,/刷新后仍缺/);assert.ok(response.body.includes(stored.record.started_at));
+    assert.ok(response.body.indexOf('刷新本页再看')<response.body.indexOf('同样的输入重新开始一次新运行'));
     assert.match(response.body,/同样的输入重新开始一次新运行/);assert.match(response.body,/client_key/);
     assert.match(response.body,/已有后续受理的模型评论/);assert.ok(response.body.includes(commentary));assert.doesNotMatch(response.body,/还没有校验结果/);
   }

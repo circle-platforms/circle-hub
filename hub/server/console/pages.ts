@@ -201,9 +201,9 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
   return html`<details class="unverified"><summary>提交内容（未经平台验证）</summary>${note ? html`<p class="notice">${note}</p>` : ''}${pre(shown)}</details>`;
 }
 
-/** A missing stored production result is a definite record gap, not an in-progress computation. */
+/** A visible run may precede its stored production result; ask for a reread before a new run. */
 export function missingProductionResult(detail:RunDetail):Html {
-  return html`<p class="notice">这次生产运行没有 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。下一步：用同样的输入重新开始一次新运行，使用新的 client_key，避免返回这次旧运行。</p>
+  return html`<p class="notice">没有找到 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。这次运行开始于 ${detail.run.started_at}；如果运行刚开始，请刷新本页再看。刷新后仍缺，再用同样的输入重新开始一次新运行，使用新的 client_key，避免返回这次旧运行。</p>
 ${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${code(detail.latest.record)}；运行页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
 }
 

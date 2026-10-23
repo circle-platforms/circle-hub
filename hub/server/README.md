@@ -240,7 +240,7 @@ links are fixed paths with encoded query parameters).
   The authoritative run page uses that same production result as its partition list and displays the latest later accepted
   result separately as 模型评论（判断）; its counts are labelled 判断，未采用, with per-item judgment claims, the original model handling declarations and cross-item claims. Commentary never reuses the adopted/open/request group titles. The results page identifies that commentary record when present.
   If the production record is absent, both pages name the missing start_run result explicitly, distinguish any accepted
-  commentary, and direct the reader to start a new run with the same inputs and a new client_key; replaying the old key
+  commentary, show the run start time, and ask the reader to refresh the same page first: run storage may precede production-result storage. Only if the refreshed page still lacks the result does it suggest a new run with the same inputs and a new client_key; replaying the old key
   would return the old run. Neither page starts or repairs a run. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
   status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
