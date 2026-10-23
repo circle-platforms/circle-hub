@@ -405,3 +405,11 @@ Raw CLI errors, response text and paths are never copied into the report line.
 
 Smoke decodes UTF-8 first and falls back to Windows-1252 for single-byte build-site pages.
 NUL-bearing or undecodable originals fail as a checker encoding limit, with the read outcome kept separate.
+
+## Needs from connectors
+
+Export a reusable credential-value check from hub/connectors/api.ts so CLI dry-run and writes share exactly one rule.
+Until that API exists, import temporarily mirrors the current 1–4096 character rule and rejects C0/DEL controls,
+including raw Basic components and the composed header. Tests compare rejected boundaries with ResourceAdmin itself.
+All resources are validated before any write, in dry-run too; I/O failures after validation remain independent writes
+and completed resources are disclosed immediately. No connector implementation is changed by this task.

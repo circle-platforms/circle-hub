@@ -647,6 +647,16 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
   }
 }
 
+// Temporary mirror of ResourceAdmin.setCredentials until connectors exports a reusable value check.
+// Keep this at the import boundary so a dry run and every resource are checked before the first write.
+const IMPORT_VALUE_MAX_CHARS = 4096;
+function importValueProblem(value: string): string | null {
+  if (!value.length) return '值是空的';
+  if (value.length > IMPORT_VALUE_MAX_CHARS) return `长度超过 ${IMPORT_VALUE_MAX_CHARS} 个字符`;
+  if (/[\u0000-\u001f\u007f]/.test(value)) return '含控制字符';
+  return null;
+}
+
 // ---------------------------------------------------------------- secret
 
 async function secretCommand(session: Session, args: readonly string[]): Promise<number> {
@@ -682,10 +692,16 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
       else { session.out(`${key}：找到，长度 ${value.length}`); if (value.length === 0) missing = true; }
     }
     if (missing) return 1;
+    for (const key of keys) {
+      const problem = importValueProblem(found.get(key)!);
+      if (problem) throw new CliError(`键 ${key} ${problem}；未写入任何凭据`, '在环境文件中修正该键的有效值，先用 --dry-run 核对后重跑');
+    }
     const grouped = new Map<string, Record<string, string>>();
     for (const mapping of mappings) {
       if (mapping.keys.length === 2 && found.get(mapping.keys[0])!.includes(':')) throw new CliError(`键 ${mapping.keys[0]} 的用户名含冒号，不能组成 Basic 头值`);
       const value = mapping.keys.length === 1 ? found.get(mapping.keys[0])! : `Basic ${Buffer.from(mapping.keys.map((key) => found.get(key)!).join(':')).toString('base64')}`;
+      const problem = importValueProblem(value);
+      if (problem) throw new CliError(`键 ${mapping.keys.join('、')} 组成的凭据${problem}；未写入任何凭据`, '修正这些键的有效值，先用 --dry-run 核对后重跑');
       const entries = grouped.get(mapping.resource) ?? {};
       entries[mapping.entry] = value; grouped.set(mapping.resource, entries);
     }

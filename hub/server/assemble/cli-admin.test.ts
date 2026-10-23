@@ -1343,13 +1343,13 @@ describe('secret import', () => {
     assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.username`)), basic);
   });
 
-  test('a later resource refusal discloses the earlier completed write without exposing any value', async () => {
+  test('review 5: an invalid later resource value is refused before any credential is written', async () => {
     const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
     const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
     const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`]);
-    assert.equal(result.code, 1); assert.ok(result.text.includes(`已设置资源 ${first} 的凭据 username`));
-    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${first}.username`)), 'reader');
+    assert.equal(result.code, 1); assert.ok(!result.text.includes(`已设置资源 ${first}`));
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${first}.username`)), null);
     assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.password`)), null);
   });
 
@@ -1494,4 +1494,28 @@ test('review 1: resource read exposes connector diagnostics only with the explic
   assert.ok(events.err.some(line => line.includes('read_ok')));
   const failure = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing', '--events']);
   assert.equal(failure.code, 1); assert.ok(failure.err.some(line => line.includes('read_failed')));
+});
+
+
+test('review 5: dry-run and real import validate every value before the first write', async () => {
+  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+  for (const value of ['SensitiveCtlPrivate95\tValue', 'X'.repeat(4097)]) {
+    secrets.add(value); secrets.add(value.slice(0, 12));
+    const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${value}`);
+    const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`];
+    for (const suffix of [['--dry-run'], []]) {
+      const result = await admin.run([...args, ...suffix]); assert.equal(result.code, 1); assert.match(result.text, /BAD/);
+      assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    }
+    await withKit(admin, async kit => {
+      const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: line => admin.deployment.printed.push(line) });
+      const by = (await kit.principals.findByName('根管理员'))!;
+      await assert.rejects(hub.connectors.admin.setCredentials(by, second, { password: value }));
+    });
+  }
+  const valid = 'V'.repeat(4096); secrets.add(valid);
+  const file = await importFile(admin, `PORTAL_USER=${valid}`);
+  const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`];
+  await expectOk(admin, [...args, '--dry-run']); await expectOk(admin, args);
+  assert.equal((await withKit(admin, kit => kit.vault.getText(`connector.${first}.username`)))?.length, 4096);
 });
