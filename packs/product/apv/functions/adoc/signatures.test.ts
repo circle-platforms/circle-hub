@@ -388,3 +388,56 @@ test('example content is marked reference only, so a reader does not take it for
   const signature = result.entries.find((entry) => entry.data.form === 'signature');
   assert.ok(signature !== undefined && signature.data.reference_only === undefined, JSON.stringify(signature?.data));
 });
+
+test('a spaced literal mark is no markup: such a line reads as no signature and is reported, not turned into a command', async () => {
+  const out = await compile({
+    'book.adoc': [
+      '= Book',                          // 1
+      '',                                // 2
+      '== 命令',                          // 3
+      '',                                // 4
+      '[role=signature]',                 // 5
+      '----',                             // 6
+      'demo + pool + add <name>',         // 7
+      'demo * cipher * add <name>',       // 8
+      'demo _ route _ add <name>',        // 9
+      'demo *pool* add <name>',           // 10
+      'demo set max_conn <count>',        // 11
+      '----',                             // 12
+      '',                                // 13
+    ].join('\n'),
+  });
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  // The three spaced-mark lines are not markup, so they are not signatures: they are reported with their line and
+  // reason, and stay the text they are — the source characters are not deleted to make a command word.
+  assert.deepEqual(
+    mapped.unparsed.map((one) => [one.file, one.line, one.text, one.reason !== '']),
+    [
+      ['book.adoc', 7, 'demo + pool + add <name>', true],
+      ['book.adoc', 8, 'demo * cipher * add <name>', true],
+      ['book.adoc', 9, 'demo _ route _ add <name>', true],
+    ],
+    JSON.stringify(mapped.unparsed),
+  );
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(
+    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    [
+      ['demo pool add <name>', '/commands/demo/pool/add', 'l/10'],
+      ['demo set max_conn <count>', '/commands/demo/set/max_conn', 'l/11'],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.path])),
+  );
+  assert.deepEqual(
+    produced.entries.filter((entry) => entry.data.form !== 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    [
+      ['demo + pool + add <name>', 'l/7'],
+      ['demo * cipher * add <name>', 'l/8'],
+      ['demo _ route _ add <name>', 'l/9'],
+    ],
+    'each line stays the words the source has, on its own line',
+  );
+  assert.ok(produced.warnings.some((warning) => warning.includes('读不成命令签名') && warning.includes('book.adoc:7')), produced.warnings.join('；'));
+});

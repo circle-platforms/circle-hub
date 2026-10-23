@@ -495,11 +495,12 @@ accepted.
 - Section paths follow K1 and have the same shape as markdown@1's. A section is keyed by the node the engine gave for it
   (the index of its own block, carried by every path element), never by its title text, so two sections with the same title
   stay two sections and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`. The segment is the heading's own source text:
-  the attribute references of this family expanded, character references decoded, and the paired inline marks at token
-  edges off — never the engine's converted title, which would carry `<code>` and `&#8217;` into the path. Every other
-  character of the title stays, because a `_`, `+` or `#` inside a word is part of the word, not markup: `health_check`,
-  `C++`, `C#` and `步骤 #1` keep their paths, and two titles that differ only by such a character are told apart by their
-  own text rather than by an ordinal. Repeated sibling keys are numbered
+  the attribute references of this family expanded, character references decoded, and the inline marks paired by
+  AsciiDoc's constrained rule off (no white space inside them) — never the engine's converted title, which would carry
+  `<code>` and `&#8217;` into the path. Every other character of the title stays, because a `_`, `+` or `#` inside a word
+  is part of the word, not markup, and a spaced mark is no markup either: `health_check`, `C++`, `C#` and `步骤 #1` keep
+  their paths, and two titles that differ only by such a character are told apart by their own text rather than by an
+  ordinal. Repeated sibling keys are numbered
   `[k]` from 1, as markdown@1 numbers them (also when a key is empty or already ends in `[digits]`), and the selector is
   the encoded `h/` path, null past 4096 characters: such a section cannot be cited and its blocks hang at the manual
   namespace root, which K1 counts in its own warning. Every section of the expanded model is created before any block is
@@ -565,10 +566,14 @@ accepted.
   emitted with invented marks.
 - Every line of a `[role=signature]` block is read on its own and cited on its own source line (the block's verified range,
   line by line), so a line never cites the whole block. A blank line makes no entry. A listing is verbatim, so the engine
-  gives no conversion of its lines and the marks are read here — but only the paired ones at token edges
-  (`*demo pool del* _<name>_` reads as `demo pool del <name>`, `\<name\>` as `<name>`), never a character inside a word:
-  `max_conn`, `health_check` and `aes128+sha` keep the command words the source has, so a signature block and a command
-  table row of the same command land on the same node. A line the rule does not
+  gives no conversion of its lines and the marks are read here — but only by AsciiDoc's constrained-markup rule: an
+  opening mark at the start of a token with its text beginning immediately, and a closing run of the same length ending
+  that text at the end, before white space or before punctuation (`*demo pool del* _<name>_` reads as
+  `demo pool del <name>`, `\<name\>` as `<name>`). Never a character inside a word — `max_conn`, `health_check` and
+  `aes128+sha` keep the command words the source has, so a signature block and a command table row of the same command land
+  on the same node — and never a mark with white space inside it: `demo + pool + add <name>` is no markup, so such a line
+  reads as no signature, is reported through `unparsed` and stays the text it is instead of becoming a command the source
+  does not have. A line the rule does not
   read stays the ordinary text it is — placed as text on its own line, and reported with its file, line, reason and next
   action (`unparsed` of the mapping and one warning of the production). Nothing is wrapped in bold marks the source does
   not have, so no statement is fabricated and no head/parameter split is guessed.

@@ -140,22 +140,31 @@ function markRun(text: string, at: number): number {
   return run;
 }
 
-/** The index of the closing run of the same length that ends a token, or -1 when the mark is unpaired. */
+/** What may follow a closing mark: the end, white space or punctuation. A word character there means the mark closed no
+ * markup, so `demo * pool * add` keeps every one of its literal asterisks. */
+const AFTER_CLOSE = /^[\s.,;:!?)\]}'"»_、。，；：！？）】…]/u;
+
+/** The index of the closing run of the same length, or -1: it must have a word character before it (the markup ends where
+ * its text ends) and the end, white space or punctuation after it. */
 function closingRun(text: string, from: number, ch: string, run: number): number {
   for (let at = from + run; at < text.length; at++) {
     if (text[at] !== ch) continue;
     const length = markRun(text, at);
-    if (length === run && isSpace(text[at + length])) return at;
+    if (length === run && !isSpace(text[at - 1]) && (at + length >= text.length || AFTER_CLOSE.test(text[at + length] as string))) return at;
     at += length - 1;
   }
   return -1;
 }
 
 /**
- * The paired inline marks AsciiDoc reads as markup dropped, and nothing else: a mark run at the start of a token whose
- * pair ends a token later in the text. A `_`, `+`, `#` or `` ` `` inside a word is part of the word (`max_conn`,
- * `aes128+sha`, `C++`, `步骤 #1`), and dropping it would invent a command word or a heading the source does not have. An
- * unpaired mark stays too: it is text, and a decision about it is not this function's.
+ * The paired inline marks AsciiDoc reads as markup dropped, and nothing else — its constrained-markup rule: an opening
+ * mark run stands at the start of a token (white space or the start before it) with its text beginning immediately (no
+ * white space after it), and its closing run of the same length ends that text (no white space before it) at the end,
+ * before white space or before punctuation. So `*demo pool del* _<name>_` loses its marks, while a `_`, `+`, `#` or
+ * `` ` `` inside a word (`max_conn`, `aes128+sha`, `C++`, `步骤 #1`) and a mark with white space inside it
+ * (`demo + pool + add`) stay: they are characters of the text, and dropping them would invent a command word or a heading
+ * the source does not have. An unpaired or escaped mark stays too — it is text, and a decision about it is not this
+ * function's.
  */
 export function dropPairedMarks(text: string): string {
   let out = '';
@@ -163,7 +172,7 @@ export function dropPairedMarks(text: string): string {
     const ch = text[at] as string;
     if (MARK_CHARS.includes(ch) && isSpace(text[at - 1])) {
       const run = markRun(text, at);
-      const close = closingRun(text, at, ch, run);
+      const close = isSpace(text[at + run]) ? -1 : closingRun(text, at, ch, run);
       if (close > at) {
         out += text.slice(at + run, close);
         at = close + run - 1;
