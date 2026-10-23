@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { boardLocate } from './board-locate.ts';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { boardGold } from './board.ts';
 import scenario from '../accept/quality-board.ts';
@@ -64,7 +68,7 @@ test('board CLI discloses document gaps and only counts and hashes on screen', a
     const run = spawnSync(process.execPath, args, { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     assert.doesNotMatch(run.stdout, /合成|Synthetic|Negative|10\.7/);
-    assert.match(run.stdout, /文档 3 份，其中不在树里 2 份，没有用例 1 份/);
+    assert.match(run.stdout, /清单 3 份，导出的脑图 3 份，其中不在树里 2 份，没有用例 1 份/);
     const result = JSON.parse(readFileSync(join(dir, 'gold.json'), 'utf8'));
     assert.equal(result.types, true);
     assert.equal(result.totals.cases, 2);
@@ -85,4 +89,26 @@ test("board grouping follows the product pack's locator, not the case-location r
   // White space inside a module name is squeezed.
   assert.deepEqual(probe(['Web  UI']), { line: null, module: null }); // no train: no module either
   assert.deepEqual(probe(['10.7', '10.7-R1', 'Web  UI']), { line: '10.7', module: 'Web UI' });
+});
+
+test('a docs list naming documents with no exported map refuses to start and says what to supply', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-board-missing-'));
+  try {
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [] } }));
+    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a', 'doc-b', 'doc-c']));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([]));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_E', '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /清单 3 份，导出的脑图缺 2 份：用 circle-hub original export 导出后重跑/);
+    assert.doesNotMatch(run.stderr, /doc-[abc]|Synthetic/);
+    const empty = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'empty.json'), '--product', 'apv', '--build', 'Synthetic_10_7_E', '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    writeFileSync(join(dir, 'empty.json'), '[]');
+    const emptyRun = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'empty.json'), '--product', 'apv', '--build', 'Synthetic_10_7_E', '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(empty.status, 1);
+    assert.equal(emptyRun.status, 1);
+    assert.match(emptyRun.stderr, /文档清单是空的：补上这个构建的文档清单/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
