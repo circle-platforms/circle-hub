@@ -34,40 +34,50 @@ const goldOf = (): { gold: unknown; dir: string } => {
 };
 
 /** Drives the scenario with a fake Hub: uploads answer src:<sha of the bytes in workdir>, runs answer item rows. */
-const drive = (scenario: ReturnType<typeof build>, answers: (key: string, sha: string) => string): { calls: Array<Array<{ tool: string; input: Record<string, unknown> }>>; done: string } => {
+const drive = (scenario: ReturnType<typeof build>, answers: (file: string) => string): { calls: Array<Array<{ tool: string; input: Record<string, unknown> }>>; done: string; names: string[] } => {
   scenario.prepare?.(join(dirs[dirs.length - 1]!, 'work'));
   const calls: Array<Array<{ tool: string; input: Record<string, unknown> }>> = [];
-  const uploadedShas: string[] = [];
+  const shaToName = new Map<string, string>();
   let index = 0;
   for (let guard = 0; guard < 500; guard += 1) {
     const reply = scenario.respond(turn(index, lastResults)) as Array<{ tool?: string; input?: Record<string, unknown>; text?: string }>;
     if (reply.length === 1 && reply[0]?.text === '检查完成。') {
-      return { calls, done: String(reply[0].text) };
+      return { calls, done: String(reply[0].text), names: [...shaToName.values()] };
     }
     const tools = reply.filter((r) => r.tool !== undefined) as Array<{ tool: string; input: Record<string, unknown> }>;
-    if (reply.every((r) => r.tool !== undefined) && reply.length === 0) return { calls, done: '' };
+    if (reply.every((r) => r.tool !== undefined) && reply.length === 0) return { calls, done: '', names: [] };
     calls.push(tools);
     // Produce the results of these calls.
     const results: Array<{ id: string; text: string; isError: boolean }> = [];
     if (tools.every((t) => t.tool === 'hub_upload_file')) {
       for (const t of tools) {
-        const bytes = readFileSync(join(dirs[dirs.length - 1]!, 'work', String(t.input.file_path)), 'utf8');
+        const name = String(t.input.file_path);
+        const bytes = readFileSync(join(dirs[dirs.length - 1]!, 'work', name), 'utf8');
         const sha = sha256Of(bytes);
-        uploadedShas.push(sha);
-        results.push({ id: `u${uploadedShas.length}`, text: `已上传 src:${sha}`, isError: false });
+        shaToName.set(sha, name);
+        results.push({ id: `u${shaToName.size}`, text: `已上传 src:${sha}`, isError: false });
       }
+    } else if (tools.length === 1 && tools[0]!.tool === 'hub_get_nodes') {
+      const reference = String((tools[0]!.input as { reference: string }).reference);
+      const full = fullTextOf.get(reference) ?? '内容 ' + reference + '：用例 1 个；缺 2 个模板类别：k-security、k-localization';
+      results.push({ id: 'gn', text: JSON.stringify(full), isError: false });
     } else if (tools.length === 1 && tools[0]!.tool === 'hub_start_run') {
       const shas = ((tools[0]!.input.inputs as { documents: Array<{ source: string }> }).documents).map((d) => d.source.slice(4));
-      const rows = shas.map((sha) => `upload-${sha.slice(0, 12)} | 文档 | 位置 / | ${answers(sha, 'x')}`);
+      const rows = shas.map((sha) => `upload-${sha.slice(0, 12)} | 文档 | 位置 / | ${answers(shaToName.get(sha) ?? '?')}`);
       results.push({ id: 'run', text: `运行 run_x 完成：\n${rows.join('\n')}`, isError: false });
     }
     lastResults = results;
     index += 1;
-    if (results.length === 0) return { calls, done: '' };
+    if (results.length === 0) return { calls, done: '', names: [] };
   }
-  return { calls, done: '未走完' };
+  return { calls, done: '未走完', names: [...shaToName.values()] };
 };
 let lastResults: Array<{ id: string; text: string; isError: boolean }> = [];
+const fullTextOf = new Map<string, string>([
+  ['rec:full-x/summary', '内容 rec:full-x/summary：用例 1 个；缺 2 个模板类别：k-security、k-localization'],
+  ['rec:full-y/summary', '内容 rec:full-y/summary：用例 1 个；缺 1 个模板类别：k-security'],
+  ['rec:full-c1/summary', '内容 rec:full-c1/summary：用例 2 个；缺 1 个模板类别：k-security'],
+]);
 
 test('parseItemLine splits on the last non-position part; a title may contain the separator', () => {
   const plain = parseItemLine('upload-0123456789ab | 甲用例 | 位置 /组 | 用例 1 个；缺 2 个模板类别（只列编号）：functional、negative');
@@ -105,7 +115,7 @@ test('the scenario walks the three phases with batch-bounded replies', () => {
   // The fake Hub answers by upload id: every copy of these synthetic documents shows the same two missing ids
   // (functional and negative absent everywhere except where a tag says otherwise — kept simple: all copies miss
   // the same two keyword categories, so every intersection matches).
-  const { calls, done } = drive(scenario, () => '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization');
+  const { calls, done } = drive(scenario, () => '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary');
   assert.ok(calls.length > 4, `phases made ${calls.length} replies`);
   for (const reply of calls) assert.ok(reply.length <= 2, `a reply carried ${reply.length} calls`);
   assert.ok(calls.some((r) => r.every((c) => c.tool === 'hub_upload_file')), 'uploads happened');
@@ -150,7 +160,7 @@ test('a request with no tool results after the start neither restarts nor advanc
 test('check() flags a wrong upload sha and a missed order-independence', () => {
   const { gold } = goldOf();
   const scenario = build(gold as never);
-  const { calls } = drive(scenario, () => '用例 1 个；缺 1 个模板类别（只列编号）：k-security');
+  const { calls } = drive(scenario, () => '用例 1 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-y/summary');
   void calls;
   // The driven scenario's answers all agree; check() must pass the intersection-based checks. A full negative case
   // needs a lying Hub, which drive() cannot express per copy; the structural negatives are covered by the parser
@@ -179,4 +189,68 @@ test('gap-metamorphic.ts and the scenario import nothing from hub/ or packs/; th
       assert.ok(/readFileSync/.test(around), 'template-v3.json is only read as data');
     }
   }
+});
+
+// Five lying Hubs (task page: each wrong answer caught by its own check, end to end). The honest answer every copy
+// gets unless a lie names its file; the lies key by upload file name, which the driver knows.
+const HONEST = '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary';
+const checksDrive = (lie: (file: string) => string | undefined): Array<{ name: string; ok: boolean; actual: string }> => {
+  const { gold } = goldOf();
+  const scenario = build(gold as never);
+  drive(scenario, (file) => lie(file) ?? HONEST);
+  return scenario.check([{ index: 0, toolResults: [], tools: [] }]).map((c) => ({ name: c.name, ok: c.ok, actual: String(c.actual) }));
+};
+
+test('a lying Hub: b loses one category the original names (order independence caught)', () => {
+  const checks = checksDrive((file) => (file === 'd0-b.json' ? '用例 1 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-y/summary' : undefined));
+  const b = checks.find((c) => c.name === '换序');
+  assert.ok(b !== undefined && !b.ok, JSON.stringify(b));
+});
+
+test('a lying Hub: a single-case copy drops the type-label category its own tag must show', () => {
+  const checks = checksDrive((file) => (file === 'd0-c0.json' ? '用例 1 个；缺 2 个模板类别（只列编号）：functional、k-security；全文 rec:full-y/summary' : undefined));
+  const type = checks.find((c) => c.name === '类型名标签');
+  assert.ok(type !== undefined && !type.ok, JSON.stringify(type));
+});
+
+test('a lying Hub: the original\'s case count is one short', () => {
+  const checks = checksDrive((file) => (file === 'd0-a.json' || file === 'd1-a.json' ? '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary' : undefined));
+  const original = checks.find((c) => c.name === '原件用例数');
+  assert.ok(original !== undefined && !original.ok, JSON.stringify(original));
+});
+
+test('a lying Hub: after the join the target category is still missing', () => {
+  // Every honest copy already misses k-security and k-localization; a joined copy that still names the target is
+  // wrong. Which file is an f copy is decided at run time, so the lie names any file ending in '-j-'.
+  const checks = checksDrive((file) => (/j-/.test(file) ? '用例 1 个；缺 2 个模板类别（只列编号）：k-security、k-localization；全文 rec:full-x/summary' : undefined));
+  const join = checks.find((c) => c.name === '加回和加入');
+  assert.ok(join !== undefined && !join.ok, JSON.stringify(join));
+});
+
+test('a lying Hub: an upload\'s src does not match the bytes written', () => {
+  // The driver answers every upload with a foreign sha: the sha check must fail.
+  const { gold } = goldOf();
+  const scenario = build(gold as never);
+  scenario.prepare?.(join(dirs[dirs.length - 1]!, 'work'));
+  const first = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
+  const upResults = first.map((c, i) => ({ id: `u${i}`, text: `已上传 src:${'f'.repeat(64)}`, isError: false }));
+  const second = scenario.respond(turn(1, upResults)) as Array<{ tool: string; input: Record<string, unknown> }>;
+  void second;
+  const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
+  const upload = checks.find((c) => c.name === '上传字节');
+  assert.ok(upload !== undefined && !upload.ok, JSON.stringify(upload));
+});
+
+test('a finding names the case and the run when a single-case answer cannot be had', () => {
+  // c-0-1's run answers two cases: the pack cannot categorize that case, and every dependent copy stops with the
+  // finding, never an unknown.
+  const { gold } = goldOf();
+  const scenario = build(gold as never);
+  drive(scenario, (file) => (file === 'd0-c1.json' ? '用例 2 个；缺 1 个模板类别（只列编号）：k-security；全文 rec:full-c1/summary' : HONEST));
+  scenario.check([{ index: 0, toolResults: [], tools: [] }]);
+  const sections = scenario.sections ?? [];
+  const finding = sections.flatMap((s) => s.lines).find((l) => l.includes('包分不出类别'));
+  assert.ok(finding !== undefined && finding.includes('a2') && finding.includes('c-0-1'), String(finding));
+  const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
+  assert.ok(checks.every((c) => c.name !== '单用例副本答案未知' ? true : false));
 });

@@ -205,13 +205,15 @@ export function withJoined(a: MindTree, b: MindTree, category: string, singleCas
 export const TYPE_NAMES = ['Functional', 'Configuration', 'Integration', 'Compatibility', 'Negative', 'Stress'] as const;
 
 export function typeNamePresent(tree: MindTree, categories: readonly TemplateCategory[]): Map<string, Set<string>> {
-  const typeIds = new Map(categories.filter((c) => c.group === 'test_type').map((c) => [c.label.toLowerCase(), c.id]));
+  // The six type names are the tags to look for (lower-cased); the table's type-label category ids are exactly these
+  // names (functional, configuration, integration, compatibility, negative, stress), so the match is by id.
+  const typeIds = new Set(categories.filter((c) => c.group === 'test_type').map((c) => c.id));
   const out = new Map<string, Set<string>>();
-  const map = mapOf(tree);
-  for (const node of map.nodes) {
+  for (const node of mapOf(tree).nodes) {
     const tags = node.resource.map((tag) => tag.trim().toLowerCase());
-    for (const [name, id] of typeIds) {
-      if (tags.includes(name)) {
+    for (const name of TYPE_NAMES) {
+      const id = name.toLowerCase();
+      if (typeIds.has(id) && tags.includes(id)) {
         const set = out.get(node.id) ?? new Set<string>();
         set.add(id);
         out.set(node.id, set);

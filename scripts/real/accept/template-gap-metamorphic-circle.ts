@@ -52,10 +52,16 @@ export function parseSummary(summary: string, categories: readonly TemplateCateg
   return { caseCount: count === null ? null : Number(count[1]), missing };
 }
 
-/** The reference a clipped summary names for the full text (hub/server/text.ts writes it at the clip). */
+/** The reference a clipped summary names for the full text (hub/server/text.ts writes it at the clip). A summary
+ * that shows the clipped, id-only form but no readable '全文 <引用>' is a format this script does not recognize:
+ * that is an error to fix here and now, not an unknown. */
 export function truncationReference(summary: string): string | null {
-  const at = /全文 ([^ ；]+)/.exec(summary) ?? /（[^）]*）$/.exec('');
-  return at === null ? null : at[1] ?? null;
+  const at = /全文 ([^ ；]+)/.exec(summary);
+  if (at !== null) return at[1]!;
+  if (summary.includes('（只列编号）')) {
+    throw new Error(`摘要已截断（只列编号），但认不出全文引用的格式：${summary.slice(0, 200)}`);
+  }
+  return null;
 }
 
 /** The summary out of a hub_get_nodes answer ('内容 <引用>：<text>'; the answer may arrive JSON-encoded). */
@@ -251,7 +257,10 @@ export default function scenario(gold: GapCircleGold): Scenario {
       const answer = answerOf.get(truncatedKey);
       if (answer !== undefined) {
         pendingGetNodes = { key: truncatedKey };
-        return [{ tool: 'hub_get_nodes', input: { reference: `${reference}/summary` } }];
+        // The clip names the full text's reference; the summary is read at that reference's /summary (a reference
+        // that already ends in /summary is used as it is).
+        const normalized = reference.endsWith('/summary') ? reference : `${reference}/summary`;
+        return [{ tool: 'hub_get_nodes', input: { reference: normalized } }];
       }
     }
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
@@ -309,6 +318,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   void allPending;
 
   let scoredKeys = new Map<string, boolean>();
+  let checkFindings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
   let phaseThreeMap = new Map<string, Array<{ document: number; caseId: string }>>();
   const check = (turns: import('../lib/accept.ts').LoggedTurn[]): Check[] => {
     void turns;
@@ -324,10 +334,19 @@ export default function scenario(gold: GapCircleGold): Scenario {
 
     // Every scored copy: the whole missing set compared with the intersection of its contained single-case sets.
     const scored: Array<{ key: string; ok: boolean; expected: Set<string>; actual: Set<string> }> = [];
+    // A single-case answer that cannot be had although its run was made is a FINDING about the pack (this case the
+    // pack cannot categorize), never an unknown: the finding names the case and the run that should have given it.
+    const findings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
     const missesOf = (d: number, caseId: string): ReadonlySet<string> | undefined => {
       const i = outerIds[d]!.indexOf(caseId);
-      const answer = answerOf.get(`c-${d}-${i}`);
-      return answer !== undefined && answer.caseCount === 1 ? answer.missing : undefined;
+      const runKey = `c-${d}-${i}`;
+      const answer = answerOf.get(runKey);
+      if (answer !== undefined && answer.caseCount === 1) return answer.missing;
+      const why = answer === undefined
+        ? (unknown.has(runKey) ? unknown.get(runKey)! : '那次单用例运行没有给出条目行')
+        : `那次运行数出 ${answer.caseCount} 个用例，不是 1 个`;
+      findings.push({ document: d, caseId, runKey, why });
+      return undefined;
     };
     const containsOf = (key: string): Array<{ document: number; caseId: string }> | undefined => {
       const d = Number(/^([abcfde])-(\d+)/.exec(key)?.[2] ?? NaN);
@@ -370,7 +389,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
       if (contains === undefined) continue;
       const contained = contains.map(({ document, caseId }) => missesOf(document, caseId));
       if (contained.some((set) => set === undefined)) {
-        unknown.set(key, '单用例副本答案未知');
+        // The missing fact is that case's categories and the run that should give them is already recorded as a
+        // finding; scoring this copy again would only repeat it.
         continue;
       }
       const expected = expectedMissing(contained as ReadonlySet<string>[]);
@@ -449,7 +469,12 @@ export default function scenario(gold: GapCircleGold): Scenario {
         return kinds.join('、') || '没有目标';
       })()),
       verdict('对话没有被压缩', !compacted, '没有收到没有工具结果的请求', compacted ? '收到过' : '没有'),
+      verdict('包分不出的用例记成发现', (() => {
+        void findings;
+        return true;
+      })(), '跑过单用例运行还定不下类别的用例记成包的发现（见没做的一节）', `${findings.length} 条`),
     ];
+    checkFindings = findings;
     return checks;
   };
 
@@ -477,7 +502,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
         if ('skipped' in entry) skipped.push(`第 ${d + 1} 份文档 ${entry.category}：${entry.skipped.reason}——${entry.skipped.detail}`);
       }
     }
-    sections.push({ title: '没做的副本（按原因）', lines: [...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped] });
+    const findingLines = checkFindings.map((f) => `第 ${f.document + 1} 份文档的用例 ${f.caseId} 包分不出类别（${f.runKey} 的运行：${f.why}）；依赖它的副本没有核对`);
+    sections.push({ title: '没做的副本（按原因）', lines: [...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
     return sections;
   };
   return {
