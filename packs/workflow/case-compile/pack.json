@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "60f5f10ee595397e05176f92b361bf8ab88cd96bf833220bcf15207775eab32a",
-      "size": 3827
+      "sha256": "ce1424e949a1020f85fc1b590c32e559882da1a4932107bab3035df3de439c14",
+      "size": 4094
     },
     {
       "path": "functions/bed.ts",
@@ -125,6 +125,21 @@
       "path": "samples/negative/blocks-nonempty.json",
       "sha256": "76925bdf19af7c6b4e0cbd397b35c7c299740306050f52d5f9c6eab83065409b",
       "size": 14611
+    },
+    {
+      "path": "samples/negative/cidr-interface.json",
+      "sha256": "7f9acfee8a5eb647fabb7e9d6905f4333b79c4c0efea3b9cc3d9ea84d0e44c6e",
+      "size": 14591
+    },
+    {
+      "path": "samples/negative/cidr-source-replacement.json",
+      "sha256": "427f5dd5114ec08bac27d88cbf719b3054a9f40b4230214865f09f323ab6d329",
+      "size": 14722
+    },
+    {
+      "path": "samples/negative/cidr-url-path.json",
+      "sha256": "ace99ac491eec71a47c249a9b7df436b0251e046558fe17897f5733e90414255",
+      "size": 14588
     },
     {
       "path": "samples/negative/commands-not-member.json",
@@ -295,6 +310,21 @@
       "path": "samples/positive/blocks-nonempty.json",
       "sha256": "1a71427f68946aa5334c52bbbae4ba335d53132c637d1733a3082ec5c4974879",
       "size": 14545
+    },
+    {
+      "path": "samples/positive/cidr-interface.json",
+      "sha256": "aeca2606bc8a2853274ec0823cecee768fb7dae80a41b2e9f50853afa80cfbe3",
+      "size": 14542
+    },
+    {
+      "path": "samples/positive/cidr-source-replacement.json",
+      "sha256": "b8ac0bb05e7eb3c8616928c3a44e1d450e84e1ad4c7668ca824910dce0250686",
+      "size": 14560
+    },
+    {
+      "path": "samples/positive/cidr-url-path.json",
+      "sha256": "9c0ba15df96712be98cd51c8d13f0b39674ae3e3b5d5e482282338a028d81889",
+      "size": 14540
     },
     {
       "path": "samples/positive/commands-not-member.json",

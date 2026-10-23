@@ -1,5 +1,5 @@
 // Literal address locations and replacement verification, never plan rewriting.
-import { addressKey } from './manifest.ts';
+import { addressKey, parseInterface } from './manifest.ts';
 import type { Replacement } from './slots.ts';
 export interface LiteralAddress { text: string; at: number; key: string | null }
 export function literalAddresses(text: string): LiteralAddress[] {
@@ -26,7 +26,8 @@ export function isHostLiteral(token: LiteralAddress, text: string, bed: import('
   const known = bed.devices.flatMap((v) => [...v.ipv4, ...v.ipv6]);
   if (known.some((v) => addressKey(v.address) === token.key)) return true;
   const tail = text.slice(token.at + token.text.length); const before = text.slice(0, token.at);
-  if (/^\/[0-9]{1,3}(?![0-9])/.test(tail) && !/https?:\/\/$/i.test(before)) return false;
+  const prefix=/^\/([0-9]{1,3})(?![0-9])/.exec(tail);
+  if(prefix){const family=token.key.startsWith('ipv4:')?'ipv4':'ipv6';const bits=family==='ipv4'?32:128;const parsed=parseInterface(family,token.text+'/'+prefix[1]);if(parsed&&parsed.prefix<bits){const host=(1n<<BigInt(bits-parsed.prefix))-1n;if((parsed.value&host)===0n)return false;}}
   if (token.key.startsWith('ipv4:')) {
     const value = BigInt('0x' + token.key.slice('ipv4:'.length)); const all = 0xffffffffn;
     if ((value & (value + 1n)) === 0n || (((all ^ value) & ((all ^ value) + 1n)) === 0n)) return false;
