@@ -38,7 +38,13 @@ const receiptOf = async (run: string): Promise<string> => {
 };
 
 /** A verified block: every item handled, the draft findings disposed of (verified unless told), one final in cross_item. */
-const verifyBlock = async (options: { draftRun: RunSummary; verdict: 'PASS' | 'PARTIAL'; level: string; session: string }): Promise<RunSummary> => {
+const verifyBlock = async (options: {
+  draftRun: RunSummary;
+  verdict: 'PASS' | 'PARTIAL';
+  level: string;
+  session: string;
+  dispositionOf?: (findingRef: string, itemId: string) => 'verified' | 'refuted' | 'partial';
+}): Promise<RunSummary> => {
   const started = await client.call('start_run', {
     pack: 'case-review-verify',
     product: bed.product.names[0],
@@ -57,14 +63,18 @@ const verifyBlock = async (options: { draftRun: RunSummary; verdict: 'PASS' | 'P
       item: it.id,
       handling: 'handled',
       slots: {
-        verification: draftFindings.map((f): SlotClaim => ({
-          text: '核实后证实初评发现',
-          code: 'verified',
-          rank: 'minor',
-          location: it.location,
-          quotes: [{ reference: it.location, text: it.label }],
-          data: { finding: f.reference },
-        })),
+        verification: draftFindings.map((f): SlotClaim => {
+          const code = options.dispositionOf?.(f.reference, it.id) ?? 'verified';
+          const text = code === 'refuted' ? '核实后推翻初评发现' : code === 'partial' ? '核实后部分证实初评发现' : '核实后证实初评发现';
+          return {
+            text,
+            code,
+            rank: 'minor',
+            location: it.location,
+            quotes: [{ reference: it.location, text: it.label }],
+            data: { finding: f.reference },
+          };
+        }),
       },
     };
   });
@@ -90,10 +100,10 @@ const refutesOf = async (run: string): Promise<string[]> => {
 };
 
 /** The report item of a started run. */
-const reportItemOf = (run: RunSummary): { fields: Record<string, unknown>; slots: Record<string, unknown> } => {
+const reportItemOf = (run: RunSummary): { summary?: string; fields: Record<string, unknown>; slots: Record<string, unknown> } => {
   const item = run.items.find((i) => i.id === 'report');
   assert.ok(item !== undefined, 'the report item exists');
-  return item as unknown as { fields: Record<string, unknown>; slots: Record<string, unknown> };
+  return item as unknown as { summary?: string; fields: Record<string, unknown>; slots: Record<string, unknown> };
 };
 
 describe('scenario 26: the review report over blocks (steps 6 and 7 of the method)', () => {
@@ -130,6 +140,9 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     reportRun = started.out.run as RunSummary;
     const report = reportItemOf(reportRun);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5' }, 'the worst of the blocks with its level');
+    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P5（最差那块的，照抄）');
+    assert.match(started.text, /整体结论码 PARTIAL、等级 P5（最差那块的，照抄）/);
+    assert.match(started.text, /证实 rec:[0-9a-f]{64}#.+；推翻 0 条/);
   });
 
   test('a report claiming PASS is refused with the computed verdict in the fix', async () => {
@@ -193,6 +206,9 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.equal(started.isError, false, started.text.slice(0, 500));
     const run = started.out.run as RunSummary;
     assert.deepEqual(reportItemOf(run).fields.overall, { verdict: 'PARTIAL', level: 'P4' });
+    assert.equal(reportItemOf(run).summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+    assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
+    assert.match(started.text, /没有要引用的发现；推翻 1 条/);
     // The refuted finding's reference as this run sees it (from its own projected fields, bound to this run).
     const projected = reportItemOf(run).fields.findings as Array<{ kind: string; reference: string }>;
     const refutedReference = projected.find((f) => f.kind === 'refuted')?.reference;
@@ -218,6 +234,95 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     await submitWith([refutedReference]);
     refutes = await refutesOf(run.run);
     assert.ok(refutes.includes('case-review-report.finding_refuted'), `citing a refuted finding is refused: ${refutes.join(', ')}`);
+  });
+
+  test('real shape (two blocks, 45 findings, 1 refuted): started run exposes citations and overall, copied report accepted on first attempt', async () => {
+    // Block E: 23 cases (slice 10..32), 23 findings (1 partial, 22 verified), verified PARTIAL P4
+    const draftE = await startReview(client, {
+      product: bed.product.names[0],
+      version: bed.site.LINE,
+      inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
+      parameters: { slice: { from: 10, to: 32 } },
+    });
+    const findingsE = new Map(draftE.items.map((it, idx) => [
+      it.id,
+      [finding(it, { text: `覆盖缺口：边界用例未覆盖 E${idx + 1}`, code: 'coverage_gap', rank: 'minor' })],
+    ]));
+    const submittedE = await client.call('submit_result', draft(draftE, findingsE));
+    assert.equal(submittedE.isError, false, submittedE.text.slice(0, 400));
+    const blockE = await verifyBlock({
+      draftRun: draftE,
+      verdict: 'PARTIAL',
+      level: 'P4',
+      session: 'sess-s26-ve',
+      dispositionOf: (_ref, id) => (id === draftE.items[0]?.id ? 'partial' : 'verified'),
+    });
+
+    // Block F: 22 cases (slice 33..54), 22 findings (1 refuted, 21 verified), verified PARTIAL P4
+    const draftF = await startReview(client, {
+      product: bed.product.names[0],
+      version: bed.site.LINE,
+      inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
+      parameters: { slice: { from: 33, to: 54 } },
+    });
+    const findingsF = new Map(draftF.items.map((it, idx) => [
+      it.id,
+      [finding(it, { text: `覆盖缺口：恢复出厂未覆盖 F${idx + 1}`, code: 'coverage_gap', rank: 'minor' })],
+    ]));
+    const submittedF = await client.call('submit_result', draft(draftF, findingsF));
+    assert.equal(submittedF.isError, false, submittedF.text.slice(0, 400));
+    const blockF = await verifyBlock({
+      draftRun: draftF,
+      verdict: 'PARTIAL',
+      level: 'P4',
+      session: 'sess-s26-vf',
+      dispositionOf: (_ref, id) => (id === draftF.items[0]?.id ? 'refuted' : 'verified'),
+    });
+
+    // Start report run
+    const started = await startReport([await receiptOf(blockE.run), await receiptOf(blockF.run)]);
+    assert.equal(started.isError, false, started.text.slice(0, 500));
+    const run = started.out.run as RunSummary;
+    const reportItem = reportItemOf(run);
+
+    // 1. Overall verdict and level in started.text and reportItem.summary
+    assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4' });
+    assert.equal(reportItem.summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+    assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
+
+    const overallMatch = /-\s*report\s*\|\s*评审终稿\s*\|\s*整体结论码\s+(\w+)、等级\s+(\w+)/.exec(started.text);
+    assert.ok(overallMatch !== null, 'answer text contains overall verdict and level in report item line');
+    const [, overallVerdict, overallLevel] = overallMatch;
+    assert.equal(overallVerdict, 'PARTIAL');
+    assert.equal(overallLevel, 'P4');
+
+    // 2. Finding references in started.text: all 44 citable references present, refuted finding not cited
+    const citableMatches = [...started.text.matchAll(/(?:证实|部分正确|新增)\s+(rec:[0-9a-f]{64}#[^\s；、|]+)/g)].map((m) => m[1]!);
+    assert.equal(citableMatches.length, 44, 'all 44 citable references can be found in started.text');
+    assert.match(started.text, /推翻 1 条/);
+
+    const allFindings = reportItem.fields.findings as Array<{ kind: string; reference: string }>;
+    const refutedFinding = allFindings.find((f) => f.kind === 'refuted');
+    assert.ok(refutedFinding !== undefined, 'refuted finding exists in projected findings');
+    assert.ok(!citableMatches.includes(refutedFinding.reference), 'refuted finding reference is not copied as citable');
+
+    // 3. Model submits the final report copied directly from started.text: accepted on the first attempt!
+    const answer = await client.call('submit_result', {
+      run: run.run,
+      model: REPORTER,
+      items: run.items.map((it) => ({ item: it.id, handling: 'handled', slots: {} })),
+      cross_item: [{
+        nature: 'judgment',
+        statement: '终稿：两块合成，共 45 条发现，核对推翻 1 条，证实 43 条，部分正确 1 条，各块发现逐条核对一致',
+        grounds: citableMatches,
+        code: overallVerdict,
+        rank: overallLevel,
+      }],
+    });
+    assert.equal(answer.isError, false, answer.text.slice(0, 500));
+    assert.equal(answer.out.acceptance, 'accepted', answer.text.slice(0, 500));
+    const refutes = await refutesOf(run.run);
+    assert.equal(refutes.length, 0, 'first attempt passes all checks with 0 refutes');
   });
 });
 

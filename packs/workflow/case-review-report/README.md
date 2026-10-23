@@ -21,6 +21,16 @@
 - case-review-verify 的结果里 `cross_item` 的结论主张（码 PASS / PARTIAL / FAIL，`rank` 是最终等级）和 `partitions` 的交付/未完成划分是这个包的输入，形状变了要同步这里。
 - case-review / case-review-verify 的 SKILL 里"分块与报告"一节指向这个包。
 
+## 版本说明
+
+- **1.3.0**：
+  - 各交付条目的摘要（`summary`）写出该条目要引用的发现引用（证实、部分正确、新增）及被推翻条数，超出限额时自动截短并提供位置指针；
+  - 终稿条目（`id: report`）的摘要明确给出 Hub 计算的整体结论码与等级（各块取最差，照抄）；
+  - `SKILL.md` 明确指引模型直接从开始运行回答复制整体结论、等级及 `rec:` 发现引用，严禁手动拼造引用或通过 `get_nodes` 翻找。
+- **1.2.0**：
+  - 各块复核结果作输入，Hub 按“各块取最差”算出整体结论和等级；
+  - 证实、部分正确和新增的发现一条不漏，推翻的不能引，建议三段齐全；两块重叠时开始运行被拒。
+
 ## 测试
 
 `functions/report.test.ts` 覆盖投影（最差、合并交付、重叠拒绝、缺条目、缺结论未知）和两个检查；`tests/acceptance/26-review-report.test.ts` 走真 Hub。
