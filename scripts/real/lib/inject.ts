@@ -9,6 +9,8 @@ import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '..
 export const PUBLIC_REFUSALS = {
   gold_kind_missing:'标准答案没有 kind：用现在的 inject-defects.ts 重新注入',
   keep_invalid:'--keep 必须为正整数',
+  session_json:'会话 JSON 无效，重新导出后重跑',
+  session_unreadable:'会话文件不可读，补取后重跑',
   session_shape:'会话 JSON 要有字符串 args 数组和 prompt，从会话文件修正后重跑',
   session_reserved:'会话 args 含驱动保留标志，从会话文件删除后重跑',
 } as const;

@@ -280,3 +280,15 @@ test('closure baseline: a valid empty-plan baseline includes positional duplicat
  assert.equal(measureReview({...options(b.out),source:b.source,plan:b.plan},driverFor(b.out),()=>{}),0);
  assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,baseline:b.out},driverFor(f.out),()=>{}),0);
 });
+
+test('closure startup session validation refuses reserved flags with exit two and a safe exact action', async () => {
+ const {validateSessionStartup}=await import('./measure-review.ts');
+ for(const side of ['--draft','--verify']) for(const flag of ['--prompt','--out','--name']) {
+  const valid=JSON.stringify({args:[],prompt:'synthetic'}), bad=JSON.stringify({args:[flag+'=private-value'],prompt:'synthetic'});
+  const checked=validateSessionStartup(side==='--draft'?bad:valid,side==='--verify'?bad:undefined);
+  assert.equal(checked.code,2); if(checked.code===2) {
+   assert.equal(checked.message,`${side} 的 args 里有 ${flag}：--prompt、--out、--name 由驱动设置，从会话 JSON 里删掉`);
+   assert.ok(!checked.message.includes('private-value'));
+  }
+ }
+});
