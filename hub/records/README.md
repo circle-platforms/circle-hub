@@ -526,6 +526,8 @@ Every accepted fallback is disclosed through `recordIntegrityNotes()` in the pub
 
 唯一业务键锁使用独立的 `UNIQUE_KEY_LOCK_SPACE`，与来源去重和普通业务事务锁的命名空间均不同；合并保留三种用途，不让它们互相占用同一个锁空间。
 
-完整管理员理由（hub-read-absence）：新增迁移 4 call_reasons，只追加每条理由的序号、完整正文和时刻；原 call_notes 的 2,000 字摘要与已应用迁移 1–3 的 SQL 均保留。CallLogInput.adminReasons 不参与调用记录及其摘要，在同一事务中批量写入；当前管理员查询才有 admin_reasons，普通读者无该字段。追加回执、JSONL 和 repairFiles 重建文件仍只带原摘要，不带完整理由。部署迁移由整合者另行执行；本分支只在临时 PostgreSQL 验证。
+完整管理员理由（hub-read-absence）：新增迁移 4 call_reasons，只追加每条理由的序号、完整正文和时刻；原 call_notes 的 2,000 字摘要与已应用迁移 1–3 的 SQL 均保留。CallLogInput.adminReasons 不参与调用记录及其摘要，在同一事务中批量写入；当前管理员查询才有 admin_reasons，普通读者无该字段。追加回执可带私有摘要；JSONL 的新写、重试与 repairFiles 重建只带调用回执字段，不带 admin_note 或 admin_reasons。部署迁移由整合者另行执行；本分支只在临时 PostgreSQL 验证。
 
 日志理由不是源文件：完整理由和摘要均拒绝保存触发凭据扫描的原文，不写命中文字或其摘要；只保留已触发日志保护这一确定说明。管理员仍可在原系统或受限原件中重现并私审，不能靠日志旁路读凭据。
+
+首轮复核修正：MCP 的管理员摘要只记理由条数，不拼接理由原文；旧调用方单独提供的 adminNote 仍只在数据库管理员查询里可见，文件序列化统一剔除所有私有备注字段。

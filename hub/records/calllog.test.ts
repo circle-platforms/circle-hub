@@ -43,6 +43,8 @@ async function people(kit: TestRecordsKit): Promise<{ admin: Principal; alice: P
   return { admin: p(admin), alice: p(alice), bob: p(bob) };
 }
 
+const fileLine=(line:CallLogLine)=>{const {admin_note,admin_reasons,...publicLine}=line;return publicLine;};
+
 async function fileLines(kit: TestRecordsKit, day: string): Promise<CallLogLine[]> {
   const text = await readFile(join(kit.dataDir, 'logs', `calls-${day}.jsonl`), 'utf8');
   return text
@@ -97,7 +99,7 @@ test('one line per call: a call_log record, a typed row and a JSONL line, with o
   await kit.callLog.append({ ...input, at: '2026-10-22T00:00:00.000Z', traceId: trace(2), spanId: span(2), callResult: 'ok', acceptance: 'accepted', errorCode: null });
   const logDir = join(kit.dataDir, 'logs');
   assert.deepEqual((await readdir(logDir)).sort(), ['calls-2026-10-21.jsonl', 'calls-2026-10-22.jsonl']);
-  assert.deepEqual(await fileLines(kit, '2026-10-21'), [line]);
+  assert.deepEqual(await fileLines(kit, '2026-10-21'), [fileLine(line)]);
   assert.equal((await stat(join(logDir, 'calls-2026-10-21.jsonl'))).mode & 0o777, 0o600);
   assert.equal((await stat(logDir)).mode & 0o777, 0o700);
   // The argument content appears nowhere: not in the tables, not in the files.
@@ -162,8 +164,10 @@ test('the real reason is kept outside the record: no digest a user sees covers t
   assert.equal(JSON.stringify((await query(kit, 'SELECT * FROM records')).rows).includes('没有分配'), false);
   assert.equal(JSON.stringify((await query(kit, 'SELECT * FROM call_logs')).rows).includes('没有分配'), false);
   assert.deepEqual((await query(kit, 'SELECT note FROM call_notes')).rows, [{ note }]);
-  // The admin's file keeps the note with the line.
-  assert.equal((await fileLines(kit, '2026-10-21')).find((line) => line.trace_id === trace(11))?.admin_note, note);
+  // Private summaries stay in the database even for legacy callers supplying only adminNote.
+  const file=await fileLines(kit,'2026-10-21');
+  assert.ok(file.every(line=>!('admin_note' in line)&&!('admin_reasons' in line)));
+  assert.ok(!JSON.stringify(file).includes(note));
   assert.deepEqual(await kit.callLog.query(alice, { userId: bob.id }), { items: [], next: null });
   assert.deepEqual((await kit.callLog.query(admin, { userId: bob.id })).items.map((line) => line.trace_id), [trace(12)]);
   assert.deepEqual((await kit.callLog.query(admin, { tool: 'get_nodes', newestFirst: false })).items.map((line) => line.trace_id), [trace(11), trace(12)]);
@@ -214,13 +218,13 @@ test('a file write that fails is completed by retrying with the same span id, an
   assert.equal((await kit.callLog.query(admin)).items.length, 1);
   await rm(join(logDir, `calls-${day}.jsonl`), { recursive: true });
   const retried = await kit.callLog.append(call);
-  assert.deepEqual(await fileLines(kit, day), [retried]);
+  assert.deepEqual(await fileLines(kit, day), [fileLine(retried)]);
   await kit.callLog.append(call);
   assert.equal((await fileLines(kit, day)).length, 1);
   // A crash between the commit and the write: lines missing from the file, one of them cut half way.
   const second = await kit.callLog.append({ ...call, at: `${day}T09:00:01.000Z`, spanId: span(51), adminNote: null });
   const third = await kit.callLog.append({ ...call, at: `${day}T09:00:02.000Z`, spanId: span(52), adminNote: null });
-  await writeFile(join(logDir, `calls-${day}.jsonl`), `${JSON.stringify(retried)}\n${JSON.stringify(second).slice(0, 40)}`, { mode: 0o600 });
+  await writeFile(join(logDir, `calls-${day}.jsonl`), `${JSON.stringify(fileLine(retried))}\n${JSON.stringify(fileLine(second)).slice(0, 40)}`, { mode: 0o600 });
   assert.equal(await kit.callLog.repairFiles({ from: `${day}T00:00:00.000Z`, to: '2026-10-22T00:00:00.000Z' }), 2);
   const repaired = await fileLines(kit, day).catch(() => null);
   assert.equal(repaired, null, 'the cut line stays as it was and is not valid JSON');
@@ -233,7 +237,7 @@ test('a file write that fails is completed by retrying with the same span id, an
     }
   });
   assert.deepEqual(parsed.map((line) => line.digest), [retried.digest, second.digest, third.digest]);
-  assert.equal(parsed[0].admin_note, '首因');
+  assert.equal(parsed[0].admin_note, undefined);
   assert.equal(await kit.callLog.repairFiles({ from: `${day}T00:00:00.000Z`, to: '2026-10-22T00:00:00.000Z' }), 0);
 });
 

@@ -12,7 +12,7 @@ import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
 import type { CallLogInput, Principal } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
 import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget } from './http.ts';
-import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError } from './notes.ts';
+import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
 
@@ -113,7 +113,7 @@ function headersOf(request: IncomingMessage): Headers {
 async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState): Promise<void> {
   const tool = LOGGED_TOOL.test(state.tool) ? state.tool : state.method === 'tools/call' ? 'tools/call' : 'mcp';
   const errorCode = state.errorCode !== null && LOGGED_CODE.test(state.errorCode) ? state.errorCode : null;
-  const note = clipNote(state.notes.join(' | '), MAX_ADMIN_NOTE);
+  const note=state.notes.length===0?null:`管理员理由 ${state.notes.length} 条；详见管理员调用日志详情`;
   const input: CallLogInput = {
     ...(options.deps.now ? { at: options.deps.now() } : {}),
     traceId,
@@ -126,7 +126,7 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
     acceptance: state.acceptance,
     errorCode,
     durationMs: Math.max(0, performance.now() - state.started),
-    adminNote: note.length === 0 ? null : note,
+    adminNote: note,
     adminReasons:[...state.notes],
   };
   try {

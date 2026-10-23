@@ -4,7 +4,7 @@
 // batches, notes records would refuse), trace and session ids, token revocation, concurrent calls, and service answers that
 // violate their output schema.
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -936,6 +936,24 @@ describe('batches and notes', () => {
     assert.ok(start, 'the start_run line is written');
     assert.match(start.admin_note ?? '', /read failed atoffset 7/);
     await client.close();
+  });
+
+  test('short MCP administrator reasons stay out of initial and repaired JSONL files',async()=>{
+    const user=await person();const client=await connect(user);
+    const original=server.deps.knowledge.getNodes.bind(server.deps.knowledge);
+    const marker='SyntheticPrivateReadReason736';
+    server.deps.knowledge.getNodes=async()=>{throw new Error(marker);};
+    try {
+      await client.call('get_nodes',{root:ROOT_1});
+      const line=(await server.records.callLog.query(server.admin.principal,{userId:user.user.id,tool:'get_nodes',limit:1})).items[0];
+      assert.ok(line.admin_reasons?.some(reason=>reason.includes(marker)));
+      assert.ok(!(line.admin_note??'').includes(marker));
+      const day=line.at.slice(0,10),file=join(server.records.dataDir,'logs',`calls-${day}.jsonl`);
+      const check=async()=>{const bytes=await readFile(file,'utf8');assert.ok(!bytes.includes(marker));assert.ok(!bytes.includes('knowledge reader attempt'));assert.ok(!bytes.includes('admin_reasons'));};
+      await check();await rm(file);
+      await server.records.callLog.repairFiles({from:day+'T00:00:00.000Z',to:new Date(Date.parse(day+'T00:00:00.000Z')+86400000).toISOString()});
+      await check();
+    }finally{server.deps.knowledge.getNodes=original;await client.close();}
   });
 
   test('each administrator reason survives the summary cap and stays out of the model answer',async()=>{

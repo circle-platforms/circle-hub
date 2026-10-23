@@ -667,11 +667,11 @@ export interface CallLogEntry {
   duration_ms: number;
 }
 
-/** One call log line as returned and as written to <log dir>/calls-YYYY-MM-DD.jsonl (that file is for admins). */
+/** A queried call-log line; JSONL stores its receipt fields only and omits private database metadata. */
 export interface CallLogLine extends CallLogEntry {
   /** Digest of the call_log record; it does not cover the admin note. */
   digest: string;
-  /** The real reason behind a neutral answer; present for admins (and in the file and in append's result) only. */
+  /** The real reason behind a neutral answer; present for admins and in append's result, never in JSONL. */
   admin_note?: string | null;
   /** Full reasons returned only by administrator queries; absent from JSONL and ordinary reader queries. */
   admin_reasons?:string[];

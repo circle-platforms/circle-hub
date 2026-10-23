@@ -105,6 +105,12 @@ async function fileState(file: string): Promise<{ digests: Set<string>; openLine
   return { digests, openLine: text.length > 0 && !text.endsWith('\n') };
 }
 
+/** Files carry the public call receipt only; private database fields never pass either write path. */
+function journalLine(line:CallLogLine):Omit<CallLogLine,'admin_note'|'admin_reasons'> {
+  const {admin_note,admin_reasons,...receipt}=line;
+  return receipt;
+}
+
 export class PgCallLog implements CallLog {
   readonly #db: Database;
   readonly #store: RecordStore;
@@ -247,7 +253,7 @@ export class PgCallLog implements CallLog {
     for (;;) {
       const rows = (
         await this.#db.query(
-          `SELECT c.*, n.note AS admin_note FROM call_logs c LEFT JOIN call_notes n ON n.digest = c.digest
+          `SELECT c.* FROM call_logs c
             WHERE c.at >= $1 AND c.at < $2 AND c.seq > $3 ORDER BY c.seq LIMIT $4`,
           [from, to, after, REPAIR_BATCH],
         )
@@ -256,7 +262,7 @@ export class PgCallLog implements CallLog {
       after = String(rows[rows.length - 1].seq);
       const byFile = new Map<string, CallLogLine[]>();
       for (const row of rows) {
-        const line: CallLogLine = { ...lineOf(row), admin_note: row.admin_note === null ? null : String(row.admin_note) };
+        const line=lineOf(row);
         const file = this.#fileOf(line);
         byFile.set(file, [...(byFile.get(file) ?? []), line]);
       }
@@ -266,7 +272,7 @@ export class PgCallLog implements CallLog {
           const state = await fileState(file);
           const missing = lines.filter((line) => !state.digests.has(line.digest));
           if (missing.length === 0) return 0;
-          await appendFile(file, `${state.openLine ? '\n' : ''}${missing.map((line) => JSON.stringify(line)).join('\n')}\n`, { mode: 0o600 });
+          await appendFile(file, `${state.openLine ? '\n' : ''}${missing.map((line) => JSON.stringify(journalLine(line))).join('\n')}\n`, { mode: 0o600 });
           return missing.length;
         });
       }
@@ -288,7 +294,7 @@ export class PgCallLog implements CallLog {
         if (state.digests.has(line.digest)) return;
         if (state.openLine) prefix = '\n';
       }
-      await appendFile(file, `${prefix}${JSON.stringify(line)}\n`, { mode: 0o600 });
+      await appendFile(file, `${prefix}${JSON.stringify(journalLine(line))}\n`, { mode: 0o600 });
     });
   }
 
