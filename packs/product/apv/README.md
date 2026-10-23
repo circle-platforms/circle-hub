@@ -517,7 +517,10 @@ accepted.
   items really are that line. A block whose verified lines are not one contiguous range — a conditional branch inside it,
   an include boundary, a line the reader dropped — becomes one mapped block per range, each part with its own lines and
   its own citation, because a fragment has to hold the words its entry claims; when the text's lines do not map one to one
-  onto the ranges, the block is reported instead of being cited on its first range alone. A block whose text step one
+  onto the ranges, the block is reported instead of being cited on its first range alone. A part of a paragraph is mapped
+  as `paragraph_part`, a kind K1 places like any other text block but reads no anchor from: the author wrote one paragraph,
+  whose text spans lines and is therefore no anchor of K1's single-line grammar, and a source boundary is not a semantic
+  one, so a part whose first line happens to be a bold command must not become a definition the source does not have. A block whose text step one
   could not verify stays out of the model and is returned in
   `uncited` with its kind, reason, next action and its place — the chapter file and that file's own line, because the
   engine reports a line of the expanded text, which in an included chapter is no line a reader can open; the expanded line
@@ -780,6 +783,11 @@ pack and reviews a mind map against the root it produced.
   failure leaves the old knowledge root where it is, asserted here only as "no partial result is returned", needs a
   knowledge sync to be seen on a root; and "this family's attribute set is not configured" can only be written from
   `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+- **K1 (adoc)**: `produceManualEntries` reads an anchor from any block whose kind is `paragraph` and whose text parses, and
+  its model has no way to say "this block is part of a larger block the author wrote, so it is no standalone signature".
+  The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
+  block, or an option that switches anchor reading off for parts, would be the clean interface. This package does not
+  change K1's files.
 - **knowledge (adoc)**: the mapping's report must not stay an object only a test can see. When the producer is wired,
   `uncited` (a block or a table row that cites no source line), `unparsed` (a line declared a signature that reads as
   none), the misaligned-table lines and the unverified-heading lines have to reach the knowledge sync's result for the

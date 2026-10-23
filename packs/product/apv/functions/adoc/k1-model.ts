@@ -108,6 +108,14 @@ export const K1_KINDS: Readonly<Record<string, string>> = {
 
 const kindOf = (block: Block): string => K1_KINDS[block.kind] ?? block.kind;
 
+/**
+ * The kind of one part of a paragraph that was split by its source ranges. K1 places it like any other text block (at its
+ * section node, or under the command before it, with the prose literals read from it) and reads no anchor from it, because
+ * an anchor is a block the author wrote as a standalone signature line — a source boundary (an include, a conditional, a
+ * comment line) is not a semantic one.
+ */
+const PARAGRAPH_PART = 'paragraph_part';
+
 /** The longest selector the Hub's reference grammar takes (`MAX_SELECTOR_LENGTH` in hub/refs/reference.ts; the pack
  * re-implements the reference codecs, because pack code may not import the Hub at run time). */
 const MAX_SELECTOR_LENGTH = 4096;
@@ -605,7 +613,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
         uncited.push(uncitedOf(model, block, '这个块已核对的原文行不连续，而它的文字与这些行对不上，不能分成各自引用的部分'));
         continue;
       }
-      for (const part of parts) emit(block, mappedKind(block), part.text, part.cite);
+      // A part is not a block the author wrote: the whole block was one paragraph, and one paragraph whose text spans
+      // lines is no anchor of K1's (its grammar is single-line), so a part must not become a signature the source does
+      // not have. K1 reads an anchor only from a `paragraph`, which is why the parts of one say they are parts.
+      const kind = mappedKind(block) === 'paragraph' ? PARAGRAPH_PART : mappedKind(block);
+      for (const part of parts) emit(block, kind, part.text, part.cite);
       continue;
     }
     const cite = table === null ? (block.origins.length > 0 ? citationOf(block.origins[0]!) : null) : table.cite;

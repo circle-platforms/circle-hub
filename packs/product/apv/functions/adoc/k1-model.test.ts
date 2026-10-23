@@ -368,3 +368,32 @@ test('a single-line comment inside a block is not content, and a comment inside 
     JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.fragments])),
   );
 });
+
+test('splitting a block by its source ranges does not make a signature the author never wrote', async () => {
+  // One paragraph of two lines, its first line only a bold command: as one block K1 reads no anchor (the text spans
+  // lines), so however its source ranges fall, no definition may appear and nothing may hang under a command.
+  const cases: Array<[string, Record<string, string>, string]> = [
+    ['one file, one range', { 'main.adoc': '= Book\n\n== 命令\n\n*demo pool add*\n这只是段内说明，不是独立签名。\n' }, 'main.adoc'],
+    ['two files, no blank line between the includes', { 'main.adoc': '= Book\n\ninclude::a.adoc[]\ninclude::b.adoc[]\n', 'a.adoc': '*demo pool add*\n', 'b.adoc': '这只是段内说明，不是独立签名。\n' }, 'main.adoc'],
+    ['a retained branch inside the paragraph', { 'main.adoc': '= Book\n\n== 命令\n\n*demo pool add*\nifdef::brand-apv[]\n这只是段内说明，不是独立签名。\nendif::[]\n' }, 'main.adoc'],
+    ['a comment line inside the paragraph', { 'main.adoc': '= Book\n\n== 命令\n\n*demo pool add*\n// 作者的注释\n这只是段内说明，不是独立签名。\n' }, 'main.adoc'],
+  ];
+  for (const [label, files, main] of cases) {
+    const out = await compile(files, main, { 'brand-apv': true });
+    const mapped = toK1Model(out.model, out.composition, 'cli');
+    assert.deepEqual(mapped.uncited, [], `${label}: ${JSON.stringify(mapped.uncited)}`);
+    const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+    assert.ok(produced.ok, `${label}: ${JSON.stringify(produced)}`);
+    assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), [], `${label}: ${JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.path]))}`);
+    assert.ok(produced.entries.every((entry) => String(entry.path).startsWith('/manual/cli')), `${label}: ${JSON.stringify(produced.entries.map((entry) => entry.path))}`);
+    // Every part cites its own range, and the words of both parts are in the knowledge.
+    const statements = produced.entries.map((entry) => String(entry.statement));
+    assert.ok(statements.some((statement) => statement.includes('demo pool add')), `${label}: ${JSON.stringify(statements)}`);
+    assert.ok(statements.some((statement) => statement.includes('段内说明')), `${label}: ${JSON.stringify(statements)}`);
+    assert.equal(
+      new Set(produced.entries.map((entry) => `${entry.fragments[0]!.source}/${entry.fragments[0]!.selector}`)).size,
+      produced.entries.length,
+      `${label}: each part cites its own range of its own file`,
+    );
+  }
+});
