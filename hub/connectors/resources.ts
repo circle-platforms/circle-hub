@@ -10,7 +10,8 @@
 // its credential names and rules (never a value).
 import { createHash } from 'node:crypto';
 import { EnvironmentSchema, type Environment, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
-import { ResourceId, ResourceRecord, type DigestRule, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
+import type { DigestRule } from '../../contracts/generated/vocabulary.ts';
+import { ResourceId, ResourceRecord, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
 import type { ResourceListing } from '../ports.ts';
 import {
   WHOLE_HUB,
@@ -101,14 +102,14 @@ export function sessionEntry(resource: string): string {
 }
 
 /** Credential names a profile declares, with their digest rule. */
-export function declaredCredentials(profile: SystemProfile): { name: string; digest: 'plain' | 'sha512_base64' }[] {
+export function declaredCredentials(profile: SystemProfile): { name: string; digest: DigestRule }[] {
   if (profile.auth.kind === 'none') return [];
   if (profile.auth.kind === 'static_header') return [{ name: profile.auth.credential, digest: 'plain' }];
   return profile.auth.credentials.map((c) => ({ name: c.name, digest: c.digest }));
 }
 
 /** What the vault keeps for a credential under its digest rule: the value, or Base64(SHA-512(UTF-8 of the value)). */
-export function storedCredential(value: string, digest: 'plain' | 'sha512_base64'): string {
+export function storedCredential(value: string, digest: DigestRule): string {
   return digest === 'sha512_base64' ? createHash('sha512').update(value, 'utf8').digest('base64') : value;
 }
 

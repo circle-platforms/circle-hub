@@ -486,7 +486,8 @@ source).
 - A 403 to a static credential is not treated as a refusal of it (the finding asked for 401 and 403): the credential was
   understood and found insufficient for one object; stopping every read of the resource for it would be wrong.
 - Reads may declare one `request` instead of a planner (D01 R[7]); routes may name a core parser (`parse`).
-- The closed sets of `resources.ts` (HTTP methods, response kinds, authentication kinds, digest rules, header schemes,
+- Credential digest rules now come from the generated `digest_rule` axis; the vault still keeps only the declared stored form.
+- The closed sets of `resources.ts` (HTTP methods, response kinds, authentication kinds, header schemes,
   expiry units, envelope modes) and the error layers of D01 R[5] are not vocabulary axes; they are written in
   `resources.ts` and `errors.ts` (see Needs).
 - Fixed route headers are a deny-list (with reserved prefixes), not an allow-list: D01 R[0] wants a new system type to need

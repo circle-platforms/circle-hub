@@ -12,7 +12,7 @@ import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../too
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = (script: string, args: string[], cwd = repo) => spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' });
 /** Runs an ES module given as text in a fresh Node process. */
-const evaluate = (code: string, args: string[] = []) => spawnSync(process.execPath, ['--input-type=module', '-e', code, ...args], { cwd: repo, encoding: 'utf8' });
+const evaluate = (code: string, args: string[] = []) => spawnSync(process.execPath, ['--input-type=module', '-e', code, ...args], { cwd: repo, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
 
 /** Every file under a directory, by relative name. */
 function snapshot(dir: string, prefix = ''): Record<string, string> {
