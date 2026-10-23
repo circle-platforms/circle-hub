@@ -57,7 +57,7 @@ test('source mapping cites one line only: the cursor decides between identical l
   ];
   const reached = verifyOrigin('same', 'paragraph', 1, apart, new Set([0, 1, 2]), input);
   assert.deepEqual(reached.origins.map((origin) => origin.selector), ['l/1']);
-  assert.equal(reached.chosenAmong, 1, 'the unreachable twin is filtered out before the count, so nothing is disclosed as a choice');
+  assert.equal(reached.chosenAmong, 2, 'the report still says two lines hold this text, even though only one is reachable');
   // Two reachable candidates and a cursor on neither: the choice stays open and nothing is cited.
   const control = [
     { file: 'book.adoc', line: 1, text: 'same' },

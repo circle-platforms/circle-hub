@@ -112,14 +112,30 @@ const SKIPPABLE: ReadonlyArray<RegExp> = [
   /^\s*include::\S+\[.*\]\s*$/,
 ];
 
-/** Whether the engine's cursor can belong to a block whose text starts at `at`: every line between is one the reader
- * consumes without producing a block. This is what keeps a neighbouring line that happens to hold the same words from
- * being cited for a block the engine put elsewhere. */
+/** A line no block's text stands on: one a condition removed, one the reader consumes without producing a block, or a
+ * blank one. The engine's cursor may sit on such a line and still belong to a block whose text starts elsewhere (a
+ * listing's delimiter, the `endif` after a removed branch); it may not sit on another block's own text. */
+function noTextLine(index: number, mapped: MappedLine[], visible: Set<number>): boolean {
+  if (!visible.has(index)) return true;
+  const line = mapped[index];
+  // A cursor past the last mapped line reaches nothing: the line is unknown, so it is not one of these.
+  if (line === undefined) return false;
+  return line.text.trim() === '' || SKIPPABLE.some((pattern) => pattern.test(line.text));
+}
+
+/**
+ * Whether the engine's cursor can belong to a block whose text starts at `at`. Two things must hold: the cursor's own
+ * line is one no block's text stands on, and every line between the cursor and the candidate is one the reader consumes
+ * without producing a block. Together they keep a neighbouring line that happens to hold the same words — the item
+ * before a checkbox item, a paragraph above an admonition — from being cited for a block the engine put elsewhere: the
+ * text being equal does not show which line the block came from.
+ */
 function reachableFrom(cursor: number, at: number, mapped: MappedLine[], visible: Set<number>): boolean {
+  if (cursor === at) return true;
+  if (!noTextLine(cursor, mapped, visible)) return false;
   for (let index = Math.min(cursor, at) + 1; index < Math.max(cursor, at); index++) {
     if (!visible.has(index)) continue;
     const line = mapped[index];
-    // A cursor past the last mapped line reaches nothing: the line between is unknown, so it is not skippable.
     if (line === undefined) return false;
     if (!SKIPPABLE.some((pattern) => pattern.test(line.text))) return false;
   }
@@ -211,8 +227,10 @@ export function verifyOrigin(
           : 'sourcemap 邻近行里没有原文与本块的文字相符（已按结构标记、属性展开、行内标记与宏、字符引用和排版替换归一后再找）',
     };
   }
-  // The same text on several admissible lines: the engine's own cursor decides, and the report says a choice was made.
+  // The same text on several admissible lines: the engine's own cursor decides. How many lines hold the text is
+  // disclosed either way, so a reader sees that the words were not unique in the neighbourhood.
   const among = admissible.length;
+  const matchedCount = byFlat.size;
   const chosen = among > 1 ? admissible.filter((candidate) => candidate.flat === reported!) : admissible;
   if (chosen.length !== 1) {
     return {
@@ -224,5 +242,5 @@ export function verifyOrigin(
   }
   const one = chosen[0]!;
   const origins = ranges(one.rows, input, originals);
-  return { origins, flat: origins.length ? one.flat : null, reason: origins.length ? '' : '候选映射与重新读取的原件行不符', chosenAmong: origins.length > 0 ? among : 0 };
+  return { origins, flat: origins.length ? one.flat : null, reason: origins.length ? '' : '候选映射与重新读取的原件行不符', chosenAmong: origins.length > 0 ? matchedCount : 0 };
 }

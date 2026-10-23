@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/adoc/origins.ts",
-      "sha256": "e403bb4b245277e56712d8a879de93602957e1a1e0e0cabf158458cfd8397f81",
-      "size": 12602
+      "sha256": "7e77ddbc5a92812c383082a92ad56d453561bcc2584df37aedee84faccde3efe",
+      "size": 13717
     },
     {
       "path": "functions/adoc/text.ts",

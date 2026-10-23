@@ -409,13 +409,21 @@ carries a `{`.
 
 The window is counted in visible lines: the cursor's own line, three visible lines before it and two after, so a block the
 engine reports at the `endif` of a removed branch still reaches the line it was read from. A candidate is used only when
-the engine's cursor can belong to it: every line between them is one the reader consumes without producing a block (a
-conditional control, a block delimiter, a block attribute or title line, a heading, an attribute entry, an include) or a
-line a condition removed. A blank line is not one of them, because a blank line ends a paragraph: a candidate on the other
-side of one is another block's line and is never cited. When several candidates are left, the one at the cursor is the
-block's line — the text is proven on every candidate, so only the position is chosen — and the choice is disclosed
-(`disambiguated`, `disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`);
-when none of them is at the cursor, nothing is cited. A cursor that reaches no candidate leaves the block uncited too.
+the engine's cursor can belong to it, which takes two things: the cursor's own line is one no block's text stands on (a line
+a condition removed, one the reader consumes without producing a block, or a blank one), and every line between the cursor
+and the candidate is one the reader consumes (a conditional control, a block delimiter, a block attribute or title line, a
+heading, an attribute entry, an include) or a line a condition removed. A blank line between them is not one of those,
+because a blank line ends a paragraph: a candidate on the other side of one is another block's line. Neither is a cursor on
+another block's own text a recovery — that is the engine pointing at the block it means, and a neighbour that happens to
+hold the same words (the item before a checkbox item, a paragraph above an admonition) is not this block's line, however
+equal the text is. So a listing is still found one line under its delimiter and a paragraph one line before a removed
+branch, while a block whose own line folds to nothing is reported and cites nothing.
+
+When several candidates are left, the one at the cursor is the block's line — the text is proven on every candidate, so
+only the position is chosen. How many lines hold the text is disclosed whenever it is more than one (`disambiguated`,
+`disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`), also when the
+reachability rule and not the cursor left one line; when none of the candidates is at the cursor and more than one
+reaches it, nothing is cited. A cursor that reaches no candidate leaves the block uncited too.
 
 A single-line comment (`// …`) is not content: the reader drops it, so the walk steps over one when a block's lines sit on
 either side of it, and such a block cites two ranges and is mapped as two blocks. A `////` block-comment delimiter is not

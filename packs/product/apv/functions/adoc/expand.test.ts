@@ -148,11 +148,11 @@ test('a container with no text of its own is not reported as unverified, and a r
   assert.equal(out.report.unverified.filter((u) => u.kind === 'ulist').length, 0, JSON.stringify(out.report.unverified));
   assert.deepEqual(out.model.blocks.filter((b) => b.kind === 'list_item').map((b) => b.origins[0]?.selector ?? null), ['l/5', 'l/6']);
   // The sentence stands on two lines, but a blank line separates them, so the other copy is another block's line: each
-  // paragraph cites its own and no choice had to be made.
+  // paragraph cites its own. That two lines hold the text is still disclosed.
   const repeated = out.model.blocks.filter((b) => b.raw === '同一段说明文字。');
   assert.deepEqual(repeated.map((b) => b.origins[0]?.selector ?? null), ['l/8', 'l/10']);
   assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
-  assert.equal(out.report.disambiguated_count, 0);
+  assert.deepEqual(out.report.disambiguated.map((d) => [d.kind, d.reported_line, d.candidates]), [['paragraph', 8, 2], ['paragraph', 10, 2]]);
 });
 
 test('two identical items on adjacent lines are told apart by the engine cursor, and the choice is disclosed', async () => {
@@ -171,7 +171,7 @@ test('a block cites its own line, not a neighbour that happens to hold the same 
     labelled.model.blocks.filter((b) => b.kind === 'paragraph' || b.kind === 'admonition').map((b) => [b.kind, b.reportedLine, b.origins[0]?.selector ?? null]),
     [['paragraph', 5, 'l/5'], ['admonition', 7, 'l/7']],
   );
-  assert.equal(labelled.report.disambiguated_count, 0, 'the other line is not a candidate at all: a blank line sits between');
+  assert.deepEqual(labelled.report.disambiguated.map((d) => [d.kind, d.reported_line, d.candidates]), [['admonition', 7, 2]], 'the twin line is counted, and the admonition still cites its own');
 
   // A description list whose second value stands on its own line, and a term that repeats it.
   const described = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\n== 说明\n\nname:: 成员名称\nweight::\n成员名称\n' }));
@@ -221,4 +221,21 @@ test('a paragraph the engine reports at the endif of a removed branch still cite
   );
   assert.deepEqual(out.report.remapped.map((r) => [r.reported_line, r.verified_line]), [[8, 5]], 'the cursor offset is disclosed');
   assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
+});
+
+test('an item that verifies on no line does not borrow the identical line of the item before it', async () => {
+  const files = { 'book.adoc': '= Synthetic\n\n== 说明\n\n* 保存\n* [x] 保存\n' };
+  const out = await compileAdoc(group(files));
+  assert.ok(out.ok, JSON.stringify(out));
+  // The engine drops the checkbox mark, so the second item's own line folds to nothing the locator can match. The first
+  // item's line holds the same words and sits right next to the cursor — but the cursor stands on the second item's own
+  // text line, which is no delimiter, control or blank line, so that neighbour is not a recovery and is not cited.
+  const items = out.model.blocks.filter((b) => b.kind === 'list_item');
+  assert.deepEqual(
+    items.map((b) => [b.reportedLine, b.origins.map((o) => o.selector)]),
+    [[5, ['l/5']], [6, []]],
+    JSON.stringify(items.map((b) => [b.reportedLine, b.raw, b.origins, b.unverifiedReason])),
+  );
+  assert.deepEqual(out.report.unverified.map((u) => [u.kind, u.reported_line]), [['list_item', 6]]);
+  assert.match(items[1]!.unverifiedReason, /相符|不唯一/);
 });
