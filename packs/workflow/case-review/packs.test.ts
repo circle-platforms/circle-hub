@@ -75,8 +75,8 @@ describe('every pack of this package', () => {
 });
 
 /** Find literal enumerations, including mixed axes and literals joined to generated subsets. */
-function handWrittenAxes(text: string): Array<{ line: number; axis: string; values: string[] }> {
-  const source = ts.createSourceFile('input.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; checker: ts.TypeChecker }): Array<{ line: number; axis: string; values: string[] }> {
+  const source = semantic?.source ?? ts.createSourceFile('input.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const axes = Object.entries(AXES).map(([name, axis]) => ({
     name, type: name.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join(''),
     values: new Set<string>(axis.values.map(v => v.code)),
@@ -86,12 +86,18 @@ function handWrittenAxes(text: string): Array<{ line: number; axis: string; valu
     if (ts.isLiteralTypeNode(node)) return literal(node.literal);
     return ts.isStringLiteral(node) ? node.text : undefined;
   };
-  const derives = (node: ts.Node, type: string): boolean => {
+  const derives = (node: ts.Node, type: string, seen = new Set<ts.Node>()): boolean => {
+    if (seen.has(node)) return false; seen.add(node);
     if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
       if (node.typeName.text === type) return true;
+      if (semantic) {
+        let symbol = semantic.checker.getSymbolAtLocation(node.typeName);
+        if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = semantic.checker.getAliasedSymbol(symbol);
+        if (symbol?.declarations?.some(d => ts.isTypeAliasDeclaration(d) && derives(d.type, type, seen))) return true;
+      }
       if (node.typeName.text === 'Extract' || node.typeName.text === 'Exclude') return node.typeArguments?.some(n => derives(n, type)) ?? false;
     }
-    return ts.isParenthesizedTypeNode(node) && derives(node.type, type);
+    return ts.isParenthesizedTypeNode(node) && derives(node.type, type) || ts.isUnionTypeNode(node) && node.types.some(t => derives(t, type));
   };
   const visit = (node: ts.Node): void => {
     // Compiler-checked subsets are allowed; their argument literals do not declare a new enumeration.
@@ -103,6 +109,47 @@ function handWrittenAxes(text: string): Array<{ line: number; axis: string; valu
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ['extract', 'exclude'].includes(node.expression.name.text)) {
       const schemaName = node.expression.expression.getText(source);
       if (axes.some(axis => schemaName === axis.type + 'Schema')) return;
+    }
+    const checkedMap = (value: ts.Expression, type: string): boolean => {
+      let at: ts.Node = value;
+      while (ts.isParenthesizedExpression(at.parent) || ts.isAsExpression(at.parent)) at = at.parent;
+      const annotation = ts.isSatisfiesExpression(at.parent) ? at.parent.type : ts.isVariableDeclaration(at.parent) ? at.parent.type : undefined;
+      const record = (t: ts.TypeNode): boolean => ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)
+        && (t.typeName.text === 'Record'
+          || ['Readonly', 'Partial'].includes(t.typeName.text) && !!t.typeArguments?.[0] && record(t.typeArguments[0]));
+      return annotation !== undefined && record(annotation);
+    };
+    if (ts.isObjectLiteralExpression(node) && node.properties.every(p => ts.isPropertyAssignment(p) && ts.isStringLiteral(p.initializer))) {
+      const keys = node.properties.flatMap(p => ts.isPropertyAssignment(p) && ts.isStringLiteral(p.initializer) && p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? [p.name.text] : []);
+      for (const axis of axes) {
+        const matching = [...new Set(keys.filter(k => axis.values.has(k)))];
+        if (matching.length >= 2 && !checkedMap(node, axis.type)) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
+      }
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+      const compared = new Map<string, { values: Set<string>; expression: ts.Expression }>();
+      const collect = (part: ts.Node): void => {
+        if (ts.isParenthesizedExpression(part)) return collect(part.expression);
+        if (!ts.isBinaryExpression(part)) return;
+        if (part.operatorToken.kind === ts.SyntaxKind.BarBarToken) { collect(part.left); collect(part.right); return; }
+        if (part.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) return;
+        const a = literal(part.left), b = literal(part.right);
+        const value = a ?? b;
+        if (value === undefined) return;
+        const key = (a === undefined ? part.left : part.right).getText(source);
+        const entry = compared.get(key) ?? { values: new Set<string>(), expression: a === undefined ? part.left : part.right }; entry.values.add(value); compared.set(key, entry);
+      };
+      collect(node);
+      for (const { values, expression } of compared.values()) for (const axis of axes) {
+        const type = semantic?.checker.getTypeAtLocation(expression);
+        const symbol = semantic?.checker.getSymbolAtLocation(expression);
+        const members = type?.isUnion() ? type.types : type ? [type] : [];
+        const finiteAxis = members.length > 0 && members.every(t => (t.flags & ts.TypeFlags.StringLiteral) !== 0 && axis.values.has((t as ts.StringLiteralType).value));
+        const typed = finiteAxis || type?.aliasSymbol?.name === axis.type || type?.aliasSymbol?.declarations?.some(d => ts.isTypeAliasDeclaration(d) && derives(d.type, axis.type)) || symbol?.declarations?.some(d => (ts.isPropertySignature(d) || ts.isParameter(d) || ts.isVariableDeclaration(d)) && d.type && derives(d.type, axis.type));
+        if (typed) continue;
+        const matching = [...values].filter(v => axis.values.has(v));
+        if (matching.length >= 2) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
+      }
     }
     const parts = ts.isUnionTypeNode(node) ? [...node.types] : ts.isArrayLiteralExpression(node) ? [...node.elements] : null;
     if (parts !== null) {
@@ -150,16 +197,40 @@ describe('the vocabulary', () => {
     assert.deepEqual(handWrittenAxes("// type K = 'definition' | 'case';\nconst x = 1;"), []);
   });
 
+  it('finds handwritten axis keys and membership chains but permits checked maps', () => {
+    assert.ok(handWrittenAxes("const labels = { added: '新增', removed: '删除', modified: '修改' } as const;").some(h => h.axis === 'change_kind'));
+    assert.ok(handWrittenAxes("x.change === 'added' || x.change === 'removed' || x.change === 'modified';").some(h => h.axis === 'change_kind'));
+    assert.ok(handWrittenAxes("'added' === x.change || 'removed' === x.change;").some(h => h.axis === 'change_kind'));
+    assert.deepEqual(handWrittenAxes("const labels: Record<ChangeKind, string> = { added: 'a', removed: 'r', modified: 'm' };"), []);
+    assert.deepEqual(handWrittenAxes("const labels = { added: 'a', removed: 'r', modified: 'm' } as const satisfies Record<ChangeKind, string>;"), []);
+    assert.deepEqual(handWrittenAxes("x === 'added' || y === 'removed';"), []);
+  });
+
+  it('distinguishes structured fields, untyped subsets and generated typed branches', () => {
+    assert.deepEqual(handWrittenAxes("const shape = { added: { type: 'string' }, removed: { type: 'string' } };"), []);
+    assert.ok(handWrittenAxes("value === 'added' || value === 'removed';").some(h => h.axis === 'change_kind'));
+    const file = join(root, 'scan-self-test.ts');
+    const text = "import type { ChangeKind } from './contracts/generated/vocabulary.ts'; type Narrow = Extract<ChangeKind, 'added' | 'removed'>; declare const typed: ChangeKind; declare const narrow: Narrow; declare const raw: string; typed === 'added' || typed === 'removed'; narrow === 'added' || narrow === 'removed'; raw === 'added' || raw === 'removed';";
+    const host = ts.createCompilerHost({}); const original = host.getSourceFile;
+    host.getSourceFile = (path, language, onError, create) => path === file ? ts.createSourceFile(path, text, language, true) : original(path, language, onError, create);
+    const program = ts.createProgram([file], { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, host);
+    const hits = handWrittenAxes(text, { source: program.getSourceFile(file)!, checker: program.getTypeChecker() });
+    assert.equal(hits.filter(h => h.axis === 'change_kind').length, 1);
+  });
+
   it('uses generated axes in hub and every pack without handwritten exceptions', () => {
     const found: string[] = [];
     const generated = packVocabularyFiles(root);
-    for (const path of owned.flatMap(sources)) {
+    const paths = owned.flatMap(sources);
+    const program = ts.createProgram(paths.map(path => join(root, path)), { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext, allowImportingTsExtensions: true, noEmit: true });
+    const checker = program.getTypeChecker();
+    for (const path of paths) {
       const text = readFileSync(join(root, path), 'utf8');
       if (Object.hasOwn(generated, path)) {
         assert.equal(text, generated[path], `${path} 必须与生成器一致`);
         continue;
       }
-      for (const h of handWrittenAxes(text)) {
+      for (const h of handWrittenAxes(text, { source: program.getSourceFile(join(root, path))!, checker })) {
         found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
       }
     }

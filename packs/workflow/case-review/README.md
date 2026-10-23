@@ -448,3 +448,10 @@ node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 | case-review/packs.test.ts（含全仓扫描） | 17 | 16 | 1 | 0 |
 
 合计 1,188 项，1,186 通过、1 失败、1 跳过。唯一失败是上列 K2 的 6 处扫描命中，未加任何基线或例外，也未改 K2 文件；合并 K2 后仍需重跑。跳过项为本机没有 sandbox-exec 时默认拒绝运行的反向环境测试，本机具备 sandbox-exec，不能将它计作通过。npx tsc --noEmit、node tools/gen-contracts.ts --check 均通过；未做真实系统验收。每条问题的改前失败日志、全量测试日志留在 Git 外。
+
+### 词表扫描语义边界（收尾复核）
+
+对象仅扫描键为轴代码、值为字符串标签的映射，不把结构字段当轴；显式 Record 或 satisfies 检查的映射放行。
+比较链在同一表达式上比较同轴两个以上代码即检查，包括子集；已有生成轴类型或 Extract 子集约束的业务分支放行。
+扫描使用 TypeScript 类型信息追踪这些约束，手写联合类型仍由原有扫描检查，不能用手写类型逃避检测。
+CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固定查重预算的出口和完整性片段分级另有定向回归。

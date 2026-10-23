@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "kind": "workflow",
   "title": "维护巡检",
   "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）先按路径列出整个命令差（变更种类、前一构建用例数），再列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "225dec010e909fd63509edceed84650c7702fbae3a4dcea33b66a47f8ab2edc7",
-      "size": 16525
+      "sha256": "bb7c34f17b0460f4c1984960815aee055e8e4073c6203176ed85b1dbeffa0788",
+      "size": 16572
     },
     {
       "path": "functions/diff.ts",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "cc5051c059b50472c24ab621d53a7667cbf8c83ab0d65c557365bd14155a5089",
-      "size": 386
+      "sha256": "a38ac0fc827bb8824dc2c12f356b89999732fb16cc2fe2778cf76cbe1115d6d4",
+      "size": 516
     },
     {
       "path": "functions/project.ts",
@@ -48,13 +48,13 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "946951d5b120b78e00489598bffff9732c68acf9f6c35995e814057d6ccfddf1",
-      "size": 13375
+      "sha256": "bfe19ee385285d6bb47f026953b244895b789a6c18f0f232236fee47cb5d4137",
+      "size": 13416
     },
     {
       "path": "functions/text.ts",
-      "sha256": "168e3bacd3c21c9af720131300275affb6dad5f1107d022f42501ad5215f7d5c",
-      "size": 1326
+      "sha256": "1c8291a795551f3a523f82ae1fd50af7f1afd0fbdc07e492b82dd977d6e58790",
+      "size": 1392
     },
     {
       "path": "functions/view.ts",

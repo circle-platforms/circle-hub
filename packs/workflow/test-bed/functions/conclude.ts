@@ -44,6 +44,10 @@ export const DEFAULT_HOURS = 2;
 
 export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', extend: '续期预订', release: '释放预订' };
 
+export function isAction(value: unknown): value is Action {
+  return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
+}
+
 /** The rows of the frozen lease view as matchNeed reads them. */
 export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, LeaseEntry> {
   const out: Record<string, LeaseEntry> = {};
@@ -55,7 +59,7 @@ export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, Le
 
 /** Parameters of a run call: action (default search), need, bed, addresses and booking, every problem named with its fix. */
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
-  const action: Action = params.action === 'facts' || params.action === 'acquire' || params.action === 'extend' || params.action === 'release' ? params.action : 'search';
+  const action: Action = isAction(params.action) ? params.action : 'search';
   const needRaw = isRecord(params.need) ? params.need : {};
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];

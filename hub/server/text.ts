@@ -1,3 +1,4 @@
+import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
 // text is laid out within TEXT_BUDGET (budget.ts): the facts a model works from come first (receipt and counts, the state of
@@ -1436,9 +1437,9 @@ export function fallbackText(tool: string, value: unknown, context: TextContext 
   const lines: string[] = [];
   let run: string | null = null;
   try {
-    if (v.call_result === 'ok' || v.call_result === 'error') lines.push(`${axisLabel('call_result')}：${labelOf('call_result', v.call_result)}`);
+    if (isCallResult(v.call_result)) lines.push(`${axisLabel('call_result')}：${labelOf('call_result', v.call_result)}`);
     const result = recordsOf(v.result);
-    if (v.acceptance === 'accepted' || v.acceptance === 'not_accepted') {
+    if (isAcceptance(v.acceptance)) {
       const partitions = v.acceptance === 'accepted' ? Partitions.safeParse(result.partitions) : null;
       lines.push(countsLine(v.acceptance, partitions?.success === true ? partitions.data : undefined));
     }
