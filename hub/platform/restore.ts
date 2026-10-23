@@ -7,7 +7,7 @@
 // the application role. Re-granting instead would need the records package's table list (RUNTIME_GRANTS), which the
 // platform may not import, and the restoring code's list could name tables the restored schema does not have yet. The
 // restore then proves that the application role holds exactly the privileges the manifest recorded and owns nothing.
-import { mkdir, rename } from 'node:fs/promises';
+import { chmod, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { checkToolMajor, DUMP_FILE, libpqDirectory, libpqTools, permissions, verifyBackup } from './backup.ts';
 import { messageOf, PlatformError } from './errors.ts';
@@ -55,6 +55,20 @@ export async function assertRestorable(layout: Layout): Promise<void> {
   if (problems.length > 0) {
     throw new PlatformError(`只能恢复到空的数据根：${problems.join('；')}`, `换一个新的 ${DATA_ROOT_VARIABLE}，或先把现有数据移开`);
   }
+}
+
+/** Archive only the vault; callers enforce key/service preconditions and hold any required platform lock. */
+export async function setAsideVault(layout:Layout, now:Date=new Date()):Promise<{path:string|null;files:number}> {
+  let path:string|null=null, files=0;
+  if (!(await isMissingOrEmpty(layout.vault))) {
+    files=(await listFiles(layout.vault)).length;
+    await mkdir(layout.setAside,{recursive:true,mode:0o700});
+    const target=await uniqueChild(layout.setAside,timestampName(now)+'-key-loss');
+    await mkdir(target,{mode:0o700});
+    path=join(target,'vault');await rename(layout.vault,path);
+  }
+  await mkdir(layout.vault,{recursive:true,mode:0o700});await chmod(layout.vault,0o700);
+  return {path,files};
 }
 
 /**

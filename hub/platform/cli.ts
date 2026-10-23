@@ -1,7 +1,7 @@
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
@@ -18,7 +18,7 @@ import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './lay
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
 import { rehearse } from './rehearse.ts';
 import { readCurrentRelease, type ReleaseRef } from './release.ts';
-import { restoreBackup } from './restore.ts';
+import { restoreBackup, setAsideVault as archiveVault } from './restore.ts';
 import { inspectRole, roleFixHint } from './roles.ts';
 import {
   environmentText,
@@ -65,7 +65,7 @@ export function usage(): string {
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
-    `  key init|status                                在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
+    `  key init [--set-aside-vault]|status             在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
     '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
@@ -186,16 +186,38 @@ const db: Handler = async (args, context, io) => {
   return 0;
 };
 
+const KEY_INIT_REFUSALS = {
+  vault_not_empty: {message:'密钥库非空，不新建主密钥',hint:'已有主密钥时不需要 key init，用 circle-hub key status 查看；只有主密钥丢失且找不回时，才停服务，运行 circle-hub key init --set-aside-vault，将 vault/ 移到 set-aside/<时间>-key-loss/vault 后建立新密钥；操作令牌也丢失时先运行 circle-hub operator-token reissue；然后 circle-hub secret import，最后起服务'},
+  service_loaded: {message:'Hub 服务已加载，不移开密钥库或初始化主密钥',hint:'先运行 circle-hub service stop，确认服务停止后再运行 key init --set-aside-vault'},
+  port_busy: {message:'配置端口仍有进程应答，不移开密钥库或新建主密钥',hint:'先核对并停妥占用该数据根配置端口的进程，再重试 key init --set-aside-vault'},
+  key_present: {message:'主密钥已存在，不移开密钥库且不覆盖密钥',hint:'用 circle-hub key status 核对现有主密钥，保留当前密钥库'},
+} as const;
+class KeyInitRefusal extends PlatformError {
+  readonly reason: keyof typeof KEY_INIT_REFUSALS;
+  constructor(reason: keyof typeof KEY_INIT_REFUSALS) {const refusal=KEY_INIT_REFUSALS[reason];super(refusal.message,refusal.hint);this.reason=reason;this.name='KeyInitRefusal';}
+}
 const key: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
-  noArguments(rest);
-  if (action !== 'init' && action !== 'status') throw new UsageError('用法：circle-hub key init|status');
-  const store = keychainFor(context, await settingsOf(context));
+  const setAsideVault = action === 'init' && rest.length === 1 && rest[0] === '--set-aside-vault';
+  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError('用法：circle-hub key init [--set-aside-vault]|status');
+  const settings=await settingsOf(context);
+  const store = keychainFor(context, settings);
   const item = `服务 ${store.service}，账户 ${store.account}`;
   if (action === 'init') {
-    await store.init();
-    io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
-    return 0;
+    if (!setAsideVault && !(await isMissingOrEmpty(context.layout.vault))) throw new KeyInitRefusal('vault_not_empty');
+    const initialize = async (): Promise<number> => {
+      if (setAsideVault) {
+        if ((await agentFor(context, settings).status()).loaded) throw new KeyInitRefusal('service_loaded');
+        if (await portAnswers(settings.port)) throw new KeyInitRefusal('port_busy');
+        if ((await store.status()).present) throw new KeyInitRefusal('key_present');
+        const moved=await archiveVault(context.layout,context.now());
+        if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
+      }
+      await store.init();
+      io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
+      return 0;
+    };
+    return setAsideVault ? withLock(platformLockPath(context),initialize) : initialize();
   }
   const { present } = await store.status();
   io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在钥匙串（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
@@ -342,6 +364,7 @@ const rehearseCommand: Handler = async (args, context, io) => {
   const report = await rehearse({ runner: context.runner, libpqBin: context.libpqBin, binariesRoot: context.codeRoot, keep: values.keep === true, now: context.now });
   io.stdout(`演练数据根：${report.root}${report.kept ? '（保留；解包目录是只读的，删除前先 chmod -R u+w）' : '（已删除）'}`);
   io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个密钥库文件，${report.packFiles} 个解包文件（派生数据，不进备份）`);
+  io.stdout(report.keyLoss.skipped ? `钥匙丢失：${report.keyLoss.reason}` : `钥匙丢失：${report.keyLoss.items} 项；备份命中 ${report.keyLoss.backupHits}；丢失后找到 ${report.keyLoss.remaining} 项；移开密钥库 ${report.keyLoss.setAsideFiles} 个文件`);
   io.stdout(`应用角色 ${report.role}：恢复后 ${report.privileges} 项权限，删改历史或表结构的 ${report.refused} 条语句被拒绝`);
   if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象；解包目录不在备份里，恢复后原样保留');
   else for (const line of report.differences) io.stderr(`不一致：${line}`);
