@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 // Compact index representation and building for defect-to-case deduplication.
 export const MAX_COMPACT_OUTPUT_BYTES = 4 * 1024 * 1024; // 4 MiB limit
 export const MAX_COMPACT_TITLE_LENGTH = 80;
@@ -8,6 +10,8 @@ export interface CompactCaseItem {
   document: string;
   node: string;
   title: string;
+  /** SHA-256 of the full normalized title; the clipped title is display only. */
+  title_key?: string;
   reference: string;
   negative?: boolean;
   expected?: string[];
@@ -44,6 +48,8 @@ export function isCompactIndex(value: unknown): value is CompactCaseIndex {
 export function normalizeText(text: string): string {
   return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
 }
+
+export const titleKey = (text: string): string => createHash('sha256').update(normalizeText(text)).digest('hex');
 
 export function normalizeCommand(cmd: string): string {
   return normalizeText(cmd.replace(/^\/commands\//, '').replace(/\//g, ' '));
@@ -184,7 +190,8 @@ export function buildCompactIndex(
 
     total++;
     const rawTitle = typeof data.title === 'string' ? data.title : '';
-    const title = rawTitle.length > MAX_COMPACT_TITLE_LENGTH ? rawTitle.slice(0, MAX_COMPACT_TITLE_LENGTH) : rawTitle;
+    const cut = rawTitle.slice(0, MAX_COMPACT_TITLE_LENGTH);
+    const title = /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
     const document = typeof data.document === 'string' ? data.document : (typeof data.doc === 'string' ? data.doc : '');
     const node = typeof data.node === 'string' ? data.node : '';
 
@@ -192,6 +199,7 @@ export function buildCompactIndex(
       document,
       node,
       title,
+      title_key: titleKey(rawTitle),
       reference,
     };
 

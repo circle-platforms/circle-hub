@@ -7,6 +7,7 @@ import {
   isCompactIndex,
   normalizeCommand,
   normalizeText,
+  titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
@@ -556,7 +557,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
       // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
       const candTitle = normalizeText(cand.title);
-      const titlesEqual = draftTitle === candTitle && draftTitle !== '';
+      const titlesEqual = draftTitle !== '' && (typeof cand.title_key === 'string' ? titleKey(draftTitle) === cand.title_key : draftTitle === candTitle);
 
       if (titlesEqual) {
         const doc = cand.document || '未知文档';

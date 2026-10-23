@@ -33,13 +33,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "e138813c230cbe722fe2f96c16cd3ed9aa9af1e01b7477460f83c4246f1354d5",
-      "size": 26786
+      "sha256": "e365190b822b7e0e9c76d521d3ba870f6dd425ab349555cb0722c0e957580f84",
+      "size": 26879
     },
     {
       "path": "functions/compact-index.ts",
-      "sha256": "c162b7b68096d93c623a9c5b0aa4363645e03cee7ab97f00f0eec8e6f74ab10e",
-      "size": 11276
+      "sha256": "56ffe57ff369269711ec39c6c2ae35bec53322808c7a283434ebbb1ff7723977",
+      "size": 11590
     },
     {
       "path": "functions/expected.ts",
