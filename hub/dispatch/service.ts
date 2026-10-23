@@ -160,7 +160,7 @@ export class DispatchService {
       const bound=intent.body.detail.request_protocol_verified===true && sameRequestIdentity(intent.body.detail.request_identity,snapshot);
       const negative=found===true && identity && at(response.value,r.reached_device)===false && (mapped(r.map,at(response.value,r.state))==='proven_not_executed' || mapped(r.map,at(response.value,r.state))==='target_rejected' && mapped(d.receipt.stages,at(response.value,r.stage))==='target_rejected');
       const absent=found===false && !!snapshot && clock>deadline && deadline>floor && floor>=snapshot.since;
-      if(allowResolution && bound && (negative || absent) && await this.certified(binding,d,client,'request_journal')) {
+      if(allowResolution && bound && (negative || absent) && await this.certified(binding,d,client,'request_journal') && await this.certified(binding,d,client,'request_journal',{version:intent.body.detail.request_protocol_version})) {
         await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'proven_not_executed',unfreeze:true,effect_accounted:true,next_action:'原探测请求的未执行事实已按认证协议回读；管理员核对探测前提后才可重新采证'},sources);return;
       }
       fact=found===true && identity && at(response.value,r.reached_device)===true?'原探测请求已有开始标记；缺少本次探测收尾及设备现场恢复事实':'探测提交的原请求尚缺相符的开始、拒收或未执行事实，不能证明没有设备效果';
@@ -415,8 +415,10 @@ export class DispatchService {
       try { return await this.observe(by,binding,d,client,at(value,r.id),intent.body.detail.fences as unknown as HolderSnapshot[],stop); }
       catch { await this.pendingRead(binding); return this.status(by,binding.job); }
     }
-    const certified = await this.certified(binding,d,client,'request_journal');
-    if (found === true && identity && reported === 'target_rejected') {
+    const queryCertified = await this.certified(binding,d,client,'request_journal');
+    const deliveryCertified = await this.certified(binding,d,client,'request_journal',{version:intent.body.detail.request_protocol_version});
+    const certified=queryCertified && deliveryCertified;
+    if (certified && found === true && identity && reported === 'target_rejected') {
       const remapped = {...d,receipt:{...d.receipt,identity:r.identity,stage:r.stage,reached_device:r.reached_device}};
       if (await this.refused(binding,remapped,client,response,lease)) return this.status(by,binding.job);
     }
@@ -450,16 +452,18 @@ export class DispatchService {
       else if(currentIdentity && floor<currentIdentity.since)missing.push('回收边界早于可靠记账起点，不能证明原请求未执行');
       else if(deadline<=floor)missing.push('原请求截止已落入可能清理区间，查空不证明未执行');
     }
-    if(!certified)missing.push('当前目标版本的请求记录前提未认证');
+    if(!queryCertified)missing.push('当前查询会话版本的请求记录前提未认证');
+    if(!deliveryCertified)missing.push('发送会话版本的请求记录前提未认证，或协议支持已撤销');
     await this.unknown(binding,missing.join('；') || '缺少可终结原请求的执行记录，请核对状态映射与原件',[response.source],{next_action:!identityBound?`请管理员 ${binding.acting_by ?? binding.initiated_by} 人工核对原投递事实、原日志和发送会话版本；不得重交`:!certified?`请管理员 ${binding.acting_by ?? binding.initiated_by} 运行 circle-hub job conformance --executor ${binding.executor} 采证并登记目标版本，再运行 circle-hub job resume ${binding.job}`:`请管理员 ${binding.acting_by ?? binding.initiated_by} 核对本次查账原件和字段映射，修复后运行 circle-hub job resume ${binding.job}；不得重交`});
     return this.status(by,binding.job);
   }
 
-  private async certified(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, premise: keyof ExecutorDefinition['premises']): Promise<boolean> {
+  private async certified(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, premise: keyof ExecutorDefinition['premises'],delivery?:{version:unknown}): Promise<boolean> {
     const current = await this.registry.get(binding.executor);
     if (!current || current.definition.target !== d.target || current.definition.endpoint !== d.endpoint || current.definition.ca !== d.ca) return false;
     const proof = current.definition.premises[premise];
-    if (!proof || proof.version !== client.serverVersion) return false;
+    const version=delivery?delivery.version:client.serverVersion;
+    if (!proof || typeof version!=='string' || proof.version !== version || delivery && !current.definition.reconciliation?.protocol_versions.includes(version)) return false;
     const by = await this.options.records.principals.get(binding.acting_by ?? binding.initiated_by);
     if (!by || by.disabled) return false;
     for (const ref of proof.evidence) {
@@ -467,8 +471,9 @@ export class DispatchService {
         if (!source?.bytes || sha256Hex(source.bytes) !== ref.slice(4)) return false;
       } catch { return false; }
     }
-    const init=eventOf(await this.journal.events(binding.job),'initialize.response');
-    await this.journal.append(binding,'premise','validate','completed',{premise,version:client.serverVersion,definition_sha256:current.digest,certified:true},[...proof.evidence,...(init?.body.inputs ?? [])]);
+    const events=await this.journal.events(binding.job);
+    const origin=delivery?eventOf(events,'intent') ?? eventOf(events,'probe_intent'):eventOf(events,'initialize.response');
+    await this.journal.append(binding,'premise','validate','completed',{premise,version,delivery_session:!!delivery,definition_sha256:current.digest,certified:true},[...proof.evidence,...(origin?.body.inputs ?? [])]);
     return true;
   }
   private async refused(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, answer: Exchange, lease: RemoteLease): Promise<boolean> {

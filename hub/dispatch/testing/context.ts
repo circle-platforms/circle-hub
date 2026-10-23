@@ -14,7 +14,7 @@ import {probes} from './probes.ts';
 let cluster:Promise<TemporaryPostgres>|undefined;
 after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
 
-export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; delay?: Record<string,number> } = {}) {
+export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number> } = {}) {
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);
   const kit = await openTestRecords({ now, postgres: await (cluster ??= startPostgres()) });
@@ -57,7 +57,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
       if (options.mode === 'fencing') await leases.forceRelease({ keys: definition('x').resources, by: admin.id, reason: '合成强制释放' });
     }
     return options.alter?.(name, replies(name)) ?? replies(name);
-  });
+  },undefined,{},options.serverVersion);
   const registry = new ExecutorRegistry(kit);
   const d = { ...definition(endpoint.endpoint),allowed_tools:[...definition(endpoint.endpoint).allowed_tools,'inspect_bound_seat'],refused_tools:['synthetic_admin_reset'],probes:{...probes,call:{...probes.call,tool:'inspect_bound_seat'}}, manifest_sha256: manifest.body.sha256, submit_timeout_ms: options.timeout ?? 300000 };
   const executor = await registry.add(admin, d, 'synthetic-secret');

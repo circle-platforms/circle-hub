@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean } = {}) {
+export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string } = {}) {
   let queries = 0;
   const rows = new Map<string, Record<string, unknown>>();
   let c!: Awaited<ReturnType<typeof setup>>;
@@ -19,7 +19,7 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     return reply;
   };
   try {
-  c = await setup({mode: options.lost ? 'disconnect' : undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
+  c = await setup({serverVersion:options.serverVersion,mode: options.lost ? 'disconnect' : undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
     if (name === 'send_blob') return admit();
     if (name !== 'lookup_blob') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'lookup_blob').at(-1)!.params.arguments as Record<string,unknown>;
