@@ -21,6 +21,7 @@ const RULES: Partial<Record<Reason, Rule>> = {
   output_failed: { missing: "能回读且与重算一致的产物；下一步：运行者修复出件并重新提交后自动重核", request: 'repair', audience: 'runner' },
   repair_exhausted: { missing: "修复后符合要求的产物；下一步：运行者修复并以前驱开新修订重跑", request: 'repair', audience: 'runner' },
   budget_exhausted: { missing: "工作上限内完成的检查结果；下一步：包主人修复检查或调整单条上限并发布后重跑", request: 'repair', audience: 'owner' },
+  integrity_unproven: { missing: "完整的来源目录及其证据；下一步：重新生产跳过的来源后自动重评", request: 'repair', audience: 'runner' },
 };
 
 export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome[], context: RecoveryContext): LayerResult {

@@ -78,3 +78,11 @@ test('budget_exhausted carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('工作上限内完'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('integrity_unproven carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'integrity_unproven' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('完整的来源目'));
+  assert.ok(LayerResult.safeParse(result).success);
+});
