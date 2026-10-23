@@ -88,3 +88,7 @@ test('lone heads, quoted words, Chinese context and English prose follow the doc
   assert.deepEqual(paths('Then run widget pool add pool1'), ['widget pool add']);
   assert.deepEqual(paths('widget pool add xxx show pools'), ['show pools', 'widget pool add']);
 });
+test('case-only command definitions retain all original paths', () => {
+  const scan = commandScanner('<commands><menu name="widget"><item name="SSL"/><item name="ssl"/></menu></commands>');
+  assert.deepEqual(scan('widget ssl').map((v) => v.path), ['/commands/widget/SSL', '/commands/widget/ssl']);
+});

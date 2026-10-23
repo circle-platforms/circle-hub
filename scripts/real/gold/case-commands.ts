@@ -37,13 +37,15 @@ function validateXml(xml: string): void {
 export function commandScanner(xml: string): (text: string) => Match[] {
   validateXml(xml);
   const root = trie();
+  const pathVariants = new Map<string, Set<string>>();
   for (const { path } of parseTree(xml)) {
     let node = root;
     for (const word of path.slice('/commands/'.length).toLowerCase().split('/')) {
       if (!node.children.has(word)) node.children.set(word, trie());
       node = node.children.get(word)!;
     }
-    node.path = path.toLowerCase();
+    node.path = path;
+    const variants = pathVariants.get(path.toLowerCase()) ?? new Set<string>(); variants.add(path); pathVariants.set(path.toLowerCase(), variants);
   }
   const index = (node: Trie): void => {
     for (const [word, child] of node.children) {
@@ -116,8 +118,10 @@ export function commandScanner(xml: string): (text: string) => Match[] {
         const chineseContext = /\p{Script=Han}$/u.test(before) || /^\p{Script=Han}/u.test(after);
         const lone = match.words + Number(match.via_no) === 1 && !hasArgs;
         if (!lone || quoted || (chineseContext && !after.startsWith('命令'))) {
-          const old = found.get(match.path);
-          found.set(match.path, old ? { ...match, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : match);
+          for (const path of pathVariants.get(match.path.toLowerCase()) ?? [match.path]) {
+            const old = found.get(path);
+            found.set(path, old ? { ...match, path, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : { ...match, path });
+          }
         }
         i = next;
       }

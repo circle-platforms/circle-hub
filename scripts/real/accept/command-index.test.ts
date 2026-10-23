@@ -62,3 +62,13 @@ test('a missing key with skipped sources is incomplete, never evidence of absenc
   assert.equal(compareCommandIndex(gold, [raw]).verdict, '输入不全');
   for (const skipped of [undefined, -1]) assert.equal(compareCommandIndex(gold, [{ ...view(), skipped }]).verdict, '输入不全');
 });
+import { computeScopeCases } from './scope-cases.ts';
+test('mixed-case definition paths survive independent extraction and both consumers', () => {
+  const path = '/commands/widget/SSL';
+  const original = caseCommandsGold('<commands><menu name="widget"><item name="SSL"/></menu></commands>', [{ document: 'synthetic-doc', map: { root: { data: { text: 'root' }, children: [{ data: { id: 'cap', text: 'widget ssl', resource: ['Functional'] } }] } } }]);
+  assert.equal(original.cases[0].paths[0].path, path);
+  const root = 'a'.repeat(64); const entry = sha256('mixed-case');
+  const raw = { schema: 'index-view@1', product: 'synthetic', build: { root }, kind: 'case', key: 'document', keys: { 'synthetic-doc': [entry] }, entries: { [entry]: { entry, kind: 'case', data: { document: 'synthetic-doc', node: 'cap', commands: [path] }, reference: `tree:${root}${path}@${entry}` } }, truncated: false, skipped: 0, cut_keys: [] };
+  assert.equal(compareCommandIndex(original, [raw]).verdict, '相等');
+  const result = computeScopeCases({ diff: { added: [], removed: [], modified: [path] }, earlierCases: original, laterCases: original, regressionRun: { items: [{ id: 'synthetic-doc:cap' }] }, maintenanceRun: { items: [{ id: 'synthetic-doc:cap' }] } }); assert.equal(result.allEqual, true);
+});
