@@ -26,6 +26,7 @@ const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
   record_index: 'value',
+  record_keys: 'key',
   objects: 'media_type',
   user_history: 'name',
   call_logs: 'tool',
@@ -148,7 +149,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       for (let n = 0; n < 5; n++) {
-        const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, index: [{ key: 'synthetic.n', value: String(n) }] });
+        const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, unique_key: `synthetic.${n}`, index: [{ key: 'synthetic.n', value: String(n) }] });
         appended.push({ id: record.id, digest: record.digest });
       }
       await kit.objects.put(Buffer.from('合成对象'), 'text/plain');
@@ -199,6 +200,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     try {
       for (const record of appended) assert.equal((await kit.store.get(record.digest))?.id, record.id);
       assert.equal(await kit.vault.getText('synthetic.entry'), '合成');
+      assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');
       await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n: 99, text: '恢复之后' } });
     } finally {
       await kit.close();
