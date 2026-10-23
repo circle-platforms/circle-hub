@@ -45,3 +45,11 @@ A workflow may omit `max_ttl_seconds`: its acquisitions have `until: null`, with
 Every active-row query, trusted snapshot, orphan cleanup and release treats null as unbounded.
 Extending such rows is refused before mutation; a lineage releases them explicitly. Capped workflows keep their TTL
 and cumulative extension rules. Migration 4 only removes the expiry NOT NULL constraint; applied migrations stay fixed.
+
+Ownership is independent of holding: `register` assigns a strictly nested slash-terminated prefix to its first user.
+Registrations may never contain each other. Administrators may reassign an exact existing prefix with a reason;
+ordinary users cannot reveal or overwrite its owner. `unregister` requires the owner or an administrator and refuses
+while any active row remains below it. A database advisory lock serializes overlap checks, registration changes and
+acquisition, including two connections registering overlapping prefixes. Migration 5 adds only the current ownership
+table and its runtime grant; each mutation appends its registration action atomically. `actionLog` includes owner,
+previous owner, actor, reason and prefix so the current table can be rebuilt. Public run views filter these trusted rows.

@@ -354,3 +354,45 @@ test('an uncapped lease has no expiry, cannot extend, survives time and releases
   assert.ok((await later.release({ keys: ['endless/a/k'], holder })).ok);
   assert.equal((await later.view('endless/')).entries.length, 0);
 });
+
+test('registration is exclusive, disjoint and replayable with audited administrator reassignment', async () => {
+  const s = new LeaseService(db, { now: clock('2026-10-24T09:00:00Z') });
+  const input = { prefix: 'owned/a/', declaredPrefix: 'owned/', owner: holder.user, by: holder.user, reason: '合成登记' };
+  assert.ok((await s.register(input)).ok);
+  const duplicate = await s.register({ ...input, owner: other.user, by: other.user });
+  assert.ok(!duplicate.ok && duplicate.code === 'LEASE_UNAVAILABLE');
+  assert.match(duplicate.message, /已经有主人/);
+  assert.ok(!duplicate.message.includes(holder.user));
+  for (const prefix of ['owned/', 'owned/a', 'owned/a/nested/']) assert.ok(!(await s.register({ ...input, prefix })).ok);
+  assert.ok(!(await s.unregister({ prefix: input.prefix, by: other.user, reason: '合成注销' })).ok);
+  assert.ok((await s.register({ ...input, owner: other.user, by: 'admin', admin: true, reason: '更正归属' })).ok);
+  assert.equal((await s.registrations('owned/'))[0]!.owner, other.user);
+  assert.ok(!(await s.unregister({ prefix: input.prefix, by: holder.user, reason: '合成注销' })).ok);
+  assert.ok((await s.acquire({ keys: ['owned/a/k'], holder, prefix: 'owned/' })).ok);
+  const busy = await s.unregister({ prefix: input.prefix, by: other.user, reason: '合成注销' });
+  assert.ok(!busy.ok && busy.code === 'LEASE_UNAVAILABLE');
+  assert.match(busy.message, /先强制释放，或等它释放/);
+  assert.ok((await s.release({ keys: ['owned/a/k'], holder })).ok);
+  assert.ok((await s.unregister({ prefix: input.prefix, by: 'admin', admin: true, reason: '管理员注销' })).ok);
+  assert.ok((await s.register({ ...input, prefix: 'owned/kept/' })).ok);
+  const state = new Map<string, string>();
+  for (const record of await s.actionLog('owned/')) {
+    if (record.op === 'register') state.set(String(record.prefix), String(record.owner));
+    if (record.op === 'unregister') state.delete(String(record.prefix));
+    if (record.reason === '更正归属') assert.equal(record.previous_owner, holder.user);
+  }
+  assert.deepEqual([...state], (await s.registrations('owned/')).map(r => [r.prefix, r.owner]));
+  assert.ok((await s.unregister({ prefix: 'owned/kept/', by: holder.user, reason: '主人注销' })).ok);
+});
+
+test('two connections registering a prefix or overlapping prefixes have exactly one winner in 50 rounds', async () => {
+  const a = new LeaseService(db); const b = new LeaseService(db);
+  for (let i = 0; i < 50; i++) {
+    const base = { declaredPrefix: 'owners/', owner: holder.user, by: holder.user, reason: '合成并发' };
+    const results = await Promise.all([
+      a.register({ ...base, prefix: `owners/r${i}/` }),
+      b.register({ ...base, prefix: i % 2 ? `owners/r${i}/nested/` : `owners/r${i}/`, owner: other.user, by: other.user }),
+    ]);
+    assert.equal(results.filter(r => r.ok).length, 1);
+  }
+});

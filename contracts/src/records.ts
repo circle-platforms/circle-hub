@@ -10,14 +10,24 @@ export const RecordKindSchema = z.enum(RECORD_KINDS);
 /** The detail a `lease` action carries (B05 F[0] milestone: the lease action kind): what happened to which keys, held
  * by whom, until when, with the fencing token. The token lives only in the Hub's own action records (D04 R[0] last
  * sentence), never in what a client sees. */
-export const LeaseDetail = z.strictObject({
-  op: LeaseOpSchema,
+const HeldLeaseDetail = z.strictObject({
+  op: LeaseOpSchema.exclude(['register', 'unregister']),
   lease: z.string().min(1).describe('the lease identity (lse_…) the keys are held under'),
   keys: z.array(z.string().min(1)).min(1),
   holder: z.strictObject({ user: z.string().min(1), run: RunId }).describe('the user and the run that hold the lease'),
   until: z.string().min(1).nullable().describe('the end moment of the lease after this operation (ISO time)'),
   token: z.number().int().nonnegative().describe('the fencing token after this operation: monotonic per key row'),
 });
+
+export const LeaseRegistrationDetail = z.strictObject({
+  op: LeaseOpSchema.extract(['register', 'unregister']),
+  prefix: z.string().min(1).endsWith('/'),
+  owner: z.string().min(1),
+  previous_owner: z.string().min(1).nullable(),
+  by: z.string().min(1),
+  reason: z.string().trim().min(1),
+});
+export const LeaseDetail = z.union([HeldLeaseDetail, LeaseRegistrationDetail]);
 
 export const RecordEnvelope = z.strictObject({
   id: RecordId,

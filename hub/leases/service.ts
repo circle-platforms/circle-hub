@@ -11,7 +11,7 @@ import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
-import { LeaseDetail } from '../../contracts/src/records.ts';
+import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
 export interface Holder {
@@ -45,6 +45,9 @@ export interface HolderSnapshot {
   released: boolean;
   expires_at: string | null;
 }
+
+export type RegistrationOutcome = { ok: true; prefix: string; owner: string } |
+  { ok: false; code: 'LEASE_UNAVAILABLE'; message: string };
 
 export interface ServiceOptions {
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
@@ -100,6 +103,7 @@ export class LeaseService {
     const keys = [...input.keys].sort();
     return this.#db
       .transaction(async (tx) => {
+        await this.#ownershipLock(tx);
         const now = await this.#nowIn(tx);
         const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
         const lease = newId('lse');
@@ -139,6 +143,65 @@ export class LeaseService {
         if (error instanceof RefusedLease) return error.outcome as AcquireOutcome;
         throw error;
       });
+  }
+
+
+  /** Ownership changes are serialized with acquisition so unregister cannot race a new holder. */
+  async register(input: { prefix: string; declaredPrefix: string; owner: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
+    const { prefix } = input;
+    if (!KEY.test(prefix) || !prefix.endsWith('/') || !input.declaredPrefix.endsWith('/') ||
+        !prefix.startsWith(input.declaredPrefix) || prefix === input.declaredPrefix) {
+      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记的键前缀须以 / 结尾，严格位于声明前缀下，不能等于声明前缀' };
+    }
+    if (!isId('usr', input.owner) || !input.reason.trim() || (!input.admin && input.owner !== input.by)) {
+      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记须写有效用户和理由，普通用户只能登记给自己' };
+    }
+    return this.#db.transaction(async tx => {
+      await this.#ownershipLock(tx);
+      const existing = await this.#db.query<{prefix:string;owner:string}>(
+        'SELECT prefix, owner FROM lease_registrations WHERE starts_with(prefix,$1) OR starts_with($1,prefix) ORDER BY prefix', [prefix], tx);
+      if (existing.rows.some(r => r.prefix !== prefix)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记前缀不能和已有登记互相包含' };
+      const previous = existing.rows[0]?.owner ?? null;
+      if (previous && !input.admin) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀已经有主人' };
+      const now = await this.#nowIn(tx);
+      await this.#db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3) ON CONFLICT(prefix) DO UPDATE SET owner=excluded.owner, registered_at=excluded.registered_at', [prefix,input.owner,now],tx);
+      await this.#registrationAction(tx, 'register', prefix, input.owner, previous, input.by, input.reason, now);
+      return { ok: true, prefix, owner: input.owner };
+    });
+  }
+
+  async unregister(input: { prefix: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
+    if (!input.reason.trim()) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '注销须写理由' };
+    return this.#db.transaction(async tx => {
+      await this.#ownershipLock(tx);
+      const registered = await this.#db.query<{owner:string}>('SELECT owner FROM lease_registrations WHERE prefix=$1 FOR UPDATE',[input.prefix],tx);
+      const owner = registered.rows[0]?.owner;
+      if (!owner || (!input.admin && owner !== input.by)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀不能由你注销' };
+      const now = await this.#nowIn(tx);
+      const held = await this.#db.query('SELECT 1 FROM leases WHERE starts_with(key,$1) AND released_at IS NULL AND (expires_at IS NULL OR expires_at>$2) LIMIT 1',[input.prefix,now],tx);
+      if (held.rows.length) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀还有未释放的租约，先强制释放，或等它释放' };
+      await this.#db.query('DELETE FROM lease_registrations WHERE prefix=$1',[input.prefix],tx);
+      await this.#registrationAction(tx, 'unregister', input.prefix, owner, owner, input.by, input.reason, now);
+      return { ok: true, prefix: input.prefix, owner };
+    });
+  }
+
+  /** Trusted ownership rows; the run boundary strips owners that its viewer cannot see. */
+  async registrations(prefix: string): Promise<Array<{ prefix: string; owner: string }>> {
+    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations WHERE starts_with(prefix,$1) ORDER BY prefix',[prefix])).rows;
+  }
+
+  async #ownershipLock(tx: PgTransaction): Promise<void> {
+    await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx);
+  }
+
+  async #registrationAction(tx: PgTransaction, op: Extract<LeaseOp, 'register' | 'unregister'>, prefix: string, owner: string, previous: string | null, by: string, reason: string, now: Date): Promise<void> {
+    const detail = LeaseRegistrationDetail.parse({ op, prefix, owner, previous_owner: previous, by, reason });
+    const time = now.toISOString();
+    const body: ActionBody = { action: 'lease', run: null, item: null, inputs: [prefix], component: 'leases@1',
+      lease: null, started_at: time, ended_at: time, result: 'completed', error_code: null, acceptance: null, codes: [], detail };
+    await this.#records.put<ActionBody>({kind:'action',schema:RECORD_SCHEMAS.action,provenance:'observed',created_at:time,body,
+      index:[{key:'action.kind',value:'lease'},{key:'lease.prefix',value:prefix}]},tx);
   }
 
   /** Extends the lease of every key for its holder by ttlSeconds from the service's own clock, inside the cumulative cap. */
@@ -242,8 +305,8 @@ export class LeaseService {
         const body = record.body;
         if (body.action !== 'lease') continue;
         const keys = (body.detail?.keys as string[] | undefined) ?? [];
-        if (!keys.some(key => key.startsWith(prefix))) continue;
-        out.push({ ...(record.integrity_note?{integrity_note:record.integrity_note}:{}),op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
+        if (!keys.some(key => key.startsWith(prefix)) && !(typeof body.detail?.prefix === 'string' && body.detail.prefix.startsWith(prefix))) continue;
+        out.push({ ...(record.integrity_note?{integrity_note:record.integrity_note}:{}),...body.detail, op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
       }
       cursor = page.next;
     } while (cursor);
