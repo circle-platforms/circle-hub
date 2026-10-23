@@ -10,7 +10,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'defect-to-case',
-  version: '1.1.0',
+  version: '1.2.0',
   kind: 'workflow',
   title: '缺陷转用例',
   description: '从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例',
@@ -99,3 +99,24 @@ export async function stage(target: string): Promise<string> {
   await copyFile(join(PACK_DIR, 'pack.json'), join(target, 'pack.json'));
   return target;
 }
+
+async function main(args: string[]): Promise<number> {
+  if (args[0] === '--write') {
+    await signManifest();
+    return 0;
+  }
+  if (args[0] === '--check') {
+    const problems = await manifestProblems();
+    if (problems.length === 0) return 0;
+    process.stderr.write(`pack.json does not list the current files; run node packs/workflow/defect-to-case/pack-files.ts --write\n${problems.join('\n')}\n`);
+    return 1;
+  }
+  if (args[0] === '--stage' && args[1] !== undefined) {
+    await stage(args[1]);
+    return 0;
+  }
+  process.stderr.write('usage: pack-files.ts --write | --check | --stage <directory>\n');
+  return 2;
+}
+
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) process.exitCode = await main(process.argv.slice(2));

@@ -62,14 +62,78 @@ describe('hand-built drafts and checks coverage', () => {
     assert.equal(out2[0].code, CODES.UNEXPECTED_REFUTATION);
   });
 
-  it('3. refuses an expected result with no quotation', () => {
+  it('3. refuses an expected result with no quotation, quote at case level, or quote missing reference', () => {
+    // 缺 quote
     const noQuote = {
       ...makeGoodDraft(),
       expected: [{ text: '无引文的结果', quote: undefined as never }],
     };
-    const out = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: noQuote.title, data: noQuote }] } }));
-    assert.equal(out[0].verdict, 'refute');
-    assert.equal(out[0].code, CODES.QUOTE_MISSING);
+    const out1 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: noQuote.title, data: noQuote }] } }));
+    assert.equal(out1[0].verdict, 'refute');
+    assert.equal(out1[0].code, CODES.QUOTE_MISSING);
+    assert.ok(out1[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out1[0].statement.includes('{"text":'));
+    assert.ok(out1[0].statement.includes('"reference":'));
+    assert.equal(out1[0].pointer, '/cases/0/expected/0/quote');
+
+    // quote 放在用例一级
+    const quoteAtCaseLevel = {
+      ...makeGoodDraft(),
+      expected: [{ text: '引文放在用例一级' }],
+    };
+    const out2 = checkGroundedReading(
+      makeInput({
+        item: '74001',
+        slots: {
+          cases: [
+            {
+              text: quoteAtCaseLevel.title,
+              quote: { reference: 'src:fix_sha', text: '健康检查间隔设置成功' },
+              quotes: [{ reference: 'src:fix_sha', text: '健康检查间隔设置成功' }],
+              data: quoteAtCaseLevel,
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal(out2[0].verdict, 'refute');
+    assert.equal(out2[0].code, CODES.QUOTE_MISSING);
+    assert.ok(out2[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out2[0].statement.includes('{"text":'));
+    assert.ok(out2[0].statement.includes('"reference":'));
+    assert.equal(out2[0].pointer, '/cases/0/expected/0/quote');
+
+    // quote 缺 reference
+    const quoteMissingRef = {
+      ...makeGoodDraft(),
+      expected: [
+        {
+          text: '健康检查间隔设置成功',
+          quote: { reference: '', text: '健康检查间隔设置成功' },
+        },
+      ],
+    };
+    const out3 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: quoteMissingRef.title, data: quoteMissingRef }] } }));
+    assert.equal(out3[0].verdict, 'refute');
+    assert.equal(out3[0].code, CODES.QUOTE_MISSING);
+    assert.ok(out3[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out3[0].statement.includes('{"text":'));
+    assert.ok(out3[0].statement.includes('"reference":'));
+    assert.equal(out3[0].pointer, '/cases/0/expected/0/quote');
+
+    // 多个期望结果中的第二个缺 quote
+    const secondMissing = {
+      ...makeGoodDraft(),
+      expected: [
+        makeGoodDraft().expected[0],
+        { text: '第二个期望结果无引文', quote: undefined as never },
+      ],
+    };
+    const out4 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: secondMissing.title, data: secondMissing }] } }));
+    assert.equal(out4[0].verdict, 'refute');
+    assert.equal(out4[0].code, CODES.QUOTE_MISSING);
+    assert.ok(out4[0].statement.includes('/cases/0/expected/1/quote'));
+    assert.equal(out4[0].pointer, '/cases/0/expected/1/quote');
   });
 
   it('4. refuses expected result containing number or command or on/off state not in quote', () => {
