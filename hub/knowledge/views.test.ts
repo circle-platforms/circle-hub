@@ -285,14 +285,14 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.match(none.notes[0], /没有缺陷种类的条目/);
   });
 
-  test('empty totals survive byte truncation and combination limits, independently for each field', async (t) => {
+  test('empty totals survive byte pagination independently for each field', async (t) => {
     const data: Record<string, unknown>[] = [
       {commands:['listed'], module:'M'}, {}, {commands:null}, {commands:[]},
       {commands:[null,null,'listed'],module:false}, {commands:0,module:''},
       {commands:['many','values'],module:['A','B'],absent:null},
     ];
     const entries = data.map((data,i) => ({kind:'case',path:'/commands/system/show',statement:`合成计数 ${i}`,data,fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}));
-    const w = await makeWorld(postgres, {pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('empty_counts',{entries})]}},knowledge:{limits:{maxViewBytes:64*1024+60,facetCombinations:1}}});
+    const w = await makeWorld(postgres, {pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('empty_counts',{entries})]}},knowledge:{limits:{maxViewBytes:64*1024+100,facetCombinations:100}}});
     t.after(()=>w.close());
     w.external.set(`site:tree:${A}`,{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
     const produced=await w.knowledge.produceTree({product:w.product,build:{...build(A,[]),sources:{tree:`site:tree:${A}`}}});
@@ -320,7 +320,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.deepEqual(view.totals.empty,{defects:4});
   });
 
-  test('a list field cross product beyond the combination cap is left out and flagged', async (t) => {
+  test('a list field cross product beyond the combination cap is refused with a narrowing action', async (t) => {
     const f = await fixture(t);
     const tags = Array.from({ length: 70 }, (_, i) => `t${i}`);
     const text = `[cmd: system show] 很多标签 ${Array.from({ length: 70 }, (_, i) => `#${i}`).join(' ')}`;
@@ -328,12 +328,11 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     f.w.external.set('site:tree:Rel_ACME_1_2_17', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
     const produced = await f.w.knowledge.produceTree({ product: f.w.product, build: build('Rel_ACME_1_2_17', ['store:mindmap:d9']) });
     assert.equal(produced.ok, true, produced.reason ?? '');
-    const view = FacetView.parse((await f.json(await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=tags,defects,missing'))).value);
-    assert.equal(view.total, 1);
-    assert.deepEqual(view.rows, []);
-    assert.equal(view.truncated, true);
-    assert.deepEqual(view.totals.empty,{tags:0,defects:0,missing:1});
-    assert.ok(view.notes.some((note) => /超过 4096 种/.test(note)));
+    const rejected=await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=tags,defects,missing');
+    assert.equal(rejected.ok,false);
+    if(!rejected.ok)assert.match(rejected.reason,/组合超过上限.*减少 by/);
+    const narrowed=FacetView.parse((await f.json(await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=missing'))).value);
+    assert.equal(narrowed.total,1);assert.deepEqual(narrowed.totals.empty,{missing:1});
   });
 
   test('the index maps each value to the entries that carry it; only= keeps the listed values and names those without entries', async (t) => {
@@ -507,11 +506,10 @@ export default function many(input: any): unknown {
     const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
     const indexMs = performance.now() - indexStarted;
     assert.deepEqual([index.total_keys, index.total_entries], [2, 60_000]);
-    assert.deepEqual(Object.keys(index.keys), ['fixed', 'known']);
-    assert.equal(index.keys.fixed.length, 2_000);
-    assert.equal(index.keys.known.length, 2_000);
-    assert.deepEqual(index.cut_keys, ['fixed', 'known']);
-    assert.ok(index.notes.includes('2 个取值的条目超过 2000 个，只列出按摘要排序的前 2000 个'));
+    assert.deepEqual(Object.keys(index.keys), ['fixed']);
+    assert.equal(index.keys.fixed.length,2_000);
+    assert.ok(index.next,'the remaining entries must be readable');
+    assert.deepEqual(index.cut_keys,[],'pagination replaces permanent per-key cuts');
     assert.equal(index.truncated, true);
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
@@ -519,15 +517,16 @@ export default function many(input: any): unknown {
     assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 
-  test('an index over the byte budget stops before a key and says so', async (t) => {
+  test('an index over the byte budget supplies a continuation within a key', async (t) => {
     // The keys M1 and M2 take 1812 and 1805 bytes with their entries, counted exactly.
     const f = await fixture(t, { knowledge: { limits: { maxViewBytes: 64 * 1024 + 2500 } } });
     const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=module`))).value);
     assert.equal(view.truncated, true);
     assert.equal(view.total_keys, 2);
     assert.deepEqual(view.cut_keys, [], 'whole-key byte-budget omissions are not per-key cuts');
-    assert.ok(Object.keys(view.keys).length < 2);
-    assert.ok(view.notes.some((note) => /之前为止/.test(note)));
+    assert.ok(Object.keys(view.entries).length < view.total_entries);
+    assert.ok(view.next);
+    assert.ok(view.notes.some((note) => /续读/.test(note)));
   });
 });
 

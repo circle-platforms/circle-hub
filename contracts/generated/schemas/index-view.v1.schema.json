@@ -6,6 +6,13 @@
       "type": "string",
       "const": "index-view@1"
     },
+    "next": {
+      "description": "Continuation for the same immutable scope; null on the last page",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "product": {
       "type": "string",
       "minLength": 1
@@ -49,14 +56,14 @@
         "type": "string"
       },
       "additionalProperties": {
-        "maxItems": 2000,
+        "maxItems": 200000,
         "type": "array",
         "items": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
       },
-      "description": "field value -> digests of the entries that carry it, sorted"
+      "description": "field value -> sorted entry digests; one emitted page has at most MAX_INDEX_PER_KEY per key, complete run bindings may collate pages"
     },
     "entries": {
       "type": "object",

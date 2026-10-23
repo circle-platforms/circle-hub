@@ -6,6 +6,13 @@
       "type": "string",
       "const": "facet-view@1"
     },
+    "next": {
+      "description": "Continuation for the same immutable scope; null on the last page",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "product": {
       "type": "string",
       "minLength": 1
@@ -50,7 +57,7 @@
       "description": "data fields of the entries; a field that holds a list counts the entry once per element, a missing field is null"
     },
     "rows": {
-      "maxItems": 20000,
+      "maxItems": 200000,
       "type": "array",
       "items": {
         "type": "object",

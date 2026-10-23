@@ -325,21 +325,19 @@ describe('recheck (finding: more than 50 documents skipped for good make every r
 });
 
 describe('index keys from data values (finding: __proto__)', () => {
-  test('__proto__ as a value is left out with a note; the other keys, constructor among them, are served', async (t) => {
+  test('a prototype-reserved index key refuses the whole page and can be narrowed explicitly', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const modules = ['__proto__', 'M1', 'constructor', 'toString'];
     const ids = documents(w, 1, 4, (i) => modules[i - 1]);
     const result = await w.knowledge.produceTree({ product: w.product, build: build(A, ids) });
     assert.equal(result.ok, true, result.reason ?? '');
     const views = reader(w);
-    const index = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
-    assert.deepEqual(Object.keys(index.keys).sort(), ['M1', 'constructor', 'toString']);
-    assert.equal(index.total_keys, 4);
-    assert.equal(index.truncated, true);
-    assert.ok(index.notes.some((n) => /取值 __proto__ 不能作为这个视图的键/.test(n)), index.notes.join('\n'));
-    const only = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module&only=__proto__`)).value);
-    assert.deepEqual(only.keys, {});
-    assert.ok(only.notes.some((n) => /带它的 2 个条目没有按它列出/.test(n)), only.notes.join('\n'));
+    const rejected=await views.read(`knowledge:index:acme:${A}?kind=case&key=module`);
+    assert.equal(rejected.ok,false);if(!rejected.ok)assert.match(rejected.reason,/__proto__.*only/);
+    const index=IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module&only=M1,constructor,toString`)).value);
+    assert.deepEqual(Object.keys(index.keys).sort(),['M1','constructor','toString']);assert.equal(index.truncated,false);
+    const only=await views.read(`knowledge:index:acme:${A}?kind=case&key=module&only=__proto__`);
+    assert.equal(only.ok,false);
     const facets = FacetView.parse((await views.json(`knowledge:facets:acme:${A}?kind=case&by=module`)).value);
     assert.equal(facets.rows.find((r) => r.values.module === '__proto__')?.count, 2, 'a value, not a key, in a facet row');
   });
@@ -633,13 +631,9 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     const w = await world(t, [DEFAULT_PRODUCERS[0], extraProducer('titles', { entries })], { knowledge: { limits: { maxViewBytes: 64 * 1024 + 200 * 1024, facetCombinations: 100 } } });
     const produced = await w.knowledge.produceTree({ product: w.product, build: build(A, undefined) });
     assert.equal(produced.ok, true, produced.reason ?? '');
-    const { value, bytes } = await reader(w).json(`knowledge:facets:acme:${A}?kind=case&by=title`);
-    const view = FacetView.parse(value);
-    assert.ok(bytes <= 64 * 1024 + 200 * 1024, `${bytes} bytes`);
-    assert.equal(view.truncated, true);
-    assert.equal(view.total, 120);
-    assert.ok(view.rows.length > 10 && view.rows.length < 100, String(view.rows.length));
-    assert.ok(view.notes.some((n) => /超过 100 种以后出现的新组合没有收集：20 个条目/.test(n)), view.notes.join('\n'));
+    const rejected=await reader(w).read(`knowledge:facets:acme:${A}?kind=case&by=title`);
+    assert.equal(rejected.ok,false);
+    if(!rejected.ok)assert.match(rejected.reason,/组合超过可计算上限.*减少 by/);
   });
 
   test('an index whose listed entries were not held during the scan reads them again and gives the same entries', async (t) => {

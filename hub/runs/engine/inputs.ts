@@ -1,3 +1,4 @@
+import {completeKnowledgeView} from '../../knowledge/api.ts';
 // Binding the start_run inputs to the workflow's input slots (W02 F[8], P02, A03): a reference the caller may read (an
 // upload_file result, or a Hub record reference, B03 R[4]) or an external object read through its system pack as the
 // caller. Each source is parsed with the core parser for its media type; required slots must be given and the media type or
@@ -162,7 +163,8 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+    const readContext={ principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) };
+    const read = id.startsWith('knowledge:') ? await completeKnowledgeView(id,readContext,ctx.deps.external,{artifacts,store}) : await ctx.deps.external.read(id,readContext);
     if (!read.ok) {
       if (read.inputError !== undefined) {
         schemaError(path, read.inputError.message, read.inputError.fix);

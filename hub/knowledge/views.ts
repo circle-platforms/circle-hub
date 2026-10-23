@@ -31,7 +31,7 @@ import {
   type ViewEntry,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
-import { canonicalBytes, canonicalize, CREDENTIAL_FINDING_LIMIT, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, CREDENTIAL_FINDING_LIMIT, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
@@ -61,19 +61,19 @@ const NOTE_REFERENCES = 10;
 const PROTO_KEY = '__proto__';
 
 export type ViewRequest =
-  | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; catalog: string | null; revision: string | null }
-  | { type: 'facets'; product: string; build: string; kind: EntryKind; by: string[]; revision: string | null }
+  | { type: 'impact'; after?: string | null; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; catalog: string | null; revision: string | null }
+  | { type: 'facets'; after?: string | null; product: string; build: string; kind: EntryKind; by: string[]; revision: string | null }
   | { type: 'links'; product: string; build: string; prefix: string; target: string | null; rule: string | null; composition: string | null; cursor: string | null; limit: number; revision: string | null }
-  | { type: 'index'; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
+  | { type: 'index'; after?: string | null; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
-  impact: { keys: ['changed', 'attached', 'attached_fields', 'catalog'], required: [] },
-  facets: { keys: ['kind', 'by'], required: ['kind', 'by'] },
+  impact: { keys: ['after', 'changed', 'attached', 'attached_fields', 'catalog'], required: [] },
+  facets: { keys: ['after', 'kind', 'by'], required: ['kind', 'by'] },
   links: {keys:['prefix','target','rule','composition','cursor','limit'],required:[]},
-  index: { keys: ['kind', 'key', 'only', 'fields'], required: ['kind', 'key'] },
+  index: { keys: ['after', 'kind', 'key', 'only', 'fields'], required: ['kind', 'key'] },
 } as const satisfies Record<ViewRequest['type'], { keys: readonly string[]; required: readonly string[] }>;
 
 const ID = /^([a-z][a-z0-9-]*):([a-z][a-z0-9_-]*):([^:?@]+):([^?@]+)(?:\?([\s\S]*))?$/;
@@ -90,6 +90,21 @@ export function splitRevision(id: string): { body: string; revision: string | nu
 export class ImpactRefusal extends Error {}
 class BuildNameRefusal extends ImpactRefusal {
   readonly fix='使用候选的完整原样构建名重新读取';
+}
+
+function pageState(after: string | null, identity: unknown): {offset:number;next:(offset:number)=>string} {
+  const q=sha256Hex(canonicalize(identity));
+  let offset=0;
+  if(after!==null){
+    try{const cursor=JSON.parse(Buffer.from(after,'base64url').toString('utf8'));if(cursor.q!==q||!Number.isSafeInteger(cursor.at)||cursor.at<1)throw new Error();offset=cursor.at;}
+    catch{throw new ImpactRefusal('续读游标不属于当前查询或组成，或格式已损坏；请从不带 after 的首页重新读取');}
+  }
+  return {offset,next:at=>Buffer.from(JSON.stringify({q,at})).toString('base64url')};
+}
+function continuationId(id:string,cursor:string,revision:string):string{
+ const {body}=splitRevision(id),at=body.indexOf('?');
+ const base=at<0?body:body.slice(0,at),query=at<0?[]:body.slice(at+1).split('&').filter(pair=>!pair.startsWith('after='));
+ query.push(`after=${encodeURIComponent(cursor)}`);return `${base}?${query.join('&')}@${revision}`;
 }
 
 function decode(text: string): string | null {
@@ -157,6 +172,8 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     const values = query.get(name) ?? [];
     return values.length === 1 ? { ok: true, value: values[0] } : { ok: false, reason: `参数 ${name} 只能有一个取值` };
   };
+  let after: string | null = null;
+  if(query.has('after')){const got=one('after');if(!got.ok)return got;after=got.value;}
   if(view==='links'){
     const values:Record<string,string|null>={prefix:'/',target:null,rule:null,composition:null,cursor:null,limit:'100'};
     for(const name of Object.keys(values))if(query.has(name)){const got=one(name);if(!got.ok)return got;values[name]=got.value;}
@@ -188,7 +205,7 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
       for (const field of raw) if (!DataFieldName.safeParse(field).success) return { ok: false, reason: `字段名 ${cutText(field, 40)} 不对（小写字母开头，只有小写字母、数字和下划线）` };
       attached_fields = [...new Set(raw)].sort(compareText);
     }
-    return { ok: true, value: { type: 'impact', product, from, to, changed: changed.value, attached: attached.value, attached_fields, catalog, revision } };
+    return { ok: true, value: { type: 'impact', after, product, from, to, changed: changed.value, attached: attached.value, attached_fields, catalog, revision } };
   }
   const kindText = one('kind');
   if (!kindText.ok) return kindText;
@@ -199,7 +216,7 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     if (by.length < 1 || by.length > 6) return { ok: false, reason: 'by 要列 1 到 6 个数据字段' };
     for (const field of by) if (!DataFieldName.safeParse(field).success) return { ok: false, reason: `数据字段名 ${cutText(field, 40)} 不对（小写字母开头，只有小写字母、数字和下划线）` };
     if (new Set(by).size !== by.length) return { ok: false, reason: 'by 里有重复的字段' };
-    return { ok: true, value: { type: 'facets', product, build, kind: kind.value[0], by, revision } };
+    return { ok: true, value: { type: 'facets', after, product, build, kind: kind.value[0], by, revision } };
   }
   const key = one('key');
   if (!key.ok) return key;
@@ -216,7 +233,7 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     for (const field of raw) if (!DataFieldName.safeParse(field).success) return { ok: false, reason: `字段名 ${cutText(field, 40)} 不对（小写字母开头，只有小写字母、数字和下划线）` };
     fields = [...new Set(raw)].sort(compareText);
   }
-  return { ok: true, value: { type: 'index', product, build, kind: kind.value[0], key: key.value, only, fields, revision } };
+  return { ok: true, value: { type: 'index', after, product, build, kind: kind.value[0], key: key.value, only, fields, revision } };
 }
 
 // ---------------------------------------------------------------- data values
@@ -365,7 +382,7 @@ export class KnowledgeViews {
    * one only itself. With `catalog` only the catalog's members count as changes, read per root and compared by syntax:
    * a path whose members differ only in the descriptive fields or the overload order is not a change, counted in the notes.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set()): Promise<ImpactView> {
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null): Promise<ImpactView> {
     let membersFrom: ReadonlyMap<string, string> | null = null;
     let membersTo: ReadonlyMap<string, string> | null = null;
     let catalogKind: EntryKind | null = null;
@@ -395,8 +412,10 @@ export class KnowledgeViews {
     };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
     const [fromComposition, toComposition] = await Promise.all([this.#reading.compositionOf(from.root), this.#reading.compositionOf(to.root)]);
+    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],exclude:[...exclude].sort()});
     const budget = this.#budget;
     interface Item {
+      position:number;
       change: PathChange;
       placement: Placement | null;
       /** Every entry the item names. */
@@ -446,7 +465,7 @@ export class KnowledgeViews {
       changedPaths++;
       attachedFrom += fromAll.length;
       attachedTo += toAll.length;
-      if (full) continue;
+      if (full || changedPaths <= page.offset) continue;
       const flaggedChange = [...before, ...after].filter((d) => exclude.has(d));
       if (flaggedChange.length > 0) {
         excludedPaths.push(node.path);
@@ -478,11 +497,12 @@ export class KnowledgeViews {
       }
       const fresh = [...additions.keys()].filter((d) => !named.has(d)).length;
       if (kept.length + 1 > MAX_IMPACT_PATHS || named.size + fresh > MAX_IMPACT_ENTRIES || bytes + size > budget) {
+        if(kept.length===0)throw new ImpactRefusal('单个变化路径超过视图页上限；用 attached_fields 收窄附着条目后重读');
         full = true;
         continue;
       }
       for (const [digest, value] of additions) named.set(digest, value);
-      kept.push({ change, placement, named: [...new Set([...before, ...after, ...fromAttached, ...toAttached])] });
+      kept.push({ position:changedPaths-1, change, placement, named: [...new Set([...before, ...after, ...fromAttached, ...toAttached])] });
       bytes += size;
     }
     // An entry named only on the earlier side of the kept paths is cited in the later root when it is there at another path
@@ -533,6 +553,7 @@ export class KnowledgeViews {
       }
       return {
         schema: 'impact-view@1',
+        next: items.length>0&&items.at(-1)!.position+1<changedPaths?page.next(items.at(-1)!.position+1):null,
         product,
         from,
         to,
@@ -544,7 +565,7 @@ export class KnowledgeViews {
         placements: items.flatMap((item) => (item.placement === null ? [] : [item.placement])),
         entries,
         totals: { changed_paths: changedPaths, attached_from: attachedFrom, attached_to: attachedTo },
-        truncated: count < changedPaths || excludedEntries.size > 0,
+        truncated: page.offset + count < changedPaths || excludedEntries.size > 0,
         skipped: { from: skippedCount(fromComposition), to: skippedCount(toComposition) },
         notes: await notesOf(count),
       };
@@ -567,8 +588,9 @@ export class KnowledgeViews {
    * exactly. `exclude` names rows left out (by the canonical JSON of their values) because their values have credential
    * scan hits.
    */
-  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set()): Promise<FacetView> {
+  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), after: string | null = null): Promise<FacetView> {
     const composition = await this.#reading.compositionOf(at.root);
+    const page=pageState(after,{product,at,kind,by,composition:composition?.record,exclude:[...exclude].sort()});
     const seen = new Set<string>();
     const counts = new Map<string, { values: FacetValue[]; count: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
@@ -585,8 +607,7 @@ export class KnowledgeViews {
         // Count membership of each null group before collecting combinations or applying any row limit.
         lists.forEach((values, i) => { if (values.includes(null)) empty[by[i]]++; });
         if (lists.reduce((n, list) => n * list.length, 1) > MAX_FACET_COMBINATIONS) {
-          cut++;
-          continue;
+          throw new ImpactRefusal('单个条目的分面字段组合超过上限；减少 by 字段后重读，未返回部分计数');
         }
         let combos: FacetValue[][] = [[]];
         for (const list of lists) combos = combos.flatMap((combo) => list.map((value) => [...combo, value]));
@@ -596,7 +617,7 @@ export class KnowledgeViews {
           const held = counts.get(key);
           if (held !== undefined) held.count++;
           else if (counts.size < limit) counts.set(key, { values: combo, count: 1 });
-          else left = true;
+          else throw new ImpactRefusal('分面取值组合超过可计算上限；减少 by 字段后重读，未返回部分计数');
         }
         if (left) unlisted++;
       }
@@ -613,7 +634,8 @@ export class KnowledgeViews {
     const budget = this.#budget;
     const rows: FacetView['rows'] = [];
     let bytes = 0;
-    for (const [, { values, count }] of all) {
+    if(page.offset>all.length)throw new ImpactRefusal('续读游标已超出分面结果；从首页重新读取');
+    for (const [, { values, count }] of all.slice(page.offset)) {
       const row = { values: Object.fromEntries(by.map((field, i) => [field, values[i]])), count };
       const size = elementBytes(row);
       if (rows.length + 1 > MAX_FACET_ROWS || bytes + size > budget) break;
@@ -632,6 +654,7 @@ export class KnowledgeViews {
     if (skipped !== null) notes.push(skipped);
     const view: FacetView = {
       schema: 'facet-view@1',
+      next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
       product,
       build: at,
       kind,
@@ -639,10 +662,11 @@ export class KnowledgeViews {
       rows,
       total: seen.size,
       totals: { empty },
-      truncated: rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
+      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
       skipped: skippedCount(composition),
       notes,
     };
+    if(rows.length===0&&page.offset<all.length)throw new ImpactRefusal('单行分面超过视图页上限；减少 by 字段后重读');
     return conforming(FacetView, view, 'facet-view@1');
   }
 
@@ -653,7 +677,7 @@ export class KnowledgeViews {
    * the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names entries left
    * out because their text has credential scan hits.
    */
-  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set()): Promise<IndexView> {
+  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null): Promise<IndexView> {
     // With fields, entries carry only those data fields and an empty statement; the identity (entry digest) and the
     // reference are unchanged. The truncation accounting uses the slimmed size: the fields decide what an entry costs.
     const slim = (content: EntryContent): EntryContent => {
@@ -663,6 +687,7 @@ export class KnowledgeViews {
       return { kind: content.kind, statement: '', data, applicability: content.applicability };
     };
     const composition = await this.#reading.compositionOf(at.root);
+    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,exclude:[...exclude].sort()});
     const onlySet = only === null ? null : new Set(only);
     const budget = this.#budget;
     const seen = new Set<string>();
@@ -707,24 +732,28 @@ export class KnowledgeViews {
     let bytes = 0;
     let stoppedAt: string | null = null;
     let proto = 0;
-    for (const value of [...keys.keys()].sort(compareText)) {
-      if (value === PROTO_KEY) {
-        proto = (keys.get(value) as string[]).length;
-        continue;
+    let position=0;
+    let available=0;
+    for(const value of [...keys.keys()].sort(compareText)) {
+      if(value===PROTO_KEY)throw new ImpactRefusal('索引含 JSON 原型保留键 __proto__；改用 only 列出需要的普通取值，或让生产器改正此字段后重新同步');
+      const all=(keys.get(value)??[]).filter(d=>!exclude.has(d)).sort(compareText);
+      available+=all.length;
+      for(const digest of all){
+        const ordinal=position++;
+        if(ordinal<page.offset||stoppedAt!==null)continue;
+        let item=kept.at(-1);
+        const same=item?.value===value;
+        const fresh=listedAll.has(digest)?[]:[digest];
+        const size=(same?elementBytes(digest):memberBytes(value,[digest]))+fresh.reduce((sum,d)=>sum+carriers.get(d)!.bytes,0);
+        if((same&&item!.listed.length>=MAX_INDEX_PER_KEY)||listedAll.size+fresh.length>MAX_INDEX_ENTRIES||bytes+size>budget){
+          if(kept.length===0)throw new ImpactRefusal('单条索引内容超过视图页上限；用 fields 收窄条目字段后重读');
+          stoppedAt=value;break;
+        }
+        if(!same){item={value,listed:[],fresh:[],cut:false};kept.push(item);}
+        item!.listed.push(digest);item!.fresh.push(...fresh);fresh.forEach(d=>listedAll.add(d));bytes+=size;
       }
-      const all = (keys.get(value) as string[]).filter((d) => !exclude.has(d)).sort(compareText);
-      if (all.length === 0) continue;
-      const listed = all.slice(0, MAX_INDEX_PER_KEY);
-      const fresh = listed.filter((d) => !listedAll.has(d));
-      const size = memberBytes(value, listed) + fresh.reduce((sum, d) => sum + (carriers.get(d) as { bytes: number }).bytes, 0);
-      if (listedAll.size + fresh.length > MAX_INDEX_ENTRIES || bytes + size > budget) {
-        stoppedAt = value;
-        break;
-      }
-      kept.push({ value, listed, fresh, cut: all.length > listed.length });
-      for (const digest of fresh) listedAll.add(digest);
-      bytes += size;
     }
+    if(page.offset>available)throw new ImpactRefusal('续读游标已超出索引结果；从首页重新读取');
     // Listed entries whose content was not held during the scan are read in a second one.
     const wanted = new Set([...listedAll].filter((d) => !held.has(d)));
     if (wanted.size > 0 && composition !== null) {
@@ -747,7 +776,7 @@ export class KnowledgeViews {
       if (perKeyCut > 0) out.push(`${perKeyCut} 个取值的条目超过 ${MAX_INDEX_PER_KEY} 个，只列出按摘要排序的前 ${MAX_INDEX_PER_KEY} 个`);
       if (fields !== null) out.push(`条目只带字段 ${fields.join('、')}（fields 参数），陈述为空`);
       const stop = count < kept.length ? kept[count].value : stoppedAt;
-      if (stop !== null) out.push(`取值按顺序列到 ${cutText(stop, 80)} 之前为止（上限 ${MAX_INDEX_ENTRIES} 个条目、约 ${this.#context.limits.maxViewBytes} 字节）`);
+      if (stop !== null) out.push(`本页在取值 ${cutText(stop, 80)} 处停止，按 next 续读剩余条目（上限 ${MAX_INDEX_ENTRIES} 个条目、约 ${this.#context.limits.maxViewBytes} 字节）`);
       if (unplacedCount > 0) out.push(`未归位条目 ${unplacedCount} 个，标在根下`);
       if (proto > 0) out.push(`取值 ${PROTO_KEY} 不能作为这个视图的键（读成 JSON 对象时会被当作原型），带它的 ${proto} 个条目没有按它列出`);
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
@@ -763,6 +792,7 @@ export class KnowledgeViews {
       }
       return {
         schema: 'index-view@1',
+        next: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available?page.next(page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)):null,
         product,
         build: at,
         kind,
@@ -775,7 +805,7 @@ export class KnowledgeViews {
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: count < kept.length || items.some((item) => item.cut) || stoppedAt !== null || proto > 0 || excluded.size > 0,
+        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0,
         skipped: skippedCount(composition),
         notes: notes(count),
       };
@@ -889,20 +919,20 @@ export class KnowledgeViews {
       const to = await resolve(request.to);
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
-      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude);
+      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);
       if (typeof at === 'string') return { ok: false, id: bare, reason: at };
       roots = [at.root];
       if (request.type === 'facets') {
-        key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by });
-        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude);
+        key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
+        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null);
         title = `${labelOf('entry_kind', request.kind)}按 ${request.by.join('、')} 计数（${at.build}）`;
       } else {
-        key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields });
-        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude);
+        key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields, after:request.after??null });
+        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null);
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }
@@ -957,6 +987,7 @@ export class KnowledgeViews {
     const finalKeys = partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
     annotate(view,covered,flagged.limited.size);
+    if(view.next)view.next=continuationId(bare,view.next,revision);
     let bytes = canonicalBytes(view);
     let large = tooLarge(bytes);
     if (large !== null) return {ok:false,id:bare,reason:large};
@@ -966,6 +997,7 @@ export class KnowledgeViews {
     if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
+      if(view.next)view.next=continuationId(bare,view.next,revision);
       bytes = canonicalBytes(view);
       large = tooLarge(bytes);
       if (large !== null) return {ok:false,id:bare,reason:large};
