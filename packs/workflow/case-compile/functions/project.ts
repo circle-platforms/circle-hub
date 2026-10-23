@@ -18,7 +18,7 @@ interface Slot {
 
 interface FrozenLeases {
   now: string;
-  entries: Array<{ key: string; until: string; mine?: boolean }>;
+  entries: Array<{ key: string; until: string | null; mine?: boolean }>;
 }
 
 const MAX_TITLE = 200;

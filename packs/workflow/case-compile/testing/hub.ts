@@ -182,6 +182,8 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       knowledge: new FakeKnowledge(),
       external,
       leases: new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }),
+      // This private synthetic database has no dispatch service or jobs.
+      leaseJobs: async () => [],
       now,
       adminLog: (entry: AdminLogEntry) => logs.push(entry),
     });
