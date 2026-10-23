@@ -428,15 +428,20 @@ block refuses the group.
 
 ### Synthetic scale
 
-2026-10-23, macOS arm64, Node v24.17.0, single concurrency, one cold sandbox process. The profile quoted is the public
+2026-10-24, macOS arm64, Node v24.17.0, single concurrency, one cold sandbox process. The profile quoted is the public
 `DEFAULT_SANDBOX.producer` of `hub/knowledge/api.ts`: 120000 ms, memoryMb 1024, 128 MiB of JSON input, 64 MiB of output.
 The RSS watchdog's own 192 MiB of overhead was not raised and no configuration was changed.
 
-One group of 12 table-dense chapters, 3146572 bytes: wall clock 1041 ms, parse and extract plus one serialization of the
-result 752.8 ms, peak process RSS 647008 KiB (631.8 MiB), heap at the end 244540504 bytes, output JSON 42004120 bytes.
+One group of 12 table-dense chapters, 3146572 bytes: wall clock 916 ms, parse and extract plus one serialization of the
+result 675.5 ms, peak process RSS 669584 KiB (653.9 MiB), heap at the end 247532808 bytes, output JSON 42004534 bytes.
 The RSS was sampled after the first serialization of the result, so it is not the kernel peak of the later transfer stage;
 the transfer stays under the original watchdog. This is one round of synthetic capacity evidence, not an SLA, and it does
 not show that real adoc of any syntax or size works.
+
+Step two added one engine call per paragraph (its own inline output, which the mapping reads instead of re-implementing
+AsciiDoc inline semantics), so a paragraph-dense group was measured as well, outside the sandbox: 12 chapters of 1200
+short paragraphs each with an attribute reference and inline marks, 1527895 bytes and 14400 paragraphs, 362 ms in one
+warm host process, 19028384 bytes of output JSON. Both runs stay far inside the producer profile; neither is an SLA.
 
 The tests run with `node --test --test-concurrency=1 "packs/product/apv/functions/adoc/*.test.ts"`. A cold process gives
 the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
@@ -595,7 +600,26 @@ accepted.
   section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to
   the adoc task (K4). K4's page says the placement code applies unchanged with text@1 l/<a>-<b> fragments, so the
   split must take the fragment parser key and the section-selector decoding from the input model there (markdown@1
-  stays the default here); this note points the integrator at that item.
+  stays the default here); this note points the integrator at that item. K4 step two took the route its page allows
+  instead of the split: the adoc mapping produces a markdown@1-shaped model and `adoc/entries.ts` rewrites K1's
+  fragments into text@1 references of the chapter files, so this producer is unchanged and still reads markdown@1 (its
+  parser key, its `h/` decoding, its inline syntax and its block kinds). The split this note asks for is still open.
+- adoc: the locator's folded comparison (`text.ts plainText`) inverts what the engine does to inline markup, character
+  references, inline macros and typographic replacements, and nothing else. A list item, description-list item or table
+  cell whose inline conversion the fold cannot invert — a menu path, a key cap, a footnote number, a cell carrying a span
+  marker (`2+|`) — is reported and cited on no line; the same words in a paragraph verify exactly, because a paragraph
+  keeps its source text. How often real manuals hit this is unknown until the integrator's adoc-versus-markdown
+  comparison runs.
+- adoc: what cannot be cited is not placed. A block, a table row or a heading line with no verified source line stays out
+  of the mapped model and is reported (`uncited`, `unparsed` and the production warnings) instead of reaching K1 without
+  a citation, which K1 would skip as malformed: the words are then not in the knowledge, and the report is the only
+  record. Nothing is placed on a line that was not read back.
+- adoc: the mapped model's `line` and `lines` are the source line numbers of the file a block cites, not indices in one
+  document-wide line list as in markdown@1: a group has many files. K1 reads neither field; the citations carry the file
+  digest with the line selector.
+- adoc: a table the engine reads without a head row gets an empty header line, which is a produced line and cites the
+  table's own range (the merged range of its verified cells) — the only fragment of this producer that cites a range no
+  single row was verified on.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
