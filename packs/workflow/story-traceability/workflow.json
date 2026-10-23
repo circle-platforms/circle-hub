@@ -14,7 +14,7 @@
     {
       "slot": "build",
       "role": "expected",
-      "description": "Optional configured PLM build list, used only when stories is absent",
+      "description": "Optional PLM build list: the selected original record name must exactly match the case-view build after NFKC and edge trimming",
       "accepts": [
         "plm:builds"
       ],

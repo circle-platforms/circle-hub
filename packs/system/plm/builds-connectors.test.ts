@@ -49,7 +49,7 @@ test('name planning makes two reads and preserves both build names and configure
   const at = plm.requests.length;
   const out = await read('Synthetic+Alternate');
   assert.deepEqual(out, { product: { id: '410', name: products[0].name }, product_resolution: 'resolved', builds: [
-    { id: '810', name: 'Synthetic_10_7_A', stories: ['910001', '910002'], scope_note: '需求范围取自构建记录' },
+    { id: '810', name: 'Synthetic_10_7_A', fields: { id: 810, name: 'Synthetic_10_7_A' }, stories: ['910001', '910002'], scope_note: '需求范围取自构建记录' },
   ] });
   assert.deepEqual(plm.requests.slice(at).map((r) => [r.path, r.query.product ?? null]), [['/plmquery/product/all/', null], ['/plmquery/build/', '410']]);
 });

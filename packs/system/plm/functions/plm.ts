@@ -254,7 +254,8 @@ export function buildsProject(input: unknown): unknown {
       const text = idText(id); return text !== null && ID.test(text.replace(/^0+/, '') || '0');
     });
     const stories = valid ? [...new Set((raw as unknown[]).map(id => String(id).replace(/^0+/, '') || '0'))].sort((a, b) => Number(a) - Number(b)) : null;
-    return { id: idText(record.id), name: typeof record.name === 'string' ? record.name : null, stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
+    const fields = Object.fromEntries(Object.entries(record).filter(([, value]) => value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)));
+    return { id: idText(record.id), name: typeof record.name === 'string' ? record.name : null, fields, stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
   });
   return { artifacts: [{ name: 'content', media_type: 'application/json', json: { product: choice.product, product_resolution: choice.resolution, builds } }] };
 }

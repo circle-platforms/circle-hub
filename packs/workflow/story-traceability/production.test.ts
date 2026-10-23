@@ -28,7 +28,7 @@ describe('synthetic story production run', { skip }, () => {
   });
   test('build-derived scope reads details automatically and records its origin', async () => {
     const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
-    hub.views.put('plm:builds:5', { builds: [{ id: '7', stories: ['21', '22'], scope_note: '需求范围取自构建记录' }] });
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', name: BUILD.name, stories: ['21', '22'], scope_note: '需求范围取自构建记录' }] });
     const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
     assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
     assert.ok(result.production);
@@ -39,13 +39,38 @@ describe('synthetic story production run', { skip }, () => {
 
   test('an expected batch read failure is counted as unavailable rather than as a missing id', async () => {
     const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
-    hub.views.put('plm:builds:5', { builds: [{ id: '7', stories: ['31', '32'] }] });
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', name: BUILD.name, stories: ['31', '32'] }] });
     const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
     assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
     const total = result.production!.result.cross_item.find(c => c.requirement === 'counts')!;
     assert.equal(total.statement.data?.plm_unread, 0); assert.equal(total.statement.data?.plm_unavailable, 2);
     assert.equal(result.production!.counts.unknown, 0);
     assert.ok(hub.views.reads.includes('plm:stories:31+32'));
+  });
+
+  test('rejects a neighboring build before production and names the selected record on an exact matching name', async () => {
+    const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
+    hub.views.put(casesId, indexViewOf('case', 'stories', [caseEntry({ defects: [], stories: ['21'], case: 'identity-case' })], {}, ['document', 'node', 'title']));
+    hub.views.put('plm:stories:21', { stories: [{ id: '21', stage: 'synthetic-stage', fields_absent: ['status'] }], unread: [] });
+    const start = () => hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '007' } }, call());
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', name: 'Synthetic_10_7_B', stories: ['21'] }] });
+    const reads = hub.views.reads.length;
+    const wrong = await start();
+    assert.equal(wrong.answer.call_result, 'error'); assert.equal(wrong.production, null);
+    const refusal = wrong.answer.errors.find((e) => e.code === 'story-traceability.invalid_input');
+    assert.ok(refusal, JSON.stringify(wrong.answer.errors));
+    assert.ok(refusal.message.includes('Synthetic_10_7_B') && refusal.message.includes(BUILD.name));
+    assert.ok(typeof refusal.fix === 'string' && refusal.fix.includes('重绑'));
+    assert.ok(!hub.views.reads.slice(reads).some((id) => id.startsWith('plm:stories:')));
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', name: BUILD.name, stories: ['21'], fields: { id: 7, name: BUILD.name, custom: false } }] });
+    const right = await start(); assert.equal(right.answer.call_result, 'ok', JSON.stringify(right.answer.errors));
+    assert.ok(right.production);
+    const item = Object.values(right.production.result.partitions).flat().find((i) => i.item === '21')!;
+    const claim = item.requirements.find((r) => r.requirement === 'traced')!.claims[0];
+    const selection = claim.statement.data!.selected_build as { id: string; name: string; reference: string; fields: unknown };
+    assert.equal(selection.id, '7'); assert.equal(selection.name, BUILD.name);
+    assert.deepEqual(selection.fields, { id: 7, name: BUILD.name, custom: false });
+    assert.match(claim.statement.text, /PLM 构建记录 7/); assert.ok(claim.statement.text.includes(selection.reference));
   });
 
 });

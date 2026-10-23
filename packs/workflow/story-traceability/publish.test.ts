@@ -58,7 +58,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.1', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.2', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
@@ -70,7 +70,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
     const sample = JSON.parse(await readFile(path, 'utf8')) as { expect: Array<{ code?: string }> };
     sample.expect[0].code = 'story-traceability.no_such_code';
     await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
-    await signPack(dir, { version: '1.0.2' });
+    await signPack(dir, { version: '1.0.3' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.sample_failed' && p.message.includes('join_mismatch')), JSON.stringify(outcome.problems, null, 1));
@@ -79,7 +79,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
   it('refuses a version without a negative sample of the counts check', async () => {
     const dir = await staged();
     await rm(join(dir, 'samples/negative/counts.json'));
-    await signPack(dir, { version: '1.0.2' });
+    await signPack(dir, { version: '1.0.4' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.unsampled'), JSON.stringify(outcome.problems, null, 1));
