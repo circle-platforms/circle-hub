@@ -61,7 +61,7 @@ The current 1.3.2 manifest signs the read description and function bytes togethe
 
 第二轮复核 3：数字键仍只发一次构建请求，note 同时写进 content 和读取清单：产品编号取自读取键，没有对照产品列表核对，空构建列表不证明产品存在。需要核对产品身份时下一步对照产品列表或按名字读取；不把调用方给的编号当成已证明存在。
 
-第二轮复核 5：真实连接器测试核对失败信封、无效键、901 字节标识及未解析读取清单，检查具体码、原因、实际请求和 original/coverage。集成者额外授权了 hub/connectors/connectors.ts 的 reader.read 长度提示：只写实际字节数与 900 字节上限，不在原因里回显键；不改长度规则或请求权限。
+第二轮复核 5：真实连接器测试核对失败信封、无效键、901 字节标识及未解析读取清单，检查具体码、原因、实际请求和 original/coverage。集成者在 plm-fields-c3 的第 3 条答复中确认保留核心改动：hub/connectors/read.ts 的统一字节计数、严格解析和 executeRead 长度拒绝；hub/connectors/connectors.ts 的 reader.accepts 类型路由及 reader.read 长度原因；hub/connectors/README.md 的说明。只写实际字节数与 900 字节上限，不回显键；不放宽长度规则或请求权限。任务页的授权记录由集成者补齐。
 
 ## Story fields that are not single JSON values
 
