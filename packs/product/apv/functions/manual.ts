@@ -19,6 +19,7 @@
 // `data.form` says signature or text.
 import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
 import { type CommandCatalog } from './cases-commands.ts';
+import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
 import { asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
@@ -338,43 +339,67 @@ function commonPrefix(lists: readonly string[][]): string[] {
   return out;
 }
 
-// Applicability (K02 F[6]): only what the section writes explicitly. A condition written at a section's opening (its
-// title and its direct blocks before the first paragraph anchor) counts for that section's own entries, never for a
-// subsection (provisional, the owner confirms). `builds` is never set on a manual entry: which builds use the manual is
-// said by the per-build roots and their compositions. Negated and vague writings are not conditions and stay unread.
+// Applicability (K02 F[6]): only what the entry's own text says explicitly, and only the fields the contract holds. A
+// table row's condition is read from that row alone; a block's from that block alone; nothing is inherited from a
+// heading, a sibling block or another row (a section-wide rule waits on the owner's decision). `builds` is never set
+// on a manual entry: which builds use the manual is said by the per-build roots and their compositions. Vague,
+// inclusive, exception and negated writings are not conditions and stay unread (they stay in the entry's text).
 type Conditions = { platforms?: string[]; models?: string[] };
 
-const PLATFORM_ATOM = '(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}|[一-鿿]{1,8})';
-const PLATFORM_LIST = `${PLATFORM_ATOM}(?:\\s*[、,，/和]\\s*${PLATFORM_ATOM})*`;
+/** Platform values a manual may name: the pack's platform tokens (hyphen-joined) plus the Han words 虚拟/物理. */
+const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequence) => sequence.join('-')), '虚拟', '物理']);
+/** The product's own names are never models (APV and NSAE name one product). */
+const PRODUCT_NAMES_LOWER: ReadonlySet<string> = new Set(PRODUCT_LINE.names.map((name) => name.toLowerCase()));
+
+const PLATFORM_ATOM = '[A-Za-z0-9][A-Za-z0-9-]{0,31}|[一-鿿]{1,8}';
 const MODEL_ATOM = '[A-Za-z0-9][A-Za-z0-9-]{0,31}';
-const MODEL_LIST = `${MODEL_ATOM}(?:\\s*[、,，/和]\\s*${MODEL_ATOM})*`;
-/** Chinese platform words that name nothing specific. */
-const VAGUE_PLATFORMS = new Set(['大多数', '部分', '一些', '所有', '各', '某些', '少数']);
-const CONDITION_RULES: Array<{ field: 'platforms' | 'models'; re: RegExp }> = [
-  { field: 'platforms', re: new RegExp(`(?<!不)适用于\\s*(${PLATFORM_LIST})\\s*平台`, 'g') },
-  { field: 'platforms', re: new RegExp(`(?:仅|只)\\s*(${PLATFORM_LIST})\\s*平台\\s*支持`, 'g') },
-  { field: 'models', re: new RegExp(`(?<!不)适用于\\s*(${MODEL_LIST})\\s*(?:系列|机型|型号)`, 'g') },
-  { field: 'models', re: new RegExp(`(?:仅|只)\\s*(${MODEL_LIST})\\s*(?:系列|机型|型号)\\s*支持`, 'g') },
+/** A coordinated list: `X、Y 平台` or `X 平台和 Y 平台` (every item may repeat the noun; the series ends on it). */
+const platformSeries = (noun: string): string => {
+  const item = `(?:${PLATFORM_ATOM})(?:\\s*${noun})?`;
+  return `${item}(?:\\s*[、,，/和]\\s*${item})*\\s*${noun}`;
+};
+const modelSeries = (noun: string): string => {
+  const item = `(?:${MODEL_ATOM})(?:\\s*${noun})?`;
+  return `${item}(?:\\s*[、,，/和]\\s*${item})*\\s*${noun}`;
+};
+const NO = '(?<!不)(?<!不再)(?<!无法)(?<!不能)(?<!并非)';
+const NO_SUPPORT = '(?<!不)支持';
+const NO_AFTER = '(?!\\s*(?:以外|之外|外))';
+const CONDITION_RULES: Array<{ field: 'platforms' | 'models'; re: RegExp; noun: string }> = [
+  { field: 'platforms', re: new RegExp(`${NO}适用于\\s*(${platformSeries('平台')})${NO_AFTER}`, 'g'), noun: '平台' },
+  { field: 'platforms', re: new RegExp(`${NO}(?:仅|只)\\s*(${platformSeries('平台')})\\s*${NO_SUPPORT}`, 'g'), noun: '平台' },
+  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('系列')})${NO_AFTER}`, 'g'), noun: '系列' },
+  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('机型')})${NO_AFTER}`, 'g'), noun: '机型' },
+  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('型号')})${NO_AFTER}`, 'g'), noun: '型号' },
+  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('系列')})\\s*${NO_SUPPORT}`, 'g'), noun: '系列' },
+  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('机型')})\\s*${NO_SUPPORT}`, 'g'), noun: '机型' },
+  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('型号')})\\s*${NO_SUPPORT}`, 'g'), noun: '型号' },
 ];
 
-/** The conditions one text declares, per field. */
+/** The conditions one text declares, per field. A coordinated list counts only when every item of it is readable. */
 function conditionsOf(text: string): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
-  for (const { field, re } of CONDITION_RULES) {
+  for (const { field, re, noun } of CONDITION_RULES) {
     re.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = re.exec(text)) !== null) {
-      for (const token of match[1].split(/[、,，/和]/)) {
-        const value = squeeze(token);
-        if (value === '' || (field === 'platforms' && VAGUE_PLATFORMS.has(value))) continue;
-        found[field].add(field === 'platforms' ? value.toLowerCase() : value);
+      const tokens = match[1]
+        .split(new RegExp(`\\s*(?:[、,，/和]|${noun})\\s*`))
+        .map((token) => squeeze(token))
+        .filter((token) => token !== '');
+      if (field === 'platforms') {
+        const lowered = tokens.map((token) => token.toLowerCase());
+        // Only the closed set counts; one unreadable item makes the whole list undeclared, never a narrowed one.
+        if (lowered.length > 0 && lowered.every((token) => PLATFORM_WORDS.has(token))) lowered.forEach((token) => found.platforms.add(token));
+      } else {
+        // The product's own names are not models; one such item makes the whole list undeclared.
+        if (tokens.length > 0 && tokens.every((token) => !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) tokens.forEach((token) => found.models.add(token));
       }
     }
   }
   const out: Conditions = {};
-  for (const field of ['platforms', 'models'] as const) {
-    if (found[field].size > 0) out[field] = [...found[field]].sort(compareText);
-  }
+  if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
+  if (found.models.size > 0) out.models = [...found.models].sort(compareText);
   return out;
 }
 

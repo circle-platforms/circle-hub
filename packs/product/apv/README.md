@@ -158,13 +158,16 @@ Producers (K02, K04, C07)
   a signature that does not parse ends the command before it and hangs at its section with `data.signature_rejected`,
   with a warning. The heading-numbering prefix is stripped before anchor parsing; a bold standalone line is never a
   heading, and an attribute placeholder a heading does not parse stays in the title as written.
-- Command tables: a pipe table whose rows carry bold signatures is split by row (each row cites its line's byte range of
-  the table block). A row with exactly one signature hangs at its command node when the command exists in the build's
-  tree (the signature entry, plus a text entry from the row's other cells). A row with several commands hangs one text
-  entry at their nearest common ancestor when that ancestor is at least one word deeper than /commands and exists in the
-  tree; a nearest common ancestor of /commands itself is not a placement (real data: over half of the multi-command
-  rows would land there) — the row stays at the section node, as do rows whose commands are missing. The header and the
-  remaining rows make one remainder text entry at the section node. Grid, multiline and simple tables are not split
+- Command tables: a pipe table whose rows carry bold signatures is split by row, decided by the manual alone (each row
+  cites its line's byte range of the table block). A row with exactly one signature hangs at its command node when the
+  command exists in the build's tree, else at its section node (the signature entry, plus a text entry from the row's
+  other cells). A row with several commands hangs one text entry at their nearest common ancestor over ALL of them when
+  every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
+  itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
+  section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
+  signature or a list of signatures joined by bare connectives; a bold span inside prose is a mention, recorded in
+  `command_literals` only. The header and the rows without a signature (parameter rows) make one remainder text entry,
+  which follows the current command, or stays at the section node. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
   command lines after a prompt in code blocks, and every signature — is recorded as written in `data.command_literals`
@@ -172,14 +175,15 @@ Producers (K02, K04, C07)
   manual subtree of a line is shared by its builds (K01 R[1]). Resolution belongs to read time, against the locked
   root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve are listed in the production
   warnings as drift candidates (the first 50, with the count).
-- Applicability (K02 F[6]): only explicit conditions, and only the fields the contract holds. `适用于 X 平台` and
-  `仅 X 平台支持` give `platforms` (build-name tokens, lower-cased, and Han words such as 虚拟/物理; the vague words 大多数,
-  部分, 一些, 所有, 各, 某些, 少数 are not platforms); `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models`
-  (as written). A condition of a section's opening (its title and its direct blocks before the first paragraph anchor)
-  counts for that section's own entries and never for a subsection's (provisional; the owner confirms). `builds` is
-  never set on a manual entry: which builds use a manual is said by the per-build root and its composition. Negations
-  (不适用于, 没有某部件时) and conditions the fields cannot hold (memory, license, deployment) are not read; the
-  conditions stay in the entries' texts.
+- Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
+  table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
+  row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
+  from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
+  `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
+  never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
+  deictic or non-set words (大多数, 部分, 所有, 该, 以下, 其他, 硬件, ...), negations (不/不再/无法/不能/并非, 仅…不支持),
+  exceptions (以外/之外/外) and partial listings are not read at all — the condition stays in the entry's text.
+  `builds` is never set on a manual entry: which builds use a manual is said by the per-build root and its composition.
 - Manual (catalog JSON): the `ist.manual-command-catalog` JSON keeps being read (signatures, value domains, worked
   examples) as a transition, until the adoc producer replaces it. Each signature is a signature entry (fragment
   `p/signatures/<k>/signature_verbatim`). A "signature" whose head holds a quoted value or a number after a known head is

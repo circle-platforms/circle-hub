@@ -610,9 +610,42 @@ describe('applicability from explicit conditions', () => {
     assert.equal(modeText.applicability, null, 'no leak to a sibling command');
   });
 
-  it('never reads a negation or a vague sentence as a condition', () => {
-    const result = produceManualEntries(markdown('# 章\n\n不适用于 hg-k 平台。\n\n部分平台支持本功能。\n\nhg-k 平台。\n\n适用于大多数平台。\n\n没有某部件时不适用。\n'));
-    assert.ok(result.entries.every((entry) => entry.applicability === null));
+  it('never reads a negation, a vague or deictic word, an exception or a partial list as a condition', () => {
+    const sentences = [
+      '不适用于 hg-k 平台。',
+      '不再适用于 hg-k 平台。',
+      '无法适用于 hg-k 平台。',
+      '不能适用于 hg-k 平台。',
+      '并非适用于 hg-k 平台。',
+      '仅 hg-k 平台不支持。',
+      '不仅 hg-k 平台支持，ft-kylinv10 平台也支持。',
+      '适用于 hg-k 平台以外的所有平台。',
+      '适用于 hg-k 平台之外的环境。',
+      '部分平台支持本功能。',
+      '适用于大多数平台。',
+      '适用于所有硬件平台。',
+      '适用于部分硬件平台。',
+      '适用于该平台。',
+      '适用于上述平台。',
+      '适用于全部平台。',
+      '仅特定平台支持。',
+      '仅少量平台支持。',
+      '适用于以下平台：hg-k、ft-kylinv10。',
+      '适用于 hg-k 和其他平台。',
+      '适用于非虚拟平台。',
+      '没有某部件时不适用。',
+      '适用于 APV 系列。',
+      '适用于 NSAE、X9000 系列。',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`# 章\n\n${sentence}\n`));
+      assert.ok(result.entries.every((entry) => entry.applicability === null), sentence);
+    }
+    // And the positive forms still read: every item of a coordinated list, from the closed set.
+    const positive = produceManualEntries(markdown('# 章\n\n适用于 hg-k 平台和 ft-kylinv10 平台。\n\n仅虚拟平台支持。\n\n适用于 X9000、X8000 机型。\n'));
+    assert.deepEqual(positive.entries[0].applicability, { platforms: ['ft-kylinv10', 'hg-k'] });
+    assert.deepEqual(positive.entries[1].applicability, { platforms: ['虚拟'] });
+    assert.deepEqual(positive.entries[2].applicability, { models: ['X8000', 'X9000'] });
   });
 
   it('leaves applicability null when nothing declares a condition', () => {
