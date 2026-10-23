@@ -54,8 +54,10 @@ test('failure to establish release prevents the next case', async () => {
 });
 test('per case reports always carry the local operation qualifier and preserve observation blocks', () => {
   const observations = [{ description: '合成外部动作', observation: '本次日志里没有这一项的标记', reference: `src:${hash}` }];
-  const lines = reportLines({ rows: [{ dynamic_terminal: 'no_verdict', reported_terminal: 'pass' }], side_effects: observations });
-  assert.equal(JSON.parse(lines[0]).qualifier, 'local_ops_not_excluded'); assert.equal(JSON.parse(lines[0]).limitation, '未排除本地操作'); assert.deepEqual(JSON.parse(lines[1]).side_effects, observations);
+  const qualifier = { nature: 'unknown', provenance: 'projected', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] };
+  const limits = ['目标对本次派发的报告', '未排除本地操作'];
+  const lines = reportLines({ rows: [{ dynamic_terminal: 'no_verdict', reported_terminal: 'pass', qualifier, limits, missing_fact: '合成完整性缺口', reason: 'integrity_unproven', next_action: '合成管理员补取原件', accepted_as_fact: false }], side_effects: observations });
+  assert.deepEqual(JSON.parse(lines[0]).qualifier, qualifier); assert.deepEqual(JSON.parse(lines[0]).limits, limits); assert.deepEqual(JSON.parse(lines[1]).side_effects, observations);
 });
 function verified() {
   return { run: { run, predecessor: run, pack: 'case-compile@2.1.0', items: [{ fields: { autoid: 'synthetic-case' } }], sources: [
@@ -94,4 +96,19 @@ test('stage zero hashes parsed defaults and refuses HTTP CA omission digest drif
     assert.throws(() => checkedDefinition({ ...raw, ca: '' }, exe, line));
     assert.throws(() => checkedDefinition(raw, exe, line.replace('启用 1', '启用 0')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('result reporting preserves source qualifications gaps and recovery without replacing them', () => {
+  const row = { reported_terminal: 'pass', dynamic_terminal: 'no_verdict', missing_fact: '缺少同租约连续性', missing_facts: ['continuity'], reason: 'integrity_unproven', next_action: '请管理员核对原租约观察；不得重交', qualifier: { nature: 'unknown', provenance: 'projected', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] }, accepted_as_fact: false, limits: ['目标对本次派发的报告', '未排除本地操作'] };
+  assert.deepEqual(JSON.parse(reportLines({ rows: [row] })[0]), { case_index: 1, ...row });
+  for (const field of ['missing_fact', 'next_action', 'qualifier', 'accepted_as_fact', 'limits', 'reason']) {
+    const bad: Record<string, unknown> = { ...row }; delete bad[field]; if (field === 'missing_fact') delete bad.missing_facts;
+    assert.throws(() => reportLines({ rows: [bad] }), new RegExp(field === 'missing_fact' ? 'missing_fact' : field));
+  }
+});
+
+test('batch qualifications are derived from each result source rather than a fixed script label', async () => {
+  const { batchQualifications } = await import('./device-run.ts');
+  const row = { reported_terminal: 'pass', dynamic_terminal: 'pass', qualifier: { nature: 'judgment', provenance: 'projected', marks: ['target_reported', 'report_for_dispatch'] }, accepted_as_fact: false, limits: ['合成结果限定'] };
+  assert.deepEqual(batchQualifications([{ rows: [row], qualifier_marks: ['target_reported'], limits: ['合成批次限定'] }]), [{ case_index: 1, rows: [{ case_index: 1, qualifier: row.qualifier, accepted_as_fact: false, limits: row.limits }], qualifier_marks: ['target_reported'], limits: ['合成批次限定'] }]);
 });

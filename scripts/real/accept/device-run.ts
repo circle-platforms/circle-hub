@@ -52,6 +52,8 @@ export function checkedDefinition(input: unknown, id: string, listed: string): {
   return { definition, digest };
 }
 
+const qualificationFields = ['missing_fact', 'missing_facts', 'reason', 'next_action', 'qualifier', 'nature', 'provenance', 'marks', 'accepted_as_fact', 'limits', 'limitation'] as const;
+const copied = (value: Record<string, unknown>, fields: readonly string[]) => Object.fromEntries(fields.filter(field => Object.hasOwn(value, field)).map(field => [field, value[field]]));
 export function reportLines(value: unknown): string[] {
   requireFact(object(value) && Array.isArray(value.rows), '结果源缺少逐用例结论；请管理员补取原作业结果');
   const lines = value.rows.map((r, index) => {
@@ -60,12 +62,33 @@ export function reportLines(value: unknown): string[] {
     const verdict = DynamicTerminalSchema.safeParse(r.dynamic_terminal); requireFact(verdict.success, '逐用例结论码不认识；请管理员核对派发版本');
     const reported = r.reported_terminal == null ? null : DynamicTerminalSchema.safeParse(r.reported_terminal);
     requireFact(reported === null || reported.success, '目标报告的结论码不认识；请管理员按结果源核对，不能据此继续');
-    return JSON.stringify({ case_index: index + 1, reported_terminal: reported === null ? null : reported.data, dynamic_terminal: verdict.data, qualifier: 'local_ops_not_excluded', limitation: '未排除本地操作', ...(verdict.data === 'no_verdict' ? { next_action: '请集成者按结果源的具体缺口补取证据并更新认证；不重发原作业' } : {}) });
+    if (verdict.data === 'no_verdict') {
+      const need = (ok: unknown, field: string) => requireFact(ok, `/rows/${index}/${field} 缺少无判定结果的说明；请管理员按结果源引用补取原作业的缺口、限定和下一步，暂停本例，不重发`);
+      need(text(r.missing_fact).trim() || Array.isArray(r.missing_facts) && r.missing_facts.length > 0 && r.missing_facts.every(v => typeof v === 'string' && v.trim()), 'missing_fact 或 missing_facts');
+      need(text(r.reason).trim(), 'reason'); need(text(r.next_action).trim(), 'next_action');
+      const qualifier = object(r.qualifier) ? r.qualifier : r;
+      need(text(qualifier.nature).trim(), 'qualifier.nature'); need(text(qualifier.provenance).trim(), 'qualifier.provenance');
+      need(Array.isArray(qualifier.marks) && qualifier.marks.length > 0 && qualifier.marks.every(v => typeof v === 'string' && v.trim()), 'qualifier.marks');
+      need(typeof r.accepted_as_fact === 'boolean', 'accepted_as_fact');
+      need(Array.isArray(r.limits) && r.limits.length > 0 && r.limits.every(v => typeof v === 'string' && v.trim()), 'limits');
+    }
+    return JSON.stringify({ case_index: index + 1, reported_terminal: reported === null ? null : reported.data, dynamic_terminal: verdict.data, ...copied(r, qualificationFields) });
   });
   // Preserve the entire observation block without inventing events from absent log markers.
   if (Object.hasOwn(value, 'side_effects')) lines.push(JSON.stringify({ side_effects: value.side_effects }));
   if (Object.hasOwn(value, 'executor_declarations')) lines.push(JSON.stringify({ executor_declarations: value.executor_declarations }));
   return lines;
+}
+
+export function batchQualifications(results: readonly unknown[]) {
+  return results.map((result, index) => {
+    const lines = reportLines(result);
+    requireFact(object(result) && Array.isArray(result.rows), '批次缺少已核对结果；请管理员补取结果源后重跑');
+    return { case_index: index + 1, rows: lines.slice(0, result.rows.length).map(line => {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      return { case_index: row.case_index, ...copied(row, qualificationFields) };
+    }), ...copied(result, [...qualificationFields, 'qualifier_marks']) };
+  });
 }
 
 export interface PreparedCase { run: string; sha256: string; booking: string }
@@ -156,15 +179,28 @@ export async function main(argv: string[]): Promise<number> {
     const save = () => { writeFileSync(statePath + '.next', canonicalBytes(state), { mode: 0o600 }); renameSync(statePath + '.next', statePath); };
     save();
     const show = async (id: string): Promise<Record<string, unknown>> => { const result = await cli(['run', 'show', checkedRunId(id), '--json']); requireFact(result.code === 0, '运行导出失败；请 Circle 给出可读的本例运行号，或请管理员核对原记录'); const value = parseStrictJson(result.stdout); requireFact(object(value) && object(value.run), '运行导出形状不符；请管理员核对当前部署'); return value; };
-    const printResult = async (status: JobStatus) => {
-      requireFact(!!status.result, '缺结果源引用；请管理员只读补取原作业结果');
+    const readResult = async (reference: string) => {
+      requireFact(!!reference, '缺结果源引用；请管理员只读补取原作业结果');
       const file = join(directory, `result-${process.hrtime.bigint()}.json`);
-      const exported = await cli(['original', 'export', status.result.slice(4), '--out', file]); requireFact(exported.code === 0, '结果原件导出失败；请管理员按结果引用补取，暂停下一例');
-      const original = readFileSync(file); requireFact(sha256Hex(original) === status.result.slice(4), '导出结果字节摘要不符；请管理员核对原作业，暂停下一例');
-      const report = parseStrictJson(original.toString('utf8'));
+      const exported = await cli(['original', 'export', reference.slice(4), '--out', file]); requireFact(exported.code === 0, '结果原件导出失败；请管理员按结果引用补取，暂停下一例');
+      const original = readFileSync(file); requireFact(sha256Hex(original) === reference.slice(4), '导出结果字节摘要不符；请管理员核对原作业，暂停下一例');
+      return parseStrictJson(original.toString('utf8'));
+    };
+    const printResult = async (status: JobStatus) => {
+      requireFact(status.result, '缺结果源引用；请管理员只读补取原作业结果');
+      const report = await readResult(status.result);
       requireFact(object(report) && report.job === status.job && report.sha256 === state.pending?.sha256 && Array.isArray(report.rows) && report.rows.length === 1 && object(report.rows[0]) && report.rows[0].item === state.pending?.autoid, '结果原件身份、摘要或用例编号不等于本例派发；请管理员对账，暂停下一例');
       for (const line of reportLines(report)) process.stdout.write(line + '\n');
       say('本例结果', { job: status.job, reference: status.result });
+    };
+    const batchSummary = async (stage: string) => {
+      const results: unknown[] = [];
+      for (const completed of state.completed) {
+        const report = await readResult(completed.result);
+        requireFact(object(report) && report.job === completed.job && report.sha256 === completed.sha256 && Array.isArray(report.rows) && report.rows.length === 1 && object(report.rows[0]) && report.rows[0].item === completed.autoid, '批次结果源身份与检查点不一致；请管理员按原结果引用对账，不重发');
+        results.push(report);
+      }
+      say(stage, { cases: state.completed.length, qualifications: batchQualifications(results) });
     };
     const release = async (booking: string) => {
       say('等待 Circle 释放本例台架', { note: '作业已有终态；请 Circle 经 test-bed 释放本例占用，再输入释放运行号' });
@@ -183,7 +219,7 @@ export async function main(argv: string[]): Promise<number> {
       await printResult(status); await release(state.pending.booking); await finish(state.pending.autoid, state.pending, status);
       if (state.completed.length === 1) { pause(); return 0; }
     }
-    if (state.completed.length === 5) { say('批次已完成', { cases: 5, note: '未排除本地操作' }); return 0; }
+    if (state.completed.length === 5) { await batchSummary('批次已完成'); return 0; }
     if (state.completed.length && state.certified_definition !== checked.digest) {
       say('首例认证待人工确认', { reference: state.completed[0].result, note: '人工确认，不是机械核对认证字段' });
       const explanation = continuation(state.first_definition, checked.digest, await rl.question('请输入“已用首例证据更新认证”：'));
@@ -213,7 +249,7 @@ export async function main(argv: string[]): Promise<number> {
         const status = parseJobReply(current.stdout); requireFact(status.job === dispatched.job, '状态回答不是原作业；请管理员核对审计，不能重发'); say('派发回执', { code: status.outcome, frozen: status.frozen, job: status.job, reference: status.result }); return status;
       }, result: printResult, release, save: finish,
     });
-    if (state.completed.length === 1) pause(); else say('批次结束', { cases: state.completed.length, qualifier: 'local_ops_not_excluded', note: '未排除本地操作' });
+    if (state.completed.length === 1) pause(); else await batchSummary('批次结束');
     return 0;
   } catch (error) {
     process.stderr.write((error instanceof FactError ? error.message : '管理阶段未完成；请集成者检查仓库外私有回执和检查点，补齐具体缺口后继续；有派发检查点时只查状态和对账，不重发') + '\n'); return 1;
