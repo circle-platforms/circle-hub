@@ -247,6 +247,32 @@ describe('the producers', () => {
     assert.ok(out.warnings.includes('没有应用手册'));
   });
 
+  it('manual: hangs signatures at /commands only when the command exists, and records the literals as written', () => {
+    const model = markdown(fixtureBytes('manual.md'));
+    const tree = slot('xml@1', xml(fixtureBytes('command-tree.xml')));
+    const out = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null, tree }, params: {} });
+    // Only commands the tree has keep their /commands paths; the others hang at their section node.
+    assert.ok(!out.entries.some((e) => e.path === '/commands/demo/probe' || e.path === '/commands/enable' || e.path === '/commands/?'));
+    const probe = out.entries.find((e) => e.data.form === 'signature' && typeof e.statement === 'string' && e.statement.startsWith('demo probe'));
+    assert.equal(probe?.path, '/manual/cli/基本配置');
+    // Literals are recorded as written, never resolved to a path at production time.
+    const example = out.entries.find((e) => e.fragments[0].selector === 'b/13/基本配置');
+    assert.deepEqual(example?.data.command_literals, ['demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent']);
+    const mention = out.entries.find((e) => e.fragments[0].selector === 'b/1/引言');
+    assert.deepEqual(mention?.data.command_literals, ['demo pool mode']);
+    const note = out.entries.find((e) => e.fragments[0].selector === 'b/7/基本配置');
+    assert.deepEqual(note?.data.command_literals, ['demo pool create']);
+    // The production warnings list the literals the tree cannot resolve, as drift candidates.
+    const drift = out.warnings.find((w) => w.includes('漂移候选'));
+    assert.ok(drift, out.warnings.join('\n'));
+    for (const literal of ['?', 'demo pool create', 'demo probe', 'enable']) assert.ok(drift.includes(literal), literal);
+    assert.ok(!drift.includes('demo pool add'), drift);
+    // Without the tree slot the anchors are placed unchecked, and no drift list is computed.
+    const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
+    assert.ok(without.warnings.some((w) => w.includes('没有命令树')), without.warnings.join('\n'));
+    assert.ok(without.entries.some((e) => e.path === '/commands/demo/probe'));
+  });
+
   it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {
     const page = html('<html><body><table><tr><th>Bug ID</th><th>Summary</th></tr><tr><td><a href=x?id=61001>61001</a></td><td>HA 切换后状态不对</td></tr><tr><td>61002</td><td>权重为 0 时调度异常</td></tr></table><p>61003: 拼写错误</p></body></html>');
     const fromPage = releaseNotes({ build: knownBuild, slots: { notes: slot('html@1', page) }, params: {} });

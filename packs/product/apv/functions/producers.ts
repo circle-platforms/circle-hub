@@ -3,10 +3,14 @@
 // selector (and slot, for a producer with several inputs). Entry kinds are K02 R[3]'s: the command tree gives definitions,
 // the manual definitions for signatures and behaviours for the text under a command, the fixed-bug list defects.
 // - commandTree: slot tree (xml@1 of command_tree-<build>.xml) -> one definition per full command at /commands/<words>
-// - manual: slots cli and app (markdown@1 of the CLI and application manuals of the build's line, both optional)
+// - manual: slots cli and app (markdown@1 of the CLI and application manuals of the build's line, both optional), plus
+//   the tree slot (the build's command tree): it decides which signatures hang at existing /commands nodes and gives
+//   the drift list of the author-marked literals the tree cannot resolve; the rest hangs at /manual/<slot>/<章节路径>
 // - releaseNotes: slot notes (the fixed-bug list of the build: html@1 of the build site's page, or a markdown@1 release
-//   note) -> defect entries, placed later by the typed-judgment model (path null), applicable to the build
+//   note) -> defect entries with path null (they stay unplaced at the root until the bot's verified placement proposals
+//   exist, K04 R[6]), applicable to the build
 import type { ProducerOutput } from '../../../../contracts/src/product.ts';
+import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
 import { produceCommandEntries } from './command-tree.ts';
 import { fixedBugEntries } from './fixed-bugs.ts';
 import { produceManualEntries } from './manual.ts';
@@ -48,13 +52,36 @@ export function commandTree(input: unknown): ProducerOutput {
 
 const withSlot = (fragment: FragmentRef, slot: string): FragmentRef & { slot: string } => ({ slot, ...fragment });
 
-/** Manuals of the line: signature paragraphs are definitions, the text under a command behaviours, the rest unplaced. */
+/**
+ * Manuals of the line: signature paragraphs are definitions (at /commands only when the build's command tree has the
+ * command), the text under a command behaviours, every other block hangs at its section node under /manual/<slot>. The
+ * `tree` slot (the build's command tree) decides existence and the drift list; without it anchors are placed unchecked.
+ */
 export function manual(input: unknown): ProducerOutput {
   const entries: ProducedEntry[] = [];
   const unplaced: Unplaced[] = [];
   const warnings: string[] = [];
   try {
     const heads = Array.isArray(paramsOf(input).heads) ? (paramsOf(input).heads as unknown[]).filter((h): h is string => typeof h === 'string') : null;
+    // The command catalog of the build is built once, when a manual is actually read.
+    let catalog: CommandCatalog | null | undefined;
+    const catalogOf = (): CommandCatalog | null => {
+      if (catalog !== undefined) return catalog;
+      catalog = null;
+      const tree = slotOf(input, 'tree');
+      if (tree === null || tree === undefined) {
+        warnings.push('没有命令树，签名按字面挂到命令节点（不能核对该节点在本构建里存在），也没有漂移候选清单');
+        return null;
+      }
+      if (tree.parser !== 'xml@1') {
+        warnings.push(`命令树不是 XML（解析器 ${String(tree.parser)}），签名按字面挂到命令节点，没有漂移候选清单`);
+        return null;
+      }
+      const built = commandCatalog(tree.model as XmlModel);
+      warnings.push(...built.warnings);
+      catalog = built.catalog;
+      return catalog;
+    };
     for (const name of ['cli', 'app']) {
       const slot = slotOf(input, name);
       if (slot === null || slot === undefined) {
@@ -65,7 +92,7 @@ export function manual(input: unknown): ProducerOutput {
         warnings.push(`${name} 手册不是 Markdown（解析器 ${String(slot.parser)}），没有读`);
         continue;
       }
-      const out = produceManualEntries(slot.model as MarkdownModel, heads);
+      const out = produceManualEntries(slot.model as MarkdownModel, heads, { name, catalog: catalogOf() });
       for (const entry of out.entries) entries.push({ ...entry, fragments: entry.fragments.map((f) => withSlot(f, name)) });
       for (const span of out.unplaced) unplaced.push({ ...span, fragment: withSlot(span.fragment, name) });
       warnings.push(...out.warnings.map((w) => `${name}：${w}`));

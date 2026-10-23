@@ -6,6 +6,9 @@
 // heading text with white space collapsed; `[k]` (from 1) is appended when the text repeats among siblings, when the
 // text itself ends in `[digits]`, or when it is empty. A section or block whose selector would be longer than
 // MAX_SELECTOR_LENGTH has none (selector null): it cannot be cited.
+// Every block also carries `path`: the decoded heading segments of its section, spelled exactly as in its `h/` selector
+// (`[]` before the first heading, null when the section has no selector), so a reader sees the section path without
+// decoding the selector.
 import {
   QUOTATION_UNITS,
   checkSize,
@@ -67,6 +70,11 @@ export type MarkdownBlock = {
   text: string;
   /** Null when the block's section has no selector or the block selector would be too long to cite. */
   selector: string | null;
+  /**
+   * The heading path of the block's section: the decoded segments of its `h/` selector (`[]` for blocks before the
+   * first heading), null when the section has no selector. Optional so models written by hand still type-check.
+   */
+  path?: string[] | null;
 };
 
 export type MarkdownModel = { charset: string; lines: number; sections: MarkdownSection[]; blocks: MarkdownBlock[]; nulRemoved: number };
@@ -459,6 +467,8 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Ma
   const blocks: MarkdownBlock[] = [];
   // Encoded heading path of each section (segments joined with `/`), built once from the parent's; null when too long.
   const paths: Array<string | null> = [''];
+  // The same paths decoded (the segments as written, before selector encoding), shared by the blocks of each section.
+  const decodedPaths: Array<string[] | null> = [[]];
   const childKeys: Array<Map<string, number[]>> = [new Map()];
   const order: Array<[boolean, number]> = [];
   const open: number[] = [0];
@@ -491,6 +501,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Ma
       const length = above === null ? Infinity : 2 + (above === '' ? 0 : above.length + 1) + segment.length;
       const path = above === null || length > MAX_SELECTOR_LENGTH ? null : above === '' ? segment : `${above}/${segment}`;
       paths.push(path);
+      decodedPaths.push(path === null ? null : [...(decodedPaths[parent] as string[]), segmentFor(key, ordinal)]);
       childKeys.push(new Map());
       sections.push({
         level: item.level,
@@ -524,6 +535,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Ma
         lines: item.end - item.start + 1,
         text: clean.slice(cleanStart(item.start), cleanEnd(item.end)),
         selector: counted(selector),
+        path: decodedPaths[owner],
       });
       order.push([false, index]);
     }

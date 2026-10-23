@@ -1,13 +1,25 @@
-// Producer of manual entries at the command nodes (/commands/<words>), from either form of the CLI manual:
+// Producer of manual entries, from either form of the CLI manual:
 // - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
-//   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way; the blocks
-//   after an anchor, up to the next anchor or heading, describe that command; a paragraph written as a signature that does
-//   not parse ends the command; every other block is returned unplaced;
+//   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
+//   - a signature hangs at its command node only when the command exists in the build's command tree (`/commands` nodes
+//     are built by the command-tree producer alone); without a tree the literal decides, unchecked;
+//   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists;
+//     a row with several commands hangs at their nearest common ancestor when that is at least one word deeper than
+//     /commands (a common ancestor of /commands itself is not a placement); every other row stays at its section node;
+//   - the blocks after an anchor, up to the next anchor or heading, describe that command and follow its placement;
+//   - every other block hangs at its section node under the manual namespace `/manual/<手册>/<章节路径>` (the preamble at
+//     the namespace root); no manual paragraph is left at the tree root.
+//   What an entry's digest covers (kind, statement, data, applicability) never depends on the build's tree: the literals
+//   the author marked (bold, backticks, quotes, command lines in code blocks, signatures) are recorded as written in
+//   `data.command_literals`, never resolved at production time (K01 R[1]: the manual subtrees of a line's builds stay
+//   shared). Placement still uses the tree (the existence checks), and with a tree the literals it cannot resolve are
+//   listed in the warnings as drift candidates.
 // - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
 // Signatures are definitions and the text under a command (descriptions, value domains, examples) behaviours (K02 R[3]);
 // `data.form` says signature or text.
-import type { EntryKind, FragmentRef, ManualCatalog, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
-import { asArray, asString, asStrings, guarded, internalError, isRecord, pathText, squeeze, stripNul } from './util.ts';
+import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
+import { type CommandCatalog } from './cases-commands.ts';
+import { asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
 const JSON_PARSER = 'json@1';
@@ -214,35 +226,305 @@ function isNoise(kind: string, text: string): boolean {
 type Section = { title: string; parent: number | null; selector: string | null };
 type Block = { kind: string; section: number; text: string; selector: string };
 
-function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, warnings: string[]): ManualResult {
+const MANUAL_NS = 'manual';
+const DEFAULT_MANUAL_NAME = 'manual';
+/** An entry's author-marked command literals are capped so a padded block cannot bloat a stored entry. */
+const MAX_LITERALS = 100;
+/** The drift warning lists the first so many unresolvable literals. */
+const MAX_DRIFT_SHOWN = 50;
+
+const LITERAL_FIRST = /^[a-z?][a-z0-9_.?-]{0,63}$/;
+const MAX_LITERAL = 200;
+const MAX_LITERAL_WORDS = 16;
+/** The emphasis and quote marks an author puts around a command literal. */
+const SPAN_MARKS: Array<[string, string]> = [
+  ['**', '**'],
+  ['`', '`'],
+  ['“', '”'],
+  ['‘', '’'],
+  ['「', '」'],
+  ['『', '』'],
+];
+
+/**
+ * The literal inside a marked span, as written (white space collapsed); null when it does not look like a command:
+ * no CJK text, at most 200 characters and 16 words, the first word a CLI word as written (lower case).
+ */
+export function commandLiteral(span: string): string | null {
+  const text = squeeze(span);
+  if (text === '' || text.length > MAX_LITERAL || CJK.test(text)) return null;
+  const words = text.split(' ');
+  if (words.length > MAX_LITERAL_WORDS || !LITERAL_FIRST.test(words[0])) return null;
+  return text;
+}
+
+/** The marked spans of a prose block that look like command literals, in first-seen order. */
+function proseLiterals(text: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    let matched = false;
+    for (const [open, close] of SPAN_MARKS) {
+      if (!text.startsWith(open, i)) continue;
+      matched = true;
+      const at = text.indexOf(close, i + open.length);
+      if (at >= 0 && at - i - open.length <= MAX_LITERAL) {
+        const literal = commandLiteral(text.slice(i + open.length, at));
+        if (literal !== null) {
+          out.push(literal);
+          i = at + close.length;
+          break;
+        }
+      }
+      // A rejected or unterminated span is stepped into, not over: the marks inside it still count.
+      i += open.length;
+      break;
+    }
+    if (!matched) i++;
+  }
+  return out;
+}
+
+/** The command lines of a code block: a line with a prompt gives the command as written after it. */
+function codeLiterals(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const prompt = PROMPT.exec(line);
+    if (prompt === null) continue;
+    const literal = commandLiteral(prompt[1]);
+    if (literal !== null) out.push(literal);
+  }
+  return out;
+}
+
+/** The catalog path of these exact words, or null when the tree has no such command (no abbreviations). */
+function existingPath(catalog: CommandCatalog, words: readonly string[]): string | null {
+  let node = catalog.root;
+  for (const word of words) {
+    const next = node.children.get(word.toLowerCase());
+    if (next === undefined) return null;
+    node = next;
+  }
+  return node.path;
+}
+
+/** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
+function resolves(catalog: CommandCatalog, literal: string): boolean {
+  let node = catalog.root;
+  for (const word of literal.split(' ')) {
+    const next = node.children.get(word.toLowerCase());
+    if (next === undefined) return false;
+    node = next;
+    if (node.path !== null) return true;
+  }
+  return false;
+}
+
+/** The longest common prefix of the word lists (case-insensitive), spelled as the first list writes it. */
+function commonPrefix(lists: readonly string[][]): string[] {
+  if (lists.length === 0) return [];
+  const out: string[] = [];
+  for (let k = 0; k < lists[0].length; k++) {
+    const word = lists[0][k].toLowerCase();
+    if (lists.every((list) => k < list.length && list[k].toLowerCase() === word)) out.push(lists[0][k]);
+    else break;
+  }
+  return out;
+}
+
+// Applicability (K02 F[6]): only what the section writes explicitly. A condition written at a section's opening (its
+// title and its direct blocks before the first paragraph anchor) counts for that section's own entries, never for a
+// subsection (provisional, the owner confirms). `builds` is never set on a manual entry: which builds use the manual is
+// said by the per-build roots and their compositions. Negated and vague writings are not conditions and stay unread.
+type Conditions = { platforms?: string[]; models?: string[] };
+
+const PLATFORM_ATOM = '(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}|[一-鿿]{1,8})';
+const PLATFORM_LIST = `${PLATFORM_ATOM}(?:\\s*[、,，/和]\\s*${PLATFORM_ATOM})*`;
+const MODEL_ATOM = '[A-Za-z0-9][A-Za-z0-9-]{0,31}';
+const MODEL_LIST = `${MODEL_ATOM}(?:\\s*[、,，/和]\\s*${MODEL_ATOM})*`;
+/** Chinese platform words that name nothing specific. */
+const VAGUE_PLATFORMS = new Set(['大多数', '部分', '一些', '所有', '各', '某些', '少数']);
+const CONDITION_RULES: Array<{ field: 'platforms' | 'models'; re: RegExp }> = [
+  { field: 'platforms', re: new RegExp(`(?<!不)适用于\\s*(${PLATFORM_LIST})\\s*平台`, 'g') },
+  { field: 'platforms', re: new RegExp(`(?:仅|只)\\s*(${PLATFORM_LIST})\\s*平台\\s*支持`, 'g') },
+  { field: 'models', re: new RegExp(`(?<!不)适用于\\s*(${MODEL_LIST})\\s*(?:系列|机型|型号)`, 'g') },
+  { field: 'models', re: new RegExp(`(?:仅|只)\\s*(${MODEL_LIST})\\s*(?:系列|机型|型号)\\s*支持`, 'g') },
+];
+
+/** The conditions one text declares, per field. */
+function conditionsOf(text: string): Conditions {
+  const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
+  for (const { field, re } of CONDITION_RULES) {
+    re.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text)) !== null) {
+      for (const token of match[1].split(/[、,，/和]/)) {
+        const value = squeeze(token);
+        if (value === '' || (field === 'platforms' && VAGUE_PLATFORMS.has(value))) continue;
+        found[field].add(field === 'platforms' ? value.toLowerCase() : value);
+      }
+    }
+  }
+  const out: Conditions = {};
+  for (const field of ['platforms', 'models'] as const) {
+    if (found[field].size > 0) out[field] = [...found[field]].sort(compareText);
+  }
+  return out;
+}
+
+function mergeConditions(base: Conditions, add: Conditions): Conditions {
+  const out: Conditions = {};
+  for (const field of ['platforms', 'models'] as const) {
+    const both = [...(base[field] ?? []), ...(add[field] ?? [])];
+    if (both.length > 0) out[field] = [...new Set(both)].sort(compareText);
+  }
+  return out;
+}
+
+/** The applicability of an entry, or null (未声明) when nothing declares a condition. */
+function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
+  return conditions.platforms === undefined && conditions.models === undefined ? null : conditions;
+}
+
+function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, options: ManualOptions, warnings: string[]): ManualResult {
   const entries: ProducedEntry[] = [];
-  const unplaced: Unplaced[] = [];
+  const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
+  const catalog = options.catalog ?? null;
   const sections: Section[] = asArray(model.sections).map((value) => {
     if (!isRecord(value)) return { title: '', parent: null, selector: null };
     const parent = Number.isInteger(value.parent) ? (value.parent as number) : null;
     return { title: asString(value.title) ?? '', parent, selector: asString(value.selector) };
   });
-  const sectionPath = (index: number): string => {
+  // The title chain of every section (top first), for the readable `section` of an entry's data.
+  const titleChains: string[][] = sections.map((_, index) => {
     const titles: string[] = [];
     const visited = new Set<number>();
     for (let at: number | null = index; at !== null && at > 0 && at < sections.length && !visited.has(at); at = sections[at].parent) {
       visited.add(at);
       titles.push(squeeze(sections[at].title));
     }
-    return titles.reverse().join(' / ');
+    return titles.reverse();
+  });
+  // The opening of every section: the texts of its direct blocks before the first paragraph anchor (a heading anchor
+  // does not end it); a section's conditions are read from its title and its opening.
+  const openings: Array<{ texts: string[]; closed: boolean }> = sections.map(() => ({ texts: [], closed: false }));
+  // The entries whose applicability is fixed after the loop, when every opening is complete.
+  const scoped: Array<{ entry: ProducedEntry; section: number; own: string }> = [];
+  let missingSection = 0;
+  let unwritable = 0;
+  let manualRoot = pathText([MANUAL_NS, name]);
+  if (manualRoot === null) {
+    manualRoot = `/${MANUAL_NS}/${DEFAULT_MANUAL_NAME}`;
+    warnings.push(`手册名写不进树路径，改用 ${DEFAULT_MANUAL_NAME}`);
+  }
+  /** Decoded segments of a section's heading path (the block.path spelling), null when the section cannot be cited. */
+  const sectionSegments = (index: number): string[] | null => {
+    if (index === 0) return [];
+    const selector = sections[index]?.selector;
+    if (typeof selector !== 'string' || !selector.startsWith('h/')) return null;
+    try {
+      return selector.slice(2).split('/').map((part) => decodeURIComponent(part));
+    } catch {
+      return null;
+    }
   };
+  /** The manual-namespace path of a block's section (the namespace root when it cannot be written). */
+  const sectionPath = (value: { [key: string]: unknown }, section: number): string => {
+    if (section < 0 || section >= sections.length) {
+      missingSection++;
+      return manualRoot as string;
+    }
+    const raw = value.path;
+    let segments: string[] | null;
+    if (Array.isArray(raw)) segments = raw.every((item): item is string => typeof item === 'string') ? (raw as string[]) : null;
+    else if (raw === null) segments = null;
+    else segments = sectionSegments(section);
+    const path = segments === null ? null : pathText([MANUAL_NS, name, ...segments]);
+    if (path === null) {
+      unwritable++;
+      return manualRoot as string;
+    }
+    return path;
+  };
+  const sectionEntryPath = (index: number): string => {
+    const segments = sectionSegments(index);
+    const path = segments === null ? null : pathText([MANUAL_NS, name, ...segments]);
+    if (path === null) {
+      unwritable++;
+      return manualRoot as string;
+    }
+    return path;
+  };
+  const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
+    const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
+    const unique = [...new Set(found)].sort(compareText);
+    if (unique.length === 0) return;
+    entry.data.command_literals = unique.slice(0, MAX_LITERALS);
+    if (unique.length > MAX_LITERALS) entry.data.command_literals_cut = true;
+  };
+  /** Byte ranges of the lines of a block's text (the fragment text the selectors name). */
+  const lineRanges = (text: string): Array<[number, number]> => {
+    const offsets = utf8Offsets(text);
+    const out: Array<[number, number]> = [];
+    let start = 0;
+    for (let i = 0; i <= text.length; i++) {
+      if (i === text.length || text.charCodeAt(i) === 0x0a) {
+        out.push([offsets[start], offsets[i]]);
+        start = i + 1;
+      }
+    }
+    return out;
+  };
+
   // Heading anchors: a heading whose text (after its numbering) is a bold command signature.
-  const headingAnchors = new Map<number, { anchor: Anchor; path: string }>();
+  const headingAnchors = new Map<number, { anchor: Anchor; path: string | null }>();
   sections.forEach((section, index) => {
     if (index === 0 || section.selector === null) return;
     const title = section.title.replace(/^\s*[0-9]+(?:\.[0-9]+)*[.．、]?\s+/, '');
     if (!title.trimStart().startsWith('**')) return;
     const anchor = parseAnchor(title, heads);
-    const path = anchor === null ? null : commandPath(anchor.words);
-    if (anchor === null || path === null) return;
+    if (anchor === null) return;
+    // Only a node the build's command tree has; without a tree the literal decides, unchecked.
+    const path = catalog === null ? commandPath(anchor.words) : existingPath(catalog, anchor.words);
     headingAnchors.set(index, { anchor, path });
-    entries.push(signatureEntry(anchor, path, { parser: MARKDOWN, selector: section.selector }));
+    const entry = signatureEntry(anchor, path ?? sectionEntryPath(index), { parser: MARKDOWN, selector: section.selector as string });
+    entries.push(entry);
+    scoped.push({ entry, section: index, own: '' });
   });
+
+  /** The signatures of one table cell: each maximal part between CJK text that parses as an anchor. */
+  const cellAnchors = (cell: string): Anchor[] => {
+    if (!cell.includes('**')) return [];
+    const out: Anchor[] = [];
+    for (const part of cell.split(new RegExp(`${CJK.source}+`, 'u'))) {
+      const anchor = parseAnchor(part, heads);
+      if (anchor !== null) out.push(anchor);
+    }
+    return out;
+  };
+
+  /** The rows of a pipe table, or null when the block is not one (grid, multiline and simple tables are not split). */
+  const pipeRows = (text: string): { lines: string[]; rows: Array<{ line: number; cells: string[] }> } | null => {
+    const splitRow = (line: string): string[] | null => {
+      let body = line.trim();
+      if (!body.includes('|')) return null;
+      if (body.startsWith('|')) body = body.slice(1);
+      if (body.endsWith('|')) body = body.slice(0, -1);
+      return body.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
+    };
+    const lines = text.split('\n');
+    if (lines.length < 3 || splitRow(lines[0]) === null) return null;
+    const delimiter = splitRow(lines[1]);
+    if (delimiter === null || delimiter.length === 0 || !delimiter.every((cell) => /^:?-+:?$/.test(cell))) return null;
+    const rows: Array<{ line: number; cells: string[] }> = [];
+    for (let k = 2; k < lines.length; k++) {
+      const cells = splitRow(lines[k]);
+      if (cells === null) return null;
+      rows.push({ line: k, cells });
+    }
+    return { lines, rows };
+  };
+
   let invalid = 0;
   let rejected = 0;
   // The command the blocks describe: set by a heading anchor when its section starts, by a paragraph anchor, and ended by
@@ -258,37 +540,171 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, w
     if (block.section !== section) {
       section = block.section;
       const heading = headingAnchors.get(block.section);
-      current = heading ? { path: heading.path, words: heading.anchor.words } : null;
+      current = heading !== undefined && heading.path !== null ? { path: heading.path, words: heading.anchor.words } : null;
     }
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
     const fragment: FragmentRef = { parser: MARKDOWN, selector: block.selector };
+    const opening = block.section >= 0 && block.section < openings.length ? openings[block.section] : null;
     const anchor = block.kind === 'paragraph' ? parseAnchor(text, heads) : null;
-    const path = anchor === null ? null : commandPath(anchor.words);
-    if (anchor !== null && path !== null) {
-      entries.push(signatureEntry(anchor, path, fragment));
-      current = { path, words: anchor.words };
+    const anchorPath = anchor === null ? null : catalog === null ? commandPath(anchor.words) : existingPath(catalog, anchor.words);
+    if (anchor !== null) {
+      // A signature whose command is not in the build's tree is still a signature: it hangs at its section node.
+      const placed = anchorPath ?? sectionPath(value, block.section);
+      const entry = signatureEntry(anchor, placed, fragment);
+      entries.push(entry);
+      scoped.push({ entry, section: block.section, own: text });
+      current = anchorPath === null ? null : { path: anchorPath, words: anchor.words };
+      if (opening !== null) opening.closed = true;
       continue;
     }
-    if (block.kind === 'paragraph' && looksLikeSignature(text)) {
+    // A command table is split by row: a one-signature row hangs at its command when the command exists; a row with
+    // several commands at their nearest common ancestor when that is at least one word deeper than /commands (the
+    // namespace root itself is not a placement); every other row stays at the section node.
+    if (block.kind === 'table') {
+      const table = pipeRows(block.text);
+      if (table !== null) {
+        const ranges = lineRanges(block.text);
+        let anchorsSeen = false;
+        const split: Array<{ entry: ProducedEntry; own: string }> = [];
+        const remainder: number[] = [];
+        for (const row of table.rows) {
+          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell).map((anchor) => ({ cell: cellIndex, anchor })));
+          if (found.length === 0) {
+            remainder.push(row.line);
+            continue;
+          }
+          anchorsSeen = true;
+          const range: [number, number] = ranges[row.line];
+          const rowFragment: FragmentRef = { parser: MARKDOWN, selector: block.selector, range };
+          if (found.length === 1) {
+            const { cell, anchor: one } = found[0];
+            const path = catalog === null ? commandPath(one.words) : existingPath(catalog, one.words);
+            if (path !== null) {
+              const signature = signatureEntry(one, path, rowFragment);
+              split.push({ entry: signature, own: table.lines[row.line] });
+              const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
+              if (described.length > 0) {
+                split.push({
+                  entry: { kind: TEXT, path, statement: described.join('；'), data: { words: one.words, form: 'text', block: 'table' }, fragments: [rowFragment], applicability: null },
+                  own: described.join('\n'),
+                });
+              }
+              continue;
+            }
+            remainder.push(row.line);
+            continue;
+          }
+          const existing = catalog === null ? found : found.filter(({ anchor: some }) => existingPath(catalog, some.words) !== null);
+          if (existing.length >= 2) {
+            const lca = commonPrefix(existing.map(({ anchor: some }) => some.words));
+            if (lca.length >= 1) {
+              // The ancestor's path is spelled as the tree spells it: the prefix of an existing command under it.
+              const firstPath = catalog === null ? null : existingPath(catalog, existing[0].anchor.words);
+              const path = firstPath === null ? pathText(['commands', ...lca]) : firstPath.split('/').slice(0, 2 + lca.length).join('/');
+              if (path !== null) {
+                split.push({
+                  entry: { kind: TEXT, path, statement: row.cells.join(' | '), data: { form: 'text', block: 'table' }, fragments: [rowFragment], applicability: null },
+                  own: row.cells.join('\n'),
+                });
+                continue;
+              }
+            }
+          }
+          remainder.push(row.line);
+        }
+        if (split.length > 0) {
+          for (const { entry, own } of split) {
+            putLiterals(entry, 'table', own);
+            entries.push(entry);
+            scoped.push({ entry, section: block.section, own });
+          }
+          if (remainder.length > 0) {
+            const lines = [table.lines[0], ...remainder.map((line) => table.lines[line])].map((line) => line.trimEnd());
+            const rest: ProducedEntry = {
+              kind: TEXT,
+              path: current !== null ? current.path : sectionPath(value, block.section as number),
+              statement: lines.join('\n'),
+              data: { form: 'text', block: 'table', section: (titleChains[block.section as number] ?? []).join(' / ') },
+              fragments: [0, ...remainder].map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
+              applicability: null,
+            };
+            putLiterals(rest, 'table', rest.statement);
+            entries.push(rest);
+            scoped.push({ entry: rest, section: block.section, own: rest.statement });
+          }
+          if (opening !== null) {
+            if (!opening.closed) opening.texts.push(text);
+            if (anchorsSeen) opening.closed = true;
+          }
+          continue;
+        }
+      }
+    }
+    const rejectedSignature = block.kind === 'paragraph' && looksLikeSignature(text);
+    if (rejectedSignature) {
       rejected++;
       current = null;
-    } else if (current !== null) {
-      entries.push({ kind: TEXT, path: current.path, statement: text, data: { words: current.words, form: 'text', block: block.kind }, fragments: [fragment], applicability: null });
+    }
+    if (current !== null && !rejectedSignature) {
+      const entry: ProducedEntry = { kind: TEXT, path: current.path, statement: text, data: { words: current.words, form: 'text', block: block.kind }, fragments: [fragment], applicability: null };
+      putLiterals(entry, block.kind, text);
+      entries.push(entry);
+      scoped.push({ entry, section: block.section, own: text });
+      if (opening !== null && !opening.closed) opening.texts.push(text);
       continue;
     }
-    // A paragraph written as a signature stays a definition when unplaced; any other block is text under some command.
-    unplaced.push({ fragment, section: sectionPath(block.section), kind: block.kind === 'paragraph' && looksLikeSignature(text) ? SIGNATURE : TEXT, text });
+    // Every other block hangs at its section node.
+    const chain = block.section >= 0 && block.section < titleChains.length ? titleChains[block.section] : [];
+    const data: { [key: string]: unknown } = { form: 'text', block: block.kind, section: chain.join(' / ') };
+    if (rejectedSignature) data.signature_rejected = true;
+    const entry: ProducedEntry = { kind: TEXT, path: sectionPath(value, block.section), statement: text, data, fragments: [fragment], applicability: null };
+    putLiterals(entry, block.kind, text);
+    entries.push(entry);
+    scoped.push({ entry, section: block.section, own: text });
+    if (opening !== null && !opening.closed) opening.texts.push(text);
   }
+
+  // Applicability, once every opening is complete: the section's scope plus the entry's own text.
+  const sectionScopes = new Map<number, Conditions>();
+  for (const { entry, section: at, own } of scoped) {
+    if (at < 0 || at >= sections.length) {
+      entry.applicability = toApplicability(conditionsOf(own));
+      continue;
+    }
+    let scope = sectionScopes.get(at);
+    if (scope === undefined) {
+      scope = conditionsOf([sections[at].title, ...openings[at].texts].join('\n'));
+      sectionScopes.set(at, scope);
+    }
+    entry.applicability = toApplicability(mergeConditions(scope, conditionsOf(own)));
+  }
+
+  // The literals the build's tree cannot resolve are drift candidates of the production (never nodes of their own).
+  if (catalog !== null) {
+    const unresolved = new Set<string>();
+    for (const entry of entries) {
+      for (const literal of asStrings(entry.data.command_literals)) {
+        if (!resolves(catalog, literal)) unresolved.add(literal);
+      }
+    }
+    if (unresolved.size > 0) {
+      const sorted = [...unresolved].sort(compareText);
+      warnings.push(`有 ${sorted.length} 个命令字面在本构建的命令树里解析不到，是漂移候选：${sorted.slice(0, MAX_DRIFT_SHOWN).join('、')}${sorted.length > MAX_DRIFT_SHOWN ? ' 等' : ''}`);
+    }
+  }
+
   if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
   if (rejected > 0) {
-    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，留给归类`);
+    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);
   }
-  return { entries, unplaced, warnings };
+  if (missingSection > 0) warnings.push(`有 ${missingSection} 个块指向不存在的章节，挂在手册命名空间的根下`);
+  if (unwritable > 0) warnings.push(`有 ${unwritable} 个块的章节路径写不出（过长或含写不出的字符），挂在手册命名空间的根下`);
+  return { entries, unplaced: [], warnings };
 }
 
 function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): ProducedEntry {
-  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params };
+  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, command_literals: [anchor.signature] };
   if (anchor.variants !== null) data.variants = anchor.variants;
   return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
 }
@@ -417,24 +833,25 @@ function isMarkdown(value: unknown): value is MarkdownModel {
 }
 
 /** Entries of a converted manual (markdown@1 model) or of the manual command catalog. `heads`: known first words. */
-export function produceManualEntries(input: MarkdownModel | ManualCatalog, heads: readonly string[] | null = null): ManualResult {
+export function produceManualEntries(input: MarkdownModel | ManualCatalog, heads: readonly string[] | null = null, options: ManualOptions = {}): ManualResult {
   const warnings: string[] = [];
   try {
     const known = heads === null ? null : new Set(asStrings(heads).map((head) => squeeze(head).split(' ')[0].toLowerCase()).filter((head) => head !== ''));
     if (isCatalog(input)) return fromCatalog(input, warnings);
-    if (isMarkdown(input)) return fromMarkdown(input, known !== null && known.size > 0 ? known : null, warnings);
+    if (isMarkdown(input)) return fromMarkdown(input, known !== null && known.size > 0 ? known : null, options, warnings);
     return { entries: [], unplaced: [], warnings: ['输入既不是 markdown@1 模型，也不是手册命令目录（ist.manual-command-catalog）'] };
   } catch (error) {
     return { entries: [], unplaced: [], warnings: [...warnings, internalError(error)] };
   }
 }
 
-/** Pack function entry: the model or catalog, or `{ model, heads }`. */
+/** Pack function entry: the model or catalog, or `{ model, heads, name }` (`name` is the segment under /manual). */
 export default function manual(input: unknown): ManualResult {
   return guarded(
     () => {
       if (isRecord(input) && 'model' in input && !isMarkdown(input) && !isCatalog(input)) {
-        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null);
+        const name = typeof input.name === 'string' && input.name !== '' ? input.name : undefined;
+        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, name === undefined ? {} : { name });
       }
       return produceManualEntries(input as MarkdownModel);
     },

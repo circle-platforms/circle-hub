@@ -3,6 +3,7 @@
 import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
 import type { CatalogSignature } from '../../../../contracts/src/tables.ts';
 import type { EntryKind, ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import type { CommandCatalog } from './cases-commands.ts';
 
 export type { EntryKind, HtmlModel, MarkdownModel, XmlModel };
 
@@ -236,7 +237,16 @@ export type ManualCatalog = {
   worked_examples?: Array<{ lines: string[]; src?: string }>;
 };
 
-export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[] };
+export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string };
+
+/**
+ * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
+ * cli or app); `catalog` is the build's command catalog (cases-commands `commandCatalog` of the command tree) — with it,
+ * signatures and command-table rows hang at /commands only at nodes the tree has, and the warnings list the literals the
+ * tree cannot resolve as drift candidates. The entries themselves never depend on the tree (K01 R[1]: the manual
+ * subtrees of a line's builds are shared).
+ */
+export type ManualOptions = { name?: string; catalog?: CommandCatalog | null };
 
 /**
  * A span the code could not place; it stays citable by its selector and goes to the typed-judgment model later. `kind` is
