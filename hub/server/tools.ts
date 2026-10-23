@@ -505,7 +505,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.context.adminNote(`the answer of ${name} does not conform to its output schema and was not sent: ${issues.join('; ')}`);
     throw internalError(call.context.traceId);
   }
-  const value = checked.data as Answer & { call_result: 'ok' | 'error'; errors: ProtocolError[]; acceptance?: Acceptance };
+  const value = checked.data as Answer & { call_result: CallResult; errors: ProtocolError[]; acceptance?: Acceptance };
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
