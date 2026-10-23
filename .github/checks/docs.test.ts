@@ -1,6 +1,7 @@
 // Checks of the docs package against the repository: see docs-rules.ts for what each rule means.
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync, lstatSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, lstatSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,7 @@ import { describe, it } from 'node:test';
 // mid-edit elsewhere in contracts/src cannot stop these checks.
 import { AXES } from '../../contracts/generated/vocabulary.ts';
 import {
+  trackedFileText,
   buildNameProblems,
   decisionSourceProblems,
   isHistorical,
@@ -176,10 +178,37 @@ describe('recorded decisions name their source', () => {
 // Git's inventory covers code, tests, ops, dot-directories and extensionless text without scanning dependencies or build output.
 const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
   .filter((path) => path && !path.startsWith('foundation/') && !path.startsWith('references/'))
-  .filter((path) => existsSync(join(ROOT, path)) && lstatSync(join(ROOT, path)).isFile())
-  .map((path) => ({ path, bytes: readFileSync(join(ROOT, path)) }))
-  .filter(({ bytes }) => !bytes.includes(0))
-  .map(({ path, bytes }) => ({ path, text: bytes.toString('utf8') }));
+  .flatMap((path) => {
+    const text = trackedFileText(join(ROOT, path));
+    return text === null ? [] : [{ path, text }];
+  });
+
+describe('tracked blobs are never skipped because of NULs or symbolic links', () => {
+  it('checks NUL-bearing Markdown and UTF-16 ASCII shapes as text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-hygiene-nul-'));
+    try {
+      const path = join(dir, 'fixture.md');
+      const home = '/' + 'Users/operator/project';
+      const build = ['Rel', 'Synthetic', '10', '4', '2'].join('_');
+      writeFileSync(path, Buffer.from(home + '\n' + build, 'utf16le'));
+      const text = trackedFileText(path)!;
+      assert.equal(localPathProblems('fixture.md', text).length, 1);
+      assert.equal(buildNameProblems('fixture.md', text).length, 1);
+      assert.ok(!text.includes('\0'));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('checks a dangling symlink target without following it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-hygiene-link-'));
+    try {
+      const path = join(dir, 'fixture.md');
+      const target = '/' + 'Users/operator/missing';
+      symlinkSync(target, path);
+      assert.equal(trackedFileText(path), target);
+      assert.equal(localPathProblems('fixture.md', trackedFileText(path)!).length, 1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
 
 describe('no machine paths in repository text', () => {
   it('reports user homes, root and variable-data paths with their line numbers', () => {

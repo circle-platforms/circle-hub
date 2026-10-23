@@ -1,6 +1,7 @@
 // Rules the docs keep, applied by docs.test.ts: links the docs site can serve, vocabulary tables equal to the generated
 // vocabulary, the model's decided and deferred counts, a source for every recorded decision, and no local paths.
 import { posix } from 'node:path';
+import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 
 export const REPOSITORY = 'https://github.com/circle-platforms/circle-hub';
 
@@ -218,4 +219,12 @@ export function buildNameProblems(file: string, text: string): string[] {
     for (const m of line.matchAll(BUILD_NAME)) problems.push(`${file}:${index + 1}: protected build name ${JSON.stringify(m[0])}`);
   });
   return problems;
+}
+
+/** Scan regular file contents and Git's symlink target text; never follow a symlink or discard a NUL-bearing blob. */
+export function trackedFileText(path: string): string | null {
+  const info = lstatSync(path);
+  if (info.isSymbolicLink()) return readlinkSync(path).replaceAll('\0', '');
+  if (info.isFile()) return readFileSync(path).toString('utf8').replaceAll('\0', '');
+  return null;
 }
