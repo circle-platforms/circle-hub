@@ -689,7 +689,7 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
           if (credential.digest !== 'plain' || auth?.kind !== 'static_header' || auth.credential !== entry
             || auth.header.name.toLowerCase() !== 'authorization' || auth.header.scheme !== 'raw') {
             throw new CliError('Basic 只可写入原样存储整个 Authorization 头的静态凭据项；未写入任何凭据',
-              '用 resource show 核对系统包声明的静态 Authorization 凭据项，再修正 --basic 的目标');
+              `--basic 只用于系统包声明为原样静态 Authorization 头的凭据项；这个资源（系统包 ${described.system_pack}）的凭据项是 ${described.credentials.map(item => item.name).join('、') || '（无）'}；用 circle-hub resource list 查看各资源绑定的系统包，再修正 --basic 的目标`);
           }
         }
         mappings.push({ keys, resource, entry, rule: credential.digest });

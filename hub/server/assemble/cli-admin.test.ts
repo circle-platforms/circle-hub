@@ -1539,6 +1539,8 @@ test('review 8: Basic targets refuse before file access and a static authorizati
   for (const entry of ['password', 'username']) {
     const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${agileId}/${entry}`]);
     assert.equal(refused.code, 1); assert.match(refused.text, /Basic.*原样.*Authorization/);
+    assert.doesNotMatch(refused.text, /resource show/);assert.match(refused.text,/circle-hub resource list/);
+    assert.ok(refused.text.includes(AGILE_PACK));assert.match(refused.text,/凭据项是/);assert.ok(refused.text.includes('username') && refused.text.includes('password'));
     assert.doesNotMatch(refused.text, /环境文件/);
   }
   const username = 'SyntheticBasicUser'; const password = 'SyntheticBasicPassword92';
