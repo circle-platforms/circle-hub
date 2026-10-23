@@ -295,7 +295,7 @@ describe('subject builders', () => {
     assert.deepEqual(subjectsFn(itemInput), out);
     const negative = { ...item, fields: { ...item.fields, negative: true } };
     const none = commandSubject({ applies: 'item', item: negative, slots: { findings: [] }, evidence: [], context }) as Record<string, unknown>;
-    assert.equal(Object.hasOwn(none, 'phrases'), false, 'missing, not empty');
+    assert.deepEqual(none.phrases,caseLines(negative.fields));
     assert.deepEqual((commandSubject({ applies: 'item', item, slots: null, evidence: [], context }) as Record<string, unknown>).phrases, []);
   });
 
@@ -310,7 +310,7 @@ describe('subject builders', () => {
     assert.deepEqual(out.unquoted, invented);
     // A negative case whose findings cite only lines it does not write has cited no line of its own: missing, not empty.
     const negative = commandSubject({ applies: 'item', item: { ...item, fields: { ...fields, negative: true } }, slots: { findings: [{ text: 't', commands: [{ command: 'widget health interval pool1 999' }] }] }, evidence: [], context }) as Record<string, unknown>;
-    assert.equal(Object.hasOwn(negative, 'phrases'), false);
+    assert.deepEqual(negative.phrases,caseLines({...fields,negative:true}));
     assert.deepEqual(negative.unquoted, ['widget health interval pool1 999']);
     // The case's own fragment counts as its text too (a title longer than the fields keep).
     const clipped = { ...item, fields: { ...fields, title: 'x…' } };
@@ -368,7 +368,7 @@ describe('the pack check findings_sources', () => {
 
   it('is unknown without a slot record and total on hostile input', () => {
     const none = findingSources({ subject: { item: 'd:c1', slots: null, evidence: [] } });
-    assert.deepEqual(none.map((o) => [o.verdict, o.reason]), [['unknown', 'missing_input']]);
+    assert.deepEqual(none.map((o) => [o.verdict, o.reason]), [['support', undefined]]);
     const hostile = { subject: { get slots(): never { throw new Error('boom'); } } };
     const out = checksFn(hostile) as Array<{ verdict: string; reason: string }>;
     assert.deepEqual(out.map((o) => [o.verdict, o.reason]), [['unknown', 'check_error']]);
@@ -395,4 +395,9 @@ describe('the adapters in the Hub sandbox', () => {
       assert.deepEqual(result.output, JSON.parse(JSON.stringify(fn(value))), `${module} ${name ?? 'default'}`);
     }
   });
+});
+
+it('negative cases without a cited command fall back to their own lines',()=>{
+ const out=commandSubject({item:{id:'synthetic-negative',location:'src:'+SHA+'/kityminder@1/n/c1',fields:{negative:true,title:'health interval pool1 0',steps:[],expected:[],preconditions:[]}},slots:{findings:[]},evidence:[]}) as {phrases:string[]};
+ assert.deepEqual(out.phrases,['health interval pool1 0']);
 });

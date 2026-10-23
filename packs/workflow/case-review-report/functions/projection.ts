@@ -58,7 +58,7 @@ export function finalOf(result: Record<string, unknown>, record: string): { verd
   const statement = claim.statement as { code: Verdict; rank?: unknown };
   return {
     verdict: statement.code,
-    level: typeof statement.rank === 'string' ? statement.rank : null,
+    level: typeof statement.rank === 'string' && statement.rank.trim()!=='' ? statement.rank : null,
     // pointer joins the submitted claim to its Hub fact; a rec: pointer addresses the stored result instead.
     reference: `rec:${record}#/cross_item/${stored.indexOf(claim)}`,
   };
@@ -274,6 +274,7 @@ export default function project(input: unknown): unknown {
         isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='support'&&isRecord(claim.statement.data)&&Array.isArray(claim.statement.data.source_facts)));
       return kept?[]:[{block:index+1,item:entry.item,legacy:legacySnapshot(block.result)}];
     }));
+    if(missingBlocks.length || missing.length) return failure('incomplete_blocks',`第 ${missingBlocks.join('、') || '已列出'} 块缺少判定或等级；未交付条目 ${missing.join('、') || '无'}`,'先完成这些块和条目的复核并重交；读取新的受理回执后再开始终稿');
     const sourceGapFix = '下一步：' + [
       missingSourceFacts.some(gap=>gap.legacy) ? '旧版块用具备初评快照的新版独立复核后重开终稿' : '',
       missingSourceFacts.some(gap=>!gap.legacy) ? '按当前块原回执补齐处置核对支持事实，修复并重交复核，再用新回执重开终稿' : '',

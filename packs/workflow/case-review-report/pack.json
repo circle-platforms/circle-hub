@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "kind": "workflow",
   "title": "评审终稿",
   "description": "按已受理复核记录与目标原文确定性排出测试子项对照表，核对简短终稿的整体结论和等级",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "363fb944131a48277db893c2a9cc613fdfaed289490a54cb0a0e6a2a093df0c8",
-      "size": 4734
+      "sha256": "b0a1888ce2ba31ad0209f23292c4bfd7c4893787f4b9567dd273dd3dd50369a6",
+      "size": 5111
     },
     {
       "path": "checks.json",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "8a92597c825db1f4b87be635b2913f5cb7109dcfa25072945b34bc9981a9e0b6",
-      "size": 4872
+      "sha256": "603fd3fc5834968ccb8cccecb9a281ffa99037f0dc2d0faef241df3216078f20",
+      "size": 4887
     },
     {
       "path": "functions/common.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "67102133bd582d2b93ac4d4288d6936ab8cb9346182b2fa852c5df8df71e4b4b",
-      "size": 25588
+      "sha256": "108c28765df146c6c61d6ffb955ffd9120b25989d8ff011ad7ff62e5fabf5c7c",
+      "size": 25920
     },
     {
       "path": "functions/tables.ts",

@@ -40,8 +40,8 @@ binds, or a validation result bound below a record, whose pointer the references
 - the summary of an item (at most 200 characters) lists its draft findings by code and rank, the draft partition and the path;
 - refusals: `invalid_input`, `draft_invalid` (not a validation result, no record digest, a result of another workflow pack
   than `case-review` (its `locks.pack`), items that are no mind-map nodes, no items), `draft_not_accepted` (nothing to verify),
-  `too_many_items` (more than 100), `internal_error`; a draft without a level is a warning (`draft_level_missing`): the verdict
-  check then stays unknown where it needs the level.
+  `too_many_items` (more than 100), `internal_error`; a draft without a level is refused (`draft_level_missing`):
+  its reviewer must supply the level and a new accepted receipt before verification can start.
 
 `expected.ts` binds the evidence of the target again with the draft pack's rules (the stories and bugs of the title and the
 folders and the spec search as expected sources; the test strategy search and the similar test lists, the target left out,
@@ -66,7 +66,7 @@ as hints), so the verifier can cite it on its own boundary; pass the draft's par
   FAIL needs a refuted draft finding that the draft itself ranked major or critical (`fail_without_major_refutation`).
   PARTIAL needs a new finding, a refuted or partly correct draft finding, or a level change (`partial_without_change`). So
   every verifier has a consistent verdict: refuting only minor findings with the level kept is a PARTIAL. Without a verdict,
-  or without a draft level to compare where the rule needs one, the outcome is unknown (missing input), never a pass.
+  or without a draft level to compare where the rule needs one, the check refutes with verdict_missing or level_missing and a repair action; a draft without a level cannot start verification.
   The verdict check appends the case rule summary line (`用例规则：...`) to its statement and includes `{ case_rule, marked_only }` in its `data`.
 
 Independence (A04): the requirements `verification` and `final` are independent of the predecessor and accept the
@@ -174,3 +174,5 @@ data.source_facts 并列原引用为根据；不重判、不改生产者或归�
 没有这样的反驳时明确保存空列表；缺少此字段的旧复核结果不能当作“没有 Hub 问题”，需用新版复核后重开终稿。
 
 每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。
+
+本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。

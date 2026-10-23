@@ -39,6 +39,8 @@ export const CODES = {
   suggestionTargetMissing:PACK+'.suggestion_target_missing',
   suggestionIncomplete:PACK+'.suggestion_incomplete',
   partialWithoutChange: `${PACK}.partial_without_change`,
+  verdictMissing: `${PACK}.verdict_missing`,
+  levelMissing: `${PACK}.level_missing`,
 } as const;
 
 const records = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
@@ -58,8 +60,8 @@ export function dispositions(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof subject.item === 'string' ? subject.item : undefined;
   const own = item !== undefined ? { item } : {};
-  if (!isRecord(subject.slots)) return [{ verdict: 'unknown', reason: 'missing_input', statement: '这个条目没有提交槽位记录，处置无从核对', grounds: [], tier: TIER, ...own }];
-  const claims = records(subject.slots[SLOT]);
+  const slots = isRecord(subject.slots) ? subject.slots : {};
+  const claims = records(slots[SLOT]);
   const draft = draftFindings(subject.fields);
   const out: CheckOutcome[] = [];
   const add = (code: string, statement: string, pointer?: string, data?: Record<string, unknown>): void => {
@@ -117,7 +119,7 @@ export function verdict(input: unknown): CheckOutcome[] {
   const anchor = typeof (handled[0] ?? items[0])?.id === 'string' ? ((handled[0] ?? items[0]).id as string) : undefined;
   const own = anchor !== undefined ? { item: anchor } : {};
   const finalIndex = cross.findIndex((c) => (VERDICTS as readonly unknown[]).includes(c.code));
-  if (finalIndex < 0) return [{ verdict: 'unknown', reason: 'missing_input', statement: '提交里没有结论（cross_item 里码为 PASS、PARTIAL 或 FAIL 的一条）', grounds: [], tier: TIER, ...own }];
+  if (finalIndex < 0) return [{ verdict: 'refute', code: CODES.verdictMissing, statement: '提交里没有结论：请在 cross_item 补一条 PASS、PARTIAL 或 FAIL，并写等级后重交', grounds: [], tier: TIER, ...own, pointer:'/cross_item' }];
   const final = cross[finalIndex];
   const pointer = `/cross_item/${finalIndex}`;
   const claims = handled.flatMap((it) => records((it.slots as Record<string, unknown>)[SLOT]).map((claim) => ({ claim, item: it })));
@@ -132,6 +134,7 @@ export function verdict(input: unknown): CheckOutcome[] {
     return null;
   })();
   const finalLevel = typeof final.rank === 'string' ? final.rank : null;
+  if (!draftLevel?.trim() || !finalLevel?.trim()) return [{verdict:'refute',code:CODES.levelMissing,statement:!draftLevel?.trim()?'初评没有等级，请先补齐初评等级并重交初评，再重开复核':'复核结论没有等级，请在结论主张 rank 写最终等级后重交',grounds:[],tier:TIER,...own,pointer}];
   const levelChanged = draftLevel !== null && finalLevel !== null ? draftLevel !== finalLevel : null;
   const firstFields = isRecord(items[0]?.fields) ? (items[0].fields as Record<string, unknown>) : {};
   const case_rule = (firstFields.case_rule === 'tagged' ? 'tagged' : 'marked') as 'tagged' | 'marked';
@@ -159,9 +162,6 @@ export function verdict(input: unknown): CheckOutcome[] {
     if (!ownQuote) {
       add(CODES.passWithoutEvidence, '结论 PASS，但复核方没有一段自己从被复核脑图里逐字引用的原文：位置和根据只是引用，照抄初评的引文也不算；PASS 至少要有一段自己核对过的被复核对象的引文');
     }
-    if (levelChanged === null && out.length === 0) {
-      return [{ verdict: 'unknown', reason: 'missing_input', statement: '初评没有等级（或结论没有等级），PASS 是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
-    }
   } else if (final.code === 'FAIL') {
     const major = refuted.filter(({ claim, item }) => {
       const finding = dataOf(claim).finding;
@@ -171,7 +171,6 @@ export function verdict(input: unknown): CheckOutcome[] {
     if (major.length === 0) add(CODES.failWithoutRefutation, '结论 FAIL，但没有推翻初评定为严重或主要的发现：FAIL 要有初评的重大事实错误（误判、位置错误、产品语义颠倒）；推翻的只是次要发现时结论应为 PARTIAL');
   } else if (final.code === 'PARTIAL') {
     if (fresh.length === 0 && corrected.length === 0 && levelChanged !== true) {
-      if (levelChanged === null) return [{ verdict: 'unknown', reason: 'missing_input', statement: '结论 PARTIAL 没有新发现，也没有推翻或修正初评发现，初评没有等级（或结论没有等级），是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
       add(CODES.partialWithoutChange, '结论 PARTIAL，但没有新发现，没有推翻或修正初评发现，等级也没有改：PARTIAL 要有其中之一；初评基本正确、没有补充时应为 PASS');
     }
   }

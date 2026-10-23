@@ -161,6 +161,11 @@
       "code": "case-review.tag_variant",
       "when": "检查 tags：一个用例的类别标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）写法和本文档这一类别最常用的写法不同",
       "fix": "改成本文档这一类别最常用的写法（陈述里给出了）"
+    },
+    {
+      "code": "case-review.negative_command_missing",
+      "when": "反向用例自身没有可核验的目录命令行",
+      "fix": "修正原用例命令行后重开评审"
     }
   ],
   "findings": [

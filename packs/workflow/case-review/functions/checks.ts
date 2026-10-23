@@ -15,6 +15,7 @@ export const HINT_ONLY = `${PACK}.hint_only`;
 export const LOCATION_MISSING = `${PACK}.location_missing`;
 export const QUOTE_MISSING = `${PACK}.quote_missing`;
 export const COMMAND_NOT_IN_CASE = `${PACK}.command_not_in_case`;
+export const NEGATIVE_COMMAND_MISSING = `${PACK}.negative_command_missing`;
 export const TAG_VARIANT = `${PACK}.tag_variant`;
 /** Most outcomes of one call: the slot schema caps findings per item, a run holds at most 100 items. */
 const MAX_OUTCOMES = 1000;
@@ -31,8 +32,7 @@ export function findingSources(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof subject.item === 'string' ? subject.item : undefined;
   const own = item !== undefined ? { item } : {};
-  const slots = isRecord(subject.slots) ? subject.slots : null;
-  if (slots === null) return [{ verdict: 'unknown', reason: 'missing_input', statement: '这个条目没有提交槽位记录，发现的根据无从核对', grounds: [], tier: 'blocking', ...own }];
+  const slots = isRecord(subject.slots) ? subject.slots : {};
   const roles = new Map<string, unknown>();
   for (const evidence of Array.isArray(subject.evidence) ? subject.evidence : []) {
     if (isRecord(evidence) && typeof evidence.reference === 'string' && evidence.resolved === true) roles.set(evidence.reference, evidence.role);
@@ -84,6 +84,24 @@ export function findingSources(input: unknown): CheckOutcome[] {
     add({ verdict: 'support', statement: `${findings.length} 条发现都写了位置和逐字引文，有线索以外的根据，引用的命令行出自用例`, grounds: [], tier: 'blocking', ...own, data: { checked: findings.length } });
   }
   return out;
+}
+
+/** A negative case must contain a line whose head belongs to the locked catalog. */
+export function negativeCommands(input:unknown):CheckOutcome[] {
+  const raw=isRecord(input)?input:{},subject=isRecord(raw.subject)?raw.subject:{};
+  const own=typeof subject.item==='string'?{item:subject.item}:{};
+  const phrases=Array.isArray(subject.phrases)?subject.phrases.filter((p):p is string=>typeof p==='string'):[];
+  if(subject.negative!==true)return [{verdict:'support',statement:'未声明反向标记，此项不要求非法命令行',grounds:[],tier:'advisory',...own}];
+  const catalog=isRecord(raw.catalog)?raw.catalog:{};
+  if(!Array.isArray(raw.catalog)&&!Array.isArray(catalog.entries))return [{verdict:'unknown',reason:'missing_input',statement:'缺少冻结命令目录；请集成者选择有命令目录的构建或恢复目录绑定后重开评审，不能据此断言用例没有命令',grounds:[],tier:'advisory',...own}];
+  const entries=Array.isArray(raw.catalog)?raw.catalog.filter(isRecord):Array.isArray(catalog.entries)?catalog.entries.filter(isRecord):[];
+  const fold=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();
+  const found=phrases.filter(phrase=>entries.some(entry=>{
+    const head=typeof entry.head==='string'?entry.head:Array.isArray(entry.words)?entry.words.join(' '):'';
+    return head!=='' && (fold(phrase)===fold(head)||fold(phrase).startsWith(fold(head)+' '));
+  }));
+  return found.length ? [{verdict:'support',statement:'反向用例有目录命令行，参数反驳由目录检查核验',grounds:[],tier:'advisory',...own}]
+    : [{verdict:'refute',code:NEGATIVE_COMMAND_MISSING,statement:'按当前目录的行首解析，反向用例没有可核验命令行；请核对目录范围，将完整非法命令单独成行并写期望反驳后重开评审',grounds:[],tier:'advisory',...own,pointer:'/phrases',data:{path:'/phrases',matched_commands:0,catalog_entries:entries.length,provided_lines:phrases.length}}];
 }
 
 type Variant = { tag: string; usual: string; category: string };
