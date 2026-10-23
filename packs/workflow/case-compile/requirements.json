@@ -23,19 +23,34 @@
       "layers": ["static"],
       "accepted_producer": "fact",
       "checks": ["contract_shape"],
-      "error_handling": []
+      "error_handling": [
+        { "code": "case-compile.slots_invalid", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.block_unknown", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.method_unknown", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.method_forbidden", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.param_arity", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.param_type", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.param_range", "action": "repair", "max_rounds": 2 }
+      ]
     },
     {
       "key": "bed_addresses",
       "name": "字面地址对得上台架",
-      "description": "每个字面地址解析成台架上的设备接口地址或分配到的地址：监听地址是被测设备的接口且同网段有触发设备，盲地址不当监听或虚拟地址，后端地址是服务器设备的地址，台架之外的地址拒绝",
+      "description": "每个字面地址解析成台架上的设备接口地址或分配到的地址：监听地址是被测设备的接口且同网段有触发设备，盲地址不当监听或虚拟地址，后端地址是服务器设备的接口地址，台架之外的地址拒绝",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
       "layers": ["static"],
       "accepted_producer": "fact",
       "checks": ["bed_addresses"],
-      "error_handling": []
+      "error_handling": [
+        { "code": "case-compile.bed_unknown", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.address_off_bed", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.listen_not_dut", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.listen_blind", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.backend_not_server", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.address_blind", "action": "repair", "max_rounds": 2 }
+      ]
     },
     {
       "key": "commands_known",
@@ -47,19 +62,29 @@
       "layers": ["static"],
       "accepted_producer": "fact",
       "checks": ["commands_catalog"],
-      "error_handling": []
+      "error_handling": [
+        { "code": "core.catalog.not_member", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.arity_mismatch", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.param_out_of_range", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.param_type_mismatch", "action": "repair", "max_rounds": 2 }
+      ]
     },
     {
       "key": "expected_grounded",
       "name": "期望结果有逐字来源",
-      "description": "每个期望结果带逐字引文（用例原文、缺陷修复说明或手册的片段），不是模型自己写的；引文在 Hub 边界逐字核对",
+      "description": "每个期望结果带逐字引文（用例原文、缺陷修复说明或手册的片段），期望文字是引文的片段，不是模型自己写的；引文在 Hub 边界逐字核对",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
       "layers": ["static"],
       "accepted_producer": "fact",
       "checks": ["expected_sources", "expected_quotes"],
-      "error_handling": []
+      "error_handling": [
+        { "code": "case-compile.expect_without_source", "action": "repair", "max_rounds": 2 },
+        { "code": "case-compile.expect_not_in_quote", "action": "repair", "max_rounds": 2 },
+        { "code": "QUOTE_MISMATCH", "action": "repair", "max_rounds": 2 },
+        { "code": "REFERENCE_UNRESOLVED", "action": "repair", "max_rounds": 2 }
+      ]
     },
     {
       "key": "plan_deterministic",
@@ -71,7 +96,7 @@
       "layers": ["static"],
       "accepted_producer": "fact",
       "checks": ["deterministic_plan"],
-      "error_handling": []
+      "error_handling": [{ "code": "case-compile.plan_in_slots", "action": "repair", "max_rounds": 2 }]
     }
   ]
 }

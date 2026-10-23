@@ -182,36 +182,60 @@ describe('a production run of case-compile', { skip }, () => {
     assert.equal(stored.latest?.result.acceptance, 'accepted');
   });
 
-  it('refutes a forbidden (object, method) pair; the plan is still generated from the rest of the slots', async () => {
+  it('带驳回的提交被存下并给剩余修复轮；改正后重交进已交付', async () => {
     const detail = await hub.service.startRunDetailed(hub.alice, start(), call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const run = detail.answer.run!;
-    const plans = goodPlans();
-    const bad = plans.get('doc-1:c-1')!;
-    bad.steps = [{ object: 'dut', method: 'reboot', params: {} }, ...bad.steps.slice(1)];
-    const answer = await hub.service.submitResult(hub.alice, submission(run.run, plans), call());
-    assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
-    const result = ValidationResult.parse(answer.result);
-    const claims = [...Object.values(result.partitions).flatMap((items) => items.flatMap((item) => item.requirements.flatMap((requirement) => requirement.claims)))];
-    const forbidden = claims.find((claim) => claim.statement.verdict === 'refute' && claim.statement.text.includes('禁用的组合'));
-    assert.ok(forbidden, JSON.stringify(claims.map((claim) => claim.statement.text)));
-    assert.match(forbidden.statement.text, /按合成合约核对/);
-    assert.match(forbidden.statement.text, /不证明在真实设备上跑得通/);
-    assert.equal(forbidden.qualifier.nature, 'fact');
-    assert.equal(forbidden.pointer, '/data/steps/0', '包函数的驳回带 /data/ 形状的 pointer');
-    assert.equal(result.acceptance, 'accepted', '校验照常完成并存下；不满足写在要求项状态上');
-    const requirementOf = (key: string) => {
-      for (const items of Object.values(result.partitions)) {
-        for (const item of items) {
-          if (item.item !== 'doc-1:c-1') continue;
-          const requirement = item.requirements.find((candidate: { requirement: string }) => candidate.requirement === key);
-          if (requirement !== undefined) return requirement as { status: string; unsatisfied_reason?: string };
-        }
-      }
-      throw new Error(`requirement ${key} not found`);
+    const violating = goodPlans();
+    violating.get('doc-1:c-1')!.steps = [{ object: 'dut', method: 'reboot', params: {} }, ...violating.get('doc-1:c-1')!.steps.slice(1)];
+
+    const first = await hub.service.submitResult(hub.alice, submission(run.run, violating), call());
+    assert.equal(first.call_result, 'ok', JSON.stringify(first.errors));
+    const firstResult = ValidationResult.parse(first.result);
+    assert.equal(firstResult.rounds.max, 2, '每个事实要求项最多修复两轮');
+    const offer = firstResult.errors.find((error) => error.code === 'case-compile.method_forbidden');
+    assert.ok(offer, '驳回写在错误列表里');
+    assert.equal(offer.item, 'doc-1:c-1');
+    assert.equal(offer.requirement, 'contract_methods');
+    assert.equal(offer.rounds_left, 2, '第一次驳回时还剩两轮');
+    // V05/V06 的口径：已交付只说明条目有了终态，不说明通过——修复轮之内，带驳回的条目留在已交付、要求项未满足；
+    // 合不合规看要求项的满足状态，不看分区。
+    const contractRequirement = firstResult.partitions.delivered
+      .find((item) => item.item === 'doc-1:c-1')
+      ?.requirements.find((requirement: { requirement: string; status: string }) => requirement.requirement === 'contract_methods');
+    assert.equal(contractRequirement?.status, 'unsatisfied', '带驳回的要求项记不满足');
+    const fixed = await hub.service.submitResult(hub.alice, submission(run.run, goodPlans()), call());
+    assert.equal(fixed.call_result, 'ok', JSON.stringify(fixed.errors));
+    assert.equal(fixed.acceptance, 'accepted', JSON.stringify(fixed.errors));
+    const result = ValidationResult.parse(fixed.result);
+    assert.ok(result.partitions.delivered.some((item) => item.item === 'doc-1:c-1'), '改正后的条目进已交付');
+    const healed = result.partitions.delivered
+      .find((item) => item.item === 'doc-1:c-1')
+      ?.requirements.find((requirement: { requirement: string; status: string }) => requirement.requirement === 'contract_methods');
+    assert.equal(healed?.status, 'satisfied');
+  });
+
+  it('修复两轮用完：条目记未完成（repair_exhausted），不进已交付', async () => {
+    const detail = await hub.service.startRunDetailed(hub.alice, start(), call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const run = detail.answer.run!;
+    // 每次提交内容要不同（同一提交内容按摘要复用第一次的结果）：三步分别是 reboot、reset、reboot+force。
+    const violating = (method: string, params: Record<string, unknown>): Map<string, PlanData> => {
+      const plans = goodPlans();
+      plans.get('doc-1:c-1')!.steps = [{ object: 'dut', method, params }, ...plans.get('doc-1:c-1')!.steps.slice(1)];
+      return plans;
     };
-    assert.deepEqual([requirementOf('contract_methods').status, requirementOf('contract_methods').unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
-    assert.equal(requirementOf('plan_deterministic').status, 'satisfied', '其余槽位照学生成执行计划并回读一致');
+    let result = ValidationResult.parse((await hub.service.submitResult(hub.alice, submission(run.run, violating('reboot', {})), call())).result);
+    assert.equal(result.rounds.used, 0, '第一次驳回时还没用过修复轮');
+    result = ValidationResult.parse((await hub.service.submitResult(hub.alice, submission(run.run, violating('reset', {})), call())).result);
+    assert.equal(result.rounds.used, 1, '第二次驳回用掉一轮');
+    result = ValidationResult.parse((await hub.service.submitResult(hub.alice, submission(run.run, violating('reboot', { force: true })), call())).result);
+    assert.equal(result.rounds.used, 2, '两轮用完');
+    const exhausted = result.partitions.incomplete.find((item) => item.item === 'doc-1:c-1');
+    assert.ok(exhausted, '条目记未完成');
+    assert.equal(exhausted.reason, 'repair_exhausted');
+    assert.ok(!result.partitions.delivered.some((item) => item.item === 'doc-1:c-1'), '修复轮用完的条目不进已交付');
+    assert.ok(result.partitions.delivered.some((item) => item.item === 'doc-1:c-2'), '没有驳回的条目照常交付');
   });
 
   it('refuses the run to a user the pack is not assigned to', async () => {

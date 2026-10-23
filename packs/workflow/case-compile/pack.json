@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "kind": "workflow",
   "title": "用例编译",
   "description": "模型按受限结构把评审过的用例编成执行计划，Hub 在边界上核对：步骤的（对象，方法）对合约、字面地址对台架、命令和参数对构建的命令目录、期望结果有逐字来源、执行计划确定性重读一致。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "bcaa564259d16ce306971668cf1dc5c3594c1929e9aa4b8d4dd9f073ce9a9fab",
-      "size": 4510
+      "sha256": "a1c87c41cbe09ae4f1530a1b7e5a566c55b4498e5ecab19c9459cbd8de782474",
+      "size": 5232
     },
     {
       "path": "checks.json",
@@ -83,13 +83,18 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "08e6a5385e4ab66f354897bcd499ed962f6cd4184307ac060f0de644c403dd83",
-      "size": 3454
+      "sha256": "a8ac7774b6621d8260a864326f731d2850b9b74dd2e7d982abede23537a6e372",
+      "size": 5428
     },
     {
       "path": "samples/negative/backend-not-server.json",
       "sha256": "dcdfea9c54a8d927b7beb2b85945446c6338755cf57d3f11256478f010ecdbc0",
       "size": 5986
+    },
+    {
+      "path": "samples/negative/commands-not-member.json",
+      "sha256": "c05ff6b668bc89457108e06991799946f45a37e9fdcb872f1c55ff7995e548bb",
+      "size": 1410
     },
     {
       "path": "samples/negative/commands-out-of-range.json",
@@ -168,8 +173,8 @@
     },
     {
       "path": "tables/commands.json",
-      "sha256": "25cec5ca91f5db6759dfdbfa82af6d265bc8df9d01483a8b29c2e01cbe458820",
-      "size": 788
+      "sha256": "3f2b28a61aa5345033f2a72485a441c66edeb4b781d881f6964dc30d05504fc7",
+      "size": 850
     },
     {
       "path": "tables/quotes.json",
