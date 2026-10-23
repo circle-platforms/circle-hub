@@ -181,3 +181,11 @@ test('review 13: duplicate and missing node ids produce four distinct single-cas
   const plan = planCopies(tree, 'review13', { categories: CATEGORIES, singleMisses: new Map() });
   assert.deepEqual(plan.c.map(copy => outerCases(copy)[0]?.data.text), ['第一', '第二', '第三', '第四']);
 });
+
+test('review 8: joining is skipped if any base-document single-case answer is unknown', () => {
+  const a = doc(group('ra', '甲', kase('a1', '甲一', '成功'), kase('a2', '甲二', '成功')));
+  const b = doc(group('rb', '乙', kase('b1', '乙一', '成功')));
+  const plan = planCopies(a, 'review8', { categories: CATEGORIES, singleMisses: new Map([['a1', new Set(['negative'])]]), other: { tree: b, singleMisses: new Map([['b1', new Set<string>()]]) } });
+  const candidate = plan.f.find(entry => entry.category === 'negative');
+  assert.ok(candidate && 'skipped' in candidate && candidate.skipped.reason === '单用例副本答案未知');
+});

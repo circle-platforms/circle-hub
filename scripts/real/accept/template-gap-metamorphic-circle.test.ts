@@ -324,3 +324,18 @@ test('review 7: full-summary reads match their reference and exclude tier, page 
   assert.equal(summaryOfGetNodes(reply('second'), reference), summary);
   assert.equal(summaryOfGetNodes(reply('first'), reference.replace('/0/', '/1/')), null);
 });
+
+test('review 8: a promoted tagged group makes the deletion copy not done instead of uploading it', async () => {
+  const { outerCaseNodes } = await import('../gold/gap-metamorphic.ts');
+  const { gold, dir } = goldOf();
+  writeFileSync(join(dir, 'a.json'), JSON.stringify({ root: group('r', '合成', { data: { id: 'g', text: '组', resource: ['Configuration'], priority: 1 }, children: [kase('a1', '甲', '成功', 'Functional')] }, kase('a2', '乙', '成功', 'Configuration')) }));
+  const scenario = build(gold as never);
+  const result = drive(scenario, file => {
+    const tree = JSON.parse(readFileSync(join(dir, 'work', file), 'utf8'));
+    const missing = tree.root.data.id === 'gap-doc1-c2' ? '缺 1 个模板类别：功能测试（functional）' : '24 个模板类别都已覆盖';
+    return `用例 ${outerCaseNodes(tree).length} 个；${missing}`;
+  });
+  const roots = result.names.map(file => String(JSON.parse(readFileSync(join(dir, 'work', file), 'utf8')).root.data.id));
+  assert.ok(!roots.includes('gap-doc1-d-functional'));
+  scenario.check([]); assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('前提不成立'))));
+});

@@ -302,6 +302,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
     const aMissingSet = new Set(originalMissing);
     for (const category of allIds) {
       if (!aMissingSet.has(category)) continue;
+      if (unknown.length > 0) { f.push({ category, skipped: { reason: '单用例副本答案未知', detail: `缺少 ${unknown.length} 个基础单用例答案` } }); continue; }
       if (bMissing.has(category) || bKnown.length === 0) {
         f.push({ category, skipped: { reason: '没有单用例副本显示 X', detail: `B 的单用例副本都缺 ${category}` } });
         continue;

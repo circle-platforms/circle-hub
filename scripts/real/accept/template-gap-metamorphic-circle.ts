@@ -178,12 +178,12 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const dCopy: Pending = { key: `d-${d}-${entry.category}`, name: `d${d}-x-${entry.category}.json`, tree: entry.copy, kind: 'd', category: entry.category, contains, premise: premiseOf(entry.copy, contains.map(() => '')) };
         dCopy.premise = { ok: outerCaseIdsOf(entry.copy).length === contains.length, actual: outerCaseIdsOf(entry.copy).length, expected: contains.length };
         dCopy.premiseBroken = !dCopy.premise.ok;
-        list.push(dCopy);
+        if (dCopy.premiseBroken) unknown.set(dCopy.key, '前提不成立'); else list.push(dCopy);
         if (entry.restored !== undefined) {
           const eContains = [...contains, { document: d, caseId: owners[0]! }];
           const eCopy: Pending = { key: `e-${d}-${entry.category}`, name: `d${d}-r-${entry.category}.json`, tree: entry.restored, kind: 'e', category: entry.category, contains: eContains, premise: { ok: outerCaseIdsOf(entry.restored).length === eContains.length, actual: outerCaseIdsOf(entry.restored).length, expected: eContains.length } };
           eCopy.premiseBroken = !eCopy.premise.ok;
-          list.push(eCopy);
+          if (eCopy.premiseBroken) unknown.set(eCopy.key, '前提不成立'); else list.push(eCopy);
         }
       }
       for (const entry of plan.f) {
@@ -196,7 +196,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const contains = [...outerIds[d]!.filter((id) => misses.has(id)).map((caseId) => ({ document: d, caseId })), ...(bDoc !== d && bCase !== undefined ? [{ document: bDoc, caseId: bCase }] : [])];
         const fCopy: Pending = { key: `f-${d}-${entry.category}`, name: `d${d}-j-${entry.category}.json`, tree: entry.copy, kind: 'f', category: entry.category, contains, premise: { ok: outerCaseIdsOf(entry.copy).length === contains.length, actual: outerCaseIdsOf(entry.copy).length, expected: contains.length } };
         fCopy.premiseBroken = !fCopy.premise.ok;
-        list.push(fCopy);
+        if (fCopy.premiseBroken) unknown.set(fCopy.key, '前提不成立'); else list.push(fCopy);
       }
     }
     queue = list;
