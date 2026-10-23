@@ -61,7 +61,10 @@ host's private job environment. Illustrative schedules (script and log paths are
 
 ## Adding sources and limits
 
-For a subtree, copy a private export properties file and change its source and output mappings. Configure the triplet in
+For a subtree, copy a private export properties file and change its source and output mappings. Name the copy
+`$KNOWLEDGE_SYNC_DIR/export-<set>.properties`, where `<set>` is the triplet's first field, and set `okm.outDir` to the
+actual absolute path corresponding to `$KNOWLEDGE_SYNC_UPLOAD_DIR/<upload-directory>`, its second field; replace these
+placeholders with the host values rather than expecting the properties reader to expand environment variables. Configure the triplet in
 one of the four existing slots, replacing the previous set if appropriate. A fifth set requires adding a slot to
 `run_release_all.sh` and updating its variable documentation and synthetic test before deployment; setting
 `KNOWLEDGE_SYNC_RELEASE_SET_5` alone does not add a job to the fixed four-slot loop.
