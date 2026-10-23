@@ -245,17 +245,15 @@ describe('unversioned pack names in start_run inputs', () => {
   });
 });
 
-for (const [name, scenario] of [
-  ['regression-scope', regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], caseCommandsUnplaced: 0, unplaced: 4 })],
-  ['maintenance-sweep', maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [], caseCommandsUnplaced: 0, unplaced: 4 })],
-] as const) {
-  test(`${name} checks only the expected and actual unplaced numbers`, () => {
-    const check = (n: number) => scenario.check(turnsOf(`运行 run_synthetic 完成。有 ${n} 个用例没有解析出命令（未归位），没算进范围。`)).find((c) => c.name === '未归位用例数')!;
-    assert.equal(check(4).ok, true); assert.equal(check(7).ok, false);
-    assert.equal(check(4).expected, '4'); assert.equal(check(4).actual, '4');
-    assert.equal(scenario.check(turnsOf('运行 run_synthetic 完成。')).find((c) => c.name === '未归位用例数')?.ok, false);
-  });
-}
+for (const name of ['regression-scope', 'maintenance-sweep']) test(`${name} validates independent count before any client work and replays disclosure from run-show`, () => {
+  const base = { product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], cases: [], caseCommandsUnplaced: 0 };
+  const make = (value: unknown) => name === 'regression-scope' ? regressionScope(value as ScopeGold) : maintenanceSweep(value as SweepGold);
+  assert.throws(() => make({ ...base, caseCommandsUnplaced: undefined }), /caseCommandsUnplaced.*totals.unplaced/);
+  assert.throws(() => make({ ...base, caseCommandsUnplaced: -1 }), /caseCommandsUnplaced/);
+  assert.throws(() => make({ ...base, unplaced: 4 }), /unplacedRun/);
+  const check = (actual: number) => make({ ...base, unplaced: 4, unplacedRun: { run: { groups: [{ kind: name, message: `有 ${actual} 个用例没有解析出命令` }] } } }).check(turnsOf('运行 run_synthetic')).find((v) => v.name === '回放运行说明未归位用例数')!;
+  assert.equal(check(4).ok, true); assert.equal(check(7).ok, false); assert.equal(check(4).actual, '4');
+});
 
 for (const [name, make] of [
   ['regression-scope', () => regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], caseCommandsUnplaced: 4 })],

@@ -15,6 +15,8 @@ export interface ScopeCaseGold {
 export interface ScopeGold {
   /** Optional expected count in replay text containing the client disclosure sentence. */
   unplaced?: number;
+  /** Observed run-show JSON, only for replaying the optional stored-note disclosure check. */
+  unplacedRun?: unknown;
   /** Required totals.unplaced from independent case-commands gold for the later build. */
   caseCommandsUnplaced: number;
   product: string;
@@ -33,6 +35,7 @@ export interface ScopeGold {
 }
 
 export default function scenario(gold: ScopeGold): Scenario {
+  validateScopeGold(gold, 'regression-scope');
   const area = '回归范围';
   const pack = 'regression-scope';
   const readFacets = facetReader();
@@ -73,16 +76,16 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
         ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
       }));
-      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, text), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, disclosureMessage(gold.unplacedRun, 'regression-scope')), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
 }
 
 /** Only the measured numbers enter this check; no case identifiers or paths. */
-function unplacedChecks(area: string, expected: number | undefined, text: string): Check[] {
+export function unplacedChecks(area: string, expected: number | undefined, text: string): Check[] {
   if (expected === undefined) return [];
   const actual = [...new Set([...text.matchAll(/(\d+) 个用例没有解析出命令/g)].map((m) => Number(m[1])))];
-  return [{ area, name: '未归位用例数', expected: String(expected), actual: actual.length ? actual.join('、') : '未给出', ok: Number.isSafeInteger(expected) && expected >= 0 && actual.length === 1 && actual[0] === expected }];
+  return [{ area, name: '回放运行说明未归位用例数', expected: String(expected), actual: actual.length ? actual.join('、') : '未给出', ok: Number.isSafeInteger(expected) && expected >= 0 && actual.length === 1 && actual[0] === expected }];
 }
 
 /** The bound source, never a newly computed view: this is exactly the hint the projection validated. */
@@ -154,4 +157,18 @@ export function facetCountCheck(area: string, expected: number, turns: readonly 
 export function withoutFacetPages(turns: readonly LoggedTurn[]): LoggedTurn[] {
   const reference = boundFacetReference(resultTexts(turns));
   return turns.map((turn) => ({ ...turn, toolResults: turn.toolResults.filter((r) => !reference || !r.text.startsWith(`内容 ${reference}`)) }));
+}
+
+export function validateScopeGold(gold: { caseCommandsUnplaced: number; unplaced?: number; unplacedRun?: unknown }, pack: string): void {
+  if (!gold || !Number.isSafeInteger(gold.caseCommandsUnplaced) || gold.caseCommandsUnplaced < 0) throw new Error('caseCommandsUnplaced 必须是非负整数：从对应构建 case-commands.ts 输出复制 totals.unplaced，再启动客户端场景');
+  if (gold.unplaced !== undefined && (!Number.isSafeInteger(gold.unplaced) || gold.unplaced < 0)) throw new Error('unplaced 必须是非负整数');
+  if (gold.unplaced !== undefined && !disclosureMessage(gold.unplacedRun, pack)) throw new Error('可选 unplaced 是运行说明回放核对：同时提供 unplacedRun（circle-hub run show --json 原样导出）；实时场景只核 caseCommandsUnplaced，不从不可见的投影说明猜披露');
+}
+export function disclosureMessage(value: unknown, pack: string): string {
+  if (!value || typeof value !== 'object') return '';
+  const wrapper = value as { run?: unknown; groups?: unknown };
+  const run = wrapper.run && typeof wrapper.run === 'object' ? wrapper.run as { groups?: unknown } : wrapper;
+  if (!Array.isArray(run.groups)) return '';
+  const groups = run.groups.filter((v) => v && typeof v === 'object' && (v as { kind?: unknown }).kind === pack);
+  return groups.length === 1 && typeof groups[0].message === 'string' ? groups[0].message : '';
 }
