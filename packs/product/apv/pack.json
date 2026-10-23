@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "27005bc6cda2076d14f2af3797039f0f6399b8cfbf766fc2c621f1868710ed3b",
-      "size": 12939
+      "sha256": "d454e1c24a04f225f0f43d240b2fca753a4f88ef0c2fb8db4d2d46e55b6326c8",
+      "size": 13425
     },
     {
       "path": "functions/adoc/input.ts",
@@ -43,13 +43,13 @@
     },
     {
       "path": "functions/adoc/origins.ts",
-      "sha256": "16dc047847c9bc6f01cebced27386acc1549df236ef91de6653a0466d289c8b5",
-      "size": 11824
+      "sha256": "e403bb4b245277e56712d8a879de93602957e1a1e0e0cabf158458cfd8397f81",
+      "size": 12602
     },
     {
       "path": "functions/adoc/text.ts",
-      "sha256": "10c5fc7fc89f19a862ca20a1887a0187d314c764da73f50d9b9f5a45fa01b8cf",
-      "size": 8489
+      "sha256": "3e2a0cdd3b760d31b6cdab2fd1b5e085ae6187b9a0a9f8e44c1a23743fecf034",
+      "size": 8621
     },
     {
       "path": "functions/adoc/types.ts",

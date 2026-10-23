@@ -38,8 +38,9 @@ const TAGGED: ReadonlyArray<readonly [RegExp, string]> = [
   [/<i>([\s\S]*?)<\/i>/giu, '*$1*'],
 ];
 
-/** Tags that carry no words of their own: the wrapper goes, its text stays. */
-const WRAPPERS = /<\/?(?:span|sub|sup|a|abbr|cite|q|mark|small|big|font|u|s|strike|kbd|keycap|menuref|btn)\b[^>]*>/giu;
+/** Tags that carry no words of their own: the wrapper goes, its text stays. A hard break goes too — the engine puts its
+ * own line break after it, so the statement keeps the break and loses the tag. */
+const WRAPPERS = /<\/?(?:span|sub|sup|a|abbr|cite|q|mark|small|big|font|u|s|strike|kbd|keycap|menuref|btn|br|hr)\b[^>]*>/giu;
 
 /**
  * The engine's inline output (its presentation tags and character references) in the markdown-shaped inline spelling

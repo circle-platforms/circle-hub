@@ -47,6 +47,8 @@ const BULLET = /^\s*(?:\*+|-|\+|\.+|[0-9]+[.)]|[a-z][.)])\s+/i;
 /** The narrow marker rule the exact pass has always used; the folded pass uses BULLET and the other variants. */
 const EXACT_BULLET = /^\s*(?:\*+|[-.]|[0-9]+[.)]) +/;
 const CELL = /(?<!\\)\|/;
+/** A single-line comment (`// …`), which the reader drops; a `////` block-comment delimiter is not one. */
+const COMMENT_LINE = /^\s*\/\/(?!\/)/;
 
 /**
  * The spellings of one source line that can carry the text of a block of this context: the line itself and the line
@@ -165,6 +167,17 @@ export function verifyOrigin(
       let walked = at;
       for (const line of expected) {
         while (walked < mapped.length && !visible.has(walked)) walked++;
+        // A single-line comment is not content: the reader drops it, so a block's lines can sit on either side of one and
+        // the block cites two ranges. A `////` block comment is not stepped over line by line, and a line that IS the
+        // expected text — a comment line inside a verbatim listing — is never skipped.
+        while (
+          walked < mapped.length &&
+          COMMENT_LINE.test(mapped[walked]!.text) &&
+          !lineMatches(kind, line, mapped[walked]!.text, expand, folded)
+        ) {
+          walked++;
+          while (walked < mapped.length && !visible.has(walked)) walked++;
+        }
         if (walked >= mapped.length) break;
         const actual = mapped[walked];
         if (!lineMatches(kind, line, actual.text, expand, folded)) break;

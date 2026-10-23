@@ -375,9 +375,11 @@ third-party engine bytes and the sandbox import allowlist are unmodified.
 conditional directives; `line_map` keeps each line's original file and line number. `blocks` come only from the AST after
 condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path
 (each element with the index of that section's own block, so two sections with the same title stay two sections), the
-heading text as written in the verified source line (`heading`, attributes expanded), `raw`/`expanded` and, for a
-paragraph, the engine's own inline output of that text (`converted`); a block that is an example or sits inside one is
-marked (`example`), and a table keeps its head, body and foot cells. Nothing here promotes a listing, a bold run, a title
+heading text as written in the verified source line (`heading`, attributes expanded), `raw`/`expanded` and, for the
+contexts that keep their source text and carry inline content of their own (a paragraph, an admonition, a simple quote, a
+verse), the engine's own inline output of that text (`converted`, empty when the engine rendered child blocks instead); a
+block that is an example or sits inside one is marked (`example`), and a table keeps its head, body and foot cells with the
+line the engine reported for each. Nothing here promotes a listing, a bold run, a title
 or a role into a command rule.
 
 Every sourcemap line number is only a candidate. The locator tries a verbatim match in a fixed neighbourhood and then
@@ -415,6 +417,10 @@ block's line — the text is proven on every candidate, so only the position is 
 (`disambiguated`, `disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`);
 when none of them is at the cursor, nothing is cited. A cursor that reaches no candidate leaves the block uncited too.
 
+A single-line comment (`// …`) is not content: the reader drops it, so the walk steps over one when a block's lines sit on
+either side of it, and such a block cites two ranges and is mapped as two blocks. A `////` block-comment delimiter is not
+stepped over, and a comment line inside a verbatim listing is content and is matched like any other line.
+
 A block or cell that cannot be verified uniquely has no reference. `unverified_count` gives the total, `unverified` keeps
 the first 100 diagnostics and `unverified_examples_truncated` is true past that. The model keeps the empty `origins`
 explicitly, with the line the engine reported (`reportedLine`) and the reason (`unverifiedReason`): having a sourcemap is
@@ -445,16 +451,17 @@ block refuses the group.
 `DEFAULT_SANDBOX.producer` of `hub/knowledge/api.ts`: 120000 ms, memoryMb 1024, 128 MiB of JSON input, 64 MiB of output.
 The RSS watchdog's own 192 MiB of overhead was not raised and no configuration was changed.
 
-One group of 12 table-dense chapters, 3146572 bytes: wall clock 916 ms, parse and extract plus one serialization of the
-result 675.5 ms, peak process RSS 669584 KiB (653.9 MiB), heap at the end 247532808 bytes, output JSON 42004534 bytes.
+One group of 12 table-dense chapters, 3146572 bytes: wall clock 953 ms, parse and extract plus one serialization of the
+result 712.7 ms, peak process RSS 680928 KiB (664.8 MiB), heap at the end 247139008 bytes, output JSON 44145472 bytes.
 The RSS was sampled after the first serialization of the result, so it is not the kernel peak of the later transfer stage;
 the transfer stays under the original watchdog. This is one round of synthetic capacity evidence, not an SLA, and it does
 not show that real adoc of any syntax or size works.
 
-Step two added one engine call per paragraph (its own inline output, which the mapping reads instead of re-implementing
-AsciiDoc inline semantics), so a paragraph-dense group was measured as well, outside the sandbox: 12 chapters of 1200
-short paragraphs each with an attribute reference and inline marks, 1527895 bytes and 14400 paragraphs, 362 ms in one
-warm host process, 19028384 bytes of output JSON. Both runs stay far inside the producer profile; neither is an SLA.
+Step two added one engine call per paragraph, admonition, quote and verse (its own inline output, which the mapping reads
+instead of re-implementing AsciiDoc inline semantics), so a paragraph-dense group was measured as well, outside the
+sandbox: 12 chapters of 1200 short paragraphs each with an attribute reference and inline marks, 1527895 bytes and 14400
+paragraphs, 358 ms in one warm host process, 19575674 bytes of output JSON. Both runs stay far inside the producer
+profile; neither is an SLA.
 
 The tests run with `node --test --test-concurrency=1 "packs/product/apv/functions/adoc/*.test.ts"`. A cold process gives
 the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
@@ -528,10 +535,15 @@ accepted.
   the row's own cells are separated by a line that holds something else. A table with no cited row at all is reported the
   same way, and the reasons are kept apart ("no cell verified" is not said of a table whose cells verified). Nothing
   borrows another row's source line.
-- A statement carries what the source says under the family's own attribute set: every block gives its attribute-expanded
-  text, except a listing or literal block, which the engine leaves verbatim and which stays verbatim here. A brand word
-  written `{product}` therefore reaches each copy with that family's value, while the fragment stays on the verified
-  source line, which still holds the placeholder (K02 R[4]: a statement need not be the source verbatim).
+- A statement carries what the source says under the family's own attribute set, in the reader's spelling: every block
+  gives the engine's own inline output where there is one (a paragraph, an admonition, a simple quote, a verse — strong as
+  `**…**`, em as `*…*`, code as backticks, character references decoded, a hard break as the line break the engine already
+  puts after its `<br>`, so no tag reaches a statement), else its attribute-expanded text, except a listing or literal
+  block, which the engine leaves verbatim and which stays verbatim here. A brand word written `{product}` therefore reaches
+  each copy with that family's value, and an admonition or a quote gives K1 the same spelling a paragraph gives, so the
+  command literal a read-time link resolves (K05 R[2]) is recorded for them too. The fragment always stays on the verified
+  source line, which still holds the placeholder and the author's own marks (K02 R[4]: a statement need not be the source
+  verbatim).
 - Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
   bold runs joined by a slash also split), every line of a `[role=signature]` block, and a paragraph the author marked as
   one — bold and italic in AsciiDoc spelling (`*demo pool add* _<name>_ _[interval]_`), or one whole monospace line

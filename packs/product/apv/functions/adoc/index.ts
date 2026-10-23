@@ -37,16 +37,22 @@ function rawOf(node: AstNode, lines: MappedLine[]): string {
   return node.getSource?.() ?? node.text ?? '';
 }
 
+/** The contexts that keep their source text and carry inline content of their own: a paragraph, an admonition, a simple
+ * quote and a verse. A list item and a table cell already hand over converted text, a listing and a literal block are
+ * verbatim, and a container is never asked: its content would be rendered a second time. */
+const INLINE_CONTEXTS = new Set(['paragraph', 'admonition', 'quote', 'verse']);
+/** A block tag in the output means the node rendered children, not inline text: such an output is not used. */
+const RENDERED_CHILDREN = /<(?:div|p|table|ul|ol|dl|pre|h[1-6]|li|td|th)\b/i;
+
 /**
- * The engine's own inline output of a block whose source text it keeps (a paragraph), so the mapping can read the
- * author's markup as the engine converts it instead of re-implementing AsciiDoc inline semantics. The contexts that
- * already hand over converted text (a list item, a table cell) and the ones that are verbatim (a listing) are not
- * converted again, and a container is never asked: its content would be rendered a second time.
+ * The engine's own inline output of a block, so the mapping reads the author's markup as the engine converts it instead
+ * of re-implementing AsciiDoc inline semantics. '' when the context has none, or when the engine rendered child blocks
+ * rather than this block's own inline text.
  */
 async function inlineOutput(node: AstNode): Promise<string> {
-  if (node.context !== 'paragraph' || typeof node.getContent !== 'function') return '';
+  if (!INLINE_CONTEXTS.has(node.context) || typeof node.getContent !== 'function') return '';
   const value = await node.getContent();
-  return typeof value === 'string' ? value : '';
+  return typeof value === 'string' && !RENDERED_CHILDREN.test(value) ? value : '';
 }
 
 /** Whether a node carries text of its own, which a reader would lose when the block is not placed. */

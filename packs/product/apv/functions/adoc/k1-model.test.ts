@@ -275,3 +275,96 @@ test('a report names the chapter file and that file\'s own line, not the line of
     JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.path, entry.fragments])),
   );
 });
+
+test('a statement carries the reader spelling: a hard break is a line break, and an admonition or quote gives its words', async () => {
+  const out = await compile(
+    {
+      'main.adoc': [
+        '= Book',                              // 1
+        '',                                    // 2
+        '== 说明',                              // 3
+        '',                                    // 4
+        '第一行 +',                             // 5
+        '第二行。',                             // 6
+        '',                                    // 7
+        '[%hardbreaks]',                       // 8
+        '甲行',                                 // 9
+        '乙行',                                 // 10
+        '',                                    // 11
+        'NOTE: 执行 *demo pool add* 前先保存。',  // 12
+        '',                                    // 13
+        '[quote]',                             // 14
+        '执行 *demo pool del* 前先保存。',        // 15
+        '',                                    // 16
+      ].join('\n'),
+    },
+    'main.adoc',
+  );
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const statements = produced.entries.map((entry) => String(entry.statement));
+  assert.ok(statements.includes('第一行\n第二行。'), JSON.stringify(statements));
+  assert.ok(statements.includes('甲行\n乙行'), JSON.stringify(statements));
+  assert.ok(!statements.some((statement) => statement.includes('<br>')), JSON.stringify(statements));
+  assert.ok(!statements.some((statement) => statement.includes('<strong>')), JSON.stringify(statements));
+  // The same words in an admonition and in a quote give the same reader spelling as in a paragraph, so K1 records the
+  // command literal a read-time link resolves (K05 R[2]).
+  const note = produced.entries.find((entry) => String(entry.statement) === '执行 **demo pool add** 前先保存。');
+  assert.ok(note !== undefined, JSON.stringify(statements));
+  assert.deepEqual(note.data.command_literals, ['demo pool add']);
+  assert.equal(note.fragments[0]!.selector, 'l/12');
+  const quote = produced.entries.find((entry) => String(entry.statement) === '执行 **demo pool del** 前先保存。');
+  assert.ok(quote !== undefined, JSON.stringify(statements));
+  assert.deepEqual(quote.data.command_literals, ['demo pool del']);
+  assert.equal(quote.fragments[0]!.selector, 'l/15');
+  // The hard-broken paragraph still cites the two lines it was verified on, one fragment for both.
+  const broken = produced.entries.find((entry) => String(entry.statement) === '第一行\n第二行。');
+  assert.ok(broken !== undefined);
+  assert.equal(broken.fragments[0]!.selector, 'l/5-6');
+});
+
+test('a single-line comment inside a block is not content, and a comment inside a listing stays verbatim', async () => {
+  const out = await compile(
+    {
+      'main.adoc': [
+        '= Book',                 // 1
+        '',                       // 2
+        '== 说明',                 // 3
+        '',                       // 4
+        '第一行。',                // 5
+        '// 作者的注释',           // 6
+        '第二行。',                // 7
+        '',                       // 8
+        '----',                   // 9
+        'demo one',               // 10
+        '// 这不是注释，是内容',     // 11
+        '----',                   // 12
+        '',                       // 13
+      ].join('\n'),
+    },
+    'main.adoc',
+  );
+  const paragraph = out.model.blocks.find((block) => block.kind === 'paragraph');
+  assert.ok(paragraph !== undefined);
+  assert.deepEqual(paragraph.origins.map((origin) => origin.selector), ['l/5', 'l/7'], 'the reader drops the comment line, so the block cites the lines on either side');
+  assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
+  const listing = out.model.blocks.find((block) => block.kind === 'listing');
+  assert.ok(listing !== undefined);
+  assert.equal(listing.raw, 'demo one\n// 这不是注释，是内容', 'a listing is verbatim: its comment line is content');
+  assert.deepEqual(listing.origins.map((origin) => origin.selector), ['l/10-11']);
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(
+    produced.entries.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    [
+      ['第一行。', 'l/5'],
+      ['第二行。', 'l/7'],
+      ['demo one\n// 这不是注释，是内容', 'l/10-11'],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.fragments])),
+  );
+});
