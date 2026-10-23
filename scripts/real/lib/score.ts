@@ -229,7 +229,14 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       modelStatementRefutes: here.flatMap((s) => s.modelStatementRefutes),
       literalUnscored: here.some((s) => s.literalUnscored),
     };
-    const mechanical = merged.marks.length > 0;
+    const mechanical = entry.seen_by === 'mechanical' && nodes.every(node => {
+      const marks = at(node)?.marks ?? [];
+      if (entry.kind === 'delete_expected') return marks.includes('core.structure.required_empty');
+      if (entry.kind === 'duplicate') return marks.includes('core.structure.duplicate_key');
+      if (entry.kind === 'replace_command_word') return marks.some(code => code.startsWith('core.catalog.'));
+      const codes = options.literal?.cases.find(c => c.id === node)?.codes ?? [];
+      return codes.length > 0 && codes.every(code => marks.includes(code));
+    });
     const draft = merged.findings.length > 0;
     const verifyRecord = nodes.map((n) => verified.get(n)).find((v): v is NonNullable<typeof v> => v !== undefined);
     const vNew = verifyRecord?.newFindings.length !== undefined && verifyRecord.newFindings.length > 0;
@@ -347,7 +354,7 @@ export function aggregate(gold: readonly GoldEntry[], runs: readonly AggregateRu
   const kinds: KindAggregate[] = [...new Set(gold.map((g) => g.kind))].map((kind) => {
     const entries = gold.filter((g) => g.kind === kind && (g.deletedCases !== undefined || eligible.has(g.node) || !excluded.has(g.node)));
     const count = (channel: 'mechanical' | 'draft' | 'verify' | 'combined'): number =>
-      scores.reduce((sum, s) => sum + s.detections.filter((d) => d.entry.kind === kind && d[channel]).length, 0);
+      scores.reduce((sum, s) => sum + s.detections.filter((d) => d.entry.kind === kind && (channel !== 'mechanical' || d.entry.seen_by === 'mechanical') && d[channel]).length, 0);
     return {
       kind,
       title: KIND_TITLES[kind] ?? kind,

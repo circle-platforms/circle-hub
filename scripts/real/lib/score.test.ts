@@ -234,3 +234,13 @@ test('untouched catalog marks are counted per claim and explicitly have no indep
   assert.doesNotMatch(screen, /catalog-case|tag-case|core.catalog/);
   assert.match(render(score([], judged, { baseline: base })).join('\n'), /目录类标记还没有独立答案 2 条/);
 });
+
+test('review 2: an unrelated mark cannot detect a mechanical injection and judgment kinds receive no Hub credit', () => {
+  const gold = [entry({ seen_by: 'mechanical', kind: 'delete_expected' })];
+  const unrelated = result([item('c1', req('literal', [refute('case-review.tag_variant')], { terminal: 'violation', attribution: 'author_input' }))]);
+  assert.equal(score(gold, unrelated).detections[0].mechanical, false);
+  const duplicated = entry({ seen_by: 'mechanical', kind: 'duplicate', copy: 'copy' });
+  const half = result([item('c1', req('literal', [refute('core.structure.duplicate_key')], { terminal: 'violation', attribution: 'author_input' }))]);
+  assert.equal(score([duplicated], half).detections[0].mechanical, false);
+  assert.equal(score([entry({ kind: 'vague_expected' })], half).detections[0].mechanical, false);
+});
