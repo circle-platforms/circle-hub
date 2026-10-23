@@ -1,7 +1,7 @@
 // xlsx@1: bounded in-memory ZIP decoding and generic SpreadsheetML structure, with no workflow semantics.
 import { crc32, inflateRawSync } from 'node:zlib';
 import { ParseError, ParseEncodingError, ParseForbiddenError, ParseLimitError, ParseSyntaxError } from '../parser.ts';
-import { checkSize, effectiveLimits, mediaTypeEssence, nodesError, selectorCharsError, type Fragment, type ParsedDocument, type Parser, type ParseLimits, type ParseOptions } from '../parser.ts';
+import { checkSize, effectiveLimits, mediaTypeEssence, selectorCharsError, type Fragment, type ParsedDocument, type Parser, type ParseLimits, type ParseOptions } from '../parser.ts';
 import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from '../reference.ts';
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
@@ -765,8 +765,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   const add = (segments: string[], text: string, data: XlsxCell | XlsxModel['definedNames'][number]): void => {
     const selector = selectorOf(segments);
     selectorChars += selector.length;
-    if (selector.length > MAX_SELECTOR_LENGTH || selectorChars > limits.maxSelectorChars)
-      throw limitError('maxSelectorChars', Math.min(limits.maxSelectorChars, selector.length > MAX_SELECTOR_LENGTH ? MAX_SELECTOR_LENGTH : limits.maxSelectorChars), 'XLSX 定位字符超过配置上限');
+    if (selector.length > MAX_SELECTOR_LENGTH || selectorChars > limits.maxSelectorChars) {
+      const max = Math.min(limits.maxSelectorChars, selector.length > MAX_SELECTOR_LENGTH ? MAX_SELECTOR_LENGTH : limits.maxSelectorChars);
+      throw limitError('maxSelectorChars', max, selectorCharsError(KEY, max).message);
+    }
     fragments.set(selector, { selector, text, byteRange: null, data });
   };
   const sheetNameCounts = new Map<string, number>();

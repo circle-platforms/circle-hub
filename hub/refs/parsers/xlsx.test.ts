@@ -524,3 +524,9 @@ test('sheet metadata budget failures do not inherit the last worksheet row', () 
   const record = centralRecords(bytes)[2]!;
   assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /工作表结构/.test(e.message) && !/行 9/.test(e.message) && e.message.includes('成员 3') && e.offset === record.local);
 });
+
+test('XLSX selector budget messages retain the configured cap and the cause', () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${'x'.repeat(1000)}" sheetId="1" r:id="sheet"/></sheets></workbook>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData>${Array.from({ length: 200 }, (_, at) => `<row r="${at + 1}"><c r="A${at + 1}"><v>1</v></c></row>`).join('')}</sheetData></worksheet>`;
+  assert.throws(() => xlsxParser.parse(workbook({ book, sheet }), { maxSelectorChars: 150000 }), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars' && /150000.*名称或标题/.test(e.message) && /成员 5/.test(e.message));
+});
