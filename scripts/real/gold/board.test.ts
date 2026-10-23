@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { boardLocate } from './board-locate.ts';
 import { test } from 'node:test';
 import { boardGold } from './board.ts';
 import scenario from '../accept/quality-board.ts';
@@ -70,4 +71,18 @@ test('board CLI discloses document gaps and only counts and hashes on screen', a
     writeFileSync(join(dir, 'tree.json'), JSON.stringify([branch('10.8', '另一个合成模块', 'a')]));
     assert.equal(spawnSync(process.execPath, args, { encoding: 'utf8' }).stdout, run.stdout, 'renaming line/module must not change the screen digest');
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("board grouping follows the product pack's locator, not the case-location rule (four probes)", () => {
+  const probe = (labels: string[]): { line: string | null; module: string | null } => { const { line, module } = boardLocate(labels); return { line, module }; };
+  // A train under its line with a plain module: line 10.6, module kept even though the versions differ in kind.
+  assert.deepEqual(probe(['10.6', '10.6.1-R2', '合成模块']), { line: '10.6', module: '合成模块' });
+  // Words the case-location rule rejects still name modules here (the pack keeps them).
+  assert.deepEqual(probe(['10.6', '10.6.1-R2', 'Build工具']), { line: '10.6', module: 'Build工具' });
+  assert.deepEqual(probe(['10.6', '10.6.1-R2', '缺陷管理']), { line: '10.6', module: '缺陷管理' });
+  // The scan stops at the first train: a later line label never replaces the line.
+  assert.deepEqual(probe(['10.7', '10.7-R1', '合成模块', '10.8']), { line: '10.7', module: '合成模块' });
+  // White space inside a module name is squeezed.
+  assert.deepEqual(probe(['Web  UI']), { line: null, module: null }); // no train: no module either
+  assert.deepEqual(probe(['10.7', '10.7-R1', 'Web  UI']), { line: '10.7', module: 'Web UI' });
 });

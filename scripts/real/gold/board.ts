@@ -7,6 +7,7 @@ import type { BoardGold, BoardGroupGold } from '../accept/quality-board.ts';
 import { caseGold } from './cases.ts';
 import { locationsGold, lineKey } from './locations.ts';
 import { cleanDocId, loadCaseMaps, parseDocumentList } from './trace.ts';
+import { boardLocate } from './board-locate.ts';
 
 // Independent normalization over a copied declaration, never a pack-computed result.
 // Declaration source: packs/workflow/template-gap/functions/tags.ts and tables/template-v3.json; no computed results copied.
@@ -41,10 +42,14 @@ export function boardGold(options: { product: string; build: string; tree: unkno
   for (const map of options.maps) {
     const location = locations.find((l) => cleanDocId(l.document) === cleanDocId(map.document));
     if (!location) notInTree++;
+    // The board groups follow the product pack's own locate rule (README 177-180), not the case-location rule: the
+    // line is the nearest line label above the first train (a version mismatch is only a note there), and modules
+    // like Build工具/缺陷管理 stay modules.
+    const boardLocation = location === undefined ? null : boardLocate([location.title, ...location.ancestors].slice(1));
     let doc;
     try { doc = caseGold([map], { caseRule: options.caseRule }).documents[0]; }
     catch (error) { if (error instanceof Error && error.message.includes('的用例节点')) { noCases++; continue; } throw error; }
-    const label = `${location?.line ? lineKey(location.line) : 'unplaced'}/${location?.module || 'unplaced'}`;
+    const label = `${boardLocation?.line ? lineKey(boardLocation.line) : 'unplaced'}/${boardLocation?.module || 'unplaced'}`;
     const held = groups.get(label) ?? { label, cases: 0, missing: 0, vague: 0, negative: 0 };
     for (const c of doc.items) {
       if (options.types) {
