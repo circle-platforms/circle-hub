@@ -154,7 +154,7 @@ describe('main CLI', () => {
 
   test('returns 1 when page file does not exist', async () => {
     const code = await main(['--page', 'nonexistent-page.html', '--line', '10.6.1', '--out', 'out.json']);
-    assert.equal(code, 1);
+    assert.equal(code, 2);
   });
 });
 
@@ -193,4 +193,12 @@ test('rejects a lexical repository path even when its symlink points outside', (
   symlinkSync(tmpDir!, join(fake, 'outside'), 'dir');
   assert.throws(() => privatePath(join(fake, 'outside', 'outside-result.json')));
   assert.ok(base);
+});
+
+test('location review 11: read refusals identify the page ordinal without printing its path', async t => {
+  const screen: string[] = [];
+  t.mock.method(process.stderr, 'write', (value: string | Uint8Array) => { screen.push(String(value)); return true; });
+  const first = writeTemp('readable-page.html', SYNTHETIC_LISTING_HTML), missing = join(tmpDir!, 'private-source-name.html');
+  assert.equal(await main(['--page', first, '--page', missing, '--line', '10.8.1', '--out', join(tmpDir!, 'never-created.json')]), 2);
+  assert.match(screen.join(''), /第 2 个 --page.*读不到/); assert.ok(!screen.join('').includes('private-source-name'));
 });

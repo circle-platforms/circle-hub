@@ -1,8 +1,8 @@
 // Gold script: build candidates of one version line computed independently from the build site listing page.
 // Strictly independent by design — imports nothing from hub/ or packs/; the build naming, version line, and
 // based-on alias rules are re-implemented directly from packs/product/apv/README.md.
-//   node scripts/real/gold/builds.ts --page <listing.html> --line <versionLine> --out <gold.json>
-// The output JSON is an array of { name, family, base, released }.
+//   node scripts/real/gold/builds.ts --page <listing.html> [--page <listing.html> ...] --line <versionLine> --out <gold.json>
+// The output JSON is { line, candidates: [{ name, family, base, built, released }] }.
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
@@ -222,7 +222,7 @@ export async function main(argv: string[]): Promise<number> {
   let line: string | undefined, out: string | undefined;
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i], value = argv[i + 1];
-    if (!value || value.startsWith('--') || !['--page', '--line', '--out'].includes(flag)) { process.stderr.write('参数无效\n'); return 2; }
+    if (!value || value.startsWith('--') || !['--page', '--line', '--out'].includes(flag)) { process.stderr.write(`第 ${i / 2 + 1} 个参数无效；下一步只用 --page、--line、--out 并补齐参数值\n`); return 2; }
     if (flag === '--page') pages.push(value);
     else if (flag === '--line') line = value;
     else out = value;
@@ -231,14 +231,20 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write('用法：--page <页面> [--page <页面>] --line <版本线> --out <仓库外文件>\n');
     return 2;
   }
+  let pageIndex = 0, writing = false;
   try {
-    const candidates = parseBuildCandidates(pages.map(page => readFileSync(privatePath(page), 'utf8')), line.replace(/^v/i, ''));
+    const texts = pages.map((page, index) => { pageIndex = index + 1; return readFileSync(privatePath(page), 'utf8'); });
+    const candidates = parseBuildCandidates(texts, line.replace(/^v/i, ''));
+    writing = true;
     writePrivateJson(out, { line: lineKey(line.replace(/^v/i, '')), candidates } satisfies BuildsGold);
     process.stdout.write(`候选 ${candidates.length} 个，APV ${candidates.filter(c => c.family === 'APV').length}、NSAE ${candidates.filter(c => c.family === 'NSAE').length}、别名 ${candidates.filter(c => c.name !== c.base).length}、没有制作时间 ${candidates.filter(c => c.built === null).length}\n`);
     return 0;
-  } catch {
-    process.stderr.write('读取或写入失败：输入输出须在仓库外，输出不可覆盖\n');
-    return 1;
+  } catch (error) {
+    const inGit = error instanceof Error && error.message === '路径必须在 Git 仓库之外';
+    if (!writing) { process.stderr.write(`第 ${pageIndex} 个 --page ${inGit ? '在 Git 仓库里' : '读不到'}；下一步：由集成者补可读的仓库外列表页后重跑\n`); return 2; }
+    const code = (error as NodeJS.ErrnoException).code;
+    process.stderr.write(inGit ? '--out 在 Git 仓库里；下一步：改用仓库外的新文件\n' : code === 'EEXIST' ? '--out 已存在，拒绝覆盖；下一步：选择新输出文件\n' : '--out 写入失败；下一步：检查仓库外目标目录的权限并换新文件重跑\n');
+    return inGit ? 2 : 1;
   }
 }
 
