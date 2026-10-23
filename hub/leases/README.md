@@ -27,3 +27,6 @@ A projection's `lease_requests` carry an operation: `acquire` (the default, the 
 ## How it is tested
 
 `service.test.ts` runs on a temporary PostgreSQL (`hub/testing/postgres.ts`): 50 rounds of two connections acquiring one key (exactly one winner each round), all-or-nothing on a busy second key, prefix and TTL refusal touching nothing, take-over of an expired row (token increments, new lease identity), re-acquire of a released row, extend within and beyond the cumulative cap (holder, stranger, expired), view at several clock moments, force release with a reason, orphan reclaim, state across a new service object, and the action-record replay (the live rows equal the replayed state).
+
+租约动作的取值类型统一来自生成词表 `LeaseOp`；内部续租/释放共用路径使用其 `Extract` 子集，
+不另写租约操作轴。

@@ -387,3 +387,39 @@ read; results, run records and production results over the record limit; queries
    Deviations)? The engine keeps the Hub's facts and makes only the judgment requirements incomplete.
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
+
+### Standing obligations and current read tiers
+
+A standing obligation reads source bytes as its configuring administrator through
+`artifacts.source(..., { consumer: 'function' })`, just as an ordinary run uses the effective-tier source reader.
+It never uses `trustedBytes` or the first original's historical tier for pack checks. A withdrawn acceptance or a new
+credential finding therefore withholds the bytes on re-evaluation and makes the dependent check unknown.
+`standing-sources.test.ts` exercises an original from an earlier scanner, its accepted current scan and withdrawal with
+real temporary records, including the bytes actually delivered to the sandboxed check.
+
+## Concurrent submission subject construction
+
+Checks that use the same pure subject builder previously started another isolated process for each check, even when
+its function and JSON input were identical. The bounded sandbox pool then spent slots rebuilding the same item or run
+subject. The run-keyed submission lock remains unchanged: different runs enter independently, and identical submissions
+of one run still return the existing receipt without another validation action.
+
+Each evaluation of one submission and locked pack version now creates a separate subject-builder scope for the whole run
+and a short-lived scope for each item. A scope keys by function identity and SHA-256 of the exact JSON input bytes. It
+shares successful construction and in-flight construction, gives each check an independent structured clone of that same
+JSON result, and drops failures so a later check can retry. It never shares across items, submissions, versions or changed
+inputs, and never shares check outcomes. Item scopes are discarded when that item's checks finish. Sandbox isolation,
+limits, concurrency, MCP timeouts and existing acceptance assertions are unchanged.
+
+Synthetic measurements on two concurrent 67-item submissions, excluding setup and start_run: before, 410 isolated pack
+function starts and 11344 ms; after, 272 starts and 6794 ms. These are observed samples, not wall-clock test thresholds.
+The repeated item builder drops from 268 to 134 starts, the repeated whole-run builder from 6 to 2; the 134 item check-function calls
+and 2 run check-function calls still execute, as do the core interpreter checks. Auxiliary memory-poller processes are excluded from function counts. Tests use two runs,
+one item and two checks, separately for item and whole-run subjects: the original starts four builders instead of two.
+They also verify both checks execute, every submission receives its receipt, concurrent identical repeats return identical
+receipt bytes, and only one submission, result and validate action is stored per run. Unit tests cover input/function/scope
+separation, byte-preserving result copies, mutation isolation, an input snapshot and retries after construction failure.
+
+部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。
+
+整份提交因其他条目被拒绝时，回注 not_stored 优先保留该条目自身的准入拒绝及 skipped/补件动作，不用一般重交文案覆盖它。

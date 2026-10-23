@@ -1,3 +1,4 @@
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Synthetic impact views for the maintenance-sweep tests. Not a pack file.
 
 export const FROM_ROOT = 'ab'.repeat(32);
@@ -17,7 +18,7 @@ export interface CaseSpec {
 
 export interface ChangeSpec {
   path: string;
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
   before?: { [key: string]: unknown }[];
   after?: { [key: string]: unknown }[];
   behaviourBefore?: string[];

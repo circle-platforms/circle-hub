@@ -1,5 +1,5 @@
 // Types shared by the interpreters, runCheck and the public api.ts.
-import type { CheckTier } from '../../contracts/generated/vocabulary.ts';
+import type { CheckTier, FragmentRead } from '../../contracts/generated/vocabulary.ts';
 import type { CheckOutcome } from '../../contracts/src/tables.ts';
 import type { CatalogView } from './catalog/view.ts';
 
@@ -16,10 +16,10 @@ export interface SourceView {
   /** The fragment text a reference resolves to, or undefined when it is not bound to this run or not readable. */
   text(reference: string): string | undefined;
   /** Why a reference has no text, for the graded outcomes (quote@1): 'bound' never appears here — text() answered.
-   * 'not_bound' the source is not an input of this run (the model can fix the reference); 'no_fragment' the source is
+   * 'not_bound' is outside this run or cannot stand alone as grounds (unknown); 'no_fragment' the source is
    * bound but the selector resolves to nothing (fix the selector or the quote); anything else is genuinely unreadable
    * ('retain_only', 'too_large', 'unavailable'), an honest unknown. Absent on a plain view: unknown, as before. */
-  why?(reference: string): string;
+  why?(reference: string): FragmentRead;
 }
 
 export interface CheckContext {

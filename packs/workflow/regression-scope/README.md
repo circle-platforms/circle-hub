@@ -106,3 +106,7 @@ is committed.
 - **runs engine** (C05 R[0], T02): every check needs a refuting sample. This pack's refutations are invariants, not defects of a scope. Request: allow a check whose only honest outcomes are support and unknown to publish without a refutation.
 - **product pack** (`packs/product/apv` cases producer, not in this tree): confirm the case entry fields (`document`, `node`, `title`, `priority`, `negative`). Until that producer is committed, the real-reader end-to-end test stays a todo. Tests here use hand-built views.
 - **knowledge pack**: the impact view is served by the Hub's reader. This pack only parses `impact-view@1`.
+
+## 生成词表与包版本
+
+regression-scope@1.6.1 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。

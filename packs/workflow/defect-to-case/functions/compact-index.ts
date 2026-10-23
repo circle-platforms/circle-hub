@@ -26,6 +26,11 @@ export interface CompactCaseIndex {
   only: string[] | null;
   /** The source view's cut_keys, or keys at the per-key cap for legacy views. */
   cappedKeys: string[];
+  /** Requested keys absent from the source view, rather than explicitly present with no entries. */
+  missingKeys?: string[];
+  /** A source truncation can hide entire requested buckets. */
+  sourceTruncated?: boolean;
+  sourceSkipped?: number;
   notes: string[];
 }
 
@@ -105,7 +110,12 @@ export function buildCompactIndex(
   // A present field is authoritative, including an empty array. Malformed fields cannot fall back to the URI.
   const only = hasOnly ? onlyField ?? [] : onlyOfExternal(external);
   const sourceTruncated = model.truncated === true;
+  const returnedKeys = new Set(isRecord(model.keys) ? Object.keys(model.keys).map(normalizeCommand) : []);
   const sourceSkipped = typeof model.skipped === 'number' ? model.skipped : 0;
+  // Complete views omit requested keys with no cases; only incomplete coverage makes absence unknown.
+  const missingKeys = sourceTruncated || sourceSkipped > 0
+    ? only?.filter(key => !returnedKeys.has(normalizeCommand(key))) ?? []
+    : [];
 
   const rawEntries = isRecord(model.entries)
     ? Object.values(model.entries)
@@ -230,11 +240,8 @@ export function buildCompactIndex(
   }
 
   let dropped = total - keptCount;
-  // With narrowing (only=…), the listed keys' completeness is what the check needs; a truncated source beyond them
-  // does not block the decidable drafts. Without narrowing, the old rule stands: the whole view must be complete.
-  let complete = !invalidMetadata && (only !== null
-    ? dropped === 0 && sourceSkipped === 0
-    : dropped === 0 && !sourceTruncated && sourceSkipped === 0);
+  // Neither narrowing nor an explicit request proves that an omitted bucket is empty.
+  let complete = !invalidMetadata && dropped === 0 && !sourceTruncated && sourceSkipped === 0 && missingKeys.length === 0;
 
   const notes: string[] = [];
   if (!hasOnly || !hasCutKeys) {
@@ -259,6 +266,7 @@ export function buildCompactIndex(
       ? `源视图 cut_keys 标明 ${cappedKeys.length} 个键的条目被每键上限截断`
       : `${cappedKeys.length} 个键的条目正好列到每键上限 ${MAX_INDEX_PER_KEY} 个，可能被截断`);
   }
+  if (missingKeys.length > 0) notes.push(`源视图缺少请求的键：${missingKeys.join('、')}；请重新读取这些键`);
   if (sourceTruncated) {
     notes.push('源用例索引已被截断');
   }
@@ -273,6 +281,9 @@ export function buildCompactIndex(
     unplacedCommands,
     only,
     cappedKeys,
+    missingKeys,
+    sourceTruncated,
+    sourceSkipped,
     notes,
   };
 

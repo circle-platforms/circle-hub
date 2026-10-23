@@ -3,7 +3,7 @@
 // builds an invalid record fails loudly instead of storing it.
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
-import { recordDigest, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord } from '../../records/api.ts';
+import { recordDigest, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
 import { ENGINE_COMPONENT } from './deps.ts';
 import { isObject } from './util.ts';
 
@@ -142,7 +142,7 @@ export async function submissionsOf(store: RecordStore, run: string): Promise<St
   return all((cursor) => store.find<unknown>({ key: INDEX.submissionRun, value: run, kind: 'submission', limit: 500, cursor }));
 }
 
-export async function putResult(store: RecordStore, result: ValidationResult, createdAt: string): Promise<StoredRecord<ValidationResult>> {
+export async function putResult(store: RecordStore, result: ValidationResult, createdAt: string, tx?: Transaction): Promise<StoredRecord<ValidationResult>> {
   const body = ValidationResult.parse(result);
   return store.put<ValidationResult>({
     kind: 'validation_result',
@@ -154,7 +154,7 @@ export async function putResult(store: RecordStore, result: ValidationResult, cr
       { key: INDEX.resultRun, value: body.run },
       { key: INDEX.resultSubmission, value: `${body.run}:${body.submission}` },
     ],
-  });
+  }, tx);
 }
 
 export async function resultFor(store: RecordStore, run: string, submission: string): Promise<StoredRecord<ValidationResult> | null> {

@@ -1,3 +1,4 @@
+import type { Verdict } from '../../../../contracts/generated/vocabulary.ts';
 // The bed check (pack function, applies run): one outcome per item, recomputed from the frozen manifest, parameters
 // and lease view of the run's groups with the same code the projection used (functions/conclude.ts). Support when the
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
@@ -8,7 +9,7 @@ import { acquirePlan, extendPlan, factsFields, leaseRecord, manifestBeds, readPa
 const TIER = 'advisory' as const;
 
 interface CheckOutcome {
-  verdict: 'support' | 'refute' | 'unknown';
+  verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   reason?: string;
   code?: string;
   statement: string;

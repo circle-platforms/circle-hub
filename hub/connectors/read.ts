@@ -201,6 +201,9 @@ function valueOf(bytes: Uint8Array, mediaType: string): unknown {
 }
 
 export class ReadEngine {
+  // Only the internal reason channel consumed by administrator notes carries pack diagnostics.
+  // Never add them to read manifests, artifacts or the public tool answer.
+  readonly #adminReasons = new WeakMap<ConnectorError, string>();
   readonly #o: ReadEngineOptions;
   readonly #cache = new Map<string, CacheEntry>();
   #cacheBytes = 0;
@@ -530,7 +533,20 @@ export class ReadEngine {
         done = plan.done;
       }
       if (!done) throw new ConnectorError('PLAN_INVALID', `规划函数 ${MAX_READ_ROUNDS} 轮后仍没有给出 done`, { layer: 'plugin' });
-      if (original === null || !responses.has(original)) throw new ConnectorError('PLAN_INVALID', '规划没有给出原件请求（第一轮的第一个请求，或 original）', { layer: 'plugin' });
+      if (original === null || !responses.has(original)) {
+        const failed = new ConnectorError('PLAN_INVALID', '规划没有给出原件请求（第一轮的第一个请求，或 original）', { layer: 'plugin' });
+        // A terminal plan that sent nothing can explain its refusal through the existing projection error shape.
+        // No response is invented: this sentinel names no original, and no successful projection or artifact is accepted.
+        if (order.length === 0 && nestedOrder.length === 0 && read.project !== undefined) {
+          try {
+            const projected = await this.#project(runtime, read, subject, args, 'unavailable', views(), nestedViews());
+            if ('error' in projected) this.#adminReasons.set(failed, this.#o.redactor.text(`${projected.error.code}：${projected.error.message}`));
+          } catch (error) {
+            if (error instanceof ConnectorError) this.#adminReasons.set(failed, this.#adminReason(error));
+          }
+        }
+        throw failed;
+      }
       const first = responses.get(original)!;
       if (!first.view.ok || first.artifact === null) {
         const code: ConnectorErrorCode = isConnectorErrorCode(first.view.error?.code) ? first.view.error.code : 'SOURCE_MALFORMED';
@@ -679,10 +695,12 @@ export class ReadEngine {
       read: read.name,
       requests: entries.length,
       ...(failure === null ? {} : { code: failure.code }),
+      // A nested pack must not receive a diagnostic it could echo into public derived content.
+      ...(failure !== null && depth > 0 && this.#adminReasons.has(failure) ? { reason: this.#adminReason(failure) } : {}),
     });
     if (failure !== null || digest === null) {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
-      return { ok: false, external: subject.id, code: final.code, reason: this.#o.redactor.text(final.message), manifest: digest };
+      return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest };
     }
     return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta };
   }
@@ -814,8 +832,17 @@ export class ReadEngine {
       const reason = error instanceof SandboxError && typeof error.detail.reason === 'string' ? `，${error.detail.reason}` : '';
       const what = error instanceof SandboxError ? SANDBOX_ERRORS[error.code] : '函数调用无效';
       const failed: ConnectorErrorCode = kind === 'plan' ? 'FUNCTION_FAILED' : 'PROJECTION_FAILED';
-      throw new ConnectorError(failed, `系统包函数 ${ref.module} 失败（${code}${reason}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code } });
+      const failure = new ConnectorError(failed, `系统包函数 ${ref.module} 失败（${code}${reason}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code } });
+      if (error instanceof SandboxError && typeof error.detail.message === 'string' && error.detail.message.trim() !== '') {
+        this.#adminReasons.set(failure, this.#o.redactor.text(error.detail.message));
+      }
+      throw failure;
     }
+  }
+
+  #adminReason(error: ConnectorError): string {
+    const detail = this.#adminReasons.get(error);
+    return this.#o.redactor.text(`${error.message}${detail ? `；${detail}` : ''}`);
   }
 
   #view(route: string, path: string, query: Record<string, string>, exchange: HttpExchange & { json?: unknown; text?: string }, error: ConnectorError | null): ReadResponse {

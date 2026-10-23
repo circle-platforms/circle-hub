@@ -551,6 +551,41 @@
       ],
       "additionalProperties": false
     },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ranking",
+                  "selection",
+                  "score"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
     "instructions": {
       "type": "string",
       "description": "the pack procedure, plain text"

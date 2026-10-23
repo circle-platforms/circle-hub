@@ -21,22 +21,28 @@ export const quoteInterpreter = defineInterpreter({
         const text = getAt(selected.value, rule.text);
         const reference = getAt(selected.value, rule.reference);
         const pointer = joinPointer(selected.pointer, rule.text);
-        if (!text.found || typeof text.value !== 'string' || !reference.found || !isReferenceUri(reference.value)) {
-          outcomes.push(unknown(base, 'missing_input', `${selected.pointer} 的引文缺少原文或有效的引用`, { pointer: selected.pointer }));
+        if (!text.found || typeof text.value !== 'string' || !reference.found || typeof reference.value !== 'string') {
+          outcomes.push(unknown(base, 'missing_input', `${selected.pointer} 的引文缺少原文或有效的引用，请补写引文文字及引用后重交`, { pointer: selected.pointer }));
           continue;
         }
         const ref = reference.value;
+        if (!isReferenceUri(ref)) {
+          outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '引用写法不对，请使用 src:<摘要>、tree:<根>/<路径>@<条目> 或 rec:<记录>#/<字段>', { pointer, data: { quote: text.value, reference: ref, why: 'malformed' } }));
+          continue;
+        }
         const fragment = request.sources?.text(ref);
         if (fragment === undefined) {
-          // The graded view says why: not an input (the model can fix the reference) and no such fragment (fix the
-          // selector or the quote) are refutations; only genuinely unreadable sources stay unknown, honestly.
+          // Decision 36: permanent reference defects refute; withheld or temporarily unavailable bytes need evidence.
           const why = request.sources?.why?.(ref);
-          if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入，请改引本运行已绑定的输入（src:<摘要> 或 tree:<锁定根>/<路径>@<条目>）`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'not_groundable') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'entry_unaddressed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '知识条目不能单独作根据（B01 R[5]），请改写为 tree:<根>/<路径>@<条目>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'malformed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '引用写法不对，请使用 src:<摘要>、tree:<根>/<路径>@<条目> 或 rec:<记录>#/<字段>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
-          else if (why === 'retain_only') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件含凭据，原文不可读`, { pointer, grounds: [ref] }));
-          else if (why === 'too_large') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段超过大小上限`, { pointer, grounds: [ref] }));
-          else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件取不回`, { pointer, grounds: [ref] }));
-          else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 没有绑定到本次运行，无法核对引文`, { pointer, grounds: [ref] }));
+          else if (why === 'retain_only') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件含凭据，原文不可读；缺管理员接受这份来源的事实，请请求管理员接受，接受后自动重评`, { pointer, grounds: [ref] }));
+          else if (why === 'too_large') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段超过大小上限，请改引更小的片段`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件暂时取不回；缺该片段的可读原文，请重读后重评`, { pointer, grounds: [ref] }));
+          else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段尚未读到；缺片段原文，请重新读取并重评`, { pointer, grounds: [ref] }));
           continue;
         }
         const data = { quote: text.value, reference: ref };

@@ -175,8 +175,8 @@ tests compare the two answers byte for byte apart from the trace.
 
 **Record visibility by reference (R02).** Records decides `source_artifact` records for everyone, admins included
 (`Artifacts.canRead`: a read with a person's own credential, `visibility.admins: false`, is theirs alone, B02 R[3]). A
-`claim` of the knowledge candidate layer (schema `knowledge-candidate@1`, named in hub/knowledge's README) is its owner's
-alone, admins included (R02, K03 R[4]). Admins read every other record. A user reads the `run`, `submission`,
+knowledge-contribution record passes product and original-source read checks before any administrator branch. All
+other claims are ordinary admin-only records; the Hub has no private candidate layer. Admins read remaining records. A user reads the `run`, `submission`,
 `validation_result` and `action` records of a run `RunsService.getRun` lets them read (the run kinds of the runs engine);
 the run is the body's `run`, or for a submission runs kept as JSON text because its arguments were not canonical JSON,
 `received.run`. Nothing else (never `call_log`, `authorization` or other claims).
@@ -316,8 +316,8 @@ hub/platform's peer map). When the owner and the runtime role are the same, it m
 8. A `release.json` that exists but is not a release record refuses to start (a broken release must not look healthy).
 9. The tools read the arguments from the server's own parse of the body, never the SDK's validated copy, so the call log,
    the schema check and the runs service see the same object.
-10. The candidate layer is recognised by its schema id `knowledge-candidate@1` (named in hub/knowledge's README) rather
-    than by importing hub/knowledge, so that loading the server does not load the knowledge package.
+10. Contribution schema identifiers come from contracts. Every revision passes the product/source gate; an unsupported
+    revision fails closed rather than falling through to generic administrator access.
 11. **The server pages content by cursor.** Every text gets `paging: true`; a page cursor is bound to the canonical
     reference the content names and checked once the reference resolves (so a reference that does not resolve answers
     as it would without a cursor). The ranges and text@1 lines of a text without paging stay valid references.
@@ -381,7 +381,7 @@ an empty cursor read as none (reference and subtree); a stored-result lookup tha
 stands, no record named, the reason in the admin note); a production run's text (counts, per-requirement counts,
 problems, the whole result readable by reference), a production result the text cannot lay out (the minimal text, the
 reason in the admin note, the call logged as answered) and the evidence gaps of the engine's detail; a server without
-`runsDetail`; records by reference (admins and `admins: false`, the `received` submission shape, the candidate layer);
+`runsDetail`; records by reference (admins and `admins: false`, the `received` submission shape, the contribution layer);
 a refused batch with a duplicate id and a cancellation (nothing ingested, one line per request); notes cut in a
 surrogate pair or quoting NUL, and a note records refuse. `text.test.ts` and `budget.test.ts`: the texts of 5 to 3,000
 items through the real text functions (budget, facts first, the note, cursors, ranges, example calls), empty partitions,
@@ -458,9 +458,8 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
   Principal), so that `token revoke` could ask before revoking the operator token itself instead of saying so after
   (decision 17).
 - **knowledge**: (1) `builds` and `diffRoots` take no principal, so the server checks the reader's lines first; a
-  principal-aware variant (like `getNodes`) would keep the check in one place. (2) The server keeps `knowledge-candidate@1`
-  claims private to their owner, admins included, by that schema id (your README's request); tell the server if it
-  changes, or export it from a module that does not load the whole package.
+  principal-aware variant (like `getNodes`) would keep the check in one place. Contribution readers use the schema id
+  exported by contracts and filter through the knowledge layer.
 - **platform**: confirm the owner role of `serve --migrate-only`: the server uses the operating-system account's own role
   and grants `CIRCLE_HUB_DATABASE_USER`.
 - **records/contracts**: a protocol code for an upload over the size limit (already requested by records); the server
