@@ -307,7 +307,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         const [{ runtime, read }] = candidates;
         const outcome = await engine.top(runtime, read, subject, context);
         if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}`,...(outcome.retry?{retry:outcome.retry}:{}) };
-        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest };
+        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
         return { ok: false, id: shown, reason: `${failure.code}：${redactor.text(failure.message)}` };

@@ -214,7 +214,7 @@ export async function bindExpected(
       }
       const reference = `src:${chosen.artifact.body.sha256}`;
       if (out.sources.some((s) => s.reference === reference)) continue;
-      out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type, label: title ?? wanted.reason });
+      out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: title ?? wanted.reason });
     } catch (error) {
       miss(describe(error));
     }

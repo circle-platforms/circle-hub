@@ -941,6 +941,7 @@ function sourceEntry(s: SourceBinding, run: string): Entry {
     s.external && `外部对象 ${clip.field(s.external, CLIP.name, '外部对象编号的超出部分')}`,
     s.media_type && clip.field(s.media_type, CLIP.name, '媒体类型的超出部分'),
     s.label && clip.field(s.label, CLIP.name, '来源名称的超出部分'),
+    s.coverage?.complete===false && `读取覆盖 ${clip.field(coverageText(s.coverage)??'',CLIP.message,'读取覆盖说明的超出部分')}`,
   ].filter(Boolean);
   return clip.entry(`- ${labelOf('source_role', s.role)} ${s.reference}${parts.length > 0 ? `（${parts.join('，')}）` : ''}`);
 }

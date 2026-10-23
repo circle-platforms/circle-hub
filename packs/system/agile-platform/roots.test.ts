@@ -63,22 +63,21 @@ describe('the plan of agile:tree:roots', () => {
     assert.ok(rounds.every((r) => r.length <= ROOTS_IN_FLIGHT));
   });
 
-  test('ten roots and the listing pages fit the five rounds; roots beyond the limit are not read', () => {
+  test('every configured root and its listing pages are read before reporting completion', () => {
     const listing = Array.from({ length: 95 }, (_, i) => ({ id: String(9000 + i), label: `根 ${i}` }));
     const trees = Object.fromEntries(listing.map((r) => [r.id, [{ label: '目录', id: `f${r.id}`, cases: [`d${r.id}`], children: [{ label: `文档 ${r.id}`, id: `d${r.id}`, cases: [], children: [] }] }]]));
     const wide: Corpus = { ...corpus, listing, trees };
     const configured = listing.slice(83, 95).map((r) => r.id);
     const { rounds, responses } = runPlan(wide, { roots: configured });
     assert.ok(rounds.length <= MAX_READ_ROUNDS);
-    assert.ok(rounds.every((r) => r.length <= ROOTS_IN_FLIGHT));
     const keys = rounds.flat().map((r) => r.key);
-    assert.equal(keys.filter((k) => k.startsWith('subtree-')).length, MAX_ROOTS);
+    assert.equal(keys.filter((k) => k.startsWith('subtree-')).length, configured.length);
     const output = rootsProject({ external: { key: ROOTS_KEY }, settings: { roots: configured }, responses, original: 'page-1' });
     assert.ok(ReadProjectionOutput.safeParse(output).success);
     const content = contentOf(output);
-    assert.equal(content.complete, false);
-    assert.deepEqual(content.unread, configured.slice(MAX_ROOTS));
-    assert.deepEqual(content.roots.map((r) => r.title), configured.slice(0, MAX_ROOTS).map((id) => `根 ${Number(id) - 9000}`), 'titles found on pages 9 and 10');
+    assert.equal(content.complete, true);
+    assert.deepEqual(content.unread??[], []);
+    assert.deepEqual(content.roots.map((r) => r.title), configured.map((id) => `根 ${Number(id) - 9000}`), 'titles found on pages 9 and 10');
   });
 
   test('a configured root listed on page 12 still gets its title', () => {
@@ -118,7 +117,7 @@ describe('the plan of agile:tree:roots', () => {
         for (let round = 1; round <= MAX_READ_ROUNDS; round++) {
           const plan = rootsPlan({ round, external: { key: ROOTS_KEY }, settings, responses });
           assert.ok(ReadPlanOutput.safeParse(plan).success, JSON.stringify(plan).slice(0, 300));
-          assert.ok(plan.requests.length <= ROOTS_IN_FLIGHT);
+          assert.equal(plan.concurrency,ROOTS_IN_FLIGHT);
         }
         const out = rootsProject({ external: { key: ROOTS_KEY }, settings, responses, original: 'page-1' });
         assert.ok(ReadProjectionOutput.safeParse(out).success, JSON.stringify(out).slice(0, 300));

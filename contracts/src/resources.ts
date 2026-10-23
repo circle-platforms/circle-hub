@@ -719,6 +719,7 @@ export type ReadResponse = z.infer<typeof ReadResponse>;
 
 /** A read of another external object the planner asked for, served from the cache unless refreshed. */
 export const NestedRead = z.strictObject({
+  coverage:Coverage.optional(),
   ok: z.boolean(),
   revision: z.string().nullable(),
   cached: z.boolean(),
@@ -757,6 +758,7 @@ export const PlannedRequest = z
 export type PlannedRequest = z.infer<typeof PlannedRequest>;
 
 export const ReadPlanOutput = z.strictObject({
+  concurrency:z.number().int().min(1).max(MAX_READ_REQUESTS).optional().describe('Optional lower in-flight limit for this plan; the resource limit still applies'),
   requests: z.array(PlannedRequest).max(MAX_READ_REQUESTS),
   reads: z.array(z.strictObject({ external: ExternalObjectId, refresh: z.boolean().optional() })).max(MAX_NESTED_READS).optional(),
   done: z.boolean().describe('true: execute these requests and reads, then stop; false: call the planner again with their answers'),

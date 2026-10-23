@@ -201,7 +201,7 @@ export async function bindInputs(
       bytes: source.bytes,
       mediaType: source.mediaType,
       sha256: source.sha256,
-      binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType, ...(title !== null ? { label: title } : {}) },
+      binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType,...(read.coverage?{coverage:read.coverage}:{}), ...(title !== null ? { label: title } : {}) },
       external,
       meta,
       record: null,

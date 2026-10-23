@@ -118,7 +118,7 @@ export interface ExternalArtifact {
 export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage }
   | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {

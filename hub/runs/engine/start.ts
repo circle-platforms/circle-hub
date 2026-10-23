@@ -20,7 +20,7 @@ import { parseReference, recReference, resolveReference } from '../../refs/api.t
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
 import { evaluate, type Evaluation } from './evaluate.ts';
-import { factClaim, rootDigest, strongestRole } from './claims.ts';
+import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
@@ -670,6 +670,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
     }
     // Projection notes are advisory cross-item facts, never evidence satisfying a requirement.
     evaluation.result.cross_item.push({...factClaim({
+      coverage:sourceCoverage(run.sources,grounds),
       outcome:{verdict:'support',statement:note.data.message,grounds,...(note.data.data === undefined ? {} : {data:note.data.data})},
       rule:`${workflow.pack.id}.projection@${workflow.pack.version}`,judges:strongestRole(roles) ?? 'subject',
       overClaims:false,discrimination:false,bound:[runDigest, workflow.pack.digest, ...(run.root === undefined ? [] : [run.root]), ...grounds.flatMap(ref => {const digest = rootDigest(ref); return digest === null ? [] : [digest];})],

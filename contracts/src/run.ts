@@ -11,7 +11,7 @@ import {
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { Coverage, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
 import { ContextBuild } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
@@ -24,6 +24,7 @@ export type InputBinding = z.infer<typeof InputBinding>;
 
 /** A source bound to the run (P02), with the role it plays (A03). Inputs carry their slot; sources the pack bound itself carry none. */
 export const SourceBinding = z.strictObject({
+  coverage:Coverage.optional().describe('Observed coverage of the external read frozen with these bytes; absent on legacy bindings'),
   reference: ReferenceUri.describe('the bound bytes or fragment; read it with get_nodes'),
   role: SourceRoleSchema,
   slot: z.string().optional().describe('input slot the source came in through'),

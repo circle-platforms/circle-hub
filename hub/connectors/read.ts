@@ -18,6 +18,7 @@ import type { ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, PackHandle } from '../ports.ts';
 import type { Artifacts, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
+import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
@@ -81,6 +82,7 @@ export type ReadOutcome =
       /** The content artifact parsed (JSON) or as text; the original when there is none. */
       content: unknown;
       meta: unknown;
+      coverage:Coverage;
     }
   | { ok: false; external: string; code: ConnectorErrorCode; reason: string; manifest: string | null;retry?:ReadRetry };
 
@@ -539,7 +541,7 @@ export class ReadEngine {
       const cached = 'cached' in outcome && outcome.cached === true;
       nested.set(target.id, {
         view: outcome.ok
-          ? { ok: true, revision: outcome.revision, cached, content: outcome.content, meta: outcome.meta, reason: null }
+          ? { ok: true, coverage:outcome.coverage, revision: outcome.revision, cached, content: outcome.content, meta: outcome.meta, reason: null }
           : { ok: false, revision: null, cached: false, content: null, meta: null, reason: outcome.reason },
         manifest: outcome.manifest,
         artifacts: outcome.ok ? outcome.artifacts.map((a) => a.artifact) : [],
@@ -571,9 +573,13 @@ export class ReadEngine {
         nestedCount += plan.reads?.length ?? 0;
         if (requestCount > maxRequests) throw new ConnectorError('READ_LIMIT', `这次读取的请求超过 ${maxRequests} 个`, { layer: 'plugin', detail: { limit: maxRequests } });
         if (nestedCount > MAX_NESTED_READS) throw new ConnectorError('READ_LIMIT', `这次读取的嵌套读取超过 ${MAX_NESTED_READS} 个`, { layer: 'plugin' });
-        const settled = await Promise.allSettled([...(plan.reads ?? []).map(nestedRead), ...plan.requests.map((request) => send(request, round))]);
-        const fatal = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-        if (fatal !== undefined) throw fatal.reason;
+        const jobs=[...(plan.reads??[]).map(wanted=>()=>nestedRead(wanted)),...plan.requests.map(request=>()=>send(request,round))];
+        const width=plan.concurrency??Math.max(jobs.length,1);
+        for(let from=0;from<jobs.length;from+=width){
+          const settled=await Promise.allSettled(jobs.slice(from,from+width).map(job=>job()));
+          const fatal=settled.find((result):result is PromiseRejectedResult=>result.status==='rejected');
+          if(fatal!==undefined)throw fatal.reason;
+        }
         done = plan.done;
       }
       if (!done) throw new ConnectorError('PLAN_INVALID', `规划函数 ${MAX_READ_ROUNDS} 轮后仍没有给出 done`, { layer: 'plugin' });
@@ -599,7 +605,7 @@ export class ReadEngine {
       }
       artifacts = [{ name: 'original', artifact: first.artifact }];
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
-      complete = [...responses.values()].every((state) => state.view.ok);
+      complete = [...responses.values()].every((state) => state.view.ok) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
         const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews());
         if ('error' in projected) throw new ConnectorError('PROJECTION_FAILED', `投影函数报错 ${this.#o.redactor.text(projected.error.code)}：${this.#o.redactor.text(projected.error.message)}`, { layer: 'plugin' });
@@ -671,8 +677,10 @@ export class ReadEngine {
     }
 
     entries.sort((a, b) => a.round - b.round || order.indexOf(a.key) - order.indexOf(b.key) || Number(a.after_login) - Number(b.after_login));
-    const examined = [...responses.values()].filter((state) => state.view.ok).length;
-    const total = responses.size;
+    const examined = [...responses.values()].filter((state) => state.view.ok).length + [...nested.values()].filter(state=>state.view.ok).length;
+    const total = order.length + nestedOrder.length;
+    const incompleteNested=[...nested].filter(([,state])=>!state.view.ok || state.view.coverage?.complete===false).map(([external])=>external);
+    if(incompleteNested.length && !note)note=`嵌套来源尚未完整：${incompleteNested.slice(0,10).join('、')}；恢复失败来源后重读本对象，再确认完整范围`;
     const ok = failure === null;
     const manifest: ReadManifest = {
       action: 'read',
@@ -747,7 +755,7 @@ export class ReadEngine {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
       return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
-    return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta };
+    return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage };
   }
 
   /** A nested or top-level read of another object, from the cache unless refreshed or expired. */
@@ -801,6 +809,7 @@ export class ReadEngine {
   /** Keeps an outcome within the entry and byte bounds (sizes of its stored artifacts), oldest out first. */
   #remember(key: string, outcome: Extract<ReadOutcome, { ok: true }>): void {
     this.#forget(key);
+    if(!outcome.coverage.complete)return;
     const bytes = outcome.artifacts.reduce((sum, { artifact }) => sum + artifact.body.size, 0);
     const limit = this.#o.nestedCacheBytes ?? DEFAULT_CACHE_BYTES;
     if (bytes > limit) return;

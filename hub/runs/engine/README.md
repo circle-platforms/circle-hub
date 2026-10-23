@@ -545,3 +545,7 @@ effective read permissions, not a trusted byte bypass. Unexpected function-read 
 K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
+
+### 外部读取覆盖限定
+
+外部输入及包声明的预期来源把 coverage 冻结进 SourceBinding。主张构造按其对象位置、根据/精确值的根摘要和检查声明的 reads 选取对应覆盖；运行级检查还涵盖它判定的条目位置。依据未完整来源的事实或判断加生成词表的 partial，并保留 qualifier.coverage；生产投影说明使用同一规则。完整的无关来源不被别的部分来源牵连，旧运行也不因一次后续完整读而升级。合计仅使用已声明覆盖的观察；所依外部来源缺覆盖时不伪造 total，原始旧绑定仍可解析。start_run 文字直接披露部分来源的读取覆盖。

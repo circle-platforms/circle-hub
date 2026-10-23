@@ -15,7 +15,7 @@ import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
-import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
+import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
@@ -331,14 +331,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     return match ? match[1] : null;
   };
 
-  const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
-    if (check.reads === undefined) {
-      return { boundSources: {}, unreadSources: [] };
-    }
-    const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
+  const sourcesForReads=(check:CheckEntry)=>{
+    if(check.reads===undefined)return [];
     const roles = new Set(check.reads.roles);
     const types = check.reads.types !== undefined ? new Set(check.reads.types) : undefined;
-    const matchingSources = (run.sources ?? []).filter((s) => {
+    return (run.sources ?? []).filter((s) => {
       if (!roles.has(s.role)) return false;
       if (types !== undefined) {
         if (s.external === undefined) return false;
@@ -347,6 +344,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       }
       return true;
     });
+  };
+
+  const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
+    if (check.reads === undefined) {
+      return { boundSources: {}, unreadSources: [] };
+    }
+    const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
+    const matchingSources=sourcesForReads(check);
     const boundSources: Record<string, string> = {};
     const unreadSources: UnreadSource[] = [];
     for (const s of matchingSources) {
@@ -731,6 +736,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
                 ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence) } : {}),
                 marks: [...marksFor(t), ...writtenAlone],
                 sourceRole: strongestRole(ce.roles),
+                coverage:sourceCoverage(run.sources,[it.location,...ce.grounds,...ce.bound]),
                 grounds: ce.grounds,
                 resolutions: ce.resolutions,
                 bound: [...baseBound, ...ce.bound, ...contextBound, input.submissionDigest],
@@ -746,13 +752,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           factClaim({
             item: it.id,
             requirement: t.key,
+            coverage:sourceCoverage(run.sources,[it.location,...o.outcome.grounds,...sourcesForReads(check).map(s=>s.reference)]),
             outcome: o.outcome,
             rule: ruleOf(workflow, check),
             judges: o.judges,
             sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
             discrimination: t.requires_discrimination === true,
-            bound: [...baseBound, ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
+            bound: [...baseBound,...sourcesForReads(check).flatMap(source=>{const digest=rootDigest(source.reference);return digest?[digest]:[];}), ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
             premises: premisesOf(o.outcome, check, it.id),
           }),
         );
@@ -809,13 +816,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     factClaim({
       ...(o.item !== undefined && itemIds.has(o.item) ? { item: o.item } : {}),
       requirement,
+      coverage:sourceCoverage(run.sources,[...items.map(it=>it.location),...o.grounds,...sourcesForReads(check).map(s=>s.reference)]),
       outcome: o,
       rule: ruleOf(workflow, check),
       judges: check.judges,
       sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',
       discrimination: (requirementsOf.get(check.id) ?? []).some((t) => t.requires_discrimination === true),
-      bound: [...crossBound, ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],
+      bound: [...crossBound,...sourcesForReads(check).flatMap(source=>{const digest=rootDigest(source.reference);return digest?[digest]:[];}), ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],
       premises: premisesOf(o, check, o.item !== undefined && itemIds.has(o.item) ? o.item : null),
     });
   for (const t of runTemplates) {
@@ -856,6 +864,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           ...(independence !== null ? { independence: warrantIndependence(independence) } : {}),
           marks: [...(entry.nature === 'fact' ? (['unverified_submission'] as const) : []), ...(template ? marksFor(template) : [])],
           sourceRole: strongestRole(ce.roles),
+          coverage:sourceCoverage(run.sources,[...ce.grounds,...ce.bound]),
           grounds: ce.grounds,
           resolutions: ce.resolutions,
           bound: [...crossBound, ...ce.bound, input.submissionDigest],

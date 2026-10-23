@@ -196,6 +196,32 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "complete": {
+                "type": "boolean"
+              },
+              "examined": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "complete",
+              "examined"
+            ],
+            "additionalProperties": false
+          },
           "ok": {
             "type": "boolean"
           },
