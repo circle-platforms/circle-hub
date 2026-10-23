@@ -9,7 +9,7 @@
 每条一个提交，先写测试。
 
 - 分支和工作树：`gold-location`，目录 `circle-hub-gold-location`（依赖已装好）
-- 可以改的路径：`scripts/real/accept/case-location.ts`、`scripts/real/gold/builds.ts`、`scripts/real/hub-call.ts` 和它们的测试；新文件 `scripts/real/accept/location-tree.ts`、`scripts/real/accept/id-spot-check.ts` 和它们的测试。`scripts/real/gold/locations.ts`、`scripts/real/accept/location-index.ts` 只导入，不改。别的路径不动（定位包、产品包、`hub/`、`contracts/` 都不改）。
+- 可以改的路径：`scripts/real/accept/case-location.ts`、`scripts/real/gold/builds.ts`、`scripts/real/hub-call.ts` 和它们的测试，以及 `scripts/real/accept-circle.test.ts` 里 case-location 那一例（21–31 行）；新文件 `scripts/real/accept/location-tree.ts`、`scripts/real/accept/id-spot-check.ts` 和它们的测试。`scripts/real/gold/locations.ts`、`scripts/real/accept/location-index.ts` 只导入，不改。别的路径不动（定位包、产品包、`hub/`、`contracts/` 都不改）。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`）。另外：
   - 核对代码不导入 `hub/` 和 `packs/`；
   - 脚本在屏幕上只打印计数、sha256 和通过与否，不打印文档号、关联编号、构建名、版本线、火车、模块和标题；带值的明细只写进 `--out` 指的目录（0600，不覆盖，在仓库里的路径拒绝）；
@@ -24,7 +24,7 @@
    - 跑完打印一行：候选 N 个，APV a、NSAE b、别名 c、没有制作时间 d。不打印名字。
    - 测试：两份合成列表页，NSAE 页上的别名基于 APV 页上的构建；同一构建两页都有只留一份；打印的那行里没有构建名。
 2. **场景必须比构建候选**（`scripts/real/accept/case-location.ts`）。
-   - gold 里每份文档都要有 `buildCandidates`（第 1 条对它所在版本线的输出）。没有就记一项不符，不跳过（609–611、665 行）。原来“没有 buildCandidates 时行为不变”的测试（`case-location.test.ts` 29 行）改成不通过。
+   - gold 里每份文档都要有 `buildCandidates`（第 1 条对它所在版本线的输出）。没有就在 `check` 里记一项不符，不跳过（609–611、665 行），构造场景时也不抛错（`capability-scenarios.test.ts` 219 行不带候选构造这个场景，只调 respond）。原来“没有 buildCandidates 时行为不变”的测试（`case-location.test.ts` 29 行）和 `accept-circle.test.ts` 21–31 行那一例改成不通过。
    - 这份文档的候选只从它自己的主张读：位置写着“条目 <文档>，要求项 build_candidates”的那条（`hub/server/claims.ts` 23 行）。“另有 N 个”也只从这条陈述里取：333 行现在取整份回答里第一个“另有”，会读到关联编号的“另有”（`locate.ts` 433 行）。一行被分页切开（“接上页：第 n 行的前 m 个字符在上一页”，`hub/server/text.ts` 1251 行）先接回去。没有这条主张，或者它是未知，记不符。
    - 逐个比，顺序也比：候选总数、别名数；按 `orderGoldCandidates`（75 行）的顺序比前 12 个，每个比名称、名称族、基础构建（别名写“基于”，不是别名的不写）、制作时间（到分钟；没有时是“制作时间未知”）、发布状态（“已发布”和日期，或“未发布”）；“另有”等于总数减 12。文字写法见 `packs/workflow/case-location/functions/candidates.ts` 53–58、93 行。
    - 覆盖：全部文档比到的候选里，APV、NSAE 和别名都至少有一个，否则记不符。

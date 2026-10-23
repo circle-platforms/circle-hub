@@ -24,11 +24,11 @@
    - 优先级不是 1 到 3 的整数：`core.structure.type_mismatch`；
    - 同一路径下标题、步骤、期望结果和前置条件全都相同（按 NFKC 比，不分大小写，空白合并）：每一份都标 `core.structure.duplicate_key`。只是标题相同不算。
 
-   按标记认出的用例没有标签，也要算缺标签（`packs/workflow/case-review/README.md` 113–114 行）。码名取自 `contracts/codes.json` 4–7 行，测试读这个文件核对码名。读脑图、认用例用 `gold/cases.ts` 的 `parseMindMap` 和 `caseNodesOf`。它本身就是独立答案，不导入 `hub/`、`packs/` 的任何东西，所以用它不会让核对变成循环。`literal.ts` 自己也不导入这两处，测试读它的源码核对 import。没有唯一 `data.id` 的用例单独计数，不计分。
+   按标记认出的用例没有标签，也要算缺标签（`packs/workflow/case-review/README.md` 113–114 行）。码名取自 `contracts/codes.json` 4–7 行，测试读这个文件核对码名。读脑图、认用例用 `gold/cases.ts` 的 `parseMindMap` 和 `caseNodesOf`。它本身就是独立答案，不导入 `hub/`、`packs/` 的任何东西，所以用它不会让核对变成循环。`literal.ts` 自己也不导入这两处，测试读它的源码核对 import。`parseMindMap` 会滤掉空标签、把不是整数的优先级记成 null（`gold/cases.ts` 47–48 行），所以空标签和优先级的写法回到原始 JSON 的 `data.resource`、`data.priority` 判，照 `parseMindMap` 的次序走一遍对上节点。没有唯一 `data.id` 的用例单独计数，不计分：`literal` 里另有 `node_ids` 检查（`tables/structure-node-ids.json`），编号缺失或重复时也出 `core.structure.required_empty`、`duplicate_key`。
 
 3. **计分**（`lib/score.ts`）：
    - 模型的发现只数 `qualifier.nature` 是 `judgment` 的主张。现在 59–61 行把 `findings` 要求项里所有带码的主张都算进去，Hub 自己检查出的反驳也会被当成模型的发现。
-   - Hub 的标记改为读 `literal`、`catalog` 两个要求项里判定为 `refute` 的事实主张，每一处反驳都在里面（`hub/runs/engine/evaluate.ts` 663–679 行）。不要只看静态层那一个码，`hub/runs/engine/terminals.ts` 130–131 行只留了首要的那个。只数静态层带归责的要求项：反向用例上预期的反驳不带归责（同一文件 289–296 行），不算标记。
+   - Hub 的标记改为读 `literal`、`catalog` 两个要求项里判定为 `refute` 的事实主张，每一处反驳都在里面（`hub/runs/engine/evaluate.ts` 663–679 行）。不要只看静态层那一个码，`hub/runs/engine/terminals.ts` 130–131 行只留了首要的那个。只数静态层带归责的要求项：反向用例上预期的反驳不带归责（同一文件 289–296 行），不算标记。也只数 `qualifier.source_role` 是 `subject` 的反驳：`command_claims` 核的是模型说命令有没有（`packs/workflow/case-review/checks.json` 45–52 行，judges 是 `artifact_under_verification`），它的反驳不是 Hub 在文档上的标记。
    - 未注入的用例上，Hub 的标记和模型的发现分开列：
      - `core.structure.*` 按（用例，码）和第 2 条的独立答案比，分成三种：支持；误报，即 Hub 标了、独立答案没有；漏标。
      - 别的码（`case-review.tag_variant`、`core.catalog.*`）没有独立答案，只数总数，和其中未改动评审里没有的个数。
@@ -53,13 +53,14 @@
 5. **合成测试**：脑图、手册片段和运行结果都是编出来的；用得到版本线就用 10.6 以后的，地址用 192.0.2.0/24。
    - 注入：两类注入只改该改的节点，源文件不变；上面列的每种拒绝各有一个反例；每条标准答案都有 `kind`。
    - 独立答案：
-     - 五种字面问题各有正例和反例；
+     - 五种字面问题各有正例和反例，含空标签和写成小数、字符串的优先级；
      - 重复的判法：大小写、全半角、空白不同仍算重复，路径或步骤不同不算；
      - 标记用例缺标签；`tagged` 规则下标记用例不是用例；
      - 没有唯一编号的用例单列；
      - 源码不导入 `hub/`、`packs/`。
    - 计分：
      - `findings` 要求项里 Hub 的反驳不算模型的发现；
+     - `command_claims` 对模型陈述的反驳不算 Hub 的标记；
      - 一个用例有两处反驳，两个码都在；预期的反驳不算；
      - 支持、误报、漏标各一例；
      - 复核的新增、证实、只被推翻各一例；
@@ -90,7 +91,7 @@
 1. 架构 6b 的“没改过的部分不多标”按页面的读法：未注入用例上 Hub 的标记要和独立答案一致，多标的算误报，少标的算漏标。
 2. 含糊期望先不做成评审包的 Hub 检查：含糊词表现在在产品包里，而且是作者自拟、待所有者定。这一件里 `vague_expected` 只算模型看得见的。以后由产品包把词表作为目录提供给工作流包，记为待办。
 3. 期望和手册、规格冲突的 Hub 检查，要先在知识树里有结构化的取值域（模型的事），这一件只做模型看得见的那一半。
-4. 未注入用例上目录类标记的独立答案，由“用例→命令”的独立抽取那一件（`gold-case-commands`）提供，这一件不另做。
+4. （2026-10-23 更正）未注入用例上目录类标记（`core.catalog.*`）的独立答案，`gold-case-commands` 给不了：它只给用例的命令路径，不给命令行和参数。这一件里这类标记照实按条数报，记为“还没有独立答案”；另开一件，照 `scripts/real/gold/command-diff.ts` 的办法自己解析命令树，核对模型引用的那些命令行，由集成者排期。
 5. 模型在未注入用例上的发现准不准，由所有者抽看；驱动把逐条明细写到仓库外，集成者把抽看的结论记进进度页。
 6. 三次度量都在决定 7 的授权里：初评用千问，复核用 GLM，GLM 的密钥照现在的读法（待定第 11 项）。
 7. 文档由集成者挑：要有一条用例的命令在手册里写了取值范围或缺省值，并且避开嵌套结构，免得两边数法不同。

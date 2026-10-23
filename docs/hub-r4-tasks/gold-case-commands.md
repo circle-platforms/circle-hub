@@ -8,7 +8,7 @@
 - 步骤要不要也扫，所有者还没定（`docs/hub-r4-tasks/agile-case-index.md` 74 行）。这一件不改索引：相等只按标题和上面的标签判，和索引一样；步骤只另量一个数给所有者。
 
 - 分支和工作树：`gold-case-commands`，目录 `circle-hub-gold-case-commands`（依赖已装好）
-- 可以改的路径：新文件 `scripts/real/gold/case-commands.ts`、`scripts/real/accept/command-index.ts` 和它们的测试；`scripts/real/accept/` 的 `scope-cases.ts`、`regression-scope.ts`、`maintenance-sweep.ts`，`scripts/real/accept-circle.ts`，和它们的测试（含 `capability-scenarios.test.ts`）；`packs/workflow/regression-scope/**`、`packs/workflow/maintenance-sweep/**`。`scripts/real/gold/cases.ts`、`command-diff.ts` 和 `tests/fixtures/case-index/**` 只导入、不改。别的路径不动（`packs/product/apv/**`、`hub/**`、`contracts/**` 有别的分支在改）。
+- 可以改的路径：新文件 `scripts/real/gold/case-commands.ts`、`scripts/real/accept/command-index.ts` 和它们的测试；`scripts/real/accept/` 的 `scope-cases.ts`、`regression-scope.ts`、`maintenance-sweep.ts`，`scripts/real/accept-circle.ts`，和它们的测试（含 `capability-scenarios.test.ts`）；`packs/workflow/regression-scope/**`、`packs/workflow/maintenance-sweep/**`。`scripts/real/gold/cases.ts`、`command-diff.ts` 和 `tests/fixtures/case-index/**` 只导入、不改。别的路径不动（`packs/product/apv/**`、`hub/**`、`contracts/**` 有别的分支在改）。这两个包 core-fixes 也在改（生成的取值换掉手写的：两包的 `functions/check.ts`、`view.ts`、`scope.ts` 或 `sweep.ts`、`pack-files.ts` 和 `pack.json` 到 1.6.1，新加 `functions/generated/vocabulary.ts`）：第 4、5 步等它合并后，从合并后的 `hub-redesign` 开始做；第 1–3、6 步可以先做。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`）。每步一个提交。两个新脚本不导入 `hub/`、`packs/` 的任何东西；取命令的规则照 README 的文字写，不看 `packs/product/apv/functions` 的代码。
 - 验证：`npx tsc --noEmit`；`node --test --test-concurrency=1` 对 `scripts/real/**`、`packs/workflow/regression-scope/**`、`packs/workflow/maintenance-sweep/**`；两包各跑 `node packs/workflow/<包>/pack-files.ts --check`。
 
@@ -17,19 +17,20 @@
 1. **从原始脑图取命令**：`scripts/real/gold/case-commands.ts`，`--tree <该构建的命令树.xml> (--map <文件>:<文档编号> … | --maps <清单>) --out <gold.json>`，清单每行一个 `<文件>:<文档编号>`。
    - 认用例用 `gold/cases.ts` 的 `parseMindMap`、`caseNodesOf`，完整命令路径用 `gold/command-diff.ts` 的 `parseTree`（item 的路径才是命令，菜单前缀不是）。这两个本身是独立的 gold，不导入 `hub/`、`packs/`，用例数和命令差都已和 Hub 逐项对上；借它们读文件格式，不会变成拿 Hub 核 Hub。取命令这一段新写，不借 `regression-doc.ts`（没有缩写，切词也不同）。
    - 扫的文字和索引一样：用例标题和它上面的每个标签（含根节点），每段单独扫，路径取并集。
-   - 规则照 `packs/product/apv/README.md` 212–226 行：
+   - 规则照 `packs/product/apv/README.md` 172–176 行（短语怎样起止、什么不算命令）和 212–226 行：
      - 全角字母数字转半角，Unicode 空白和零宽字符转空格，竖向换行算行尾，不做完整 NFKC；
-     - 命令词是连续的 ASCII 字母、数字、`-`、`_`；汉字、全角标点、句读、引号括号和行尾处断开；粘在命令前的列表序号（`1.`、`2）`）去掉；
+     - 命令词是连续的 ASCII 字母、数字、`-`、`_`；短语从某条命令开头的词起，到汉字、全角标点、句读、行尾或闭合的引号括号处断开，引号和反引号里的取到闭合处；粘在命令前的列表序号（`1.`、`2）`）去掉；
+     - 不收散文：英文停用词或占位词（`xxx`）截回命令头；前面是英文词时只留命令头；单独一个词只在引号里、或是夹在汉字里的完整命令头而且后面没写“命令”时才算。停用词表 gold 自己列（README 只说“英文停用词”）；
      - 每个词的位置找最长的完整命令，不分大小写；一个词可以是它那一层唯一的前缀（至少两个字母，大写写法至少三个），靠缩写得到的命令至少两个词，首词缩写不收英文短词（gold 自己列一张小表）；树里没有的 `no <命令>` 归到它撤销的命令；
      - 命令后面的词算参数，到断开处为止，或者遇到另一条至少两个词的命令。
    - 编号：`data.id` 在这份文档的用例里唯一的，键是 `<文档>:<id>`；重复或缺失的标为不比较，只计数。Hub 的位置键和 `#k` 键（`@` 开头或 `#<数字>` 结尾）也不比较。文档编号去掉 `agile:case:`、`agile:mindmap:` 前缀。
    - 输出：命令树字节的 SHA-256；每个用例的键、能不能比、解析出的路径（排好序，每条带 `abbreviated`、`via_no` 两个布尔值和词数），步骤（用例下面带子节点的子节点，嵌套用例除外）里解析出的路径（只作测量）；合计。
-   - 测试：汉字紧贴命令；内层词和首词的缩写，两个大写字母、单独的缩写、有歧义的前缀都不算；`no` 的两种情形；列表序号；全角、不换行空格、零宽字符；行尾断开；参数里夹着另一条两个词的命令；不是命令的分组标签（命令前缀、`IPv4`、带缺陷号的标题）；编号重复的不比较；嵌套用例拿到外层标题的命令；读不了的文件、坏的 XML 退出码非 0；4,000 条命令、2 万个用例几秒内跑完。再拿 `tests/fixtures/case-index/table.ts` 的手写真值逐行跑（树是 `catalog.ts` 的 `commandTreeXml(CATALOG_A)`，这两个文件不导入任何代码）：对不上的行在测试里列成已知差异，每行写原因，不改表。
+   - 测试：汉字紧贴命令；内层词和首词的缩写，两个大写字母、单独的缩写、有歧义的前缀都不算；`no` 的两种情形；列表序号；全角、不换行空格、零宽字符；行尾断开；停用词和占位词截回命令头，英文语境只留命令头，单独一个词在引号里、夹在汉字里、后面写了“命令”三种情形；参数里夹着另一条两个词的命令；不是命令的分组标签（命令前缀、`IPv4`、带缺陷号的标题）；编号重复的不比较；嵌套用例拿到外层标题的命令；读不了的文件、坏的 XML 退出码非 0；4,000 条命令、2 万个用例几秒内跑完。再拿 `tests/fixtures/case-index/table.ts` 的手写真值逐行跑（树是 `catalog.ts` 的 `commandTreeXml(CATALOG_A)`，这两个文件不导入任何代码）：对不上的行在测试里列成已知差异，每行写原因，不改表。
 2. **和 Hub 的索引视图比**：`scripts/real/accept/command-index.ts`，`--gold <gold.json> --index <视图.json> [--index …] [--out <报告.json>]`。视图是 `knowledge:index:<产品>:<构建>?kind=case&key=document&fields=commands,document,node` 的导出，大构建按 `only=` 分几份。
    - 条目的路径取自它的树引用（`tree:<根><路径>@<摘要>`，未归位的在 `/`），一个用例的条目合起来是 Hub 的命令集合；和条目里 `data.commands` 对不上的另计。
-   - 有一份 `truncated` 为真、`cut_keys` 不空，或者几份的根不同：判“输入不全”，不判相等。
+   - 有一份 `truncated` 为真、`cut_keys` 不空、`skipped` 不是 0（`contracts/src/views.ts` 136 行：这时缺的键是未知，A05 R[0]），或者几份的根不同：判“输入不全”，不判相等。
    - 屏幕上只有计数、摘要和判定，不出现编号和命令路径：两边都有、只在 gold、只在 Hub 的文档和用例，不比较的用例；命令集合相等、不等的用例；只在 gold 的路径（其中缩写、`no`、单词命令各多少），只在 Hub 的路径；未归位（gold、Hub、两边都、只有 gold、只有 Hub）；步骤测量（Hub 未归位的用例里，步骤能解析出命令的个数，不进判定）；两边“用例 → 命令集合”表的 SHA-256；末行 `判定：相等`、`判定：不相等` 或 `判定：输入不全`，相等才退出码 0。逐个用例的差异只写进 `--out`。
-   - 测试：相等；只在一边的文档、用例、路径；两种未归位不一致；条目和 `data.commands` 对不上；截断、`cut_keys`、根不同；分几份导出和一份的结果相同；屏幕输出里没有编号和路径。
+   - 测试：相等；只在一边的文档、用例、路径；两种未归位不一致；条目和 `data.commands` 对不上；截断、`cut_keys`、`skipped`、根不同；分几份导出和一份的结果相同；屏幕输出里没有编号和路径。
 3. **条目核对的用例一侧换成 gold**（`scripts/real/accept/scope-cases.ts`）：
    - 加 `--later-cases`、`--earlier-cases`（第 1 步在两个构建上各跑一次的输出，各用自己的命令树）。给了就不要 `--later-nodes`、`--earlier-nodes`：期望的回归范围是后一构建里命令落在新增或修改路径上的用例，期望的维护巡检是前一构建里命令落在删除或修改路径上的用例；不比较的用例两边都去掉，只报个数。
    - 两种方式都改成屏幕上只有计数、每张差异表的 SHA-256 和判定，条目编号只写进新加的 `--out`（现在 260–322 行会把最多 50 个编号打到屏幕上）。
@@ -58,7 +59,7 @@
 2. `node scripts/real/gold/case-commands.ts --tree <后一构建.xml> --maps <清单> --out <临时目录>/later.json`，前一构建同样。
 3. `node scripts/real/accept/command-index.ts --gold <临时目录>/later.json --index <视图> … --out <临时目录>/later-index.json`，前一构建同样。屏幕上只有第 2 步列的计数、两个摘要和判定行；两边的未归位数就是重新量出的结果。
 4. `node scripts/real/accept/scope-cases.ts --diff <命令差.json> --later-cases <later.json> --earlier-cases <earlier.json> --regression-run <回归.json> --maintenance-run <巡检.json> --out <临时目录>/scope.json`：计数、摘要、判定。
-5. 两包 1.7.0 发布后，`node scripts/real/accept-circle.ts --scenario scripts/real/accept/regression-scope.ts --gold <gold.json> --out <仓库外目录>`，巡检同样；gold 的 `unplaced` 填第 3 步 Hub 一侧的数。屏幕上只有汇总行。
+5. 两包 1.7.0 发布后，`HUB_REAL_TOKEN=… node scripts/real/accept-circle.ts --scenario scripts/real/accept/regression-scope.ts --gold <gold.json> --out <仓库外目录>`，巡检同样；gold 的 `unplaced` 填第 3 步 Hub 一侧的数。屏幕上只有汇总行。
 
 完成后在终端里回报：提交号、测试数量、第 1 步对不上手写真值的行和原因、有没有要模型加轴的取值、没做完或拿不准的地方。
 

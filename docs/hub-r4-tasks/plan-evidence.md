@@ -9,9 +9,9 @@
 - 分层：平台不导入 records（`hub/platform/README.md` 176 行）。所以钥匙丢失分两半：钥匙串和备份那一半进 `rehearse.ts`，密钥库和重新导入那一半写成 server 一侧的测试。
 
 - 分支和工作树：`plan-evidence`，目录 `circle-hub-plan-evidence`（依赖已装好）
-- 可以改的路径：`hub/server/cli-admin.ts`；`hub/server/assemble/` 下的新文件 `env-file.ts`、`vault.ts` 的提示、`cli-admin.test.ts`、README（提示改了以后跟着变的断言照改）；`hub/platform/rehearse.ts`、`rehearse.test.ts`、`cli.ts` 里 `rehearse` 的输出、`README.md`；`packs/system/plm/**`；`packs/workflow/case-review/**`（`packs.test.ts` 除外，core-fixes 在改）；新文件 `scripts/real/gold/plm-build.ts`、`scripts/real/smoke-connectors.ts` 和它们的测试；`tests/acceptance/` 里因为多了一个要求项而变的断言。`contracts/`、`hub/runs/engine/`、`hub/rules/`、`hub/connectors/`、`packs/product/apv/` 不动，缺什么先回报。
-- 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`）。每条一个提交。要用钥匙串的地方只用临时钥匙串文件（建法照 `hub/platform/keychain.test.ts` 489–496 行），服务名用一次性的，不用部署的 `circle-hub`；每个 `security` 调用都要点名这个文件（照 `hub/platform/test-support.ts` 33 行的 guard）；不经平台的 `key` 命令（它用默认钥匙串）。合成构建名用 10.6 以后的版本线，地址用 192.0.2.0/24。取值只用 `contracts/generated` 的类型，包函数里用 `import type`。
-- 验证：`npx tsc --noEmit`；`node --test --test-concurrency=1` 对 `hub/server/assemble/*.test.ts`、`hub/platform/rehearse.test.ts`、`hub/platform/cli.test.ts`、`packs/system/plm/**/*.test.ts`、`packs/workflow/case-review*/**/*.test.ts`、`scripts/real/**/*.test.ts`；`npm run test:acceptance`。
+- 可以改的路径：`hub/server/cli-admin.ts`；`hub/server/assemble/` 下的新文件 `env-file.ts`、`vault.ts` 的提示、`cli-admin.test.ts`、README（提示改了以后跟着变的断言照改）；`hub/platform/rehearse.ts`、`rehearse.test.ts`、`cli.ts` 里 `rehearse` 的输出、`README.md`；`packs/system/plm/**`（gold-trace 第 5 条也改这个包，先后和版本号由集成者定）；`packs/workflow/case-review/**`（`packs.test.ts` 除外；core-fixes 还改了这个包的 `pack.json`、`README.md`、`functions/expected-sources.ts`，加了生成的词表，第 5 条等它合并以后在它之上做）；新文件 `scripts/real/gold/plm-build.ts`、`scripts/real/smoke-connectors.ts` 和它们的测试；`tests/acceptance/` 里因为多了一个要求项而变的断言。`contracts/`、`hub/runs/engine/`、`hub/rules/`、`hub/connectors/`、`packs/product/apv/` 不动，缺什么先回报。
+- 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`）。每条一个提交。要用钥匙串的地方只用临时钥匙串文件（建法照 `hub/platform/keychain.test.ts` 489–496 行），服务名用一次性的，不用部署的 `circle-hub`；每个 `security` 调用都要点名这个文件（照 `hub/platform/test-support.ts` 33 行的 guard）；不经平台的 `key` 命令（它用默认钥匙串）。合成构建名用 10.6 以后的版本线，地址用 192.0.2.0/24。取值只用 `contracts/generated` 的类型，包函数里用 `import type`；运行时要整组取值的，照 core-fixes 给包生成 `functions/generated/vocabulary.ts` 的办法（它合并以后；登记要改 `tools/gen-contracts.ts`，先回报）。
+- 验证：`npx tsc --noEmit`；`node packs/workflow/case-review/packaging.ts check plm case-review`；`node --test --test-concurrency=1` 对 `hub/server/assemble/*.test.ts`、`hub/platform/rehearse.test.ts`、`hub/platform/cli.test.ts`、`packs/system/plm/**/*.test.ts`、`packs/workflow/case-review*/**/*.test.ts`、`scripts/real/**/*.test.ts`；`npm run test:acceptance`。
 
 ## 要做的
 
@@ -45,14 +45,14 @@
 4. **PLM 系统包按名字读构建列表**（`packs/system/plm/system.json` 125–131 行）。
    - `plm:builds` 的键多一种写法：这条线的各个名字，各自 URI 编码后用 `+` 连接。改成规划函数（`functions/plm.ts` 加 `buildsPlan`、`buildsProject`，`max_requests: 2`）：数字键照旧只读这个产品的构建列表；名字键先读产品列表，产品名按 `/` 拆开（NFKC、去首尾空白、大小写折叠）后含有每个名字的产品正好一个，才读它的构建列表，没有或不止一个就不读。依据：这条线的产品记录名字里列出两族名字（`docs/hub-r4-architecture.md` 156 行；合成桩照这样写，`hub/connectors/testing/plm.ts` 19 行）。
    - content：`{ product: {id, name} | null, product_resolution, builds: [{ name }] }`。`product_resolution` 用词表轴 `resolution` 的值（`contracts/generated/vocabulary.ts` 12 行：已解析、有歧义、未解析）；构建名取每项的 `name`（合成夹具的形状，`tests/fixtures/plm/index.ts` 43–49 行）。
-   - 版本 1.1.0，改 README，`node packs/workflow/case-review/packaging.ts sign plm`。
+   - 升小版本（gold-trace 第 5 条也升这个包，版本号接在先合并的那件后面），改 README，`node packs/workflow/case-review/packaging.ts sign plm`。
    - 测试（`plm.test.ts`，合成应答写在测试里，不改 `tests/fixtures/plm` 现有的值）：数字键；名字解析到一个产品；一个也没有；两个产品都列出这些名字；构建列表为空。
 
-5. **case-review 的 PLM 构建核对**。
+5. **case-review 的 PLM 构建核对**（等 core-fixes 合并以后，在它之上做）。
    - 期望来源（`functions/expected.ts` 42 行一带）：运行有锁定构建、有产品名时加一条 `plm:builds:<名字>+<名字>`，角色 expected，理由写“核对锁定构建在 PLM 里有没有；只作记录，不挡评审，不作评审的根据”。
    - 新要求项 `plm_build`：target run，fact，static，`required: false`（`contracts/src/pack.ts` 145 行：只有门禁型运行要求必需项满足），bookkeeping。新检查 `plm_build`：包内函数，`reads: { roles: ["expected"], types: ["plm:builds"] }`（照 `packs/workflow/traceability/checks.json` 9 行），applies run，subject 只取 `context.build`，judges expected（先例 `packs/workflow/case-review-report/checks.json` 12 行），tier advisory。
    - 判定：构建列表里和锁定构建同名（NFKC、去首尾空白后逐字相等）的条数。1 条支持；0 条反驳 `case-review.plm_build_none`；多于 1 条反驳 `case-review.plm_build_not_unique`；data 写 `resolution`（同上的轴）和条数，根据是那份来源的 `src:` 引用。没有锁定构建、PLM 没绑上或在 `unread_sources` 里、产品没解析出来，都记未知（缺输入），说明写是哪一种。不提发布状态。
-   - 码写进 `tables/codes.json`；样例：正例找到，反例没有、不唯一（`testing/samples.ts write`）；SKILL.md 加一句：这一项 Hub 自己核对，模型不填，PLM 构建列表不是评审证据；README 写明这条记录要到第一次提交以后才有（评审包不在 start_run 时算事实）；版本 1.1.0；`packaging.ts sign case-review`。
+   - 码写进 `tables/codes.json`；样例：正例找到，反例没有、不唯一（`testing/samples.ts write`）；SKILL.md 加一句：这一项 Hub 自己核对，模型不填，PLM 构建列表不是评审证据；README 写明这条记录要到第一次提交以后才有（评审包不在 start_run 时算事实）；升小版本，接在 core-fixes 的 1.0.4 后面；`packaging.ts sign case-review`。
    - 测试：检查函数和期望来源，上面每种情形一例；用 `hub/server/testing-real.ts`（真实的包和引擎、PLM 桩、临时 PostgreSQL）跑一次评审，提交以后这个要求项的结论和合成答案一致；`tests/acceptance` 里因为多了一个要求项变的断言照实改，不放宽。
    - `packs.test.ts` 不改，它的发布检查（55 行：每个检查都要有正例和反例）和词表扫描（98 行）要照样通过。引擎要是在评审运行里不给运行级事实要求项结论，停下回报，不改 `hub/runs/engine`。
 
@@ -76,7 +76,7 @@
 
 ## 集成者之后跑
 
-合并、发布、部署以后，在这台 Mac 上做，结果记进进度：
+合并、发布、部署以后，在这台 Mac 上做，结果记进进度（只记计数和一致与否，不记路径）：
 
 1. 导入凭据（部署的 Hub），先加 `--dry-run` 跑一遍：
    ```
@@ -84,11 +84,11 @@
    ```
    屏幕上只有键名、找到或没有、长度和写入行。不导入模型密钥。
 2. 第 12 步演练（演练数据根、本机回环）：
-   - `circle-hub rehearse`：行数、对象、权限和钥匙串那一行，核对一致；
+   - `circle-hub rehearse`：行数、对象、权限和钥匙串那一行，核对一致；演练根的路径不记；
    - `node --test --test-concurrency=1 hub/server/assemble/cli-admin.test.ts`：钥匙丢失两遍都通过，macOS 上跳过 0；
-   - `node --test --test-concurrency=1 hub/platform/deploy-system.test.ts hub/platform/service.test.ts hub/platform/lifecycle.test.ts hub/config/config.test.ts tests/acceptance/17-hub-restart.test.ts`：切换失败回滚（`deploy-system.test.ts` 188 行）、重启恢复（`service.test.ts` 17 行、场景 17）、只监听本机（`lifecycle.test.ts` 54 行、`config.test.ts` 125 行），记计数。这些测试里 launchctl 是假的：服务标签固定（`hub/platform/settings.ts` 35 行），真跑会顶掉在用的服务，记录里照写；
+   - `node --test --test-concurrency=1 hub/platform/deploy-system.test.ts hub/platform/service.test.ts hub/platform/lifecycle.test.ts hub/config/config.test.ts tests/acceptance/17-hub-restart.test.ts`：切换失败回滚（`deploy-system.test.ts` 188 行）、重启恢复（`service.test.ts` 17 行、场景 17）、只监听本机（数据库只有本机套接字，`lifecycle.test.ts` 54 行；Hub 只收回环地址，`config.test.ts` 125 行），记计数。这些测试里 launchctl 是假的：服务标签固定（`hub/platform/settings.ts` 35 行），真跑会顶掉在用的服务，记录里照写；
    - 部署的 Hub 只读看一眼监听（`lsof -nP -iTCP -sTCP:LISTEN` 里 Hub 进程那几行）：只有 127.0.0.1，只记地址和端口。
-3. PLM 构建核对：发布 plm 1.1.0 和 case-review 1.1.0，`circle-hub resource update <PLM 资源> --system-pack plm`；用所有者选的构建开一次评审（第 15 步）、提交一次，`run show <运行> --json` 存到 Git 之外；`resource read <PLM 资源> products all` 和 `resource read <PLM 资源> builds <名字>+<名字>`，两份原件用 `original export` 导出；然后：
+3. PLM 构建核对：发布 plm 和 case-review 的新版本，`circle-hub resource update <PLM 资源> --system-pack plm`；用所有者选的构建经真实客户端开一次评审、提交一次（第 15 步：`HUB_REAL_TOKEN=<令牌> node scripts/real/review-circle.ts --endpoint-from circle --prompt <评审提示> --out <目录> --name <标签>`，运行号取 `<标签>.calls.jsonl` 里 `start_run` 那一行），`run show <运行> --json` 存到 Git 之外；`resource read <PLM 资源> products all` 和 `resource read <PLM 资源> builds <名字>+<名字>`，两份原件用 `original export` 导出；然后：
    ```
    node scripts/real/gold/plm-build.ts --products <文件> --builds <文件> --names <名字>+<名字> --build <构建名> --hub <run show 的 JSON>
    ```
