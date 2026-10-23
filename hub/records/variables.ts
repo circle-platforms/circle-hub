@@ -120,7 +120,7 @@ export class RecordVariables {
         if (!parsed.success)
             throw new VariableError(parsed.error.issues[0].message);
         const text = canonicalize(value);
-        const token = (v: unknown): boolean => typeof v === 'string' ? v.length >= 16 && !/\s/u.test(v) && /[A-Z]/.test(v) && /[a-z]/.test(v) && /\d/.test(v) : Array.isArray(v) ? v.some(token) : v !== null && typeof v === 'object' ? Object.values(v).some(token) : false;
+        const token = (v: unknown): boolean => typeof v === 'string' ? v.length >= 16 && !/\s/u.test(v) && /[A-Z]/.test(v) && /[a-z]/.test(v) && /\d/.test(v) : Array.isArray(v) ? v.some(token) : v !== null && typeof v === 'object' ? Object.entries(v).some(([key,value])=>token(key)||token(value)) : false;
         if (!options.notSecret && (scanForCredentials(Buffer.from(text)).findings.length || token(value)))
             throw new VariableError('值像是凭据：用 circle-hub secret set；确实不是时显式给 --not-secret');
         const note = validateChangeReason(reason + (options.notSecret ? '；已确认不是密钥（--not-secret）' : ''));
