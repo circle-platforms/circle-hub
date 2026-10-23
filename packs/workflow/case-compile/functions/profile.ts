@@ -39,6 +39,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (header.length !== FORMAT.header_columns || header.some((v) => !oneLine(v)) || new Set(header).size !== header.length) issue('/workbook/header', '表头必须是九个不同的非空单行文字');
   const closing = Array.isArray(workbook.closing_row) ? workbook.closing_row : [];
   if (closing.length !== FORMAT.header_columns || closing.some((v) => typeof v !== 'string' || v !== '' && !oneLine(v)) || !closing.some((v) => v !== '')) issue('/workbook/closing_row', '收尾行必须是九格文字，至少一格非空');
+  if(closing.slice(4).some(v=>v!=='')||closing[2]!==''&&(typeof closing[2]!=='string'||!/^[0-9]+$/.test(closing[2])||!Number.isSafeInteger(Number(closing[2]))||Number(closing[2])===1))problems.push({pointer:'/workbook/closing_row',message:'收尾行 E–I 必须为空，C 只能为空或不等于 1 的安全非负整数',fix:'管理员按 runtime-profile@1 修正收尾行后重新发布'});
   if (typeof workbook.autoid_pattern === 'string') {
     try { if (!workbook.autoid_pattern.startsWith('^') || !workbook.autoid_pattern.endsWith('$') || workbook.autoid_pattern.length > 200) throw new Error(); new RegExp(workbook.autoid_pattern, 'u'); } catch { issue('/workbook/autoid_pattern', '用例号形状必须是有首尾锚点的正则表达式，至多 200 字符'); }
   }
