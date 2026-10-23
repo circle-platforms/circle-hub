@@ -160,8 +160,11 @@ describe('main CLI', () => {
 
 describe('multiple listing pages and private output', () => {
   test('merges families before resolving cross-page alias chains and deduplicates names', async t => {
-    const first = 'Rel_APV_10_8_1_11 (build on 2026-08-01 10:00:00 ):\n<BLOCKQUOTE><A href="command_tree.xml">tree</A></BLOCKQUOTE>\nRel_NSAE_10_8_1_12 (build on unknown ): based on Rel_APV_10_8_1_11';
-    const second = 'Rel_NSAE_10_8_1_13 (build on 2026-08-02 10:00:00 ): based on Rel_NSAE_10_8_1_12\n' + first;
+    const first = 'Rel_APV_10_8_1_11 (build on 2026-08-01 10:00:00 ):\n<BLOCKQUOTE><A href="command_tree.xml">tree</A></BLOCKQUOTE>';
+    const second = 'Rel_NSAE_10_8_1_12 (build on unknown ): based on Rel_APV_10_8_1_11\nRel_NSAE_10_8_1_13 (build on 2026-08-02 10:00:00 ): based on Rel_NSAE_10_8_1_12';
+    assert.equal(parseBuildCandidates([first], '10.8.1').length, 1);
+    assert.equal(parseBuildCandidates([first, first, second], '10.8.1').length, 3, 'duplicate pages do not duplicate builds');
+    assert.notEqual(parseBuildCandidates([second], '10.8.1').length, parseBuildCandidates([first, second], '10.8.1').length, 'the last page alone must not satisfy the two-page fixture');
     const page1 = writeTemp('family-one.html', first), page2 = writeTemp('family-two.html', second);
     const out = join(tmpDir!, 'multi.json');
     const screen: string[] = [];
