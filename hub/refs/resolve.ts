@@ -1,7 +1,6 @@
-// Resolution (B03 R[0], R[1]; B02 F[5], R[4]): re-verifies the digest and the reader's permission, locates the fragment
-// with the named parser and returns its text, or an unresolved result. Missing and forbidden give the same neutral
-// SOURCE_UNAVAILABLE; the real reason goes only to the admin diagnostics callback, and whether the Hub could check at
-// all goes to the internal caller in a field the reader never sees.
+// Resolution rechecks bytes and permission. Null permission answers remain neutral; reader and integrity faults
+// have distinct recovery codes. Internal reasons let the boundary record unfinished work instead of refusing it.
+import { IntegrityError } from '../records/api.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { labelOf, type PermissionRole, type ProducerKind, type ReadTier, type Reason, type ReferenceScheme } from '../../contracts/generated/vocabulary.ts';
 import type { RecordEnvelope } from '../../contracts/src/records.ts';
@@ -82,6 +81,8 @@ export interface ResolveDiagnostic {
 }
 
 export interface ResolveContext {
+  /** Enable bounded retries for service callers without their own read retry boundary. */
+  retryReads?: boolean;
   reader: ReaderIdentity;
   /** The clock validity re-reads judge against (B01 R[3]); absent, the wall clock. */
   now?: () => Date;
@@ -125,14 +126,14 @@ export type UncheckedReason = Extract<Reason, 'check_error' | 'integrity_unprove
 export type Unresolved = {
   resolved: false;
   reference: string;
-  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED'>;
+  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'>;
   message: string;
   fix: string;
   /**
    * Internal: set when the answer says nothing about the reference because the Hub could not check it (a reader that
    * failed or is missing: check_error; stored bytes or a record that do not hash to the digest: integrity_unproven).
-   * The caller then records unknown with this reason instead of refusing the submission (T03 R[3]). Not enumerable,
-   * so JSON and object spread leave it out and the reader-facing payload is the same as for an absent source.
+   * The caller records unfinished work with this reason instead of refusing the submission (T03 R[3]). Not enumerable,
+   * so JSON and object spread leave it out; the public code and recovery instructions distinguish the fault.
    */
   readonly reason?: UncheckedReason;
 };
@@ -177,7 +178,10 @@ export function fragmentDigest(fragment: Pick<Fragment, 'text'>): string {
 }
 
 function unavailable(reference: string, reason?: UncheckedReason): Unresolved {
-  const result: Unresolved = { resolved: false, reference, code: 'SOURCE_UNAVAILABLE', message: UNAVAILABLE_MESSAGE, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix };
+  const code = reason === 'integrity_unproven' ? 'SOURCE_INTEGRITY_UNPROVEN' : reason === 'check_error' ? 'SOURCE_RETRYABLE' : 'SOURCE_UNAVAILABLE';
+  const next = new Date(Date.now() + 1000).toISOString();
+  const message = reason === 'integrity_unproven' ? '缺少经摘要核验的原件；请管理员从备份恢复后重读' : reason === 'check_error' ? `缺少本次来源读取结果；下一次重读时间 ${next}，按原引用重读` : UNAVAILABLE_MESSAGE;
+  const result: Unresolved = { resolved: false, reference, code, message, fix: PROTOCOL_CODES[code].fix };
   if (reason !== undefined) Object.defineProperty(result, 'reason', { value: reason, enumerable: false });
   return result;
 }
@@ -221,18 +225,20 @@ function visibility(tier: ReadTier, consumer: ProducerKind, text: string | null,
   return { readable: false, text: null, summary: null, note: labelOf('validity_status', 'credential_unreadable') };
 }
 
-async function settle<T>(read: () => Promise<T | null> | T | null): Promise<{ value: T | null; error: unknown }> {
-  try {
-    return { value: await read(), error: null };
-  } catch (error) {
-    return { value: null, error };
+async function settle<T>(read: () => Promise<T | null> | T | null, retry = false): Promise<{ value: T | null; error: unknown }> {
+  for (let attempt = 0; ; attempt++) {
+    try { return { value: await read(), error: null }; }
+    catch (error) {
+      if (error instanceof IntegrityError || attempt === (retry ? 2 : 0)) return { value: null, error };
+      await new Promise(resolve => setTimeout(resolve, 10 * (attempt + 1)));
+    }
   }
 }
 
 /**
  * Resolves a reference for a reader. Syntax problems, unknown parsers, unparseable sources, selectors that locate
- * nothing and bad ranges are REFERENCE_UNRESOLVED; absence, missing permission, a missing or failing reader and digest
- * mismatch are all the same SOURCE_UNAVAILABLE for the reader (the last three carry the internal `reason`). Never
+ * nothing and bad ranges are REFERENCE_UNRESOLVED; null permission answers are SOURCE_UNAVAILABLE. Reader and digest
+ * faults have actionable recovery codes and preserve the internal `reason`. Never
  * rejects for anything a reference or a stored source can contain.
  */
 export async function resolveReference(input: string | Reference, ctx: ResolveContext): Promise<ResolveResult> {
@@ -263,16 +269,16 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
       }
       const trees = ctx.trees;
       const { value: read, error } = await settle(() =>
-        ref.scheme === 'tree' ? trees.read(ref.root, ref.path, ref.entry ?? null, ctx.reader) : trees.readEntry(ref.entry, ctx.reader),
+        ref.scheme === 'tree' ? trees.read(ref.root, ref.path, ref.entry ?? null, ctx.reader) : trees.readEntry(ref.entry, ctx.reader), ctx.retryReads
       );
       if (error !== null) {
         diagnose(`tree reader failed: ${String(error)}`);
-        return unavailable(canonical, 'check_error');
+        return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
       }
       if (read === null) {
         if (ref.scheme === 'tree' && trees.hasRoot) {
           const hasRoot = trees.hasRoot.bind(trees);
-          const visible = await settle(() => hasRoot(ref.root, ctx.reader));
+          const visible = await settle(() => hasRoot(ref.root, ctx.reader), ctx.retryReads);
           if (visible.error !== null) {
             diagnose(`tree reader failed: ${String(visible.error)}`);
             return unavailable(canonical, 'check_error');
@@ -311,10 +317,10 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
         return unavailable(canonical, 'check_error');
       }
       const records = ctx.records;
-      const { value: record, error } = await settle(() => records.read(ref.record, ctx.reader));
+      const { value: record, error } = await settle(() => records.read(ref.record, ctx.reader), ctx.retryReads);
       if (error !== null) {
         diagnose(`record reader failed: ${String(error)}`);
-        return unavailable(canonical, 'check_error');
+        return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
       }
       if (record === null) return unavailable(canonical);
       let digest: string;
@@ -400,17 +406,17 @@ async function resolveSource(
     return unavailable(canonical, 'check_error');
   }
   const sources = ctx.sources;
-  const { value: read, error } = await settle(() => sources.read(ref.sha256, ctx.reader));
+  const { value: read, error } = await settle(() => sources.read(ref.sha256, ctx.reader), ctx.retryReads);
   if (error !== null) {
     diagnose(`source reader failed: ${String(error)}`);
-    return unavailable(canonical, 'check_error');
+    return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
   }
   if (read === null) return unavailable(canonical);
   const groundable = isGroundable('src');
   if (read.bytes === null || read.bytes === undefined) {
     if (read.readTier !== 'retain_only') {
       diagnose(`source reader withheld the bytes of a ${String(read.readTier)} source`);
-      return unavailable(canonical, 'check_error');
+      return unavailable(canonical, 'integrity_unproven');
     }
   } else if (read.bytes.length !== read.size || sha256Hex(read.bytes) !== ref.sha256) {
     diagnose(`stored bytes (size ${read.bytes.length}, recorded ${read.size}) do not hash to the referenced digest`);

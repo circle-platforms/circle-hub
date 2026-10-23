@@ -305,11 +305,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         try {
           const parsed = parseReference(reference);
           const result = await retryRead(() => resolveReference(parsed, resolveCtx), result => result.resolved ? null
-            : { reason: result.reason ?? result.code, retry: result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
+            : { reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE'), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
               if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
           if (!result.resolved) {
-            return { resolved: false, text: null, reason: result.reason ?? result.code };
+            return { resolved: false, text: null, reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE') };
           }
           if (result.text === null) {
             return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? 'credential_unreadable' as const : 'missing_input' as const };
@@ -416,13 +416,13 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         let result: Awaited<ReturnType<typeof resolveReference>>;
         try {
           result = await retryRead(() => resolveReference(ref, resolveCtx), value => !value.resolved
-            && value.code === 'SOURCE_UNAVAILABLE' && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
+            && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
             attempt => { if(attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read',ENGINE_COMPONENT,attempt,{reference})); });
         } catch(error) {
           onError(error,'graded fragment');
           throw new HubReadFailure(reference,'check_error',retryAttempts);
         }
-        if(!result.resolved && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined)
+        if(!result.resolved && result.reason !== undefined)
           throw new HubReadFailure(reference,result.reason,retryAttempts);
         return finish(result);
       })();

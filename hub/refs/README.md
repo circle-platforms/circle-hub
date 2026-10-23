@@ -193,12 +193,12 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
 - **rec**: `RecordReader.read(digest, reader)`; the digest is recomputed (`recordDigest`: SHA-256 of the RFC 8785 JSON of
   `{kind, schema, provenance, created_at, body}`), the JSON Pointer is followed into the body, and the validity of the
   nearest enclosing object that has one (a claim) is returned (B03 R[0]).
-- **Unavailable**: absent, forbidden, a reader that throws, a missing reader, and stored bytes or records that do not
-  hash to the digest all give the reader the same `{resolved: false, code: 'SOURCE_UNAVAILABLE', message: '对你不可用',
-  fix}`; the real reason goes only to `onDiagnostic` (admin log). For the internal caller, the cases where the Hub could
-  not check at all carry `reason` (`check_error`: a reader failed or is missing; `integrity_unproven`: content does not
-  match its digest, or a record body is not JSON data). `reason` is not enumerable: JSON and object spread leave it
-  out, so nothing reaches the reader; the caller records unknown with it instead of refusing the submission (T03 R[3]).
+- **Unavailable**: absent or forbidden sources remain the identical `SOURCE_UNAVAILABLE` answer. A service caller
+  without an enclosing retry boundary enables `retryReads`: initial read plus two retries, 10/20 ms backoff. Null
+  permission answers are never retried. Exhaustion or a missing configured reader reports `SOURCE_RETRYABLE`, names
+  the missing read and the next retry time; integrity failures report `SOURCE_INTEGRITY_UNPROVEN` and ask the
+  administrator to restore the original from backup and verify its digest. Typed integrity faults are never retried
+  as transient faults. Internal, non-enumerable `reason` still keeps these faults out of boundary refusals (T03 R[3]).
   **Unresolved** (`REFERENCE_UNRESOLVED`, with a Chinese reason): bad syntax, an unregistered parser, a source that does
   not parse with the named parser, a selector that locates nothing, a bad range, a pointer that does not exist, and a
   parser answer whose canonical selector cannot be written (the core parsers never give one).
@@ -207,7 +207,7 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   never gives the text, the fragment or any structure, with the note `labelOf('validity_status', 'credential_unreadable')`
   (含凭据，原文不可读). For `retain_only` the selector and range are not evaluated and the reference comes back as given:
   every reference to the source gets the same answer, so probing cannot reveal line lengths, names or headings. Such a
-  read may come without bytes (`SourceRead.bytes` null); any other tier without bytes is a failed read.
+  read may come without bytes (`SourceRead.bytes` null); any other tier without bytes is an integrity failure.
 - `groundable` says whether the reference may stand alone as a claim's grounds: never an `entry:` (B01 R[5]); a `rec:`
   only for results and the Hub's own records, kinds `claim`, `validation_result`, `action`, `effect` (B01 R[4]).
 - `verifyQuote(result, quote)` is true or false on readable text and null when the text cannot be checked.

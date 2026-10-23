@@ -588,10 +588,12 @@ Other read failures stay neutral; neither the supplied key nor resource existenc
 
 仅重试 SOURCE_TIMEOUT、SOURCE_UNREACHABLE 和 HTTP 429/5xx。每个已规划请求共享两次传输重试，退避从 100 ms 起；有效 Retry-After（秒或 HTTP-date）是不得提前的时刻，累计等待至多 30 秒，超过预算便返回 retry 的原码、最早时间与实际尝试数，不缩短服务器要求。非法或不可表示的 Retry-After 是确定的格式故障。每次完整应答先存为原件；读清单逐次记录 attempt 和 retry_at，逻辑覆盖数不因重试重复累计，所有完整应答仍共用原字节预算。
 
-max_requests 继续约束规划请求槽位。每槽位最多三次传输尝试；原有的明确登录失效再发一次沿用同一传输重试预算，物理读尝试最多四次。路由许可与原有登录停止规则保留：登录交换本身不重试，401/403/404/410、格式、凭据或本地存储故障不进入传输重试。ExternalRead 保留 retry 元数据；对外中性码/可重试码分类与登录请求记录，按任务依赖后接，不在这里臆造新协议码。
+max_requests 继续约束规划请求槽位。每槽位最多三次传输尝试；原有的明确登录失效再发一次沿用同一传输重试预算，物理读尝试最多四次。路由许可与原有登录停止规则保留：登录交换本身不重试，401/403/404/410、格式、凭据或本地存储故障不进入传输重试。ExternalRead 保留 retry 元数据；对外读取耗尽使用已登记的 SOURCE_RETRYABLE，带下次重读时间；登录请求记录仍等 hub-unknown-exits。
 
 ## 读取覆盖（hub-read-absence 第 3 条）
 
 成功的 ReadOutcome、ExternalRead 与运行 SourceBinding 保留同一 coverage。计数单位是这次读声明的请求槽位和嵌套对象，不是业务条目；重试不会重复累计，尚未发出的已规划目标也进入 total。嵌套对象不完整时父对象同样不完整，其名称和补读动作进入 note。部分结果不进入成功缓存；新的读会重新取得它，不把曾经的部分当成完整缓存。
 
 ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实际发送仍受资源限流。敏捷包不再用五轮乘每轮四条的切片丢掉剩余根或页；所有配置根、所需页都列进计划后才答 done，同时声明 concurrency=4。请求、字节与轮数上限仍会拒绝超预算的读取。缺席/中性码、登录请求和第 9 条按运行授权读取器仍按任务依赖后接。
+
+读取出口接口 Needs：登录停止需要 hub-unknown-exits 的具名资源管理员请求记录（请求号、缺失事实、期限、处置后重读入口）。接口合并前保持登录停止，不虚构已发出的请求。
