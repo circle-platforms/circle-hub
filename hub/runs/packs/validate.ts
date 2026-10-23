@@ -378,8 +378,17 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
         }
         if (!isKnownCode(row.code, manifest.id)) {
           c.add(problem('requirements.unknown_code', 'requirements.json', `要求项 ${r.key} 的错误处理行用了未知的码 ${row.code}`, `用 *、核心违规码、协议码，或者包自己的码（${manifest.id}.<码>）`, { field }));
-        } else if (Object.hasOwn(CORE_VIOLATION_CODES, row.code) && !interpreters.has(CORE_VIOLATION_CODES[row.code as keyof typeof CORE_VIOLATION_CODES].interpreter)) {
-          c.warn(problem('requirements.code_unused', 'requirements.json', `要求项 ${r.key} 的错误处理行处理 ${row.code}，但它的检查里没有 ${CORE_VIOLATION_CODES[row.code as keyof typeof CORE_VIOLATION_CODES].interpreter} 解释器，这一行用不上`, '删掉这一行，或者给要求项加上对应的检查', { field }));
+        } else if (Object.hasOwn(CORE_VIOLATION_CODES, row.code)) {
+          const emitter=CORE_VIOLATION_CODES[row.code as keyof typeof CORE_VIOLATION_CODES].interpreter;
+          const contribution=emitter==='contribution';
+          const applicable=contribution?workflow?.contribution?.requirement===r.key:interpreters.has(emitter);
+          if(!applicable){
+            const reason=contribution
+              ?workflow?.contribution===undefined?'工作流没有声明回注准入':'回注准入绑定的是要求项 '+workflow.contribution.requirement
+              :'它的检查里没有 '+emitter+' 解释器';
+            const fix=contribution?'删掉这一行，或者将回注准入绑定到对应要求项':'删掉这一行，或者给要求项加上对应的检查';
+            c.warn(problem('requirements.code_unused', 'requirements.json', '要求项 '+r.key+' 的错误处理行处理 '+row.code+'，但'+reason+'，这一行用不上',fix,{field}));
+          }
         }
       });
       (r.expected?.overrides ?? []).forEach((o, k) => {

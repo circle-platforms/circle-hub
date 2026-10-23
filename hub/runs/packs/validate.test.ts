@@ -424,3 +424,17 @@ test('check reads max_bytes is validated against core limit of 1 MiB', async () 
   });
   await refused(invalidType, 'checks.shape', { file: 'checks.json' });
 });
+
+test('core emitter usage follows the configured contribution requirement rather than an installed interpreter',async()=>{
+  const code='core.contribution.signature_required';
+  const row=(pack:PackDescription,index:number)=>editJson<Json>(pack,'requirements.json',value=>{value.requirements[index].error_handling.push({code,action:'repair',max_rounds:2});});
+  const capability=editJson<Json>(base,'workflow.json',value=>{value.contribution={slot:'findings',requirement:'titles'};});
+  const used=await accepted(row(capability,0));
+  assert.ok(!used.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+  const other=await accepted(row(capability,1));assert.ok(other.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('回注准入')));
+  const absent=await accepted(row(base,0));assert.ok(absent.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('回注准入')));
+  const structure=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.structure.duplicate_key',action:'repair',max_rounds:2});}));
+  assert.ok(!structure.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+  const catalog=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.catalog.not_member',action:'repair',max_rounds:2});}));
+  assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
+});
