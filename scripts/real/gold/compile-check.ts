@@ -118,7 +118,7 @@ const str = (v: unknown): v is string => typeof v === 'string';
 export type Verdict = 'pass' | 'fail' | 'unknown';
 interface Answer { verdict: Verdict; reason?: string; code?: string }
 const pass = (): Answer => ({ verdict: 'pass' });
-const fail = (reason: string): Answer => ({ verdict: 'fail', reason });
+const fail = (reason: string, code?: string): Answer => ({ verdict:'fail',reason,...(code === undefined ? {} : {code}) });
 const unknown = (reason: string): Answer => ({ verdict: 'unknown', reason });
 const ipKey = (s: string): string => isIP(s) === 4 ? `4:${parseIpv4(s)}` : isIP(s) === 6 ? `6:${parseIpv6(s)}` : '';
 
@@ -156,7 +156,7 @@ export interface RunShowExport {
   latest?: {submission?: unknown; result?: {run: string; submission: string; partitions: Record<string, Array<{item: string; requirements: HubRequirement[]}>>}} | null;
 }
 export type CheckType = 'contract' | 'address' | 'command' | 'quotation' | 'plan';
-export interface StepVerdict extends Answer { item: string; stepIndex: number; checkType: CheckType; pointer: string }
+export interface StepVerdict extends Answer { item: string; stepIndex: number; checkType: CheckType; pointer: string; check?: 'function' | 'catalog' | 'quote' }
 export interface PlanReceipt { item: string; plan: string; sha256: string }
 export interface CompileCheckResult {
   allPassed: boolean; notes: string[]; stepVerdicts: StepVerdict[]; plans: PlanReceipt[];
@@ -213,7 +213,7 @@ function bedProblem(v: unknown): string | null {
   return null;
 }
 function planProblem(v: unknown): string | null {
-  if (!obj(v) || !str(v.bucket) || !v.bucket || !Array.isArray(v.blocks) || !v.blocks.every(b => b === 'setup' || b === 'teardown')) return '计划 bucket 或 blocks 格式错误';
+  if (!obj(v) || !str(v.bucket) || !v.bucket || !Array.isArray(v.blocks)) return '计划 bucket 或 blocks 格式错误';
   if (!Array.isArray(v.steps) || v.steps.length === 0 || !v.steps.every(s => obj(s) && str(s.object) && str(s.method) && obj(s.params))) return '计划 steps 格式错误';
   if (!Array.isArray(v.expects) || v.expects.length === 0 || !v.expects.every(e => obj(e) && str(e.text) && e.text.trim() && obj(e.quote) && str(e.quote.reference) && str(e.quote.text))) return '计划 expects 缺少期望或逐字来源';
   return null;
@@ -244,20 +244,24 @@ function valueProblem(p: ContractParamDef, value: unknown, lexical = false): str
   if (str(value) && (p.minLength !== undefined && [...value].length < p.minLength || p.maxLength !== undefined && [...value].length > p.maxLength)) return `参数 ${p.name} 长度超出范围`;
   return null;
 }
-export function checkContractMethod(c: CompileContract, object: string, method: string, params: Record<string, unknown>): Answer {
-  const m = methodOf(c, object, method);
-  if (!m) return fail(`（${object}，${method}）未在合约中定义`);
-  if (c.forbidden.some(f => f.object === object && f.method === method)) return fail(`（${object}，${method}）已被合约禁用`);
-  for (const key of Object.keys(params)) if (!m.params.some(p => p.name === key)) return fail(`未声明参数 ${key}`);
+function contractChecks(c: CompileContract, object: string, method: string, params: Record<string,unknown>): Answer[] {
+  const m = methodOf(c,object,method);
+  if (!m) return [fail(`（${object}，${method}）未在合约中定义`)];
+  const answers: Answer[] = [];
+  if (c.forbidden.some(f => f.object === object && f.method === method)) answers.push(fail(`（${object}，${method}）已被合约禁用`));
+  for (const key of Object.keys(params)) if (!m.params.some(p => p.name === key)) answers.push(fail(`未声明参数 ${key}`));
   for (const p of m.params) {
-    if (!Object.hasOwn(params, p.name)) {
-      if (p.optional || p.default !== undefined) continue;
-      return fail(`缺少必填参数 ${p.name}`);
+    if (!Object.hasOwn(params,p.name)) {
+      if (!p.optional && p.default === undefined) answers.push(fail(`缺少必填参数 ${p.name}`));
+    } else {
+      const problem = valueProblem(p,params[p.name]);
+      if (problem) answers.push(fail(problem));
     }
-    const problem = valueProblem(p, params[p.name]);
-    if (problem) return fail(problem);
   }
-  return pass();
+  return answers.length ? answers : [pass()];
+}
+export function checkContractMethod(c: CompileContract, object: string, method: string, params: Record<string,unknown>): Answer {
+  return contractChecks(c,object,method,params)[0];
 }
 
 export function checkBedAddress(bed: RawBedManifest['beds'][number], raw: string, role: string, allocated: readonly string[] = []): Answer {
@@ -267,7 +271,7 @@ export function checkBedAddress(bed: RawBedManifest['beds'][number], raw: string
   const match = interfaces.find(i => ipKey(i.ip) === key);
   if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`台架之外的地址一律拒绝：${raw}`);
   if (role === 'listen' && match?.device.type !== 'load-balancer') return fail('监听地址必须是被测设备的接口地址');
-  if (role === 'backend' && match?.device.type !== 'server') return fail('后端地址必须是服务器设备的接口地址');
+  if (role === 'backend' && match?.device.type !== 'server') return fail('后端地址必须是服务器设备的接口地址','case-compile.backend_not_server');
   if ((role === 'listen' || role === 'virtual') && match?.device.type === 'load-balancer') {
     const trigger = interfaces.some(i => ['router','client'].includes(i.device.type) && i.subnet.family === match.subnet.family && i.subnet.prefix === match.subnet.prefix && i.subnet.network === match.subnet.network);
     if (!trigger) return fail('盲地址不能当监听或虚拟地址：同网段没有触发设备');
@@ -504,6 +508,36 @@ export function compareCompileVerdicts(hub: readonly StepVerdict[], gold: readon
   return {equal: differences.length === 0,differences};
 }
 
+/** Public README Pointers: interpreter positions are in subject order, never sorted by path. */
+function pointerMaps(data: PlanData | undefined, contract: CompileContract): {phrases:number[];quotes:number[]} {
+  const phrases: number[] = [], quotes: number[] = [];
+  for (const [i,step] of (data?.steps ?? []).entries()) {
+    for (const p of methodOf(contract,step.object,step.method)?.params ?? []) {
+      const v = Object.hasOwn(step.params,p.name) ? step.params[p.name] : p.default;
+      if (p.command && str(v) && v.trim()) phrases.push(i);
+    }
+  }
+  for (const [i,expect] of (data?.expects ?? []).entries()) if (expect.quote.reference.trim() && expect.quote.text.trim()) quotes.push(i);
+  return {phrases,quotes};
+}
+function judgedUnit(pointer: string | undefined, base: string, maps: {phrases:number[];quotes:number[]}): string | null {
+  if (pointer === undefined) return null;
+  let p = pointer === base ? '/' : pointer.startsWith(`${base}/`) ? pointer.slice(base.length) : pointer;
+  if (p === '/data') p = '/'; else if (p.startsWith('/data/')) p = p.slice(5);
+  const phrase = /^\/phrases\/(0|[1-9]\d*)$/.exec(p);
+  if (phrase) return maps.phrases[Number(phrase[1])] === undefined ? null : `/steps/${maps.phrases[Number(phrase[1])]}`;
+  const quote = /^\/quotes\/(0|[1-9]\d*)\/text$/.exec(p);
+  if (quote) return maps.quotes[Number(quote[1])] === undefined ? null : `/expects/${maps.quotes[Number(quote[1])]}`;
+  if (p === '/bucket' || p.startsWith('/bucket/')) return '/bucket';
+  if (p === '/plan_json' || p.startsWith('/plan_json/')) return '/plan_json';
+  const indexed = /^\/(blocks|steps|expects)\/(0|[1-9]\d*)(?:\/|$)/.exec(p);
+  if (indexed) return `/${indexed[1]}/${indexed[2]}`;
+  // Other shape pointers judge the whole plan, as do generation/re-read failures.
+  return p === '/' || p.startsWith('/') && !p.startsWith('/phrases') && !p.startsWith('/quotes') ? '/' : null;
+}
+const checkOfPointer = (pointer: string | undefined): 'function' | 'catalog' | 'quote' =>
+  pointer?.startsWith('/phrases/') ? 'catalog' : pointer?.startsWith('/quotes/') ? 'quote' : 'function';
+
 export function compileCheck(inputs: {run: RunShowExport; submission: Submission; contract: unknown; bed: unknown; commandTreeXml?: string; commandCatalog?: CommandCatalogDeclaration; sources?: ReadonlyMap<string,string>}): CompileCheckResult {
   const {run,submission} = inputs;
   const stepVerdicts: StepVerdict[] = [], plans: PlanReceipt[] = [], differences: string[] = [];
@@ -528,7 +562,7 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
   if (resultItems.length !== expectedIds.size || new Set(resultItems.map(i => i.item)).size !== resultItems.length || resultItems.some(i => !expectedIds.has(i.item))) differences.push('结论与运行条目集合不一致');
   for (const [index, entry] of submitted.entries()) {
     const base = `/items/${index}/slots/plan/0/data`;
-    const add = (type: CheckType, step: number, pointer: string, a: Answer) => stepVerdicts.push({item:entry.item,stepIndex:step,checkType:type,pointer,...a});
+    const add = (type: CheckType, step: number, pointer: string, a: Answer, check: StepVerdict['check'] = type === 'command' ? 'catalog' : 'function') => stepVerdicts.push({item:entry.item,stepIndex:step,checkType:type,pointer,check,...a});
     const claims = entry.slots?.plan;
     const data = claims?.[0]?.data;
     const shape = entry.handling !== 'handled' || !Array.isArray(claims) || claims.length !== 1 ? '条目必须 handled 并提交一份 plan 主张' : planProblem(data);
@@ -537,6 +571,7 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       for (const t of ['address','command','quotation','plan'] as const) add(t,0,base,unknown(shape ?? cp ?? bp!));
     } else {
       const d = data!;
+      d.blocks.forEach((block,i) => { if (block !== 'setup' && block !== 'teardown') add('contract',0,`${base}/blocks/${i}`,fail('块不在有限集中','case-compile.block_unknown')); });
       const bed = manifest.beds.find(b => b.name === d.bucket);
       const leases = run.run.lease_context;
       const start = Date.parse(run.run.started_at);
@@ -550,7 +585,7 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       if (!bed) add('address',0,`${base}/bucket`,fail('台架不存在'));
       for (const [i,s] of d.steps.entries()) {
         const ptr = `${base}/steps/${i}`;
-        add('contract',i+1,ptr,checkContractMethod(contract,s.object,s.method,s.params));
+        for (const answer of contractChecks(contract,s.object,s.method,s.params)) add('contract',i+1,ptr,answer);
         const m = methodOf(contract,s.object,s.method);
         if (!m) {
           add('address',i+1,ptr,unknown('方法未知，无法确定地址参数'));
@@ -563,9 +598,12 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
         }
       }
       for (const [i,e] of d.expects.entries()) {
-        let a = checkVerbatimQuote(inputs.sources ?? new Map(),e.quote.reference,e.quote.text);
-        if (!collapseWhitespace(e.quote.text).includes(collapseWhitespace(e.text))) a = fail('期望结果不是所引原文的逐字片段');
-        add('quotation',i+1,`${base}/expects/${i}`,a);
+        const pointer = `${base}/expects/${i}`;
+        if (!e.quote.reference.trim() || !e.quote.text.trim()) add('quotation',i+1,pointer,fail('期望结果缺少逐字引文或来源','case-compile.expect_without_source'));
+        else {
+          add('quotation',i+1,pointer,collapseWhitespace(e.quote.text).includes(collapseWhitespace(e.text)) ? pass() : fail('期望结果不是所引原文的逐字片段','case-compile.expect_not_in_quote'));
+          add('quotation',i+1,pointer,checkVerbatimQuote(inputs.sources ?? new Map(),e.quote.reference,e.quote.text),'quote');
+        }
       }
       if (Object.hasOwn(d,'plan_json')) add('plan',0,`${base}/plan_json`,{...fail('槽位不能提交 plan_json；执行计划由 Hub 生成'),code:'case-compile.plan_in_slots'});
       else try {
@@ -592,14 +630,20 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       const actual = layers.length !== 1 ? undefined : layers[0].terminal === 'pass' ? 'pass' : layers[0].terminal === 'violation' ? 'fail' : layers[0].terminal === 'unchecked' ? 'unknown' : undefined;
       if (reqs.length !== 1 || actual !== gold) differences.push(`${entry.item}/${key}：Hub ${actual ?? '缺失或非事实终态'}，独立答案 ${gold}`);
       if (actual === 'fail' && gold === 'fail') {
-        // Refutations must identify the same failing step/parameter. Missing pointers are
-        // missing evidence, never an excuse to accept an aggregate failure keyword.
+        const maps = !shape && !cp ? pointerMaps(data,contract) : {phrases:[],quotes:[]};
         const local = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && v.verdict === 'fail');
         const refutes = reqs.flatMap(r => r.claims).filter(c => c.statement.verdict === 'refute');
-        const relative = (p: string) => p.startsWith(base) ? p.slice(base.length) || '/' : p;
-        const localPointers = new Set(local.map(v => relative(v.pointer)));
-        const hubPointers = new Set(refutes.flatMap(c => c.pointer ? [relative(c.pointer)] : []));
-        if (!refutes.length || refutes.some(c => !c.pointer) || localPointers.size !== hubPointers.size || [...localPointers].some(p => !hubPointers.has(p))) differences.push(`${entry.item}/${key}：不通过的位置缺失或不同，不能确认逐步一致`);
+        if (!refutes.length || refutes.some(c => c.pointer === undefined)) differences.push(`${entry.item}/${key}：不通过的位置缺失，不能确认逐步一致`);
+        for (const check of ['function','catalog','quote'] as const) {
+          const localCheck = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && (v.check ?? 'function') === check);
+          const hubCheck = reqs.flatMap(r => r.claims).filter(c => checkOfPointer(c.pointer) === check);
+          if (localCheck.some(v => v.verdict === 'unknown') && !localCheck.some(v => v.verdict === 'fail') || hubCheck.some(c => c.statement.verdict === 'unknown') && !hubCheck.some(c => c.statement.verdict === 'refute')) continue;
+          // Cap diagnostics per check before coalescing parameter errors to their judged step.
+          const ours = local.filter(v => (v.check ?? 'function') === check).slice(0,10).map(v => judgedUnit(v.pointer,base,maps));
+          const theirs = refutes.filter(c => checkOfPointer(c.pointer) === check).slice(0,10).map(c => judgedUnit(c.pointer,base,maps));
+          const a = [...new Set(ours)], b = [...new Set(theirs)];
+          if (a.includes(null) || b.includes(null) || JSON.stringify(a) !== JSON.stringify(b)) differences.push(`${entry.item}/${key}/${check}：前 10 条不通过的位置或次序不同，不能确认逐步一致`);
+        }
       }
 
     }
