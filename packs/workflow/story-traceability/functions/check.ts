@@ -1,0 +1,51 @@
+import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
+import { normalizeId } from './ids.ts';
+import { isRecord, clip, shown } from './text.ts';
+import type { Row } from './project.ts';
+
+export function readSubject(input: unknown): { items: Array<{ id: string; fields: Row }>; facts: Record<string, unknown> } {
+  if (!isRecord(input) || !Array.isArray(input.items) || !isRecord(input.context) || !Array.isArray(input.context.groups) || !isRecord(input.context.groups[0])) throw new Error('缺少条目或视图事实');
+  return { items: input.items as Array<{ id: string; fields: Row }>, facts: input.context.groups[0] };
+}
+// Build-derived scopes read batch details as expected sources before verification.
+export function detailOf(row: Row, sources: unknown): Row {
+  if (row.plm_returned || !isRecord(sources)) return row;
+  const records: Record<string, unknown>[] = [];
+  const references: string[] = [];
+
+  for (const [reference, text] of Object.entries(sources)) {
+    if (typeof text !== 'string') continue;
+    try {
+      const value: unknown = JSON.parse(text);
+      if (isRecord(value) && Array.isArray(value.stories)) for (const r of value.stories) if (isRecord(r) && normalizeId(String(r.id)) === row.id) { records.push(r); references.push(reference); }
+    } catch { /* Non-JSON sources do not establish status. */ }
+  }
+  if (!records.length) return row;
+  const r = records[0];
+  if (records.some(other => JSON.stringify([other.status ?? null, other.stage ?? null]) !== JSON.stringify([r.status ?? null, r.stage ?? null]))) throw new Error('需求详情来源冲突');
+  return { ...row, references: [...new Set([...row.references, ...references])], plm_returned: true, status: typeof r.status === 'string' ? r.status : null, stage: typeof r.stage === 'string' ? r.stage : null, title: typeof r.title === 'string' ? r.title : null };
+}
+export const checkError = (): CheckOutcome[] => [{ verdict: 'unknown', reason: 'check_error', tier: 'advisory', grounds: [], statement: '需求追溯检查缺少有效事实；下一步：把运行编号交给任务包维护人修复后重跑' }];
+export default function check(input: unknown): CheckOutcome[] {
+  try {
+    if (!isRecord(input)) return checkError();
+    const { items, facts } = readSubject(input.subject);
+    return items.map((item, at): CheckOutcome => {
+      const row = detailOf(item.fields, input.sources);
+      const offending = row.cases.filter(c => c.stories !== null && !c.stories.some(id => normalizeId(id) === row.id));
+      const missingFields = [...(row.status === null ? ['status'] : []), ...(row.stage === null ? ['stage'] : [])];
+      const data = { story: row.id, status: row.status, stage: row.stage, plm_returned: row.plm_returned, missing_fields: missingFields, case_count: row.cases.length, cases: row.cases, scope: row.scope,
+        gaps: [...(row.plm_returned && missingFields.length ? [`PLM 需求 ${row.id} 缺少字段 ${missingFields.join('、')}`] : []), ...(row.cases.length ? [] : [`构建 ${row.build} 的需求 ${row.id} 缺少已索引用例条目`]), ...(row.plm_returned ? [] : [`PLM 没有返回需求 ${row.id}`])],
+        next_actions: [...(row.plm_returned && missingFields.length ? [`请管理员核对 PLM 需求 ${row.id} 的 ${missingFields.join('、')} 字段，补齐原件后重跑`] : []), ...(row.cases.length ? [] : [`读取完整相关脑图和敏捷树并核对需求编号；构建 ${row.build} 的用例条目需更新时，请管理员运行知识同步，完成后重跑`]), ...(row.plm_returned ? [] : [`请管理员核对需求 ${row.id} 的 PLM 访问和原件，恢复读取后重跑`])] };
+      const base = { item: item.id, pointer: `/items/${at}/fields`, tier: 'advisory' as const, grounds: [...row.references, ...row.cases.map(c => c.reference)], data };
+      if (offending.length) return { ...base, verdict: 'refute', code: 'story-traceability.join_mismatch', statement: '列出的用例原始需求编号不含被判需求；请任务包维护人修复索引连接后重跑' };
+      const view = isRecord(facts.view) ? facts.view : {};
+      const partial = view.truncated === true || Number(view.skipped) > 0 || Number(view.missing) > 0 ? '；来源部分可读' : '';
+      const status = row.status ?? '未知'; const stage = row.stage ?? '未知';
+      let statement = `需求 ${row.id}（状态：${status}；阶段：${stage}）：${row.cases.length} 个已索引用例${row.cases.length ? `追溯：${row.cases.slice(0, 5).map(c => `${c.document ?? ''}:${c.case} ${shown(c.title, 30)}`).join('；')}${row.cases.length > 5 ? `；另有 ${row.cases.length - 5} 个` : ''}` : ''}${partial}；${row.scope}${row.plm_returned ? '' : '；PLM 未返回'}`;
+      if (!row.cases.length) statement += `；用例索引按构造不完整，没有列出不等于没有；${data.next_actions.join('；')}`;
+      else if (!row.plm_returned || missingFields.length) statement += `；${data.next_actions.join('；')}`;
+      return row.cases.length ? { ...base, verdict: 'support', statement: clip(statement, 500) } : { ...base, verdict: 'unknown', reason: 'missing_input', statement: clip(statement, 500) };
+    });
+  } catch { return checkError(); }
+}

@@ -1,0 +1,105 @@
+{
+  "schema": "pack@1",
+  "id": "story-traceability",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "需求追溯矩阵",
+  "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，缺用例记未知并明确后续动作，不绑定产品线",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "1b079e4cee5a3e2a15a9a3d507da4fa8af2a5f016a7b61ebd57cd6bf438e0e83",
+      "size": 2446
+    },
+    {
+      "path": "checks.json",
+      "sha256": "212605e1725707c22ed9d360342dd0efcfbb8a66c86ce1942db34f315ae75796",
+      "size": 876
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "4283c3205d08b557f995f7a8488643aca59982742b2a3d31aaf1300f70b3489c",
+      "size": 5213
+    },
+    {
+      "path": "functions/counts.ts",
+      "sha256": "bfa6e86fed25cbebdba5d303f0469fbe409f56eccda2a37ce4df41f09665f5ef",
+      "size": 2097
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "06a16d532511485ae588f622027e7ae70fdd4eda26d56a8f484813d31529b710",
+      "size": 650
+    },
+    {
+      "path": "functions/ids.ts",
+      "sha256": "d82e433621dbb61521ba8ff7c00b47ba6b988f4257ea6be7292cc9ab6b22b74e",
+      "size": 230
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "b9c49450ac6bf38f086a1e0a17a2e3d41bdb7d23604aed266c13858b2e6c497d",
+      "size": 7676
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "e3dbe0d1755bc7316f67514338a8864b5b2f0de6c2677bdd75584c5d16143377",
+      "size": 329
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "fad1338c4d6c61ac79a972211287d1593a57cc1242367d194d2eda7ad281585c",
+      "size": 2756
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "d0d6c17792836a4793fc25f1700d772f66154938cf5c84d9554caf9059859843",
+      "size": 1575
+    },
+    {
+      "path": "functions/views.ts",
+      "sha256": "ec4500ae609fc61dd342bcc13358eb0388bbf188acf5a6aa407e1fa702545437",
+      "size": 5135
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "0049d4dc1268cb182ef5e3429d87ac3c2397c3d6c08078b5ab598a0663b42d4e",
+      "size": 1025
+    },
+    {
+      "path": "samples/negative/counts.json",
+      "sha256": "4b49f4ae90497a4605f0cf8249481c2aa0ee11fed39693a3a96e3e6b0705de90",
+      "size": 2063
+    },
+    {
+      "path": "samples/negative/traced.json",
+      "sha256": "fbf815b4b532d75437e17b5820053af9d8a7f7201359a58376a130bfa66df923",
+      "size": 2062
+    },
+    {
+      "path": "samples/positive/counts.json",
+      "sha256": "31329ead25050a2d6335fd519cf02476d3c1810069d5c962fa793f64fd183948",
+      "size": 2014
+    },
+    {
+      "path": "samples/positive/traced.json",
+      "sha256": "b8a3df2bcc56893eefa4e799ecd9399ff3658c5ba0459a0541b4bdcc61e11e45",
+      "size": 2014
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "2fecd2b184a0ddfd7ee8847fc996aca9b4b37e8d7e6497dad8b36a2eefde40b7",
+      "size": 881
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "c772c3cfbea6b762c8473ddf7a5125456d7643a69e11c491466e110e817cd370",
+      "size": 1289
+    }
+  ]
+}
