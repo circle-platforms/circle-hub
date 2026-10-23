@@ -11,10 +11,8 @@ import { CASE_COMMAND_TABLE } from '../../../tests/fixtures/case-index/table.ts'
 const xml = commandTreeXml(CATALOG_A);
 const scan = commandScanner(xml);
 const paths = (text: string) => scan(text).map((m) => m.path.slice(10).replaceAll('/', ' ')).sort();
-// README specifies single-word commands without the prose stop-word guard found only in implementation comments.
-const differences: Record<string, { actual: string[]; reason: string }> = {
-  'not-prose-ping': { actual: ['ping'], reason: 'README has no English prose/argument stop-word exclusion for a full single-word command' },
-};
+// Every hand-written row currently agrees; this explicit registry must name and explain any later discrepancy.
+const differences: Record<string, { actual: string[]; reason: string }> = {};
 for (const row of CASE_COMMAND_TABLE) test(`hand truth: ${row.key}`, () => {
   const difference = differences[row.key];
   assert.deepEqual(paths(row.text), difference?.actual ?? [...row.commands].sort(), difference?.reason ?? row.note);
@@ -77,4 +75,16 @@ test('step measurement reads direct operation children and excludes nested case 
   const result = caseCommandsGold(xml, [{ document: 'synthetic-doc', map }]);
   assert.deepEqual(result.cases.find((c) => c.node === 'case')!.steps.map((p) => p.path), ['/commands/show/pools']);
   assert.deepEqual(result.cases.find((c) => c.node === 'nested')!.steps.map((p) => p.path), ['/commands/relay/endpoint/add']);
+});
+
+test('lone heads, quoted words, Chinese context and English prose follow the documented phrase rules', () => {
+  assert.deepEqual(paths('"ping"'), ['ping']);
+  assert.deepEqual(paths('`ping`'), ['ping']);
+  assert.deepEqual(paths('“ping”'), ['ping']);
+  assert.deepEqual(paths('执行ping查看'), ['ping']);
+  for (const text of ['ping', 'ping命令', '执行 ping 命令', 'Please ping the gateway', 'ping xxx', 'ping the gateway', 'will ping', '"ping']) assert.deepEqual(paths(text), [], text);
+  assert.deepEqual(paths('ping gateway'), ['ping']);
+  assert.deepEqual(paths('执行 ping xxx'), ['ping']);
+  assert.deepEqual(paths('Then run widget pool add pool1'), ['widget pool add']);
+  assert.deepEqual(paths('widget pool add xxx show pools'), ['show pools', 'widget pool add']);
 });

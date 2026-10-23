@@ -11,6 +11,7 @@ interface Trie { children: Map<string, Trie>; prefixes: Map<string, string | nul
 const trie = (): Trie => ({ children: new Map(), prefixes: new Map() });
 // English short words cannot introduce an abbreviated command (README rule, independent small list).
 const SHORT = new Set('an as at be by do for he if in is it me my of on or so the to up us we'.split(' '));
+const STOP = new Set('a an and are as at be been being but by can could did do does for from had has have he her here him his how i if in into is it its may might my not of on or our please should that the their them then there these they this those to too was we were what when where which who will with would you your xxx'.split(' '));
 export const sha256 = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 export const documentKey = (value: string): string => value.replace(/^agile:(?:case|mindmap):/, '');
 export const comparableNode = (value: string): boolean => value !== '' && !value.startsWith('@') && !/#\d+$/.test(value);
@@ -80,8 +81,17 @@ export function commandScanner(xml: string): (text: string) => Match[] {
       .replace(/[\r\n\v\f\u0085\u2028\u2029]/g, '\n').replace(/[\p{White_Space}\u200b-\u200d\u2060\ufeff]/gu, (c) => c === '\n' ? c : ' ')
       .replace(/\d+[.、）)](?=[A-Za-z])/g, ' ');
     const found = new Map<string, Match>();
-    for (const segment of folded.split(/[^A-Za-z0-9_\- \t]+/)) {
-      const tokens = segment.trim().split(/[ \t]+/).filter(Boolean);
+    // Track complete quote pairs independently of word tokenization. Unclosed marks are not quoted evidence.
+    const quoteRanges: Array<[number, number]> = [];
+    const pairs: Record<string, string> = { '"': '"', "'": "'", '`': '`', '“': '”', '‘': '’', '「': '」', '『': '』' };
+    const stack: Array<{ close: string; start: number }> = [];
+    for (let k = 0; k < folded.length; k++) {
+      if (stack.at(-1)?.close === folded[k]) { const open = stack.pop()!; quoteRanges.push([open.start, k]); }
+      else if (pairs[folded[k]]) stack.push({ close: pairs[folded[k]], start: k });
+    }
+    for (const segment of folded.matchAll(/[A-Za-z0-9_\-]+(?:[ \t]+[A-Za-z0-9_\-]+)*/g)) {
+      const words = [...segment[0].matchAll(/[A-Za-z0-9_\-]+/g)];
+      const tokens = words.map((word) => word[0]);
       const at = (i: number): Match | null => {
         const own = resolve(tokens, i);
         if (own) return own;
@@ -91,10 +101,25 @@ export function commandScanner(xml: string): (text: string) => Match[] {
       for (let i = 0; i < tokens.length;) {
         const match = at(i);
         if (!match) { i++; continue; }
-        const old = found.get(match.path);
-        found.set(match.path, old ? { ...match, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : match);
-        i += match.words + Number(match.via_no);
-        while (i < tokens.length && (at(i)?.words ?? 0) < 2) i++;
+        const start = segment.index + words[i].index;
+        const headEndIndex = i + match.words + Number(match.via_no);
+        const end = segment.index + words[headEndIndex - 1].index + words[headEndIndex - 1][0].length;
+        const quoted = quoteRanges.some(([from, to]) => from < start && to >= end);
+        const before = folded.slice(0, start).trimEnd();
+        const after = folded.slice(end).trimStart();
+        const englishBefore = /[A-Za-z_-]$/.test(before);
+        // Stop words and placeholders trim a phrase back to its head, never provide arguments to a lone word.
+        let next = headEndIndex;
+        while (next < tokens.length && (at(next)?.words ?? 0) < 2) next++;
+        const args = tokens.slice(headEndIndex, next);
+        const hasArgs = !englishBefore && args.length > 0 && !args.some((arg) => STOP.has(arg.toLowerCase()));
+        const chineseContext = /\p{Script=Han}$/u.test(before) || /^\p{Script=Han}/u.test(after);
+        const lone = match.words + Number(match.via_no) === 1 && !hasArgs;
+        if (!lone || quoted || (chineseContext && !after.startsWith('命令'))) {
+          const old = found.get(match.path);
+          found.set(match.path, old ? { ...match, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : match);
+        }
+        i = next;
       }
     }
     return [...found.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
