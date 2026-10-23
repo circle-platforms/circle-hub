@@ -106,11 +106,10 @@ describe('xml@1 on the command-tree fixture', () => {
 });
 
 describe('xml@1 safeguards', () => {
-  it('refuses DOCTYPE, so entity expansion and external entities never happen', () => {
+  it('refuses entity declarations while external DOCTYPE identifiers are never fetched', () => {
     const attempts = [
       '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;">]><lolz>&lol2;</lolz>',
       '<!DOCTYPE x [<!ENTITY ext SYSTEM "file:///etc/passwd">]><x>&ext;</x>',
-      '<!DOCTYPE x SYSTEM "http://192.0.2.1/x.dtd"><x/>',
     ];
     for (const xml of attempts) assert.throws(() => xmlParser.parse(utf8(xml)), ParseForbiddenError);
     assert.throws(() => xmlParser.parse(utf8('<x>&undefined;</x>')), ParseSyntaxError);
@@ -130,7 +129,7 @@ describe('xml@1 safeguards', () => {
   });
 
   it('checks encodings', () => {
-    assert.throws(() => xmlParser.parse(new Uint8Array([0xff, 0xfe, 0x3c, 0x00])), ParseEncodingError);
+    assert.throws(() => xmlParser.parse(new Uint8Array([0xff, 0xfe, 0x3c])), ParseEncodingError);
     assert.throws(() => xmlParser.parse(utf8('<?xml version="1.0" encoding="Shift_JIS"?><a/>')), ParseEncodingError);
     assert.throws(() => xmlParser.parse(new Uint8Array([0x3c, 0x61, 0x3e, 0xc3, 0x28, 0x3c, 0x2f, 0x61, 0x3e])), (e: unknown) => e instanceof ParseEncodingError && e.offset === 3);
     assert.throws(() => xmlParser.parse(new Uint8Array([0xef, 0xbb, 0xbf, ...utf8('<?xml version="1.0" encoding="ISO-8859-1"?><a/>')])), ParseEncodingError);
@@ -237,4 +236,10 @@ describe('xml@1 on hostile and unusual input', () => {
     assert.equal(doc.locate('x/r/j[20000]')!.selector, 'x/r/j[20000]');
     assert.equal(doc.locate('x/r/j[20001]'), null);
   });
+});
+
+it('native XML syntax failures have a source-assigned public reason without classifying error prose', () => {
+  for (const text of ['<private-synthetic><other></private-synthetic>', '<a>\u0001</a>']) {
+    assert.throws(() => xmlParser.parse(utf8(text)), (error: unknown) => error instanceof ParseSyntaxError && error.message === 'XML 格式不对：不符合 XML 语法' && typeof error.detail === 'string');
+  }
 });

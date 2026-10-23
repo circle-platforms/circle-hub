@@ -347,3 +347,13 @@ test('an unknown interpreter check does not compare positions inside an otherwis
   f.run.latest!.result!.partitions.delivered![0].requirements[3].claims.push({pointer:'/quotes/999/text',statement:{text:'未知',verdict:'unknown'}});
   assert.equal(compileCheck(f).comparison.equal,true);
 });
+
+test('expected-text containment retains its current package rule independently of source quotation', () => {
+  const f = fixture();
+  const e = data(f).expects[0];
+  e.text = '健康检查间隔设置成功'; e.quote.text = '健康检查间隔\n设置成功';
+  f.sources.set(e.quote.reference, '健康检查间隔\r\n设置成功');
+  const judgments = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation');
+  assert.ok(judgments.some(v => v.code === 'case-compile.expect_not_in_quote' && v.verdict === 'fail'));
+  assert.equal(checkVerbatimQuote(f.sources, e.quote.reference, e.text).verdict, 'pass');
+});
