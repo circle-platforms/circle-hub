@@ -576,7 +576,11 @@ accepted.
   `aes128+sha` keep the command words the source has, so a signature block and a command table row of the same command land
   on the same node — and never a mark with white space inside it: `demo + pool + add <name>` is no markup, so such a line
   reads as no signature, is reported through `unparsed` and stays the text it is instead of becoming a command the source
-  does not have. A line the rule does not
+  does not have. Nor is a mark escaped by an odd number of backslashes markup: `demo *pool\*_ add <name>` keeps its literal
+  asterisk, reads as no signature and is reported the same way, because deleting an escaped character would invent a
+  command word (`demo pool_ add`) that the source does not have — an even run of backslashes is a literal backslash and the
+  mark after it is markup as usual. Since a listing is verbatim, a reported line keeps its escapes in the statement; the
+  same pairing rule decides the marks of a heading segment. A line the rule does not
   read stays the ordinary text it is — placed as text on its own line, and reported with its file, line, reason and next
   action (`unparsed` of the mapping and one warning of the production). Nothing is wrapped in bold marks the source does
   not have, so no statement is fabricated and no head/parameter split is guessed.

@@ -144,13 +144,23 @@ function markRun(text: string, at: number): number {
  * markup, so `demo * pool * add` keeps every one of its literal asterisks. */
 const AFTER_CLOSE = /^[\s.,;:!?)\]}'"»_、。，；：！？）】…]/u;
 
-/** The index of the closing run of the same length, or -1: it must have a word character before it (the markup ends where
- * its text ends) and the end, white space or punctuation after it. */
+/** Whether the character at an index is escaped: an odd number of backslashes before it. An escaped mark is a literal
+ * character of the text, so it closes no markup — `demo *pool\*_ add` has no bold run, and reading one there would delete
+ * a source character and invent a command word. An even run of backslashes is a literal backslash, and the mark after it
+ * is markup as usual. */
+function escaped(text: string, at: number): boolean {
+  let count = 0;
+  while (text[at - 1 - count] === '\\') count++;
+  return count % 2 === 1;
+}
+
+/** The index of the closing run of the same length, or -1: it must be unescaped, have a word character before it (the
+ * markup ends where its text ends) and the end, white space or punctuation after it. */
 function closingRun(text: string, from: number, ch: string, run: number): number {
   for (let at = from + run; at < text.length; at++) {
     if (text[at] !== ch) continue;
     const length = markRun(text, at);
-    if (length === run && !isSpace(text[at - 1]) && (at + length >= text.length || AFTER_CLOSE.test(text[at + length] as string))) return at;
+    if (length === run && !escaped(text, at) && !isSpace(text[at - 1]) && (at + length >= text.length || AFTER_CLOSE.test(text[at + length] as string))) return at;
     at += length - 1;
   }
   return -1;
@@ -161,10 +171,11 @@ function closingRun(text: string, from: number, ch: string, run: number): number
  * mark run stands at the start of a token (white space or the start before it) with its text beginning immediately (no
  * white space after it), and its closing run of the same length ends that text (no white space before it) at the end,
  * before white space or before punctuation. So `*demo pool del* _<name>_` loses its marks, while a `_`, `+`, `#` or
- * `` ` `` inside a word (`max_conn`, `aes128+sha`, `C++`, `步骤 #1`) and a mark with white space inside it
- * (`demo + pool + add`) stay: they are characters of the text, and dropping them would invent a command word or a heading
- * the source does not have. An unpaired or escaped mark stays too — it is text, and a decision about it is not this
- * function's.
+ * `` ` `` inside a word (`max_conn`, `aes128+sha`, `C++`, `步骤 #1`), a mark with white space inside it
+ * (`demo + pool + add`) and a mark escaped by an odd number of backslashes (`demo *pool\*_ add`) stay: they are characters
+ * of the text, and dropping them would invent a command word or a heading the source does not have. An unpaired mark stays
+ * too — it is text, and a decision about it is not this function's. The escapes themselves are resolved afterwards
+ * (`resolveEscapes`), so a literal mark keeps its identity as a character instead of becoming markup.
  */
 export function dropPairedMarks(text: string): string {
   let out = '';

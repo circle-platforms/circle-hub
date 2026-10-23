@@ -502,3 +502,57 @@ test('an example takes no part in judgment: its literal is no drift candidate, a
   assert.ok(real !== undefined && real.data.reference_only === undefined, JSON.stringify(real?.data));
   assert.deepEqual(real!.data.command_literals, ['demo ghost show']);
 });
+
+test('an escaped closing mark is a literal character: it stays in the line and the line reads as no signature', async () => {
+  const lines = [
+    '= Book',                       // 1
+    '',                             // 2
+    '== 命令',                       // 3
+    '',                             // 4
+    '[role=signature]',              // 5
+    '----',                          // 6
+    'demo *pool\\*_ add <name>',     // 7
+    'demo +pool\\+_ add <name>',     // 8
+    'demo #pool\\#_ add <name>',     // 9
+    'demo `pool\\`_ add <name>',     // 10
+    'demo *pool\\* add <name>',      // 11
+    'demo *pool* add <name>',        // 12
+    '----',                          // 13
+    '',                             // 14
+  ];
+  const out = await compile({ 'book.adoc': lines.join('\n') });
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  // The five escaped lines are no markup: their literal marks stay in the text, the words are no command words, and the
+  // lines are reported instead of becoming a definition of a command the source does not have.
+  assert.deepEqual(
+    mapped.unparsed.map((one) => [one.file, one.line, one.text]),
+    [
+      ['book.adoc', 7, 'demo *pool\\*_ add <name>'],
+      ['book.adoc', 8, 'demo +pool\\+_ add <name>'],
+      ['book.adoc', 9, 'demo #pool\\#_ add <name>'],
+      ['book.adoc', 10, 'demo `pool\\`_ add <name>'],
+      ['book.adoc', 11, 'demo *pool\\* add <name>'],
+    ],
+    JSON.stringify(mapped.unparsed),
+  );
+  for (const withoutCatalog of [produceAdocEntries(mapped, { name: 'cli', slot: 'manual' }), produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo', 'pool_', 'add'], ['demo', 'pool', 'add']]) })]) {
+    assert.ok(withoutCatalog.ok, JSON.stringify(withoutCatalog));
+    assert.deepEqual(
+      withoutCatalog.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+      [['demo pool add <name>', '/commands/demo/pool/add', 'l/12']],
+      'the unescaped line is still a signature, and a catalog that holds the fabricated command changes nothing',
+    );
+    assert.deepEqual(
+      withoutCatalog.entries.filter((entry) => entry.data.form !== 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+      [
+        ['demo *pool\\*_ add <name>', 'l/7'],
+        ['demo +pool\\+_ add <name>', 'l/8'],
+        ['demo #pool\\#_ add <name>', 'l/9'],
+        ['demo `pool\\`_ add <name>', 'l/10'],
+        ['demo *pool\\* add <name>', 'l/11'],
+      ],
+      'a listing is verbatim: each line keeps the characters the source has, escapes included, on its own line',
+    );
+  }
+});

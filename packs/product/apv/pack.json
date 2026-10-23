@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/adoc/text.ts",
-      "sha256": "148d3964ff7dcf09b8f697d33aa258f0f978264d28feb0cbc3e815125aa82830",
-      "size": 9491
+      "sha256": "b8b1a802ccf42483959db593027fa7fa3e7cee9291a5bd3e187717e8d669326e",
+      "size": 10277
     },
     {
       "path": "functions/adoc/types.ts",
