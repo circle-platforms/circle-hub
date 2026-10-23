@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { privatePath, writePrivateJson } from '../gold/builds.ts';
-import { unreadResults, collectionRecoveryAction, type Pending, capturedResult, readCaptures, resultItems, refusedDocuments, uncertainStarts } from './location-tree.ts';
+import { unreadResults, unreadResultAction, unreadResultRecovery, collectionRecoveryAction, type Pending, capturedResult, readCaptures, resultItems, refusedDocuments, uncertainStarts } from './location-tree.ts';
 
 export interface SampleId {
   id: string;
@@ -85,11 +85,11 @@ export async function main(argv: string[], print: (line: string) => void = line 
       for (const document of requested) if (!observed.has(document) && !accepted.has(document) && refused.has(document) && !uncertain.has(document)) excluded.push({ document, reason: refused.get(document)! });
       for (const document of requested) if (!observed.has(document) && !excluded.some(row => row.document === document)) {
         const start = uncertain.get(document), result = unread.get(document);
-        missing.push({document, fact:'已请求但未取得的完整 location 结果', next_action: start || result ? collectionRecoveryAction() : '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样',
-          ...(start ? {recovery:{tool:'start_run',args:start.args,session:start.session}} : result ? {recovery:{tool:'get_nodes',args:{reference:result.reference},session:result.session,start_args:result.args}} : {})});
+        missing.push({document, fact:result?.reference===null?'运行已受理但没有结果引用':'已请求但未取得的完整 location 结果', next_action: start ? collectionRecoveryAction() : result ? unreadResultAction(result) : '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样',
+          ...(start ? {recovery:{tool:'start_run',args:start.args,session:start.session}} : result ? {recovery:unreadResultRecovery(result)} : {})});
       }
       for (const item of items.values()) item.documents.sort(compare);
-      if (results.size === 0) missing.push({ document: '（结果输入没有可用文档）', fact: '完整定位结果', next_action: '由集成者重跑全树采集，确认 get_nodes 的结构化 content.text 是完整 JSON 后重新抽样' });
+      if (results.size === 0) missing.push({ document: '（结果输入没有可用文档）', fact: '完整定位结果', next_action: '先完成记录里逐份文档的恢复动作，确认 get_nodes 的结构化 content.text 是完整 JSON 后从新 --out 重新抽样；无结果引用时先请集成者修复 Hub 持久化缺口，不直接新建 key 重跑' });
       const totals = { stories: [...items.values()].filter(i => i.kind === 'story').length, bugs: [...items.values()].filter(i => i.kind === 'bug').length, unclassified: [...items.values()].filter(i => i.kind === null).length };
       const entries: Entry[] = missing.length ? [] : sampleIds([...items.values()], count, seed).map(item => ({ ...item, found: null, ...(item.kind === null ? { lookup: [`plm:story:${item.id}`, `plm:bug:${item.id}`] } : {}) }));
       const record: SampleRecord = { schema: 'id-spot-check@1', seed, results_sha256: saved.sha256, totals, requested: count, population_complete: missing.length === 0, entries, excluded, not_run: missing };

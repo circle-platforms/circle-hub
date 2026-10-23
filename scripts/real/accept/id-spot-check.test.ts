@@ -118,3 +118,12 @@ test('closure a timed out retry supersedes the earlier batch refusal and pauses 
  assert.deepEqual(record.excluded.map((r:any)=>r.document),['950803']);
  assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('同一 client_key') && r.next_action.includes('--collect') && r.recovery.args.client_key==='synthetic-stable-key'));
 });
+
+test('closure B5 accepted without a reference blocks sampling and names the Hub persistence gap',async t=>{
+ const w=world(t);rmSync(join(w.results,'runs/000001.get_nodes.json'));const args={client_key:'synthetic-key-without-result',inputs:{documents:[{external:'agile:mindmap:950802'}]}};
+ writeFileSync(join(w.results,'runs/000002.start_run.json'),JSON.stringify({session:'synthetic',request:{tool:'start_run',args},response:{isError:false,text:'运行 rn_without_result：任务包 case-location\n问题：定位合成文档',structured:{call_result:'ok',errors:[],run:{run:'rn_without_result',pack:'case-location@1.0.0',items:[],requirements:[]}}}}));
+ assert.equal(await main(['sample','--results',w.results,'--record',w.record],()=>{}),2);
+ const record=JSON.parse(readFileSync(w.record,'utf8'));assert.equal(record.population_complete,false);assert.equal(record.entries.length,0);
+ const pending=record.not_run.find((row:any)=>row.document==='950802');assert.match(pending.fact,/已受理.*没有结果引用/);assert.deepEqual(pending.recovery.args,args);assert.equal(pending.recovery.run,'rn_without_result');assert.match(pending.next_action,/不会补生成结果/);
+ assert.ok(record.not_run.every((row:any)=>!row.next_action.includes('重跑全树采集')));
+});

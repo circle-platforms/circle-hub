@@ -272,3 +272,13 @@ test('closure B4 unread results recover through a fresh same key collect without
  const pending=JSON.parse(readFileSync(join(root,'first/details.json'),'utf8')).details.not_run[0];assert.match(pending.next_action,/location-tree.ts.*--collect/);assert.match(pending.next_action,/24/);assert.ok(pending.recovery.start_args.client_key);
  const screen:string[]=[];assert.equal(await main(args(join(root,'second')),{call:fake,print:l=>screen.push(l)}),0);assert.ok(screen.includes('判定：通过'));assert.equal(created.size,1);assert.equal(keys[0],keys[1]);
 });
+
+test('closure B5 an accepted run without a result reference is a Hub persistence gap',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'no-result-reference-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ writeFileSync(join(root,'tree.json'),JSON.stringify(tree()));writeFileSync(join(root,'builds.json'),JSON.stringify(emptyBuilds[0]));writeFileSync(join(root,'token'),'synthetic');
+ const tools:string[]=[],screen:string[]=[];
+ const code=await main(['--tree',join(root,'tree.json'),'--builds',join(root,'builds.json'),'--out',join(root,'out'),'--collect','--token-file',join(root,'token')],{call:async(_options,calls)=>{tools.push(calls[0].tool);return[{isError:false,text:'运行 rn_synthetic：任务包 case-location，条目 1 个\n问题：合成文档的定位',structured:{call_result:'ok',errors:[],run:{run:'rn_synthetic',pack:'case-location@1.0.0',items:[],requirements:[]}}}];},print:l=>screen.push(l)});
+ assert.equal(code,2);assert.deepEqual(tools,['start_run']);const report=JSON.parse(readFileSync(join(root,'out/details.json'),'utf8'));
+ assert.equal(report.summary.missing.no_item,0);assert.equal(report.summary.missing.result_unread,1);assert.equal(report.summary.candidates.not_run,1);
+ const pending=report.details.not_run[0];assert.match(pending.fact,/已受理.*没有结果引用/);assert.equal(pending.recovery.run,'rn_synthetic');assert.ok(pending.recovery.args.client_key);assert.match(pending.next_action,/集成者.*Hub/);assert.match(pending.next_action,/不会补生成结果/);assert.ok(!screen.join('').includes('rn_synthetic'));assert.ok(!screen.includes('判定：不通过'));
+});

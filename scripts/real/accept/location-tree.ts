@@ -52,7 +52,7 @@ ROLLBACK;
 
 export interface Capture { session?: string; transport_error?: boolean; request: { tool: string; args: unknown }; response: ToolText }
 export interface ResultItem { document: string; location: Record<string, unknown> | null; candidates: unknown[] | null }
-export type Pending = { document: string; fact: string; next_action: string; next_command?: string; recovery?: { tool: string; args: unknown; session: string | null; start_args?: unknown } };
+export type Pending = { document: string; fact: string; next_action: string; next_command?: string; recovery?: { tool: string; args: unknown; session: string | null; start_args?: unknown; run?: string | null } };
 type Difference = { document: string; field: string; gold: unknown; actual: unknown; reason: string; next_action?: string };
 type Missing = { document: string; reason: string; next_action: string };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -132,21 +132,33 @@ export function uncertainStarts(captures: Capture[]): Map<string, { args: unknow
   return pending;
 }
 
+export interface UnreadResult {reference:string|null;run:string|null;session:string|null;args:unknown}
+
 /** An accepted run reference without a complete readable capture is an unobserved result, not an empty result. */
-export function unreadResults(captures: Capture[]): Map<string,{reference:string;session:string|null;args:unknown}> {
+export function unreadResults(captures: Capture[]): Map<string,UnreadResult> {
   const readable = new Set<string>();
   for(const capture of captures) if(!transportFailure(capture) && capturedResult(capture)!==null && object(capture.request.args) && typeof capture.request.args.reference==='string') readable.add(capture.request.args.reference);
-  const pending = new Map<string,{reference:string;session:string|null;args:unknown}>();
+  const pending = new Map<string,UnreadResult>();
   for(const capture of captures) {
     if(capture.request.tool!=='start_run' || transportFailure(capture) || capture.response.isError)continue;
     const answer=capture.response.structured;
-    if(!object(answer) || answer.call_result!=='ok' || !object(answer.result) || typeof answer.result.reference!=='string')continue;
-    const reference=answer.result.reference;
-    for(const document of requestedDocuments(capture)) {if(readable.has(reference))pending.delete(document);else pending.set(document,{reference,session:capture.session ?? null,args:capture.request.args});}
+    if(!object(answer) || answer.call_result!=='ok')continue;
+    const reference=object(answer.result) && typeof answer.result.reference==='string' ? answer.result.reference : null;
+    const run=object(answer.run) && typeof answer.run.run==='string' ? answer.run.run : null;
+    for(const document of requestedDocuments(capture)) {if(reference!==null && readable.has(reference))pending.delete(document);else pending.set(document,{reference,run,session:capture.session ?? null,args:capture.request.args});}
   }
   return pending;
 }
 export const collectionRecoveryAction = ():string => '保持同一原树导出、原会话和 --batch，在幂等窗口内（默认 24 小时）运行 node scripts/real/accept/location-tree.ts --collect --tree <同一原树文件> --batch <原批量> --token-file <原令牌文件> --out <仓库外新目录>，保留原 --builds、--facets、--production 和 --url 参数。每批派生保存的同一 client_key，Hub 返回同一运行并重读结果；之后从新 --out 比较或用同一种子抽样。若原 key 缺失或窗口已过，先由集成者查已有运行，不能直接新建 key 重跑';
+
+export function unreadResultRecovery(pending:UnreadResult):NonNullable<Pending['recovery']> {
+  return pending.reference === null ? {tool:'start_run',args:pending.args,session:pending.session,run:pending.run} : {tool:'get_nodes',args:{reference:pending.reference},session:pending.session,start_args:pending.args,run:pending.run};
+}
+export function unreadResultAction(pending:UnreadResult):string {
+  if(pending.reference !== null) return collectionRecoveryAction();
+  const key=object(pending.args) && typeof pending.args.client_key==='string' ? pending.args.client_key : '未提供（请集成者从原调用补取）';
+  return '运行已受理但没有结果引用；请集成者按运行 '+(pending.run ?? '未提供（请从原受理应答补取）')+'、client_key '+key+' 和保存的请求参数核对 Hub 侧运行及结果记录，修复持久化缺口。同键在幂等窗口内只返回已有运行，不会补生成结果；不要按结果缺条目处理，也不要直接新建 key 重跑。窗口过后仍须先由集成者核对已有运行，再决定是否开新运行，读取完整结果到仓库外新 --out 后重新比较或抽样';
+}
 
 export function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
   const refused = new Map<string, string>();
@@ -312,10 +324,10 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
     if (category) {
       summary.missing[category]++;
       if (category === 'result_unread') {
-        const pending=unread.get(expected.document)!;const next_action=collectionRecoveryAction();
+        const pending=unread.get(expected.document)!;const next_action=unreadResultAction(pending);
         summary.candidates.not_run++;
         details.missing.push({document:expected.document,reason:'结果未读到',next_action});
-        details.not_run.push({document:expected.document,fact:'已受理运行的完整定位与候选结果',next_action,recovery:{tool:'get_nodes',args:{reference:pending.reference},session:pending.session,start_args:pending.args}});
+        details.not_run.push({document:expected.document,fact:pending.reference===null?'运行已受理但没有结果引用':'已受理运行的完整定位与候选结果',next_action,recovery:unreadResultRecovery(pending)});
         continue;
       }
       if (category === 'start_uncertain') {
