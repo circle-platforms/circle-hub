@@ -8,14 +8,14 @@
 // more, while four-digit numbers and numbers glued to Han text or a unit start titles as quantities (8080 端口, 4094 VLAN,
 // 10000并发, 1000条). Where a leading number is no id at all (folders deep in the tree, the map path, the case text), callers
 // read marked ids only. (Numbers are invented.)
-import { nfkc, validDate } from './text.ts';
+import { validDate } from './text.ts';
 import type { FoundId } from './types.ts';
 
 /** Code units of one text that are scanned; real titles are far shorter. */
 const MAX_SCAN = 2000;
 
 /**
- * Markers on NFKC, lower-cased text. Alternatives in order: the "bug to case" family (unmarked), bug words (defect), story
+ * Markers on NFKC, lower-cased text. Alternatives in order: the "bug to case" family (defect), bug words (defect), story
  * words (requirement), plm (unmarked), then the Chinese words. ASCII markers must not continue a word (debug, history).
  */
 const MARKER = /(?<![a-z0-9])(?:(bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})|(bugs?)|(stor(?:y|ies))|(plm))|(缺陷)|(需求单?)/gu;
@@ -45,7 +45,7 @@ function idAt(text: string, at: number, min: number, max: number, bare: boolean)
   let end = at;
   while (end < text.length && text[end] >= '0' && text[end] <= '9') end += 1;
   const id = text.slice(at, end);
-  if (id.length < min || id.length > max || id.startsWith('0')) return null;
+  if (id.length < min || id.length > max) return null;
   const before = text[at - 1] ?? '';
   const next = text[end] ?? '';
   const after = text[end + 1] ?? '';
@@ -58,12 +58,14 @@ function idAt(text: string, at: number, min: number, max: number, bare: boolean)
   if (id.length === 8 && validDate(Number(id.slice(0, 4)), Number(id.slice(4, 6)), Number(id.slice(6, 8)))) return null; // 20260531
   if (/^\s*[年月日号]/u.test(text.slice(end, end + 3))) return null; // 2026年
   if (bare && /^\s*:/.test(text.slice(end, end + 3))) return null; // 1001：网络
-  return { id, end };
+  const normalized = normalizeId(id);
+  return normalized === null ? null : { id: normalized, end };
 }
 
 /** Ids from `at` on: one, then more after list separators; stops at the first number that cannot be an id. */
-function idList(text: string, at: number, min: number, max: number, bare = false): { ids: string[]; end: number; ends: number[] } {
+function idList(text: string, at: number, min: number, max: number, bare = false): { ids: string[]; end: number; starts: number[]; ends: number[] } {
   const ids: string[] = [];
+  const starts: number[] = [];
   const ends: number[] = [];
   let position = at;
   let end = at;
@@ -71,6 +73,7 @@ function idList(text: string, at: number, min: number, max: number, bare = false
     const found = idAt(text, position, min, max, bare);
     if (found === null) break;
     ids.push(found.id);
+    starts.push(position);
     ends.push(found.end);
     position = found.end;
     end = found.end;
@@ -78,34 +81,42 @@ function idList(text: string, at: number, min: number, max: number, bare = false
     if (separator === null) break;
     position += separator.length;
   }
-  return { ids, end, ends };
+  return { ids, end, starts, ends };
 }
 
-/** The kind of a marker: null for the "bug to case" family and PLM. */
+/** The kind of a marker: null only for PLM. */
 function kindOf(groups: RegExpExecArray | RegExpMatchArray): FoundId['kind'] {
-  if (groups[1] !== undefined || groups[4] !== undefined) return null;
+  if (groups[4] !== undefined) return null;
+  if (groups[1] !== undefined) return 'bug';
   if (groups[2] !== undefined || groups[5] !== undefined) return 'bug';
   return 'story';
 }
 
 /** Ids after a marker word anywhere in the text. */
-export function markedIds(text: string): FoundId[] {
-  const lower = nfkc(text.slice(0, MAX_SCAN)).toLowerCase();
+export function markedIds(text: string, fromBugToCase?: (id: string) => void): FoundId[] {
+  const frame = scanText(text.slice(0, MAX_SCAN), true, true);
+  const lower = frame.text;
   const out: FoundId[] = [];
   MARKER.lastIndex = 0;
   for (let match = MARKER.exec(lower); match !== null; match = MARKER.exec(lower)) {
     let kind = kindOf(match);
+    let family = match[1] !== undefined;
     let position = match.index + match[0].length;
     position += (sticky(GLUE, lower, position) ?? '').length;
     INNER.lastIndex = position;
     const inner = INNER.exec(lower);
     if (inner !== null) {
+      family = false;
       kind = inner[1] !== undefined || inner[3] !== undefined ? 'story' : 'bug';
       position += inner[0].length;
       position += (sticky(GLUE, lower, position) ?? '').length;
     }
-    const { ids, end } = idList(lower, position, 2, 9);
-    for (const id of ids) out.push({ kind, id });
+    const { ids, end, starts, ends } = idList(lower, position, 2, 9);
+    for (const [index, id] of ids.entries()) {
+      const raw = frame.spelling(starts[index], ends[index]);
+      out.push(raw === id ? { kind, id } : { kind, id, spellings: [raw] });
+      if (family) fromBugToCase?.(id);
+    }
     if (ids.length > 0) MARKER.lastIndex = Math.max(MARKER.lastIndex, end);
   }
   return out;
@@ -116,7 +127,8 @@ export function markedIds(text: string): FoundId[] {
  * seven digits each, none glued to Han text or followed by a unit (the whole run is a quantity then).
  */
 export function leadingIds(text: string): FoundId[] {
-  const lower = nfkc(text.slice(0, MAX_SCAN)).toLowerCase();
+  const frame = scanText(text.slice(0, MAX_SCAN), true, true);
+  const lower = frame.text;
   let at = 0;
   for (let guard = 0; guard < 32; guard++) {
     const skip = sticky(LEAD_SKIP, lower, at) ?? sticky(LEAD_BRACKET, lower, at) ?? sticky(LEAD_WORD, lower, at);
@@ -124,9 +136,12 @@ export function leadingIds(text: string): FoundId[] {
     at += skip.length;
   }
   at += (sticky(LEAD_OPEN, lower, at) ?? '').length;
-  const { ids, ends } = idList(lower, at, 5, 7, true);
+  const { ids, starts, ends } = idList(lower, at, 5, 7, true);
   if (ends.some((end) => GLUED_HAN.test(lower.slice(end, end + 1)) || UNIT.test(lower.slice(end, end + 12)))) return [];
-  return ids.map((id) => ({ kind: null, id }));
+  return ids.map((id, index) => {
+    const raw = frame.spelling(starts[index], ends[index]);
+    return raw === id ? { kind: null, id } : { kind: null, id, spellings: [raw] };
+  });
 }
 
 /**
@@ -137,17 +152,53 @@ export function extractIds(text: string, options: { leading?: boolean } = {}): F
   if (typeof text !== 'string' || text === '') return [];
   const found = [...markedIds(text), ...(options.leading === false ? [] : leadingIds(text))];
   const named = new Set(found.filter((f) => f.kind !== null).map((f) => f.id));
-  const seen = new Set<string>();
-  return found.filter((f) => {
-    if (f.kind === null && named.has(f.id)) return false;
-    const key = `${f.kind}:${f.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const byId = new Map<string, FoundId>();
+  for (const entry of found) {
+    if (entry.kind === null && named.has(entry.id)) {
+      for (const namedEntry of found.filter(candidate => candidate.id === entry.id && candidate.kind !== null)) {
+        if (entry.spellings || namedEntry.spellings) namedEntry.spellings = [...new Set([...(namedEntry.spellings ?? [namedEntry.id]), ...(entry.spellings ?? [entry.id])])];
+      }
+      continue;
+    }
+    const key = `${entry.kind}:${entry.id}`; const previous = byId.get(key);
+    if (previous && (previous.spellings || entry.spellings)) previous.spellings = [...new Set([...(previous.spellings ?? [previous.id]), ...(entry.spellings ?? [entry.id])])];
+    else if (!previous) byId.set(key, entry);
+  }
+  return [...byId.values()];
 }
 
 /** Whether a text carries an id (a folder that does is a document folder, not a module). */
 export function hasIds(text: string): boolean {
   return extractIds(text).length > 0;
+}
+
+/** Defect ids explicitly introduced by this title convention, excluding an intervening story/bug marker. */
+export function bugToCaseIds(text: string): string[] {
+  const ids: string[] = [];
+  markedIds(text, id => ids.push(id));
+  return ids;
+}
+
+/** Canonical nonzero decimal identity; all-zero text is not an identifier. Original spelling is retained separately. */
+export function normalizeId(raw: string): string | null {
+  const digits = raw.normalize('NFKC');
+  return /^0+$/.test(digits) ? null : digits.replace(/^0+(?=\d)/, '');
+}
+
+/** Matching text with source offsets, so compatibility normalization never rewrites a displayed identifier. */
+function scanText(raw: string, squeeze = false, lower = false): { text: string; spelling: (start: number, end: number) => string } {
+  let text = '';
+  const starts: number[] = []; const ends: number[] = [];
+  for (const part of new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(raw.toWellFormed())) {
+    let piece = part.segment.normalize('NFKC');
+    if (lower) piece = piece.toLowerCase();
+    for (const unit of piece.split('')) {
+      if (squeeze && unit === '\u0000') continue;
+      const char = squeeze && /\s/u.test(unit) ? ' ' : unit;
+      if (squeeze && char === ' ' && (!text || text.endsWith(' '))) continue;
+      text += char; starts.push(part.index); ends.push(part.index + part.segment.length);
+    }
+  }
+  if (squeeze && text.endsWith(' ')) { text = text.slice(0, -1); starts.pop(); ends.pop(); }
+  return { text, spelling: (start, end) => raw.slice(starts[start], ends[end - 1]) };
 }

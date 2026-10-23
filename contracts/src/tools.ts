@@ -2,6 +2,7 @@
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
+import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
@@ -143,6 +144,7 @@ const KnowledgeNode = z.strictObject({
   digest: Sha256,
   children: z.array(z.strictObject({ name: z.string(), path: TreePath, digest: Sha256 })),
   entries: z.array(NodeEntry),
+  contributions: z.array(KnowledgeContributionPageView).max(MAX_NODE_CONTRIBUTIONS).optional().describe('A bounded page of contributions beside the tree; continue with next; not part of the root digest'),
 });
 
 export const GetNodesOutput = Envelope.extend({

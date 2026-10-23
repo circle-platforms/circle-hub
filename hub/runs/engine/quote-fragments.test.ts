@@ -24,8 +24,8 @@ after(async function afterHook() {
 const EXPECTED: Record<string, string> = { c1: '3 区开始浇灌，15 分钟后停止', c2: '列出 8 个分区的状态' };
 
 /** A run whose c4 findings slot carries the quote deep in data (data.expected_quote); returns the findings requirement. */
-const quoteRun = async (h: Harness, map: string, quote: { text: string; reference: string }) => {
-  const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, h.call())).run!;
+const quoteRun = async (h: Harness, map: string, quote: { text: string; reference: string }, notes?: string) => {
+  const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map }, ...(notes ? { notes: [{ reference: notes }] } : {}) } }, h.call())).run!;
   const reference = quote.reference === '@c2expected'
     ? expectedRef(map, run).replace('c1aaaaaaaaaae0','c2bbbbbbbbbbe0')
     : quote.reference === '@c1expected' ? expectedRef(map, run) : quote.reference;
@@ -48,7 +48,7 @@ const quoteRun = async (h: Harness, map: string, quote: { text: string; referenc
     h.call(),
   );
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-  const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+  const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
   return row.requirements.find((r) => r.requirement === 'findings')!;
 };
 
@@ -90,7 +90,7 @@ test('the same slot-data quote, not verbatim, is refuted with QUOTE_MISMATCH', {
   }
 });
 
-test('a quote whose source is not an input of this run is refuted, not unknown', { skip }, async () => {
+test('a quote whose source is not an input of this run is refuted', { skip }, async () => {
   const { h, map } = await open();
   try {
     const findings = await quoteRun(h, map, { text: '随便什么文字', reference: `src:${'f'.repeat(64)}/kityminder@1/n/docq7/c1aaaaaaaaaa` });
@@ -152,7 +152,7 @@ test('two data-only quote rows over one reference resolve once per evaluation', 
       h.call(),
     );
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-    const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+    const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
     // Both rows over the one reference are checked (four quote supports: two rows x two checks) with no refute or
     // unknown — one parse served them all.
     const findings = row.requirements.find((r) => r.requirement === 'findings')!;
@@ -183,7 +183,7 @@ test('a tree reference whose root is the run\'s locked root is checked: verbatim
   }
 });
 
-test('a tree reference whose root is not the run\'s locked root is refuted as not an input', { skip }, async () => {
+test('a tree reference whose root is not the run\'s locked root is refuted', { skip }, async () => {
   const h = await openHarness(postgres, { review: { dynamicFindings: true }, dataQuotes: true });
   try {
     const map = await h.upload(h.alice, toyMap(standardDocument()));
@@ -199,7 +199,7 @@ test('a tree reference whose root is not the run\'s locked root is refuted as no
   }
 });
 
-test('a rec reference that does not resolve stays unknown, never refuted', { skip }, async () => {
+test('an out of scope record reference is refuted with a binding remedy', { skip }, async () => {
   const h = await openHarness(postgres, { review: { dynamicFindings: true }, dataQuotes: true });
   try {
     const map = await h.upload(h.alice, toyMap(standardDocument()));
@@ -207,45 +207,63 @@ test('a rec reference that does not resolve stays unknown, never refuted', { ski
     const stranger = 'e'.repeat(64);
     const findings = await quoteRun(h, map, { text: '随便什么文字', reference: `rec:${stranger}#/body/x` });
     const layer = findings.layers.find((l) => l.layer === 'static')!;
-    assert.equal(layer.terminal, 'unchecked', JSON.stringify(findings.layers));
-    assert.equal(layer.reason, 'missing_input');
-    assert.ok(!findings.claims.some((c) => c.statement.verdict === 'refute'), JSON.stringify(findings.claims.map((c) => c.statement)));
-    const unknown = findings.claims.find((c) => c.statement.verdict === 'unknown');
-    assert.ok(unknown !== undefined && /取不回|不可读|没有绑定/.test(unknown.statement.text), JSON.stringify(unknown?.statement));
+    assert.equal(layer.terminal, 'violation', JSON.stringify(findings.layers));
+    assert.ok(findings.claims.some(c => c.statement.code === 'QUOTE_MISMATCH'));
+    assert.ok(findings.claims.some(c => c.statement.verdict === 'refute' && c.statement.data?.why === 'not_bound'));
+    const unknown = findings.claims.find((c) => c.statement.verdict === 'refute');
+    assert.ok(unknown !== undefined && /取不回|不可读|没有绑定|不是这次运行的输入/.test(unknown.statement.text), JSON.stringify(unknown?.statement));
   } finally {
     await h.close();
   }
 });
 
 
-test('readable rec fragments pass, a wrong quote refutes, but an unresolved pointer stays unknown', { skip }, async t => {
+test('a readable record outside the run is refuted even when the quote matches', { skip }, async t => {
   const {h,map}=await open(); t.after(()=>h.close());
   const owner=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'3.2',inputs:{map:{reference:map}}},h.call());
   assert.ok(owner.run);
   const record=await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{run:owner.run.run,text:'合成记录片段'}});
   const reference=`rec:${record.digest}#/text`;
-  const good=await quoteRun(h,map,{text:'合成记录片段',reference});
-  assert.equal(good.claims.filter(c=>c.statement.verdict==='support' && c.statement.text.includes('逐字一致')).length,2);
-  assert.ok(!good.claims.some(c=>c.statement.verdict==='refute'||c.statement.verdict==='unknown'));
-  const wrong=await quoteRun(h,map,{text:'记录中没有的文字',reference});
-  assert.ok(wrong.claims.some(c=>c.statement.verdict==='refute' && c.statement.code==='QUOTE_MISMATCH'));
-  const missing=await quoteRun(h,map,{text:'合成记录片段',reference:`rec:${record.digest}#/missing`});
-  assert.ok(missing.claims.some(c=>c.statement.verdict==='unknown' && c.statement.reason==='missing_input'));
-  assert.ok(!missing.claims.some(c=>c.statement.verdict==='refute'));
+  for (const text of ['合成记录片段', '记录中没有的文字']) {
+    const result = await quoteRun(h, map, { text, reference });
+    assert.ok(result.claims.some(c => c.statement.verdict === 'refute' && c.statement.data?.why === 'not_bound'));
+    assert.ok(!result.claims.some(c => c.statement.verdict === 'unknown'));
+  }
 });
 
-test('entry references follow the boundary resolver: readable passes and unavailable stays unknown', { skip }, async t => {
+test('bound action records are checked but bound run records cannot serve as grounds', { skip }, async t => {
+  const { h, map } = await open(); t.after(() => h.close());
+  h.review.workflow.inputs.find(i => i.slot === 'notes')!.accepts.push('application/json');
+  const owner = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, h.call())).run!;
+  const action = await h.kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { run: owner.run, text: '合成记录片段' } });
+  const reference = `rec:${action.digest}#/text`;
+  const good = await quoteRun(h, map, { text: '合成记录片段', reference }, `rec:${action.digest}`);
+  assert.equal(good.claims.filter(c => c.statement.verdict === 'support' && c.statement.text.includes('逐字一致')).length, 2);
+  const wrong = await quoteRun(h, map, { text: '记录中没有的文字', reference }, `rec:${action.digest}`);
+  assert.ok(wrong.claims.some(c => c.statement.verdict === 'refute' && c.statement.code === 'QUOTE_MISMATCH'));
+  const missing = await quoteRun(h, map, { text: '合成', reference: `rec:${action.digest}#/absent` }, `rec:${action.digest}`);
+  assert.ok(missing.claims.some(c => c.statement.verdict === 'refute' && c.statement.data?.why === 'no_fragment'));
+  const malformed = await quoteRun(h, map, { text: '合成', reference: 'src:bad' });
+  assert.ok(malformed.claims.some(c => c.statement.verdict === 'refute' && c.statement.data?.why === 'malformed'));
+  const stored = await h.kit.store.find({ key: 'runs.id', value: owner.run, kind: 'run' });
+  const runRef = `rec:${stored.items[0].digest}`;
+  const forbidden = await quoteRun(h, map, { text: owner.run, reference: `${runRef}#/run` }, runRef);
+  assert.ok(forbidden.claims.some(c => c.statement.verdict === 'refute' && c.statement.data?.why === 'not_groundable'));
+  assert.ok(!forbidden.claims.some(c => c.statement.verdict === 'unknown'));
+});
+
+test('standalone knowledge entries require a tree address', { skip }, async t => {
   const {h,map}=await open(); t.after(()=>h.close());
   const entry='d'.repeat(64),treeReader=h.knowledge.treeReader();
   t.mock.method(h.knowledge,'treeReader',()=>({...treeReader,readEntry:(sha:string)=>sha===entry
     ? {text:'合成条目原文',mediaType:'text/plain',readTier:'model_readable' as const,grounds:[]}
     : null}));
   const good=await quoteRun(h,map,{text:'合成条目原文',reference:`entry:${entry}`});
-  assert.equal(good.claims.filter(c=>c.statement.verdict==='support' && c.statement.text.includes('逐字一致')).length,2);
-  assert.ok(!good.claims.some(c=>c.statement.verdict==='unknown'||c.statement.verdict==='refute'));
+  assert.ok(good.claims.some(c=>c.statement.verdict==='refute' && c.statement.data?.why==='entry_unaddressed'));
+  assert.ok(!good.claims.some(c=>c.statement.verdict==='unknown'));
   const missing=await quoteRun(h,map,{text:'合成条目原文',reference:`entry:${'c'.repeat(64)}`});
-  assert.ok(missing.claims.some(c=>c.statement.verdict==='unknown'));
-  assert.ok(!missing.claims.some(c=>c.statement.verdict==='refute'));
+  assert.ok(missing.claims.some(c=>c.statement.verdict==='refute'));
+  assert.ok(!missing.claims.some(c=>c.statement.verdict==='unknown'));
 });
 
 test('resolver codes refute parser and range failures even when the message never says 找不到', { skip }, async t => {
@@ -260,21 +278,27 @@ test('resolver codes refute parser and range failures even when the message neve
   }
 });
 
-test('a locked tree with no readable text stays unknown, including retained content and failed reads', { skip }, async t => {
+test('a locked tree preserves retained/empty grades and automatically recovers temporary read failures', { skip }, async t => {
   const {h,map}=await open(); t.after(()=>h.close());
   const treeReader=h.knowledge.treeReader();
+  let offlineReads=0;
   t.mock.method(h.knowledge,'treeReader',()=>({...treeReader,hasRoot:()=>true,read:(...args:Parameters<typeof treeReader.read>)=>{
     if (args[1] === '/empty') return {text:null,mediaType:'application/octet-stream',readTier:'model_readable' as const,grounds:[]};
     if (args[1] === '/held') return {text:null,mediaType:'text/plain',readTier:'retain_only' as const,grounds:[]};
-    if (args[1] === '/offline') throw new Error('合成读取失败');
+    if (args[1] === '/offline') { if(++offlineReads < 3) throw new Error('合成读取失败'); return {text:'任意引文',mediaType:'text/plain',readTier:'model_readable' as const,grounds:[]}; }
     if (args[1] === '/missing') return null;
     return treeReader.read(...args);
   }}));
-  for (const [path,message] of [['/empty',/取不回/],['/held',/含凭据，原文不可读/],['/offline',/取不回/]] as const) {
+  for (const [path,message] of [['/held',/含凭据，原文不可读/]] as const) {
     const result=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}${path}`});
     assert.ok(!result.claims.some(c=>c.statement.verdict==='refute'));
     assert.ok(result.claims.some(c=>c.statement.verdict==='unknown' && message.test(c.statement.text)));
   }
+  const recovered=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/offline`});
+  assert.equal(offlineReads,3);
+  assert.ok(!recovered.claims.some(c=>c.statement.verdict==='unknown'||c.statement.verdict==='refute'));
+  const empty=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/empty`});
+  assert.ok(empty.claims.some(c=>c.statement.verdict==='refute' && c.statement.data?.why==='no_fragment'));
   const missing=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/missing`});
   const refute=missing.claims.find(c=>c.statement.verdict==='refute');
   assert.ok(refute);

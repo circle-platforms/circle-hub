@@ -20,6 +20,16 @@
       ],
       "required": false,
       "many": false
+    },
+    {
+      "slot": "facets",
+      "role": "hint",
+      "description": "起始构建用例按命令分面的完整计数，只作未归位披露：knowledge:facets:<产品>:<起始构建>?kind=case&by=commands；截断时先补取完整视图",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": false
     }
   ],
   "parameters": [

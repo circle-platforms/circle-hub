@@ -10,6 +10,7 @@ import { isId, newId } from '../records/ids.ts';
 import type { ActionBody } from '../records/api.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
+import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
@@ -227,7 +228,7 @@ export class LeaseService {
 
   /** The shared body of extend and release: rows locked FOR UPDATE, every update must affect its row, and the
    * service's own clock decides (no caller-supplied moment: a caller could lie a lease young again). */
-  async #change(keys: string[], holder: Holder, op: 'extend' | 'release', ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
+  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
       const now = await this.#nowIn(tx);
@@ -301,7 +302,7 @@ export class LeaseService {
     return row.rows[0]?.expires_at.toISOString() ?? null;
   }
 
-  async #appendAction(tx: PgTransaction, op: 'acquire' | 'extend' | 'release' | 'force_release' | 'take_over', lease: string, keys: string[], holder: Holder, until: string, token: number, extra: Record<string, unknown> = {}): Promise<void> {
+  async #appendAction(tx: PgTransaction, op: LeaseOp, lease: string, keys: string[], holder: Holder, until: string, token: number, extra: Record<string, unknown> = {}): Promise<void> {
     const detail = LeaseDetail.parse({ op, lease, keys, holder, until, token });
     const startedAt = new Date().toISOString();
     const body: ActionBody = {

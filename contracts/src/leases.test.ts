@@ -128,7 +128,7 @@ test('RunRecord gains leases: the lease id, its keys and the until moment', () =
   assert.ok(without.success, 'leases is optional');
 });
 
-test('the lease_op axis holds the five lease operations with D04’s words, and a revision note names the audit', async () => {
+test('the lease_op axis holds the seven lease operations with D04’s words, and a revision note names the audit', async () => {
   const axis = model.vocabulary.find((a) => a.axis === 'lease_op');
   assert.ok(axis, 'the model has a lease_op axis');
   assert.deepEqual(
@@ -139,13 +139,15 @@ test('the lease_op axis holds the five lease operations with D04’s words, and 
       ['release', '释放'],
       ['force_release', '强制释放'],
       ['take_over', '接管'],
+      ['register', '登记'],
+      ['unregister', '注销'],
     ],
   );
   const d04 = model.elements.find((e) => e.id === 'D04')!;
   const notes = [...((d04 as { changes6?: string[] }).changes6 ?? [])];
   assert.ok(notes.some((c) => c.includes('lease_op') && c.includes('核对')), 'a revision note names the audit');
   const { LEASE_OP, LEASE_OP_LABEL, LeaseOpSchema, isLeaseOp } = await import('../generated/vocabulary.ts');
-  assert.deepEqual([...LEASE_OP], ['acquire', 'extend', 'release', 'force_release', 'take_over']);
+  assert.deepEqual([...LEASE_OP], ['acquire', 'extend', 'release', 'force_release', 'take_over', 'register', 'unregister']);
   assert.equal(LEASE_OP_LABEL.force_release, '强制释放');
   assert.equal(LEASE_OP_LABEL.take_over, '接管');
   assert.ok(isLeaseOp('take_over') && !isLeaseOp('steal'));

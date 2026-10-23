@@ -1,7 +1,7 @@
 {
   "schema": "system@1",
   "title": "PLM 查询服务",
-  "description": "PLM 查询服务的只读访问：缺陷详情（plm:bug:<编号>）、需求详情（plm:story:<编号>）、产品列表（plm:products:all）和一个产品的构建列表（plm:builds:<产品编号>）。读接口也用 POST，而且写接口与读接口同一个前缀，所以读路由逐条列出（方法加路径模板），写接口一条也没有列，传输层按路由清单拒绝它。登录与敏捷测试平台相同（同一个令牌可用）；信封 {code, msg, data}，code 1000 表示成功，构建列表的成功应答是不带信封的数组。",
+  "description": "PLM 查询服务的只读访问：缺陷详情（plm:bug:<编号>）、需求详情（plm:story:<编号>）、产品列表（plm:products:all）和一个产品的构建列表（plm:builds:<产品编号> 或 plm:builds:<逐族编码的名字，以 + 连接>）。读接口也用 POST，而且写接口与读接口同一个前缀，所以读路由逐条列出（方法加路径模板），写接口一条也没有列，传输层按路由清单拒绝它。登录与敏捷测试平台相同（同一个令牌可用）；信封 {code, msg, data}，code 1000 表示成功，构建列表的成功应答是不带信封的数组。",
   "roles": [
     {
       "name": "plm-oauth",
@@ -191,7 +191,7 @@
     {
       "name": "bug",
       "external": "plm:bug",
-      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）",
+      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段",
       "plan": {
         "module": "functions/plm.ts",
         "export": "detailPlan"
@@ -233,7 +233,7 @@
     {
       "name": "stories",
       "external": "plm:stories",
-      "description": "多个需求的详情列表（编号用 + 连接，至多 50 个）：保留原样状态、阶段和标题，未返回的编号列为未知",
+      "description": "多个需求的详情列表（编号用 + 连接，至多 50 个）：标量状态与阶段原样保留；非单个值置 null 并列入 fields_nonscalar，原值在原件；缺字段列入 fields_absent；标题保留；应答未包含的编号列入 unread",
       "plan": {
         "module": "functions/plm.ts",
         "export": "storiesPlan"
@@ -256,17 +256,15 @@
     {
       "name": "builds",
       "external": "plm:builds",
-      "description": "一个产品的构建列表（编号写产品编号）",
-      "request": {
-        "route": "builds",
-        "query": {
-          "product": "{id}"
-        }
-      },
-      "max_requests": 1,
+      "description": "一个产品的构建列表：数字键直接读取；名字键将各名字分别 URI 编码后以 + 连接，产品名整串先 NFKC 再按 / 切开，各段 trim、String.prototype.toLowerCase 后精确匹配；请求的每族名字规范化后不能含 /，唯一匹配才读构建。settings.build_story_field 指定构建需求字段，不猜字段名；产品未唯一解析时 builds 为 null（未读），列出按编号去重的候选、缺口与下一步，覆盖不完整；数字键只读一次，产品编号取自读取键，没有对照产品列表核对，构建列表为空不证明产品存在",
+      "max_requests": 2,
       "project": {
         "module": "functions/plm.ts",
         "export": "buildsProject"
+      },
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "buildsPlan"
       }
     }
   ]

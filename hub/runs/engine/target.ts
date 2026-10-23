@@ -78,7 +78,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   const readable = await packs.readableProducts(user);
   const human: Warrant = { producer: 'human', id: user.id };
   // A workflow that names no product and requires no catalog is bound to no product line (see boundProducts in runs/packs).
-  const unbound = binding.id === undefined && binding.catalogs.length === 0;
+  const unbound = binding.id === undefined && binding.catalogs.length === 0 && workflow.workflow.contribution === undefined;
   const eligible = async (): Promise<ProductHandle[]> => {
     if (unbound) return [];
     if (binding.id !== undefined) {

@@ -280,6 +280,6 @@ describe('scenario 27: checks read bound sources by declaration', () => {
     assert.equal(dataReads.unread_sources.length, 1);
     assert.equal(dataReads.unread_sources[0].reference, bigRef);
     assert.equal(dataReads.unread_sources[0].slot, 'guide');
-    assert.match(dataReads.unread_sources[0].reason, /超过大小上限/);
+    assert.equal(dataReads.unread_sources[0].reason, 'budget_exhausted');
   });
 });

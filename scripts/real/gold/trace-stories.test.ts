@@ -89,10 +89,11 @@ test('the independent gold counts non-scalar state separately from explicit null
   assert.deepEqual(gold.statuses, [{ status: null, count: 1 }]);
 });
 
-test('story gold owns zero-prefix matching while the shared location gold retains its current rule', async () => {
+test('story gold independently follows the published nonzero leading-zero rule', async () => {
   const {extractAssociatedIds}=await import('./locations.ts');
-  assert.deepEqual(extractAssociatedIds('缺陷 0910011 合成',[]).bugs,[]);
-  assert.deepEqual(extractAssociatedIds('需求 00021 合成',[]).stories,[]);
+  assert.deepEqual(extractAssociatedIds('缺陷 0910011 合成',[]).bugs,['0910011']);
+  assert.deepEqual(extractAssociatedIds('需求 00021 合成',[]).stories,['00021']);
+  assert.deepEqual(extractAssociatedIds('缺陷 00；需求 000',[]).associatedIds,[]);
   const value=storyGold({ids:['21'],plm:[{id:21}],maps:[{document:'91',map}],tree:{id:'root',label:'需求 00021',children:[{id:'91',label:'合成文档',children:[]}]},product:'synthetic',build:'Synthetic_10_6'});
   assert.equal(value.stories[0].cases.length,2);
   const folderOnly=storyGold({ids:['21'],plm:[],maps:[{document:'91',map:{root:node('合成文档','root',[node('合成用例','c1',[node('期望','e1')],['Functional'])])}}],tree:{id:'root',label:'需求 00021',children:[{id:'91',label:'合成文档',children:[]}]},product:'synthetic',build:'Synthetic_10_6'});

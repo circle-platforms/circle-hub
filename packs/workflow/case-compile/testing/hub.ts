@@ -27,13 +27,13 @@ import { stage } from '../pack-files.ts';
 
 export const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
-export const ROOT = sha('synthetic root of Rel_APV_10_6_1_57');
+export const ROOT = sha('synthetic root of Fixture_Build_A');
 
 export const BUILD: KnownBuild = {
-  name: 'Rel_APV_10_6_1_57',
-  family: 'APV',
-  line: '10.6.1',
-  base: 'Rel_APV_10_6_1_57',
+  name: 'Fixture_Build_A',
+  family: 'Widget',
+  line: 'fixture-line',
+  base: 'Fixture_Build_A',
   platform: null,
   built_at: '2026-09-01T00:00:00.000Z',
   released_at: '2026-09-02T00:00:00.000Z',
@@ -54,13 +54,13 @@ export class FakeKnowledge implements KnowledgePort {
   readonly #catalogView: CatalogView = buildCatalog(CATALOG_SPEC);
 
   async builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]> {
-    return product === 'apv' && (filter?.line === undefined || filter.line === BUILD.line) ? [BUILD] : [];
+    return product === 'widget' && (filter?.line === undefined || filter.line === BUILD.line) ? [BUILD] : [];
   }
   async resolveBuild(product: string, name: string): Promise<KnownBuild | null> {
-    return product === 'apv' && name.toLowerCase() === BUILD.name.toLowerCase() ? BUILD : null;
+    return product === 'widget' && name.toLowerCase() === BUILD.name.toLowerCase() ? BUILD : null;
   }
   async currentRoot(product: string, line: string): Promise<RootInfo | null> {
-    return product === 'apv' && line === BUILD.line ? this.info() : null;
+    return product === 'widget' && line === BUILD.line ? this.info() : null;
   }
   async rootOfBuild(product: string, name: string): Promise<RootInfo | null> {
     return (await this.resolveBuild(product, name)) === null ? null : this.info();
@@ -84,7 +84,7 @@ export class FakeKnowledge implements KnowledgePort {
     return null;
   }
   private info(): RootInfo {
-    return { root: ROOT, composition: sha('composition of Rel_APV_10_6_1_57'), product: 'apv', build: BUILD, produced_at: '2026-09-03T00:00:00.000Z' };
+    return { root: ROOT, composition: sha('composition of Fixture_Build_A'), product: 'widget', build: BUILD, produced_at: '2026-09-03T00:00:00.000Z' };
   }
 }
 
@@ -168,9 +168,9 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const staged = await stage(join(temp.path, 'case-compile'));
     const published = await registry.publish(alice, staged);
     if (!published.ok) throw new Error(`case-compile was not published: ${JSON.stringify(published.problems, null, 1)}`);
-    const product = await registry.publish(alice, (await writePack(join(temp.path, 'apv'), productPack('apv', 'APV', ['APV', 'NSAE']))).dir);
+    const product = await registry.publish(alice, (await writePack(join(temp.path, 'widget'), productPack('widget', 'Widget', ['Widget', 'Gadget']))).dir);
     if (!product.ok) throw new Error(`product pack was not published: ${JSON.stringify(product.problems, null, 1)}`);
-    await registry.activate(admin, 'apv');
+    await registry.activate(admin, 'widget');
     await registry.assign(admin, alice.id, 'case-compile');
 
     const external = new FakeExternal(kit.artifacts);

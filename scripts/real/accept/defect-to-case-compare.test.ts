@@ -1,11 +1,12 @@
 // Synthetic tests of accept/defect-to-case-compare.ts: the head-overlap ratios, the verbatim report read from the
 // Hub's claims (never recomputed), and the duplicate-set comparison in both directions and the equal case.
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {createHash} from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { computeComparison, draftsOf, main, renderComparison } from './defect-to-case-compare.ts';
+import { computeComparison, draftsOf, main, renderComparison, outsideGit, writePrivateJson, comparisonDetails, evidenceQuestions } from './defect-to-case-compare.ts';
 
 const docGold = {
   document: '24110',
@@ -71,14 +72,14 @@ describe('the verbatim report reads the Hub’s claims, never re-judged', () => 
     const comparison = computeComparison(docGold, submissionOf(draft('a', 'show health')), resultWith([supportClaim, supportClaim]));
     assert.equal(comparison.quotes.allVerbatim, true);
     assert.equal(comparison.quotes.support, 2);
-    assert.match(renderComparison(comparison), /每条期望结果的引用都已被 Hub 判为逐字/);
+    assert.match(renderComparison(comparison), /支持 2 条/);
   });
 
   test('a refute claim is reported with its verdict and text', () => {
     const comparison = computeComparison(docGold, submissionOf(draft('a', 'show health')), resultWith([refuteQuoteClaim]));
     assert.equal(comparison.quotes.allVerbatim, false);
     assert.equal(comparison.quotes.problems.length, 1);
-    assert.match(renderComparison(comparison), /refute：第 1 个起草用例第 1 个期望结果/);
+    assert.match(renderComparison(comparison), /引文问题 1 条/);
   });
 
   test('no grounded claim at all is not "all verbatim"', () => {
@@ -143,7 +144,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     assert.equal(h.docRatio, 1);
     assert.deepEqual(h.unrecognizedInDoc, ['function', 'stress']);
     const text = renderComparison(comparison);
-    assert.match(text, /已有文档未识别的命令行：function、stress/);
+    assert.match(text, /未识别文档行 2/);
   });
 
   const syntheticXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
@@ -152,7 +153,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     <menu name="demo">
       <item name="pool">
         <arguments>
-          <string name="name"/>
+          <arg name="name" type="STRING"/>
         </arguments>
       </item>
     </menu>
@@ -229,7 +230,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     assert.equal(h.draftHeads, 1);
     assert.deepEqual(h.unrecognizedInDrafts, ['custom_tool action 123']);
     const text = renderComparison(comparison);
-    assert.match(text, /草稿里目录找不到的命令行：custom_tool action 123/);
+    assert.match(text, /未识别草稿行 1/);
   });
 
   test('main CLI accepts --commands and outputs comparison with catalog split', () => {
@@ -246,9 +247,78 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
       writeFileSync(commandsFile, syntheticXml, 'utf8');
 
       const code = main(['--gold', goldFile, '--drafts', draftsFile, '--result', resultFile, '--commands', commandsFile]);
-      assert.equal(code, 0);
+      assert.equal(code, 1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test('rendered output contains no synthetic title, command or quotation', () => {
+  const comparison = computeComparison(docGold, submissionOf(draft('SYNTHETIC_TITLE', 'widget health interval pool1 5', 'SYNTHETIC_QUOTE')), resultWith([refuteQuoteClaim], [dupClaim('SYNTHETIC_TITLE')]));
+  const text = renderComparison(comparison);
+  for (const secret of ['SYNTHETIC_TITLE', 'widget health interval', 'SYNTHETIC_QUOTE', refuteQuoteClaim.statement.text]) assert.ok(!text.includes(secret));
+});
+
+test('parameter combinations have all three categories and reverse coverage',()=>{
+  const commands='<commands><menu name="widget"><item name="health interval"><arguments><arg name="name" type="STRING"/><arg name="n" type="U16"/></arguments></item><item name="new"><arguments/></item></menu></commands>';
+  const report=computeComparison(docGold,submissionOf(draft('a','widget health interval pool1 5'),draft('b','widget health interval pool1 6'),draft('c','widget new')),resultWith([]),{commandTreeXml:commands});
+  assert.deepEqual([report.parameters!.same,report.parameters!.different,report.parameters!.absent],[1,1,1]);
+  assert.equal(report.parameters!.docRatio,1/3);
+});
+
+test('details are positional and private destinations cannot be in this worktree or its Git directory',()=>{
+  assert.throws(()=>outsideGit(join(import.meta.dirname,'forbidden-details.json')));
+  const detail=comparisonDetails(computeComparison(docGold,submissionOf(draft('PRIVATE_TITLE','widget health interval pool1 5')),resultWith([refuteQuoteClaim])));
+  assert.ok(!JSON.stringify(detail).includes('PRIVATE_TITLE'));
+});
+test('private details are written only as positions and categories with restrictive permissions',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-private-details-'));
+  try{
+    const comparison=computeComparison(docGold,submissionOf(draft('PRIVATE_TITLE','widget health interval pool1 5')),resultWith([refuteQuoteClaim]));
+    const path=join(dir,'details.json');writePrivateJson(path,comparisonDetails(comparison));
+    assert.ok(!readFileSync(path,'utf8').includes('PRIVATE_TITLE'));
+    assert.equal(statSync(path).mode&0o777,0o600);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});
+test('CLI exit codes follow known command disagreements and successful comparisons',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-exit-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  t.mock.method(process.stdout,'write',()=>true);
+  const manual=Buffer.from('SYNTHETIC_EXPECTATION');
+  const digest=createHash('sha256').update(manual).digest('hex');
+  const files={gold:docGold,result:{partitions:{delivered:[{item:'74001',requirements:[{requirement:'commands',status:'satisfied'},{requirement:'grounded',status:'satisfied'}]}]}},run:{sources:[]}};
+  for(const [name,value] of Object.entries(files))writeFileSync(join(dir,name),JSON.stringify(value));
+  writeFileSync(join(dir,'manual'),manual);writeFileSync(join(dir,'commands'),'<commands><menu name="widget"><item name="set"><arguments><arg name="" type="U16"/></arguments></item></menu></commands>');
+  for(const [value,expected] of [['5',0],['99999',1]] as const){
+    writeFileSync(join(dir,'drafts'),JSON.stringify(submissionOf({steps:[{command:`widget set ${value}`}],expected:[{text:manual.toString(),quote:{text:manual.toString(),reference:`src:${digest}`}}]})));
+    const args=['gold','drafts','result','commands','manual','run'].flatMap(name=>['--'+name,join(dir,name)]);
+    assert.equal(main(args),expected);
+  }
+});
+test('CLI diagnostics identify input flags and digest failures without exposing paths or bytes',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-diagnostic-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  let errors='';t.mock.method(process.stderr,'write',(value:any)=>{errors+=String(value);return true;});t.mock.method(process.stdout,'write',()=>true);
+  const args=['--gold',join(dir,'PRIVATE_ABSENT'),'--drafts',join(dir,'drafts'),'--result',join(dir,'result')];
+  assert.equal(main(args),2);assert.match(errors,/--gold/);assert.doesNotMatch(errors,/PRIVATE_ABSENT/);
+  writeFileSync(args[1],JSON.stringify(docGold));writeFileSync(args[3],JSON.stringify(submissionOf(draft('PRIVATE_TITLE','widget set 5'))));writeFileSync(args[5],JSON.stringify(resultWith([])));
+  const sourceDir=join(dir,'sources');mkdirSync(sourceDir);writeFileSync(join(sourceDir,'a'.repeat(64)),'PRIVATE_TAMPERED_BYTES');errors='';
+  assert.equal(main([...args,'--sources',sourceDir]),2);assert.match(errors,/source integrity mismatch.*--sources.*1/);assert.doesNotMatch(errors,/PRIVATE/);
+});
+
+test('follow-up reasons distinguish absent inputs from unsupported rules',()=>{
+  const missing=evidenceQuestions(computeComparison(docGold,submissionOf(draft('private','widget set 5')),resultWith([])));
+  assert.equal(missing.find(q=>q.missing_fact==='build_command_tree_original')?.reason,'missing_input');
+  const unsupported=evidenceQuestions(computeComparison(docGold,submissionOf(draft('private','widget set 5')),resultWith([]),{commandTreeXml:'<commands><menu name="widget"><item name="set"><arguments><arg name="" type="DEPLOYMENT"/></arguments></item></menu></commands>'}));
+  assert.equal(unsupported.find(q=>q.missing_fact==='declared_argument_type_rule')?.reason,'no_check');
+  assert.ok(!unsupported.some(q=>q.next_action.includes('replay_submission')));
+});
+
+test('comparison delegates hard wrapped quotations to the independent decision 37 oracle', () => {
+  const bytes = Buffer.from('返回\n成功 set 10 0'), digest = createHash('sha256').update(bytes).digest('hex');
+  const quoted = { ...draft('synthetic', 'show health'), expected: [{ text: '返回成功', quote: { reference: `src:${digest}/text@1/l/1-2`, text: '返回成功' } }] };
+  const options = { sources: new Map([[digest, bytes]]), run: { sources: [] } };
+  const report = computeComparison(docGold, submissionOf(quoted), {}, options).quoteOracle;
+  assert.equal(report.counts.support, 1); assert.equal(report.expectedVerbatim, 1);
+  quoted.expected[0].quote.text = 'set 100';
+  assert.equal(computeComparison(docGold, submissionOf(quoted), {}, options).quoteOracle.counts.refute, 1);
 });

@@ -14,7 +14,7 @@
         "source": "agile:mindmap:24001@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": null },
+        "declared": {"product": null, "line": null},
         "id_ranges": null
       },
       "verdict": "support",
@@ -39,10 +39,12 @@
         "requirements": ["20931"],
         "defects": [],
         "unclassified": [],
-        "id_sources": [{ "id": "20931", "kind": "story", "from": ["title"] }],
-        "ranged": { "requirements": [], "defects": [] },
+        "id_sources": [{"id": "20931", "kind": "story", "from": ["title"]}],
+        "ranged": {"requirements": [], "defects": []},
         "declared": [],
-        "conflicts": []
+        "conflicts": [],
+        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.1", "level": 3, "label": "004：10.6.1-R2-2026/7"}],
+        "missing": []
       }
     },
     {
@@ -57,11 +59,11 @@
         "source": "agile:mindmap:24004@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": null },
+        "declared": {"product": null, "line": null},
         "id_ranges": null
       },
       "verdict": "unknown",
-      "summary": "不确定（没有版本层）：产品线 apv（APV）；版本未知；未分类编号 90220",
+      "summary": "不确定（没有版本层）：产品线 apv（APV）；版本未知；缺陷 90220",
       "answer": {
         "case_id": "24004",
         "product_line": "apv",
@@ -80,12 +82,14 @@
         "source": "agile:mindmap:24004@1",
         "build_names": [],
         "requirements": [],
-        "defects": [],
-        "unclassified": ["90220"],
-        "id_sources": [{ "id": "90220", "kind": null, "from": ["title"] }],
-        "ranged": { "requirements": [], "defects": [] },
+        "defects": ["90220"],
+        "unclassified": [],
+        "id_sources": [{"id": "90220", "kind": "bug", "from": ["title"]}],
+        "ranged": {"requirements": [], "defects": []},
         "declared": [],
-        "conflicts": []
+        "conflicts": [],
+        "version_values": [],
+        "missing": ["目录里的版本层"]
       }
     },
     {
@@ -100,7 +104,7 @@
         "source": "agile:mindmap:24005@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": null },
+        "declared": {"product": null, "line": null},
         "id_ranges": null
       },
       "verdict": "unknown",
@@ -126,9 +130,11 @@
         "defects": [],
         "unclassified": [],
         "id_sources": [],
-        "ranged": { "requirements": [], "defects": [] },
+        "ranged": {"requirements": [], "defects": []},
         "declared": [],
-        "conflicts": []
+        "conflicts": [],
+        "version_values": [],
+        "missing": ["目录里的版本层"]
       }
     },
     {
@@ -143,11 +149,11 @@
         "source": "agile:mindmap:24006@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": null },
+        "declared": {"product": null, "line": null},
         "id_ranges": null
       },
-      "verdict": "unknown",
-      "summary": "不确定（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB；未分类编号 74001",
+      "verdict": "refute",
+      "summary": "目录版本层自相矛盾（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB；缺陷 74001",
       "answer": {
         "case_id": "24006",
         "product_line": "apv",
@@ -166,12 +172,14 @@
         "source": "agile:mindmap:24006@1",
         "build_names": [],
         "requirements": [],
-        "defects": [],
-        "unclassified": ["74001"],
-        "id_sources": [{ "id": "74001", "kind": null, "from": ["title"] }],
-        "ranged": { "requirements": [], "defects": [] },
+        "defects": ["74001"],
+        "unclassified": [],
+        "id_sources": [{"id": "74001", "kind": "bug", "from": ["title"]}],
+        "ranged": {"requirements": [], "defects": []},
         "declared": [],
-        "conflicts": []
+        "conflicts": [],
+        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.2", "level": 3, "label": "004：10.6.2-R2-2026/7"}],
+        "missing": []
       }
     },
     {
@@ -186,7 +194,7 @@
         "source": "agile:mindmap:24001@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": "10.7.3" },
+        "declared": {"product": null, "line": "10.7.3"},
         "id_ranges": null
       },
       "verdict": "refute",
@@ -211,10 +219,102 @@
         "requirements": ["20931"],
         "defects": [],
         "unclassified": [],
-        "id_sources": [{ "id": "20931", "kind": "story", "from": ["title"] }],
-        "ranged": { "requirements": [], "defects": [] },
+        "id_sources": [{"id": "20931", "kind": "story", "from": ["title"]}],
+        "ranged": {"requirements": [], "defects": []},
         "declared": [],
-        "conflicts": [{ "field": "line", "declared": "10.7.3", "tree": "10.6.1" }]
+        "conflicts": [{"field": "line", "declared": "10.7.3", "tree": "10.6.1"}],
+        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.1", "level": 3, "label": "004：10.6.1-R2-2026/7"}],
+        "missing": []
+      }
+    },
+    {
+      "id": "build_folder_consistent",
+      "note": "构建名目录提供版本；版本层冲突保留所有版本",
+      "input": {
+        "case_id": "24401",
+        "kind": "document",
+        "root": "NSAE",
+        "ancestors": ["Rel_NSAE_10_9_1_37 回归"],
+        "title": "合成构建目录",
+        "source": "agile:mindmap:24401@1",
+        "names": ["APV", "NSAE"],
+        "product": "apv",
+        "declared": {"product": null, "line": null},
+        "id_ranges": null
+      },
+      "verdict": "support",
+      "summary": "产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37",
+      "answer": {
+        "case_id": "24401",
+        "product_line": "apv",
+        "product_name": "NSAE",
+        "version": "10.9.1",
+        "build": null,
+        "patch": null,
+        "line": "10.9.1",
+        "train": null,
+        "module": null,
+        "ancestor_path": ["NSAE", "Rel_NSAE_10_9_1_37 回归"],
+        "version_source": "folders",
+        "confidence": "high",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24401@1",
+        "build_names": ["Rel_NSAE_10_9_1_37"],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {"requirements": [], "defects": []},
+        "declared": [],
+        "conflicts": [],
+        "version_values": [{"version": "10.9.1", "level": 1, "label": "Rel_NSAE_10_9_1_37 回归"}],
+        "missing": []
+      }
+    },
+    {
+      "id": "build_folder_conflict",
+      "note": "构建名目录提供版本；版本层冲突保留所有版本",
+      "input": {
+        "case_id": "24402",
+        "kind": "document",
+        "root": "NSAE",
+        "ancestors": ["Rel_NSAE_10_9_1_37 回归", "060：10.8.1"],
+        "title": "合成构建目录",
+        "source": "agile:mindmap:24402@1",
+        "names": ["APV", "NSAE"],
+        "product": "apv",
+        "declared": {"product": null, "line": null},
+        "id_ranges": null
+      },
+      "verdict": "refute",
+      "summary": "目录版本层自相矛盾（目录里的版本不一致：10.9.1、10.8.1）：产品线 apv（NSAE）；版本 10.9.1（目录，置信度低）；版本线 10.8.1；写出的构建名 Rel_NSAE_10_9_1_37",
+      "answer": {
+        "case_id": "24402",
+        "product_line": "apv",
+        "product_name": "NSAE",
+        "version": "10.9.1",
+        "build": null,
+        "patch": null,
+        "line": "10.8.1",
+        "train": null,
+        "module": null,
+        "ancestor_path": ["NSAE", "Rel_NSAE_10_9_1_37 回归", "060：10.8.1"],
+        "version_source": "folders",
+        "confidence": "low",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24402@1",
+        "build_names": ["Rel_NSAE_10_9_1_37"],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {"requirements": [], "defects": []},
+        "declared": [],
+        "conflicts": [],
+        "version_values": [{"version": "10.9.1", "level": 1, "label": "Rel_NSAE_10_9_1_37 回归"}, {"version": "10.8.1", "level": 2, "label": "060：10.8.1"}],
+        "missing": []
       }
     }
   ]

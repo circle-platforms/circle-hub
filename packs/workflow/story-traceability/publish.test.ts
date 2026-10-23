@@ -9,8 +9,9 @@ import type { Principal } from '../../../hub/records/api.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
-import { stage } from './pack-files.ts';
+import { IDENTITY, stage } from './pack-files.ts';
 
+const nextVersion = (offset: number) => { const [major, minor, patch] = IDENTITY.version.split('.'); return `${major}.${minor}.${Number(patch) + offset}`; };
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
 let kit: TestRecordsKit;
@@ -58,7 +59,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.5', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.8', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
@@ -70,7 +71,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
     const sample = JSON.parse(await readFile(path, 'utf8')) as { expect: Array<{ code?: string }> };
     sample.expect[0].code = 'story-traceability.no_such_code';
     await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
-    await signPack(dir, { version: '1.0.2' });
+    await signPack(dir, { version: nextVersion(1) });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.sample_failed' && p.message.includes('join_mismatch')), JSON.stringify(outcome.problems, null, 1));
@@ -79,7 +80,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
   it('refuses a version without a negative sample of the counts check', async () => {
     const dir = await staged();
     await rm(join(dir, 'samples/negative/counts.json'));
-    await signPack(dir, { version: '1.0.2' });
+    await signPack(dir, { version: nextVersion(2) });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.unsampled'), JSON.stringify(outcome.problems, null, 1));

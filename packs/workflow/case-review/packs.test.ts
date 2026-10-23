@@ -2,12 +2,14 @@
 // publish check (hub/runs api: readPackDirectory, validatePack, runPublishCheck, refusalsOf), without a database. The
 // registry publication itself (records, owner, activation) runs in packs/workflow/case-review-verify/end-to-end.test.ts.
 import assert from 'node:assert/strict';
+import ts from 'typescript';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { packVocabularyFiles } from '../../../tools/gen-contracts.ts';
 import { AXES } from '../../../contracts/generated/vocabulary.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { StartRunInput } from '../../../contracts/src/tools.ts';
@@ -72,30 +74,55 @@ describe('every pack of this package', () => {
   });
 });
 
-/**
- * String-literal unions and arrays of two or more values that all belong to one vocabulary axis: an enumeration written by
- * hand (brief section 10). A subset derived from the generated type or schema (Extract<>, Exclude<>, .extract(), .exclude())
- * is checked by the compiler and allowed.
- */
+/** Find literal enumerations, including mixed axes and literals joined to generated subsets. */
 function handWrittenAxes(text: string): Array<{ line: number; axis: string; values: string[] }> {
-  const axes = Object.entries(AXES).map(([name, axis]) => [name, new Set<string>(axis.values.map((v) => v.code))] as const);
+  const source = ts.createSourceFile('input.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const axes = Object.entries(AXES).map(([name, axis]) => ({
+    name, type: name.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join(''),
+    values: new Set<string>(axis.values.map(v => v.code)),
+  }));
   const out: Array<{ line: number; axis: string; values: string[] }> = [];
-  for (const pattern of [/((?:'[a-z_]+'\s*\|\s*)+'[a-z_]+')/g, /\[\s*((?:'[a-z_]+'\s*,\s*)+'[a-z_]+')\s*,?\s*\]/g]) {
-    for (const m of text.matchAll(pattern)) {
-      const before = text.slice(Math.max(0, (m.index ?? 0) - 120), m.index);
-      if (/(?:Extract|Exclude)<[^<>]*,\s*$|\.(?:extract|exclude)\(\s*\[?\s*$/.test(before)) continue;
-      const values = [...m[1].matchAll(/'([a-z_]+)'/g)].map((v) => v[1]);
-      for (const [axis, set] of axes) {
-        if (values.every((v) => set.has(v))) out.push({ line: text.slice(0, m.index).split('\n').length, axis, values });
+  const literal = (node: ts.Node): string | undefined => {
+    if (ts.isLiteralTypeNode(node)) return literal(node.literal);
+    return ts.isStringLiteral(node) ? node.text : undefined;
+  };
+  const derives = (node: ts.Node, type: string): boolean => {
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+      if (node.typeName.text === type) return true;
+      if (node.typeName.text === 'Extract' || node.typeName.text === 'Exclude') return node.typeArguments?.some(n => derives(n, type)) ?? false;
+    }
+    return ts.isParenthesizedTypeNode(node) && derives(node.type, type);
+  };
+  const visit = (node: ts.Node): void => {
+    // Compiler-checked subsets are allowed; their argument literals do not declare a new enumeration.
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && ['Extract', 'Exclude'].includes(node.typeName.text)
+      && node.typeArguments?.[0] && ts.isTypeReferenceNode(node.typeArguments[0])) {
+      visit(node.typeArguments[0]);
+      return;
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ['extract', 'exclude'].includes(node.expression.name.text)) {
+      const schemaName = node.expression.expression.getText(source);
+      if (axes.some(axis => schemaName === axis.type + 'Schema')) return;
+    }
+    const parts = ts.isUnionTypeNode(node) ? [...node.types] : ts.isArrayLiteralExpression(node) ? [...node.elements] : null;
+    if (parts !== null) {
+      const values = [...new Set(parts.map(literal).filter((v): v is string => v !== undefined))];
+      for (const axis of axes) {
+        const matching = values.filter(v => axis.values.has(v));
+        if (matching.length >= 2 || (matching.length > 0 && ts.isUnionTypeNode(node) && parts.some(p => derives(p, axis.type)))) {
+          out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
+        }
       }
     }
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   return out;
 }
 
 describe('the vocabulary', () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const owned = ['packs/workflow/case-review', 'packs/workflow/case-review-verify', 'packs/product', 'packs/system', 'tests/fixtures'];
+  const owned = ['hub', 'packs', 'tests/fixtures'];
   const sources = (dir: string): string[] =>
     readdirSync(join(root, dir))
       .sort()
@@ -112,47 +139,29 @@ describe('the vocabulary', () => {
     assert.deepEqual(handWrittenAxes("type F = 'APV' | 'NSAE' | 'other'; const f = ['positive', 'negative'];"), []);
   });
 
-  interface VocabularyScanException {
-    file: string;
-    values: string[];
-    reason: string;
-  }
+  it('finds mixed unions, mixed arrays and literals joined to generated subsets', () => {
+    assert.ok(handWrittenAxes("type H = 'handled' | 'skipped' | 'not_covered';").some(h => h.axis === 'item_handling'));
+    assert.ok(handWrittenAxes('type B = "observed" | "declared" | "none";').some(h => h.axis === 'provenance_type'));
+    assert.ok(handWrittenAxes("const values = ['observed', 'declared', 'none'];").some(h => h.axis === 'provenance_type'));
+    assert.ok(handWrittenAxes("type C = 'added' | Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>;").some(h => h.axis === 'change_kind'));
+    assert.deepEqual(handWrittenAxes("type C = Extract<ChangeKind, 'added' | 'removed'>;"), []);
+    assert.ok(handWrittenAxes("type C = Extract<'added' | 'removed', 'added'>;").some(h => h.axis === 'change_kind'));
+    assert.ok(handWrittenAxes("other.extract(['added', 'removed']);").some(h => h.axis === 'change_kind'));
+    assert.deepEqual(handWrittenAxes("// type K = 'definition' | 'case';\nconst x = 1;"), []);
+  });
 
-  const EXCEPTIONS: VocabularyScanException[] = [
-    {
-      file: 'packs/workflow/case-review/functions/expected-sources.ts',
-      values: ['min', 'max'],
-      reason: '编号范围对象的键，不是度量',
-    },
-    {
-      file: 'packs/workflow/case-review-verify/functions/expected-sources.ts',
-      values: ['min', 'max'],
-      reason: '编号范围对象的键，不是度量',
-    },
-  ];
-
-  it('is never written by hand in the code of this package: the generated types and schemas are used', () => {
-    const hits = new Map<VocabularyScanException, number>(EXCEPTIONS.map((e) => [e, 0]));
+  it('uses generated axes in hub and every pack without handwritten exceptions', () => {
     const found: string[] = [];
+    const generated = packVocabularyFiles(root);
     for (const path of owned.flatMap(sources)) {
       const text = readFileSync(join(root, path), 'utf8');
-      for (const h of handWrittenAxes(text)) {
-        const match = EXCEPTIONS.find(
-          (e) => e.file === path && e.values.length === h.values.length && e.values.every((v, i) => v === h.values[i]),
-        );
-        if (match) {
-          hits.set(match, (hits.get(match) ?? 0) + 1);
-        } else {
-          found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
-        }
+      if (Object.hasOwn(generated, path)) {
+        assert.equal(text, generated[path], `${path} 必须与生成器一致`);
+        continue;
       }
-    }
-    for (const exc of EXCEPTIONS) {
-      assert.equal(
-        hits.get(exc),
-        1,
-        `例外表条目 ${exc.file} [${exc.values.join(', ')}] 命中次数为 ${hits.get(exc)}，必须正好命中 1 次（理由：${exc.reason}）`,
-      );
+      for (const h of handWrittenAxes(text)) {
+        found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
+      }
     }
     assert.deepEqual(found, []);
   });

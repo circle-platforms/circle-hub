@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { projectItems } from '../functions/project.ts';
 import { buildSubject } from '../functions/subject.ts';
-import { boundView, facetRow, facetViewOf } from '../functions/test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from '../functions/test-support.ts';
 import type { GroupBoard } from '../functions/types.ts';
 
 const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -14,7 +14,7 @@ const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: nul
 
 function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { parameters?: Record<string, unknown>; overrides?: Parameters<typeof facetViewOf>[1] } = {}) {
   const parameters = options.parameters ?? {};
-  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
+  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
   if ('error' in projected) throw new Error(`projection refused: ${projected.error.code}`);
   const items = projected.items.map((it) => ({ id: it.id, label: it.label, location: `src:${it.location.source}/json@1/${it.location.selector}`, fields: it.fields }));
   return buildSubject({ applies: 'run', items, context: { ...CONTEXT, parameters, groups: projected.groups ?? [] } });

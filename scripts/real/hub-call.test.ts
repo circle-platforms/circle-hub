@@ -47,6 +47,10 @@ describe('hub-call structured output', () => {
         const name = message.params.name;
         const args = (message.params.arguments ?? {}) as Record<string, unknown>;
 
+        if (name === 'slow_tool') {
+          await new Promise(resolve => setTimeout(resolve, 120));
+          return { content: [{ type: 'text', text: '合成工具结束' }], structuredContent: { call_result: 'ok' } };
+        }
         if (name === 'inspect_node') {
           return {
             content: [{ type: 'text', text: `Node inspected: ${args.path}` }],
@@ -100,6 +104,12 @@ describe('hub-call structured output', () => {
         // ignore cleanup error
       }
     }
+  });
+
+  test('per-call timeout refuses a slow tool only when the timeout is shorter than its delay', async () => {
+    const options = { url: serverUrl, token, session: 'synthetic-timeout' };
+    assert.equal((await callTools({ ...options, timeoutMs: 20 }, [{ tool: 'slow_tool', args: {} }]))[0].isError, true);
+    assert.equal((await callTools({ ...options, timeoutMs: 1000 }, [{ tool: 'slow_tool', args: {} }]))[0].isError, false);
   });
 
   test('formatStructured marks errors clearly and preserves ok structuredContent', () => {

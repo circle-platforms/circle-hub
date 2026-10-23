@@ -19,8 +19,9 @@
 
 ## 要做的
 
-1. **驱动真实客户端的两处通用改动**（别的场景行为不变）
+1. **驱动真实客户端的三处通用改动**（别的场景行为不变）
    - `Scenario`（`scripts/real/lib/accept.ts` 6–16 行）加可选的 `prepare(workdir)`。`accept-circle.ts` 在写好专用目录（53 行）之后、启动 Circle（60 行）之前调用它，传 `written.workdir`；临时目录照旧在结束时整个删掉（69 行）。场景的 `sections` 在 `check` 里算好就行（82 行在 75 行的 `check` 之后才读）。
+   - `Scenario` 再加可选的 `limits`：`accept-circle.ts` 81 行把它接在两句固定的限度后面。现在场景没有这个字段，第 3 条要写的限度靠它。
    - 这个场景一轮对话里有几百次工具调用。Circle 按估算的 token 数到窗口的 85% 就压缩对话，压缩时请模型写总结，不知道窗口时按 128,000 算（Circle 的 `src/context_middleware.ts` 290–312、428 行，`src/model_catalog.ts` 6 行）；脚本化模型写不了总结。`writeHome`（`circle-home.ts` 129 行）加一个可选项，只由 `accept-circle.ts` 传：在 `settings.json` 里给脚本化模型写 `models.<模型名>.context_window`（`src/model_catalog.ts` 160–167 行），取 1,000,000。先只读 Circle 源码确认这条路，确认不了就回报，不改 Circle。
 
 2. **副本和预期**（`scripts/real/gold/gap-metamorphic.ts`，纯函数）
@@ -54,6 +55,7 @@
    - 预期：假 Hub 按合成脑图写明的答案作答（每个合成用例写明它显示哪些类别，按节点编号查，不看文字），全部核对相符。再各造一个错的假 Hub，让对应那一项不符：换序后少一类；单用例副本丢了祖先文字带来的类别；用例数少一个；加入以后目标类别仍缺；上传引用的 sha256 不对。
    - 解析：摘要的两种写法和全覆盖；截断带引用和不带引用；标题里有“ | ”。
    - 场景：照 `capability-scenarios.test.ts` 用合成的工具结果走完三段，断言每个回复的调用数不超过 `batch`、开始运行被拒时那一批记未知、开始以后收到没有工具结果的请求不重新开始；那个文件 199–215 行的扫描照过。
+   - 独立性：`gap-metamorphic.ts` 和场景的源码不导入 `hub/`、`packs/`（测试读源码核对 import），`template-v3.json` 只按路径读。
    - `writeHome`：不给那个可选项时，`settings.json` 和现在一样。
 
 5. **集成者之后跑**（终端不跑；真实 Circle 客户端，已部署的 Hub，至少两份真实文档，其中至少一份有关键词类别为“有”）：

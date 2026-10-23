@@ -2,6 +2,7 @@
 import type { BoundInput, ProjectedItem } from '../../../../contracts/src/pack.ts';
 import { absent, nonscalar, scalar, type Scalar } from './plm-fields.ts';
 import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import { sameBuild } from './build-match.ts';
 import { scopeText } from './scope.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, strings, shown, utf8Length } from './text.ts';
@@ -9,7 +10,8 @@ import { readIndexView } from './views.ts';
 
 export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; fields_nonscalar: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
-export type Row = Story & { plm_returned: boolean; plm_responded: boolean; indexed_match_count: number; case_count_lower_bound: boolean; coverage_complete: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
+export type SelectedBuild = { id: string; name: string; reference: string; case_build: string; case_root: string };
+export type Row = Story & { selected_build?: Pick<SelectedBuild, 'id' | 'name'>; plm_returned: boolean; plm_responded: boolean; indexed_match_count: number; case_count_lower_bound: boolean; coverage_complete: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
 class ProjectionRefusal extends Error {
   readonly fix: string;
@@ -28,6 +30,7 @@ export function projectItems(input: unknown): unknown {
   const view = read.view;
 
 
+  let selectedBuild: SelectedBuild | undefined;
   const rows = new Map<string, Row>();
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
   const scope: ProvenanceType = storyInputs.length > 0 ? 'declared' : 'observed';
@@ -37,6 +40,7 @@ export function projectItems(input: unknown): unknown {
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
       status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [], fields_nonscalar: r ? nonscalar(r) : [],
+      ...(selectedBuild ? { selected_build: { id: selectedBuild.id, name: selectedBuild.name } } : {}),
       plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), indexed_match_count: 0, case_count_lower_bound: false, coverage_complete: false, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
     if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent, previous.fields_nonscalar]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent, next.fields_nonscalar])) throw new ProjectionRefusal('同一需求的 PLM 原件内容冲突', '请重新导出一致原件并重新绑定需求来源');
@@ -64,16 +68,27 @@ export function projectItems(input: unknown): unknown {
     const buildId = normalizeId(params.build_id.trim());
     if (!validId(buildId)) return fail('构建编号无效', '明确给出 build_id 正整数编号');
     const model = isRecord(source.model) ? source.model : {};
+    if (Object.hasOwn(model, 'product_resolution') && model.product_resolution !== 'resolved') return fail('PLM 产品尚未唯一解析，未取得可核验的产品构建列表', '核对产品名单，调整 plm:builds 的名字集合或明确产品编号后重读；不把未读取当作构建编号不存在');
     if (!Array.isArray(model.builds)) return fail('PLM 构建列表没有 builds 数组', '重新绑定有效的 PLM 构建列表原件，或向用户索取需求编号');
     const builds = model.builds;
-    const at = builds.findIndex(b => isRecord(b) && normalizeId(String(b.id).trim()) === buildId);
+    const matches = builds.flatMap((b, at) => isRecord(b) && normalizeId(String(b.id).trim()) === buildId ? [at] : []);
+    if (matches.length > 1) return fail(`PLM 构建编号 ${buildId} 对应多条记录，不能确定所选记录`, '请核对 PLM 构建原件并重新读取唯一记录，或直接给出需求编号');
+    const at = matches[0] ?? -1;
     const build = builds[at];
     if (!isRecord(build)) return fail(`PLM 构建列表未包含规范化编号 ${buildId}`, '请用户确认构建编号，或直接提供需求编号');
+    if (typeof build.name !== 'string' || build.name.trim() === '') return fail(`PLM 构建记录 ${buildId} 缺少原始 name，无法证明它对应构建 ${view.build} 和知识根 ${view.root}`, '重新读取保留记录原始 name 的 PLM 构建列表，选中与 cases 用例视图对应的记录，或直接提供需求编号');
+    if (isRecord(build.fields) && Object.hasOwn(build.fields, 'name') && build.fields.name !== build.name) return fail(`PLM 构建记录 ${buildId} 的 name 与原始标量字段矛盾`, '重新读取一致的 PLM 构建记录并绑定对应的 cases 用例视图');
+    if (!sameBuild(build.name, view, input.context)) return fail(`PLM 构建记录 ${buildId} 的 name ${build.name} 未证明与用例视图构建 ${view.build}、知识根 ${view.root} 相同`, '下一步重绑与所选 PLM 原始 name 同名的 cases 用例视图，再重开运行；当前没有只读别名查询接口，不猜跨名称族对应关系');
+    selectedBuild = { id: buildId, name: build.name, reference: `src:${source.sha256}/json@1/p/builds/${at}`, case_build: view.build, case_root: view.root };
+
     if (!Array.isArray(build.stories)) return fail(`构建记录 ${buildId} 未提供可用的需求编号数组；${typeof build.scope_note === 'string' ? build.scope_note : '当前投影未说明原始字段名或配置'}`, '请管理员核对 settings.build_story_field 和构建记录原件，或向用户索取需求编号');
     if (build.stories.length === 0) return fail(`构建记录 ${buildId} 的需求编号数组为空`, '请用户提供要核对的需求编号，或请管理员确认该构建的需求范围；不把空数组解释成字段缺失');
     for (const id of build.stories) add(String(id), null, source, `p/builds/${at}`);
   }
-  if (rows.size === 0 || rows.size > 8000) return fail('需求范围为空或超过 8000 条', '提供非空需求编号列表；超限则分批运行');
+  if (rows.size === 0) return fail('需求范围为空', '提供非空需求编号列表后重新绑定');
+  if (rows.size > 8000) return selectedBuild
+    ? fail(`PLM 构建记录 ${selectedBuild.id} 的需求范围有 ${rows.size} 条，超过每运行 8000 条上限`, '请任务包维护人提供保留同一构建来源的分块核对，或由用户明确给出需求编号后按声明范围另开分批运行；不要重复绑定整份构建范围')
+    : fail(`用户声明的需求范围有 ${rows.size} 条，超过每运行 8000 条上限`, '把用户明确给出的需求编号列表分批，每批最多 8000 条后运行');
   const byId = new Map<string, Map<string, Case>>();
   const digestsById = new Map<string, Set<string>>();
   for (const [key, digests] of Object.entries(view.keys)) {
@@ -112,10 +127,12 @@ export function projectItems(input: unknown): unknown {
       summary: shown(`${row.indexed_match_count ? row.case_count_lower_bound ? `至少 ${row.indexed_match_count} 个已索引条目` : `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
-  const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
+  const facts = { ...(selectedBuild ? { selected_build: selectedBuild } : {}), product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
     cut_keys: view.cut_keys, only: view.only, total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
   const result = { items, groups: [facts], warnings: read.warnings };
-  if (utf8Length(JSON.stringify(result)) > 5 * 1024 * 1024) return fail('投影结果超过 5 MiB', '把需求编号列表分成更小的批次');
+  if (utf8Length(JSON.stringify(result)) > 5 * 1024 * 1024) return selectedBuild
+    ? fail(`PLM 构建记录 ${selectedBuild.id} 的需求范围投影超过 5 MiB`, '请任务包维护人提供保留同一构建来源的分块核对，或由用户明确给出需求编号后按声明范围另开分批运行；不要重复绑定整份构建范围')
+    : fail('投影结果超过 5 MiB', '把需求编号列表分成更小的批次');
   return result;
 }
 export default function project(input: unknown): unknown {

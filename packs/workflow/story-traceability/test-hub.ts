@@ -3,6 +3,7 @@
 // and NSAE, a knowledge base with one build and root, and a fake knowledge reader serving hand-built index views.
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, KnowledgePort, NodesPage, RootDiff, RootInfo } from '../../../hub/ports.ts';
 import type { Artifacts, Principal } from '../../../hub/records/api.ts';
@@ -170,7 +171,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       now,
       adminLog: (entry) => logs.push(entry),
     });
-    const principal = (u: { id: string; name: string; role: 'user' | 'admin' }): Principal => ({ id: u.id, name: u.name, role: u.role });
+    const principal = (u: { id: string; name: string; role: PermissionRole }): Principal => ({ id: u.id, name: u.name, role: u.role });
     return {
       kit,
       registry,

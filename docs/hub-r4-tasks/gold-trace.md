@@ -9,11 +9,11 @@
 第 1、2 条是独立核对，只动 `scripts/real/`；第 3 到 6 条是功能。每条一个提交，测试先写。
 
 - 分支和工作树：`gold-trace`，目录 `circle-hub-gold-trace`（依赖已装好）
-- 可以改的路径：`scripts/real/gold/**`、`scripts/real/accept/**`、新文件 `scripts/real/console-page.ts`，以及它们的测试（`scripts/real/gold/regression-doc.test.ts` 不动）；`packs/workflow/quality-board/**`；新包 `packs/workflow/story-traceability/**`；`packs/system/plm/**`；`hub/server/console/**`、`hub/server/console*.test.ts`、`hub/server/fakes.ts`、`hub/server/README.md` 的控制台一节。改过的包升版本并重新签，发布由集成者做。`contracts/`、`hub/knowledge/`、`hub/runs/`、`hub/server/text.ts`、`hub/server/tools.ts`、`packs/product/`、`packs/workflow/traceability/`、`packs/workflow/template-gap/` 只读（测试里可以导入）；缺什么先回报。
+- 可以改的路径：`scripts/real/` 里只动这些文件和它们的测试：新文件 `gold/trace-scan.ts`、`gold/board.ts`、`gold/trace-stories.ts`、`accept/story-traceability.ts`、`console-page.ts`，改 `gold/trace.ts`、`gold/join.ts`、`gold/cases.ts`、`accept/traceability.ts`、`accept/quality-board.ts`、`accept/capability-scenarios.test.ts`（只改追溯和看板两段）；`scripts/real/` 下别的文件不动，gold-d2c、gold-location、gold-review 和 hygiene-2 在改其中几处。`packs/workflow/quality-board/**`（`test-hub.ts` 除外，core-fixes 在改）；新包 `packs/workflow/story-traceability/**`；`packs/system/plm/**`（plan-evidence 第 4 条也改这个包，先后和版本号由集成者定）；`hub/server/console/**`、`hub/server/console*.test.ts`、`hub/server/fakes.ts`、`hub/server/README.md` 的控制台一节。改过的包升版本并重新签，发布由集成者做。`contracts/`、`hub/knowledge/`、`hub/runs/`、`hub/server/text.ts`、`hub/server/tools.ts`、`packs/product/`、`packs/workflow/traceability/`、`packs/workflow/template-gap/` 只读（测试里可以导入）；缺什么先回报。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`）。另外：
   - 独立答案脚本只读原始输入（脑图 JSON、敏捷树导出、修复缺陷页、PLM 原件），自己算，不导入 `hub/` 和 `packs/` 的代码；`scripts/real/gold/` 里的脚本互相导入可以。
-  - 新脚本和新核对项在屏幕上只打计数、SHA-256 前 12 位和通过与否；构建名、编号、标题、模块名和命令只写进 `--out` 的文件。
-  - 取值用 `contracts/generated/vocabulary.ts` 的类型；需要新的轴，回报给集成者，由集成者在模型里加轴。合成例子用 10.6 以后的版本线、192.0.2.0/24 的地址。
+  - 新脚本和新核对项在屏幕上只打计数、SHA-256 前 12 位和通过与否；构建名、编号、标题、模块名和命令只写进 `--out` 的文件。名字的摘要只用来和 `--out` 对号，不抄进进度：构建名和模块名能穷举出来。
+  - 取值用 `contracts/generated/vocabulary.ts` 的类型，包函数里只 `import type`；运行时要整组取值的，照 core-fixes 给包生成 `functions/generated/vocabulary.ts` 的办法（它合并以后；登记要改 `tools/gen-contracts.ts`，先回报）。需要新的轴，回报给集成者，由集成者在模型里加轴。合成例子用 10.6 以后的版本线、192.0.2.0/24 的地址。
 - 验证：`npx tsc --noEmit`；`node packs/workflow/quality-board/pack-files.ts --check`、`node packs/workflow/story-traceability/pack-files.ts --check`、`node packs/system/plm/api.ts check`；`node --test --test-concurrency=1` 对 `scripts/real/**/*.test.ts`、`packs/workflow/quality-board/**/*.test.ts`、`packs/workflow/story-traceability/**/*.test.ts`、`packs/system/plm/**/*.test.ts`、`hub/server/console*.test.ts`。
 
 ## 要做的
@@ -27,7 +27,7 @@
      - `--closed-statuses` 现在只认纯数组（`trace.ts` 420–424 行，`join.ts` 241–245 行同样），包里的表却是 `{statuses: [...]}`（`packs/workflow/traceability/tables/closed-statuses.json`），传表文件会被悄悄忽略、退回默认值。两种都认，别的形状报错退出。读这张表不循环：读的是“哪些状态算已关闭”这份声明，不是包算出的结果。
    - 场景 `scripts/real/accept/traceability.ts`：加一项“已关闭且已追溯的缺陷至少 1 个”，独立答案里没有就不通过，写明正例没核到。核对项的名字、期望和实际不再写缺陷号和用例号，改成序号、SHA-256 前 12 位和个数。
    - 测试：合成三个构建，只有一个有已关闭且已追溯的缺陷，扫描建议它；PLM 没返回的、bugzilla 的不算已关闭；前导零；`--docs-dir` 筛掉清单外的文档；编号只在敏捷树目录里的也算追溯；表的两种写法和错的写法；屏幕输出里找不到任何合成的构建名、缺陷号和标题。
-   - 集成者之后跑：导出全部修复缺陷页、脑图和敏捷树（`circle-hub original list --external <前缀>` 重定向到文件，`circle-hub original export <sha256> --out <文件>`）；`node scripts/real/gold/trace-scan.ts --fixed-dir <目录> --cases-dir <目录> --tree <文件> --out <文件>`；挑已追溯最多的几个构建，用 `node scripts/real/hub-call.ts --token-file <文件> --max 0 --structured <文件> start_run '<追溯运行的参数>'` 在部署的 Hub 上各开一次追溯运行（屏幕上只有字符数），让 Hub 读 PLM 状态，导出 `plm:bugs:` 原件，再加 `--plm <文件>… --closed-statuses packs/workflow/traceability/tables/closed-statuses.json` 扫一次；对建议的构建用 `trace.ts`（加 `--docs`、`--tree`、`--plm`、`--closed-statuses`）出独立答案，再跑 `HUB_REAL_TOKEN=… node scripts/real/accept-circle.ts --scenario scripts/real/accept/traceability.ts --gold <文件> --out <目录>`，全部通过，屏幕上只有序号、个数和通过与否。找不到这样的构建，就记下正例仍没证明。
+   - 集成者之后跑：导出全部修复缺陷页、脑图和敏捷树（`circle-hub original list --external <前缀>` 重定向到文件，一次最多 500 行、不翻页，多了按更长的前缀分批；`circle-hub original export <sha256> --out <文件>`）；`node scripts/real/gold/trace-scan.ts --fixed-dir <目录> --cases-dir <目录> --tree <文件> --out <文件>`；挑已追溯最多的几个构建，用 `node scripts/real/hub-call.ts --token-file <文件> --max 0 --structured <文件> start_run '<追溯运行的参数>'` 在部署的 Hub 上各开一次追溯运行（屏幕上只有字符数），让 Hub 读 PLM 状态，导出 `plm:bugs:` 原件，再加 `--plm <文件>… --closed-statuses packs/workflow/traceability/tables/closed-statuses.json` 扫一次；对建议的构建用 `trace.ts`（加 `--docs`、`--tree`、`--plm`、`--closed-statuses`）出独立答案，再跑 `HUB_REAL_TOKEN=… node scripts/real/accept-circle.ts --scenario scripts/real/accept/traceability.ts --gold <文件> --out <目录>`，全部通过，屏幕上只有序号、个数和通过与否。找不到这样的构建，就记下正例仍没证明。
 
 2. **看板逐组独立核对**：新脚本 `scripts/real/gold/board.ts`。
    - 输入：`--tree`、`--cases-dir`、`--docs`（这个构建的根读到的文档清单）、`--product`、`--build`、`[--case-rule]`、`--out`；输出 `BoardGold`（`scripts/real/accept/quality-board.ts` 11–32 行）。
@@ -52,7 +52,7 @@
 5. **需求到用例的矩阵**：新的工作流包 `packs/workflow/story-traceability`，文件照 `packs/workflow/traceability`。
    - 另做一个包，不并进追溯包：一个工作流只有一个被判对象所在的输入槽（`contracts/src/pack.ts` 411 行），追溯包的槽名、条目编号和结论文字是现有 SKILL、场景和独立答案在读的。
    - 一个构建有哪些需求，Hub 里现在没有来源（发布说明只列缺陷）。条目是调用方给的需求号；SKILL 让模型向用户要编号，不猜（`docs/hub-r4-architecture.md` 101 行）。
-   - PLM 包先加批量读 `plm:stories:<编号>+<编号>+…`，照 `plm:bugs`（`packs/system/plm/system.json` 102–108 行，`functions/plm.ts` 56、125 行）：最多 50 个，按数值排序去重；内容 `{stories: [{id, status, stage, title}], unread: [...]}`，状态和阶段原样。包升小版本。
+   - PLM 包先加批量读 `plm:stories:<编号>+<编号>+…`，照 `plm:bugs`（`packs/system/plm/system.json` 102–108 行，`functions/plm.ts` 56、125 行）：最多 50 个，按数值排序去重；内容 `{stories: [{id, status, stage, title}], unread: [...]}`，状态和阶段原样。包升小版本（plan-evidence 第 4 条也升这个包，版本号接在先合并的那件后面）。
    - 输入：`stories`（被判对象，接受 `plm:stories`，可多个）和 `cases`（期望来源，`knowledge:index:<产品>:<构建>?kind=case&key=stories&fields=document,node,title`）；不绑定产品线。
    - 证据规则照缺陷：编号按数字规范化后精确比较；至少一个已索引用例带这个需求号记支持，数据里列出用例；没有记未知（缺输入），写明索引按构造不完整；PLM 没返回的需求号也是条目，状态记未知，不当成任何状态。运行级计数：需求数、已追溯、未追溯、PLM 没返回的，按 PLM 原样状态分开计；不定哪些状态算“已交付”。
    - 两条完整性反驳照追溯包（列出的用例的原始编号里没有这个需求号；视图声明没截断却少于总数），给发布校验做反例样例。

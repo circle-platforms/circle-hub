@@ -47,13 +47,13 @@ describe('the read functions', () => {
   });
 
   test('version lines of folder names: the numbers they end in, leading zeros and trailing .0 beyond the second part dropped', () => {
-    assert.equal(folderLine('rel_x_10_4_6'), '10.4.6');
-    assert.equal(folderLine('rel_y_10_5_0'), '10.5');
-    assert.equal(folderLine('rel_x_010_05'), '10.5');
+    assert.equal(folderLine('rel_x_10_7_1'), '10.7.1');
+    assert.equal(folderLine('rel_y_10_7_0'), '10.7');
+    assert.equal(folderLine('rel_x_010_07'), '10.7');
     assert.equal(folderLine('Manual-7.2'), '7.2');
     assert.equal(folderLine('rel_x'), null);
-    assert.equal(folderLine('rel_x_10_4_6_patch'), null);
-    assert.equal(lineKey('10.5.0'), '10.5');
+    assert.equal(folderLine('rel_x_10_7_1_patch'), null);
+    assert.equal(lineKey('10.7.0'), '10.7');
     assert.equal(lineKey('7'), null);
   });
 

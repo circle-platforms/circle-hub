@@ -130,7 +130,7 @@ describe('resolveReference: source fragments', () => {
     const missing = await resolveReference(srcFragment(mapSha, 'kityminder@1', 'n/no-such-node'), ctx);
     assert.ok(!missing.resolved && missing.code === 'REFERENCE_UNRESOLVED' && /找不到/.test(missing.message));
     const before = reads.length;
-    const unknown = await resolveReference(srcFragment(mapSha, 'xlsx@1', 'Service/7/C'), ctx);
+    const unknown = await resolveReference(srcFragment(mapSha, 'xlsx@999', 'Service/7/C'), ctx);
     assert.ok(!unknown.resolved && unknown.code === 'REFERENCE_UNRESOLVED' && /没有登记/.test(unknown.message));
     assert.equal(reads.length, before, 'the parser is checked before the source is read');
     const wrongParser = await resolveReference(srcFragment(mapSha, 'xml@1', 'x/a'), ctx);
@@ -285,7 +285,7 @@ describe('resolveReference: read tiers', () => {
     });
     const shapes = answers.map(({ reference: _reference, ...rest }) => JSON.stringify(rest));
     assert.equal(new Set(shapes).size, 1, 'every probe gets the same answer');
-    const unknownParser = await resolveReference(srcFragment(secretSha, 'xlsx@1', 'a'), ctx);
+    const unknownParser = await resolveReference(srcFragment(secretSha, 'xlsx@999', 'a'), ctx);
     assert.ok(!unknownParser.resolved && unknownParser.code === 'REFERENCE_UNRESOLVED', 'an unregistered parser is refused for every source alike');
   });
 

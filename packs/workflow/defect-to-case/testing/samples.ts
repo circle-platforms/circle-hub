@@ -1,4 +1,5 @@
 // Sample generator for defect-to-case pack (pack-sample@1).
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,9 @@ import { commandSubject, duplicateSubject, quoteSubject } from '../functions/sub
 import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, goodDraft } from './fixtures.ts';
 
 const BUG_ID = SYNTHETIC_BUG_74001.id;
-const FIX_REF = SYNTHETIC_BUG_74001.fixReference;
-const FIX_TEXT = SYNTHETIC_BUG_74001.fixText;
+const BUG_DIGEST = createHash('sha256').update(JSON.stringify(SYNTHETIC_BUG_74001)).digest('hex');
+const FIX_REF = `src:${BUG_DIGEST}/json@1/p/fields/${SYNTHETIC_BUG_74001.fix_field}`;
+const FIX_TEXT = SYNTHETIC_BUG_74001.fields.fix;
 
 type Entry = { folder: 'positive' | 'negative'; sample: PackSample };
 
@@ -27,8 +29,8 @@ function sample(
 export function samples(): Entry[] {
   const defaultGoodSubject = {
     item: BUG_ID,
-    label: SYNTHETIC_BUG_74001.label,
-    location: SYNTHETIC_BUG_74001.location,
+    label: SYNTHETIC_BUG_74001.title,
+    location: `src:${BUG_DIGEST}/json@1/p/id`,
     fields: SYNTHETIC_BUG_74001.fields,
     slots: {
       cases: [
@@ -217,12 +219,21 @@ export function samples(): Entry[] {
       { sources: { [FIX_REF]: FIX_TEXT } },
     ),
 
+    sample('positive', 'sources_allowed', 'grounded_sources', '只引用本条缺陷的配置修复字段', {
+      item: BUG_ID, allowed_quote_sources: { defect: 'b'.repeat(64), manual: 'c'.repeat(64), fix_field: 'fix' },
+      quotes: [{ reference: `src:${'b'.repeat(64)}/json@1/p/fields/fix`, text: '合成修复说明' }],
+    }, [{ verdict: 'support', item: BUG_ID, tier: 'blocking' }]),
+    sample('negative', 'sources_forbidden', 'grounded_sources', '缺陷步骤字段不是修复说明', {
+      item: BUG_ID, allowed_quote_sources: { defect: 'b'.repeat(64), manual: 'c'.repeat(64), fix_field: 'fix' },
+      quotes: [{ reference: `src:${'b'.repeat(64)}/json@1/p/fields/steps`, text: '合成步骤' }],
+    }, [{ verdict: 'refute', code: 'defect-to-case.quote_source_forbidden', item: BUG_ID, tier: 'blocking' }]),
+
     // 5. grounded_reading
     sample(
       'positive',
       'reading_grounded',
       'grounded_reading',
-      '期望结果阅读精炼且未引入来源未包含的数字或命令',
+      '期望文字为自身引文的逐字片段',
       defaultGoodSubject,
       [{ verdict: 'support', item: BUG_ID }],
     ),
@@ -230,9 +241,9 @@ export function samples(): Entry[] {
       'negative',
       'reading_unsupported_entity',
       'grounded_reading',
-      '期望结果阅读引入了来源引文未提及的数字实体',
+      '期望文字不是自身引文的逐字片段',
       defaultReadingBadSubject,
-      [{ verdict: 'refute', code: 'defect-to-case.unsupported_entity', item: BUG_ID, tier: 'advisory' }],
+      [{ verdict: 'refute', code: 'defect-to-case.expect_not_in_quote', item: BUG_ID, tier: 'blocking' }],
     ),
 
     // 6. duplicate_check
@@ -253,6 +264,7 @@ export function samples(): Entry[] {
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       },
       [{ verdict: 'support', item: BUG_ID }],
+      { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
     sample(
       'negative',
@@ -271,6 +283,7 @@ export function samples(): Entry[] {
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       },
       [{ verdict: 'refute', code: 'defect-to-case.duplicate_case', item: BUG_ID, tier: 'advisory' }],
+      { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
   ];
 }

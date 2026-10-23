@@ -1,3 +1,4 @@
+import { facetCountCheck } from '../../../scripts/real/accept/regression-scope.ts';
 // A production run end to end: the published pack, the real run engine, and a fake reader serving hand-built impact
 // views. start_run computes and stores the validation result. The real knowledge reader waits on the cases index.
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import { StartRunOutput } from '../../../contracts/src/tools.ts';
 import { ValidationResult, partitionCountsOf, type ItemResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
-import { buildImpact, reviewSweep } from './functions/test-support.ts';
+import { buildImpact, reviewSweep, facetInput } from './functions/test-support.ts';
 import { createPacksPort } from '../../../hub/runs/api.ts';
 import { callTool } from '../../../hub/server/tools.ts';
 import { EmptyKnowledge, call, openHub, type Hub } from './test-hub.ts';
@@ -17,8 +18,10 @@ let hub: Hub;
 
 const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?catalog=commands@1';
 const BOTH = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?catalog=commands@1';
-const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_4?catalog=commands@1';
+const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_3..Rel_W_1_0_4?catalog=commands@1';
 const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?catalog=commands@1';
+const FACETS = 'knowledge:facets:widget:Rel_W_1_0_1?kind=case&by=commands';
+const FACETS_SKIPPED='knowledge:facets:widget:'+SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..')[0]+'?kind=case&by=commands';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 const both = [
@@ -41,9 +44,13 @@ before(async () => {
   postgres = await startPostgres();
   if (skip) return;
   hub = await openHub(postgres, {});
+  hub.external.put(FACETS, bytes(facetInput(buildImpact([])).model));
   hub.external.put(REVIEW, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1' })));
   hub.external.put(BOTH, bytes(buildImpact(both, { catalog: 'commands@1' })));
-  hub.external.put(SKIPPED, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1', skipped: { from: 3, to: 0 } })));
+  const skippedView=buildImpact(reviewSweep(), { catalog: 'commands@1', skipped: { from: 3, to: 0 } });
+  const selectedBuilds=SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..');
+  (skippedView.from as {build:string}).build=selectedBuilds[0];(skippedView.to as {build:string}).build=selectedBuilds[1];
+  hub.external.put(SKIPPED,bytes(skippedView));hub.external.put(FACETS_SKIPPED,bytes(facetInput(skippedView).model));
   hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
 });
 after(async () => {
@@ -66,7 +73,7 @@ const requirement = (item: ItemResult, key: string): RequirementResult => {
 
 describe('a production run of maintenance-sweep', { skip }, () => {
   it('reports removed commands as blocking and definition changes field by field', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
@@ -121,16 +128,15 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     }
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
     assert.equal(unknown.length, 1);
-    assert.equal(unknown[0].requirement, 'command_exists');
-    assert.equal(unknown[0].statement.reason, 'missing_input');
-    assert.equal(unknown[0].qualifier.nature, 'unknown');
-    assert.match(unknown[0].statement.text, /索引没有收录的用例，这里不作结论/);
+    assert.match(unknown[0].statement.text, /命令归属事实/);
+    assert.match(unknown[0].statement.text, /下一步/);
+    assert.ok(result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     const stored = (await hub.service.getRun(hub.alice, run.run))!;
     assert.match(String((stored.run.groups?.[0] as { message?: string }).message), /有 4 条用例需要维护/);
   });
 
   it('keeps both reasons on one case', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: BOTH } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: BOTH }, facets: { external: FACETS } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.deepEqual(
       detail.answer.run!.items.map((item) => item.id),
@@ -152,7 +158,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
   });
 
   it('skips help when ignore_fields names it, and still reports a signature change', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW } }, parameters: { ignore_fields: ['help'] } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } }, parameters: { ignore_fields: ['help'] } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.deepEqual(
       detail.answer.run!.items.map((item) => item.id),
@@ -163,7 +169,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
   });
 
   it('says a short earlier index is not proof that nothing is stale', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: SKIPPED } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: SKIPPED }, facets: { external: FACETS_SKIPPED } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const unknown = detail.production!.result.cross_item.find((claim) => claim.statement.reason === 'missing_input')!;
     assert.match(unknown.statement.text, /较早构建的索引缺少 3 份列出的文档/);
@@ -171,7 +177,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
   });
 
   it('starts a clean pair legally and stores an empty result', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: EMPTY } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: EMPTY }, facets: { external: FACETS } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.equal(detail.answer.run!.items.length, 0);
     assert.notEqual(detail.production, null);
@@ -208,7 +214,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     assert.equal(read.isError, false);
     assert.match(read.content[0].text, /覆盖：完整：已查 0，共 0/);
     assert.match(read.content[0].text, /条目明细：没有条目/);
-    assert.match(read.content[0].text, /索引没有收录的用例，这里不作结论。/);
+    assert.ok(!read.content[0].text.includes('个用例没有解析出命令'), 'hint counts are not validation claims');
     const content = (read.structuredContent as { content: { text: string; reference: string; readable: boolean } }).content;
     assert.equal(content.reference, detail.answer.result!.reference);
     assert.equal(content.readable, true);
@@ -218,9 +224,9 @@ describe('a production run of maintenance-sweep', { skip }, () => {
   });
 
   it('refuses a product on an unbound pack, and keeps the pack from users it is not assigned to', async () => {
-    const named = await hub.service.startRun(hub.alice, { pack: 'maintenance-sweep', product: 'widget', inputs: { impact: { external: REVIEW } } }, call());
+    const named = await hub.service.startRun(hub.alice, { pack: 'maintenance-sweep', product: 'widget', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } } }, call());
     assert.ok(named.errors.some((error) => error.message.includes('不能指定产品')), JSON.stringify(named.errors));
-    const refused = await hub.service.startRun(hub.bob, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW } } }, call());
+    const refused = await hub.service.startRun(hub.bob, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } } }, call());
     assert.deepEqual(
       refused.errors.map((error) => error.code),
       ['SOURCE_UNAVAILABLE'],
@@ -247,7 +253,7 @@ describe('the real knowledge reader', () => {
         kind: 'case',
         path: m === null ? null : '/commands/' + m[1] + '/' + m[2],
         statement: node.text,
-        data: { document: String(root.id), node: String(data.id), title: node.text, priority: data.priority },
+        data: { document: String(root.id), node: String(data.id), title: node.text, priority: data.priority, commands: m === null ? [] : ['/commands/' + m[1] + '/' + m[2]] },
         fragments: [{ slot: 'cases', source: doc.sha256, parser: 'kityminder@1', selector: node.selector }],
         applicability: null,
       });
@@ -273,7 +279,7 @@ describe('the real knowledge reader', () => {
     w.external.set('site:tree:Rel_WDG_7_7_7', { bytes: treeOf(false), mediaType: XML });
     w.external.set('site:tree:Rel_WDG_7_7_8', { bytes: treeOf(true), mediaType: XML });
     const cases = (id: string, cmd: string): string => {
-      w.external.set(`store:mindmap:${id}`, { bytes: mindMap({ id, module: 'M1' }, [{ id: `${id}-c1`, text: `[cmd: net ${cmd}] 连通检查`, priority: 2 }]), mediaType: JSON_TYPE });
+      w.external.set(`store:mindmap:${id}`, { bytes: mindMap({ id, module: 'M1' }, [{ id: `${id}-c1`, text: `[cmd: net ${cmd}] 连通检查`, priority: 2 }, ...(id === 'd1' ? [{ id: 'unplaced', text: '未归位的合成用例', priority: 2 }] : [])]), mediaType: JSON_TYPE });
       return `store:mindmap:${id}`;
     };
     const build = (name: string, source: string) => ({ name, family: 'WDG', line: '7.7', base: name, platform: null, built_at: '2026-01-02T10:00:00.000Z', released_at: '2026-01-05T00:00:00.000Z', sources: { tree: `site:tree:${name}`, cases: source }, root: null });
@@ -284,9 +290,27 @@ describe('the real knowledge reader', () => {
 
     const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
     const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title&catalog=catalog@1';
-    const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference } } }, call());
+    const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference }, facets: { external: 'knowledge:facets:acme:Rel_WDG_7_7_7?kind=case&by=commands' } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(detail.answer.run!.items.length > 0, 'the real reader answers an impact view the sweep projects');
+    const storedRun = (await runHub.service.getRun(runHub.alice, detail.answer.run!.run))!;
+    assert.equal(storedRun.run.groups?.[0].unplaced, 1);
+    // Read the already-bound hint over the same MCP tool boundary used by the scripted client.
+    const facetSource = detail.answer.run!.sources.find((source) => source.slot === 'facets')!;
+    const context = call('synthetic-facet-client');
+    const response = await callTool({ records: runHub.kit, runs: runHub.service, packs: createPacksPort(runHub.registry), knowledge: w.knowledge, now: () => new Date() } as unknown as Parameters<typeof callTool>[0], {
+      principal: runHub.alice, traceId: context.traceId, sessionId: context.sessionId,
+      context: { ...context, adminNote: () => {} }, state: {},
+    } as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: facetSource.reference });
+    assert.equal(response.isError, false);
+    const numeric = facetCountCheck('synthetic', 1, [
+      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 'start', text: `- 线索 ${facetSource.reference}（输入 facets）`, isError: false }] },
+      { index: 2, tools: [], toolResults: [{ id: 'read', text: response.content[0].text, isError: false }] },
+    ]);
+    assert.equal(numeric.ok, true, JSON.stringify(numeric));
+
+    assert.match(String(storedRun.run.groups?.[0].message), /1 个用例没有解析出命令/);
+    assert.ok(detail.production!.result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     await runHub.close();
     await w.close();
   });

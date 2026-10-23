@@ -5,6 +5,7 @@
 // - 个数对但用例号不属于 gold 的不符: count matches but statement case id not in gold -> fails
 // - 个数差一: reported case count differs by one -> fails
 // - 未知行被写成有用例: defect with no cases is reported as having cases -> fails
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
@@ -22,6 +23,7 @@ const turnsOf = (texts: string[]): LoggedTurn[] => {
   ];
 };
 
+const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 12);
 const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
 
 describe('traceability scenario checks', () => {
@@ -31,6 +33,7 @@ describe('traceability scenario checks', () => {
     defects: [
       {
         bug: '7300',
+        closed: true,
         status: 'fixed',
         cases: [
           { id: '9001:c-1', title: '会话检查' },
@@ -56,14 +59,15 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && knownCheck.ok);
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
   });
 
@@ -79,12 +83,13 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
   });
 
@@ -99,13 +104,14 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:wrong-case 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && !knownCheck.ok);
-    assert.match(knownCheck.actual, /用例号不属于独立依据/);
+    assert.match(knownCheck.actual, /不属于独立依据的用例/);
   });
 
   test('fails when case count is off by one (个数差一)', () => {
@@ -119,11 +125,12 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && !knownCheck.ok);
     assert.match(knownCheck.actual, /用例数不一致/);
   });
@@ -139,11 +146,12 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && !unknownCheck.ok);
   });
 
@@ -193,10 +201,10 @@ describe('traceability scenario checks', () => {
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
 
-    const statusCheck7300 = checks.find((c) => c.name.includes('7300') && c.name.includes('缺陷系统状态'));
+    const statusCheck7300 = checks.find((c) => c.name.includes(hash('7300')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck7300 && statusCheck7300.ok);
 
-    const statusCheck7402 = checks.find((c) => c.name.includes('7402') && c.name.includes('缺陷系统状态'));
+    const statusCheck7402 = checks.find((c) => c.name.includes(hash('7402')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck7402 && statusCheck7402.ok);
 
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
@@ -237,7 +245,7 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const statusCheck = checks.find((c) => c.name.includes('7300') && c.name.includes('缺陷系统状态'));
+    const statusCheck = checks.find((c) => c.name.includes(hash('7300')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck && !statusCheck.ok);
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && !countsCheck.ok);
@@ -282,10 +290,12 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    assert.ok(checks.filter((c) => c.name !== '已关闭且已追溯的缺陷至少 1 个').every((c) => c.ok), JSON.stringify(checks));
+    assert.equal(checks.find((c) => c.name === '已关闭且已追溯的缺陷至少 1 个')?.ok, false);
+    assert.doesNotMatch(JSON.stringify(checks), /800[1-5]|9001|会话检查/);
 
     for (const b of ['8001', '8002', '8003', '8004', '8005']) {
-      const c = checks.find((chk) => chk.name.includes(b) && chk.name.includes('缺陷系统状态'));
+      const c = checks.find((chk) => chk.name.includes(hash(b)) && chk.name.includes('缺陷系统状态'));
       assert.ok(c && c.ok);
     }
   });
@@ -371,3 +381,29 @@ describe('traceability scenario respond flow', () => {
     assert.deepEqual(reply1, [{ tool: 'hub_get_nodes', input: { reference: 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' } }]);
   });
 });
+
+  test('a gold with no closed status names rerunning trace.ts with --plm, not another build', () => {
+    const scenario = traceability({
+      product: 'apv',
+      build: 'Rel_APV_10_6_1_57',
+      defects: [{ bug: '7300', status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }] }],
+    });
+    const checks = scenario.check(turnsOf(['运行 run_9 完成。缺陷 1 个：已追溯 1 个，未追溯 0 个。未知 0 个。已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。']));
+    const positive = checks.find((c) => c.name === '已关闭且已追溯的缺陷至少 1 个');
+    assert.ok(positive !== undefined && !positive.ok);
+    assert.match(String(positive.actual), /重跑 trace\.ts，加 --plm --closed-statuses/);
+    assert.ok(!String(positive.actual).includes('导出其他构建'));
+  });
+
+  test('a trace.ts gold made without --plm has no closed status anywhere and the scenario fails loudly on it', async () => {
+    const { traceGold } = await import('../gold/trace.ts');
+    const html = '<a href="?m=bug&f=view&id=910001">910001</a>';
+    const gold = traceGold({ html, maps: [] }) as TraceGold;
+    assert.equal(gold.closed_defects, undefined, 'joinGold never wrote an invented 0');
+    assert.ok(gold.defects.every((d) => d.closed === undefined), 'no per-defect closed status either');
+    const scenario = traceability({ product: 'apv', build: 'Rel_APV_10_6_1_57', defects: gold.defects });
+    const checks = scenario.check(turnsOf(['运行 run_9 完成。缺陷 1 个：已追溯 0 个，未追溯 1 个。未知 0 个。']));
+    const counts = checks.find((c) => c.name === '已关闭缺陷统计与独立依据一致');
+    assert.ok(counts !== undefined && !counts.ok, 'the count comparison must not run against an invented 0');
+    assert.match(String(counts.actual), /标准答案没有已关闭状态：重跑 trace\.ts，加 --plm --closed-statuses/);
+  });

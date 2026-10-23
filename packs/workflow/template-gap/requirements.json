@@ -8,9 +8,29 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["coverage"],
+      "checks": [
+        "coverage"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "command_coverage",
+      "name": "按命令的模板类别覆盖",
+      "description": "每份文档按锁定用例索引的命令路径核验模板 command 组的 9 个类别；已知命令结论照给，缺索引、来源不全或用例未匹配时写明缺失事实和同步后重跑动作",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "command_coverage"
+      ],
       "error_handling": []
     }
   ]

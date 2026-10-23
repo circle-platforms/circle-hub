@@ -65,11 +65,11 @@ test('two thousand requirements match an independent double loop', () => {
 
 test('configured build scope is optional and missing field requests ids without guessing', () => {
   const cases = input().inputs.filter(i => i.slot === 'cases');
-  const build = boundView('build', { builds: [{ id: '7', stories: ['21', '23'], scope_note: '需求范围取自构建记录' }] }, 'plm:builds:5');
+  const build = boundView('build', { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: ['21', '23'], scope_note: '需求范围取自构建记录' }] }, 'plm:builds:5');
   const p = project({ inputs: [...cases, build], parameters: { build_id: '7' } }) as any;
   assert.deepEqual(p.items.map((i: any) => i.id), ['21', '23']);
   assert.equal(p.items[0].fields.scope, 'observed');
-  build.model = { builds: [{ id: '7', stories: null, scope_note: '缺少设置 settings.build_story_field' }] };
+  build.model = { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: null, scope_note: '缺少设置 settings.build_story_field' }] };
   const absent = project({ inputs: [...cases, build], parameters: { build_id: '7' } }) as any;
   assert.match(absent.error.message, /未提供可用的需求编号数组/);
   assert.match(absent.error.message, /settings.build_story_field/);
@@ -132,7 +132,7 @@ test('absent PLM fields are observed absence, scalar values are raw, and unread 
 
 test('failed detail sources are distinct from a successful PLM response without an id', () => {
   const cases = input().inputs.filter(i => i.slot === 'cases');
-  const build = boundView('build', { builds: [{ id: '7', stories: ['21', '23'] }] }, 'plm:builds:5');
+  const build = boundView('build', { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: ['21', '23'] }] }, 'plm:builds:5');
   const s = projected({ inputs: [...cases, build], parameters: { build_id: '7' } });
   const unavailable = check({ subject: s, sources: {}, unread_sources: ['src:missing'] }) as any[];
   assert.match(unavailable[0].statement, /详情没有读到（来源不可用）/); assert.doesNotMatch(unavailable[0].statement, /应答里没有编号/);
@@ -168,10 +168,10 @@ test('pack label snapshot equals the authoritative generated vocabulary', async 
 
 test('build ids compare after normalization and refusal names an empty array rather than a missing field', () => {
   const cases = input().inputs.filter(i => i.slot === 'cases');
-  const build = boundView('build', { builds: [{ id: '7', stories: ['21'] }] }, 'plm:builds:5');
+  const build = boundView('build', { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: ['21'] }] }, 'plm:builds:5');
   const p = project({ inputs: [...cases, build], parameters: { build_id: '007' } }) as any;
   assert.deepEqual(p.items?.map((i: any) => i.id), ['21']);
-  build.model = { builds: [{ id: '7', stories: [], scope_note: '需求范围取自构建记录' }] };
+  build.model = { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: [], scope_note: '需求范围取自构建记录' }] };
   const empty = project({ inputs: [...cases, build], parameters: { build_id: '007' } }) as any;
   assert.match(empty.error.message, /构建记录 7.*数组为空/); assert.doesNotMatch(empty.error.message, /没有需求字段|缺少指定构建记录/);
   const missing = project({ inputs: [...cases, build], parameters: { build_id: '8' } }) as any;
@@ -230,7 +230,7 @@ test('non-scalar PLM fields are determinate observations counted apart from expl
 
 test('build-derived details retain non-scalar markers from the system projection', () => {
   const cases = input().inputs.filter(source => source.slot === 'cases');
-  const build = boundView('build', { builds: [{ id: '7', stories: ['21'] }] }, 'plm:builds:5');
+  const build = boundView('build', { builds: [{ id: '7', name: (cases[0].model as any).build.build, stories: ['21'] }] }, 'plm:builds:5');
   const s = projected({ inputs: [...cases, build], parameters: { build_id: '7' } });
   const sources = { ['src:' + 'c'.repeat(64)]: JSON.stringify({ stories: [{ id: '21', status: null, stage: null, fields_absent: [], fields_nonscalar: ['status'] }], unread: [] }) };
   const [total] = counts({ subject: s, sources }) as any[];

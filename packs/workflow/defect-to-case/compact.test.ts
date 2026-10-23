@@ -4,7 +4,7 @@ import type { BoundInput, RunContext } from '../../../contracts/src/pack.ts';
 import type { IndexView, ViewEntry } from '../../../contracts/src/views.ts';
 import { checkDuplicate } from './functions/checks.ts';
 import { projectDefects } from './functions/projection.ts';
-import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG, makeGoodDraft } from './testing/fixtures.ts';
+import { SYNTHETIC_BOUND_MANUAL, SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG, makeGoodDraft } from './testing/fixtures.ts';
 
 const DUMMY_CONTEXT: RunContext = {
   product: 'apv',
@@ -88,7 +88,7 @@ describe('compact case index and deduplication at real scale', () => {
     const initialMem = process.memoryUsage().heapUsed;
     const start = Date.now();
     const result = projectDefects({
-      inputs: [makeBoundDefect(), boundIndex],
+      inputs: [SYNTHETIC_BOUND_MANUAL, makeBoundDefect(), boundIndex],
       parameters: {},
       context: DUMMY_CONTEXT,
     });
@@ -243,7 +243,7 @@ describe('compact case index and deduplication at real scale', () => {
     };
 
     const result = projectDefects({
-      inputs: [makeBoundDefect(), boundIndex],
+      inputs: [SYNTHETIC_BOUND_MANUAL, makeBoundDefect(), boundIndex],
       parameters: {},
       context: DUMMY_CONTEXT,
     });

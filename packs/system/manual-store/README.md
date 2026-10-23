@@ -6,7 +6,7 @@ documents; reads only.
 | Read | Gives |
 | --- | --- |
 | `manual:file:<path>` | one file by its path below the base |
-| `manual:cli:<line>`, `manual:app:<line>` | the CLI or application manual of a version line: the subfolder of `settings.cli_folder` (default `cli`) or `settings.app_folder` (`app`) whose name ends in the line's numbers (`rel_x_10_4_6` is line 10.4.6), file `settings.cli_file` (`cli_cn/cli_cn.md`) or `settings.app_file`; content `text/markdown` without NUL bytes (the original keeps them), meta `{title, line, folder, nul_removed}` |
+| `manual:cli:<line>`, `manual:app:<line>` | the CLI or application manual of a version line: the subfolder of `settings.cli_folder` (default `cli`) or `settings.app_folder` (`app`) whose name ends in the line's numbers (`rel_x_10_7_1` is line 10.7.1), file `settings.cli_file` (`cli_cn/cli_cn.md`) or `settings.app_file`; content `text/markdown` without NUL bytes (the original keeps them), meta `{title, line, folder, nul_removed}` |
 | `manual:spec-search:<terms joined by +>` | `settings.spec_folder` (default `spec`) listed once with PROPFIND Depth 1; every file name scored by the number of terms it contains (case-insensitive, an ASCII acronym counts like any term where no ASCII letter touches it), ties to the file whose terms are rarer in the folder, the best five with at least one term read; the derived content (Markdown) lists the files read and holds their texts; nothing found is an empty listing, not an error |
 | `manual:qa-search:<terms joined by +>` | the same over the test strategy documents (`settings.qa_folder`, default `qa`); the workflows bind it with role hint (evidence group d) |
 
