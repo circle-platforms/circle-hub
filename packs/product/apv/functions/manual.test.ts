@@ -190,15 +190,15 @@ describe('entries from the converted manual', () => {
     assert.deepEqual(fromMarkdown.unplaced, []);
     const hung = fromMarkdown.entries.filter((entry) => entry.path?.startsWith('/manual/'));
     assert.deepEqual(
-      hung.map((entry) => [entry.kind, entry.path, entry.fragments[0].selector, entry.data.section]),
+      hung.map((entry) => [entry.kind, entry.path, entry.fragments[0].selector]),
       [
-        ['behaviour', '/manual/manual/引言', 'b/0/引言', '引言'],
-        ['behaviour', '/manual/manual/引言', 'b/1/引言', '引言'],
-        ['behaviour', '/manual/manual/基本配置', 'b/0/基本配置', '基本配置'],
-        ['behaviour', '/manual/manual/基本配置', 'b/1/基本配置', '基本配置'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
-        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明'],
+        ['behaviour', '/manual/manual/引言', 'b/0/引言'],
+        ['behaviour', '/manual/manual/引言', 'b/1/引言'],
+        ['behaviour', '/manual/manual/基本配置', 'b/0/基本配置'],
+        ['behaviour', '/manual/manual/基本配置', 'b/1/基本配置'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明'],
+        ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
       ],
     );
     // "**demo broken** *\<name*" is written as a signature but its brackets do not close: it hangs at its section,
@@ -352,11 +352,8 @@ describe('manual section placement', () => {
   it('hangs the preamble at the manual namespace root and names the manual by options.name', () => {
     const result = produceManualEntries(markdown('前言一段，标题之前。\n\n# 章\n\n正文。\n'), null, { name: 'cli' });
     assert.deepEqual(
-      result.entries.map((entry) => [entry.path, entry.data.section]),
-      [
-        ['/manual/cli', ''],
-        ['/manual/cli/章', '章'],
-      ],
+      result.entries.map((entry) => [entry.path]),
+      [['/manual/cli'], ['/manual/cli/章']],
     );
     assert.deepEqual(result.unplaced, []);
   });
@@ -653,10 +650,10 @@ describe('command tables split by row', () => {
   it('never splits a table that is not a pipe table, or a pipe table without a resolvable signature row', () => {
     const grid = ['# 章', '', '+-----+-----+', '| a   | b   |', '+-----+-----+', '| **demo pool add** | x |', '+-----+-----+'].join('\n');
     const fromGrid = produceManualEntries(markdown(grid), null, { catalog });
-    assert.deepEqual(fromGrid.entries.map((entry) => [entry.path, entry.data.block]), [['/manual/manual/章', 'table']]);
+    assert.deepEqual(fromGrid.entries.map((entry) => [entry.path]), [['/manual/manual/章']]);
     const plain = ['# 章', '', '| 命令 | 说明 |', '| --- | --- |', '| 添加成员 | 用池命令 |'].join('\n');
     const fromPlain = produceManualEntries(markdown(plain), null, { catalog });
-    assert.deepEqual(fromPlain.entries.map((entry) => [entry.path, entry.data.block]), [['/manual/manual/章', 'table']]);
+    assert.deepEqual(fromPlain.entries.map((entry) => [entry.path]), [['/manual/manual/章']]);
   });
 });
 

@@ -570,7 +570,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    * (K02 F[6]): no condition is inherited from a heading, a sibling block or another row.
    */
   const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[] }): ProducedEntry => {
-    const data: { [key: string]: unknown } = { form: 'text', block: init.block, section: sectionText(init.section) };
+    // Data stays identical across placements (K01 R[1]) and across heading edits (K02 F[1], R[4]): the section
+    // chain is provenance and lives in the fragment selectors and the section-node paths, never in the digest.
+    const data: { [key: string]: unknown } = { form: 'text' };
     if (init.words !== undefined) data.words = init.words;
     const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability: toApplicability(conditionsOf(init.statement)) };
     putLiterals(entry, init.block, init.statement);

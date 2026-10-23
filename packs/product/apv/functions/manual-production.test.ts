@@ -156,6 +156,27 @@ describe('production with the real manual producer', () => {
     assert.notEqual(await nodeDigest(second.root as string, ['commands']), await nodeDigest(first.root as string, ['commands']));
   });
 
+
+  test('renaming a chapter heading leaves every /commands node digest unchanged (a heading is no entry data)', async () => {
+    external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
+    const before = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), by: admin });
+    assert.ok(before.ok, before.reason ?? '');
+    // A chapter inserted before 命令 renumbers it: 3 命令 would become 4 命令 in the heading chain.
+    const renumbered = MANUAL.replace('# 命令', '# 4 命令');
+    assert.notEqual(renumbered, MANUAL);
+    external.set('manual:cli:10.6.1', { bytes: renumbered, mediaType: 'text/markdown' });
+    const after = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_9', 'site:tree:a'), by: admin });
+    assert.ok(after.ok, after.reason ?? '');
+    for (const names of [['commands', 'demo', 'pool', 'add'], ['commands', 'demo', 'probe'], ['commands', 'demo', 'route', 'static']]) {
+      assert.equal(
+        await nodeDigest(after.root as string, names),
+        await nodeDigest(before.root as string, names),
+        `${names.join('/')} keeps its digest when only a heading changed`,
+      );
+    }
+    external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
+  });
+
   test('editing one manual section changes only its node and its ancestors to the root', async () => {
     const source = 'manual:cli:10.6.1';
     const target = build('Rel_APV_10_6_1_11', 'site:tree:a');
