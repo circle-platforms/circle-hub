@@ -23,29 +23,42 @@ const rulesOf=(value:unknown):Rule[]=>{
   if(new Set(rules.map(r=>r.id)).size!==rules.length)throw new Error('链接声明编号重复');
   return rules;
 };
-export function resolveLiteral(rule:Rule,literal:string,nodes:RelationNodes):{target:string|null;attempted_path:string|null;stopped_at:string;remainder:string[]} {
-  let text=literal;
-  if(rule.normalize?.strip_nul)text=text.replaceAll('\0','');
-  const original=text.trim()?text.trim().split(/\s+/u):[];
-  const words=original.map(word=>{
-    let value=rule.normalize?.nfkc?word.normalize('NFKC'):rule.normalize?.nfc?word.normalize('NFC'):word;
-    if(rule.normalize?.lowercase)value=value.toLowerCase();return value;
-  });
-  const base=pathSegments(rule.namespace),segments:string[]=[];
-  let stopped='/',best:string|null=null,bestWords=0,attempted:string|null=null;
-  try{attempted=pathOf([...base,...words]);}catch{}
-  for(const part of base){segments.push(part);const path=pathOf(segments);if(!nodes.has(path))return {target:null,attempted_path:attempted,stopped_at:stopped,remainder:original};stopped=path;}
-  for(let i=0;i<words.length;i++){
-    segments.push(words[i]);let path:string;try{path=pathOf(segments);}catch{break;}
-    const kinds=nodes.get(path);if(kinds===undefined)break;stopped=path;
-    if(rule.entry_kind===undefined||kinds.has(rule.entry_kind)){best=path;bestWords=i+1;}
-  }
-  if(words.length===0||rule.match===LINK_MATCH[0]&&(best!==attempted||bestWords!==words.length))best=null;
-  return {target:best,attempted_path:attempted,stopped_at:stopped,remainder:best===null?original:original.slice(bestWords)};
+function normalizedWord(rule:Rule,value:string):string {
+  if(rule.normalize?.strip_nul)value=value.replaceAll('\0','');
+  if(rule.normalize?.nfkc)value=value.normalize('NFKC');else if(rule.normalize?.nfc)value=value.normalize('NFC');
+  return rule.normalize?.lowercase?value.toLowerCase():value;
 }
+function wordsOf(rule:Rule,literal:string):{original:string[];words:string[]}{
+  const text=rule.normalize?.strip_nul?literal.replaceAll('\0',''):literal;
+  const original=text.trim()?text.trim().split(/\s+/u):[];
+  return {original,words:original.map(word=>normalizedWord(rule,word))};
+}
+function resolverOf(rule:Rule,nodes:RelationNodes){
+  const index=new Map<string,Array<{path:string;kinds:ReadonlySet<string>}>>();
+  for(const [path,kinds] of [...nodes].sort(([a],[b])=>compareText(a,b))){
+    const folded=pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),choices=index.get(folded)??[];
+    choices.push({path,kinds});index.set(folded,choices);
+  }
+  return (literal:string):{target:string|null;attempted_path:string|null;stopped_at:string;remainder:string[]}=>{
+    const {original,words}=wordsOf(rule,literal),base=pathSegments(rule.namespace).map(word=>normalizedWord(rule,word)),segments:string[]=[];
+    let stopped='/',best:string|null=null,bestWords=0,attempted:string|null=null;
+    try{attempted=pathOf([...base,...words]);}catch{}
+    for(const part of base){segments.push(part);const choices=index.get(pathOf(segments));if(!choices)return {target:null,attempted_path:attempted,stopped_at:stopped,remainder:original};stopped=choices[0].path;}
+    for(let i=0;i<words.length;i++){
+      segments.push(words[i]);let path:string;try{path=pathOf(segments);}catch{break;}
+      const choices=index.get(path);if(!choices)break;stopped=choices[0].path;
+      const eligible=choices.find(node=>rule.entry_kind===undefined||node.kinds.has(rule.entry_kind));
+      if(eligible){best=eligible.path;bestWords=i+1;}
+    }
+    if(words.length===0||rule.match===LINK_MATCH[0]&&bestWords!==words.length)best=null;
+    return {target:best,attempted_path:attempted,stopped_at:stopped,remainder:best===null?original:original.slice(bestWords)};
+  };
+}
+export function resolveLiteral(rule:Rule,literal:string,nodes:RelationNodes){return resolverOf(rule,nodes)(literal);}
 /** The very same evaluator is used by production diagnostics and by read-time views. */
 export function relationFacts(root:string,declarations:readonly Rule[],nodes:RelationNodes,sources:readonly LiteralSource[]):RelationFacts {
   const rules=rulesOf(declarations),links:LinkEdge[]=[],groups=new Map<string,LinkDrift>(),entries=new Set<string>();let literals=0;
+  const resolvers=new Map(rules.map(rule=>[rule.id,resolverOf(rule,nodes)]));
   for(const source of new Map(sources.map(s=>[s.path+'\0'+s.entry,s])).values())for(const rule of rules){
     if(!Object.hasOwn(source.content.data,rule.field))continue;
     const raw=source.content.data[rule.field];if(raw===null||raw===undefined)continue;
@@ -53,9 +66,14 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
     if(values===null)throw new Error(`链接声明 ${rule.id} 的字面字段必须是文字或文字列表`);
     const reference=source.unplaced?`entry:${source.entry}`:treeReference(root,source.path,source.entry),occurrence={reference,path:source.path,summary:summaryOf(source.content.statement)};
     for(const literal of new Set(values)){
-      literals++;entries.add(reference);const match=resolveLiteral(rule,literal,nodes);
+      literals++;entries.add(reference);const match=resolvers.get(rule.id)!(literal);
       if(match.target!==null)links.push({...occurrence,rule:rule.id,literal,target:match.target,remainder:match.remainder});
-      else {const key=canonicalize([rule.id,literal]),group=groups.get(key)??{rule:rule.id,literal,attempted_path:match.attempted_path,stopped_at:match.stopped_at,total:0,occurrences:[]};group.total++;group.occurrences.push(occurrence);groups.set(key,group);}
+      else {
+        const normalized=wordsOf(rule,literal).words.join(' '),key=canonicalize([rule.id,normalized]);
+        const group=groups.get(key)??{rule:rule.id,literal:normalized,spellings:[],attempted_path:match.attempted_path,stopped_at:match.stopped_at,total:0,occurrences:[]};
+        group.spellings=[...new Set([...(group.spellings??[]),literal])].sort(compareText);
+        group.total++;group.occurrences.push(occurrence);groups.set(key,group);
+      }
     }
   }
   links.sort((a,b)=>compareText(a.rule,b.rule)||compareText(a.literal,b.literal)||compareText(a.reference,b.reference));

@@ -770,3 +770,5 @@ refreshes. Node replies show only reverse references and one-line summaries, wit
 acceptance. Tests also cover exact and longest-prefix positives/negatives, grouped drift, source-prefix and target filters,
 unchanged bytes for an old composition after a same-root refresh, stale-pointer refusal, legacy snapshots and declaration
 rejection. Views can be bound as ordinary external inputs; review and version-difference pack consumption is the second step.
+
+Declared relation normalizers apply to both literal words and node segments. Equivalent target paths select the code-point-smallest eligible canonical path, independent of enumeration order. Drift is grouped by normalized words and retains every written spelling in spellings.\n

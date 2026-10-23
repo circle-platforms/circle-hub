@@ -141,7 +141,7 @@ export type IndexView = z.infer<typeof IndexView>;
 // ---------------------------------------------------------------- literal relations pinned to a composition
 export const LinkOccurrence = z.strictObject({ reference: z.union([referenceUriOf('tree').refine(value=>/@[a-f0-9]{64}$/.test(value),'an entry reference is required'),referenceUriOf('entry')]), path: TreePath, summary: z.string() });
 export const LinkEdge = LinkOccurrence.extend({ rule: z.string(), literal: z.string(), target: TreePath, remainder: z.array(z.string()) });
-export const LinkDrift = z.strictObject({ rule: z.string(), literal: z.string(), attempted_path: TreePath.nullable(), stopped_at: TreePath, total: z.number().int().nonnegative(), occurrences: z.array(LinkOccurrence) });
+export const LinkDrift = z.strictObject({ rule: z.string(), literal: z.string(), spellings:z.array(z.string()).optional(), attempted_path: TreePath.nullable(), stopped_at: TreePath, total: z.number().int().nonnegative(), occurrences: z.array(LinkOccurrence) });
 export const LinkTotals = z.strictObject({ entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative() });
 export const Backlinks = z.strictObject({ composition: Sha256.nullable(), configured: z.boolean(), total: z.number().int().nonnegative().nullable(), entries: z.array(LinkOccurrence), truncated: z.boolean(), notes: z.array(z.string()) }).refine(value=>value.configured===(value.total!==null)&&(!value.configured||value.composition!==null),'computed backlinks require a pinned composition and total');
 export const LinksView = z.strictObject({
