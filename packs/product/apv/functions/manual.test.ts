@@ -205,7 +205,7 @@ describe('entries from the converted manual', () => {
     // marked signature_rejected, with a warning.
     const rejected = hung.find((entry) => entry.fragments[0].selector === 'b/1/基本配置/显示命令/其他说明');
     assert.equal(rejected?.data.signature_rejected, true);
-    assert.deepEqual(fromMarkdown.warnings, ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
+    assert.deepEqual(fromMarkdown.warnings, ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
   });
 
   it('gives fragments the markdown@1 document locates, with the same text', () => {

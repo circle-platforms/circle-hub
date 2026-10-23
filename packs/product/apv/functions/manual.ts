@@ -4,7 +4,7 @@
 //   - a signature hangs at its command node only when the command exists in the build's command tree (a DIRECT call
 //     without a catalog places by the literal, unchecked; a PRODUCTION with no tree slot or a non-xml@1 tree keeps
 //     every signature at its section node, warns with the missing fact and the next action, and lists no drift) (`/commands` nodes
-//     are built by the command-tree producer alone); without a tree the literal decides, unchecked;
+//     are built by the command-tree producer alone).
 //   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists
 //     and every command of a multi-command row exists (then the row hangs at their nearest common ancestor when that
 //     is at least one word deeper than /commands — /commands itself is not a placement); rows without a signature
@@ -1174,7 +1174,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 
   if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
   if (rejected > 0) {
-    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);
+    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);
   }
   if (missingSection > 0) warnings.push(`有 ${missingSection} 个块指向不存在的章节，挂在手册命名空间的根下`);
   if (unwritable > 0) warnings.push(`有 ${unwritable} 个块的章节路径写不出（过长或含写不出的字符），挂在手册命名空间的根下`);

@@ -166,14 +166,19 @@ Producers (K02, K04, C07)
   other cells). A row with several commands hangs one text entry at their nearest common ancestor over ALL of them when
   every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
   itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
-  section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
-  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／; under a header that
-  names commands a slash between two signature-shaped runs splits them, elsewhere a plain-character join is one value
-  or term cell); a bold span inside
-  prose is a mention, recorded in `command_literals` only. A cell holding one bare bold word is a value, a parameter
-  name or a term, never a signature (unless the table header names commands): such rows keep the table's remainder
-  and the word is recorded in `command_literals` only. The header and the rows without a signature make one remainder
-  text entry, which follows the current command, or stays at the section node; a row that states its own condition
+  section node, as does any row naming a missing command. The cell rule is PER COLUMN (closure findings 2 and 19):
+  a column whose header is one of the command terms (命令、命令格式、命令名称、命令行、CLI 命令、Command、Commands、
+  Command Syntax) takes every signature-shaped run; in every other column a bold span needs parameter or group syntax
+  to be a signature — a bare bold run, one word or many, is a value, a parameter name or a term. Text before the
+  first bold run of a cell is prose: the whole cell is prose and its bold span is a mention, recorded in
+  `command_literals` only; a prose run between two bold runs ends the list (the runs before it stay signatures, the
+  rest is the row's prose), while a run of bare connectives (与/和/及/或、顿号、逗号；斜线 only in a command column)
+  continues the list. A bold span that follows another with no separator at all rides with it: an anchor may span
+  several runs (a bold keyword or parameter of the same signature). A cell whose bold head equals one of the current
+  command's parameter names, or one enumerated alternative of its variant group, is a value row: such rows keep the
+  table's remainder, and a remainder made only of value rows records no `command_literals`. The header and the rows
+  without a signature make one remainder text entry, which follows the current command, or stays at the section node;
+  a row that states its own condition
   becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
@@ -183,8 +188,10 @@ Producers (K02, K04, C07)
   manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
   read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
   are listed in the production warnings as drift candidates. Signature literals are decided by the placement check
-  (never by the leading-run rule): a signature not placed at /commands lists exactly its positive variants (a bare
-  key of a variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the tree).
+  (never by the leading-run rule): a signature not placed at /commands lists its positive variants and its own raw
+  spelling, and a mention is drift exactly when the tree cannot resolve it by words or by expanding one {a|b} group
+  (a bare key of a variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the
+  tree).
   The count covers every literal found (past the per-entry
   cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
