@@ -44,7 +44,7 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): Sour
 export function runOfRecord(record: { kind: string; schema: string; body: unknown }): string | null {
   const { kind, schema, body } = record;
   if (!isObject(body)) return null;
-  if (kind !== 'run' && kind !== 'validation_result' && kind !== 'submission' && kind !== 'action') return null;
+  if (!(kind==='claim'&&schema==='hypothesis-set@1') && kind !== 'run' && kind !== 'validation_result' && kind !== 'submission' && kind !== 'action' && kind !== 'request') return null;
   if (typeof body.run === 'string') return body.run;
   if (kind === 'submission' && schema === SCHEMAS.received && isObject(body.received) && typeof body.received.run === 'string') return body.received.run;
   return null;
