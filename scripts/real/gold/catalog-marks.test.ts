@@ -332,3 +332,9 @@ test('unexpected oracle defects propagate while known input refusals carry fixed
  assert.throws(()=>readCatalog('<commands>'),e=>e instanceof CatalogInputError && e.reason==='tree_structure');
  void broken;
 });
+
+test('missing submission identity asks for its canonical digest rather than an unavailable original-byte digest', async () => {
+ const {catalogMarks}=await import('./catalog-marks.ts');const shown=receiptRun();delete shown.latest.result.submission;
+ const report=catalogMarks({packManifest,tableBytes,argumentTypes:[],treeXml:tree,sourceBytes,run:shown,submissionBytes:bytes,table});
+ const gap=report.requests.find(r=>r.pointer==='/latest/result/submission')!;assert.match(gap.fact,/规范 JSON/);assert.ok(!gap.fact.includes('原件字节'));
+});

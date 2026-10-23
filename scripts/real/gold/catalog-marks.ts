@@ -393,7 +393,7 @@ export interface CatalogReport extends CatalogComparison {
   inputs: { tree_sha256: string | null; source_sha256: string | null; submission_sha256: string | null; expected_submission_sha256: string | null; locked_root: string | null };
 }
 export interface CatalogInputs {
-  treeXml: string; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
+  treeXml: string; treeBytes?: Uint8Array; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
   table: unknown; packManifest?: unknown; tableBytes?: Uint8Array; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
 }
 const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -431,7 +431,7 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   const empty: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
   const run = object(input.run) ? input.run : {}, record = object(run.run) ? run.run : {}, latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
   const wanted = typeof result.submission === 'string' && /^[0-9a-f]{64}$/.test(result.submission) ? result.submission : null;
-  const inputs = { tree_sha256: sha256(input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : (() => { try { return sha256(canonicalJson(parseJson(input.submissionBytes))); } catch { return null; } })(), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
+  const inputs = { tree_sha256: sha256(input.treeBytes ?? input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : (() => { try { return sha256(canonicalJson(parseJson(input.submissionBytes))); } catch { return null; } })(), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
   const requests = tableRequests(input.table);
   const add = (where: string, pointer: string, fact: string, next_action: string): void => { requests.push(request({ input: where, pointer }, fact, next_action)); };
   const manifest = object(input.packManifest) ? input.packManifest : {};
@@ -442,8 +442,8 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   if (input.argumentTypes === undefined) add('argument-types', '/', '锁定根生产参数中的 argumentTypes 声明（允许空数组）', '请集成者从锁定根对应生产记录导出声明数组，每项为 {command, position, type, origin}，保存为 Git 外 JSON，通过 --argument-types 传入后重跑');
   const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
 
-  if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的原件字节 sha256', exportSubmission);
-  if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整原始字节', exportSubmission);
+  if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的规范 JSON sha256', exportSubmission);
+  if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整正文 JSON', exportSubmission);
   else if (wanted !== null && inputs.submission_sha256 !== wanted) add('submission', '/', '提交正文规范 JSON 摘要与最新受理提交不一致', exportSubmission);
   if (result.acceptance !== CATALOG_VALUES.accepted) add('run', '/latest/result/acceptance', '最新已受理的评审结果', '请集成者重导出本次 circle-hub run show <运行> --json 的最新受理结果');
   if (typeof record.run !== 'string' || result.run !== record.run) add('run', '/latest/result/run', '提交、最新受理结果和运行的同一身份', '重新导出同一次运行的 run show 与提交原件后重跑');
@@ -532,7 +532,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
     const argumentTypes = flags.has('--argument-types') ? readArgumentTypes(read('argument-types')) : undefined;
     stage = 'compare';
-    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
+    report = catalogMarks({ treeXml, treeBytes, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
     report.inputs.tree_sha256 = sha256(treeBytes);
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
   } catch (error) {

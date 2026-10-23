@@ -393,3 +393,12 @@ test('closure startup session validation refuses reserved flags with exit two an
   }
  }
 });
+
+test('Latin-1 measurement tree receipts hash the original bytes rather than re-encoded XML', t => {
+ const f=catalogFixture(t);
+ const bytes=Buffer.from('<?xml version="1.0" encoding="ISO-8859-1"?><commands><menu name="widget"><item name="port" help_string="café"><arguments><arg name="port" type="U16" limit="[1 - 20]"/></arguments></item></menu></commands>','latin1');
+ writeFileSync(f.commandTree,bytes);
+ assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes,submission:f.original},f.driver,()=>{}),0);
+ const report=JSON.parse(readFileSync(join(f.out,'r1/catalog/catalog-marks.json'),'utf8'));
+ assert.equal(report.inputs.tree_sha256,createHash('sha256').update(bytes).digest('hex'));
+});
