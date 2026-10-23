@@ -424,3 +424,11 @@ test('check reads max_bytes is validated against core limit of 1 MiB', async () 
   });
   await refused(invalidType, 'checks.shape', { file: 'checks.json' });
 });
+
+test('publishing checks every local tool while packages without tools retain their validation', async () => {
+  await accepted(workflowPack());
+  await accepted(withFiles(workflowPack(), { 'tools/task.ts': "import { readFile } from 'node:fs/promises'; import '../functions/helper.ts'; void readFile;", 'functions/helper.ts': 'export const helper = 1;' }));
+  await refused(withFiles(workflowPack(), { 'tools/task.ts': "import 'zod';" }), 'tools.import_package', { file: 'tools/task.ts' });
+  await refused(withFiles(workflowPack(), { 'tools/task.ts': "import '../../outside.ts';" }), 'tools.import_outside');
+  await refused(withFiles(workflowPack(), { 'tools/task.mjs': 'module.exports = 1;' }), 'tools.unsupported_syntax');
+});

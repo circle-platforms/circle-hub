@@ -4,7 +4,7 @@
 // are erased by Node's type stripping and are not imports; an import whose specifiers are all inline `type` ones is kept
 // by Node as a module load, so it counts. The sandbox admits ES modules only: a .ts or .js module whose stripped code has no
 // ES module syntax is loaded by Node as CommonJS, so the scan refuses it as well.
-import { isBuiltin } from 'node:module';
+import { builtinModules, isBuiltin } from 'node:module';
 import { posix } from 'node:path';
 import type * as TS from 'typescript';
 import { problem, utf8 } from './problems.ts';
@@ -164,7 +164,7 @@ function namespaceHasValues(ts: typeof TS, node: TS.ModuleDeclaration): boolean 
   return body.statements.some((s) => !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s) && !(ts.isModuleDeclaration(s) && !namespaceHasValues(ts, s)));
 }
 
-function analyze(ts: typeof TS, path: string, text: string): ModuleFacts {
+function analyze(ts: typeof TS, path: string, text: string, tools = false): ModuleFacts {
   const facts: ModuleFacts = { imports: [], computed: [], unsupported: [], syntax: [], exports: new Set(), star: [], esm: false };
   const kind = TYPESCRIPT.includes(posix.extname(path)) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
@@ -180,6 +180,7 @@ function analyze(ts: typeof TS, path: string, text: string): ModuleFacts {
   // Functions entered on the way down: an await outside every function is top-level await.
   let functions = 0;
   const visit = (node: TS.Node): void => {
+    if (tools && ((ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require') || (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && (node.expression.text === 'exports' || node.expression.text === 'module' && node.name.text === 'exports')) || (ts.isElementAccessExpression(node) && ts.isIdentifier(node.expression) && (node.expression.text === 'exports' || node.expression.text === 'module' && literalText(ts, node.argumentExpression) === 'exports')))) facts.unsupported.push({ what: 'CommonJS', line: lineOf(node) });
     if (ts.isImportDeclaration(node)) {
       const clause = node.importClause;
       if (clause?.phaseModifier === ts.SyntaxKind.DeferKeyword) facts.unsupported.push({ what: 'import defer', line: lineOf(node) });
@@ -289,7 +290,7 @@ function packageOf(specifier: string): string {
  * Scans the modules the entries reach (relative imports followed inside the pack) and checks each import against the policy
  * and each entry's export. Returns one problem per offending import, unsupported syntax or missing export.
  */
-export async function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entries: readonly FunctionEntry[], policy: ImportPolicy = SANDBOX_IMPORT_POLICY): Promise<PackProblem[]> {
+async function scanModules(files: ReadonlyMap<string, Uint8Array>, entries: readonly FunctionEntry[], policy: ImportPolicy, tools = false): Promise<PackProblem[]> {
   const problems: PackProblem[] = [];
   const facts = new Map<string, ModuleFacts | null>();
   const queue: string[] = [];
@@ -319,7 +320,7 @@ export async function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entr
     }
     let module: ModuleFacts;
     try {
-      module = analyze(ts, path, text);
+      module = analyze(ts, path, text, tools);
     } catch (error) {
       // The parser recurses per nesting level: code nested deep enough overflows the stack. Unchecked is not admitted.
       const why = error instanceof RangeError ? '嵌套太深，检查器的栈不够' : '检查器无法解析它';
@@ -418,7 +419,7 @@ export async function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entr
     }
     return { names, open };
   };
-  for (const entry of entries) {
+  for (const entry of tools ? [] : entries) {
     const module = facts.get(entry.module);
     if (module === undefined || module === null) continue;
     const { names, open } = exportsOf(entry.module, new Set());
@@ -428,4 +429,15 @@ export async function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entr
     }
   }
   return problems;
+}
+
+/** Sandboxed functions retain their runtime policy and named-export checks. */
+export function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entries: readonly FunctionEntry[], policy: ImportPolicy = SANDBOX_IMPORT_POLICY): Promise<PackProblem[]> {
+  return scanModules(files, entries, policy);
+}
+/** Client-side tools have no Hub dependencies: all builtins, no third-party packages, no required export. */
+export async function scanTools(files: ReadonlyMap<string, Uint8Array>): Promise<PackProblem[]> {
+  const entries = [...files.keys()].filter((path) => path.startsWith('tools/') && CODE.includes(posix.extname(path))).map((module) => ({ module, export: '', file: module, field: '' }));
+  const found = await scanModules(files, entries, { builtins: builtinModules.map((name) => name.replace(/^node:/, '')), packages: [] }, true);
+  return found.map((p) => ({ ...p, rule: p.rule.replace(/^functions\./, 'tools.'), message: p.message.replaceAll('包内函数', '本地工具').replaceAll('沙箱只运行', '本地工具只运行'), fix: p.rule === 'functions.import_package' ? '本地工具只能导入 Node 内置模块和清单里的包内文件；移除第三方依赖' : p.fix }));
 }

@@ -19,7 +19,7 @@ import { ProductDeclaration, ProductId, type PackFunctionRef } from '../../../co
 import { SystemProfile } from '../../../contracts/src/resources.ts';
 import { scanForCredentials, sha256Hex } from '../../records/api.ts';
 import { getInterpreter, INTERPRETERS } from '../../rules/api.ts';
-import { scanFunctions, SANDBOX_IMPORT_POLICY, type FunctionEntry, type ImportPolicy } from './imports.ts';
+import { scanTools, scanFunctions, SANDBOX_IMPORT_POLICY, type FunctionEntry, type ImportPolicy } from './imports.ts';
 import { fieldText, isRecord, pointerOf, problem, readJsonFile, shapeProblems, utf8 } from './problems.ts';
 import type {
   LoadedSample,
@@ -513,6 +513,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   const policy = options.policy ?? SANDBOX_IMPORT_POLICY;
   const c = new Collector(new Map(directory.files.map((f) => [f.path, f.bytes])));
   const { manifest } = directory;
+  for (const p of await scanTools(c.files)) c.add(p);
   for (const p of versionProblems(manifest)) c.add(p);
   for (const p of credentialProblems(directory)) c.add(p);
   for (const [i, file] of manifest.files.entries()) {
