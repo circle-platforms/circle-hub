@@ -14,15 +14,15 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '1.3.1',
+  version: '2.3.3',
   kind: 'workflow',
   title: '用例编译',
-  description: '模型按受限结构把评审过的用例编成执行计划，Hub 在边界上核对：步骤的（对象，方法）对合约、字面地址对台架、命令和参数对构建的命令目录、期望结果有逐字来源、执行计划确定性重读一致。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”',
+  description: '按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'tables', 'samples', 'examples'];
+const FOLDERS = ['functions', 'tables', 'samples', 'examples', 'scripts'];
 /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 
@@ -43,13 +43,16 @@ async function walk(relative: string): Promise<string[]> {
 export async function packFiles(): Promise<string[]> {
   const paths = [...TOP];
   for (const folder of FOLDERS) paths.push(...(await walk(folder)));
-  return paths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return paths.map((path) => path.startsWith('scripts/') ? 'tools/' + path.slice('scripts/'.length) : path).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+// The existing pack contract permits tools/, not scripts/. Publication preserves source bytes under that namespace.
+const sourcePath = (path: string): string => path.startsWith('tools/') ? 'scripts/' + path.slice('tools/'.length) : path;
 
 export async function computeManifest(): Promise<Manifest> {
   const files: ManifestEntry[] = [];
   for (const path of await packFiles()) {
-    const bytes = await readFile(join(PACK_DIR, path));
+    const bytes = await readFile(join(PACK_DIR, sourcePath(path)));
     files.push({ path, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.byteLength });
   }
   return { ...IDENTITY, files };
@@ -63,7 +66,7 @@ export async function stage(target: string): Promise<string> {
   for (const path of await packFiles()) {
     const to = join(target, path);
     await mkdir(dirname(to), { recursive: true });
-    await copyFile(join(PACK_DIR, path), to);
+    await copyFile(join(PACK_DIR, sourcePath(path)), to);
   }
   await writeFile(join(target, 'pack.json'), manifestText(manifest));
   return target;

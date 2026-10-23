@@ -39,8 +39,10 @@ export interface Outcome {
 }
 
 /** The two markers every conclusion of this pack carries (task page A.5): never "可以运行". */
-export function markers(synthetic: boolean): string {
-  return synthetic ? '（按合成合约核对；不证明在真实设备上跑得通）' : '（不证明在真实设备上跑得通）';
+export function markers(synthetic: boolean, identity?: { runtimeVersion: string; digest: string }): string {
+  const basis = synthetic ? '按合成合约核对' : '按发布的运行器合约核对';
+  const who = identity ? `；运行时 ${identity.runtimeVersion}；身份 ${identity.digest.slice(0, 12)}` : '';
+  return `（${basis}${who}；不证明在真实设备上跑得通）`;
 }
 
 export function outcome(kind: Outcome['verdict'], statement: string, tier: Outcome['tier'], item: string, extras: Partial<Outcome> = {}): Outcome {

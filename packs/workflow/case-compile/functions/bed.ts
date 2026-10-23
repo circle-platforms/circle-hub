@@ -3,9 +3,10 @@
 // addresses (a DUT interface on a segment without any), backends (server interfaces and the declared services), and
 // the devices without any interface address as unknowns. Address use in a plan is judged from these facts plus the
 // run's lineage leases (allocated addresses); every comparison is by the numeric address key, never by notation.
+import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { addressKey, type ManifestBed } from './manifest.ts';
 
-export const TRIGGER_TYPES: ReadonlySet<string> = new Set(['router', 'client']);
+export const TRIGGER_TYPES: ReadonlySet<string> = new Set(FORMAT.trigger_types);
 
 export interface SegmentFact {
   subnet: string;
@@ -73,7 +74,7 @@ export function bedFacts(bed: ManifestBed): BedFacts {
     }
   }
   for (const service of bed.services) {
-    const bare = backends.findIndex((fact) => fact.address === service.ip && fact.service === null);
+    const bare = backends.findIndex((fact) => addressKey(fact.address) === addressKey(service.ip) && fact.service === null);
     if (bare >= 0) backends.splice(bare, 1);
     backends.push({ device: service.host, address: service.ip, service: `${service.host}:${service.port}/${service.proto}` });
   }
@@ -91,7 +92,8 @@ export function bedFacts(bed: ManifestBed): BedFacts {
 export type AddressReading =
   | { kind: 'interface'; device: string; type: string; subnet: string }
   | { kind: 'allocated' }
-  | { kind: 'off_bed' };
+  | { kind: 'off_bed' }
+  | { kind: 'not_address' };
 
 export interface LeaseRow {
   key: string;
@@ -106,7 +108,7 @@ export interface LeaseRow {
  */
 export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: string, address: string): AddressReading {
   const key = addressKey(address);
-  if (key === null) return { kind: 'off_bed' };
+  if (key === null) return { kind: 'not_address' };
   for (const device of bed.devices) {
     for (const iface of [...device.ipv4, ...device.ipv6]) {
       if (addressKey(iface.address) === key) return { kind: 'interface', device: device.name, type: device.type, subnet: iface.subnet };

@@ -1,0 +1,51 @@
+// Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
+import { isRecord } from './text.ts';
+export type KeywordValue = string | number;
+export interface PlanStep { object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
+export interface PlanExpect { text: string; quote: { reference: string; text: string }; after: number }
+export interface Replacement { case: string; bed: string }
+export interface PlanSlots { bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
+export interface SlotProblem { pointer: string; message: string }
+export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
+  const problems: SlotProblem[] = [];
+  const issue = (pointer: string, message: string) => problems.push({ pointer, message });
+  if (!isRecord(value)) return { ok: false, problems: [{ pointer: '', message: '槽位不是对象；按 slots.schema.json 的完整形状填写' }] };
+  const keys = (raw: Record<string, unknown>, allowed: string[], at: string): void => {
+    for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
+  };
+  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements'], '');
+  if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是台架名');
+  if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
+  const steps: PlanStep[] = [];
+  if (!Array.isArray(value.steps) || !value.steps.length) issue('/steps', '步骤必须是非空数组');
+  for (const [i, raw] of (Array.isArray(value.steps) ? value.steps : []).entries()) {
+    const at = `/steps/${i}`;
+    if (!isRecord(raw)) { issue(at, '步骤不是对象'); continue; }
+    keys(raw, ['object', 'method', 'args', 'keywords'], at);
+    for (const field of ['object', 'method']) if (typeof raw[field] !== 'string' || !raw[field]) issue(`${at}/${field}`, '缺少对象或方法原名');
+    if (!Array.isArray(raw.args) || raw.args.some((v) => typeof v !== 'string')) issue(`${at}/args`, 'args 必须是文字列表，没有位置参数写 []');
+    if (!isRecord(raw.keywords) || Object.values(raw.keywords).some((v) => typeof v !== 'string' && !(typeof v === 'number' && Number.isSafeInteger(v) && v >= 0))) issue(`${at}/keywords`, 'keywords 必须是参数名到文字或安全非负整数的映射，没有关键字写 {}');
+    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({ object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
+  }
+  const expects: PlanExpect[] = [];
+  if (!Array.isArray(value.expects)) issue('/expects', 'expects 必须是数组');
+  for (const [i, raw] of (Array.isArray(value.expects) ? value.expects : []).entries()) {
+    const at = `/expects/${i}`;
+    if (!isRecord(raw)) { issue(at, '期望不是对象'); continue; }
+    keys(raw, ['text', 'quote', 'after'], at);
+    if (typeof raw.text !== 'string' || !raw.text) issue(`${at}/text`, '期望文字不能为空');
+    if (!Number.isSafeInteger(raw.after) || (raw.after as number) < 1) issue(`${at}/after`, 'after 必须是从 1 开始的步骤号');
+    if (!isRecord(raw.quote) || typeof raw.quote.reference !== 'string' || !raw.quote.reference || typeof raw.quote.text !== 'string' || !raw.quote.text) issue(`${at}/quote`, 'quote 必须带 reference 和逐字 text');
+    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({ text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
+  }
+  const replacements: Replacement[] = [];
+  if (!Array.isArray(value.replacements)) issue('/replacements', 'replacements 必须是数组，没有替换写 []');
+  for (const [i, raw] of (Array.isArray(value.replacements) ? value.replacements : []).entries()) {
+    const at = `/replacements/${i}`;
+    if (!isRecord(raw)) { issue(at, '替换条目不是对象'); continue; }
+    keys(raw, ['case', 'bed'], at);
+    if (typeof raw.case !== 'string' || !raw.case || typeof raw.bed !== 'string' || !raw.bed) issue(at, '替换条目必须是 {case, bed} 文字地址');
+    else replacements.push({ case: raw.case, bed: raw.bed });
+  }
+  return problems.length ? { ok: false, problems } : { ok: true, slots: { bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
+}

@@ -28,6 +28,10 @@ import { FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
 import { ExternalType } from './resources.ts';
 
+/** A subject builder may name refuted prerequisites; unknown shapes remain ordinary subjects. */
+export const SubjectBlocked = z.strictObject({blocked:z.array(z.strictObject({check:z.string().regex(/^[a-z][a-z0-9_]*$/),pointer:JsonPointer,code:z.string().min(1)})).min(1).max(100)});
+export type SubjectBlocked = z.infer<typeof SubjectBlocked>;
+
 // ---------------------------------------------------------------- paths
 
 const SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
@@ -569,6 +573,7 @@ export const PackSample = z.strictObject({
 export type PackSample = z.infer<typeof PackSample>;
 
 export const schemas: Record<string, z.ZodType> = {
+  'subject-blocked@1': SubjectBlocked,
   'pack@1': PackManifest,
   'requirements@1': RequirementsFile,
   'checks@1': ChecksFile,
