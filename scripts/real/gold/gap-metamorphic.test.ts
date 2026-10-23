@@ -143,3 +143,9 @@ test('outerCases follows the independent rule: tagged nodes and marked cases, ou
   const tagged = caseNodesOf(parseMindMap(tree), { caseRule: 'tagged' });
   assert.deepEqual(tagged.map((n) => n.id), ['c1'], 'under tagged the marked case is not a case');
 });
+
+test('review 3: a renewed root never reuses an id already present in the original tree', () => {
+  const tree = doc(group('r', '合成', kase('gap-doc1-a', '合成用例', '合成期望')));
+  const plan = planCopies(tree, 'doc1', { categories: CATEGORIES, singleMisses: new Map() });
+  assert.notEqual(plan.a.root.data.id, 'gap-doc1-a');
+});

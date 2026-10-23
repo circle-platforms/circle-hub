@@ -271,3 +271,18 @@ test('review 1: start_run uses the actual strict reference binding contract', as
 test('review 2: real Hub item rows include a dash, title separators and a final location column', () => {
   assert.deepEqual(parseItemLine('- upload-0123456789ab | 合成 | 标题 | 用例 2 个；24 个模板类别都已覆盖 | 位置 src:synthetic'), { item: 'upload-0123456789ab', summary: '用例 2 个；24 个模板类别都已覆盖' });
 });
+
+test('review 3: every mixed-document run has distinct root ids with a batch of four', async () => {
+  const { outerCaseNodes } = await import('../gold/gap-metamorphic.ts');
+  const { gold, dir } = goldOf(); (gold as { batch: number }).batch = 4;
+  const scenario = build(gold as never);
+  const result = drive(scenario, file => `用例 ${outerCaseNodes(JSON.parse(readFileSync(join(dir, 'work', file), 'utf8'))).length} 个；24 个模板类别都已覆盖`);
+  const shas = new Map<string, string>();
+  for (const batch of result.calls) {
+    for (const call of batch) if (call.tool === 'hub_upload_file') { const bytes = readFileSync(join(dir, 'work', String(call.input.file_path)), 'utf8'); shas.set(sha256Of(bytes), String(JSON.parse(bytes).root.data.id)); }
+    for (const call of batch) if (call.tool === 'hub_start_run') {
+      const docs = (call.input.inputs as { documents: { reference: string }[] }).documents;
+      const roots = docs.map(d => shas.get(d.reference.slice(4))); assert.equal(new Set(roots).size, roots.length);
+    }
+  }
+});

@@ -34,6 +34,14 @@ export type MindTree = { root: MindNode; [key: string]: unknown };
 
 const newRootId = (seed: string): string => `gap-${seed}`;
 
+function renewedId(tree: MindTree, seed: string): string {
+  const used = new Set<string>(); const stack = [tree.root];
+  while (stack.length) { const node = stack.pop()!; used.add(String(node.data.id ?? '')); stack.push(...(node.children ?? [])); }
+  const base = newRootId(seed); let value = base; let at = 0;
+  while (used.has(value)) value = `${base}-${++at}`;
+  return value;
+}
+
 const clone = <T>(value: T): T => structuredClone(value);
 
 const idOf = (node: MindNode): string => String(node.data.id ?? '');
@@ -112,7 +120,7 @@ export function reversed(tree: MindTree, seed: string): MindTree {
     }
   };
   flip(copy.root);
-  copy.root.data.id = newRootId(seed);
+  copy.root.data.id = renewedId(tree, seed);
   return copy;
 }
 
@@ -130,7 +138,7 @@ export function singleCase(tree: MindTree, caseId: string, seed: string): MindTr
     ancestor.children = [kept];
     kept = ancestor;
   }
-  kept.data.id = newRootId(seed);
+  kept.data.id = renewedId(tree, seed);
   return buildFrom(kept, metaOf(tree));
 }
 
@@ -146,7 +154,7 @@ export const outerCaseIdsOf = (tree: MindTree): string[] => outerCases(tree).map
 /** d: remove every outermost case whose single-case copy has X present (with its subtree). */
 export function withoutCategory(tree: MindTree, singleCaseMisses: ReadonlyMap<string, ReadonlySet<string>>, category: string, seed: string): MindTree {
   const copy = clone(tree);
-  copy.root.data.id = newRootId(seed);
+  copy.root.data.id = renewedId(tree, seed);
   const drop = new Set(
     outerCaseIdsOf(tree)
       .filter((id) => !(singleCaseMisses.get(id) ?? new Set()).has(category))
@@ -174,7 +182,7 @@ export function withRestored(tree: MindTree, removed: readonly string[], caseId:
   const parentInCopy = parent === null ? copy.root : locate(copy, parsedId(parent));
   if (parentInCopy === null) throw new Error(`放不回去：找不到父节点 ${parsedId(parent!)}`);
   parentInCopy.children = [...(parentInCopy.children ?? []), node];
-  copy.root.data.id = newRootId(seed);
+  copy.root.data.id = renewedId(original, seed);
   return copy;
 }
 
@@ -194,9 +202,9 @@ export function withJoined(a: MindTree, b: MindTree, category: string, singleCas
     ancestor.children = [hung];
     hung = ancestor;
   }
-  hung.data = { ...hung.data, resource: undefined, priority: undefined, id: `gap-joined-${seed}` };
+  hung.data = { ...hung.data, resource: undefined, priority: undefined, id: renewedId(b, `joined-${seed}`) };
   copy.root.children = [...(copy.root.children ?? []), hung];
-  copy.root.data.id = newRootId(seed);
+  copy.root.data.id = renewedId(a, seed);
   return copy;
 }
 
@@ -261,7 +269,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
   const undecided: SkipReason[] = unknown.map((id) => ({ reason: '单用例副本答案未知', detail: id }));
 
   const a = clone(tree);
-  a.root.data.id = newRootId(`${seed}-a`);
+  a.root.data.id = renewedId(tree, `${seed}-a`);
   const b = reversed(tree, `${seed}-b`);
   const c = ids.map((id, i) => singleCase(tree, id, `${seed}-c${i + 1}`));
 

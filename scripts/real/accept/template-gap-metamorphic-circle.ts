@@ -127,7 +127,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   const pendingOf = (tree: MindTree, seed: string): { tree: MindTree; name: string } => ({ tree, name: '' });
   void pendingOf;
 
-  const plans = trees.map((tree) => planCopies(tree, 'doc', { categories, singleMisses: new Map() }));
+  const plans = trees.map((tree, d) => planCopies(tree, `doc${d + 1}`, { categories, singleMisses: new Map() }));
   const queuePhase = (which: 1 | 2): void => {
     const list: Pending[] = [];
     for (const [d, plan] of plans.entries()) {
