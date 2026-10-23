@@ -179,3 +179,13 @@ test('history distinguishes versions outside retention from an unexpectedly miss
  const version=(await f.kit.variables.history(f.admin,'secret','DEMO_AUTH'))[0];if(version.definition?.schema==='secret@1')await f.kit.vault.remove(version.definition.entry);
  f.lines.length=0;await namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']);assert.ok(f.lines.some(line=>line.includes('登记了第 3 版，密钥库里没有')&&line.includes('secret set --name')));
 });
+
+test('var set cannot change a binding selected through an older stored source reference',async t=>{
+ const f=await setup(t);const {definition}=await import('../dispatch/testing/definition.ts');
+ await f.kit.variables.setVariable(f.admin,'DEMO_BIND','build','DEMO_INITIAL');
+ const id=newId('exe');const object=await f.kit.objects.put(canonicalBytes({...definition('http://127.0.0.1:1/mcp'),id,conditions:[{pointer:'/build',equals:{$value:'${var:DEMO_BIND}'}}]}),'application/json');
+ await f.kit.authorizations.configureResource(f.admin,'executor.'+id,object.sha256,'DEMO_LEGACY');
+ await writeFile(join(f.kit.dataDir,'bind.json'),JSON.stringify('lease_token'));
+ await assert.rejects(variableCommand(f.session,['set','DEMO_BIND','--file','bind.json','--reason','DEMO_CHANGE']),/绑定|引用/);
+ assert.equal(await f.kit.variables.valueAt('DEMO_BIND',(await f.kit.variables.snapshot()).get('DEMO_BIND')!),'build');
+});

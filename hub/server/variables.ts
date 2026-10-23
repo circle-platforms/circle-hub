@@ -9,7 +9,7 @@ import { RunId } from '../../contracts/src/common.ts';
 import { labelOf, isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
 import { readProfile } from '../connectors/api.ts';
 import type { PacksPort } from '../ports.ts';
-import { ExecutorDefinition } from '../dispatch/api.ts';
+import { ExecutorDefinition, ExecutorSource } from '../dispatch/api.ts';
 import { canonicalize, digestOf, validateChangeReason, secretForms, isSha256, parseStrictJson, scanForCredentials, VariableError, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
 import { requireVaultKey } from './assemble/vault.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
@@ -355,6 +355,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                 }
             values.set(name!, value);
             for (const definition of affected) {
+                if(definition.kind==='executor'&&!ExecutorSource.safeParse(definition.body).success)throw new CliError(`部署定义 ${definition.id} 的引用位置或调用绑定不合规则；期望值只能是字面值或整值变量，请先 executor update 修正后重做 var set`);
                 const resolved = substitute(definition.body, (kind, n) => kind === 'secret' ? '${secret:' + n + '}' : values.get(n));
                 const checked = definition.kind === 'resource' ? ResourceRecord.safeParse(resolved) : ExecutorDefinition.safeParse(resolved);
                 if (!checked.success)

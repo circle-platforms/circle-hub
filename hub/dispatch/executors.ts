@@ -1,8 +1,8 @@
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
-import { secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
+import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
 import { ExecutorDefinition } from './definition.ts';
-import { ExecutorSource, resolveExecutor } from './source.ts';
+import { ExecutorSource, resolveExecutor, checkedReferences } from './source.ts';
 export { ExecutorSource } from './source.ts';
 export type RegisteredExecutor = {
     id: string;
@@ -150,9 +150,11 @@ export class ExecutorRegistry {
         throw error;
     } }
     private validate(input: unknown): ExecutorSource { let parsed; try {
+        checkedReferences(input);
         parsed = ExecutorSource.safeParse(input);
     }
-    catch {
+    catch(error) {
+        if(error instanceof VariableInputError)throw new Error(error.message);
         throw new Error('执行器源定义无效；核对结构和引用的位置');
     } if (!parsed.success)
         throw new Error('执行器源定义无效：核对端点、固定 CA、引用位置、调用和必需字段'); let bytes: Uint8Array; try {
