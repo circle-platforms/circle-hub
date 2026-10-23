@@ -68,6 +68,24 @@ export class DispatchService {
     const jobs=await this.journal.blockers(executor,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
     return Promise.all(jobs.map(job=>this.status(by,job)));
   }
+  /** Trusted lease boundary: unresolved effects block local release even after a terminal observation. */
+  async activeLeaseJobs(keys: readonly string[]): Promise<Array<{key:string;job:string}>> {
+    if (!keys.length) return [];
+    const keysSet=new Set(keys);const events=await this.journal.targets(keys);
+    if(events.some(e=>e.integrity_note))throw new Error('作业记录完整性未证明，请管理员从可信记录恢复后核验');
+    const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort();
+    const rows:Array<{key:string;job:string}>=[];
+    for(const job of jobs){
+      const history=await this.journal.events(job);
+      if(history.some(e=>e.integrity_note))throw new Error('作业记录完整性未证明，请管理员从可信记录恢复后核验');
+      const reservation=history.find(e=>e.body.detail.phase==='reservation');
+      const binding=reservation?.body.detail.binding as JobBinding|undefined;
+      if(!binding)throw new Error('作业缺少资源登记，请管理员恢复作业登记后核验');
+      if(reservation?.body.detail.read_only===true || isDone(history) && !isFrozen(history))continue;
+      for(const key of binding.resources)if(keysSet.has(key))rows.push({key,job});
+    }
+    return rows.sort((a,b)=>a.key.localeCompare(b.key)||a.job.localeCompare(b.job));
+  }
   async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);

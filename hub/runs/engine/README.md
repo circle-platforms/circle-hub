@@ -550,3 +550,9 @@ A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`un
 extend is refused for the whole request before effects, and release still requires the same user and predecessor
 lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
 unbounded; fences, holder identity and lineage remain mandatory.
+
+Lease views freeze `since`, `run`, `until`, `mine`, unfinished `jobs` and authorized `holder` identities, plus registration
+rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_registrations` are retained on the run;
+evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
+read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
+`DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.

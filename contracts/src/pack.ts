@@ -205,6 +205,13 @@ export type ContextKey = (typeof CONTEXT_KEY)[number];
 export const ContextKeySchema = z.enum(CONTEXT_KEY);
 
 /** Facts about the run that checks and pack functions may use. */
+export const LeaseContextRow = z.strictObject({
+  key: z.string().min(1), since: IsoTime, until: IsoTime.nullable(), run: z.string().min(1), mine: z.boolean(),
+  holder: z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional(),
+  jobs: z.array(z.string().min(1)),
+});
+export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
+  owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
   product: z.string().nullable(),
   names: z.array(z.string()).describe('every name of the bound product line (all of them name one line); empty when the run has no product'),
@@ -222,9 +229,10 @@ export const RunContext = z.strictObject({
   leases: z
     .strictObject({
       now: IsoTime.describe('the moment the lease table was frozen for this run'),
+      registrations: z.array(LeaseRegistrationRow).default([]),
       entries: z
-        .array(z.strictObject({ key: z.string().min(1), until: IsoTime.nullable(), mine: z.boolean() }))
-        .describe('the unexpired, unreleased rows of the declared prefixes at the frozen moment; no tokens, no other holders\' names — visibility is undecided (D04 changes5)'),
+        .array(LeaseContextRow)
+        .describe('active rows at the frozen moment; every viewer sees run and since; only registered owners and admins see holder identity; no tokens'),
     })
     .optional()
     .describe('present only when the workflow asked for the leases context (workflow.context)'),

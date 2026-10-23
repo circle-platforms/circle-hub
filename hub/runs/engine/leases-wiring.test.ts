@@ -123,7 +123,7 @@ function leasesPack(
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
-  h = await openHarness(postgres, { leases: true });
+  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.includes('meadow/visibility/k') ? [{key:'meadow/visibility/k',job:'synthetic-running'}] : [] });
   leases = h.leases!;
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-engine-'));
@@ -335,4 +335,34 @@ it('an uncapped booking rejects any extension before mutation and releases only 
   assert.equal((await start('toy-endless-release')).answer.errors[0]?.code, 'LEASE_UNAVAILABLE');
   assert.equal((await start('toy-endless-release', booked)).answer.call_result, 'ok');
   assert.equal((await leases.view('meadow/endless/')).entries.length, 0);
+});
+
+it('freezes the owner, holder, third user and admin views without leaking names or fences', async () => {
+  const thirdUser = await h.kit.principals.createUser(h.admin, '合成第三人');
+  const third = { ...thirdUser };
+  const key = 'meadow/visibility/k';
+  const holderRun = 'run_0123456789abcdefghjkmnpqrs';
+  assert.ok((await leases.register({ prefix: 'meadow/visibility/', declaredPrefix: 'meadow/', owner: h.alice.id, by: h.alice.id, reason: '合成登记' })).ok);
+  assert.ok((await leases.acquire({ keys: [key], holder: { user: h.bob.id, run: holderRun }, prefix: 'meadow/' })).ok);
+  const acquiredSince = (await leases.view('meadow/visibility/')).entries[0]!.since;
+  const spec = leasesPack('toy-visibility', { declare: { prefix: 'meadow/' }, askContext: true, projection: plainProjection });
+  await h.workflows.add(await writePack(packRoot, spec));
+  for (const user of [h.alice, h.bob, third, h.admin]) {
+    h.workflows.assign(user.id, spec.id);
+    const ownMap = await h.upload(user, toyMap(standardDocument()));
+    const detail = await h.service.startRunDetailed(user, { pack: spec.id, inputs: { map: { reference: ownMap } } }, h.call(`visibility-${user.id}`));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const record = await storedRun(detail.answer.run!.run);
+    const row = record.lease_context!.find(r => r.key === key)!;
+    assert.equal(row.run, holderRun);
+    assert.equal(row.since, acquiredSince);
+    assert.deepEqual(row.jobs, ['synthetic-running']);
+    assert.equal(row.until, null);
+    const visible = user.id === h.alice.id || user.role === 'admin';
+    assert.deepEqual(row.holder, visible ? { user: h.bob.id, name: h.bob.name } : undefined);
+    assert.ok(!JSON.stringify(row).includes('token') && !JSON.stringify(row).includes('fencing'));
+    const registration = record.lease_registrations!.find(r => r.prefix === 'meadow/visibility/')!;
+    assert.equal(registration.mine, user.id === h.alice.id);
+    assert.equal(Boolean(registration.owner), user.role === 'admin');
+  }
 });

@@ -884,6 +884,44 @@
         ]
       }
     },
+    "lease_registrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mine": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "user",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "prefix",
+          "mine"
+        ],
+        "additionalProperties": false
+      }
+    },
     "lease_context": {
       "description": "the frozen lease rows of the workflow's declared prefix at start_run (every holder's rows, no tokens), `mine` marking the rows held by this run's lineage (D04 R[0])",
       "type": "array",
@@ -893,6 +931,11 @@
           "key": {
             "type": "string",
             "minLength": 1
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           },
           "until": {
             "anyOf": [
@@ -906,14 +949,46 @@
               }
             ]
           },
+          "run": {
+            "type": "string",
+            "minLength": 1
+          },
           "mine": {
             "type": "boolean"
+          },
+          "holder": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "user",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "required": [
           "key",
+          "since",
           "until",
-          "mine"
+          "run",
+          "mine",
+          "jobs"
         ],
         "additionalProperties": false
       }

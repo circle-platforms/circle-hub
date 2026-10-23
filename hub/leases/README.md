@@ -53,3 +53,8 @@ while any active row remains below it. A database advisory lock serializes overl
 acquisition, including two connections registering overlapping prefixes. Migration 5 adds only the current ownership
 table and its runtime grant; each mutation appends its registration action atomically. `actionLog` includes owner,
 previous owner, actor, reason and prefix so the current table can be rebuilt. Public run views filter these trusted rows.
+
+Every current row view now includes the acquisition moment (`since`), holder run and nullable expiry. Trusted callers
+may request the user id. The engine separately decides identity visibility using the registration table: registered
+owners and administrators see holder id/name; everyone sees the run, since, mine and unfinished job ids. Registration
+rows expose only prefix/mine except in administrator runs. Fences never enter either frozen view.

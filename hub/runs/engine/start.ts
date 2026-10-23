@@ -79,7 +79,7 @@ export function requirementSummary(t: RequirementTemplate): RequirementSummary {
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
 export function summaryOf(record: RunRecord): RunSummary {
-  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, ...summary } = record;
+  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
   return RunSummary.parse(summary);
 }
 
@@ -99,12 +99,22 @@ export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow
 }
 
 /** The frozen lease rows of the workflow's declared prefix (W06, D04 R[0]), for the run context; null when it did not ask. */
-export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<Array<{ key: string; until: string | null }> | null> {
+export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow, user: Principal): Promise<NonNullable<RunContext['leases']> | null> {
   if (!(workflow.workflow.context ?? []).includes('leases')) return null;
-  if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 声明了租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
-  const prefix = workflow.workflow.leases?.prefix ?? `${workflow.pack.id}/`;
-  const view = await ctx.deps.leases.view(prefix);
-  return view.entries;
+  if (!ctx.deps.leases || !ctx.deps.leaseJobs) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','租约或只读作业端口未配置',{path:'/pack',fix:'请管理员配置租约服务和按键只读作业端口后重开运行'})]);
+  const prefix=workflow.workflow.leases?.prefix ?? workflow.pack.id+'/';
+  const registered=await ctx.deps.leases.registrations(prefix);
+  const rows=(await ctx.deps.leases.view(prefix,true)).entries;
+  const jobs=await ctx.deps.leaseJobs(rows.map(row=>row.key));
+  const identity=async(id:string)=>{
+    const record=await ctx.deps.records.principals?.get(id);
+    if(!record)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','持有人用户资料缺失',{path:'/pack',fix:'请管理员恢复用户资料后重开运行'})]);
+    return {user:id,name:record.name};
+  };
+  return {now:ctx.now().toISOString(),entries:await Promise.all(rows.map(async row=>({key:row.key,since:row.since,until:row.until,run:row.run,mine:false,
+    jobs:jobs.filter(job=>job.key===row.key).map(job=>job.job),
+    ...(user.role==='admin'||registered.some(r=>r.owner===user.id&&row.key.startsWith(r.prefix))?{holder:await identity(row.user)}:{})}))),
+    registrations:await Promise.all(registered.map(async row=>({prefix:row.prefix,mine:row.owner===user.id,...(user.role==='admin'?{owner:await identity(row.owner)}:{})})))};
 }
 
 /** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
@@ -478,7 +488,8 @@ async function startFresh(
   // R[0]) are marked `mine`, so an extend or release projection discovers the keys it may operate on (C6 item 5); a run
   // without a predecessor holds nothing yet and skips the lookup. The same view is frozen in the run record, so
   // replaying the projection from the record's context asks for the same keys again.
-  const leaseRows = await contextLeases(ctx, workflow);
+  const leaseView = await contextLeases(ctx, workflow, user);
+  const leaseRows = leaseView?.entries ?? null;
   let leaseLineageHolders = new Set<string>();
   if (leaseRows !== null && leaseRows.length > 0 && predecessor !== null && ctx.deps.leases !== undefined) {
     const lineage = await lineageOf(ctx, runId, predecessor.body.run);
@@ -494,7 +505,7 @@ async function startFresh(
     parameters,
     groups: [],
     ...(builds !== null ? { builds } : {}),
-    ...(leaseRows !== null ? { leases: { now: startedAt, entries: leaseRows.map((row) => ({ key: row.key, until: row.until, mine: leaseLineageHolders.has(row.key) })) } } : {}),
+    ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild);
@@ -538,7 +549,7 @@ async function startFresh(
 
   // The frozen rows carry `mine` for the rows held by this run's lineage (D04 R[0]): the projection of a successor
   // reads it to see which keys it may extend or release. (The view itself was taken before the projection.)
-  const frozenLeaseRows: Array<{ key: string; until: string | null; mine: boolean }> | null =
+  const frozenLeaseRows =
     leaseRows === null
       ? null
       : leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) }));
@@ -572,7 +583,7 @@ async function startFresh(
       ? { client_key: input.client_key, request_digest: requestDigest, client_key_expires_at: new Date(at.getTime() + ctx.clientKeyWindowMs).toISOString() }
       : {}),
     ...(grantedLeases.length > 0 ? { leases: grantedLeases } : {}),
-    ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows } : {}),
+    ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows, lease_registrations: leaseView!.registrations } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);

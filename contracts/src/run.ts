@@ -12,7 +12,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild } from './pack.ts';
+import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -146,8 +146,9 @@ export const RunRecord = RunSummary.extend({
     ]))
     .optional()
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
+  lease_registrations: z.array(LeaseRegistrationRow).optional(),
   lease_context: z
-    .array(z.strictObject({ key: z.string().min(1), until: IsoTime.nullable(), mine: z.boolean() }))
+    .array(LeaseContextRow)
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {

@@ -55,7 +55,7 @@ test('CONTEXT_KEY gains leases and RunContext carries the frozen lease view (no 
     root: null,
     parameters: {},
     groups: [],
-    leases: { now: '2026-10-22T08:00:00.000Z', entries: [{ key: 'some/prefix/key-1', until: '2026-10-22T10:00:00.000Z', mine: true }, { key: 'some/prefix/key-2', until: '2026-10-23T10:00:00.000Z', mine: false }] },
+    leases: { now: '2026-10-22T08:00:00.000Z', entries: [{ since:'2026-10-22T08:00:00.000Z',run:'run_synthetic',jobs:[],key: 'some/prefix/key-1', until: '2026-10-22T10:00:00.000Z', mine: true }, { since:'2026-10-22T08:00:00.000Z',run:'run_synthetic',jobs:[],key: 'some/prefix/key-2', until: '2026-10-23T10:00:00.000Z', mine: false }] },
   });
   assert.ok(parsed.success, JSON.stringify(parsed.error?.issues));
   // a token or a holder name never appears in the frozen view

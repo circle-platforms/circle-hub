@@ -255,23 +255,12 @@ export class LeaseService {
     });
   }
 
-  /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */
-  async view(prefix: string): Promise<{ entries: Array<{ key: string; until: string | null }> }>;
-  /** The same rows with the holder's run (an administrator's view; the run context never asks for it). */
-  async view(prefix: string, withHolder: true): Promise<{ entries: Array<{ key: string; until: string | null; run: string }> }>;
-  async view(prefix: string, withHolder?: boolean): Promise<{ entries: Array<{ key: string; until: string | null; run?: string }> }> {
-    // starts_with, not LIKE: a key may hold '_' and '_' is a wildcard in LIKE.
-    const rows = await this.#db.query<{ key: string; expires_at: Date | null; run_id: string }>(
-      `SELECT key, expires_at, run_id FROM leases WHERE starts_with(key, $1) AND released_at IS NULL AND (expires_at IS NULL OR expires_at > $2) ORDER BY key`,
-      [prefix, await this.#now()],
-    );
-    return {
-      entries: rows.rows.map((row) => ({
-        key: row.key,
-        until: row.expires_at?.toISOString() ?? null,
-        ...(withHolder === true ? { run: row.run_id } : {}),
-      })),
-    };
+  /** Active row facts; holder identities are trusted-only and filtered at the run boundary. */
+  async view(prefix: string): Promise<{entries:Array<{key:string;since:string;until:string|null;run:string}>}>;
+  async view(prefix: string, withHolder: true): Promise<{entries:Array<{key:string;since:string;until:string|null;run:string;user:string}>}>;
+  async view(prefix: string, withHolder?: boolean): Promise<{entries:Array<{key:string;since:string;until:string|null;run:string;user?:string}>}> {
+    const rows = await this.#db.query<Row>('SELECT key, acquired_at, expires_at, run_id, user_id FROM leases WHERE starts_with(key,$1) AND released_at IS NULL AND (expires_at IS NULL OR expires_at>$2) ORDER BY key',[prefix,await this.#now()]);
+    return {entries:rows.rows.map(row=>({key:row.key,since:row.acquired_at.toISOString(),until:row.expires_at?.toISOString()??null,run:row.run_id,...(withHolder?{user:row.user_id}:{})}))};
   }
 
   /** Frees rows whose run record no longer exists and that were acquired over 60 seconds ago; returns how many. */
