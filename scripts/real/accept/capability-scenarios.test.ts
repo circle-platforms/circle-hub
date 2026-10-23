@@ -183,8 +183,8 @@ describe('quality-board scenario', () => {
 describe('product line unbinding in start_run inputs', () => {
   test('start_run 输入里没有 product', async () => {
     const scenarios = [
-      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
-      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      regressionScope({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
       traceability({ product: 'apv', build: 'b1', defects: [] }),
       qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
     ];
@@ -225,8 +225,8 @@ describe('unversioned pack names in start_run inputs', () => {
     const allScenarios = [
       caseLocation({ document: '90001', product: 'apv', line: '10.6.1' }),
       templateGap({ document: '90001', cases: 10 }),
-      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
-      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      regressionScope({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ caseCommandsUnplaced: 0, product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
       traceability({ product: 'apv', build: 'b1', defects: [] }),
       qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
     ];
