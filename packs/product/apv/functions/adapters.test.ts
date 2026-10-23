@@ -146,10 +146,11 @@ describe('the sync plan', () => {
     // A duplicate name keeps one copy (the later build time).
     assert.equal(rest('Rel_APV_10_6_1_55').built_at, '2026-05-04T21:30:00Z');
     // An unreleased build with a red release mark and no release date, a Beta build without a tree, a build whose
-    // listed build time is malformed: all known by name only.
+    // valid listed build times are known by name only; malformed times fail explicitly.
     assert.deepEqual([rest('Rel_APV_10_6_1_38').base, rest('Rel_APV_10_6_1_38').sources], ['Rel_APV_10_6_1_38', {}]);
     assert.deepEqual([rest('Beta_APV_10_6_1_120').base, rest('Beta_APV_10_6_1_120').sources, rest('Beta_APV_10_6_1_120').released_at], ['Beta_APV_10_6_1_120', {}, null]);
-    assert.deepEqual([rest('Rel_APV_10_6_1_36').base, rest('Rel_APV_10_6_1_36').built_at], ['Rel_APV_10_6_1_36', null]);
+    assert.equal(byName.has('Rel_APV_10_6_1_36'), false);
+    assert.equal(output.failed_builds?.find(row => row.build.name === 'Rel_APV_10_6_1_36')?.reason, 'SOURCE_UNPARSEABLE');
     // An NSAE build without a tree and without a base text stays its own base (a name-only build, not a broken alias).
     assert.deepEqual([rest('Rel_NSAE_10_6_1_12').base, rest('Rel_NSAE_10_6_1_12').sources], ['Rel_NSAE_10_6_1_12', {}]);
     // An unreleased NSAE name with a “based on” text carries that build as its base (the page says so), still name-only.

@@ -1235,7 +1235,6 @@ function rootCatalogs(
       skippers.push(producer);
     }
     const reasons: string[] = [];
-    if (rows.length === 0) reasons.push(`没有${catalog.producer === undefined ? '' : `生产器 ${catalog.producer} 的`} ${catalog.entry_kind} 种类的条目`);
     if (invalid > 0) reasons.push(`${invalid} 个条目没有可用的目录数据`);
     if (lost > 0) reasons.push(`${lost} 个条目没能挂树`);
     if (refusedHere > 0) reasons.push(`${refusedHere} 个条目没有通过核对`);

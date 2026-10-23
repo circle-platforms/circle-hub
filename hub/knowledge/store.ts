@@ -70,6 +70,9 @@ export const INDEX = {
   produceProduct: 'knowledge.produce.product',
   sync: 'knowledge.sync',
   contradiction: CONTRADICTION,
+  buildFailure: 'knowledge.build.failure',
+  buildFailureName: 'knowledge.build.failure.name',
+  buildFailureRoot: 'knowledge.build.failure.root',
   build: 'knowledge.build',
   buildProduct: 'knowledge.build.product',
   buildBase: 'knowledge.build.base',
@@ -679,6 +682,17 @@ export class KnowledgeStore {
   }
 
   // ------------------------------------------------------------ builds
+
+  /** Failed observations, including builds for which no root could be produced. */
+  async buildFailures(product: string, query: { name?: string; root?: string | null } = {}): Promise<StoredRecord<ActionBody>[]> {
+    const key = query.name !== undefined ? INDEX.buildFailureName : query.root !== undefined ? INDEX.buildFailureRoot : INDEX.buildFailure;
+    const value = query.name !== undefined ? `${product}/${fold(query.name)}` : query.root !== undefined ? `${product}/${query.root ?? 'none'}` : product;
+    if (!indexValueFits(value)) return [];
+    const rows = await this.all<ActionBody>({ key, value, kind: 'action' });
+    return rows.filter(row => row.body.component === COMPONENTS.sync && row.body.result === 'error' && row.body.detail.product === product
+      && (query.name === undefined || fold(String((row.body.detail.build as BuildInfo)?.name)) === fold(query.name))
+      && (query.root === undefined || row.body.detail.root === query.root || (query.root !== null && row.body.detail.previous_root === query.root)));
+  }
 
   async putBuild(body: KnowledgeBuildBody, tx?: Transaction): Promise<StoredRecord<KnowledgeBuildBody>> {
     const problem = buildProblem(body.product, body.build);

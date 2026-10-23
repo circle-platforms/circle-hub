@@ -17,6 +17,7 @@ import { createCatalogView, type CatalogEntry, type CatalogView } from '../rules
 import { CompositionView, type ReadRow } from './composition.ts';
 import { CONTRADICTION, pointerName } from './store.ts';
 import { mapLimited } from './concurrency.ts';
+import { KnowledgeError } from './errors.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
 import { catalogCanon, catalogData } from './produce.ts';
@@ -248,15 +249,16 @@ export class TreeReading {
       }
       paths.push({ text: path, segments });
     }
+    const badCursor = (reason:string):never => {throw new KnowledgeError(`游标${reason}；请从首页重新读取`,{code:'REFERENCE_UNRESOLVED',fix:'移除 cursor，从同一根、路径和深度的首页重新读取，再使用返回的 next'});};
     const decoded=query.cursor?decodeCursor(query.cursor):null;
-    if(query.cursor&&!decoded)return null;
-    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)return null;
+    if(query.cursor&&!decoded)return badCursor('写法无效');
+    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)return badCursor('不属于所给组成');
     const hint=query.composition!==undefined?query.composition:decoded?.c;
     const relationComposition=hint===null?null:await this.#relations?.compositionFor(root,reader,hint)??null;
     if(hint&&!relationComposition)return null;
     const cursorComposition=relationComposition&&(relationComposition.body.links!==undefined||typeof hint==='string')?relationComposition.record:undefined;
     const queryKey=createHash('sha256').update(JSON.stringify([root,paths.map(p=>p.text),depth,...(cursorComposition?[cursorComposition]:[])])).digest('hex').slice(0,16);
-    if(decoded&&decoded.q!==queryKey)return null;
+    if(decoded&&decoded.q!==queryKey)return badCursor('不属于本次读取范围');
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
     if ((await this.#context.store.node(root)) === null) return null;
     const composition = relationComposition ?? await this.compositionOf(root);
@@ -341,7 +343,7 @@ export class TreeReading {
       if (!(await visit(path.segments, found.digest, found.node, depth))) break;
     }
     // A cursor that points past the walk (or into a node without such an entry) was not made by this query.
-    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) return null;
+    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) return badCursor('位置已经超出本次读取范围');
     const notes: string[] = [];
     if (walk.split !== null) notes.push(walk.split);
     if (missing.length > 0) notes.push(`这些路径在这个根里不存在：${cutText(missing.join('、'), 1000)}`);
@@ -624,10 +626,7 @@ export class TreeReading {
         if (data.summary !== undefined) entry.summary = data.summary;
         kept.push({ entry, segments: pathSegments(row.path) });
       }
-      const catalog =
-        kept.length === 0
-          ? null
-          : createCatalogView(
+      const catalog = createCatalogView(
               kept.map((m) => m.entry),
               { reference: treeReference(root, pathOf(commonAncestor(kept.map((m) => m.segments)))), complete: declaration.complete, caseSensitive: declaration.case_sensitive },
             );

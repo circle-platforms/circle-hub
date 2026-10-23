@@ -88,6 +88,9 @@ export function splitRevision(id: string): { body: string; revision: string | nu
 
 /** A refusal of an impact-view request the caller may read as-is (a root without the catalog, a changed kind outside it). */
 export class ImpactRefusal extends Error {}
+class BuildNameRefusal extends ImpactRefusal {
+  readonly fix='使用候选的完整原样构建名重新读取';
+}
 
 function decode(text: string): string | null {
   try {
@@ -794,7 +797,8 @@ export class KnowledgeViews {
     } catch (error) {
       if(error instanceof RelationReadError)return {ok:false,id:splitRevision(id).body,reason:error.message+'；下一步：'+error.nextAction};
       if (error instanceof LinkRefusal) return {ok:false,id:splitRevision(id).body,reason:error.message};
-      if (error instanceof ImpactRefusal) return { ok: false, id: splitRevision(id).body, reason: error.message };
+      if(error instanceof BuildNameRefusal)return {ok:false,id:splitRevision(id).body,reason:error.message,inputError:{message:error.message,fix:error.fix}};
+      if (error instanceof ImpactRefusal) return {ok:false,id:splitRevision(id).body,reason:error.message};
       return { ok: false, id, reason: `知识视图出错：${describeError(error)}` };
     }
   }
@@ -866,7 +870,11 @@ export class KnowledgeViews {
     if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识` };
     const resolve = async (name: string): Promise<At | string> => {
       const named = await this.#builds.named(product, name);
-      if (named === null) return `产品 ${product} 没有构建 ${cutText(name, 80)}`;
+      if (named === null) {
+        const candidates = await this.#builds.candidates(product,name);
+        if(candidates.length>1)throw new BuildNameRefusal(`构建名字的大小写有歧义，候选：${candidates.map(build=>build.name).join('、')}；请使用候选的完整原样构建名重读`);
+        return `产品 ${product} 没有构建 ${cutText(name,80)}`;
+      }
       const root = await this.#builds.rootOfBuild(product, name);
       if (root === null) return `构建 ${named.name} 还没有知识树的根`;
       return { build: named.name, root: root.root };

@@ -37,6 +37,9 @@ export type Build = {
   number: string | null;
   /** Build time as listed, ISO 8601 without a zone (the page states none): 2024-06-26T12:06:23. */
   built: string | null;
+  /** A determined listing failure; never interpreted as a successful build with an unknown timestamp. */
+  failure?: string;
+  built_raw?: string;
   /** Release date, ISO 8601: 2024-06-27, or 2024-06 when the page gives only the month; null when not released. */
   released: string | null;
   /** The build this one is based on (NSAE-named builds of the older lines name their base APV build). */

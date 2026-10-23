@@ -95,10 +95,10 @@ describe('get_nodes', () => {
     const output = GetNodesOutput.safeParse({ call_result: 'ok', errors: [], trace: '0af7651916cd43dd8448eb211c80319c', root: w.root, nodes: all, coverage: pages[2].coverage });
     assert.equal(output.success, true, output.success ? '' : JSON.stringify(output.error.issues.slice(0, 3)));
 
-    // A cursor belongs to its query; a malformed one is refused like an absent root.
+    // A cursor belongs to its query; a reader already authorized for the root gets the determined remedy.
     const first = await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6 }, w.user);
-    assert.equal(await w.knowledge.getNodes({ root: w.root, paths: ['/commands'], depth: 6, cursor: first?.next }, w.user), null);
-    assert.equal(await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: 'not a cursor' }, w.user), null);
+    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/commands'], depth: 6, cursor: first?.next }, w.user), /游标.*首页/);
+    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: 'not a cursor' }, w.user), /游标.*首页/);
     assert.equal(await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 7 }, w.user), null);
     assert.equal(await w.knowledge.getNodes({ root: w.root, paths: ['commands'], depth: 1 }, w.user), null);
 

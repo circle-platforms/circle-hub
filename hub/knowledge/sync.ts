@@ -5,6 +5,7 @@
 // unchanged build is skipped), resumable (every production or failure is a generate action; a rerun skips what is done),
 // bounded (concurrency, per-build bytes, rounds and reads) and reported per build.
 import { z } from 'zod';
+import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
 import type { SyncPlanInput } from '../../contracts/src/product.ts';
 import type { ProductHandle } from '../ports.ts';
@@ -57,6 +58,7 @@ export interface SyncBuildReport {
   outcome: BuildOutcome;
   /** Chinese reason. */
   reason: string;
+  reason_code?: ProtocolCode;
   root: string | null;
   composition: string | null;
   /** Dry run only: a root would be produced. */
@@ -101,13 +103,14 @@ type SyncRead = SyncPlanInput['read'][string];
 interface PlanAnswer {
   fetch: string[];
   builds: BuildInfo[];
+  failed_builds?: SyncPlanOutput['failed_builds'];
   invalid: Array<{ index: number; raw: unknown; reason: string }>;
   done: boolean;
   note?: string;
 }
 
 /** The envelope of sync-plan-output@1 with the builds unchecked: one build that is not build-info@1 fails only itself. */
-const PlanEnvelope = z.strictObject({ fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
+const PlanEnvelope = z.strictObject({ failed_builds: SyncPlanOutput.shape.failed_builds, fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
 
 async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
@@ -210,7 +213,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   // ---------------------------------------------------------------- builds
   const planned = new Map<string, BuildInfo>();
   for (const build of output.builds) planned.set(build.name, build);
-  report.plan.builds = planned.size + output.invalid.length;
+  report.plan.builds = planned.size + output.invalid.length + (output.failed_builds?.length ?? 0);
   // A build the plan gave that is not build-info@1 fails alone (README decision 12); the others go on.
   for (const bad of output.invalid) {
     const raw = typeof bad.raw === 'object' && bad.raw !== null ? (bad.raw as Record<string, unknown>) : {};
@@ -221,6 +224,29 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   const names = new Set(product.product.names.map((name) => fold(name)));
   const releasedAliasBases = new Set([...planned.values()].filter((b) => b.base !== b.name && b.released_at !== null).map((b) => b.base));
   const pack = { id: product.id, version: product.version, digest: product.digest };
+  for (const failed of output.failed_builds ?? []) {
+    const build = failed.build;
+    const problem = buildProblem(productId, build);
+    if (!dryRun && problem === null && names.has(fold(build.family))) {
+      // A bad new observation must never replace an existing successful build or its root.
+      if (await builds.named(productId, build.name) === null) await builds.record(productId, pack, { ...build, base: build.name, sources: {} }, planAction, sync);
+      const previous = await builds.resolve(productId, build.name);
+      await context.store.putAction({
+        action: ACTION.generate, run: null, item: null, component: COMPONENTS.sync,
+        inputs: planAction === null ? [] : [`rec:${planAction}`], lease: null,
+        started_at: startedAt, ended_at: context.now().toISOString(), result: 'error',
+        error_code: failed.reason, acceptance: null, codes: [],
+        detail: { sync, product: productId, ...failed, root: null, composition: null, previous_root: previous?.root ?? null },
+      }, [
+        { key: INDEX.buildFailure, value: productId },
+        { key: INDEX.buildFailureName, value: `${productId}/${fold(build.name)}` },
+        { key: INDEX.buildFailureRoot, value: `${productId}/none` },
+        ...(previous?.root ? [{ key: INDEX.buildFailureRoot, value: `${productId}/${previous.root}` }] : []),
+      ]);
+    }
+    report.builds.push({ name: build.name, family: build.family, line: build.line, base: build.base,
+      outcome: 'failed', reason: problem ?? `${failed.reason}：${failed.fix}`, reason_code: failed.reason, root: null, composition: null });
+  }
   const own: BuildInfo[] = [];
   const touchedLines = new Set<string>();
   const ordered = [...planned.values()].sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
@@ -490,7 +516,7 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
     if (build.success) builds.push(build.data);
     else invalid.push({ index, raw, reason: `计划给出的第 ${index + 1} 个构建不符合 build-info@1：${issueText(build.error)}` });
   });
-  return { ok: true, value: { fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
+  return { ok: true, value: { failed_builds: parsed.data.failed_builds, fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
 }
 
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */
@@ -521,6 +547,7 @@ async function writePlanAction(
       fetch: input.output?.fetch.length ?? null,
       builds: input.output?.builds.length ?? null,
       invalid_builds: input.output?.invalid.length ?? null,
+      failed_builds: input.output?.failed_builds?.length ?? 0,
       done: input.output?.done ?? null,
       // What the pack function wrote is made storable (a lone surrogate would fail the whole sync).
       note: input.output?.note === undefined ? null : cutText(input.output.note, 1000),

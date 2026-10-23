@@ -844,3 +844,12 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 View-scope task 7: sync source-load failures retain the core parser identity, safe ParseError message, original-byte
 offset and constructor-defined recovery instruction. Raw parser-library detail and source text are not copied into
 the sync report. No supporting parser is distinguished from a registered parser rejecting invalid bytes.
+
+View-scope task 8: case-only ambiguous build spellings are returned as explicit candidates to an authorized product
+reader rather than guessed or called absent. Empty declared catalogs retain completeness. After root permission
+checks, invalid/mismatched/out-of-range node cursors give REFERENCE_UNRESOLVED with a restart-from-first-page fix;
+unreadable roots remain neutral. Listing parser failures carry a determined failure field and do not become plan builds.
+
+计划可用 sync-plan-output@1 的可选 failed_builds 把来源、原始构建资料、注册原因码和修复动作交给核心。
+同步把它记为失败 generate 动作和无根构建（已有成功构建及其根不被替换）；store.buildFailures 可按产品、
+构建和根查询，未产根使用 root:null。失败计入同步计数，dryRun 不写记录。原因码在产品计划构造处确定。

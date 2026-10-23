@@ -512,3 +512,8 @@ classification and current-parameter/value-row state. K1's standalone drift accu
 signature groups use the declared exact primary/alternatives rule, other cells retain prose mentions, and Hub production and
 reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
 of depending on a truncated field or a producer-local warning.
+
+View-scope: build timestamps also accept time followed by a slash date. A timestamp that cannot be parsed is a determined
+listing failure, with its build name and a repair instruction; the sync plan excludes it from successful builds.
+Needs: catalog parameter address roles, address/hostname alternatives and singular limit await the hub-unknown-model
+contracts and matcher change owned by codex-b. Those fields are not emitted before the strict contract accepts them.
