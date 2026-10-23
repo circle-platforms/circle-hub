@@ -67,3 +67,5 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 判断记录上传不绑定为可共享运行输入，仅经 submit_result.notes 的 src 引用关联；上传只对本人和管理员可见，普通回注读者不能据此查看判断记录。因此 K04 R[5] 的记录可查只对提交人和管理员成立，这是本版限制，不声称对所有回注读者成立。
 
 外发流水先写 `phase: sending` 再发请求，完成后追加 `phase: completed`；用 request_digest 和 attempts 配对。sending 记时间、片段摘要/引用/种类、选择加入和题目标识；completed 另记状态及服务请求号。被终止时只有 sending 表示可能已外发、处理情况未取得，不能当作未发送。
+
+校准阈值只计有判断记录背书的样例：按样例同行的 judgments 摘要读取记录，核 requested/returned/exact_model、题型、输入及 state 摘要、候选顺序和回答概率；再从该集合的原树 root/under 重做遮字及正确子项推导，核 expected。手写样例、缺记录或任一字段不符均不计入阈值；校准和归位共用这条核验路径。旧输出缺记录时使用 place/calibrate 的原 --out，或在当前根重新 calibrate。
