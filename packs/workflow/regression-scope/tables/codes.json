@@ -58,7 +58,7 @@
     {
       "code": "regression-scope.facets_view",
       "when": "未绑定唯一的完整目标根用例命令分面，或分面截断、内容不合式",
-      "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；缺少完整计数时先补取未截断视图再开始运行"
+      "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；缺完整计数时读取 notes 和根引用交当前用户供集成者定位行数、字节预算或来源排除原因；同一根不自动重试，待修复并取得完整输入后再启动"
     }
   ],
   "warnings": [

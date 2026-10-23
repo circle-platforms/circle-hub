@@ -24,7 +24,7 @@ test('missing required facets refuses instead of ending in unknown', () => {
 });
 test('truncated facets refuse with missing fact and recovery action', () => {
   const out = project(0, (v) => { v.model.truncated = true; });
-  assert.equal(out.error?.code, 'maintenance-sweep.facets_view'); assert.match(out.error?.message ?? '', /缺少完整/); assert.match(out.error?.fix ?? '', /重新读取/);
+  assert.equal(out.error?.code, 'maintenance-sweep.facets_view'); assert.match(out.error?.message ?? '', /缺少完整/); assert.match(out.error?.fix ?? '', /不自动重试/);
 });
 for (const [name, mutate] of Object.entries({
   root: (v: any) => { v.model.build.root = 'f'.repeat(64); }, product: (v: any) => { v.model.product = 'other'; }, kind: (v: any) => { v.model.kind = 'definition'; }, by: (v: any) => { v.model.by.push('module'); }, schema: (v: any) => { v.model.schema = 'wrong'; }, count: (v: any) => { v.model.rows[0].count = -1; }, duplicate: (v: any) => { v.model.rows.push(v.model.rows[0]); }, digest: (v: any) => { v.sha256 = 'bad'; },
@@ -56,4 +56,9 @@ test('index-coverage unknown is identical with and without the facets hint metad
 test('skipped facet sources refuse rather than disclose a false zero', () => {
   const out = project(0, (v) => { v.model.skipped = 3; });
   assert.equal(out.error?.code, 'maintenance-sweep.facets_view'); assert.match(out.error?.message ?? '', /3 份来源未读/); assert.match(out.error?.message ?? '', /修复.*重新生产根/); assert.ok(!out.error?.message.includes('0 个用例'));
+});
+
+test('deterministic truncation names notes and requests a real repair instead of a retry loop', () => {
+  const result = project(0, (v) => { v.model.truncated = true; v.model.notes = ['合成字节预算截断']; });
+  assert.match(result.error?.message ?? '', /合成字节预算截断/); assert.match(result.error?.fix ?? '', /不自动重试/); assert.match(result.error?.fix ?? '', /集成者/);
 });
