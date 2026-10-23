@@ -24,7 +24,6 @@ export interface BatchDeps {
   submission(record:string):Promise<unknown>;
   exportOriginal(sha:string,path:string):Promise<void>;
   now():Date;
-  replaySubmission?(submission:unknown):Promise<void>;
 }
 export function validatePairings(value:unknown):Pairings {
   if(!object(value)||!['product','prompt','fix_field'].every(k=>typeof value[k]==='string'&&value[k].trim()!=='')||!Array.isArray(value.pairings)||value.pairings.length===0)throw new Error('invalid pairings');
@@ -145,18 +144,6 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       let comparison=computeComparison(gold,submission,result,inputs);
       category='index_view_schema_or_identity_defect';
       let duplicates=recountDuplicates(indexes,submission,xml,result);
-      const resultGap=!validRounds(result)||evidenceQuestions(comparison).some(q=>q.next_action==='replay_submission_and_read_current_result')||duplicates.details.some(d=>d.gap?.action==='replay_submission_and_read_current_result');
-      if(resultGap&&deps.replaySubmission) {
-        performed('replay_identical_submission_and_read_current_result',1);
-        try {
-          await deps.replaySubmission(submission);
-          const refreshed=await deps.show(run.run);
-          if(object(refreshed)&&object(refreshed.run)&&refreshed.run.run===run.run&&refreshed.run.root===run.root&&refreshed.run.pack_digest===run.pack_digest&&JSON.stringify(refreshed.run.sources)===JSON.stringify(run.sources)&&object(refreshed.latest)&&object(refreshed.latest.result)&&refreshed.latest.result.submission===accepted[0].record) {
-            selected=refreshed;result=refreshed.latest.result;
-            comparison=computeComparison(gold,submission,result,inputs);duplicates=recountDuplicates(indexes,submission,xml,result);
-          }
-        }catch{}
-      }
       requests.push(...evidenceQuestions(comparison));
       if(!validRounds(result))requests.push({category:'design_gap',missing_fact:'repair_round_usage_and_limit',next_action:'replay_submission_or_repair_current_result_export',owner:'Claude'});
       for(const d of duplicates.details)if(d.gap)requests.push({draft:d.draft,category:'design_gap',missing_fact:d.gap.fact,next_action:d.gap.action,owner:d.gap.owner});
@@ -234,7 +221,6 @@ export function createBatchDeps(options:BatchOptions,processRunner?:ProcessRunne
     show:async(run)=>JSON.parse(cli(['run','show',run,'--json'])),
     submission:async(record)=>{const [reply]=await tools({url:options.url??'http://127.0.0.1:7420/mcp',token:options.token,session:'gold-d2c'},[{tool:'get_nodes',args:{reference:`rec:${record}`}}]);if(reply.isError||!object(reply.structured)||!object(reply.structured.content)||typeof reply.structured.content.text!=='string')throw new Error('submission unavailable');return JSON.parse(reply.structured.content.text);},
     exportOriginal:async(sha,path)=>{cli(['original','export',sha,'--out',path],dirname(path));},
-    replaySubmission:async(submission)=>{await tools({url:options.url??'http://127.0.0.1:7420/mcp',token:options.token,session:'gold-d2c-recovery'},[{tool:'submit_result',args:submission}]);},
   };
 }
 export async function main(argv=process.argv.slice(2),injected?:BatchDeps):Promise<number>{

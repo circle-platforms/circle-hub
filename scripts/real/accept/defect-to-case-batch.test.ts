@@ -85,12 +85,12 @@ test('missing expected-result evidence becomes a named-person design-gap request
     assert.match(report.text,/设计缺口/);assert.ok(!report.text.includes('没法重算'));
   }finally{f.close();}
 });
-test('a pending requirement triggers identical resubmission and rejudgment against the current result',async()=>{
+test('a pending requirement fails without writing or replacing the observed Hub result',async()=>{
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0');
-    const requirement=detail.latest.result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='commands');requirement.status='pending';let replays=0;
-    f.deps.replaySubmission=async body=>{assert.deepEqual(body,f.submissions.get('e'.repeat(64)));replays++;requirement.status='satisfied';};
-    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
-    assert.equal(replays,1);assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);
+    detail.latest.result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='commands').status='pending';let writes=0;
+    Object.assign(f.deps,{replaySubmission:async()=>{writes++;}});
+    const before=JSON.stringify(detail),report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(writes,0);assert.equal(report.code,1);assert.equal(JSON.stringify(detail),before);
   }finally{f.close();}
 });
 test('a client that skips the task is automatically rerun once rather than left unknown',async()=>{
@@ -115,11 +115,11 @@ test('an unreadable run is not falsely reported as absent after the automatic re
     assert.equal(report.code,1);assert.equal(reads,4);assert.match(report.text,/run_record_read_defect/);assert.doesNotMatch(report.text,/no_defect_to_case_run|PRIVATE_TRANSPORT_DETAIL/);
   }finally{f.close();}
 });
-test('missing repair-round facts trigger a current-result replay instead of a successful incomplete summary',async()=>{
-  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const detail=f.details.get('run_synthetic_0');delete detail.latest.result.rounds;
-    let actions=0;f.deps.replaySubmission=async()=>{actions++;detail.latest.result.rounds={used:0,max:2};};
+test('missing repair-round facts fail without resubmitting the accepted body',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);delete f.details.get('run_synthetic_0').latest.result.rounds;
+    let writes=0;Object.assign(f.deps,{replaySubmission:async()=>{writes++;}});
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
-    assert.equal(actions,1);assert.equal(report.code,0);
+    assert.equal(writes,0);assert.equal(report.code,1);
   }finally{f.close();}
 });
 test('every bound src original is exported, including an unused expected manual',async()=>{
