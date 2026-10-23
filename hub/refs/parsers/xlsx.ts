@@ -5,6 +5,9 @@ import { checkSize, effectiveLimits, mediaTypeEssence, nodesError, selectorChars
 import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from '../reference.ts';
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
+const asciiFold = (value: string): string => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+/** Sum of UTF-8 value text placed in cells, including each use of a shared string. */
+export const XLSX_CELL_TEXT_LIMIT = 32 * 1024 * 1024;
 /** Hard container caps. Parser options may lower input size, but cannot raise these security limits. */
 export const XLSX_ZIP_LIMITS = Object.freeze({ maxBytes: 16 * 1024 * 1024, maxMembers: 256, maxMemberBytes: 16 * 1024 * 1024, maxExpandedBytes: 32 * 1024 * 1024, maxRatio: 100 });
 const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, message); };
@@ -15,6 +18,11 @@ const CP437 = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ
 export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
   if (!(input instanceof Uint8Array))
     throw new TypeError('bytes must be a Uint8Array');
+  let memberOffset: number | null = null;
+  let memberOrdinal: number | null = null;
+  const located = (message: string): string => memberOrdinal === null ? message : `ZIP 成员 ${memberOrdinal}：${message}`;
+  const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, located(message), memberOffset); };
+  const forbidden = (message: string): never => { throw new ParseForbiddenError(KEY, located(message), memberOffset); };
   const limits = XLSX_ZIP_LIMITS;
   if (input.length > limits.maxBytes)
     throw new ParseLimitError(KEY, 'maxBytes', limits.maxBytes, `ZIP 总字节数超过上限 ${limits.maxBytes}`);
@@ -39,7 +47,8 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
   let directorySize = bytes.readUInt32LE(end + 12);
   let directoryAt = bytes.readUInt32LE(end + 16);
   let directoryEnd = end;
-  if (end >= 20 && bytes.readUInt32LE(end - 20) === 0x07064b50) {
+  const hasZip64 = end >= 20 && bytes.readUInt32LE(end - 20) === 0x07064b50;
+  if (hasZip64) {
     if (bytes.readUInt32LE(end - 16) !== 0 || bytes.readUInt32LE(end - 4) !== 1)
       forbidden('不接受分卷 ZIP64');
     const at = u64(end - 12, end);
@@ -53,11 +62,22 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP64 成员数不一致');
     directorySize = u64(at + 40, end - 20);
     directoryAt = u64(at + 48, end - 20);
+    for (const [offset, sentinel, actual] of [[8, 0xffff, count], [10, 0xffff, count], [12, 0xffffffff, directorySize], [16, 0xffffffff, directoryAt]]) {
+      const declared = offset < 12 ? bytes.readUInt16LE(end + offset) : bytes.readUInt32LE(end + offset);
+      if (declared !== sentinel && declared !== actual) syntax('ZIP64 与 ZIP 结束记录的声明不一致');
+    }
+    let extensionAt = at + 56;
+    while (extensionAt < end - 20) {
+      fits(extensionAt, 6, end - 20);
+      const size = bytes.readUInt32LE(extensionAt + 2);
+      fits(extensionAt + 6, size, end - 20);
+      extensionAt += 6 + size;
+    }
     directoryEnd = at;
   }
   else if (count === 0xffff || directorySize === 0xffffffff || directoryAt === 0xffffffff)
     syntax('ZIP64 目录记录缺失');
-  if (bytes.readUInt16LE(end + 8) !== bytes.readUInt16LE(end + 10))
+  if (!hasZip64 && bytes.readUInt16LE(end + 8) !== bytes.readUInt16LE(end + 10))
     syntax('ZIP 分卷成员数不一致');
   if (count > limits.maxMembers)
     forbidden(`ZIP 成员数超过上限 ${limits.maxMembers}`);
@@ -67,6 +87,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     syntax('ZIP 中央目录位置或大小不一致');
   fits(directoryAt, directorySize, directoryEnd);
   type Entry = {
+    ordinal: number;
     name: string;
     nameBytes: Buffer;
     version: number;
@@ -104,6 +125,16 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       forbidden('不接受加密 ZIP');
     return output;
   };
+  const verifyUnicodePath = (fields: Map<number, Buffer>, entry: Entry): void => {
+    const unicode = fields.get(0x7075);
+    if (!unicode) return;
+    if (unicode.length < 5 || unicode[0] !== 1) syntax('ZIP Unicode 路径扩展字段格式或版本无效');
+    if (unicode.readUInt32LE(1) !== crc32(entry.nameBytes)) syntax('ZIP Unicode 路径扩展 CRC 与原始成员名不一致');
+    let name: string;
+    try { name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unicode.subarray(5)); }
+    catch { return syntax('ZIP Unicode 路径扩展不是 UTF-8'); }
+    if (name !== entry.name) syntax('ZIP Unicode 路径扩展与原始成员名不一致');
+  };
   for (let i = 0; i < count; i++) {
     fits(position, 46, directoryEnd);
     if (bytes.readUInt32LE(position) !== 0x02014b50)
@@ -112,7 +143,9 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     const extra = bytes.readUInt16LE(position + 30);
     const comment = bytes.readUInt16LE(position + 32);
     fits(position, 46 + nameLength + extra + comment, directoryEnd);
-    const entry: Entry = { name: '', nameBytes: bytes.subarray(position + 46, position + 46 + nameLength), version: bytes.readUInt16LE(position + 6), flags: bytes.readUInt16LE(position + 8), method: bytes.readUInt16LE(position + 10), crc: bytes.readUInt32LE(position + 16), compressed: bytes.readUInt32LE(position + 20), size: bytes.readUInt32LE(position + 24), at: bytes.readUInt32LE(position + 42) };
+    const entry: Entry = { ordinal: i + 1, name: '', nameBytes: bytes.subarray(position + 46, position + 46 + nameLength), version: bytes.readUInt16LE(position + 6), flags: bytes.readUInt16LE(position + 8), method: bytes.readUInt16LE(position + 10), crc: bytes.readUInt32LE(position + 16), compressed: bytes.readUInt32LE(position + 20), size: bytes.readUInt32LE(position + 24), at: bytes.readUInt32LE(position + 42) };
+    memberOrdinal = entry.ordinal;
+    memberOffset = entry.at;
     flagsOk(entry.flags);
     if (entry.method !== 0 && entry.method !== 8)
       syntax('OOXML ZIP 压缩方法只支持存储和 Deflate');
@@ -131,6 +164,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
         entry[field] = Number(n);
         cursor += 8;
       }
+    memberOffset = entry.at;
     const attributes = bytes.readUInt32LE(position + 38);
     const kind = (attributes >>> 16) & 0xf000;
     if (kind !== 0 && kind !== 0x8000 && kind !== 0x4000)
@@ -141,21 +175,20 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     catch {
       syntax('ZIP 成员路径不是 UTF-8');
     }
-    const unicode = fields.get(0x7075);
-    if (unicode && unicode.length >= 5 && unicode[0] === 1 && unicode.readUInt32LE(1) === crc32(entry.nameBytes)) {
-      try {
-        entry.name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unicode.subarray(5));
-      }
-      catch {
-        syntax('ZIP Unicode 成员路径无效');
-      }
-    }
     const path = entry.name.endsWith('/') ? entry.name.slice(0, -1) : entry.name;
-    if (!path || entry.name.length > 512 || /[\\:\u0000-\u001f\u007f]/.test(entry.name) || path.split('/').some((part) => part === '' || part === '.' || part === '..'))
-      forbidden('ZIP 成员路径不安全或过长');
-    if (seen.has(entry.name))
+    if (!path) forbidden('ZIP 成员路径为空');
+    if (entry.name.length > 512) forbidden('ZIP 成员路径长度超过上限 512');
+    if (entry.name.includes('\\')) forbidden('ZIP 成员路径含反斜杠');
+    if (entry.name.includes(':')) forbidden('ZIP 成员路径含冒号');
+    if (/[\u0000-\u001f\u007f]/.test(entry.name)) forbidden('ZIP 成员路径含控制字符');
+    const segments = path.split('/');
+    if (segments.includes('')) forbidden('ZIP 成员路径段为空');
+    if (segments.includes('.')) forbidden('ZIP 成员路径段为点');
+    if (segments.includes('..')) forbidden('ZIP 成员路径段为父级段');
+    if (seen.has(asciiFold(entry.name)))
       syntax('ZIP 成员路径重复');
-    seen.add(entry.name);
+    seen.add(asciiFold(entry.name));
+    verifyUnicodePath(fields, entry);
     expanded += entry.size;
     if (expanded > limits.maxExpandedBytes)
       forbidden(`ZIP 解压后的总量超过上限 ${limits.maxExpandedBytes}`);
@@ -176,20 +209,23 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP 本地成员不连续、重叠或有附加数据');
     fits(entry.at, 30, directoryAt);
     const at = entry.at;
+    memberOrdinal = entry.ordinal;
+    memberOffset = at;
     if (bytes.readUInt32LE(at) !== 0x04034b50)
       syntax('ZIP 本地头签名不对');
     const nameLength = bytes.readUInt16LE(at + 26);
     const extra = bytes.readUInt16LE(at + 28);
     flagsOk(bytes.readUInt16LE(at + 6));
     fits(at + 30, nameLength + extra + entry.compressed, directoryAt);
-    extras(at + 30 + nameLength, extra);
+    const localFields = extras(at + 30 + nameLength, extra);
     if (bytes.readUInt16LE(at + 4) !== entry.version || bytes.readUInt16LE(at + 6) !== entry.flags || bytes.readUInt16LE(at + 8) !== entry.method || !bytes.subarray(at + 30, at + 30 + nameLength).equals(entry.nameBytes))
       syntax('ZIP 本地头与中央目录不一致');
+    verifyUnicodePath(localFields, entry);
     const descriptor = (entry.flags & 8) !== 0;
     let localSize = bytes.readUInt32LE(at + 22);
     let localCompressed = bytes.readUInt32LE(at + 18);
     if (localSize === 0xffffffff || localCompressed === 0xffffffff) {
-      const data = extras(at + 30 + nameLength, extra).get(1);
+      const data = localFields.get(1);
       let p = 0;
       for (const field of ['size', 'compressed'] as const)
         if ((field === 'size' ? localSize : localCompressed) === 0xffffffff) {
@@ -243,7 +279,11 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       catch (error) {
         if (error instanceof ParseError)
           throw error;
-        syntax('ZIP 解压失败、流不完整或实际解压大小超过声明上限');
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ERR_BUFFER_TOO_LARGE') syntax('ZIP 实际解压大小超过声明上限');
+        if (code === 'Z_BUF_ERROR') syntax('ZIP Deflate 流不完整');
+        if (code === 'Z_DATA_ERROR') syntax('ZIP Deflate 数据损坏');
+        syntax('ZIP Deflate 解压器失败');
       }
     }
     if (content!.length !== entry.size)
@@ -271,9 +311,13 @@ export type XlsxCell = {
 export type XlsxRow = {
   number: number;
   hidden: boolean;
+  ht: string | null;
+  customHeight: boolean;
   cells: XlsxCell[];
 };
 export type XlsxSheet = {
+  relationshipId: string;
+  relationshipType: string;
   name: string;
   state: string;
   part: string;
@@ -281,6 +325,7 @@ export type XlsxSheet = {
   lastRow: number;
 };
 export type XlsxModel = {
+  nulRemoved: number;
   members: {
     name: string;
     size: number;
@@ -333,11 +378,14 @@ function required(element: Element, name: string): string {
   return value!;
 }
 /** SpreadsheetML escaped strings, decoded once so an escaped underscore remains literal. */
-function xstring(value: string): string {
+function decodeXstring(value: string, onNul: (count: number) => void): string {
   const text = value.replace(/_x([0-9A-Fa-f]{4})_/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   if (!text.isWellFormed())
     throw new ParseEncodingError(KEY, 'XLSX 转义字符串含不成对的代理字符');
-  return text;
+  let removed = 0;
+  const clean = text.replace(/\u0000/g, () => { removed++; return ''; });
+  if (removed) onNul(removed);
+  return clean;
 }
 function integer(value: string, what: string, minimum = 0): number {
   if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < minimum)
@@ -407,11 +455,16 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   const limits = effectiveLimits(LIMITS, options);
   checkSize(KEY, bytes, limits);
   const archive = readXlsxArchive(bytes);
+  let nulRemoved = 0;
+  const xstring = (value: string): string => decodeXstring(value, (count) => { nulRemoved += count; });
   if (!archive.has('[Content_Types].xml') || !archive.has('_rels/.rels'))
     syntax('XLSX 缺少工作簿必需部件');
+  const actualNames = new Map([...archive.keys()].map((name) => [asciiFold(name), name]));
+  const actualPart = (name: string): string => actualNames.get(asciiFold(name)) ?? name;
   const cache = new Map<string, Element>();
   let nodeCount = 0;
   const part = (name: string): Element => {
+    name = actualPart(name);
     const cached = cache.get(name);
     if (cached)
       return cached;
@@ -428,8 +481,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       root = xml.model.root;
     }
     catch (error) {
-      if (error instanceof ParseLimitError)
+      if (error instanceof ParseLimitError) {
+        if (error.limit === 'maxNodes') throw nodesError(KEY, limits.maxNodes);
         throw new ParseLimitError(KEY, error.limit, error.max, error.message);
+      }
       if (error instanceof ParseError && error.parser === KEY)
         throw error;
       if (error instanceof ParseError)
@@ -448,7 +503,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (++nodeCount > limits.maxNodes)
         throw nodesError(KEY, limits.maxNodes);
       if (raw.irregular !== null)
-        forbidden('XLSX 部件 XML 被修复过或起始标签不规范');
+        forbidden('XLSX 部件 XML 起始标签不规范');
       const own: NamespaceScope = { parent: scope, bindings: new Map() };
       for (const [name, value] of Object.entries(raw.attributes))
         if (name === 'xmlns')
@@ -510,11 +565,17 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     syntax('XLSX 内容类型部件无效');
   const defaults = new Map<string, string>();
   const overrides = new Map<string, string>();
-  for (const element of children(types, 'Default'))
-    defaults.set(required(element, 'Extension').toLowerCase(), required(element, 'ContentType'));
-  for (const element of children(types, 'Override'))
-    overrides.set(partTarget('', required(element, 'PartName')), required(element, 'ContentType'));
-  const members = [...archive].map(([name, value]) => ({ name, size: value.length, contentType: name === '[Content_Types].xml' ? 'application/xml' : overrides.get(name) ?? defaults.get(name.split('.').at(-1)!.toLowerCase()) ?? null }));
+  for (const element of children(types, 'Default')) {
+    const extension = asciiFold(required(element, 'Extension'));
+    if (defaults.has(extension)) syntax('XLSX 内容类型默认扩展名重复');
+    defaults.set(extension, required(element, 'ContentType'));
+  }
+  for (const element of children(types, 'Override')) {
+    const name = asciiFold(partTarget('', required(element, 'PartName')));
+    if (overrides.has(name)) syntax('XLSX 内容类型覆盖部件名重复');
+    overrides.set(name, required(element, 'ContentType'));
+  }
+  const members = [...archive].map(([name, value]) => ({ name, size: value.length, contentType: name === '[Content_Types].xml' ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null }));
   // Opaque XML parts are checked for syntax/repairs only; no style, theme, property, macro or link is interpreted.
   for (const member of members)
     if (/\.(?:xml|rels)$/i.test(member.name) || /(?:\+xml|\/xml)$/.test(mediaTypeEssence(member.contentType ?? '')))
@@ -534,7 +595,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/.exec(path);
       if (!match)
         syntax('XLSX 关系部件路径无效');
-      source = [match![1], match![2]].filter(Boolean).join('/');
+      source = actualPart([match![1], match![2]].filter(Boolean).join('/'));
       if (!archive.has(source))
         syntax('XLSX 关系部件的源部件不存在');
     }
@@ -551,7 +612,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (ids.has(id))
         syntax('XLSX 关系标识重复');
       ids.add(id);
-      const resolved = external ? null : partTarget(source, target);
+      const resolved = external ? null : actualPart(partTarget(source, target));
       if (resolved !== null && !archive.has(resolved))
         syntax('XLSX 关系指向不存在的部件（关系断链）');
       relationships.push({ source, id, type, target, external });
@@ -581,12 +642,21 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   }
   const definedNames = children(book, 'definedNames').flatMap((root) => children(root, 'definedName')).map((element) => ({ name: xstring(required(element, 'name')), scope: attribute(element, 'localSheetId') === undefined ? null : integer(attribute(element, 'localSheetId')!, '定义名作用域'), reference: textOf(element) }));
   const sheets: XlsxSheet[] = [];
-  for (const sheet of children(book, 'sheets').flatMap((root) => children(root, 'sheet'))) {
+  let cellTextBytes = 0;
+  const sheetRelations = new Map(bookRelations.map((relationship) => [relationship.id, relationship]));
+  const usedSheetParts = new Set<string>();
+  // Validate all sheet identities before creating any rows or cells; a cached XML part must not amplify the model.
+  const sheetTargets = children(book, 'sheets').flatMap((root) => children(root, 'sheet')).map((sheet) => {
     const id = DOCUMENT_REL.map((uri) => attribute(sheet, 'id', uri)).find((id) => id !== undefined);
-    const relationship = bookRelations.find((r) => r.id === id);
+    const relationship = id === undefined ? undefined : sheetRelations.get(id);
     if (!relationship || relationship.external || !relationship.resolved)
       syntax('XLSX 工作表关系缺失或不是包内部件');
     const sheetPart = relationship!.resolved!;
+    if (usedSheetParts.has(sheetPart)) syntax('XLSX 多张工作表指向同一个部件');
+    usedSheetParts.add(sheetPart);
+    return { sheet, relationship: relationship!, sheetPart };
+  });
+  for (const { sheet, relationship, sheetPart } of sheetTargets) {
     const root = part(sheetPart);
     const rows: XlsxRow[] = [];
     let lastRow = 0;
@@ -595,12 +665,14 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       syntax('XLSX 工作表部件 XML 无效');
     for (const row of children(root, 'sheetData').flatMap((root) => children(root, 'row'))) {
       const number = attribute(row, 'r') === undefined ? previousRow + 1 : integer(attribute(row, 'r')!, '行号', 1);
+      if (number <= previousRow) syntax('XLSX 行号必须严格递增');
       previousRow = number;
       const cells: XlsxCell[] = [];
       let column = 0;
       for (const cell of children(row, 'c')) {
         const reference = attribute(cell, 'r') ?? `${columnName(column + 1)}${number}`;
         const position = coordinate(reference);
+        if (position.row !== number) syntax('XLSX 单元格行号与所在行号不一致');
         column = position.column;
         lastRow = Math.max(lastRow, position.row);
         const type = attribute(cell, 't') ?? 'n';
@@ -616,13 +688,18 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
             syntax('XLSX 共享字符串部件或索引缺失');
           text = sharedStrings[index];
         }
+        cellTextBytes += Buffer.byteLength(text, 'utf8');
+        if (cellTextBytes > XLSX_CELL_TEXT_LIMIT) forbidden(`XLSX 模型的单元格文本总量超过 UTF-8 字节上限 ${XLSX_CELL_TEXT_LIMIT}`);
         cells.push({ reference, type, text, formula: children(cell, 'f').length > 0, style: attribute(cell, 's') === undefined ? null : integer(attribute(cell, 's')!, '样式号') });
       }
-      rows.push({ number, hidden: bool(attribute(row, 'hidden')), cells });
+      const ht = attribute(row, 'ht') ?? null;
+      const customHeight = bool(attribute(row, 'customHeight'));
+      rows.push({ number, hidden: bool(attribute(row, 'hidden')) || (customHeight && ht !== null && ht.trim() !== '' && Number(ht) === 0), ht, customHeight, cells });
     }
-    sheets.push({ name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
+    sheets.push({ relationshipId: relationship.id, relationshipType: relationship.type, name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
   }
-  const model: XlsxModel = { members, relationships, sheets, sharedStrings, definedNames };
+  if (definedNames.some((name) => name.scope !== null && name.scope >= sheets.length)) syntax('XLSX 定义名作用域指向不存在的工作表');
+  const model: XlsxModel = { nulRemoved, members, relationships, sheets, sharedStrings, definedNames };
   const fragments = new Map<string, Fragment>();
   let selectorChars = 0;
   const add = (segments: string[], text: string, data: XlsxCell | XlsxModel['definedNames'][number]): void => {
@@ -632,6 +709,12 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       throw selectorCharsError(KEY, Math.min(limits.maxSelectorChars, selector.length > MAX_SELECTOR_LENGTH ? MAX_SELECTOR_LENGTH : limits.maxSelectorChars));
     fragments.set(selector, { selector, text, byteRange: null, data });
   };
+  const sheetNameCounts = new Map<string, number>();
+  for (const sheet of sheets) sheetNameCounts.set(sheet.name, (sheetNameCounts.get(sheet.name) ?? 0) + 1);
+  const writable = (segments: string[]): boolean => {
+    try { return segments.every((segment) => segment !== '' && segment.length <= MAX_SELECTOR_LENGTH) && selectorOf(segments).length <= MAX_SELECTOR_LENGTH; }
+    catch { return false; }
+  };
   for (const [s, sheet] of sheets.entries()) {
     const counts = new Map<string, number>();
     for (const row of sheet.rows)
@@ -639,9 +722,19 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
         counts.set(cell.reference, (counts.get(cell.reference) ?? 0) + 1);
     for (const [r, row] of sheet.rows.entries())
       for (const [c, cell] of row.cells.entries())
-        add(counts.get(cell.reference) === 1 ? ['c', String(s), cell.reference] : ['i', String(s), String(r), String(c)], cell.text, cell);
+        add(counts.get(cell.reference) === 1 && sheetNameCounts.get(sheet.name) === 1 && writable(['c', sheet.name, cell.reference]) ? ['c', sheet.name, cell.reference] : ['i', String(s), String(r), String(c)], cell.text, cell);
   }
-  definedNames.forEach((name, i) => add(['n', String(i)], name.reference, name));
+  const nameCounts = new Map<number | null, Map<string, number>>();
+  for (const name of definedNames) {
+    let scoped = nameCounts.get(name.scope);
+    if (!scoped) { scoped = new Map(); nameCounts.set(name.scope, scoped); }
+    scoped.set(name.name, (scoped.get(name.name) ?? 0) + 1);
+  }
+  definedNames.forEach((name, i) => {
+    const path = name.scope === null ? ['n', name.name] : ['n', sheets[name.scope].name, name.name];
+    const uniqueScope = name.scope === null || sheetNameCounts.get(sheets[name.scope].name) === 1;
+    add(uniqueScope && nameCounts.get(name.scope)!.get(name.name) === 1 && writable(path) ? path : ['i', 'n', String(i)], name.reference, name);
+  });
   cache.clear();
   archive.clear();
   return {
@@ -654,7 +747,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (selector.startsWith(prefix))
         output.push(selector);
     } return output; },
-    summary() { const cells = sheets.flatMap((sheet) => sheet.rows.flatMap((row) => row.cells)); return { parser: KEY, members: members.length, sheets: sheets.length, rows: sheets.reduce((n, sheet) => n + sheet.rows.length, 0), cells: cells.length, sharedStrings: sharedStrings.length, definedNames: definedNames.length, hiddenSheets: sheets.filter((sheet) => sheet.state === 'hidden' || sheet.state === 'veryHidden').length, hiddenRows: sheets.reduce((n, sheet) => n + sheet.rows.filter((row) => row.hidden).length, 0), formulas: cells.filter((cell) => cell.formula).length, externalRelationships: relationships.filter((relationship) => relationship.external).length }; },
+    summary() { const cells = sheets.flatMap((sheet) => sheet.rows.flatMap((row) => row.cells)); return { parser: KEY, nulRemoved, members: members.length, sheets: sheets.length, rows: sheets.reduce((n, sheet) => n + sheet.rows.length, 0), cells: cells.length, sharedStrings: sharedStrings.length, definedNames: definedNames.length, hiddenSheets: sheets.filter((sheet) => sheet.state === 'hidden' || sheet.state === 'veryHidden').length, hiddenRows: sheets.reduce((n, sheet) => n + sheet.rows.filter((row) => row.hidden).length, 0), formulas: cells.filter((cell) => cell.formula).length, externalRelationships: relationships.filter((relationship) => relationship.external).length }; },
   };
 }
 export const xlsxParser: Parser<XlsxModel> = { id: 'xlsx', version: 1, mediaTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel.sheet.macroEnabled.12'], limits: LIMITS, parse };

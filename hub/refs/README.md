@@ -9,7 +9,7 @@ Other packages import only from `hub/refs/api.ts`. refs imports only `contracts/
 | --- | --- |
 | `reference.ts` | `parseReference`, `formatReference`, `normalizeReference`, `sameTarget`, `sameSource`, `srcFragment`, `treeReference`, `recReference`, selector, path and pointer codecs, `MAX_SELECTOR_LENGTH`, `ReferenceSyntaxError` |
 | `parser.ts` | `Parser`, `ParsedDocument`, `Fragment`, limits, typed parse errors, `createParserRegistry`, `recognize` |
-| `parsers/*.ts` | the six core parsers: `kityminder@1`, `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1` |
+| `parsers/*.ts` | the seven core parsers: `kityminder@1`, `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1`, `xlsx@1` |
 | `quote.ts` | `quoteMatches`, `locateQuote`, `findQuote`, `candidatesFrom` |
 | `resolve.ts` | `SourceReader`, `TreeReader`, `RecordReader`, `resolveReference`, `verifyQuote`, document cache, `isGroundable` |
 | `canonical-json.ts` | RFC 8785 serialization and `recordDigest`, used to re-verify `rec:` references |
@@ -58,6 +58,7 @@ rec:<record>[#<JSON Pointer>]
 | `markdown@1` | text/markdown, text/x-markdown | `h/<heading>/...` a section; `b/<k>[/<heading>...]` block k directly inside that section, or before the first heading | section or block exactly as written, NUL removed | section from its heading line; block lines |
 | `json@1` | application/json | `p` the document, `p/<token>/...` member names and array indices | strings as they are, other values as JSON | none |
 | `text@1` | text/plain, text/* | `l/<n>` line n (from 1), `l/<a>-<b>` lines a to b (a < b) | the lines joined with LF | from the first line's start to the last line's end |
+| `xlsx@1` | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet | `c/<sheet name>/<A1>`, `n/<name>`, `n/<sheet name>/<local name>`; `i/<sheet>/<row>/<cell>` or `i/n/<name index>` fallback (0-based) | decoded cell value or name reference | none |
 
 `locate` returns null for anything that does not locate exactly one fragment (it never throws for bad selectors) and
 returns the canonical selector in `Fragment.selector`: an XML index path or an explicit `[1]` resolves to the name path.
@@ -132,6 +133,7 @@ escapes such as `\ud83d` get U+FFFD instead, counted in `surrogatesReplaced`; a 
 | markdown@1 | 16 MiB | 6 heading levels | 1 000 000 lines | | 64 Mi |
 | json@1 | 16 MiB | 128 | 2 000 000 values | | 64 Mi |
 | text@1 | 16 MiB | 1 | 1 000 000 lines | | (not needed) |
+| xlsx@1 | 16 MiB (hard ZIP cap) | 100 XML levels | 1 000 000 XML elements across parts | 1 024 per tag | 64 Mi |
 
 parse5 checks each new attribute against all earlier ones of the tag, scope checks walk the open-element stack, and
 misnested markup makes it move nodes between child lists, so hostile input can cost quadratic time. html@1 therefore:
@@ -211,6 +213,10 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   never change). Permission is still checked by the reader on every call.
 
 ## Decisions and deviations from the brief
+
+The original XLSX registration changed `hub/refs/resolve.test.ts` outside this task's allowed paths: two intentionally
+fixtures now use xlsx@999 for the unregistered parser, because xlsx@1 is registered. This necessary test
+update is retained and disclosed to the integrator as a scope deviation; this review batch does not edit that file.
 
 1. `Parser.parse` is synchronous for the core parsers. A pack-provided parser run in the sandbox would need an
    asynchronous adapter; none exists in milestone 1.
@@ -296,6 +302,14 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
 
 ## Needs from other packages
 
+- **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
+  name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
+
+- **runs / server**: surface the last ParseError message when all parsers for the declared media type refuse.
+  Both start_run and upload_file must return that definite reason and a corrective action; recognize currently drops
+  it, so this branch cannot claim caller-visible refusal diagnostics until the owners add this handoff. This is an
+  integration need outside the XLSX parser task's allowed paths.
+
 - **contracts**: (1) a protocol code for "the source does not parse with the declared parser" (for example
   `SOURCE_UNPARSEABLE`, fix "上传能按声明格式解析的文件，或换用对应的解析器"), or confirmation that
   `SUBMISSION_SCHEMA_VIOLATION` is meant; (2) move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs
@@ -338,7 +352,7 @@ The generic workbook model is JSON data, independent of any workflow:
   value `text`, `formula` flag and numeric `style` (null when absent). Numbers, booleans, errors and dates stay as text;
   formulas are never evaluated and their value is only the stored cache. A missing cache gives empty text. Inline and
   shared rich-text runs are joined without phonetic annotations; SpreadsheetML escaped strings are decoded once,
-  including escaped underscores. Decoded control characters stay in the value; repaired XML (including raw NUL) is
+  including escaped underscores. Decoded U+0000 is removed and counted in nulRemoved; other decoded control characters stay in the value; repaired XML (including raw NUL) is
   refused rather than silently changed. A decoded unpaired surrogate is an encoding error.
 - `sharedStrings[]`: decoded strings in table order. A missing table or out-of-range referenced index is refused.
 - `definedNames[]`: `name`, `scope` (null for workbook scope, otherwise the zero-based `localSheetId`) and literal
@@ -350,9 +364,11 @@ of any cell, including an empty style-only cell; empty row declarations and work
 Multi-sheet workbooks, hidden/very-hidden sheets, hidden rows, formulas and values beginning with `=` are accepted as
 structure. No workflow-specific subset is enforced here.
 
-Selectors are `c/<zero-based sheet index>/<A1 reference>` and `n/<zero-based defined-name index>`. If a coordinate occurs
-more than once, each occurrence instead has `i/<sheet index>/<row index>/<cell index>`, all indices zero-based; no
-occurrence is silently discarded. Each fragment's data is the corresponding cell/name object. `byteRange` is null:
+Selectors prefer names: `c/<sheet name>/<A1 reference>`, workbook `n/<defined name>`, and local
+`n/<sheet name>/<defined name>`, with each segment escaped by the refs codec. Duplicate sheet names, duplicate
+coordinates, duplicate scoped names, empty names or name paths above the selector-length cap fall back to
+`i/<sheet index>/<row index>/<cell index>` for cells and `i/n/<defined-name index>` for names (all indices zero-based).
+No ambiguous name selector is listed or resolved; no occurrence is discarded. Each fragment's data is the corresponding cell/name object. `byteRange` is null:
 fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
 order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
 paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also
@@ -369,3 +385,29 @@ The parser is available as `createDefaultRegistry().get('xlsx@1')`. An upload fi
 selects `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; a caller's explicit media type takes
 precedence. ZIP bytes without a filename or media type are not guessed to be spreadsheets. Non-ZIP bytes never match
 xlsx@1. Runtime registration was appended so the existing parser preference order stays intact.
+
+XLSX workbook sheet relationships are resolved through an id map. A second sheet targeting an already-used internal
+part refuses the package before any row/cell model is built; XML caching cannot multiply one worksheet's cells by the
+number of sheet entries. This is a structural identity and bounded-work rule, independent of workbook policy.
+
+ZIP member identity always comes from the raw central filename (UTF-8 with bit 11, CP437 otherwise), with the same raw
+name required in the local header. A version-1 Info-ZIP Unicode Path field is accepted only with a matching raw-name
+CRC and the exact same decoded name, in either header; it never renames a member. Unsafe or duplicate raw names are
+refused before optional metadata can hide them. Invalid or contradictory path metadata is a generic ZIP refusal.
+
+XLSX cell value text has an additional aggregate 32 MiB UTF-8 budget: every resolved shared-string use, inline value
+and v-value is charged before insertion into the model. The shared-string dictionary remains under the ZIP expansion
+cap. A small dictionary referenced many times cannot defer a huge-model failure to sandbox input serialization.
+
+For xlsx@1, nulRemoved counts escaped U+0000 removed once per decoded source string (including shared-string entries,
+sheet names and defined names), rather than once per shared-string use. Raw NUL in XML still refuses as repaired XML.
+
+ZIP64 compares each non-sentinel EOCD count, size and offset with the ZIP64 record. Bounded extensible data remains
+accepted with its header/length framing checked, as defined by APPNOTE 4.3.14; a size above 44 alone is not malformed.
+
+Row `ht` retains the literal height or null, and `customHeight` retains the boolean flag. `hidden` means explicit
+hidden=true or customHeight=true with numeric height zero; hiddenRows uses that same definition. Column visibility
+is not interpreted by this model, so hiddenRows is not a statement about column visibility or whole-sheet rendering.
+
+Each sheet preserves `relationshipId` and literal `relationshipType`; an empty chartsheet or another opaque part is
+therefore distinguishable from an empty worksheet without guessing from its filename or dropping its identity.
