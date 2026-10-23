@@ -140,8 +140,8 @@ export function staticTerminal(input: StaticInput): RawStatic {
 }
 
 /** The error handling row for a code: the exact code, else `*` (W02 F[7]). */
-export function routeOf(rows: readonly ErrorHandlingRow[], code: string): ErrorHandlingRow | undefined {
-  return rows.find((r) => r.code === code) ?? rows.find((r) => r.code === '*');
+export function routeOf(rows: readonly ErrorHandlingRow[], code?: string, reason?: Reason): ErrorHandlingRow | undefined {
+  return (code === undefined ? undefined : rows.find(r => r.code === code)) ?? (reason === undefined ? undefined : rows.find(r => r.reason === reason)) ?? (code === undefined ? undefined : rows.find(r => r.code === '*'));
 }
 
 /** Repair rounds of a requirement: the largest max_rounds of its repair rows, 0 without one (RequirementSummary.repair_rounds). */
@@ -190,13 +190,13 @@ export function rowApplies(row: ErrorHandlingRow, o: JudgedOutcome): boolean {
  * unknown (keeps the violation, unattributed), reject keeps the violation and lets the partition decide. A refutation the
  * expectation names is the expected outcome and is never routed.
  */
-export function applyRouting(raw: RawStatic, template: RequirementTemplate, roundsUsed: number): RoutedStatic {
+export function applyRouting(raw: RawStatic, template: RequirementTemplate, roundsUsed: number, outcomes: readonly JudgedOutcome[] = []): RoutedStatic {
   const rounds = repairRounds(template);
   const roundsLeft = Math.max(0, rounds - roundsUsed);
   const exhausted = roundsUsed >= rounds;
   const routed: Routed[] = [];
-  for (const o of raw.unexpected) {
-    const row = routeOf(template.error_handling, o.outcome.code ?? '');
+  for (const o of [...raw.unexpected, ...outcomes.filter(o => o.outcome.verdict === 'unknown')]) {
+    const row = routeOf(template.error_handling, o.outcome.code, o.outcome.reason);
     if (row === undefined || !rowApplies(row, o)) continue;
     routed.push(row.action === 'repair' ? { outcome: o, action: 'repair', roundsLeft } : { outcome: o, action: row.action });
   }
@@ -210,7 +210,11 @@ export function applyRouting(raw: RawStatic, template: RequirementTemplate, roun
     action: null,
     expectedRefutation: raw.expectedRefutation,
   };
-  if (raw.terminal !== 'violation' || raw.primary === undefined || raw.expectedRefutation) return base;
+  if (raw.terminal !== 'violation' || raw.primary === undefined || raw.expectedRefutation) {
+    const unknown = routed.find(r => r.outcome.outcome.verdict === 'unknown');
+    if (unknown?.action === 'repair' && exhausted) return {...base, terminal:'incomplete', reason:'repair_exhausted',action:'repair',lead:unknown.outcome};
+    return base;
+  }
   const lead = routed.find((r) => r.outcome === raw.primary) ?? routed[0];
   if (lead === undefined) return base;
   base.action = lead.action;

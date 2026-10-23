@@ -704,7 +704,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
-      const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
+      const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0, outcomes);
       const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
       const layers = [] as typeof unresolved;
       for (const layer of unresolved) {
@@ -770,19 +770,24 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       }
       results.push({ requirement: t.key, layers, ...status, claims });
       for (const r of routed.routed) {
-        if (r.action === 'unknown') continue;
         const check = checks.get(r.outcome.check)!;
         const path = submissionPointer(it.id, check, r.outcome.outcome.pointer);
         errors.push({
-          code: r.outcome.outcome.code ?? 'check_error',
-          message: r.outcome.outcome.statement,
+          code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
+          message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
           fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
-          ...(r.action === 'repair' ? { rounds_left: r.roundsLeft ?? 0 } : {}),
+          ...(r.action === 'repair' || r.outcome.outcome.verdict === 'unknown' ? { rounds_left: r.roundsLeft ?? roundsLeftOf(t) } : {}),
         });
         if (r.action === 'repair') problems.add(t.key);
+      }
+      for (const outcome of outcomes.filter(o => o.outcome.verdict === 'unknown')) {
+        problems.add(t.key);
+        if (routed.routed.some(r => r.outcome === outcome)) continue;
+        const check=checks.get(outcome.check);
+        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;

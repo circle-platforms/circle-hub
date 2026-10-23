@@ -563,3 +563,7 @@ The judged lineage lists historical starts and accepted submissions missing a se
 until the author supplies a new revision with sessions. Missing-session submissions are kept and checked for all
 other problems but refused as a whole. Their action records `refusal: session_missing` without repair keys and
 never enter the distinct-submission repair ledger; the same bytes with a session are evaluated again.
+
+Every unknown outcome is named in errors with its item, requirement, missing fact, submission path and remaining
+repair rounds; the requirement is charged once per distinct submission. Cause selectors route alongside exact
+codes without treating reason strings as interpreter codes. Repair routing is restricted to the artifact provider.
