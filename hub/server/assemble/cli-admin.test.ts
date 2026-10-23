@@ -1436,6 +1436,9 @@ describe('reimport after key loss', () => {
       } else await rm(admin.deployment.key.path);
       const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
       assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
+      for(const step of ['operator-token reissue','secret import','最后起服务']) assert.ok(refused.text.includes(step),step);
+      assert.ok(refused.text.indexOf('operator-token reissue') < refused.text.indexOf('secret import'), refused.text);
+      assert.ok(refused.text.indexOf('secret import') < refused.text.indexOf('最后起服务'), refused.text);
       assert.equal((await admin.run(['resource', 'list'])).code, 0);
       const aside = join(admin.deployment.dataDir, 'set-aside'); await mkdir(aside, { mode: 0o700 });
       await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
