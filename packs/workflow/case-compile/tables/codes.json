@@ -92,6 +92,11 @@
       "code": "case-compile.assertion_in_steps",
       "when": "steps 里直接填写了 literal_assertion 调用，绕过唯一的溯源期望入口",
       "fix": "断言写进 expects，带引文和 after"
+    },
+    {
+      "code": "case-compile.workbook_invalid",
+      "when": "上传工作簿不是与已核验槽位、原合约、配置和本运行生成器一致的原字节",
+      "fix": "先修正计划并取得满足结果，用同版客户端脚本重新生成上传；冻结输入不能在旧运行替换，须开始新的后继运行"
     }
   ],
   "refusals": [
@@ -159,6 +164,16 @@
       "code": "case-compile.internal_error",
       "when": "投影函数内部出错",
       "fix": "将输入交给任务包维护人，修复后重新开始运行"
+    },
+    {
+      "code": "case-compile.workbook_input",
+      "when": "绑定文件不是完整的 xlsx@1 原件或超出单例模型预算",
+      "fix": "上传客户端脚本生成的原始 xlsx 字节并绑定其引用"
+    },
+    {
+      "code": "case-compile.workbook_context",
+      "when": "绑定工作簿却未提供计划运行号",
+      "fix": "复制已满足计划运行号作为 plan_run 和 predecessor"
     }
   ],
   "warnings": [

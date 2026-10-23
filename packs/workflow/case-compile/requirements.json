@@ -223,6 +223,28 @@
           "max_rounds": 2
         }
       ]
+    },
+    {
+      "key": "workbook_verified",
+      "name": "工作簿原字节核验",
+      "description": "客户端工作簿由独立读取器解释，符合运行器布局、原合约和本轮配置，再从槽位重算字节与绑定原件摘要相同才支持；缺少文件时自动转客户端生成并开始后继核验运行",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "workbook_verified"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.workbook_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
     }
   ]
 }

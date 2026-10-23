@@ -41,6 +41,16 @@
       ],
       "required": true,
       "many": false
+    },
+    {
+      "slot": "workbook",
+      "role": "artifact_under_verification",
+      "description": "客户端从已满足计划生成并上传的单用例工作簿，xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
+      "accepts": [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ],
+      "required": false,
+      "many": false
     }
   ],
   "parameters": [
@@ -64,6 +74,17 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 128
+      }
+    },
+    {
+      "name": "plan_run",
+      "description": "绑定 workbook 时必填：已满足的计划运行号，作为说明行来源；同时作 predecessor，二者一致由派发核对",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^run_[a-z0-9]+$"
       }
     }
   ],

@@ -38,3 +38,11 @@ export function quoteSubject(input: unknown): unknown {
   const subject = planSubject(input); const read = readSlots(subject.data);
   return { item: subject.item, quotes: read.ok ? read.slots.expects.map((v) => v.quote) : [] };
 }
+
+/** Workbook input is frozen by projection; only original metadata and current submitted slots are joined here. */
+export function workbookSubject(input: unknown): unknown {
+  const raw = isRecord(input) ? input : {}; const context = isRecord(raw.context) ? raw.context : {};
+  const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
+  const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
+  return { ...planSubject(input), fields: isRecord(item.fields) ? item.fields : {}, workbook: frozen.workbook ?? null, generation: frozen.generation ?? null, manifest_sha256: frozen.manifest_sha256 ?? null };
+}

@@ -77,6 +77,21 @@
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里"
+    },
+    {
+      "id": "workbook_verified",
+      "title": "独立回读及重算工作簿原件",
+      "function": {
+        "module": "functions/workbook.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "workbookSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等"
     }
   ]
 }

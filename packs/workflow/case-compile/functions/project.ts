@@ -4,6 +4,8 @@ import { isRecord, refusal, type PackWarning } from './text.ts';
 import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile } from './profile.ts';
 import { parseManifest } from './manifest.ts';
+import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
+import { readWorkbookModel } from './xlsx-model.ts';
 import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
 
 interface Slot {
@@ -73,6 +75,12 @@ export function projectItems(input: unknown): unknown {
   if (parameters.case_rule !== undefined && parameters.case_rule !== 'tagged' && parameters.case_rule !== 'marked') {
     return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）');
   }
+  const workbook = slotOf(inputs, 'workbook');
+  if (workbook) {
+    if (workbook.parser !== 'xlsx@1' || typeof workbook.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(workbook.sha256) || !readWorkbookModel(workbook.model)) return refusal('workbook_input', '工作簿不是完整的 xlsx@1 绑定原件', '上传原始 xlsx，按 upload_file 返回的 src: 引用绑定，不上传自行转换的 JSON');
+    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '单用例工作簿模型超过核验预算', '减少同一个用例内的非必要内容后重新生成，不能截断模型或拆掉要执行的行');
+    if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 plan_run', '从已满足提交及结果复制计划运行号，以其为 predecessor 开新运行并绑定原工作簿');
+  }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
   const extraction = extractCases(subject.model, rule);
   if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
@@ -114,6 +122,9 @@ export function projectItems(input: unknown): unknown {
         contract: contractSlot.model,
         manifest: inventorySlot.model,
         profile: profileSlot.model,
+        manifest_sha256: typeof inventorySlot.sha256 === 'string' ? inventorySlot.sha256 : '',
+        workbook: workbook ? { model: workbook.model, sha256: workbook.sha256, source: `src:${workbook.sha256}` } : null,
+        generation: { plan_run: parameters.plan_run ?? null, build: context.build ?? null, generator: WORKBOOK_FORMAT.generator },
         leases: { now: typeof frozenLeases.now === 'string' ? frozenLeases.now : new Date(0).toISOString(), entries: Array.isArray(frozenLeases.entries) ? frozenLeases.entries : [] },
         case_rule: rule,
         marked_only: extraction.markedOnly,
