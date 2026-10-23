@@ -5,7 +5,7 @@ import { runRecord as baseRun } from '../../contracts/src/fixtures.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
 import { newId } from '../records/api.ts';
 import { LINK_MATCH } from '../../contracts/generated/vocabulary.ts';
-import { LinkDeclaration, type KnownBuild } from '../../contracts/src/product.ts';
+import { LinkDeclaration,Producer, type KnownBuild } from '../../contracts/src/product.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { createKnowledgeReader } from './api.ts';
 import { resolveLiteral } from './links.ts';
@@ -70,12 +70,17 @@ test('a new declaration produces the same root, a new composition and pointer, w
   const current=(await f.json(await f.read())).view;assert.equal(current.totals?.links,1);assert.equal(current.composition,second.composition);
   const next=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/'],depth:2,cursor:nodePage.next},f.w.admin);assert.ok(next);assert.ok(next.nodes.every(n=>!n.backlinks||n.backlinks.composition===f.first.composition));
 });
-test('a legacy composition stays untouched and gives a definite missing-declaration result',async t=>{
-  const f=await fixture(t,null);const original=await f.w.knowledge.store.composition(f.first.composition!);
-  const view=(await f.json(await f.read())).view;
+test('a true legacy composition stays untouched and yields one page-level repair note',async t=>{
+  const f=await fixture(t,null),original=await f.w.knowledge.store.composition(f.first.composition!);assert.ok(original);
+  const body=structuredClone(original);delete body.links;
+  const legacy=await f.w.kit.store.withTransaction(tx=>f.w.knowledge.store.putRoot(body,tx));
+  const view=(await f.json(await f.read('',legacy.digest))).view;
   assert.equal(view.configured,false);assert.equal(view.totals,null);assert.match(view.notes.join(''),/这份组成没有链接声明.*重新生产/);
-  assert.deepEqual(await f.w.knowledge.store.composition(f.first.composition!),original);
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,composition:legacy.digest,paths:['/'],depth:2},f.w.admin);
+  assert.ok(page);assert.match(page.coverage.note??'',/这份组成没有链接声明/);assert.ok(page.nodes.every(node=>node.backlinks===undefined));
+  assert.deepEqual(await f.w.knowledge.store.composition(legacy.digest),body);
 });
+
 test('unknown declarations are refused before source reads, and unauthorized readers get no relation view',async t=>{
   const f=await fixture(t);const reader=createKnowledgeReader(f.w.knowledge);
   assert.equal((await reader.read('knowledge:links:widget:10.6.1',{principal:f.w.outsider,run:null,purpose:'synthetic'})).ok,false);
@@ -157,4 +162,28 @@ test('accepted source coverage serves the same links to members without probing 
     const answer=await w.kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(answer);answers.push(answer);
   }
   assert.deepEqual(answers[0],answers[1]);assert.equal(probes,0);
+});
+
+test('no-rule productions snapshot an empty declaration and omit unrelated backlink blocks',async t=>{
+  const empty=await fixture(t,null),body=await empty.w.knowledge.store.composition(empty.first.composition!);
+  assert.deepEqual(body?.links,[]);
+  const view=(await empty.json(await empty.read())).view;assert.equal(view.configured,true);assert.equal(view.totals?.links,0);
+  const page=await empty.w.knowledge.getNodes({root:empty.first.root!,paths:['/'],depth:2},empty.w.admin);
+  assert.ok(page);assert.equal(page.coverage.note,undefined);assert.ok(page.nodes.every(node=>node.backlinks===undefined));
+  const linked=await fixture(t);
+  const notes=await linked.w.knowledge.getNodes({root:linked.first.root!,paths:['/notes'],depth:2},linked.w.admin);
+  assert.ok(notes);assert.ok(notes.nodes.every(node=>node.backlinks===undefined));
+});
+test('a run without a composition receives a new-run action rather than being asked for a run again',async t=>{
+  const f=await fixture(t),page=await f.w.knowledge.getNodes({root:f.first.root!,composition:null,paths:['/'],depth:2},f.w.admin);
+  assert.ok(page);assert.match(page.coverage.note??'',/运行.*组成.*新.*运行/);assert.doesNotMatch(page.coverage.note??'',/请给出运行|移动.*指针/);
+});
+test('a historical root points to a concrete composition view instead of moving the current pointer',async t=>{
+  const f=await fixture(t);f.w.product.product.producers=[Producer.parse(extraProducer('entities',{entries:[...entries,content('/new','behaviour','New synthetic node')]}))];
+  f.w.product.digest='f'.repeat(64);
+  const next=await f.w.knowledge.produceTree({product:f.w.product,build});assert.ok(next.ok);assert.notEqual(next.root,f.first.root);
+  await f.w.knowledge.reconcileLine('widget',build.line,f.w.admin);
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
+  assert.ok(page);assert.match(page.coverage.note??'',/knowledge:links:widget:/);assert.ok(page.coverage.note?.includes('composition='+f.first.composition));
+  assert.doesNotMatch(page.coverage.note??'',/移动.*指针/);
 });

@@ -128,7 +128,8 @@ export class LinkReading {
   }
   async facts(composition:CompositionView):Promise<RelationFacts>{
     const cached=this.#cache.get(composition.record);if(cached)return cached;
-    if(composition.body.links===undefined)throw new Error('这份组成没有链接声明；下一步是重新生产这条线');
+    if(composition.body.links===undefined)throw new Error('这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
+    if(composition.body.links.length===0)return {links:[],drift:[],diagnostics:[],entries:0,literals:0};
     const nodes=new Map<string,RelationNode>(),sources:LiteralSource[]=[],contents=new Map<string,EntryContent>(),owners=new Map<string,readonly string[]>();
     for await(const row of composition.contentRows(undefined)){contents.set(row.entry,row.content);owners.set(row.path+"\0"+row.entry,row.producers);}
     // Reachability comes from the node graph; a row alone never invents a target.
@@ -148,7 +149,7 @@ export class LinkReading {
     const prefix=request.prefix??'/',target=request.target??null,rule=request.rule??null;
     pathSegments(prefix);if(target!==null)pathSegments(target);
     const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
-    if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明；下一步是重新生产这条线']};
+    if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取']};
     if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new Error('这份组成没有请求的链接声明，请按声明编号重读');
     const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target)&&(rule===null||edge.rule===rule));
     const drift=facts.drift.filter(g=>(target===null||g.attempted_path===target)&&(rule===null||g.rule===rule)).map(g=>({...g,occurrences:g.occurrences.filter(o=>beneath(o.path,prefix))})).filter(g=>g.occurrences.length).map(g=>({...g,total:g.occurrences.length}));
@@ -178,9 +179,22 @@ export class LinkReading {
     return output;
   }
   async backlinks(root:string,path:string,reader:Principal,composition?:string|null):Promise<Backlinks|undefined>{
-    const view=composition===null?null:await this.compositionFor(root,reader,composition);
-    if(!view){const records=await this.#context.store.productionsOfRoot(root);for(const record of records){const body=await this.#context.store.composition(record.detail.composition as string);if(body?.links!==undefined&&await this.#allowed(body.product,reader))return {composition:null,configured:false,total:null,entries:[],truncated:false,notes:['这次读没有选定唯一组成；请给出运行，或先生成并移动这条线的指针']};}return undefined;}
-    if(view.body.links===undefined)return composition?{composition:view.record,configured:false,total:null,entries:[],truncated:false,notes:['这份组成没有链接声明；下一步是重新生产这条线']}:undefined;
+    const absent=(record:string|null,note:string):Backlinks=>({composition:record,configured:false,total:null,entries:[],truncated:false,notes:[note]});
+    if(composition===null)return absent(null,'这个运行没有锁定组成快照；下一步：以同样的输入新开运行，锁定组成后再读关联');
+    const view=await this.compositionFor(root,reader,composition);
+    if(!view){
+      const candidates:CompositionView[]=[];
+      for(const production of await this.#context.store.productionsOfRoot(root)){
+        const record=String(production.detail.composition),body=await this.#context.store.composition(record);
+        if(body&&body.links?.length!==0&&await this.#allowed(body.product,reader))candidates.push(new CompositionView(this.#context.store,record,body));
+      }
+      candidates.sort((a,b)=>compareText(a.record,b.record));
+      const candidate=candidates[0];if(!candidate)return undefined;
+      const id='knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.line)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record;
+      return absent(null,'这个历史根没有选定唯一组成；下一步：按明确的组成读取关联视图 '+id);
+    }
+    if(view.body.links===undefined)return absent(view.record,'这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
+    if(view.body.links.length===0||!view.body.links.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
     const facts=await this.facts(view),unique=new Map<string,LinkEdge>();
     for(const edge of facts.links)if(edge.target===path)unique.set(edge.reference,edge);
     const all=[...unique.values()].sort((a,b)=>compareText(a.reference,b.reference));

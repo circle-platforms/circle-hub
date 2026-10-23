@@ -491,7 +491,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   const configured=product.product.links===undefined?undefined:LinkDeclaration.array().max(32).safeParse(product.product.links);
   if(configured&&!configured.success)return fail('产品链接声明无效，修正声明后重新生产');
-  const links=configured?.success?configured.data:undefined;
+  const links=configured?.success?configured.data:[];
   if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
   if(links&&new Set(links.map(rule=>rule.id)).size!==links.length)return fail('产品链接声明编号重复，修正后重新生产');
 
@@ -792,7 +792,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     .map(({ row, producers, slots }) => ({ ...row, producers: [...producers].sort(compareText), basis: basisOver(slots, basisOf) }))
     .sort((a, b) => compareText(a.entry, b.entry));
 
-  if(links!==undefined){
+  if(links.length>0){
     try {
       const ownership=new Map(composition.map(row=>[row.path+"\0"+row.entry,row.producers]));
       const kinds=new Map(nodes.map(node=>[node.path,relationNode(node.entries.map(id=>({kind:contents.get(id)!.kind,producers:ownership.get(node.path+"\0"+id)??[]})))]));
@@ -842,7 +842,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
           refused_count: problems.refusedCount,
           ...(lists.length > 0 ? { skipped: problems.skipped, skipped_count: problems.skippedCount } : {}),
           catalogs,
-          ...(links===undefined?{}:{links}),
+          links,
           counts: { nodes: nodes.length, entries: composition.length, placed_by_model: composition.filter((row) => row.placement !== undefined).length, unplaced: unplacedRows.length },
           kinds,
           warnings: problems.warnings,
