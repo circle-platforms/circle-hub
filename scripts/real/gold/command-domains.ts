@@ -151,7 +151,8 @@ export function requirementStatus(resultValue: unknown, item: string, key: strin
   return found.length === 1 && REQUIREMENT_STATUS.includes(found[0].status) ? found[0].status : null;
 }
 export function compareStatus(verdict: Verdict, status: RequirementStatus | null): 'equal' | 'different' | 'unknown' {
-  if (verdict === UNKNOWN || status === null || status === REQUIREMENT_STATUS[2]) return 'unknown';
+  if (verdict === UNKNOWN) return 'unknown';
+  if(status===null||status===REQUIREMENT_STATUS[2])return 'different';
   return (verdict === SUPPORT) === (status === REQUIREMENT_STATUS[0]) ? 'equal' : 'different';
 }
 export function parsedDraftCommands(draft: LocatedDraft, xml: string): { commands: SplitCommand[]; unrecognized: string[]; located: { step: number; line: number; command: SplitCommand | null }[] } {
@@ -215,7 +216,8 @@ export function domainReport(submission: unknown, hub: unknown, xml: string) {
     const hasUnknown = own.some(d => d.verdict === UNKNOWN || d.outcomes.some(o => o.verdict === UNKNOWN));
     const status = requirementStatus(hub, item, 'commands'), comparison = compareStatus(verdict, status);
     const start = differences.length;
-    if (comparison === 'different') {
+    if(comparison==='different'&&(status===null||status===REQUIREMENT_STATUS[2]))for(const d of own)differences.push({draft:d.draft,category:'hub_output_missing'});
+    else if (comparison === 'different') {
       if (compareStatus(aggregate(own.map(d => d.stepRule)), status) === 'equal') {
         for (const d of own.filter(d => d.stepRule !== d.verdict)) for (const step of d.steps.filter(s => s.catalog === SUPPORT)) differences.push({ draft: d.draft, step: step.step, category: 'negative_step_rule' });
       }

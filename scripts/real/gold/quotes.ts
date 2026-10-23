@@ -140,7 +140,8 @@ export function quotesReport(submission: unknown, hub: unknown, inputs: QuoteInp
   const items = [...new Set(drafts.map(d => d.item))].map(item => {
     const own = found.filter(f => f.item === item);
     const verdict = own.some(f => f.verdict === REFUTE) ? REFUTE : own.length === 0 || own.some(f => f.verdict === UNKNOWN) ? UNKNOWN : SUPPORT;
-    return { verdict, comparison: compareStatus(verdict, requirementStatus(hub, item, 'grounded')) };
+    const status=requirementStatus(hub,item,'grounded');
+    return {verdict,comparison:compareStatus(verdict,status),hubOutputMissing:verdict!==UNKNOWN&&(status===null||status==='pending')};
   });
   return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.verdict === v).length])),
     targets: Object.fromEntries(['fix','defect_other','manual','other','unknown_defect_field','unknown_target'].map(c => [c, Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, found.filter(f => f.category === c && f.verdict === v).length]))])),

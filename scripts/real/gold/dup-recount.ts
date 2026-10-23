@@ -45,16 +45,15 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
     const hub=new Set<string>();let known=requirements.length===1&&drafts.filter(x=>x.item===d.item&&x.data.title===d.data.title).length===1;
     for(const c of matching){const target=c.statement?.data?.duplicate_of??c.data?.duplicate_of; if(!object(target)||typeof target.document!=='string'||typeof target.node!=='string') known=false; else hub.add(pair(target.document,target.node));}
     if(claims.some(c=>!drafts.some(x=>x.item===d.item&&typeof c.statement?.text==='string'&&c.statement.text.startsWith(`起草用例“${x.data.title??''}”与已索引用例重复`)))) known=false;
-    const hubOutputMissing=requirements.some(r=>r.status==='pending'||(r.claims??[]).some((c:any)=>(c.statement?.verdict===UNKNOWN||c.statement?.reason==='missing_input'||c.reason==='missing_input')&&(!c.statement?.text||c.statement.text.startsWith(`起草用例“${d.data.title??''}”`))));
+    const hubOutputMissing=!known||requirements.some(r=>!['satisfied','unsatisfied'].includes(r.status)||(r.claims??[]).some((c:any)=>(c.statement?.verdict===UNKNOWN||c.statement?.reason==='missing_input'||c.reason==='missing_input')&&(!c.statement?.text||c.statement.text.startsWith(`起草用例“${d.data.title??''}”`))));
     const expected=new Set(sameTitle.map(([key])=>key));
     const expectedPending = covered && sameNegative.length > sameTitle.length;
-    const titleEqual=covered&&known?!hubOutputMissing&&expected.size===hub.size&&[...expected].every(k=>hub.has(k)):null;
+    const titleEqual=covered?!hubOutputMissing&&expected.size===hub.size&&[...expected].every(k=>hub.has(k)):null;
     const unread = views.some((v:any)=>v.skipped>0);
     const equal=expectedPending||unread?null:titleEqual;
     const gap = !covered ? { fact: 'complete_command_index', action: 'request_complete_index_export', owner: 'Claude' }
       : expectedPending ? { fact: 'existing_case_expected_text_and_bound_original_identity', action: 'request_indexed_case_originals', owner: 'Claude' }
-      : unread ? { fact: 'unread_indexed_documents', action: 'retry_source_sync_and_export_complete_index', owner: 'Claude' }
-      : !known ? { fact: 'current_duplicate_claim_set', action: 'replay_submission_and_read_current_result', owner: 'Claude' } : undefined;
+      : unread ? { fact: 'unread_indexed_documents', action: 'retry_source_sync_and_export_complete_index', owner: 'Claude' } : undefined;
     return { draft:d.draft, sameCommands:covered?candidates.length:null, sameNegative:covered?sameNegative.length:null, sameTitle:covered?sameTitle.length:null,
       verdict:gap?UNKNOWN:(sameTitle.length>0?REFUTE:SUPPORT), reason:gap?INTEGRITY:undefined, equal, titleEqual, hubOutputMissing, gap };
   });

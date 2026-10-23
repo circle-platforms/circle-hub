@@ -120,7 +120,8 @@ test('missing repair-round facts fail without resubmitting the accepted body',as
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);delete f.details.get('run_synthetic_0').latest.result.rounds;
     let writes=0;Object.assign(f.deps,{replaySubmission:async()=>{writes++;}});
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
-    assert.equal(writes,0);assert.equal(report.code,1);
+    assert.equal(writes,0);assert.equal(report.code,1);assert.equal(report.totals.design_gaps,0);assert.equal(report.totals.defects,1);
+    assert.ok(JSON.parse(readFileSync(join(f.out,'pair-1','details.json'),'utf8')).positions.some((p:any)=>p.category==='hub_output_missing'));
   }finally{f.close();}
 });
 test('every bound src original is exported, including an unused expected manual',async()=>{

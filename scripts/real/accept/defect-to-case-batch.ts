@@ -145,10 +145,10 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       category='index_view_schema_or_identity_defect';
       let duplicates=recountDuplicates(indexes,submission,xml,result);
       requests.push(...evidenceQuestions(comparison));
-      if(!validRounds(result))requests.push({category:'design_gap',missing_fact:'repair_round_usage_and_limit',next_action:'replay_submission_or_repair_current_result_export',owner:'Claude'});
+      const hubOutputMissing=!validRounds(result);
       for(const d of duplicates.details)if(d.gap)requests.push({draft:d.draft,category:'design_gap',missing_fact:d.gap.fact,next_action:d.gap.action,owner:d.gap.owner});
       if(duplicates.skipped>0)requests.push({category:'design_gap',missing_fact:'unread_indexed_documents',next_action:'retry_source_sync_and_export_complete_index',owner:'Claude'});
-      const passed=gates(comparison),ok=Object.values(passed).every(Boolean)&&duplicates.passed&&requests.length===0;
+      const passed=gates(comparison),ok=Object.values(passed).every(Boolean)&&duplicates.passed&&requests.length===0&&!hubOutputMissing;
       totals.completed++;if(!ok)totals.failed++;if(!ok&&requests.length===0)totals.defects++;
       if(passed.commands)totals.command_gate_pass++;if(passed.quotes)totals.quote_gate_pass++;if(passed.origins)totals.origin_gate_pass++;if(duplicates.passed)totals.duplicate_gate_pass++;
       totals.known_step_rule_items+=comparison.parameters!.domains.items.filter(i=>i.differenceCategories.includes('negative_step_rule')).length;
@@ -165,10 +165,10 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       totals.pair_draft+=params.draftPairs;totals.pair_doc+=params.docPairs;totals.pair_shared+=params.shared;
       const buckets=object(result.partitions)?Object.values(result.partitions).flatMap(v=>Array.isArray(v)?v:[]):[],requirements=Array.isArray(run.requirements)?run.requirements:[];
       const satisfied=requirements.filter((r:any)=>buckets.length>0&&buckets.every(b=>(b.requirements??[]).some((v:any)=>v.requirement===r.key&&v.status===REQUIREMENT_STATUS[0]))).length;
-      const rounds=validRounds(result)?`${result.rounds.used}/${result.rounds.max}`:'设计缺口';
+      const rounds=validRounds(result)?`${result.rounds.used}/${result.rounds.max}`:'输出缺失';
       lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；提交 ${selected.submissions.length}；受理 ${selected.submissions.filter((s:any)=>s.acceptance==='accepted').length}；修复轮 ${rounds}；要求项 ${satisfied}/${requirements.length}；任务包 ${run.pack}；摘要 ${run.pack_digest}；输入摘要 ${[sha256(commandBytes),sha256(manual),sha256(mapBytes),...sources.keys()].join(' ')}；${ok?'通过':'不通过'}`);
 
-      writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:ok?'passed':requests.length?'design_gap':'comparison_defect',positions:comparisonDetails(comparison),duplicates:duplicates.details});
+      writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:ok?'passed':requests.length?'design_gap':'comparison_defect',positions:[...comparisonDetails(comparison),...(hubOutputMissing?[{category:'hub_output_missing'}]:[])],duplicates:duplicates.details});
     }catch{
       const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','original_export_or_integrity_defect','index_view_schema_or_identity_defect','invalid_run'].includes(category);
       if(definite)totals.defects++;

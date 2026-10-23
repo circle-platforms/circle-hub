@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { commandDomains, judgeCommand, domainReport } from './command-domains.ts';
+import { commandDomains, judgeCommand, domainReport, compareStatus } from './command-domains.ts';
 const xml = (args: string) => `<commands><scope type="global"><menu name="widget"><item name="set"><arguments>${args}</arguments></item></menu></scope></commands>`;
 const judge = (type: string, value: string, attrs = '', help = '') => judgeCommand({ head: 'widget set', parameters: [value] }, commandDomains(xml(`<arg name="value" type="${type}" ${attrs}>${help}</arg>`)));
 for (const [type, good, bad, verdict] of [
@@ -62,4 +62,13 @@ test('a noninteger parameter ignored by simplified refutation matching gets its 
   const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'unsatisfied'}]}]}};
   const report=domainReport(submission,hub,xml('<arg name="address" type="IPADDR"/>'));
   assert.equal(report.items[0].verdict,'support');assert.deepEqual(report.differences.map(d=>d.category),['simplified_refutation_match']);
+});
+
+test('known gold verdicts disagree with missing, pending and duplicated Hub requirements',()=>{
+  for(const status of [null,'pending'] as const)for(const verdict of ['support','refute'] as const)assert.equal(compareStatus(verdict,status),'different');
+  const submission={items:[{item:'i',slots:{cases:[{data:{steps:[{command:'widget set 5'}]}}]}}]};
+  for(const requirements of [[],[{requirement:'commands',status:'pending'}],[{requirement:'commands',status:'satisfied'},{requirement:'commands',status:'satisfied'}]]){
+    const report=domainReport(submission,{partitions:{delivered:[{item:'i',requirements}]}},xml('<arg name="" type="U16"/>'));
+    assert.equal(report.items[0].comparison,'different');assert.ok(report.differences.some(d=>d.category==='hub_output_missing'));
+  }
 });

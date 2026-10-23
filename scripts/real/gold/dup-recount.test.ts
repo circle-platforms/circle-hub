@@ -38,3 +38,8 @@ for(const mode of ['pending','unknown_claim'])test(`a decided draft differs from
   assert.equal(report.different,1);assert.equal(report.unknown,0);assert.equal(report.passed,false);
   assert.equal(report.details[0].hubOutputMissing,true);
 });
+
+test('a missing duplicate requirement is a Hub mismatch when the independent inputs are complete',()=>{
+  const report=recountDuplicates([view({})],draft,xml,{});
+  assert.equal(report.different,1);assert.equal(report.unknown,0);assert.equal(report.details[0].gap,undefined);
+});

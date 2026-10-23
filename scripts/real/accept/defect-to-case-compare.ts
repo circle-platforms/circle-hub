@@ -323,6 +323,7 @@ export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
     ...(comparison.parameters?.domains.differences ?? []),
+    ...comparison.quoteOracle.items.flatMap((item,index)=>item.hubOutputMissing?[{item_position:index+1,category:'hub_output_missing'}]:[]),
     ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),
     ...comparison.quoteOracle.details.map(d => ({ draft: d.draft, expected: d.expected, category: [d.category, d.verdict, d.reason ?? '', d.scope, d.expectedVerbatim === false ? 'paraphrased' : ''].filter(Boolean).join('.') })),
 
