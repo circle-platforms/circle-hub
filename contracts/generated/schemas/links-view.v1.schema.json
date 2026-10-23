@@ -246,6 +246,59 @@
         "additionalProperties": false
       }
     },
+    "rule_diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_check",
+              "check_error",
+              "timeout",
+              "missing_input",
+              "declared_skip",
+              "not_covered",
+              "awaiting_step",
+              "output_failed",
+              "repair_exhausted",
+              "budget_exhausted",
+              "integrity_unproven"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "next_action": {
+            "type": "string"
+          },
+          "unchecked_literals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "rule",
+          "namespace",
+          "reason",
+          "message",
+          "next_action",
+          "unchecked_literals"
+        ],
+        "additionalProperties": false
+      }
+    },
     "totals": {
       "anyOf": [
         {
@@ -277,6 +330,11 @@
               "maximum": 9007199254740991
             },
             "diagnosed_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unchecked_literals": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991

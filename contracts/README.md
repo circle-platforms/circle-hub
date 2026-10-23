@@ -155,3 +155,9 @@ same namespace, kind, normalization and producer restrictions. Counts describe t
 by rule and normalized literal; identical spellings under different rules remain separate groups. Group structure is
 validated when the reader evaluates producer data; malformed data is an entry diagnostic, never a whole-production error.
 The declaration's cross-field requirements are runtime refinements, in addition to the generated schema properties.
+
+`links-view@1.rule_diagnostics` reports unavailable target namespaces once per rule, with a generated reason and concrete
+recovery action. Its `unchecked_literals` and the optional matching total count the unchecked candidate spellings, including
+both primary and expanded spellings of an unresolved alternative group (deduplicated per entry); they are part of `literals`
+and never part of drift counts. Rule diagnostics are separate from malformed source-entry diagnostics and carry no invented
+entry reference. Prefix/rule filters apply to the unchecked totals as they do to checked source occurrences.

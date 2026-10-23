@@ -793,3 +793,5 @@ checks; otherwise each distinct expanded alternative contributes a link or drift
 alternatives are counted separately. Malformed groups produce entry diagnostics. The producer and read-time view share
 `relationFacts`; declarations are frozen in the composition as before. These are source spellings, never build-dependent
 entry edits. Ordinary-field declarations and their counts keep their existing behavior.
+
+缺少目标目录或目录内没有符合声明种类、生产器的目标时，relationFacts 不判漂移：rule_diagnostics 每条声明一条，写出缺失目录和补齐有效来源后重新生产的动作。totals.unchecked_literals 单列未核对候选，仍计入 literals，绝不计入 drift；备选组在目录不可用时计入主干及展开项的去重候选。生产警告和读时结果共用这一判定，后续有效来源的生产会重新核对。

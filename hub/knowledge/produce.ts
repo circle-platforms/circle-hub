@@ -798,6 +798,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       const kinds=new Map(nodes.map(node=>[node.path,relationNode(node.entries.map(id=>({kind:contents.get(id)!.kind,producers:ownership.get(node.path+"\0"+id)??[]})))]));
       const sources=[...composition.map(row=>({path:row.path,entry:row.entry,content:contents.get(row.entry)!,producers:row.producers})),...unplacedRows.map(row=>({path:'/',entry:row.entry,content:contents.get(row.entry)!,producers:row.producers,unplaced:true}))];
       const facts=relationFacts(root.digest,links,kinds,sources);
+      for(const diagnostic of facts.rule_diagnostics)problems.warn(diagnostic.message+'；待核对候选字面 '+diagnostic.unchecked_literals+' 个；下一步：'+diagnostic.next_action);
       for(const diagnostic of facts.diagnostics)problems.warn(diagnostic.message+"；"+diagnostic.reference+"；下一步："+diagnostic.next_action);
       for(const rule of links){const groups=facts.drift.filter(group=>group.rule===rule.id);if(groups.length)problems.warn(`链接声明 ${rule.id}：有 ${groups.length} 个字面在此根没有可匹配目标（漂移事实）：${literalWarningDetails(groups.map(g=>g.literal))}`);}
     }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}

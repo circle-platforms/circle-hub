@@ -78,3 +78,19 @@ test('the fixed manual fixture has identical declared production drift and paged
   }while(cursor);
   assert.deepEqual([...new Map(drift.map(pair=>[JSON.stringify(pair),pair])).values()],[['manual-literals','demo broken'],['manual-literals','demo pool create'],['manual-literals','enable'],['manual-signatures','?'],['manual-signatures','demo probe'],['manual-signatures','enable']]);
 });
+
+test('an HTML tree source leaves manual literals unchecked in both production and the read view',async t=>{
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
+  const external=new Manuals(kit),packs=new FakePacks(),directory=fileURLToPath(new URL('../',import.meta.url));
+  const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  const handle:ProductHandle={id:'apv',version:'1.3.0',digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
+  external.set('site:tree:links',{bytes:'<html><body>synthetic unavailable tree</body></html>',mediaType:'text/html'});
+  external.set('manual:cli:10.6.1',{bytes:'**demo pool add** *<name>*\n\n参考 `demo pool create` 和 `demo probe`。\n',mediaType:'text/markdown'});
+  const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const build:KnownBuild={name:'Rel_APV_10_6_1_99',family:'APV',line:'10.6.1',base:'Rel_APV_10_6_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
+  const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
+  assert.ok(!produced.warnings.some(warning=>warning.includes('漂移事实')),produced.warnings.join('\n'));
+  const reader=createKnowledgeReader(knowledge),result=await reader.read('knowledge:links:apv:10.6.1',{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
+  const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
+  assert.deepEqual(view.drift,[]);assert.equal(view.totals?.unchecked_literals,3);assert.equal(view.rule_diagnostics?.length,2);assert.equal(view.totals?.literals,3);
+});

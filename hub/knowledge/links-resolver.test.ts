@@ -42,3 +42,14 @@ test('alternative groups prefer an exact primary definition then check each expa
   for(const bad of [{...grouped,field:'ordinary'},{...grouped,match:'longest_prefix'},{...grouped,alternatives_field:undefined}])assert.equal(LinkDeclaration.safeParse(bad).success,false);
   const malformed=relationFacts('a'.repeat(64),[grouped],graph,[source('mode',[])]) ;assert.equal(malformed.diagnostics.length,1);
 });
+
+test('unavailable target namespaces diagnose each rule once and count literals as unchecked',()=>{
+  const scoped=LinkDeclaration.parse({...rule,target_producers:['tree']});
+  const source={path:'/notes',entry:'b'.repeat(64),producers:['notes'],content:{kind:'behaviour' as const,statement:'Synthetic mentions',data:{mentions:['demo gone','demo other']},applicability:null}};
+  for(const graph of [new Map<string,ReadonlySet<string>>([['/',new Set()]]),new Map<string,ReadonlySet<string>>([['/terms',new Set()],['/terms/demo',new Set(['definition'])]])]){
+    const facts=relationFacts('a'.repeat(64),[scoped],graph,[source]);
+    assert.deepEqual(facts.drift,[]);assert.deepEqual(facts.links,[]);
+    assert.equal(facts.rule_diagnostics.length,1);assert.equal(facts.unchecked.reduce((n,item)=>n+item.literals,0),2);
+    assert.match(facts.rule_diagnostics[0].next_action,/有效.*来源.*重新生产/);
+  }
+});
