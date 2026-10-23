@@ -39,7 +39,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '保持未知' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
-  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'candidate', label: '候选层' }] },
+  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干' }, { code: 'branch', label: '枝' }, { code: 'leaf', label: '叶' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
@@ -62,6 +62,9 @@ export const AXES = {
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
   fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '不是这次运行的输入' }, { code: 'not_groundable', label: '这类记录不能作根据' }, { code: 'entry_unaddressed', label: '知识条目单独引用了，没写树地址' }, { code: 'malformed', label: '引用写法不对' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'too_large', label: '超过大小上限' }, { code: 'retain_only', label: '只保留、不可读' }, { code: 'unavailable', label: '暂时读不到' }] },
+  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }] },
+  task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
+  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -391,9 +394,9 @@ export function isPermissionKind(value: unknown): value is PermissionKind {
 }
 
 /** 知识层 (K03) */
-export const KNOWLEDGE_LAYER = ['tree', 'observation', 'candidate'] as const;
+export const KNOWLEDGE_LAYER = ['tree', 'observation', 'contribution'] as const;
 export type KnowledgeLayer = (typeof KNOWLEDGE_LAYER)[number];
-export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'candidate': '候选层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
+export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'contribution': '回注层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
 export const KnowledgeLayerSchema = z.enum(KNOWLEDGE_LAYER);
 export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
   return (KNOWLEDGE_LAYER as readonly unknown[]).includes(value);
@@ -597,6 +600,33 @@ export function isFragmentRead(value: unknown): value is FragmentRead {
   return (FRAGMENT_READ as readonly unknown[]).includes(value);
 }
 
+/** 按文档的产出种类 (K03) */
+export const DOCUMENT_OUTPUT_KIND = ['classification', 'placement_proposal', 'assertion', 'relation'] as const;
+export type DocumentOutputKind = (typeof DOCUMENT_OUTPUT_KIND)[number];
+export const DOCUMENT_OUTPUT_KIND_LABEL = { 'classification': '分类', 'placement_proposal': '归位提议', 'assertion': '声明', 'relation': '关系' } as const satisfies { readonly [K in DocumentOutputKind]: string };
+export const DocumentOutputKindSchema = z.enum(DOCUMENT_OUTPUT_KIND);
+export function isDocumentOutputKind(value: unknown): value is DocumentOutputKind {
+  return (DOCUMENT_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 按任务的产出种类 (W07) */
+export const TASK_OUTPUT_KIND = ['ranking', 'selection', 'score'] as const;
+export type TaskOutputKind = (typeof TASK_OUTPUT_KIND)[number];
+export const TASK_OUTPUT_KIND_LABEL = { 'ranking': '排序', 'selection': '取舍', 'score': '分数' } as const satisfies { readonly [K in TaskOutputKind]: string };
+export const TaskOutputKindSchema = z.enum(TASK_OUTPUT_KIND);
+export function isTaskOutputKind(value: unknown): value is TaskOutputKind {
+  return (TASK_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 关系种类 (K03) */
+export const RELATION_KIND = ['same_subject', 'contradicts'] as const;
+export type RelationKind = (typeof RELATION_KIND)[number];
+export const RELATION_KIND_LABEL = { 'same_subject': '说的是同一件事', 'contradicts': '互相矛盾' } as const satisfies { readonly [K in RelationKind]: string };
+export const RelationKindSchema = z.enum(RELATION_KIND);
+export function isRelationKind(value: unknown): value is RelationKind {
+  return (RELATION_KIND as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -657,6 +687,9 @@ export interface AxisValues {
   measure: Measure;
   placement: Placement;
   fragment_read: FragmentRead;
+  document_output_kind: DocumentOutputKind;
+  task_output_kind: TaskOutputKind;
+  relation_kind: RelationKind;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -719,6 +752,9 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   measure: MEASURE_LABEL,
   placement: PLACEMENT_LABEL,
   fragment_read: FRAGMENT_READ_LABEL,
+  document_output_kind: DOCUMENT_OUTPUT_KIND_LABEL,
+  task_output_kind: TASK_OUTPUT_KIND_LABEL,
+  relation_kind: RELATION_KIND_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

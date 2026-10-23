@@ -5,9 +5,10 @@
 //
 // Record layout (hub/knowledge/README.md): nodes and entries are `tree_node` records (tree content, never a ground on their
 // own, B01 R[5]), compositions are `tree_root` records (a large one with `tree_root` part records beside it), current-root
-// moves are `root_pointer` records, builds, calibration sets, observations and candidates are `claim` records with the
+// moves are `root_pointer` records, builds, calibration sets, observations and contributions are `claim` records with the
 // schemas below. Digests of nodes and entries cover the normalised content only (K01 R[7], K02 R[4]); see nodeDigest and
 // entryDigest in hub/knowledge.
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './contributions.ts';
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
@@ -369,23 +370,6 @@ export const KnowledgeObservationBody = z.strictObject({
 });
 export type KnowledgeObservationBody = z.infer<typeof KnowledgeObservationBody>;
 
-/**
- * A person's candidate (K03): experience a model summarised in Circle, visible to its owner only. It binds the node path,
- * the digest of the cited fragment and the root it rests on (K03 R[5]); its ground is an uploaded session excerpt whose
- * quotation the Hub verified before the candidate entered the layer (K03 R[4]). Never in a root digest.
- */
-export const KnowledgeCandidateBody = z.strictObject({
-  owner: UserId,
-  product: ProductId,
-  root: Sha256,
-  path: TreePath,
-  cited_fragment: Sha256.describe('SHA-256 of the text at the path in that root when the candidate was written'),
-  statement: z.string().min(1),
-  ground: z.strictObject({ reference: SrcReferenceUri, quote: z.string().min(1) }),
-  applicability: Applicability.nullable(),
-});
-export type KnowledgeCandidateBody = z.infer<typeof KnowledgeCandidateBody>;
-
 export const schemas: Record<string, z.ZodType> = {
   'tree_node@1': TreeNodeBody,
   'knowledge-entry@1': KnowledgeEntryBody,
@@ -397,5 +381,5 @@ export const schemas: Record<string, z.ZodType> = {
   'knowledge-build@1': KnowledgeBuildBody,
   'knowledge-calibration@1': KnowledgeCalibrationBody,
   'knowledge-observation@1': KnowledgeObservationBody,
-  'knowledge-candidate@1': KnowledgeCandidateBody,
+  [KNOWLEDGE_CONTRIBUTION_SCHEMA]: KnowledgeContributionBody,
 };

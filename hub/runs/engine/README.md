@@ -419,3 +419,7 @@ one item and two checks, separately for item and whole-run subjects: the origina
 They also verify both checks execute, every submission receives its receipt, concurrent identical repeats return identical
 receipt bytes, and only one submission, result and validate action is stored per run. Unit tests cover input/function/scope
 separation, byte-preserving result copies, mutation isolation, an input snapshot and retries after construction failure.
+
+部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。
+
+整份提交因其他条目被拒绝时，回注 not_stored 优先保留该条目自身的准入拒绝及 skipped/补件动作，不用一般重交文案覆盖它。

@@ -1,4 +1,6 @@
 import type { ProducerKind } from '../../contracts/generated/vocabulary.ts';
+import { isKnowledgeContributionSchema } from '../../contracts/src/contributions.ts';
+import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
 import type { RunsService } from '../ports.ts';
@@ -31,12 +33,6 @@ export function sourceReaderFor(
   };
 }
 
-/**
- * The schema of a claim of the knowledge candidate layer, as hub/knowledge's README names it for this reader (its SCHEMAS
- * .candidate). Named here rather than imported so that loading the server does not load the knowledge package.
- */
-export const CANDIDATE_SCHEMA = 'knowledge-candidate@1';
-
 /** Record kinds that belong to a run: the runs engine's rule (hub/runs/engine/readers.ts). */
 const RUN_KINDS: ReadonlySet<string> = new Set<RecordKind>(['run', 'submission', 'validation_result', 'action']);
 
@@ -57,19 +53,17 @@ export function runOfRecord(kind: string, body: unknown): string | null {
 
 /**
  * Records by digest for one caller. Records decides source artifacts for everyone, admins included (a read with a
- * person's own credential is theirs alone, B02 R[3]); a candidate of the knowledge candidate layer is its owner's alone,
- * admins included (R02, K03 R[4]). Admins read every other record. A user reads the run, submission, validation result and
+ * person's own credential is theirs alone, B02 R[3]). Contributions pass the product reader before the admin
+ * branch. Admins read the remaining records. A user reads the run, submission, validation result and
  * action records of a run the runs service lets them read (RunsService.getRun); never call logs, authorizations or any
  * other kind (the console and the tools give those views where they are allowed).
  */
-export function recordReaderFor(records: RecordsKit, runs: RunsService, principal: Principal, note: (reason: string) => void = () => {}): RecordReader {
+export function recordReaderFor(records: RecordsKit, runs: RunsService, principal: Principal, note: (reason: string) => void = () => {}, contributions?: Pick<ContributionLayer, 'read'>): RecordReader {
   const mayRead = async (record: StoredRecord): Promise<boolean> => {
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
+    if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) return (await contributions?.read(record.digest, account)) != null;
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
-    if (record.kind === 'claim' && record.schema === CANDIDATE_SCHEMA) {
-      return isObject(record.body) && typeof record.body.owner === 'string' && record.body.owner === account.id;
-    }
     if (account.role === 'admin') return true;
     const run = runOfRecord(record.kind, record.body);
     return run !== null && (await runs.getRun(principal, run)) !== null;

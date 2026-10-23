@@ -111,7 +111,7 @@ export async function bindInputs(
       };
     }
     if (ref.scheme === 'rec') {
-      const record = await recordReader(store).read(ref.record, identityOf(user));
+      const record = await recordReader(store, ctx.deps.knowledge.layers?.contributions).read(ref.record, identityOf(user));
       if (record === null) {
         gone(path, 'record absent or not visible to the caller');
         return null;

@@ -17,7 +17,7 @@ import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, page } from './console
 import { SessionStore, cookie } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
 import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
-import { CANDIDATE_SCHEMA, runOfRecord } from './readers.ts';
+import { runOfRecord } from './readers.ts';
 import { countsLine } from './text.ts';
 import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, schemaErrors } from './tools.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
@@ -270,7 +270,6 @@ test('the run of a run-scoped record, by the runs engine\'s shapes; other kinds 
   assert.equal(runOfRecord('claim', { run }), null);
   assert.equal(runOfRecord('call_log', { run }), null);
   assert.equal(runOfRecord('action', { run: null }), null);
-  assert.equal(CANDIDATE_SCHEMA, 'knowledge-candidate@1');
 });
 
 test('an input slot reads an external system when it accepts system:type, never a media type', () => {

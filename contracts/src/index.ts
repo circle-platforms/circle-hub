@@ -21,6 +21,7 @@ export * from './claim.ts';
 export * from './validation.ts';
 export * from './run.ts';
 export * from './submission.ts';
+export * from './contributions.ts';
 export * from './records.ts';
 export * from './annotations.ts';
 export * from './tools.ts';

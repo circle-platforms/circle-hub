@@ -67,6 +67,8 @@ export interface EvaluationInput {
   traceId: string;
   /** Items whose own exact values did not resolve: no checks or conclusions for them (a not-accepted submission). */
   exclude?: ReadonlySet<string>;
+  /** Hub admission policy facts, kept on the declared item requirement rather than whole-submission errors. */
+  admission?: {requirement:string;outcomes:ReadonlyMap<string,CheckOutcome[]>};
 }
 
 export interface Evaluation {
@@ -180,7 +182,9 @@ function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
 }
 
 /** rule@version of a check: the core interpreter, or the pack function check of this pack version. */
+const ADMISSION_CHECK='@hub.contribution';
 function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
+  if(check.id===ADMISSION_CHECK)return 'knowledge.contribution@1';
   return check.interpreter ?? `${workflow.pack.id}.${check.id}@${workflow.pack.version}`;
 }
 
@@ -194,6 +198,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
+  if(input.admission!==undefined)checks.set(ADMISSION_CHECK,{id:ADMISSION_CHECK,title:'Hub 回注来源核验',applies:'item',judges:'artifact_under_verification',tier:'blocking',basis:'K03 R[4]-R[6]：回注根据与入层约束'});
   // Whole-refusal diagnostics must never check unresolved items, including fact checks and run-level subjects.
   // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
   const items = run.items.filter(it => !exclude.has(it.id));
@@ -250,7 +255,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: recordReader(ctx.deps.records.store),
+      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
     };
@@ -470,6 +475,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
   const missingItemArtifact = (id: string): boolean => submission !== null && handlingOf(id) !== 'handled';
   const artifactCheck = (check: CheckEntry): boolean => check.judges === 'artifact_under_verification';
+  const deniedArtifact=(check:CheckEntry,id:string):boolean=>input.admission?.outcomes.has(id)===true&&artifactCheck(check)&&(requirementsOf.get(check.id)??[]).every(t=>t.key===input.admission!.requirement);
   const allTexts = new Map<string, string>();
   for (const it of items) for (const [k, v] of evidenceOf(it.id).texts) allTexts.set(k, v);
 
@@ -478,7 +484,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     // A run check of item artifacts sees only submitted artifacts. A check of a run-level artifact (for example
     // a final claim) still needs every target's metadata to test coverage, but receives no absent slot property.
     const itemArtifactsOnly = artifactCheck(check) && (requirementsOf.get(check.id) ?? []).every(t => t.target === 'item');
-    const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)) : items;
+    const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)&&!deniedArtifact(check,it.id)) : items;
     if (itemArtifactsOnly && checkItems.length === 0) continue;
     const checkedIds = new Set(checkItems.map(it => it.id));
     const built = await buildSubject(runSubjects, check, { applies: 'run', items: checkItems.map(subjectItem), context }, () => ({
@@ -505,6 +511,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id);
     const ev = evidenceOf(it.id);
     for (const check of perItem) {
+      if(deniedArtifact(check,it.id))continue;
       if (artifactCheck(check) && missingItemArtifact(it.id)) continue;
       if (judgmentOnly(check) && (handlingOf(it.id) !== 'handled' || exclude.has(it.id) || submission === null)) continue;
       const evidence = slots === null ? [] : ev.evidence;
@@ -523,13 +530,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
   });
 
-  const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] =>
-    template.checks.flatMap((cid) => {
+  const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] => [
+    ...template.checks.flatMap((cid) => {
       const check = checks.get(cid);
       if (check === undefined || (artifactCheck(check) && missingItemArtifact(id))) return [];
       const list = check.applies === 'run' ? (runOutcomes.get(cid)?.own.get(id) ?? []) : (itemOutcomes.get(cid)?.get(id) ?? []);
       return list.map((outcome) => ({ outcome, check: cid, judges: check.judges }));
-    });
+    }),
+    ...(input.admission?.requirement===template.key ? (input.admission.outcomes.get(id)??[]).map(outcome=>({outcome,check:ADMISSION_CHECK,judges:'artifact_under_verification' as const})) : []),
+  ];
 
   // Pointers of check outcomes into the submission, for the errors (default subjects only).
   const submissionPointer = (id: string, check: CheckEntry, pointer: string | undefined): string | undefined => {
@@ -596,7 +605,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const raw = staticTerminal({
         producer: t.accepted_producer,
         hasProducer,
-        checks: t.checks.filter((id) => checks.has(id)).length,
+        checks: t.checks.filter((id) => checks.has(id)).length+(outcomes.some(o=>o.check===ADMISSION_CHECK)?1:0),
         outcomes,
         // A missing item artifact is a coverage gap even when its requirement accepts only facts. Pure target
         // checks keep their existing handling rules; production evaluation has no submitted artifact to omit.
@@ -665,7 +674,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         errors.push({
           code: r.outcome.outcome.code ?? 'check_error',
           message: r.outcome.outcome.statement,
-          fix: fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
+          fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,

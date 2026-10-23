@@ -1,3 +1,4 @@
+import type { ContributionLayer } from '../knowledge/api.ts';
 // The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
 // and delegation to RunsService for the rest. Every answer is validated against the tool's output schema before it is sent;
 // one that does not conform is an internal error and never reaches the caller (D05). isError is true only when the answer is
@@ -430,6 +431,15 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     if (!(error instanceof ReferenceSyntaxError)) throw error;
     return { answer: errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]) };
   }
+  if(parsed.scheme==='rec'){
+    const layer=(deps.knowledge as typeof deps.knowledge&{layers?:{contributions:ContributionLayer}}).layers?.contributions;
+    const view=await layer?.readView(parsed.record,call.principal);
+    if(view?.status==='credential_unreadable'){
+      if(cursor!==null){const problem=pageCursorProblem(reference,cursor);if(problem!==null)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/cursor',problem,CURSOR_FIX)])};}
+      // A dynamic access marker is not a rewritten record. Never send a redacted body under the original digest.
+      return {answer:{call_result:'ok',errors:[],content:{reference,read_tier:'retain_only',readable:false,sha256:parsed.record,note:view.note,structure:{status:view.status,record:view.record}}}};
+    }
+  }
   // A withheld source (retain_only) comes back from the reader with null bytes; refs answers it with the note and without
   // evaluating the selector, so absent and withheld follow refs' one rule.
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
@@ -439,7 +449,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     parsers: deps.parsers,
     sources,
     trees: deps.knowledge.treeReader(),
-    records: recordReaderFor(deps.records, deps.runs, call.principal, note),
+    records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
   });
