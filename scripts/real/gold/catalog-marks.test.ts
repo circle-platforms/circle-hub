@@ -39,7 +39,7 @@ test('a signature or an optional-argument assignment that matches proves the lin
 test('NFKC, case folding and whitespace folding apply without cutting or inventing arguments', () => {
   const catalog = readCatalog(tree);
   assert.equal(judgeCommand(catalog, 'ＷＩＤＧＥＴ　ＰＯＲＴ ２１').code, 'core.catalog.param_out_of_range');
-  assert.ok(quoteFromCase('ＷＩＤＧＥＴ　ＰＯＲＴ ２１', ['执行 widget   port 21。']));
+  assert.ok(quoteFromCase('ＷＩＤＧＥＴ　ＰＯＲＴ ２１', ['widget   port 21']));
   assert.ok(!quoteFromCase('widget port 2', ['widget port 21']));
   assert.ok(!quoteFromCase('widget port', ['widget port 21']));
   assert.ok(!quoteFromCase('widget port 21 extra', ['widget port 21']));
@@ -270,4 +270,12 @@ test('fallback cases without citations do not block a run and position selectors
   shown.latest.result.partitions.delivered=[{item:'fallback',requirements:[{requirement:'catalog',layers:[{layer:'static',terminal:'violation',attribution:'author_input'}],claims:[hubMark()]}]}];
   const compared=compareCatalogMarks({treeXml:tree,source:own,submission:submitted,run:shown});
   assert.equal(compared.requests.length,0); assert.equal(compared.supported.length,1);
+});
+
+test('partial argument citations request a declared boundary rule rather than sharing the checked cut algorithm', async () => {
+  const {compareCatalogMarks}=await import('./catalog-marks.ts');
+  const own=structuredClone(source); own.root.children[0].data.text='widget port 21,22';
+  const report=compareCatalogMarks({treeXml:tree,source:own,submission,run:run()});
+  assert.ok(report.requests.some(r=>r.input==='table' && r.pointer==='/match/boundary' && r.next_action));
+  assert.equal(report.expected.length,0); assert.equal(report.extra.length,0);
 });

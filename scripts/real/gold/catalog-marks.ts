@@ -122,17 +122,8 @@ export function readCatalog(xml: string, argumentTypes: readonly DeclaredArgumen
 
 /** Case quotation uses the table's matching form and cannot add or cut off command arguments. */
 export function quoteFromCase(command: string, lines: readonly string[]): boolean {
-  const phrase = fold(command); if (!phrase) return false;
-  for (const raw of lines) {
-    const line = fold(raw);
-    for (let at = line.indexOf(phrase); at >= 0; at = line.indexOf(phrase, at + 1)) {
-      const before = line.slice(0, at), after = line.slice(at + phrase.length);
-      if (/[a-z0-9_]$|[a-z0-9_"'] $/.test(before)) continue;
-      if (/^[a-z0-9_]|^ [a-z0-9_"']|^[.\-/:][a-z0-9_]/.test(after)) continue;
-      return true;
-    }
-  }
-  return false;
+  const phrase = fold(command);
+  return phrase !== '' && lines.some(line => fold(line) === phrase);
 }
 
 function tokenize(line: string): string[] | null {
@@ -296,6 +287,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
     if (needsEvidence) report.requests.push(request(at, '有命令引文的运行条目与原件位置的唯一对应', '请集成者重导出 run show 中本条目的 location 位置选择器后重跑，不能靠重复编号猜测'));
     return null;
   };
+  const boundaryGaps = new Set<string>();
   const phrases = new Map<string, string[]>(), blocked = new Set<string>();
   const submitted = object(input.submission) ? input.submission : {};
   array(submitted.items).forEach((entry, i) => {
@@ -312,7 +304,13 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         if (!object(value) || typeof value.command !== 'string') { report.requests.push(request(location, '模型原样引用的完整命令行', '按本位置补原始提交，不从 Hub 的标记反推命令行')); return; }
         if (typeof value.present === 'boolean') return; // These are model membership statements, not cited lines.
         if (value.present !== undefined) { report.requests.push(request({ ...location, pointer: location.pointer + '/present' }, '该命令是原样引用还是存在性陈述', '补取原始布尔值或确认未声明 present 后重跑')); return; }
-        if (!quoteFromCase(value.command, target.lines)) { report.summary.not_quoted++; return; }
+        if (!quoteFromCase(value.command, target.lines)) {
+          if (fold(value.command) && target.lines.some(line => fold(line).includes(fold(value.command as string)))) {
+            boundaryGaps.add(entry.item as string);
+            report.requests.push({ ...request({ input: 'table', pointer: '/match/boundary' }, '子串引文的完整词与参数边界规则', '请集成者在锁定版本的表或 README 声明边界规则与正反样例后重跑；也可重新提交完整命令行引文，不能复制被核实现的切分算法'), related: [location, target.at] });
+          } else report.summary.not_quoted++;
+          return;
+        }
         owned.push({ command: value.command, at: location });
       });
     });
@@ -335,7 +333,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
   for (const [partition, values] of Object.entries(object(result.partitions) ? result.partitions : {})) array(values).forEach((value, i) => {
     if (!object(value) || typeof value.item !== 'string') return;
     const target = identify(value.item, { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/item` });
-    if (!target) return;
+    if (!target || boundaryGaps.has(value.item)) return;
     array(value.requirements).forEach((requirement, j) => {
       if (!object(requirement) || requirement.requirement !== 'catalog') return;
       const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === 'static');
