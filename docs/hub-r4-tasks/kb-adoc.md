@@ -89,3 +89,5 @@ K1 还在改，这一件先做和 K1 的文档模型无关的部分。
 5. **整组失败照旧**：任一族展开失败，整组失败，保留旧根（第 7 条）。测试：只让一族失败，旧根不动。
 
 可以改的路径不变；要动 `hub/**`、`contracts/**` 的地方先回报。`param_sources` 由 apv-deployment-conventions 第一步加，这一件只读它。
+
+第 44 项注：这一件照现在的样子合并（第二步和决定 35 的几条，fb17a2f4 到 e570fc87 已经做完）。接线挪到 apv-deployment-conventions 的 APV 那一步：`product.json` 接上 adoc 生产器的槽，每个名称族声明一个变量 `APV_ADOC_ATTRIBUTES_<族名的大写>`，`params.attributes.<族名>` 写引用；`families.ts` 的说明、`families.test.ts` 92 行一带和 README 不再提 `param_sources`，属性集的来历由 Hub 组成记录的 `variables` 写。真实同步时每族的变量都要设置，第 4 条“没配属性集”的情形只在试运行和样例里出现。

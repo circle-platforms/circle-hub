@@ -117,3 +117,11 @@
 7. 重新导入那一半写成服务端测试，照页面。另外做：`key init` 遇到非空的 `vault/` 就拒绝，并给出把它移开的选项。
 8. 真实服务上的切换失败回滚和重启恢复，由集成者放在下一次部署时演练。
 9. 冒烟改为核对命令输出（连接器事件）和服务日志，照页面。
+
+## 第 44 项注：hub-variables 第一步合并以后的做法
+
+这一件照现在的写，到时由 hub-variables 第 3 条改：
+
+- 第 1 条的 `secret import` 改成写到名字：`--key <键名>=<密钥名>`、`--basic <用户键>:<密码键>=<密钥名>`，加 `--digest <密钥名>=sha512_base64`、`--short <密钥名>` 和必填的 `--reason`；“一个键写进两个资源”改成“两个资源引用同一个密钥”；`--basic` 的核对改成核引用这个名字的各凭据项。
+- 第 3 条的恢复步骤里，`secret import` 照到时的写法；导入之前 `secret list` 写“登记了第 n 版，密钥库里没有它的条目”。
+- “集成者之后跑”第 1 条：hub-variables 第一步部署以前照现在的命令；部署以后先 `resource update <资源> --credential <凭据项>=<名字>` 迁移原值，以后再导入就写进 `PORTAL_USERNAME`、`PORTAL_PASSWORD`（`--digest PORTAL_PASSWORD=sha512_base64`）、`SVN_AUTHORIZATION` 这些名字。
