@@ -1,0 +1,23 @@
+{
+  "model": "jev-scripted-10.6.0",
+  "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "items": [
+    {
+      "id": "p_bbbbbbbbbbbbbbbb",
+      "code": "placement_proposal",
+      "text": "归位提议：放到 /manual。归类判断：Jev@jev-scripted-10.6.0，p=1.00，只影响位置（阈值 0.9，校准样例 80 个）",
+      "data": {
+        "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "path": "/manual",
+        "source": {
+          "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/source@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "quote": "synthetic manual passage"
+        }
+      },
+      "supporting_judgment": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "judgments": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ]
+    }
+  ]
+}

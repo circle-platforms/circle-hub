@@ -12,7 +12,7 @@ import { StartRunInput } from '../../../contracts/src/tools.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { readPackDirectory, validatePack, runPublishCheck, refusalsOf } from '../../../hub/runs/api.ts';
 import { stagePack, manifestProblems } from '../case-review/packaging.ts';
-import { slots } from './pack-files.ts';
+import { slots, VERSION } from './pack-files.ts';
 import project from './functions/project.ts';
 
 const directory=fileURLToPath(new URL('./',import.meta.url));
@@ -66,5 +66,5 @@ test('admission codes have one core registry and no pack namespaced duplicate', 
   const admission=registry.codes.filter((entry:{code:string})=>entry.code.startsWith('core.contribution.'));
   assert.equal(admission.length,10);for(const entry of admission){assert.equal(entry.interpreter,'contribution');assert.ok(entry.when&&entry.fix);}
   assert.ok(!readdirSync(new URL('./tables/',import.meta.url)).includes('codes.json'));
-  assert.equal(JSON.parse(readFileSync(new URL('./pack.json',import.meta.url),'utf8')).version,'1.0.1');
+  assert.equal(JSON.parse(readFileSync(new URL('./pack.json',import.meta.url),'utf8')).version,VERSION);
 });
