@@ -140,6 +140,8 @@ export interface RunDetail {
   submissions: RunSubmissionView[];
   /** The latest validation result (an accepted submission, or the result of a production run), with its record digest. */
   latest: { record: string; result: ValidationResult } | null;
+  /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
+  production: { record: string; result: ValidationResult } | null;
 }
 
 export interface RunsService {

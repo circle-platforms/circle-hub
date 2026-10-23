@@ -793,7 +793,8 @@ export class FakeRuns implements RunsService {
     const scripted = this.script.take('getRun');
     if (scripted !== undefined) return scripted.value as RunDetail | null;
     const stored = await this.#visible(user, run);
-    return stored === null ? null : { run: stored.record, submissions: [...stored.submissions], latest: stored.latest };
+    return stored === null ? null : { run: stored.record, submissions: [...stored.submissions], latest: stored.latest,
+      production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecord>> {

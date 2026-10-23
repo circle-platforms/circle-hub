@@ -233,7 +233,8 @@ links are fixed paths with encoded query parameters).
 
 - **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
   newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
-  the page empty. `/console/results/<run>` reads `getRun`'s latest result, shows whole-result partition counts via
+  the page empty. `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
+  record digest. Later accepted commentary cannot replace its record, counts or claims. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
   static terminal and claims). `terminal` uses the generated static-terminal vocabulary; `offset` pages 500 filtered
   items at a time. Counts are computed before filtering or paging. Bookkeeping delivery is not an overall pass;

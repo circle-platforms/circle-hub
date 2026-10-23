@@ -1,4 +1,4 @@
-// Read-only production results derived solely from the latest stored validation result.
+// Read-only production results computed at start_run, separate from later model commentary.
 import { STATIC_TERMINAL, isStaticTerminal, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
@@ -34,8 +34,8 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
     return { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">筛选终态或分页位置不对</p>`) };
   }
   const authority = html`<p>${link(`/console/runs/${runId}`, '查看运行（权威视图）')}</p>`;
-  if (detail.latest === null) return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}<p class="empty">还没有校验结果</p>`) };
-  const result = detail.latest.result;
+  if (detail.production === null) return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}<p class="empty">还没有校验结果</p>`) };
+  const result = detail.production.result;
   const items = PARTITION.flatMap((p) => result.partitions[p]);
   const filtered = terminal === undefined ? items : items.filter((item) => item.requirements.some((r) => r.layers.some((l) => l.layer === 'static' && l.terminal === terminal)));
   const offset = Number(rawOffset);
@@ -52,7 +52,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   const nav = html`<p>${offset > 0 ? link(`/console/results/${runId}`, '上一页', { terminal, offset: Math.max(0, offset - 500) }) : ''} ${offset + 500 < filtered.length ? link(`/console/results/${runId}`, '下一页', { terminal, offset: offset + 500 }) : ''}</p>`;
   return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}
 <p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
-${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['校验结果记录', code(detail.latest.record)]])}
+${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['校验结果记录', code(detail.production.record)]])}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(claimBlock))}
 ${filter}<p>筛选后 ${filtered.length} 个；本页 ${Math.min(offset + 1, filtered.length)}–${Math.min(offset + 500, filtered.length)}</p>
 ${table(['编号', '名称', '摘要', '要求项的静态层终态与主张'], rows, '没有条目')}${nav}`) };

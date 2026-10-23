@@ -37,6 +37,17 @@ async function start(user: TestUser, pack = 'facts', count = 3) {
   return id;
 }
 
+test('result page keeps the production record and counts after accepted model commentary',async()=>{
+  const user=await server.createUser('生产记录');const id=await start(user);const cookie=await login(user);
+  const stored=server.fakes.runs.runs.get(id)!;const original=stored.production!;
+  const response=await server.fakes.runs.submitResult(user.principal,{run:id,model:'synthetic-commentary',items:stored.record.items.map((item,i)=>i===0?{item:item.id,handling:'skipped',reason:'合成跳过'}:{item:item.id,handling:'handled',slots:{findings:[{text:'模型评论独立标记',code:'literal_issue'}]}})},{traceId:'2'.repeat(32),sessionId:null});
+  assert.equal(response.acceptance,'accepted');assert.notEqual(stored.latest!.record,original.record);
+  const result=await send(`/console/results/${id}`,cookie);
+  assert.match(result.body,new RegExp(original.record));
+  assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions)));
+  assert.ok(!result.body.includes(stored.latest!.record));assert.ok(!result.body.includes('模型评论独立标记'));
+});
+
 test('production visibility, neutral refusals, admin and list filters', async () => {
   const a = await server.createUser('甲'); const b = await server.createUser('乙');
   const earlier = await start(a); const own = await start(a); const other = await start(b); const review = await start(a, 'review');
@@ -100,6 +111,7 @@ test('1200 items have three pages, stable whole-result counts, summaries, claims
   assert.doesNotMatch(unknown.body, /<strong>[^<]*通过/);
   assert.equal((await send(`/console/results/${id}?terminal=bogus`, cookie)).status, 400);
   stored.latest = null;
+  stored.production = null;
   assert.match((await send(`/console/results/${id}`, cookie)).body, /还没有校验结果/);
 });
 
