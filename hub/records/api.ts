@@ -17,6 +17,7 @@ import type { HubConfig } from '../config/index.ts';
 export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
+export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';
 export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';

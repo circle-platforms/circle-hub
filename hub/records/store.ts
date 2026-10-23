@@ -1,6 +1,9 @@
 // Append-only record store over PostgreSQL. Bodies are stored as their RFC 8785 canonical text, so every value canonicalize
 // accepts (JSON data with well-formed strings, U+0000 included, which PostgreSQL text and jsonb reject raw) is kept exactly;
 // digests are re-verified on read. Input canonicalize refuses (a lone surrogate) is kept as an object instead (README).
+import { noteNoncanonical } from './integrity-notes.ts';
+import { parseStrictJson } from './strict-json.ts';
+export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 import { SchemaId } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
@@ -205,8 +208,17 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
   const body = String(row.body);
+  let parsedFallback: unknown;
+  let noncanonical = false;
   if (sha256Hex(envelopeCanonical(meta, body)) !== row.digest) {
-    throw new IntegrityError('记录内容与它的摘要不符（存储被改动过）', { detail: { record: row.id, digest: row.digest } });
+    try {
+      parsedFallback = parseStrictJson(body);
+      const canonicalBody = canonicalize(parsedFallback);
+      if (sha256Hex(envelopeCanonical(meta, canonicalBody)) !== row.digest) throw new Error('digest mismatch');
+      noncanonical = true;
+    } catch {
+      throw new IntegrityError('记录内容与它的摘要不符（存储被改动过或正文不能规范化）', { detail: { record: row.id, digest: row.digest } });
+    }
   }
   const kind = RecordKindSchema.safeParse(meta.kind);
   if (!kind.success || !isProvenanceType(meta.provenance)) {
@@ -218,10 +230,11 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   }
   let parsed: B;
   try {
-    parsed = JSON.parse(body) as B;
+    parsed = noncanonical ? parsedFallback as B : JSON.parse(body) as B;
   } catch (error) {
     throw new IntegrityError('记录正文不是 JSON', { detail: { record: row.id }, cause: error });
   }
+  if (noncanonical) noteNoncanonical(String(row.id), String(row.digest));
   return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed };
 }
 

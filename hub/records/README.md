@@ -509,3 +509,9 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
 Migration 3 adds append-only `record_keys` with primary key `(kind,key)` and a foreign key to `records`; the runtime receives SELECT and INSERT only. Migrations 1 and 2 are unchanged. Tests: `node --test --test-concurrency=1 hub/records/*.test.ts`.
 
 `createRecordStore(database, StoreOptions)` exposes the shared writer for a component that already owns a database transaction (for example leases). Its `put` joins the same transaction; it does not open an independent commit. Prefer passing the deployment's configured RecordStore when available so its record limits and instrumentation remain authoritative.
+
+## Noncanonical stored representations
+
+The digest is defined over canonical content. Reads first verify the stored body text without reparsing for the hash. If that fast check fails, they strictly parse JSON (rejecting duplicate member names), canonicalize it, and recompute the same canonical envelope digest. Only an exact digest match is accepted. Different content, malformed JSON or noncanonicalizable values still raise IntegrityError. Historical body bytes, digests and migrations are never rewritten.
+
+Every accepted fallback is disclosed through `recordIntegrityNotes()` in the public API: the process-local total read count and per-record id/digest/read counts with the explanation “正文不是规范写法、内容与摘要一致”. Snapshots are detached, contain no body text, retain up to 1000 distinct examples and explicitly mark truncation; the total count continues beyond that cap. This is maintenance telemetry, not a new authorization or a rewritten historical fact. An operator examining old data queries it in the same process that performed the reads. Fast-path reads do not increment it.
