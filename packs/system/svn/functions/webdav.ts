@@ -1,5 +1,5 @@
 // Pure SVN HTTP v2 planners and projections; all network and XML parsing belong to the Hub.
-type Element = { name: string; children: (Element | string)[] };
+type Element = { name: string; attributes?: Record<string, string>; children: (Element | string)[] };
 type Response = { ok?: boolean; model?: { root?: Element } };
 type Input = { round?: number; external: { key: string }; responses?: Record<string, Response> };
 const REVISION = /^[0-9]{1,200}$/;
@@ -18,12 +18,26 @@ function fileKey(key: string): { rev: string; path: string } | null {
   const path = pathKey(key.slice(at + 1));
   return at > 0 && REVISION.test(rev) && path !== null ? { rev, path } : null;
 }
-const local = (e: Element) => e.name.slice(e.name.indexOf(':') + 1);
+// Resolve bindings at each element; declarations apply to that element and its descendants only.
+// Keep non-DAV elements unnamed so a familiar local name in another namespace is never a DAV property.
+function davTree(element: Element, inherited: ReadonlyMap<string, string> = new Map()): Element {
+  const bindings = new Map(inherited);
+  for (const [name, uri] of Object.entries(element.attributes ?? {})) {
+    if (name === 'xmlns') bindings.set('', uri);
+    else if (name.startsWith('xmlns:')) bindings.set(name.slice(6), uri);
+  }
+  const parts = element.name.split(':');
+  const prefix = parts.length === 1 ? '' : parts[0];
+  const name = parts.length <= 2 && bindings.get(prefix) === 'DAV:' ? parts.at(-1)! : '';
+  return { name, children: element.children.map((child) => typeof child === 'string' ? child : davTree(child, bindings)) };
+}
+const local = (e: Element) => e.name;
 const children = (e: Element, name: string): Element[] => e.children.filter((c): c is Element => typeof c !== 'string' && local(c) === name);
 function text(e: Element): string { return e.children.map((c) => typeof c === 'string' ? c : text(c)).join('').trim(); }
 function value(e: Element, name: string): string | null { const found = children(e, name); return found.length === 1 ? text(found[0]) : null; }
 function rows(response: Response | undefined): Element[] {
-  const root = response?.ok === true ? response.model?.root : undefined;
+  const parsed = response?.ok === true ? response.model?.root : undefined;
+  const root = parsed && davTree(parsed);
   return root && local(root) === 'multistatus' ? children(root, 'response') : [];
 }
 function properties(row: Element): Element | null {

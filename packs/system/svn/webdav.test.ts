@@ -56,6 +56,32 @@ test('XML namespaces, response attributes, percent encoding and directory slashe
   assert.deepEqual(directoryProject(input(unprefixed)), directoryProject(input(listing())));
 });
 
+test('unrelated XML namespaces cannot supply DAV properties or revision identity', () => {
+  const wrongNamespace = (xml: string) => xml.replaceAll('DAV:', 'urn:synthetic:unrelated');
+  assert.ok('error' in (directoryProject({
+    ...input(wrongNamespace(listing())),
+    responses: { revision: response(wrongNamespace(multi(row(`${prefix}/${dir}/`)))), list: response(wrongNamespace(listing())) },
+  }) as object));
+  for (const property of ['version-name', 'resourcetype', 'collection', 'getcontentlength']) {
+    const rebound = listing().replaceAll(`<D:${property}`, `<D:${property} xmlns:D="urn:synthetic:unrelated"`);
+    assert.ok('error' in (directoryProject(input(rebound)) as object), property);
+  }
+});
+
+test('namespace bindings are inherited and scoped, including default namespace resets', () => {
+  const inherited = listing().replaceAll(' xmlns:D="DAV:"', '').replace('<D:multistatus>', '<D:multistatus xmlns:D="DAV:">');
+  assert.deepEqual(directoryProject(input(inherited)), directoryProject(input(listing())));
+  const alias = inherited.replaceAll('D:', 'Z:').replace('xmlns:D=', 'xmlns:Z=');
+  assert.deepEqual(directoryProject(input(alias)), directoryProject(input(listing())));
+  const unprefixed = inherited.replaceAll('D:', '').replace('xmlns:D=', 'xmlns=');
+  assert.deepEqual(directoryProject(input(unprefixed)), directoryProject(input(listing())));
+  const reset = unprefixed.replaceAll('<version-name>', '<version-name xmlns="">');
+  assert.ok('error' in (directoryProject(input(reset)) as object));
+  const restored = listing().replace('<D:prop>', '<D:prop xmlns:Z="urn:synthetic:unrelated">')
+    .replace('<D:resourcetype>', '<Z:resourcetype xmlns:Z="DAV:">').replace('</D:resourcetype>', '</Z:resourcetype>');
+  assert.deepEqual(directoryProject(input(restored)), directoryProject(input(listing())));
+});
+
 test('newer member revisions, failed properties and unsafe or ambiguous members fail closed', () => {
   for (const xml of [listing('18'), listing('HEAD'), listing().replace('200 OK', '404 Not Found'), multi(row(base), row('http://192.0.2.1/away', '1', false)), multi(row(base), row(`${base}../away`, '1', false)), multi(row(base), row(`${base}a%2Fb`, '1', false)), multi(row(base), row(`${base}a`, '1', false, 'not-size')), multi(row(base), row(`${base}a`, '1', false), row(`${base}%61`, '1', false)), multi(row(base), row(`${base}folder`, '1', true)), multi()]) {
     assert.ok('error' in (directoryProject(input(xml)) as object), xml);
