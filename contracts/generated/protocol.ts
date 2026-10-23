@@ -5,6 +5,7 @@ export const PROTOCOL_CODES = {
   REFERENCE_UNRESOLVED: { when: '精确值解析不出（T03 整份不受理之一）', fix: '改用能解析的原文，或先调用 resolve_reference' },
   REFERENCE_AMBIGUOUS: { when: '精确值有歧义（T03 整份不受理之一）', fix: '从诊断给出的可能所指里选一个' },
   QUOTE_MISMATCH: { when: '原文与引用对不上（T03 整份不受理之一）', fix: '按原文逐字引用，或先调用 resolve_reference' },
+  SOURCE_UNPARSEABLE: { when: '所有候选解析器均拒收源文件', fix: '上传能按声明格式解析的文件，或换用对应的解析器' },
   SOURCE_UNAVAILABLE: { when: '缺失或无权，对读者一律显示“对你不可用”（D05）', fix: '无；真实原因只在管理员日志里' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },

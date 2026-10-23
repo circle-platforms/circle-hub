@@ -45,8 +45,8 @@ describe('quoteMatches', () => {
     ['full-width digits', '参数超出范围 １-３６００'],
     ['ASCII parentheses', '1-3600(Timeout)'],
     ['a different digit', '超出范围 1-3601'],
-    ['white space added inside a word', '超时 时间'],
-    ['white space removed between words', '设为0时'],
+    ['white space added inside a Latin word', 'Time out'],
+    ['white space removed between Latin words', 'set100'],
     ['a dropped character', '超时间设为'],
     ['an empty quote', ''],
     ['white space only', '  　\t\r\n'],
@@ -303,9 +303,9 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
   });
 
   it('says what the white-space rule is when nothing is found, and refuses half characters', () => {
-    const missing = search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时时间');
+    const missing = search(markdownParser, 'set 10 0\n', 'set 100');
     assert.equal(missing.resolution, 'unresolved');
-    assert.match(missing.diagnostics[0], /原文没有空白的地方引文不能加/);
+    assert.match(missing.diagnostics[0], /东亚宽字符或全角字符/);
     assert.doesNotMatch(missing.diagnostics[0], /空白差异不影响核对/);
     assert.equal(search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时 时间').resolution, 'resolved');
     const half = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'ok 😀 ok' }], '\ude00');
@@ -374,5 +374,18 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
       assert.equal(candidates.length, 200_000, 'values only');
       assert.equal(findQuote(candidates, 'v199999').resolution, 'resolved');
     });
+  });
+});
+
+describe('East Asian quotation whitespace', () => {
+  it('drops a run when either adjacent code point is wide or fullwidth and keeps Latin boundaries', () => {
+    for (const [text, quote] of [['页面\r\n跳转', '页面跳转'], ['中\nA', '中A'], ['A\n中', 'A中'], ['Ａ \n B', 'ＡB'], ['𠀀\nA', '𠀀A'], ['🙂\nA', '🙂A']]) {
+      assert.ok(quoteMatches(text, quote)); assert.ok(locateQuote(text, quote));
+    }
+    for (const [text, quote] of [['set 10 0', 'set 100'], ['a b', 'ab'], ['a + b', 'a+b'], ['α β', 'αβ'], ['ｱ A', 'ｱA']]) assert.equal(quoteMatches(text, quote), false);
+    const source = '前中\r\nA后'; const location = locateQuote(source, '中A')!;
+    assert.equal(sliceUtf8(source, location.from, location.to), '中\r\nA');
+    const failed = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'set 10 0' }], 'set 100');
+    assert.match(failed.diagnostics.join(''), /东亚|全角/);
   });
 });

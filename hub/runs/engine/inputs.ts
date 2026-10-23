@@ -216,9 +216,12 @@ export async function bindInputs(
       const path = Array.isArray(given) ? `/inputs/${slot.slot}/${k}` : `/inputs/${slot.slot}`;
       const read = 'reference' in binding ? await readReference(slot, path, binding.reference) : await readExternal(slot, path, binding.external);
       if (read === null) continue;
-      const parsed = recognize(ctx.parsers, read.bytes, read.mediaType);
+      let refusal: ProtocolError | null = null;
+      const parsed = recognize(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
+        refusal = protocolError('SOURCE_UNPARSEABLE', `${error.parser}：${error.message}`, { path, fix: error.fix });
+      });
       if (parsed === null) {
-        schemaError(path, `源文件不能按媒体类型 ${read.mediaType} 的核心解析器解析`, '上传能按声明格式解析的文件');
+        errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
       out.push({

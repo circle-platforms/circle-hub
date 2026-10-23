@@ -23,7 +23,6 @@ import {
   type QuotationSource,
   type QuotationUnit,
 } from '../parser.ts';
-import { collapseWhitespace } from '../quote.ts';
 import { MAX_SELECTOR_LENGTH, selectorSegment, trySelectorSegments } from '../reference.ts';
 import { countNul, decodeDeclared, removeNul, splitLines } from '../text-decoding.ts';
 
@@ -480,7 +479,8 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Ma
       const raw = removeNul(item.title);
       const attribute = attributeBlock(raw);
       const title = attribute ? attribute.title : raw;
-      const key = collapseWhitespace(title);
+      // Heading keys are stable parser identities; quotation whitespace must not change their grammar.
+      const key = title.replace(/\p{White_Space}+/gu, ' ').replace(/^ | $/g, '');
       const siblings = childKeys[parent].get(key) ?? [];
       const ordinal = siblings.length + 1;
       const index = sections.length;

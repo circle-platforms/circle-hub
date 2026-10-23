@@ -3,7 +3,7 @@
 import { QuoteTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { getAt, joinPointer, selectAll } from '../json.ts';
 import { baseFor, isReferenceUri, quoted, refuteProtocol, support, unknown } from '../outcome.ts';
-import { collapseWhitespace, quoteInCollapsed } from '../text.ts';
+import { collapseWhitespace, quotationForm, quoteInCollapsed } from '../text.ts';
 import { defineInterpreter, pathIssues } from './define.ts';
 
 export const quoteInterpreter = defineInterpreter({
@@ -48,7 +48,7 @@ export const quoteInterpreter = defineInterpreter({
         const data = { quote: text.value, reference: ref };
         let haystack = collapsed.get(ref);
         if (haystack === undefined) {
-          haystack = collapseWhitespace(fragment);
+          haystack = quotationForm(fragment);
           collapsed.set(ref, haystack);
         }
         // Same rule as quoteMatches(fragment, quote), with the fragment side computed once.

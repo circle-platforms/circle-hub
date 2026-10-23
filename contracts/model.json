@@ -3698,6 +3698,11 @@
     "fix": "按原文逐字引用，或先调用 resolve_reference"
    },
    {
+    "code": "SOURCE_UNPARSEABLE",
+    "when": "所有候选解析器均拒收源文件",
+    "fix": "上传能按声明格式解析的文件，或换用对应的解析器"
+   },
+   {
     "code": "SOURCE_UNAVAILABLE",
     "when": "缺失或无权，对读者一律显示“对你不可用”（D05）",
     "fix": "无；真实原因只在管理员日志里"
