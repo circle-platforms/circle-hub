@@ -70,7 +70,7 @@ describe('publishing the traceability pack', { skip }, () => {
     const sample = JSON.parse(await readFile(path, 'utf8')) as { expect: Array<{ code?: string }> };
     sample.expect[0].code = 'traceability.no_such_code';
     await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
-    await signPack(dir, { version: '1.0.6' });
+    await signPack(dir, { version: '1.0.7' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.sample_failed' && p.message.includes('status_conflict')), JSON.stringify(outcome.problems, null, 1));
@@ -79,7 +79,7 @@ describe('publishing the traceability pack', { skip }, () => {
   it('refuses a version without a negative sample of the counts check', async () => {
     const dir = await staged();
     await rm(join(dir, 'samples/negative/count-mismatch.json'));
-    await signPack(dir, { version: '1.0.6' });
+    await signPack(dir, { version: '1.0.7' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.unsampled'), JSON.stringify(outcome.problems, null, 1));
