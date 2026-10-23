@@ -159,8 +159,7 @@
                   }
                 },
                 "required": [
-                  "keys",
-                  "ttl_seconds"
+                  "keys"
                 ],
                 "additionalProperties": false,
                 "description": "acquire (the default): every key free (or taken over from expired/released rows), all or nothing"
@@ -195,6 +194,80 @@
                 ],
                 "additionalProperties": false,
                 "description": "extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "register"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "unregister"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "force_release"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys",
+                  "reason"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "object",

@@ -545,3 +545,28 @@ effective read permissions, not a trusted byte bypass. Unexpected function-read 
 K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
+
+A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
+extend is refused for the whole request before effects, and release still requires the same user and predecessor
+lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
+unbounded; fences, holder identity and lineage remain mandatory.
+
+Lease views freeze `since`, `run`, `until`, `mine`, unfinished `jobs` and authorized `holder` identities, plus registration
+rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_registrations` are retained on the run;
+evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
+read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
+`DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.
+
+Owner `force_release` checks every key, owner/admin authority, active row, nonempty reason and unfinished dispatch job
+before any operation executes. Unfinished jobs refuse with job status/disposition instructions; local release cannot
+stop remote work. The service rechecks owner authorization under the registration lock, increments fences, and records
+the acting user, reason and original holders. Run records preserve released keys and their prior runs; originals remain
+append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
+read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
+later acquire or run-record write fails; their action records remain the source of truth.
+
+The final force-release guard runs under the same database lock used by dispatch reservation insertion. It re-reads
+unfinished jobs while the lock is held; a competing reservation rechecks fences in that transaction before it commits.
+The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
+Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
+older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.

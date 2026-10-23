@@ -11,10 +11,11 @@
 //   "你没有持有这个预订" when the lineage holds nothing.
 // The frozen groups carry the raw manifest, the normalized parameters and the frozen lease view, so the check
 // recomputes everything from them (functions/conclude.ts is the one computation both sides use).
+import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
+import { ownershipPlan, type OwnershipRequest } from './ownership.ts';
 import { isRecord } from './common.ts';
 import {
   acquirePlan,
-  extendPlan,
   factsFields,
   leaseRecord,
   manifestBeds,
@@ -23,7 +24,6 @@ import {
   searchFields,
   type AcquirePlan,
   type Action,
-  type ExtendPlan,
   type FrozenLeases,
   type Normalized,
 } from './conclude.ts';
@@ -33,7 +33,7 @@ interface Slot {
   model: unknown;
 }
 
-type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
+type LeaseRequest = OwnershipRequest | { op?: Extract<LeaseOp,'acquire'>; keys:string[] } | { op:Extract<LeaseOp,'release'>; keys:string[] };
 
 interface Out {
   items: Array<{ id: string; label: string; summary: string; location: { parser: string; selector: string }; fields: Record<string, unknown> }>;
@@ -93,14 +93,16 @@ export default function project(input: unknown): Out | Failure {
       bed: normalized.bed,
       addresses: normalized.addresses,
       booking: normalized.booking,
+      reason: normalized.reason,
+      devices: normalized.devices,
       manifest: slot.model,
-      leases: { now, entries: frozenLeases?.entries ?? [] },
+      leases: { now, entries: frozenLeases?.entries ?? [], registrations: frozenLeases?.registrations ?? [] },
     },
   ];
   const warnings: Array<{ code: string; message: string }> = [];
 
   if (action === 'search') {
-    const fields = searchFields(beds, normalized.need, leases, now);
+    const fields = searchFields(beds, normalized.need, leases, now, frozenLeases);
     return {
       items: fields.map((f) => ({
         id: f.bed,
@@ -114,12 +116,12 @@ export default function project(input: unknown): Out | Failure {
     };
   }
   if (action === 'facts') {
-    const fields = factsFields(beds);
+    const fields = factsFields(beds, frozenLeases);
     return {
       items: fields.map((f) => ({
         id: f.bed,
         label: f.bed,
-        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}${f.installed.length > 0 ? `，装机声明 ${f.installed.length} 项（声明，未核对）` : ''}`,
+        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}${f.installed.length > 0 ? `，装机声明 ${f.installed.length} 项（声明，未核对）` : ''}；${f.occupancy.join('；')}`,
         location: locationOf(slot.model, f.bed),
         fields: { action, ...f },
       })),
@@ -127,20 +129,25 @@ export default function project(input: unknown): Out | Failure {
       warnings,
     };
   }
-  if (action === 'extend' || action === 'release') {
+  if(action==='register'||action==='unregister'||action==='force_release'){
+    const planned=ownershipPlan(beds,normalized,frozenLeases);
+    if(!planned.ok)return failure(planned.failure.code,planned.failure.message,planned.failure.fix);
+    return {items:[{id:planned.fields.bed,label:planned.fields.bed,summary:planned.fields.conclusion,location:locationOf(slot.model,planned.fields.bed),fields:planned.fields}],groups:[{...groups[0],lease_requests:[planned.request]}],warnings,lease_requests:[planned.request]};
+  }
+  if (action === 'release') {
     const booking = normalized.booking as string;
-    const held = action === 'extend' ? extendPlan(frozenLeases, booking, normalized.need.hours) : releasePlan(frozenLeases, booking);
+    const held = releasePlan(frozenLeases, booking);
     if (!held.ok) return failure(held.failure.code, held.failure.message, held.failure.fix);
     const plan = held.plan;
-    const request: LeaseRequest = action === 'extend' ? { op: 'extend', keys: plan.keys, ttl_seconds: (plan as ExtendPlan).ttl_seconds } : { op: 'release', keys: plan.keys };
+    const request: LeaseRequest = {op:'release',keys:plan.keys};
     return {
       items: [
         {
           id: plan.bed ?? 'booking',
-          label: `${action === 'extend' ? '续期' : '释放'}预订 ${booking}`,
+          label: `释放预订 ${booking}`,
           summary: plan.conclusion,
           location: plan.bed !== null ? locationOf(slot.model, plan.bed) : { parser: 'json@1', selector: 'p/' },
-          fields: { action, booking, bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, ...(action === 'extend' ? { ttl_seconds: (plan as ExtendPlan).ttl_seconds, hours: normalized.need.hours } : {}), conclusion: plan.conclusion },
+          fields: { action, booking, bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, conclusion: plan.conclusion },
         },
       ],
       groups: [{ ...groups[0], lease_requests: [request] }],
@@ -159,11 +166,11 @@ export default function project(input: unknown): Out | Failure {
         label: `预订 ${plan.bed}`,
         summary: plan.conclusion,
         location: locationOf(slot.model, plan.bed),
-        fields: { action, bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, ttl_seconds: plan.ttl_seconds, hours: normalized.need.hours, conclusion: plan.conclusion },
+        fields: { action, bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, conclusion: plan.conclusion },
       },
     ],
-    groups: [{ ...groups[0], lease_requests: [{ keys: plan.keys, ttl_seconds: plan.ttl_seconds }] }],
+    groups: [{ ...groups[0], lease_requests: [{ keys: plan.keys }] }],
     warnings,
-    lease_requests: [{ keys: plan.keys, ttl_seconds: plan.ttl_seconds }],
+    lease_requests: [{ keys: plan.keys }],
   };
 }

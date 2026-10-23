@@ -100,7 +100,7 @@
       "type": "boolean"
     },
     "required": {
-      "description": "When true, a commands location that is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing",
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
       "type": "boolean"
     },
     "claims": {

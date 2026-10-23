@@ -400,8 +400,8 @@ describe('ValidationResult', () => {
     rejectsAt(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'not_run' }), [...at, 'reason'], 'not run without reason');
     rejectsAt(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'no_verdict' }), [...at, 'reason'], 'no verdict without reason');
     rejectsAt(ValidationResult, withLayer({ layer: 'static', terminal: 'incomplete' }), [...at, 'reason'], 'incomplete without reason');
-    roundTrips(ValidationResult, withLayer({ layer: 'static', terminal: 'unchecked', reason: 'no_check', attribution: 'data_gap' }));
-    roundTrips(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'not_run', reason: 'no_check' }));
+    roundTrips(ValidationResult, withLayer({ layer: 'static', terminal: 'unchecked', reason: 'no_check', attribution: 'data_gap', missing:'合成检查',exit:{action:'reevaluate',audience:{hub:true},due:'2026-11-01T12:00:00.000Z'} }));
+    roundTrips(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'not_run', reason: 'no_check',missing:'合成观察',exit:{action:'observe',audience:{hub:true},due:'2026-11-01T12:00:00.000Z'} }));
   });
   test('a requirement lists each layer once and names why it is unsatisfied', () => {
     const at = ['partitions', 'delivered', 0, 'requirements', 0];

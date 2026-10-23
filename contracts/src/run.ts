@@ -6,13 +6,14 @@ import {
   DoneRuleSchema,
   ExecutionHostSchema,
   LayerSchema,
+  LeaseOpSchema,
   PackKindSchema,
   SourceRoleSchema,
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild } from './pack.ts';
+import { Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -54,6 +55,7 @@ export const RequirementSummary = z.strictObject({
   layers: z.array(LayerSchema).describe('the judgment layers this requirement is judged on; other layers are not applicable'),
   done_rule: DoneRuleSchema,
   accepted_producer: AcceptedProducerSchema,
+  observation:Versioned.optional().describe('The declared P07 observation contract for the dynamic layer'),
   repair_rounds: z.number().int().nonnegative(),
 });
 export type RequirementSummary = z.infer<typeof RequirementSummary>;
@@ -112,6 +114,7 @@ export const RunSummary = z.strictObject({
   predecessor: RunId.optional(),
   session: z.string().optional().describe('client session id observed from the request header'),
   started_at: IsoTime,
+  submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
@@ -122,6 +125,12 @@ const CONFIGURED = TriggerSchema.extract(['event_or_schedule', 'standing_obligat
  * Body of a `run` record (run@1): the summary plus what only the Hub needs (W06 F[0]-F[10], W09 F[1], D05 R[4]-R[5]).
  * Phase is derived from records, never stored. A Hub-side run (a standing obligation the Hub executes) has no runner.
  */
+// Earlier run@1 snapshots contain only key/until/mine. They remain immutable and readable.
+const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs:true}).superRefine((row,ctx)=>{
+  const known=[row.since,row.run,row.jobs].filter(value=>value!==undefined).length;
+  if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
+});
+
 export const RunRecord = RunSummary.extend({
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
@@ -140,20 +149,29 @@ export const RunRecord = RunSummary.extend({
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),
   leases: z
     .array(z.union([
-      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
-      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
+      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: LeaseOpSchema.extract(['register','unregister']), prefix:z.string().min(1), owner:z.string().min(1) }),
+      z.strictObject({ op: LeaseOpSchema.extract(['force_release']), keys:z.array(z.string().min(1)).min(1), reason:z.string().min(1), until:IsoTime.nullable(), previous_holders:z.array(z.strictObject({key:z.string().min(1),run:RunId})) }),
       z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
     ]))
     .optional()
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
+  lease_registrations: z.array(LeaseRegistrationRow).optional(),
   lease_context: z
-    .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
+    .array(PersistedLeaseContextRow)
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
   if (r.host === 'hub') {
-    if (r.runner !== undefined) ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run the Hub executes has no runner' });
-    if (r.trigger !== 'standing_obligation') ctx.addIssue({ code: 'custom', path: ['trigger'], message: 'the Hub executes only standing obligations (W06 F[1])' });
+    if(r.trigger==='standing_obligation'){
+      if(r.runner!==undefined)ctx.addIssue({code:'custom',path:['runner'],message:'a standing obligation keeps its legacy configurer identity'});
+    }else{
+      if(r.trigger!=='event_or_schedule')ctx.addIssue({code:'custom',path:['trigger'],message:'an automatic successor is event triggered'});
+      if(r.runner===undefined)ctx.addIssue({code:'custom',path:['runner'],message:'an automatic successor preserves the original named runner'});
+      if(r.predecessor===undefined)ctx.addIssue({code:'custom',path:['predecessor'],message:'an automatic successor names the original run'});
+      if(r.requirements.some(requirement=>requirement.accepted_producer!=='fact'))ctx.addIssue({code:'custom',path:['requirements'],message:'the Hub succeeds only fact-producing runs'});
+    }
   } else if (r.runner === undefined) {
     ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run executed by a client or a bot names its runner' });
   }
@@ -165,4 +183,6 @@ export const RunRecord = RunSummary.extend({
     ctx.addIssue({ code: 'custom', path: ['client_key'], message: 'client_key, request_digest and client_key_expires_at go together' });
   }
 });
+/** Strict new-write shape; the base RunRecord remains a historical reader. */
+export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;

@@ -53,7 +53,7 @@ export const RESOURCE_USAGE =
 export const SECRET_USAGE = 'secret import --env-file <文件> --key <键名>=<资源>/<凭据项>… [--basic <用户键>:<密码键>=<资源>/<凭据项>] [--dry-run] | set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
-export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由>';
+export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
@@ -1134,8 +1134,40 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
     if (viewer.role !== 'admin') throw new CliError('只有管理员能列出租约');
     const leases = await session.leases();
     const view = await leases.view(values.prefix ?? '', true);
-    if (view.entries.length === 0) session.out('没有未到期的租约');
-    for (const entry of view.entries) session.out([entry.key, entry.run, entry.until].join('\t'));
+    const registrations=await leases.registrations(values.prefix??'');
+    const names=await session.names();
+    const name=(id:string|undefined)=>id===undefined?'—':(names.get(id)??id+'（用户资料缺失，请管理员恢复）');
+    if (view.entries.length === 0 && registrations.length===0) session.out('没有未到期的租约');
+    for(const row of view.entries){const owner=registrations.find(reg=>row.key.startsWith(reg.prefix));
+      session.out([row.key,name(owner?.owner),name(row.user),row.run,row.since,row.until??'无到期时刻'].join('\t'));
+    }
+    for(const reg of registrations)if(!view.entries.some(row=>row.key.startsWith(reg.prefix)))session.out([reg.prefix,name(reg.owner),'空闲','—','—','—'].join('\t'));
+    return 0;
+  }
+  if(sub==='register'||sub==='unregister'){
+    const {positionals,values}=parse(rest,{owner:{type:'string'},reason:{type:'string'},as:{type:'string'}},1);
+    const prefix=positionals[0]??'';
+    if(!values.reason?.trim())throw new UsageError('登记或注销须写 --reason <理由>');
+    if(sub==='register'&&!values.owner)throw new UsageError('登记须写 --owner <用户>');
+    const viewer=await session.viewer(values.as);
+    if(viewer.role!=='admin')throw new CliError('只有管理员能管理登记');
+    const leases=await session.leases();
+    if(sub==='unregister'){
+      const outcome=await leases.unregister({prefix,by:viewer.id,admin:true,reason:values.reason});
+      if(!outcome.ok)throw new CliError(outcome.message,'先强制释放，或等它释放；再核对登记');
+    }else{
+      const owner=await session.user(values.owner!);
+      if(owner.disabled)throw new CliError('不能登记给已停用的用户','先核对用户状态');
+      const hub=await session.hub();const prefixes:string[]=[];
+      for(const pack of await hub.registry.listPacks())if(pack.kind==='workflow')for(const version of pack.versions){
+        const loaded=await hub.workflows.byDigest(version.digest);if(loaded?.workflow.leases)prefixes.push(loaded.workflow.leases.prefix);
+      }
+      const declared=prefixes.filter(root=>prefix.startsWith(root)&&prefix!==root).sort((a,b)=>b.length-a.length)[0];
+      if(!declared)throw new CliError('没有工作流声明这个租约前缀','先发布声明对应租约前缀的工作流，再登记其下的键前缀');
+      const outcome=await leases.register({prefix,declaredPrefix:declared,owner:owner.id,by:viewer.id,admin:true,reason:values.reason});
+      if(!outcome.ok)throw new CliError(outcome.message,'核对登记前缀，不要使已有登记互相包含');
+    }
+    session.out(sub==='register'?'已登记 '+prefix:'已注销 '+prefix);
     return 0;
   }
   if (sub === 'release') {
@@ -1149,7 +1181,14 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
       throw new CliError('没有租约行');
     }
     const leases = await session.leases();
-    const outcome = await leases.forceRelease({ keys: [key], by: viewer.id, reason: values.reason.trim() });
+    const dispatch = (await session.hub()).dispatch;
+    if (!dispatch) throw new CliError('缺少未终态作业事实', '请管理员配置只读作业端口后重试');
+    const jobs = await dispatch.activeLeaseJobs([key]);
+    if (jobs.length) throw new CliError(`作业 ${jobs.map(job=>job.job).join('、')} 还没有终态，本地释放停不了网关上的作业`, '等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
+    const outcome = await leases.forceRelease({ keys: [key], by: viewer.id, reason: values.reason, guard:async()=>{
+      const active=await dispatch.activeLeaseJobs([key]);
+      if(active.length)throw new CliError('作业 '+active.map(job=>job.job).join('、')+' 还没有终态，本地释放停不了网关上的作业','等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
+    } });
     if (!outcome.ok) throw new CliError(outcome.code === 'LEASE_NO_ROW' ? '没有租约行' : `没有释放：${outcome.message}`, outcome.code === 'LEASE_NO_ROW' ? '键上没有未到期的租约' : '稍后再试');
     session.out(`已释放 ${key}（理由：${values.reason.trim()}）`);
     return 0;

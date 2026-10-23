@@ -103,6 +103,38 @@
             "type": "string",
             "minLength": 1
           },
+          "limits": {
+            "description": "Per-check work limits within sandbox capacity; omission inherits service defaults, never an effect budget",
+            "type": "object",
+            "properties": {
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 120000
+              },
+              "memoryMb": {
+                "type": "integer",
+                "minimum": 32,
+                "maximum": 4096
+              },
+              "outputBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 67108864
+              },
+              "logBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "inputBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 134217728
+              }
+            },
+            "additionalProperties": false
+          },
           "reads": {
             "description": "bound sources of these roles are read into sources for this check",
             "type": "object",

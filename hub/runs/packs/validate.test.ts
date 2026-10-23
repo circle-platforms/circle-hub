@@ -446,3 +446,8 @@ test('core emitter usage follows the configured contribution requirement rather 
   const catalog=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.catalog.not_member',action:'repair',max_rounds:2});}));
   assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
 });
+
+test('reason selectors remain typed causes rather than installed-interpreter codes',async()=>{
+  const result=await accepted(requirements(value=>{value.requirements[0].error_handling.unshift({reason:'timeout',action:'repair',max_rounds:2});}));
+  assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+});

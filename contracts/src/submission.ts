@@ -1,5 +1,6 @@
 // Submission (W07): what the client hands back. Stored exactly as received; the Hub computes every terminal state itself.
 import { z } from 'zod';
+import {MissingFact,UnknownExit} from './validation.ts';
 import { TaskOutputValue } from './contributions.ts';
 import type { ItemHandling, Nature } from '../generated/vocabulary.ts';
 import { ItemId, RunId } from './common.ts';
@@ -24,6 +25,8 @@ export const HandledItem = z
 export const SkippedItem = z.strictObject({
   item: ItemId,
   handling: z.literal('skipped' satisfies ItemHandling),
+  missing:MissingFact.optional().describe('Explicit remaining work; otherwise the Hub derives the unfinished item from its frozen projection'),
+  exit:UnknownExit.optional().describe('Optional fully bound intent; the Hub binds the actual request and named recipient'),
   reason,
 });
 

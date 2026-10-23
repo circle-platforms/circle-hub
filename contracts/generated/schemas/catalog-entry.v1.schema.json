@@ -40,9 +40,16 @@
                     "ipv6",
                     "mask",
                     "port",
-                    "keyword"
+                    "keyword",
+                    "hostname",
+                    "ip_or_hostname"
                   ],
-                  "description": "string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword"
+                  "description": "string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract"
+                },
+                "address_role": {
+                  "description": "Role identifier from the bound published runtime/bed contract, not an inferred core role",
+                  "type": "string",
+                  "pattern": "\\S"
                 },
                 "optional": {
                   "description": "The argument may be omitted",
@@ -95,7 +102,7 @@
                 "type"
               ],
               "additionalProperties": false,
-              "description": "One typed parameter of a signature"
+              "description": "One typed parameter of a signature. A producer interprets a scalar source limit by that source format and emits generic constraints: an exact numeric value uses equal minimum/maximum, a ceiling uses maximum, a member uses values, a length uses maxLength; raw limit is not guessed by the core"
             },
             "description": "Positional parameters in order"
           },

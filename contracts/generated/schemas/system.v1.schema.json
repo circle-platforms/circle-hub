@@ -429,6 +429,41 @@
             "maximum": 268435456,
             "description": "a longer response is an error; it is never truncated"
           },
+          "pagination": {
+            "description": "The planner may request further pages within this finite bound; no hidden fetch or truncated completion",
+            "type": "object",
+            "properties": {
+              "max_pages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "max_pages"
+            ],
+            "additionalProperties": false
+          },
+          "redirects": {
+            "description": "Each same-origin hop is another planned, recorded read request; never a transport auto-follow",
+            "type": "object",
+            "properties": {
+              "same_origin": {
+                "type": "boolean",
+                "const": true
+              },
+              "max_hops": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "same_origin",
+              "max_hops"
+            ],
+            "additionalProperties": false
+          },
           "timeout_ms": {
             "type": "integer",
             "minimum": 100,
