@@ -845,6 +845,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const runs = boldRuns(cell);
     if (runs.length === 0) return [];
     if (runs.some((run) => run.proseTail === true)) return [];
+    // Text before the FIRST bold run (先执行 **demo pool create**) is prose: the whole cell is prose and its bold
+    // span is a mention (c3 item 3) — a definition comes only from a signature cell.
+    const firstRun = runs[0]!;
+    if (cell.slice(0, firstRun.start).trim() !== '') return [];
     const out: Anchor[] = [];
     let acceptedEnd = -1;
     let outStart = -1;
@@ -950,7 +954,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         const commandColumn = (cellIndex: number): boolean => {
           if (header === null) return false;
           const name = header[cellIndex] ?? '';
-          return /(?:^|[^A-Za-z])(?:命令|commands?)(?:$|[^A-Za-z])/i.test(name) || /^(?:命令|commands?)$/i.test(name.trim());
+          // A closed list only (c3 item 3): 命令说明/命令模式/命令功能 DESCRIBE or qualify the command and are
+          // value columns, where a bold span is a value or a mention, never a signature.
+          const COMMAND_COLUMN_HEADERS = /^(?:命令|命令格式|命令名称|命令行|CLI 命令|命令行格式|Command|Commands|Command Syntax)$/i;
+          return COMMAND_COLUMN_HEADERS.test(name.trim());
         };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];

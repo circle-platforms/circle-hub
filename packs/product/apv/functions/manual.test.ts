@@ -587,6 +587,27 @@ describe('placement against the build’s command tree', () => {
 
 
 
+
+  it('a description cell keeps its row a signature row, and only a closed header list names a command column (closure c3 item 3)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="create" help_string="c"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    // A bold mention in the description cell never steals the definition.
+    const mention = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* | 先执行 **demo pool create** *\\<name\\>* |\n'), null, { catalog: tree });
+    assert.ok(mention.entries.some((entry) => entry.kind === 'definition' && entry.path === '/commands/demo/pool/add'), JSON.stringify(mention.entries.map((e) => [e.kind, e.path])));
+    // Text before the first bold run is prose: the whole cell is prose, a bold span inside it is a mention.
+    const proseFirst = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| 先执行 **demo pool create** | 创建 |\n'), null, { catalog: tree });
+    assert.ok(!proseFirst.entries.some((entry) => entry.kind === 'definition'), JSON.stringify(proseFirst.entries.map((e) => [e.kind, String(e.statement)])));
+    // A header that QUALIFIES the command (命令说明, 命令模式) is not a command column.
+    for (const headers of [['命令', '命令说明'], ['命令', '命令模式', '说明']]) {
+      const doc = headers.length === 2
+        ? `# 章\n\n## 配置命令\n\n| ${headers[0]} | ${headers[1]} |\n|---|---|\n| **demo pool add** *\\<name\\>* | 添加成员，参见 **demo pool mode** |\n`
+        : `# 章\n\n## 配置命令\n\n| ${headers[0]} | ${headers[1]} | ${headers[2]} |\n|---|---|---|\n| **demo pool add** *\\<name\\>* | **config** | 添加 |\n`;
+      const result = produceManualEntries(markdown(doc), null, { catalog: tree });
+      assert.ok(result.entries.some((entry) => entry.kind === 'definition' && entry.path === '/commands/demo/pool/add'), JSON.stringify(result.entries.map((e) => [e.kind, e.path])));
+      assert.ok(!result.entries.some((entry) => entry.kind === 'definition' && String(entry.statement).startsWith('config')), headers.join('/'));
+      assert.ok(!result.entries.some((entry) => entry.kind === 'definition' && String(entry.statement).startsWith('demo pool mode')), headers.join('/'));
+    }
+  });
+
   it('keeps a multi-run cell whole: parameters and bold keywords ride with their signature (closure c3 item 1)', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu><menu name="show"><item name="version" help_string="v"><arguments></arguments></item></menu></scope></commands>')).catalog;
     // A bold parameter keyword after the head's parameters: one signature, both parameters.
