@@ -26,3 +26,9 @@ node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合�
 可选角色决定文件为 `{ "allowed": […], "unopened": […] }`。`allowed` 每项沿用包的 `{object, method, parameters: {参数名: 角色}}`，角色只读包格式表，不按函数名猜。无法归入现有角色的组合放 `unopened`，每项 `{object, method, parameters: [{name, missing, reason, next}]}`，写明哪个签名参数缺什么事实、为什么现有检查无法覆盖、下一步怎样另开包角色和检查任务。脱敏参数不能定角色。未决定的组合仍列在草稿里，参数角色为 null，不会自动启用。
 
 检查先证明全部启用组合恰好落在 allowed 或 unopened 一边，不重不漏、无禁用组合；allowed 每个参数都有包表角色，再调用包的配置解析器核身份及形状。额外核对座位序号小于预检设备数。只说明已启用组合的覆盖情况，不以草稿代替部署事实核对；拒绝命令文本由集成者填写，不在脚本预设。
+
+```
+node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked]
+```
+
+核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则及编号列表，标准输出仅个数与源字节摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
