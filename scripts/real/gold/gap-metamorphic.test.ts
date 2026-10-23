@@ -149,3 +149,13 @@ test('review 3: a renewed root never reuses an id already present in the origina
   const plan = planCopies(tree, 'doc1', { categories: CATEGORIES, singleMisses: new Map() });
   assert.notEqual(plan.a.root.data.id, 'gap-doc1-a');
 });
+
+test('review 4: presence is the complement of the intersection, including heterogeneous donor cases', () => {
+  const categories = [{ id: 'configuration', label: '配置', group: 'test_type' }, { id: 'security', label: '安全', group: 'other' }, { id: 'database', label: '数据库', group: 'other' }];
+  const a = doc(group('ra', '合成甲', group('ga', '组', kase('a1', '甲一', '成功'), kase('a2', '甲二', '成功'))));
+  const b = doc(group('rb', '合成乙', group('gb', '组', kase('b1', '乙一', '成功'), kase('b2', '乙二', '成功'))));
+  const plan = planCopies(a, 'review4', { categories, singleMisses: new Map([['a1', new Set(['database'])], ['a2', new Set(['database', 'security'])]]), other: { tree: b, singleMisses: new Map([['b1', new Set(['security'])], ['b2', new Set(['security', 'database'])]]) } });
+  assert.ok(plan.d.some(entry => entry.category === 'security' && 'copy' in entry));
+  assert.ok(plan.f.some(entry => entry.category === 'database' && 'copy' in entry));
+  assert.ok(!plan.f.some(entry => entry.category === 'security'));
+});

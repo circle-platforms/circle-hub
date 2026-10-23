@@ -274,7 +274,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
   const c = ids.map((id, i) => singleCase(tree, id, `${seed}-c${i + 1}`));
 
   const allIds = categories.map((x) => x.id);
-  const originalMissing = new Set(known.flatMap((id) => [...(singleMisses.get(id) ?? new Set())]));
+  const originalMissing = expectedMissing(known.map(id => singleMisses.get(id)!));
   const originalPresent = allIds.filter((id) => !originalMissing.has(id));
 
   const d: CopyPlan['d'] = [];
@@ -300,7 +300,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
   if (options.other !== undefined) {
     const bIds = outerCaseIdsOf(options.other.tree);
     const bKnown = bIds.filter((id) => options.other!.singleMisses.has(id));
-    const bMissing = new Set(bKnown.flatMap((id) => [...(options.other!.singleMisses.get(id) ?? new Set())]));
+    const bMissing = expectedMissing(bKnown.map(id => options.other!.singleMisses.get(id)!));
     const aMissingSet = new Set(originalMissing);
     for (const category of allIds) {
       if (!aMissingSet.has(category)) continue;
