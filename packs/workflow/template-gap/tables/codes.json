@@ -41,7 +41,7 @@
     {
       "code": "template-gap.index_invalid",
       "when": "用例索引不是 case/document 的 index-view@1、根或产品与运行不同、only 不等于敏捷平台文档集合，或连接与完整性事实不可读",
-      "fix": "按运行锁定的构建重绑 case_index，only 精确列出这次敏捷平台文档，fields=document,node,commands；上传文件不写进 only"
+      "fix": "按运行锁定的构建重绑 case_index，only 精确列出这次敏捷平台文档，fields=document,node,commands,title,path_labels；上传文件不写进 only"
     }
   ],
   "warnings": [
@@ -101,6 +101,11 @@
       "code": "template-gap.no_commands",
       "when": "文档用例均已连接到完整索引，但所有用例都没有解析出的命令",
       "fix": "把命令写进用例标题或上级节点，知识同步后重跑"
+    },
+    {
+      "code": "template-gap.case_rule_mismatch",
+      "when": "按命令覆盖采用默认 marked 的用例键，而运行采用 tagged，不能按索引键核验命令覆盖",
+      "fix": "用默认 case_rule 重跑：不传 case_rule 或设为 marked；不靠知识同步修复规则不一致"
     }
   ]
 }

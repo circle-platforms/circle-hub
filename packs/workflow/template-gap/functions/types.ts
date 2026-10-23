@@ -94,10 +94,11 @@ export type CoverageSubject = {
 };
 
 /** Frozen per-case category membership, before evidence lists are capped for display. */
-export type CaseCategory = { id: string; categories: string[] };
+export type CaseCategory = { id: string; visit: number; categories: string[] };
+export type CaseRevisionNodes = { texts: string[]; parents: number[] };
 export type CommandFact = { command: string; caseCount: number; categories: (CategoryFact & { references: string[] })[]; missing: string[]; skipped: Skip[]; references: string[] };
 export type CommandCoverage = {
-  bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
+  case_rule: 'marked' | 'tagged'; rule_mismatch: boolean; bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
   caseCount: number; matchedCases: number; unmatched: string[]; commandlessCases: number;
   truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
   commands: CommandFact[];

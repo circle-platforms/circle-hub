@@ -15,7 +15,7 @@
     {
       "slot": "case_index",
       "role": "expected",
-      "description": "与锁定构建同根的用例索引；only 只列本次敏捷平台文档，fields=document,node,commands；上传文件不在索引里",
+      "description": "与锁定构建同根的用例索引；only 只列本次敏捷平台文档，fields=document,node,commands,title,path_labels；上传文件不在索引里",
       "accepts": [
         "knowledge:index"
       ],

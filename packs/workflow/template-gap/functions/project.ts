@@ -6,13 +6,13 @@
 // Refusals of the whole call: an input that is not a parsed mind map, a document listed twice, a skip the pack cannot apply
 // (the caller's own parameter, never dropped silently), a document with no case, documents whose root nodes cannot be told
 // apart, and a result above the output limit.
-import { caseCategories, commandCoverage, indexedCommands } from './commands.ts';
+import { caseCategories, caseRevisionNodes, commandCoverage, indexedCommands } from './commands.ts';
 import type { CaseIndex } from './index.ts';
 import { compareText, readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
 import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts';
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
-import { categoryFacts, readTemplate, type Template } from './template.ts';
+import { categoryFacts, MAX_EVIDENCE, readTemplate, type Template } from './template.ts';
 import { clip, collapseWhitespace, isBlank, isWhiteSpace, textOf, utf8Length } from './text.ts';
 import type { DocumentFields, DocumentItem, ItemLocation, PackFailure, ProjectionOutcome, Skip } from './types.ts';
 
@@ -153,7 +153,7 @@ function summaryOf(fields: DocumentFields, template: Template): string {
     if (command) {
       const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0 || command.unplacedRoot === null;
       const missing = partial ? 0 : command.commands.filter(row => row.missing.length > 0).length;
-      const note = command.uploaded ? '；上传文件不在索引里' : !command.bound ? '；缺 case_index'  : partial ? '；索引待补，知识同步后重跑，未判覆盖完整' : !command.documentIndexed ? '；文档不在索引里' : command.commands.length === 0 ? '；用例未解析出命令' : '';
+      const note = command.uploaded ? '；上传文件不在索引里' : command.rule_mismatch ? '；规则不一致，用默认 marked 重跑' : !command.bound ? '；缺 case_index'  : partial ? '；索引待补，知识同步后重跑，未判覆盖完整' : !command.documentIndexed ? '；文档不在索引里' : command.commands.length === 0 ? '；用例未解析出命令' : '';
       parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${note}`);
     }
     if (fields.missing.length > 0) parts.push(`缺 ${fields.missing.length} 个模板类别${note}：${fields.missing.map(name).join('、')}`);
@@ -274,11 +274,13 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     );
   }
 
-  const memberships = new Map(documents.map(document => [document.id, caseCategories(template, document.cases)]));
+  const fullFacts = new Map(documents.map(document => [document.id, categoryFacts(template, document.cases, { evidenceLimit: Infinity })]));
+  const memberships = new Map(documents.map(document => [document.id, caseCategories(template, document.cases, fullFacts.get(document.id))]));
+  const revisions = new Map(documents.map(document => [document.id, caseRevisionNodes(document.cases)]));
   const commandSkips = (id: string): Skip[] => skips.filter(s => s.document === null || s.document === id).map(({ category, reason, command }) => ({ category, reason, ...(command !== undefined ? { command } : {}) })).sort((a,b) => template.categories.findIndex(c => c.id === a.category) - template.categories.findIndex(c => c.id === b.category) || compareText(a.command ?? '', b.command ?? ''));
   const lock = isRecord(input.context) ? input.context : {};
   const items: DocumentItem[] = documents.map((document) => {
-    const categories = categoryFacts(template, document.cases);
+    const categories = fullFacts.get(document.id)!.map(fact => ({ ...fact, evidence: fact.evidence.slice(0, MAX_EVIDENCE) }));
     const skipped = skipsFor(document.id, skips, template);
     const skippedIds = new Set(skipped.map((skip) => skip.category));
     const marked_only = document.cases.markedOnly;
@@ -292,7 +294,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
       marked_only,
       data: { case_rule: caseRule, marked_only },
       categories,
-      command_coverage: commandCoverage(template, document.id, memberships.get(document.id)!, caseIndex, commandSkips(document.id), document.uploaded, lock),
+      command_coverage: commandCoverage(template, document.id, memberships.get(document.id)!, caseIndex, commandSkips(document.id), document.uploaded, lock, caseRule, revisions.get(document.id)),
       missing: categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
       skipped,
     };
@@ -300,6 +302,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   });
   const groups: Record<string, unknown>[] = items.map((item) => ({
     command_cases: memberships.get(item.id)!,
+    command_nodes: revisions.get(item.id)!,
     command_skips: commandSkips(item.id),
     uploaded: documents.find(d => d.id === item.id)!.uploaded,
     kind: 'document',

@@ -292,7 +292,7 @@ describe('projectDocuments', () => {
     assert.ok(worst.summary.endsWith('模板类别出现 0/24 个；用例规则：标签或标记；其中 6789 个只靠标记识别（没有标签）'), worst.summary);
 
     const worstTagged = itemOf(km(12_345, 6_789), { external: external() }, { case_rule: 'tagged' });
-    assert.ok(worstTagged.summary.startsWith('用例 12345 个；按命令：0 个命令，0 个缺类别；缺 case_index；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
+    assert.ok(worstTagged.summary.startsWith('用例 12345 个；按命令：0 个命令，0 个缺类别；规则不一致，用默认 marked 重跑；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
     assert.ok(worstTagged.summary.length <= LIMITS.maxSummary);
     assert.match(worstTagged.summary, /用例规则：只认标签/);
     assert.match(worstTagged.summary, /(?:未计入未标签 6789 个|另有 6789 个没有标签、写法像用例的节点没有计入)/);

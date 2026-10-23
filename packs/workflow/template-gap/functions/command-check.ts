@@ -1,7 +1,7 @@
 // Advisory facts from the frozen case index and per-case template membership. Display rows cannot set the universe.
 import TABLE from '../tables/template-v3.json' with { type: 'json' };
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
-import type { CaseCategory, CommandCoverage, Skip } from './types.ts';
+import type { CaseCategory, CaseRevisionNodes, CommandCoverage, Skip } from './types.ts';
 import { isBlank } from './text.ts';
 import { isRecord } from './common.ts';
 import { readCaseIndex } from './index.ts';
@@ -16,7 +16,9 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
   const base = { tier: TIER, ...(item ? { item } : {}), grounds: typeof s.location === 'string' && s.location.startsWith('src:') ? [s.location] : [] };
   const unknown = (statement: string, missing: string[], data: Record<string, unknown> = {}): CheckOutcome => ({ ...base, verdict: 'unknown', reason: 'missing_input', statement, data: { missing, ...data } });
   const retry = `知识同步后，重新读取锁定构建 ${String(lock.build ?? '未提供')} 的 case_index 并重跑文档 ${document}；若同键或字节上限仍导致取不全，明确报告索引补读能力缺口并交集成者处理`;
-  if (!document || typeof s.uploaded !== 'boolean' || !Array.isArray(s.cases) || s.cases.length !== s.case_count || !s.cases.every(c => isRecord(c) && typeof c.id === 'string' && Array.isArray(c.categories) && c.categories.every(v => typeof v === 'string'))) {
+  const nodes = isRecord(s.nodes) ? s.nodes : {};
+  const validNodes = Array.isArray(nodes.texts) && nodes.texts.every(v => typeof v === 'string') && Array.isArray(nodes.parents) && nodes.parents.length === nodes.texts.length && nodes.parents.every((v, i) => Number.isSafeInteger(v) && v >= -1 && v < i);
+  if (!validNodes || (s.case_rule !== 'marked' && s.case_rule !== 'tagged') || !document || typeof s.uploaded !== 'boolean' || !Array.isArray(s.cases) || s.cases.length !== s.case_count || !s.cases.every(c => isRecord(c) && typeof c.id === 'string' && Number.isSafeInteger(c.visit) && (c.visit as number) >= 0 && (c.visit as number) < (nodes.texts as unknown[]).length && Array.isArray(c.categories) && c.categories.every(v => typeof v === 'string'))) {
     return [unknown('缺少冻结的文档用例事实；下一步：联系包维护人恢复投影快照后重新开始运行', ['frozen_case_facts'], { next_action: '联系包维护人恢复投影快照后重新开始运行' })];
   }
   const cases = s.cases as CaseCategory[];
@@ -25,24 +27,26 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
   const template = readTemplate(TABLE);
   if (typeof template === 'string') throw new Error('invalid package template');
   const skips = Array.isArray(s.skipped) ? s.skipped.filter((v): v is Skip => isRecord(v) && typeof v.category === 'string' && typeof v.reason === 'string' && !isBlank(v.reason) && (v.command === undefined || typeof v.command === 'string')) : [];
-  const coverage = commandCoverage(template, document, cases, index, skips, s.uploaded, lock);
-  const viewGrounds = typeof s.index_reference === 'string' && s.index_reference.startsWith('src:') ? [s.index_reference] : [];
+  const coverage = commandCoverage(template, document, cases, index, skips, s.uploaded, lock, s.case_rule as 'marked' | 'tagged', nodes as CaseRevisionNodes);
+  // The source-view receipt stays in frozen groups; facts cite the locked tree, independent of JSON enumeration order.
+  const viewGrounds = coverage.root ? [`tree:${coverage.root}/`] : [];
   const data = { document, root: coverage.root, build: coverage.build };
   const refute = (code: string, statement: string, detail: Record<string, unknown>): CheckOutcome => ({ ...base, verdict: 'refute', code: `template-gap.${code}`, statement, grounds: [...base.grounds, ...viewGrounds], data: { ...data, ...detail } });
   if (coverage.uploaded) return [refute('not_indexed', `上传文件 ${document} 不在用例索引里；根 ${String(coverage.root)}，构建 ${String(coverage.build)}。下一步：用敏捷平台的文档编号重跑`, { scope: 'document', next_action: '用敏捷平台的文档编号重跑' })];
+  if (coverage.rule_mismatch) return [refute('case_rule_mismatch', '按命令覆盖与索引的用例规则不一致：索引采用 marked；下一步：用默认 case_rule（不写或设为 marked）重跑，知识同步不能修复规则不一致', { scope: 'document', expected_case_rule: 'marked', actual_case_rule: coverage.case_rule, next_action: '用默认 case_rule（不写或设为 marked）重跑' })];
   if (!coverage.bound) {
     const action = `带 case_index（同一构建，only 精确列出本次敏捷平台文档，fields=document,node,commands）重跑文档 ${document}`;
     return [unknown(`文档 ${document} 缺少用例索引 case_index；下一步：${action}`, ['case_index'], { ...data, scope: 'document', next_action: action })];
   }
   const indexIncomplete = coverage.truncated || coverage.skippedSources > 0 || coverage.cutKeys.includes(document) || coverage.unplacedRoot === null;
   if (!coverage.documentIndexed && !indexIncomplete) {
-    const action = '用收了这份文档的构建（文档所在版本线不晚于构建）重跑，或等知识同步收进它后重跑';
+    const action = '用收了这份文档的构建（文档所在版本线不晚于构建）重跑，或等知识同步收进它后重跑；若文档在产品线不分版本范围，先取得该范围的根，用 get_nodes 读取 tree:<不分版本根>/；入口尚未落地时明确报 kb-unversioned 能力缺口，不要反复尝试其他构建';
     return [refute('not_indexed', `文档 ${document} 不在完整用例索引里；根 ${String(coverage.root)}，构建 ${String(coverage.build)}。下一步：${action}`, { scope: 'document', next_action: action })];
   }
   const partial = indexIncomplete || coverage.unmatched.length > 0;
   const gapData = { ...data, unmatched_cases_count: coverage.unmatched.length, unmatched_cases: coverage.unmatched, skipped_sources: coverage.skippedSources, unplaced_root: coverage.unplacedRoot, unplaced_scope: 'root', truncated: coverage.truncated, cut_keys: coverage.cutKeys, notes: coverage.notes, next_action: retry };
   const missing = [...(!coverage.documentIndexed ? ['case_index.document'] : []), ...(coverage.skippedSources > 0 ? ['case_index.sources'] : []), ...(coverage.truncated || coverage.cutKeys.includes(document) ? ['case_index.entries'] : []), ...(coverage.unplacedRoot === null ? ['case_index.unplaced_count'] : []), ...coverage.unmatched];
-  const gap = `文档 ${document} 有 ${coverage.unmatched.length} 个用例没对上索引；根有 ${coverage.skippedSources} 份来源没读入，视图报告未归位条目 ${coverage.unplacedRoot ?? '计数不可读'} 个（全根计数，条目仍在索引内）${coverage.truncated ? '；视图截断' : ''}，所以可能还有命令没读到。下一步：${retry}`;
+  const gap = `文档 ${document} 有 ${coverage.unmatched.length} 个用例没对上索引（键缺失或标题、上级标签不一致）；根有 ${coverage.skippedSources} 份来源没读入，视图报告未归位条目 ${coverage.unplacedRoot ?? '计数不可读'} 个（全根计数，条目仍在索引内）${coverage.truncated ? '；视图截断' : ''}，所以可能还有命令没读到。下一步：${retry}`;
   const outcomes: CheckOutcome[] = coverage.commands.map(row => {
     const details = { ...data, command: row.command, case_count: row.caseCount, categories: row.categories, skipped: row.skipped, missing: row.missing };
     const grounds = [...new Set([...base.grounds, ...viewGrounds, ...row.references])];

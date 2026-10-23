@@ -12,7 +12,7 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
   if (bound.length === 0) return null;
   const context = isRecord(input.context) ? input.context : {};
   const expected = [...new Set(agileDocuments)].sort(compareText);
-  const fix = `锁定构建 ${String(context.build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands；only 只写这次敏捷平台文档，不含上传文件`;
+  const fix = `锁定构建 ${String(context.build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
   const bad = (fact: string): PackFailure => failure('index_invalid', `用例索引不能绑定：${fact}`, fix);
   if (bound.length !== 1) return bad('case_index 只接受一份视图');
   const source = bound[0];
@@ -24,13 +24,13 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
   if (!strings(v.only) || JSON.stringify([...new Set(v.only)].sort(compareText)) !== JSON.stringify(expected)) return bad('only 与这次敏捷平台文档集合不一致');
   if (typeof v.truncated !== 'boolean' || !count(v.skipped) || !count(v.total_keys) || !count(v.total_entries) || !strings(v.notes) || v.cut_keys !== undefined && !strings(v.cut_keys)) return bad('缺少或无法读取完整性事实 truncated、skipped、cut_keys、计数或 notes');
   if (!isRecord(v.keys) || !isRecord(v.entries)) return bad('缺少 keys 或 entries');
-  if (v.fields !== undefined && (!strings(v.fields) || !['document', 'node', 'commands'].every(k => (v.fields as string[]).includes(k)))) return bad('fields 缺少 document、node 或 commands');
+  if (v.fields !== undefined && (!strings(v.fields) || !['document', 'node', 'commands', 'title', 'path_labels'].every(k => (v.fields as string[]).includes(k)))) return bad('fields 缺少 document、node、commands、title 或 path_labels');
   for (const [document, digests] of Object.entries(v.keys)) {
     if (!expected.includes(document) || !strings(digests)) return bad('keys 含运行范围外的文档或非摘要列表');
     for (const digest of digests) {
       const entry = v.entries[digest];
       if (!sha.test(digest) || !isRecord(entry) || entry.entry !== digest || entry.kind !== 'case' || typeof entry.reference !== 'string' || !entry.reference.startsWith(`tree:${v.build.root}/`) || !entry.reference.endsWith(`@${digest}`)) return bad('条目身份、种类或 tree 引用不一致');
-      if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
+      if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || typeof entry.data.title !== 'string' || !strings(entry.data.path_labels) || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
     }
   }
   if ((v.cut_keys as string[] | undefined)?.some(key => !expected.includes(key))) return bad('cut_keys 含运行范围外的文档');
@@ -44,8 +44,8 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
     keys[document] = [...new Set(v.keys[document] as string[])].sort(compareText);
     for (const digest of keys[document]!) {
       const e = (v.entries as Record<string, any>)[digest];
-      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, commands: [...new Set<string>(e.data.commands)].sort(compareText) } };
+      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, title: e.data.title, path_labels: [...e.data.path_labels], commands: [...new Set<string>(e.data.commands)].sort(compareText) } };
     }
   }
-  return { schema: 'index-view@1', product: v.product, build: { root: v.build.root, build: v.build.build }, kind: 'case', key: 'document', only: expected, fields: ['document', 'node', 'commands'], keys, entries, cut_keys: [...new Set(v.cut_keys as string[] ?? [])].sort(compareText), truncated: v.truncated, skipped: v.skipped, total_keys: v.total_keys, total_entries: v.total_entries, notes: [...v.notes].sort(compareText) };
+  return { schema: 'index-view@1', product: v.product, build: { root: v.build.root, build: v.build.build }, kind: 'case', key: 'document', only: expected, fields: ['document', 'node', 'commands', 'title', 'path_labels'], keys, entries, cut_keys: [...new Set(v.cut_keys as string[] ?? [])].sort(compareText), truncated: v.truncated, skipped: v.skipped, total_keys: v.total_keys, total_entries: v.total_entries, notes: [...v.notes].sort(compareText) };
 }

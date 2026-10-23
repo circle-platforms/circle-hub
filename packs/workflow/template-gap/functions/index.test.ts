@@ -19,6 +19,7 @@ for (const [name, edit] of [
   ['wrong schema', (v: any) => { v.schema = 'facet-view@1'; }],
   ['contradictory complete counts', (v: any) => { v.total_entries = 1; }],
   ['wrong index key', (v: any) => { v.key = 'commands'; }],
+  ['missing revision fields', (v: any) => { v.fields = ['document', 'node', 'commands']; }],
   ['missing completeness fact', (v: any) => { delete v.skipped; }],
 ] as const) test(`refuses case index: ${name}`, () => {
   const v = good(); edit(v); const out = call(v);

@@ -8,62 +8,98 @@
     "document": "900001",
     "location": "src:5a830d27fc8a18b75c35c8c230b63e0ee866834a4bc60d909e6e6a1e0877dc4a/kityminder@1/i",
     "uploaded": false,
+    "case_rule": "marked",
     "cases": [
       {
         "id": "900001:case0",
+        "visit": 1,
         "categories": [
           "command_add"
         ]
       },
       {
         "id": "900001:case1",
+        "visit": 2,
         "categories": [
           "command_delete"
         ]
       },
       {
         "id": "900001:case2",
+        "visit": 3,
         "categories": [
           "command_modify"
         ]
       },
       {
         "id": "900001:case3",
+        "visit": 4,
         "categories": [
           "command_query"
         ]
       },
       {
         "id": "900001:case4",
+        "visit": 5,
         "categories": [
           "show_at_maximum"
         ]
       },
       {
         "id": "900001:case5",
+        "visit": 6,
         "categories": [
           "no_command"
         ]
       },
       {
         "id": "900001:case6",
+        "visit": 7,
         "categories": [
           "clear_command"
         ]
       },
       {
         "id": "900001:case7",
+        "visit": 8,
         "categories": [
           "operation_log"
         ]
       },
       {
         "id": "900001:case8",
+        "visit": 9,
         "categories": [
           "audit_log"
         ]
       }
     ],
+    "nodes": {
+      "texts": [
+        "合成根",
+        "合成command_add",
+        "合成command_delete",
+        "合成command_modify",
+        "合成command_query",
+        "合成show_at_maximum",
+        "合成no_command",
+        "合成clear_command",
+        "合成operation_log",
+        "合成audit_log"
+      ],
+      "parents": [
+        -1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
     "case_count": 9,
     "skipped": [],
     "index": {
@@ -80,7 +116,9 @@
       "fields": [
         "document",
         "node",
-        "commands"
+        "commands",
+        "title",
+        "path_labels"
       ],
       "only": [
         "900001"

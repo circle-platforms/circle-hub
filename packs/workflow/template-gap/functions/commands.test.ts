@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { baseDocument, goldOf } from '../testing/mindmap.ts';
 import { bind, projectionInput, isFailure } from '../testing/support.ts';
-import { LOCK, bindIndex, indexView } from '../testing/index.ts';
+import { LOCK, assignedCases, bindIndex, indexView } from '../testing/index.ts';
 import { projectDocuments } from './project.ts';
 const doc = '900001';
 const document = bind(baseDocument(), { external: `agile:mindmap:${doc}` });
 const cases = () => goldOf(baseDocument(), doc).byCategory.get('command_add')!;
 const rawRun = (parameters: Record<string, unknown> = {}) => {
-  const ids = cases(); const view = indexView(ids.slice(0, 2).flatMap(id => [{ document: doc, node: id.slice(doc.length + 1), commands: ['CLI/widget/add', 'CLI/widget/delete'] }, { document: doc, node: id.slice(doc.length + 1), commands: ['CLI/widget/add'] }]));
+  const ids = cases(); const records = assignedCases(baseDocument(), doc);
+  const view = indexView(ids.slice(0, 2).flatMap(id => { const record = records.find(c => c.node === id.slice(doc.length + 1))!; return [{ ...record, commands: ['CLI/widget/add', 'CLI/widget/delete'] }, { ...record, commands: ['CLI/widget/add'] }]; }));
   const out = projectDocuments({ ...projectionInput([document, bindIndex(view)], parameters), context: { ...LOCK, parameters } });
   return out;
 };
@@ -43,7 +44,7 @@ test('command counts retain every case while category evidence is sorted and cap
   let source = baseDocument();
   for (let i = 0; i < 30; i++) source = withCase(source, '其他', witnessCase('command_add', 1000 + i));
   const ids = goldOf(source, doc).byCategory.get('command_add')!.sort(); assert.ok(ids.length > 20);
-  const view = indexView(ids.map(id => ({ document: doc, node: id.slice(doc.length + 1), commands: ['CLI/widget/add'] })));
+  const view = indexView(assignedCases(source, doc, () => ['CLI/widget/add']).filter(c => ids.includes(`${doc}:${c.node}`)));
   const out = projectDocuments({ ...projectionInput([bind(source, { external: `agile:mindmap:${doc}` }), bindIndex(view)]), context: LOCK });
   assert.ok(!isFailure(out));
   const row = out.items[0]!.fields.command_coverage!.commands[0]!;
