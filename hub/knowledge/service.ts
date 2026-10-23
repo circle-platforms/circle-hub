@@ -1,3 +1,5 @@
+import {scheduleSync} from './sync-schedule.ts';
+import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
@@ -73,6 +75,8 @@ export interface Knowledge extends KnowledgePort {
   produceTree(input: ProduceInput): Promise<ProduceResult>;
   /** Syncs of one product run one after the other in this process. */
   syncProduct(product: ProductHandle, options?: SyncOptions): Promise<SyncReport>;
+  /** Explicit opt-in periodic synchronization; the caller owns and stops this handle. */
+  scheduleSync(product:ProductHandle,options:{intervalMs:number;sync?:SyncOptions;onReport?:(report:SyncReport)=>void}):ReturnType<typeof scheduleSync<SyncReport>>;
   /** What a run locks: the root of a named build (any family), else the current root of the line. */
   lockRoot(product: string, target: { line?: string | null; build?: string | null }): Promise<RootInfo | null>;
   /** An enabled admin moves a current root, with the completed generate action that produced it as `cause` (K01 R[6], B05 R[4]). */
@@ -206,6 +210,9 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ extras
     produceTree: (input) => produceTree(context, input),
     syncProduct: (product, syncOptions = {}) => syncOne(product, syncOptions),
+    scheduleSync(product,options){
+      return scheduleSync(signal=>syncOne(product,{...options.sync,signal}),{intervalMs:options.intervalMs,onReport:options.onReport,onError:async()=>{await requestKnowledgeFact(context,{kind:'repair',subject:product.product.id,missing:'定时知识同步未能完成',action:'管理员核对该产品同步动作的错误并修复后重新同步',inputs:[]});}});
+    },
     async lockRoot(product, target) {
       if (target.build !== undefined && target.build !== null && target.build !== '') return builds.rootOfBuild(product, target.build);
       if (target.line !== undefined && target.line !== null && target.line !== '') return builds.currentRoot(product, target.line);

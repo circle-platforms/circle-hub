@@ -19,6 +19,9 @@ import { describeError } from './errors.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
 import { ListLoader, uniqueList } from './lists.ts';
 import { infoOf, plannedSources, produceTree } from './produce.ts';
+import {loadSyncCheckpoint,saveSyncCheckpoint,syncCheckpointKey} from './sync-checkpoint.ts';
+import {requestKnowledgeFact} from './requests.ts';
+import {KnowledgeStore,buildKey} from './store.ts';
 import {readProblemRows} from './problem-journal.ts';
 import { SourceLoader } from './sources.ts';
 import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists } from './store.ts';
@@ -153,7 +156,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
-  const loader = new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
+  const loader = new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers, records:context.records.store }, by, 'knowledge sync');
 
   // ---------------------------------------------------------------- plan rounds
   const planOptions: Record<string, unknown> = { ...(declaration.options ?? {}), ...(options.options ?? {}) };
@@ -169,7 +172,12 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       return finish();
     }
   }
+  const checkpointKey=syncCheckpointKey(productId,product.digest,planOptions);
+  const saved=await loadSyncCheckpoint(context,checkpointKey,loader);
   const read: Record<string, SyncRead> = {};
+  const requiredBases=new Set<string>(saved?.required_builds??[]);
+  if(saved){for(const page of saved.captured)read[page.id]=await readPage(loader,page.id,context.limits.maxBuildBytes);pending=[...new Set([...saved.pending,...pending.filter(id=>!Object.hasOwn(read,id))])];}
+  if(requiredBases.size)planOptions.required_builds=[...requiredBases].sort();
   let reads = 0;
   let output: PlanAnswer | null = null;
   let planAction: string | null = null;
@@ -197,15 +205,23 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       return finish();
     }
     output = planned.value;
-    if (output.done) break;
+    const named=new Set([...output.builds.filter(build=>build.base!==build.name||Object.keys(build.sources).length>0).map(build=>build.name),...known.filter(build=>build.root!==null).map(build=>build.name)]);
+    const unresolved=output.builds.filter(build=>build.base!==build.name&&!named.has(build.base)).map(build=>build.base);
+    const newBases=unresolved.filter(name=>!requiredBases.has(name));
+    newBases.forEach(name=>requiredBases.add(name));
+    if(requiredBases.size)planOptions.required_builds=[...requiredBases].sort();
+    pending=[...new Set([...pending.filter(id=>!Object.hasOwn(read,id)),...output.fetch.filter(id=>!Object.hasOwn(read,id))])];
+    if(output.done&&newBases.length===0)break;
+    output.done=false;
     if (report.plan.limits.reads) break;
-    pending = output.fetch.filter((id) => !Object.hasOwn(read, id));
     if (round === maxRounds) report.plan.limits.rounds = true;
   }
   if (output === null) {
     report.error = '计划函数没有给出结果';
     return finish();
   }
+  if(!dryRun)await saveSyncCheckpoint(context,checkpointKey,loader,{sync,pending,required_builds:[...requiredBases],done:output.done&&pending.length===0});
+  const listingDigest=sha256Hex(canonicalize((await loader.captured()).map(page=>({id:page.id,artifact:page.sha256})).sort((a,b)=>compareText(a.id,b.id))));
   report.plan.done = output.done;
   report.plan.note = output.note === undefined ? null : cutText(output.note, 1000);
   if (report.plan.limits.rounds) report.warnings.push(`计划函数在 ${maxRounds} 轮后仍未完成，按最后一轮列出的构建继续`);
@@ -274,9 +290,10 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     touchedLines.add(build.line);
     if (build.base !== build.name) {
       const target = planned.get(build.base) ?? (await builds.resolve(productId, build.base));
+      if(target===null&&!dryRun)await requestKnowledgeFact(context,{kind:'repair',subject:`${productId}/${build.base}`,missing:'计划补取后仍未列出别名所需的基础构建',action:'联系产品包作者核对构建站列表和基础构建引用，修正计划后重新同步',inputs:planAction?[`rec:${planAction}`]:[]});
       report.builds.push({
         ...base,
-        outcome: 'skipped',
+        outcome: target===null?'failed':'skipped',
         reason: target === null ? `别名，基于 ${build.base}；这个基础构建不在计划里，也不在知识库里` : `别名，使用 ${build.base} 的树`,
       });
       continue;
@@ -306,6 +323,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
         build.name,
         await processOwnTree(context, product, build, {
           sync,
+          listingDigest,
           loader,
           by,
           dryRun,
@@ -322,6 +340,15 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   });
   for (const build of own) report.builds.push(results.get(build.name) as SyncBuildReport);
   report.builds.sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
+
+  if(!dryRun&&!options.signal?.aborted)for(const row of report.builds){
+    if(row.base===row.name||row.outcome==='failed')continue;
+    const root=await builds.rootOfBuild(productId,row.name);
+    if(root===null){
+      row.outcome='failed';row.reason=`基础构建 ${row.base} 没有形成可用根；已登记核对请求，修复来源或计划后重新同步`;
+      await requestKnowledgeFact(context,{kind:'repair',subject:`${productId}/${row.base}`,missing:'别名依赖的基础构建没有可用根',action:'管理员核对基础构建的同步失败动作，恢复来源或请包作者修正计划后重新同步',inputs:planAction?[`rec:${planAction}`]:[]});
+    }
+  }
 
   // ---------------------------------------------------------------- current roots
   if (!dryRun) {
@@ -340,11 +367,16 @@ async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
   build: BuildInfo,
-  options: { sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
+  options: { listingDigest:string; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
 ): Promise<SyncBuildReport> {
   const productId = product.product.id;
   const base = { name: build.name, family: build.family, line: build.line, base: build.base };
   const info = infoOf(build);
+  const newest=await context.store.newest<ActionBody>({key:INDEX.produce,value:buildKey(productId,build.name),kind:'action'});
+  const prior=newest===null?null:KnowledgeStore.produceOf(newest);
+  if(prior&&!prior.completed&&prior.detail.pack.digest===product.digest&&canonicalize(prior.detail.build)===canonicalize(recordedOf(info).build)&&prior.detail.listing_digest===options.listingDigest&&prior.detail.source_failures?.some(failure=>failure.code==='SOURCE_ABSENT'&&failure.status===404))
+    return {...base,outcome:'failed',reason:'构建来源已确定答复 HTTP 404；构建站列表未变，保留无根失败记录，列表变化后自动重查',root:null,composition:null,reason_code:'SOURCE_ABSENT'};
+
   const existing = await context.store.latestProduction(productId, build.name);
   const keyOf = (s: { producer: string; slot: string; external: string | null }): string => `${s.producer}\u0000${s.slot}\u0000${s.external ?? ''}`;
   const oldSkipped=existing?.detail.problem_chunks
@@ -390,6 +422,8 @@ async function processOwnTree(
     if (changed === null) {
       // An optional source that was missing is read again every time (one read per sync for a source builds share).
       for (const source of existing.detail.missing) {
+        const observed=source.observation as {code?:string;status?:number}|undefined;
+        if(observed?.code==='SOURCE_ABSENT'&&observed.status===404&&existing.detail.listing_digest===options.listingDigest)continue;
         if (source.external !== null && (await options.loader.read(source.external)).ok) {
           changed = `可选来源 ${source.external} 现在能读到了`;
           break;
@@ -454,6 +488,7 @@ async function processOwnTree(
     build: { ...info, root: existing?.detail.root ?? null },
     by: options.by,
     sync: options.sync,
+    listingDigest:options.listingDigest,
     retrySkipped:true,
     refreshSources,
     loader: options.loader,
@@ -461,7 +496,7 @@ async function processOwnTree(
     ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),
     ...(options.readConcurrency === undefined ? {} : { readConcurrency: options.readConcurrency }),
   });
-  if (!produced.ok) return { ...base, outcome: 'failed', reason: produced.reason ?? '生产失败', root: null, composition: null, refused: produced.refusedCount };
+  if (!produced.ok) return { ...base, outcome: 'failed', reason: produced.reason ?? '生产失败', ...(produced.sourceFailures?.some(source=>source.code==='SOURCE_ABSENT')?{reason_code:'SOURCE_ABSENT' as const}:{}), root: null, composition: null, refused: produced.refusedCount };
   const note = produced.refusedCount > 0 ? `；${produced.refusedCount} 个条目没有通过核对` : '';
   const skipped = produced.skippedCount > 0 ? `；跳过 ${produced.skippedCount} 份列出的来源（见组成记录）` : '';
   const calls = produced.calls.reused > 0 ? `；生产器调用 ${produced.calls.made} 次，复用 ${produced.calls.reused} 次` : '';

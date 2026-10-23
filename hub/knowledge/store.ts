@@ -300,7 +300,7 @@ export const ProduceDetail = z.object({
   /** The sources of single slots (list sources are summarised in `lists`). */
   sources: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string(), sha256: z.string() })),
   /** Optional sources that could not be read for this production. */
-  missing: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string().nullable() })).default([]),
+  missing: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string().nullable(), observation:z.unknown().optional(), conclusion:z.string().optional() })).default([]),
   lists: z.array(ListDetail).default([]),
   /** Producer calls made and calls answered from stored outputs. */
   calls: z.object({ made: z.number(), reused: z.number() }).nullable().default(null),
@@ -315,6 +315,8 @@ export const ProduceDetail = z.object({
     })
     .nullable()
     .default(null),
+  listing_digest:z.string().optional(),
+  source_failures:z.array(z.object({external:z.string(),code:z.string(),status:z.number().nullable(),at:z.string(),manifest:z.string(),system_pack:z.string(),resource:z.string()})).optional(),
   problem_chunks:z.object({warnings:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()})),refused:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()})),skipped:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()}))}).optional(),
   reason: z.string().nullable(),
 });
@@ -691,7 +693,7 @@ export class KnowledgeStore {
     const value = query.name !== undefined ? `${product}/${fold(query.name)}` : query.root !== undefined ? `${product}/${query.root ?? 'none'}` : product;
     if (!indexValueFits(value)) return [];
     const rows = await this.all<ActionBody>({ key, value, kind: 'action' });
-    return rows.filter(row => row.body.component === COMPONENTS.sync && row.body.result === 'error' && row.body.detail.product === product
+    return rows.filter(row => (row.body.component === COMPONENTS.sync || row.body.component === COMPONENTS.produce) && row.body.result === 'error' && row.body.detail.product === product
       && (query.name === undefined || fold(String((row.body.detail.build as BuildInfo)?.name)) === fold(query.name))
       && (query.root === undefined || row.body.detail.root === query.root || (query.root !== null && row.body.detail.previous_root === query.root)));
   }

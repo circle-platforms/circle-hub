@@ -3,6 +3,8 @@
 // Hub parses, not the pack). Only model-readable text read with a shared credential enters the tree: a credential hit
 // (retain_only), function-only bytes, bytes the scanner could not inspect and personal-credential reads are refused with a
 // Chinese reason naming the digest (B02 R[3], R[4]; records README, Needs).
+import {ReadManifest} from '../../contracts/src/resources.ts';
+import type {RecordStore} from '../records/api.ts';
 import { labelOf, type ReadTier } from '../../contracts/generated/vocabulary.ts';
 import { EXTERNAL_ARTIFACT, type ExternalReaderPort } from '../ports.ts';
 import type { Artifacts, Principal, SourceArtifact } from '../records/api.ts';
@@ -14,9 +16,11 @@ const MODEL_READABLE: ReadTier = 'model_readable';
 const RETAIN_ONLY: ReadTier = 'retain_only';
 
 /** One external read: the artifact a consumer parses (`content` when the system pack derived one, else the original). */
+export interface SourceObservation {external:string;code:string;status:number|null;at:string;manifest:string;system_pack:string;resource:string}
+
 export type ExternalLoad =
-  | { ok: true; id: string; revision: string | null; artifact: SourceArtifact }
-  | { ok: false; id: string; reason: string };
+  | { ok: true; id: string; revision: string | null; artifact: SourceArtifact; manifest?:string|null }
+  | { ok: false; id: string; reason: string; observation?:SourceObservation };
 
 /** Stored bytes a parser may read, with the record that decided the read. */
 export interface ReadableSource {
@@ -42,6 +46,7 @@ export interface SourceDeps {
   external: ExternalReaderPort;
   artifacts: Artifacts;
   parsers: ParserRegistry;
+  records?:Pick<RecordStore,'get'>;
 }
 
 /** The message for a source whose credential scan found something: names the digest and how an administrator unblocks it. */
@@ -96,6 +101,18 @@ export class SourceLoader {
     return pending;
   }
 
+  /** Resuming a saved plan pins a stored observation, never reinterprets it as a fresh connector read. */
+  restore(id:string,artifact:SourceArtifact,revision:string|null,manifest?:string|null):void {
+    if(!this.#reads.has(id))this.#reads.set(id,Promise.resolve({ok:true,id,artifact,revision,manifest}));
+  }
+  async captured():Promise<Array<{id:string;artifact:string;sha256:string;revision:string|null;manifest:string|null}>>{
+    const loads=await Promise.all(this.#reads.values());return loads.flatMap(load=>load.ok?[{id:load.id,artifact:load.artifact.digest,sha256:load.artifact.body.sha256,revision:load.revision,manifest:load.manifest??null}]:[]);
+  }
+  async manifest(id:string|null|undefined):Promise<ReadManifest|null>{
+    if(!id||!this.#deps.records)return null;
+    const row=await this.#deps.records.get(id);if(row?.kind!=='action'||row.schema!=='read-manifest@1')return null;
+    const parsed=ReadManifest.safeParse(row.body);return parsed.success&&parsed.data.principal===this.#by.id?parsed.data:null;
+  }
   async #read(id: string): Promise<ExternalLoad> {
     this.readCount++;
     let result;
@@ -105,11 +122,18 @@ export class SourceLoader {
       // The port promises never to throw; a broken adapter is reported like a failed read.
       return { ok: false, id, reason: `读取失败（连接器出错：${describeError(error)}）` };
     }
-    if (!result.ok) return { ok: false, id, reason: `读取失败：${result.reason}` };
+    if (!result.ok) {
+      const manifest=await this.manifest(result.manifest);
+      const observation=manifest?.external===result.id&&manifest.result==='error'&&manifest.error_code!==null?{
+        external:result.id,code:manifest.error_code,status:manifest.requests.findLast(request=>!request.ok&&request.status!==null)?.status??null,
+        at:manifest.ended_at,manifest:result.manifest!,system_pack:manifest.system_pack.id,resource:manifest.resource,
+      }:undefined;
+      return {ok:false,id,reason:observation?`读取确定失败：${observation.code}（${observation.status===null?'无 HTTP 状态':`HTTP ${observation.status}`}，${observation.at}）`:`读取失败：${result.reason}`,...(observation?{observation}:{})};
+    }
     const chosen =
       result.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? result.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) return { ok: false, id, reason: '读取结果里没有原件' };
-    return { ok: true, id, revision: result.revision, artifact: chosen.artifact };
+    return { ok: true, id, revision: result.revision, artifact: chosen.artifact, manifest:result.manifest };
   }
 
   /**

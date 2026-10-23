@@ -55,7 +55,7 @@ import {
   type ListState,
 } from './lists.ts';
 import { MAX_DESCRIPTION, type PlacementChild, type PlacementOutcome, type PlacementSpan } from './placement.ts';
-import { SourceLoader, type ParsedSource } from './sources.ts';
+import { SourceLoader, type ParsedSource, type SourceObservation } from './sources.ts';
 import {
   ACTION,
   COMPONENTS,
@@ -95,6 +95,7 @@ export interface ProduceInput {
   /** List sources read at the same time (default the limit listReadConcurrency, 4). */
   readConcurrency?: number;
   signal?: AbortSignal;
+  listingDigest?:string;
   retrySkipped?:boolean;
   refreshSources?:ReadonlySet<string>;
 }
@@ -121,6 +122,7 @@ export interface ProduceResult {
   /** Listed sources the production could not use (first 200), and how many there were. */
   skipped: SkippedSource[];
   skippedCount: number;
+  sourceFailures?:SourceObservation[];
   /** Producer calls made in the sandbox and calls answered from stored outputs (memoized batches). */
   calls: { made: number; reused: number };
   /** List sources used again from a stored load, and list sources read through the port. */
@@ -438,6 +440,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const problems = new Problems();
   const usedSources: ProduceDetail['sources'] = [];
   const missing: ProduceDetail['missing'] = [];
+  const sourceFailures:SourceObservation[]=[];
   const lists: ListDetail[] = [];
   const totals: CallTotals = { made: 0, reused: 0, timeouts: 0, warnings: [] };
   let listLoader: ListLoader | null = null;
@@ -458,6 +461,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     refusedCount: problems.refusedCount,
     skipped: problems.skipped,
     skippedCount: problems.skippedCount,
+    sourceFailures,
     calls: { made: totals.made, reused: totals.reused },
     loads: { reused: listLoader?.reused ?? 0, read: listLoader?.read ?? 0 },
     parts: 0,
@@ -499,7 +503,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     await keep();
     const action = await writeProduceAction(
       context,
-      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, problem_chunks:problems.chunks, calls: totals, placement: null, reason: text },
+      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement: null, reason: text },
       null,
     );
     return result({ reason: text, action });
@@ -513,7 +517,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   if (build.base !== build.name) return fail(`构建 ${build.name} 是 ${build.base} 的别名，没有自己的树`);
   if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
-  const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
+  const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers, records:context.records.store }, by, 'knowledge sync');
   const cap = context.limits.maxBuildBytes;
   listLoader = new ListLoader(context, loader, {
     maxAgeSeconds: input.maxAgeSeconds ?? context.limits.listMaxAgeSeconds,
@@ -554,10 +558,14 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     if (loaded === undefined) {
       const read = await loader.read(source.external);
       if (!read.ok) {
+        if(read.observation){
+          sourceFailures.push(read.observation);
+          if(read.observation.code==='SOURCE_FORBIDDEN')await requestKnowledgeFact(context,{kind:'repair',subject:source.external,missing:'构建站明确拒绝访问（SOURCE_FORBIDDEN）',action:'联系此构建站负责人开放这个读取对象，再重新同步',inputs:[`rec:${read.observation.manifest}`]});
+        }
         if (source.optional) {
           problems.warn(`${source.producer}.${source.slot}：${source.external} ${read.reason}（可选，跳过）`);
           slots.set(source.slot, null);
-          missing.push({ producer: source.producer, slot: source.slot, external: source.external });
+          missing.push({ producer: source.producer, slot: source.slot, external: source.external, ...(read.observation?{observation:read.observation,conclusion:`可选来源读取确定失败：${read.observation.code}，HTTP ${read.observation.status}，${read.observation.at}`}:{}) });
           continue;
         }
         return fail(`${source.producer}.${source.slot}：${source.external} ${read.reason}`);
@@ -871,7 +879,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         action: async (record, tx) => {
           const action = await writeProduceAction(
             context,
-            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, problem_chunks:problems.chunks, calls: totals, placement, reason: null },
+            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement, reason: null },
             tx,
           );
           // A build produced without a build record (not by a sync) gets one, so that builds are known from their records alone.
@@ -1314,6 +1322,8 @@ interface ProduceActionInput {
   placement: ProduceDetail['placement'];
   reason: string | null;
   problem_chunks?:ProblemChunks;
+  listing_digest?:string;
+  source_failures?:SourceObservation[];
 }
 
 /** The generate action of one production (completed) or of its failure (error), indexed for the build and the root. */
@@ -1331,6 +1341,8 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     calls: { made: input.calls.made, reused: input.calls.reused },
     placement: input.placement,
     reason: input.reason,
+    ...(input.listing_digest?{listing_digest:input.listing_digest}:{}),
+    ...(input.source_failures?.length?{source_failures:input.source_failures}:{}),
     ...(input.problem_chunks?{problem_chunks:input.problem_chunks}:{}),
   };
   const body: ActionBody = {
@@ -1343,7 +1355,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     started_at: input.startedAt,
     ended_at: context.now().toISOString(),
     result: input.root === null ? 'error' : 'completed',
-    error_code: null,
+    error_code: input.source_failures?.some(source=>source.code==='SOURCE_ABSENT')?'SOURCE_ABSENT':input.source_failures?.some(source=>source.code==='SOURCE_FORBIDDEN')?'SOURCE_UNAVAILABLE':null,
     acceptance: null,
     codes: [],
     detail: detail as unknown as Record<string, unknown>,
@@ -1351,6 +1363,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
   const index = [
     { key: INDEX.produce, value: buildKey(input.product, input.build.name) },
     { key: INDEX.produceProduct, value: input.product },
+    ...(input.root===null?[{key:INDEX.buildFailure,value:input.product},{key:INDEX.buildFailureName,value:buildKey(input.product,input.build.name)},{key:INDEX.buildFailureRoot,value:`${input.product}/none`}]:[]),
     ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root }]),
     ...(input.sync === null ? [] : [{ key: INDEX.sync, value: input.sync }]),
   ];

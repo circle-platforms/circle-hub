@@ -72,3 +72,5 @@ export { LinkReading, relationFacts, resolveLiteral } from './links.ts';
 export type { RelationFacts, RelationNodes, LiteralSource, LinkRequest } from './links.ts';
 
 export {completeKnowledgeView} from './complete-view.ts';
+
+export {scheduleSync} from './sync-schedule.ts';

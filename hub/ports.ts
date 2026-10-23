@@ -117,7 +117,7 @@ export interface ExternalArtifact {
  */
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
+  | { ok: false; id: string; reason: string; manifest?:string|null; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
