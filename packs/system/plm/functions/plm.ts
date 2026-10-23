@@ -184,8 +184,9 @@ export function storiesProject(input: unknown): unknown {
     const record = data.find((item) => isRecord(item) && idText(item.id) === id);
     if (!isRecord(record)) { unread.push(id); continue; }
     const scalar = (value: unknown) => value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value);
-    if (['status', 'stage'].some(key => Object.hasOwn(record, key) && record[key] !== undefined && !scalar(record[key]))) return { error: { code: 'plm.no_records', message: '需求状态或阶段不是 JSON 标量' } };
-    stories.push({ id, status: record.status ?? null, stage: record.stage ?? null,
+    const fieldsNonscalar = ['status', 'stage'].filter(key => Object.hasOwn(record, key) && record[key] !== undefined && !scalar(record[key]));
+    stories.push({ id, status: scalar(record.status) ? record.status : null, stage: scalar(record.stage) ? record.stage : null,
+      fields_nonscalar: fieldsNonscalar,
       title: typeof record.title === 'string' ? record.title : null,
       fields_absent: ['status', 'stage'].filter(key => !Object.hasOwn(record, key) || record[key] === undefined) });
   }

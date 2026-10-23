@@ -24,6 +24,7 @@ before(async () => {
     if (agile.tokens.has(r.headers.authorization ?? '')) {
       if (r.method === 'GET' && r.path === '/plmquery/product/all/') return reply(productFailure ? { code: 4321, msg: 'synthetic-failure', data: null } : { code: 1000, data: products });
       if (r.method === 'GET' && r.path === '/plmquery/build/') return reply(r.query.product === '410' ? builds : []);
+      if (r.method === 'POST' && r.path === '/plmquery/story/detail/') return reply({ code: 1000, data: [{ id: 21, status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: 22, status: null, stage: null }, { id: 23 }] });
       if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>' }] });
     }
     return plmReply(r, (token) => agile.tokens.has(token), () => writes++);
@@ -115,4 +116,18 @@ test('unresolved manifests identify the product original and explicitly incomple
   const original = out.artifacts.find(a => a.name === 'original')!;
   const bytes = await artifactBytes(kit, original.artifact.body.sha256);
   assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes)), { code: 1000, data: products });
+});
+
+test('a non-scalar story field keeps all stories readable through the connector and retains the raw original', async () => {
+  const out = await kit.connectors.executeRead(resourceId, 'stories', { id: '21+22+23' }, context());
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  const content = out.artifacts.find(artifact => artifact.name === 'content')!;
+  const model = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, content.artifact.body.sha256)));
+  assert.equal(model.stories.length, 3); assert.deepEqual(model.unread, []);
+  assert.deepEqual(model.stories[0].fields_nonscalar, ['status', 'stage']);
+  assert.deepEqual(model.stories[1].fields_nonscalar, []);
+  const original = out.artifacts.find(artifact => artifact.name === 'original')!;
+  const raw = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, original.artifact.body.sha256)));
+  assert.deepEqual(raw.data[0].status, { raw: 'synthetic' });
+  assert.deepEqual(raw.data[0].stage, ['synthetic']);
 });

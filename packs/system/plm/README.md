@@ -62,3 +62,11 @@ The unreleased package stays at 1.2.0; story projection fixes only require re-si
 第二轮复核 3：数字键仍只发一次构建请求，note 同时写进 content 和读取清单：产品编号取自读取键，没有对照产品列表核对，空构建列表不证明产品存在。需要核对产品身份时下一步对照产品列表或按名字读取；不把调用方给的编号当成已证明存在。
 
 第二轮复核 5：真实连接器测试核对失败信封、无效键、901 字节标识及未解析读取清单，检查具体码、原因、实际请求和 original/coverage。集成者额外授权了 hub/connectors/connectors.ts 的 reader.read 长度提示：只写实际字节数与 900 字节上限，不在原因里回显键；不改长度规则或请求权限。
+
+## Story fields that are not single JSON values
+
+Version 1.3.0 never rejects a story batch merely because one status or stage is an object or array. Scalar values and
+explicit null remain unchanged. A non-scalar field is listed in fields_nonscalar, with null only as the content model's
+placeholder; fields_absent remains separate. Its original raw JSON is retained in the original response artifact. The
+consumer reports status_nonscalar and stage_nonscalar as observed counts, excluding these fields from scalar grouping;
+this is a known observation, not an unknown lifecycle state. Other stories in the same batch remain readable.
