@@ -899,6 +899,17 @@ describe('applicability from explicit conditions', () => {
     assert.deepEqual(closed.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['ft-kylinv10', 'hg-k'] }, 'a fullwidth comma joins a closed list');
   });
 
+
+  it('reads conditions in bounded time even on hostile paragraphs (closure findings 7 and 15)', () => {
+    const hostile = (word: string) => produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${word}\n`));
+    const started1 = Date.now();
+    hostile('适用于'.repeat(20000));
+    assert.ok(Date.now() - started1 < 1000, `适用于×20000 took ${Date.now() - started1} ms`);
+    const started2 = Date.now();
+    hostile('仅 hg-k 平台支持'.repeat(20000));
+    assert.ok(Date.now() - started2 < 1000, `仅…支持×20000 took ${Date.now() - started2} ms`);
+  });
+
   it('reads no vague, deictic, negated, exception or garbled model value (closure findings 3 and 12)', () => {
     const sentences = [
       '适用于所有型号。',

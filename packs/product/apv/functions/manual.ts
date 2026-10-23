@@ -408,126 +408,129 @@ const CLAUSE_END = /[。；：\n]/;
  */
 function conditionsOf(text: string): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
-  // The tight 仅/只 trigger: the items begin directly after 仅/只 and the clause's LAST noun is followed directly
-  // by 支持 at the clause end ('仅 X9000 系列支持'): a 支持 deep in the text or another word between noun and 支持
-  // never fires it (closure findings 3 and 12).
-  const candidates: Array<{ index: number; 0: string }> = [];
-  for (const match of text.matchAll(/(?:仅|只)\s*/gu)) {
-    candidates.push({ index: match.index ?? 0, 0: match[0] });
-  }
-  for (const match of text.matchAll(/适用于/gu)) {
-    candidates.push({ index: match.index ?? 0, 0: match[0] });
-  }
-  for (const at of candidates) {
-      // The clause before the trigger: back to the previous clause boundary.
-      let boundary = 0;
-      for (let k = at.index - 1; k >= 0; k -= 1) {
-        if (CLAUSE_END.test(text[k] ?? '')) { boundary = k + 1; break; }
-      }
-      const before = text.slice(boundary, at.index);
-      if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
-      const after = text.slice(at.index + at[0].length);
-      const seriesEnd = after.search(CLAUSE_END);
-      const candidate = (seriesEnd === -1 ? after : after.slice(0, seriesEnd)).trim();
-      const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
-      // The series is read as repeated items: `X、Y 平台` or `X 平台与 Y 平台` (each item may repeat the noun). The
-      // FIRST noun ends an item group; a connective after it continues the series, another noun extends the field
-      // word (系列机型), 等/以外/其他/其余 ends it unread, a negation anywhere after the trigger ends it unread, and
-      // any other tail (的功能) is quiet and ends the read.
-      const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
-      let nounAteSupport = false;
-      const fieldOf = (word: string): 'platforms' | 'models' => (word === '平台' ? 'platforms' : 'models');
-      let rest = candidate;
-      const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
-      let field: 'platforms' | 'models' | null = null;
-      let ok = true;
-      let quiet = false;
-      for (;;) {
-        const head = NOUN_RE.exec(rest);
-        if (head === null) {
-          // What is left after the last noun must be quiet (的功能) or a connective followed by the next item.
-          const left = rest;
-          if (left.trim() === '') break;
-          const continued = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})`, 'u').exec(left);
-          if (continued !== null) {
-            rest = left.slice(continued[0].length);
-            const nextNoun = NOUN_RE.exec(rest);
-            if (nextNoun === null) { ok = false; break; } // 或其他平台: a connective with no readable item after it
-            continue;
-          }
-          // The quiet tail is a possessive tail (starts with 的) or a start-build tail (自 <版本> 起…): an
-          // unfinished item (物理设备 without its own noun) or any other leftover keeps the whole series unread.
-          const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
-          if (left.trim() !== '' && !startTailHere && !/^的/u.test(left.trim())) { ok = false; break; }
-          quiet = true;
-          break;
-        }
-        const itemPart = rest.slice(0, head.index);
-        const nounWord = head[1]!;
-        const nextField = fieldOf(nounWord);
-        if (field === null) field = nextField;
-        else if (field !== nextField) { ok = false; break; } // mixed fields in one series stay unread
-        const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
-        if (itemPart.trim() !== '' && pieceTokens.length === 0) { ok = false; break; }
-        // A token that is neither a known platform word nor a model atom fails the WHOLE series (closure 14): a
-        // narrowed first-item read (虚拟 of 虚拟平台和物理设备) never happens.
-        if (field === 'platforms' && !pieceTokens.every((token) => PLATFORM_WORDS.has(token.toLowerCase()))) { ok = false; break; }
-        if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) { ok = false; break; }
-        tokensByField[field].push(...pieceTokens);
-        nounAteSupport = head[2] !== undefined;
-        rest = rest.slice(head.index + head[0].length);
-        const after = rest;
-        if (after.trim() === '') break;
-        if (ETC.test(after) || CLAUSE_NEGATION.test(after) || /^\s*外/.test(after)) { ok = false; break; }
-        const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(after);
-        if (connective !== null) {
-          rest = after.slice(connective[0].length);
-          continue;
-        }
-        // A leftover that is itself a field noun (系列机型: the noun extends) continues the loop — the head branch
-        // consumes it next. Otherwise the tail is a possessive tail (的功能…) or Han prose after the noun's own 支持
-        // (仅 hg-k 平台支持硬件加速); anything else — an unfinished item (物理设备), a foreign tail — keeps the whole
-        // series unread (closure 14).
-        if (NOUN_RE.test(rest.trim())) continue;
-        // A start-build tail (自 <版本> 起…/可用/不可用) is prose about availability, not a condition item.
-        const startTail = /^自\s*\S+\s*起/.test(rest.trim());
-        if (rest.trim() !== '' && !startTail && !/^的/u.test(rest.trim()) && !nounAteSupport) { ok = false; }
-        quiet = true;
-        break;
-      }
-      // The 仅/只 trigger is tight (closure 12): its clause must END with the noun followed directly by 支持
-      // ('仅 X9000 系列支持'); '该功能仅支持 X9000 系列' (支持 before the items) leaves no 支持 at the end and never reads.
-      // Tight 仅/只 (closure 12): the clause must END with 支持 right after the noun ('仅 hg-k 平台支持硬件加速'
-      // passes: the noun's own 支持 ends it, a quiet Han tail follows and is allowed). '该功能仅支持 X9000 系列'
-      // (支持 before the items) never reads: no 支持 follows its noun.
-      if (at[0].startsWith('仅') || at[0].startsWith('只')) {
-        if (!/(?:平台|系列|机型|型号)\s*支持/u.test(candidate)) { continue; }
-      }
-      // The quiet tail must be quiet indeed: another field noun, a bracket group, a separator or a connective with
-      // no item after it makes the whole series unread — never a narrowed read (closure 14). A following FIELD NOUN
-      // that only extends the same field's noun (系列机型, 系列型号) is the noun itself, not a foreign tail.
-      const tailText = rest.replace(/^(?:系列|机型|型号)+\s*$/u, '').trim();
-      if (process.env.FDBG) console.error('END', JSON.stringify({ok, field, tokens: tokensByField, quiet, rest, tailText}));
-      if (quiet && tailText !== '' && (/(?:平台|系列|机型|型号)/u.test(tailText) || /[（）()【】\[\]{}:：、,，/／]/u.test(tailText) || CONNECTIVES.some((word) => tailText.includes(word)))) { continue; }
-      if (!ok || field === null || quiet === false && rest.trim() !== '') continue;
-      void quiet;
-      const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
-      if (tokens.length === 0) continue;
-      const noun = field === 'platforms' ? '平台' : '系列';
-      if (field === 'platforms') {
-        const lowered = tokens.map((token) => token.toLowerCase());
-        if (lowered.every((token) => PLATFORM_WORDS.has(token))) lowered.forEach((token) => found.platforms.add(token));
-      } else if (tokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) {
-        // A model value is a listed ASCII model atom (research 3 rec 1): a vague, deictic or Han word fails the
-        // shape and the whole series stays unread (closure findings 3 and 12).
-        tokens.forEach((token) => found.models.add(token));
+  // One clause split for the whole text (bounded: every clause is scanned once, every candidate's series window is
+  // capped, so hostile paragraphs stay linear — closure findings 7 and 15).
+  const CLAUSE_BOUND = 200;
+  const clauses: Array<{ start: number; end: number }> = [];
+  {
+    let start = 0;
+    for (let k = 0; k < text.length; k += 1) {
+      if (CLAUSE_END.test(text[k] ?? '')) {
+        clauses.push({ start, end: k });
+        start = k + 1;
       }
     }
+    clauses.push({ start, end: text.length });
+  }
+  for (const clause of clauses) {
+    const slice = text.slice(clause.start, clause.end);
+    // Every trigger position in this clause (适用于, and 仅/只 whose clause holds 支持 right after a noun).
+    const positions: number[] = [];
+    const tight: number[] = [];
+    const loose: number[] = [];
+    let from = 0;
+    for (;;) {
+      const at = slice.indexOf('适用于', from);
+      if (at < 0) break;
+      positions.push(at + 3);
+      from = at + 3;
+    }
+    from = 0;
+    for (;;) {
+      const rest = slice.slice(from);
+      const at = new RegExp('(?:仅|只)(\\s*)').exec(rest);
+      if (at === null) break;
+      const tightOnly = from === 0 && at.index === 0;
+      const itemsAt = from + at.index + at[0].length;
+      (tightOnly ? tight : loose).push(itemsAt);
+      from = itemsAt;
+      if (from >= slice.length) break;
+    }
+    positions.push(...loose, ...tight);
+    for (const itemsAt of positions) {
+      const before = slice.slice(Math.max(0, itemsAt - 64), itemsAt);
+      if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
+      // A 仅/只 candidate is tight only at the clause start (the whole clause is the series: 仅 hg-k 平台支持…).
+      const isTight = tight.includes(itemsAt);
+      if (isTight && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
+      // The candidate series: at most CLAUSE_BOUND characters from the trigger.
+      const candidate = slice.slice(itemsAt, Math.min(slice.length, itemsAt + CLAUSE_BOUND)).trim();
+      const read = readSeries(candidate);
+      if (read === null) continue;
+      for (const token of read.platforms) found.platforms.add(token);
+      for (const token of read.models) found.models.add(token);
+    }
+  }
   const out: Conditions = {};
   if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
   if (found.models.size > 0) out.models = [...found.models].sort(compareText);
   return out;
 }
+
+/** One series candidate: the items up to and through the field noun, tokens by field, or null when unread. */
+
+function readSeries(candidate: string): { platforms: string[]; models: string[] } | null {
+  const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
+  let rest = candidate;
+  const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
+  let field: 'platforms' | 'models' | null = null;
+  let nounAteSupport = false;
+  const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
+  let guard = 0;
+  for (;;) {
+    if (guard++ > 64) return null;
+    const head = NOUN_RE.exec(rest);
+    if (head === null) {
+      const left = rest;
+      if (left.trim() === '') break;
+      const continued = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})`, 'u').exec(left);
+      if (continued !== null) {
+        const afterConnective = left.slice(continued[0].length);
+        if (NOUN_RE.exec(afterConnective) === null) {
+          // A connective before a start-build tail (，自 X 起…) ends the series quietly; a connective before any
+          // other non-item (或其他平台) makes it unread.
+          if (/^自\s*\S+\s*起/.test(afterConnective.trim())) break;
+          return null;
+        }
+        rest = afterConnective;
+        continue;
+      }
+      const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
+      if (left.trim() !== '' && !startTailHere && !/^的/u.test(left.trim())) return null;
+      break;
+    }
+    if (head.index > CLAUSE_WINDOW) return null;
+    const itemPart = rest.slice(0, head.index);
+    const nounWord = head[1]!;
+    const nextField: 'platforms' | 'models' = nounWord === '平台' ? 'platforms' : 'models';
+    if (field === null) field = nextField;
+    else if (field !== nextField) return null;
+    const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
+    if (itemPart.trim() !== '' && pieceTokens.length === 0) return null;
+    if (field === 'platforms' && !pieceTokens.every((token) => PLATFORM_WORDS.has(token.toLowerCase()))) return null;
+    if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) return null;
+    tokensByField[field].push(...pieceTokens);
+    nounAteSupport = head[2] !== undefined;
+    rest = rest.slice(head.index + head[0].length);
+    if (rest.trim() === '') break;
+    if (ETC.test(rest) || CLAUSE_NEGATION.test(rest) || /^\\s*外/.test(rest)) return null;
+    const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(rest);
+    if (connective !== null) {
+      rest = rest.slice(connective[0].length);
+      continue;
+    }
+    if (NOUN_RE.test(rest.trim())) continue;
+    const startTail = /^自\s*\S+\s*起/.test(rest.trim());
+    if (rest.trim() !== '' && !startTail && !/^的/u.test(rest.trim()) && !nounAteSupport) return null;
+    break;
+  }
+  if (field === null) return null;
+  const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
+  if (tokens.length === 0) return null;
+  return field === 'platforms' ? { platforms: tokens, models: [] } : { platforms: [], models: tokens };
+}
+
+const CLAUSE_WINDOW = 200;
 
 /** The applicability of an entry, or null (未声明) when nothing declares a condition. */
 function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
