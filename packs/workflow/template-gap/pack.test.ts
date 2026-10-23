@@ -269,3 +269,10 @@ describe('the examples', () => {
     assert.deepEqual(json(EXAMPLE_RESULT).item.fields.missing, ['stress']);
   });
 });
+
+it('records decision 35 item 19 while keeping all 24 template categories required', async () => {
+  const readme = await readFile(join(PACK_DIR, 'README.md'), 'utf8');
+  assert.match(readme, /1\. .*已定（决定 35 第 19 项）/);
+  assert.equal(TEMPLATE.categories.length, 24);
+  assert.ok(TEMPLATE.categories.every(category => category.required !== false));
+});

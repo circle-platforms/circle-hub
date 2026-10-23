@@ -147,7 +147,7 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
    24 required every document of its real sample missed 8 to 23 categories (median 19) and four categories matched in none:
    whether a per-command or per-feature category applies needs the commands of the feature. So expect most real documents to
    be unsatisfied; the check stays advisory, the summary names every gap, and a category that does not apply is declared
-   skipped by the user. Open question 1.
+   skipped by the user. Confirmed by decision 35 item 19; open question 1 is settled.
 2. **No error handling row vs `* → unknown`.** coverage@1 gives exactly one refutation code, `core.coverage.shortfall`.
    Earlier engine behavior turned a `* → unknown` row into `unchecked` (`integrity_unproven`, attribution `data_gap`, status
    pending, counted in `unknown`). On 2026-10-22, the owner unified the engine behavior with the reference (Decision 6):
@@ -238,8 +238,8 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 
 ## Open questions
 
-1. All 24 categories required (this pack, brief 6a/6b) or only the six test types (case-review, measured)? Or per-command
-   categories required only for documents whose feature has the command, which needs the product pack's command extraction?
+1. **已定（决定 35 第 19 项）**：模板 v3 的 24 个类别全部必选；另按命令报告 9 个 command 类别的覆盖。
+   文档级 24 类覆盖不因命令、功能或索引内容而缩减。
 2. A tagged priority-1 node: a group while it holds cases (now, case-review), always a group, or always a case (the brief)?
 3. Number copies of a shared id and id-less cases by their content instead of document order, in both packs?
 4. Name an upload by something its order does not change (its root id, or a digest of an order-free form)?
