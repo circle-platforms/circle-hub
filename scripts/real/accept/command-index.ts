@@ -115,15 +115,26 @@ export function renderIndexReport(report: IndexReport): string {
   return [...Object.entries(report.counts).map(([name, count]) => `${labels[name]}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incompleteSummary.reduce((n, v) => n + v.count, 0)}`, ...renderIncomplete(report.incompleteSummary), `判定：${report.verdict}`].join('\n');
 }
 export function main(argv: string[]): number {
+  const usage = '用法：node scripts/real/accept/command-index.ts --gold <gold.json> --index <view.json> [--index …] [--out <report.json>]\n';
+  const flags = new Map<string, string[]>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i]; const value = argv[i + 1];
+    if (!['--gold', '--index', '--out'].includes(key) || !value || value.startsWith('--') || key !== '--index' && flags.has(key)) { process.stderr.write(usage); return 2; }
+    flags.set(key, [...(flags.get(key) ?? []), value]);
+  }
+  if (!flags.has('--gold') || !flags.has('--index')) { process.stderr.write(usage); return 2; }
+  let phase = '金标准';
+  const read = (file: string): unknown => {
+    let text: string; try { text = readFileSync(file, 'utf8'); } catch { throw new Error('文件不可读，请重新导出该类文件'); }
+    try { return JSON.parse(text) as unknown; } catch { throw new Error('不是有效 JSON，请按原样重新导出'); }
+  };
   try {
-    const value = (name: string) => argv[argv.indexOf(`--${name}`) + 1];
-    const indices = argv.flatMap((arg, i) => arg === '--index' ? [argv[i + 1]] : []);
-    if (!argv.includes('--gold') || !indices.length) throw new Error('缺少输入');
-    const report = compareCommandIndex(JSON.parse(readFileSync(value('gold'), 'utf8')) as CommandsGold, indices.map((file) => JSON.parse(readFileSync(file, 'utf8')) as unknown));
-    if (argv.includes('--out')) writeFileSync(value('out'), `${JSON.stringify(report, null, 2)}\n`);
-    process.stdout.write(`${renderIndexReport(report)}\n`);
-    return report.verdict === '相等' ? 0 : 1;
-  } catch { process.stderr.write('读取或比较失败：检查 gold 和全部索引分片的格式及可读性\n'); return 1; }
+    const gold = read(flags.get('--gold')![0]) as CommandsGold;
+    const views = flags.get('--index')!.map((file, i) => { phase = `索引分片 ${i + 1}`; return read(file); });
+    phase = '输入核对'; const report = compareCommandIndex(gold, views);
+    if (flags.has('--out')) { phase = '报告输出'; try { writeFileSync(flags.get('--out')![0], `${JSON.stringify(report, null, 2)}\n`); } catch { throw new Error('报告不可写，请换可写的输出位置'); } }
+    process.stdout.write(`${renderIndexReport(report)}\n`); return report.verdict === '相等' ? 0 : 1;
+  } catch (error) { process.stderr.write(`读取或比较失败：${phase}：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1]?.endsWith('/accept/command-index.ts')) process.exitCode = main(process.argv.slice(2));
 

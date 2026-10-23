@@ -96,3 +96,14 @@ test('apostrophes inside English contractions cannot quote an intervening lone c
   assert.deepEqual(paths("don't ping it's fine"), []); assert.deepEqual(paths("we'll ping you've asked"), []);
   assert.deepEqual(paths("执行 'ping'"), ['ping']);
 });
+test('CLI missing flags return usage and input errors identify only the input kind and reason', () => {
+  for (const args of [[], ['--tree', 'fixture'], ['--tree', 'fixture', '--out', 'report'], ['--tree', '--out', 'report', '--map', 'fixture:doc']]) {
+    const out = spawnSync(process.execPath, ['scripts/real/gold/case-commands.ts', ...args], { encoding: 'utf8' }); assert.equal(out.status, 2); assert.match(out.stderr, /用法.*--map/);
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'gold-usage-')); try {
+    const tree = join(dir, 'tree.xml'); const map = join(dir, 'map.json'); writeFileSync(tree, '<commands><item name="bad"></commands>'); writeFileSync(map, '{}');
+    const run = () => spawnSync(process.execPath, ['scripts/real/gold/case-commands.ts', '--tree', tree, '--map', `${map}:private-doc`, '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    let result = run(); assert.equal(result.status, 1); assert.match(result.stderr, /命令树.*标签不匹配/);
+    writeFileSync(tree, '<commands/>'); result = run(); assert.match(result.stderr, /脑图 1.*缺少 root/); assert.ok(!result.stderr.includes(dir)); assert.ok(!result.stderr.includes('private-doc'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

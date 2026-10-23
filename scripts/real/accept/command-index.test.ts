@@ -94,3 +94,9 @@ test('incomplete screen output gives fixed missing-fact categories and useful ne
   const raw = view(); raw.truncated = true; const result = compareCommandIndex(gold, [raw, raw]); const output = renderIndexReport(result);
   assert.match(output, /分片截断 2 项/); assert.match(output, /下一步.*only=/); assert.ok(!output.includes('synthetic-doc')); assert.ok(!output.includes('/commands/'));
 });
+import { spawnSync } from 'node:child_process';
+test('index CLI refuses missing inputs before reading any data', () => {
+  for (const args of [[], ['--gold', 'fixture'], ['--index', 'fixture'], ['--gold', '--index', 'fixture']]) {
+    const out = spawnSync(process.execPath, ['scripts/real/accept/command-index.ts', ...args], { encoding: 'utf8' }); assert.equal(out.status, 2); assert.match(out.stderr, /用法.*--gold.*--index/);
+  }
+});

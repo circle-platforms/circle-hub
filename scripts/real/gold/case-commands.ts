@@ -167,19 +167,30 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
 }
 
 export function main(argv: string[]): number {
-  const value = (name: string) => argv[argv.indexOf(`--${name}`) + 1];
-  if (!argv.includes('--tree') || !argv.includes('--out')) { process.stderr.write('需要 --tree、--map 或 --maps、--out\n'); return 2; }
+  const usage = '用法：node scripts/real/gold/case-commands.ts --tree <tree.xml> (--map <file>:<document> … | --maps <manifest>) --out <gold.json>\n';
+  const flags = new Map<string, string[]>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const name = argv[i]; const value = argv[i + 1];
+    if (!['--tree', '--out', '--maps', '--map'].includes(name) || !value || value.startsWith('--') || name !== '--map' && flags.has(name)) { process.stderr.write(usage); return 2; }
+    flags.set(name, [...(flags.get(name) ?? []), value]);
+  }
+  if (!flags.has('--tree') || !flags.has('--out') || !flags.has('--map') && !flags.has('--maps')) { process.stderr.write(usage); return 2; }
+  let phase = '命令树';
+  const read = (file: string): Buffer => { try { return readFileSync(file); } catch (error) { const code = (error as { code?: string }).code; throw new Error(`文件不可读${code && /^[A-Z_]+$/.test(code) ? `（${code}）` : ''}`); } };
   try {
-    const args = argv.flatMap((arg, i) => arg === '--map' ? [argv[i + 1]] : []);
-    if (argv.includes('--maps')) args.push(...readFileSync(value('maps'), 'utf8').split(/\r?\n/).filter((line) => line.trim() !== ''));
-    if (!args.length) throw new Error('没有脑图清单');
-    const maps = args.map((arg) => { const at = /:agile:(?:case|mindmap):/.exec(arg)?.index ?? arg.lastIndexOf(':'); if (at < 1) throw new Error('清单需要文件和文档编号'); return { document: arg.slice(at + 1), map: JSON.parse(readFileSync(arg.slice(0, at), 'utf8')) as unknown }; });
-    const treeBytes = readFileSync(value('tree'));
-    const gold = caseCommandsGold(treeBytes.toString('utf8'), maps);
-    gold.tree_sha256 = sha256(treeBytes);
-    writeFileSync(value('out'), `${JSON.stringify(gold, null, 2)}\n`);
-    process.stdout.write(`用例 ${gold.totals.cases}，可比较 ${gold.totals.comparable}，未归位 ${gold.totals.unplaced}\n`);
-    return 0;
-  } catch { process.stderr.write('抽取失败：检查命令树、脑图和清单文件的格式及可读性\n'); return 1; }
+    const treeBytes = read(flags.get('--tree')![0]); const xml = treeBytes.toString('utf8'); validateXml(xml);
+    const args = [...(flags.get('--map') ?? [])];
+    if (flags.has('--maps')) { phase = '清单'; args.push(...read(flags.get('--maps')![0]).toString('utf8').split(/\r?\n/).filter((line) => line.trim() !== '')); }
+    if (!args.length) { phase = '清单'; throw new Error('没有脑图条目；每行需要文件和文档编号'); }
+    const maps = args.map((arg, i) => {
+      phase = `脑图 ${i + 1}`;
+      const at = /:agile:(?:case|mindmap):/.exec(arg)?.index ?? arg.lastIndexOf(':'); if (at < 1 || !arg.slice(at + 1)) throw new Error('清单需要文件和文档编号');
+      const text = read(arg.slice(0, at)).toString('utf8'); let map: unknown; try { map = JSON.parse(text); } catch { throw new Error('不是有效 JSON'); }
+      parseMindMap(map); return { document: arg.slice(at + 1), map };
+    });
+    phase = '清单与命令抽取'; const gold = caseCommandsGold(xml, maps); gold.tree_sha256 = sha256(treeBytes);
+    phase = '输出'; try { writeFileSync(flags.get('--out')![0], `${JSON.stringify(gold, null, 2)}\n`); } catch { throw new Error('报告文件不可写，请换可写的输出位置'); }
+    process.stdout.write(`用例 ${gold.totals.cases}，可比较 ${gold.totals.comparable}，未归位 ${gold.totals.unplaced}\n`); return 0;
+  } catch (error) { process.stderr.write(`抽取失败：${phase}：${error instanceof Error ? error.message : '输入无效'}；修正该类输入后重新运行\n`); return 1; }
 }
 if (process.argv[1]?.endsWith('/gold/case-commands.ts')) process.exitCode = main(process.argv.slice(2));
