@@ -397,6 +397,9 @@ describe('locations gold generator', () => {
 });
 
 describe('leading-zero associated identifiers', () => {
+  it('keeps the case-location rule: ids with leading zeros stay unmarked here (the trace path keeps them via bugIdsOf)', () => {
+    assert.deepEqual(extractAssociatedIds('缺陷 0910011 合成', []).bugs, []);
+  });
   it('preserves nonzero identifiers for normalized joins and rejects all-zero runs', async () => {
     const { joinGold } = await import('./join.ts');
     const ids = extractAssociatedIds('需求 00910002；缺陷 00910001；缺陷 000000；需求 000000', []);

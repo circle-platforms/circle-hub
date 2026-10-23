@@ -110,7 +110,7 @@ function idAt(text: string, at: number, min: number, max: number, bare: boolean)
   let end = at;
   while (end < text.length && text[end] >= '0' && text[end] <= '9') end += 1;
   const id = text.slice(at, end);
-  if (id.length < min || id.length > max || /^0+$/.test(id)) return null;
+  if (id.length < min || id.length > max || id.startsWith('0')) return null;
   const before = text[at - 1] ?? '';
   const next = text[end] ?? '';
   const after = text[end + 1] ?? '';
