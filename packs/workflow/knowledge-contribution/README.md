@@ -69,3 +69,5 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 外发流水先写 `phase: sending` 再发请求，完成后追加 `phase: completed`；用 request_digest 和 attempts 配对。sending 记时间、片段摘要/引用/种类、选择加入和题目标识；completed 另记状态及服务请求号。被终止时只有 sending 表示可能已外发、处理情况未取得，不能当作未发送。
 
 校准阈值只计有判断记录背书的样例：按样例同行的 judgments 摘要读取记录，核 requested/returned/exact_model、题型、输入及 state 摘要、候选顺序和回答概率；再从该集合的原树 root/under 重做遮字及正确子项推导，核 expected。手写样例、缺记录或任一字段不符均不计入阈值；校准和归位共用这条核验路径。旧输出缺记录时使用 place/calibrate 的原 --out，或在当前根重新 calibrate。
+
+提交在校准及归位记录核验之前解析 --skip；明确跳过的条目不核提议、不上传其归位判断记录，只提交条目标识和跳过理由。局部拒绝带条目标识、原索引和判断摘要；缺记录时用 place 的原 --out。proposals.json 另存当时的校准阈值和样例数，当前校准不同会明确报告两者并要求重跑 place，不把补校准说成改写判断。

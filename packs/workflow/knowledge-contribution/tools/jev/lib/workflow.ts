@@ -5,7 +5,7 @@ import { inputDigest, topChoice, shouldDescend, NONE_OPTION, type JevChoiceQuest
 import { maskLiterals, thresholdOf } from './calibration.ts';
 import { narrowCandidates, optionNames, type PlacementChild } from './placement.ts';
 import { checkResponse, checkModel } from './validate.ts';
-import { readJsonFile, secureUrl, cut, need, record, sha, type LocalStore } from './local.ts';
+import { Refusal, readJsonFile, secureUrl, cut, need, record, sha, type LocalStore } from './local.ts';
 interface Context { values: any; hub: Hub; judge: Judge|null; store: LocalStore; allowed: Set<string>; model:string; io:{cwd:string;stdout:(v:string)=>void;stderr:(v:string)=>void} }
 const within=(path:string,under:string)=>under==='/'||path===under||path.startsWith(under+'/');
 const segments=(path:string)=>path==='/'?[]:path.slice(1).split('/').map(decodeURIComponent);
@@ -73,32 +73,46 @@ export async function runWorkflow(action:string,c:Context):Promise<number>{
   const outcome={reference:piece.reference,path:descended?path:null,stopped_at:path,reason,p:probability,threshold:calibration.threshold,model,judgments,candidate,unanswered:missing};outcomes.push(outcome);
   if(descended&&!missing){const code=GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code;proposals.push({id:'p_'+treeReference(piece.reference).entry.slice(0,16),code,text:proposalText(path,model,probability!,calibration),data:{root:v.root,path,source:{reference:piece.reference,quote:cut(piece.text.split('\n')[0]!,200)}},supporting_judgment:supporting,judgments});}
  }
- await store.write('placement.json',{model,root:v.root,items:outcomes},true);await store.write('proposals.json',{model,root:v.root,items:proposals},true);io.stdout(`归类判断：Jev@${model}；候选 ${outcomes.length}，提议 ${proposals.length}；只影响位置；停法和补取动作见 placement.json`);return failed?3:0;
+ await store.write('placement.json',{model,root:v.root,items:outcomes},true);await store.write('proposals.json',{model,root:v.root,calibration:{threshold:calibration.threshold,total:calibration.total},items:proposals},true);io.stdout(`归类判断：Jev@${model}；候选 ${outcomes.length}，提议 ${proposals.length}；只影响位置；停法和补取动作见 placement.json`);return failed?3:0;
 }
 function proposalText(path:string,model:string,p:number,calibration:{threshold:number|null;total:number}){return `归位提议：放到 ${path}。归类判断：Jev@${model}，p=${p.toFixed(2)}，只影响位置（阈值 ${calibration.threshold}，校准样例 ${calibration.total} 个）`;}
-export async function verifyProposals(input:any,hub:Hub,store:LocalStore){
+export class ProposalRefusal extends Refusal {
+ readonly reason:string;readonly item:string;readonly index:number;readonly judgment:string;
+ constructor(reason:string,message:string,item:string,index:number,judgment:string){super(`条目 ${item}（索引 ${index}，判断 ${judgment}）：${message}`);this.name='ProposalRefusal';this.reason=reason;this.item=item;this.index=index;this.judgment=judgment;}
+}
+export async function verifyProposals(input:any,hub:Hub,store:LocalStore,skip:ReadonlySet<string>=new Set()){
+ store.guard(input);
+ need(record(input)&&Array.isArray(input.items)&&input.items.every((p:any)=>record(p)&&typeof p.id==='string'),'提议条目缺少标识；重跑 place');
  checkModel(input.model,false);secureUrl(hub.url.href,input.model);
- const all=new Map((await store.records('judgments.jsonl')).map(value=>[inputDigest(value),value]));const calibration=await calibrationState(store,input.model,hub);need(calibration.threshold!==null,'提议缺合格校准；运行 calibrate 后重跑 place');
+ if(input.items.every((p:any)=>skip.has(p.id)))return [];const all=new Map((await store.records('judgments.jsonl')).map(value=>[inputDigest(value),value]));const calibration=await calibrationState(store,input.model,hub);
  const tree=new Tree(hub,input.root);const allowed=new Set<string>(GENERATED.axes.entry_kind.map((v:any)=>v.code));const used=new Map<string,any>();
- for(const p of input.items){
-  need(record(p)&&record(p.data)&&record(p.data.source)&&Array.isArray(p.judgments)&&p.judgments.length>0,'提议缺判断链；用原输出目录重跑 place');
-  const source=treeReference(p.data.source.reference);need(source.root===input.root&&p.data.root===input.root&&p.id==='p_'+source.entry.slice(0,16),'提议身份或根不符；重跑 place');
-  need(p.code===GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code,'提议种类不是归位提议；重跑 place');
-  const piece=await tree.piece('source',p.data.source.reference,allowed);need(p.data.source.quote===cut(piece.text.split('\n')[0]!,200),'提议引文被修改；重跑 place');
+ for(const [index,p]of input.items.entries()){
+  if(skip.has(p.id))continue;const item=typeof p.id==='string'?p.id:'未提供';let witness=typeof p.supporting_judgment==='string'?p.supporting_judgment:'未提供';
+  const ensure:(ok:unknown,reason:string,message:string)=>asserts ok=(ok,reason,message)=>{if(!ok)throw new ProposalRefusal(reason,message,item,index,witness);};
+  try{
+  ensure(calibration.threshold!==null,'calibration_missing','该 --out 里没有有效校准及判断记录；用 place 的 --out 运行 submit，或重新 calibrate 后 place');
+  ensure(record(input.calibration),'calibration_snapshot_missing','缺少 place 的校准快照；用当前校准重跑 place');
+  ensure(input.calibration.threshold===calibration.threshold&&input.calibration.total===calibration.total,'calibration_changed',`校准已变（阈值 ${input.calibration.threshold}→${calibration.threshold}，样例 ${input.calibration.total}→${calibration.total}）；用当前校准重跑 place`);
+  ensure(record(p)&&record(p.data)&&record(p.data.source)&&Array.isArray(p.judgments)&&p.judgments.length>0,'judgment_missing','该 --out 里没有这些判断记录；用 place 的 --out 运行 submit');
+  const source=treeReference(p.data.source.reference);ensure(source.root===input.root&&p.data.root===input.root&&p.id==='p_'+source.entry.slice(0,16),'identity_mismatch','提议身份或根不符；重跑 place');
+  ensure(p.code===GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code,'kind_mismatch','提议种类不是归位提议；重跑 place');
+  const piece=await tree.piece('source',p.data.source.reference,allowed);ensure(p.data.source.quote===cut(piece.text.split('\n')[0]!,200),'quote_mismatch','提议引文被修改；重跑 place');
   let path:string|null=null;let supporting:string|null=null;let probability:number|null=null;let stopped=false;
-  for(const hash of p.judgments){const r=all.get(hash);need(r&&r.requested_model===input.model&&r.returned_model===input.model&&r.exact_model===input.model,'提议缺判断记录或模型不一致；用原确切版本重跑 place');need(!stopped,'停止后的判断不能下降；重跑 place');
-   const prefix=`Classify the passage \`${r.question_id}\` under knowledge node `;const suffix='. Choose a child or none.';need(typeof r.instructions==='string'&&r.instructions.startsWith(prefix)&&r.instructions.endsWith(suffix),'判断不是归位问题；重跑 place');const at=r.instructions.slice(prefix.length,-suffix.length);need(at.startsWith('/')&&(path===null||path===at),'判断链路径不连续；重跑 place');path=at;
-   const id='q'+inputDigest({piece:piece.sha256,path}).slice(0,40);const narrowed=narrowCandidates(await tree.children(path!,source.entry),piece.text);need(narrowed,'判断节点不能提问；重跑 place');const prepared=question(id,path!,narrowed);
-   need(r.question_type==='choice'&&r.question_id===id&&r.input_digest===inputDigest(piece.text)&&r.state_digest===inputDigest({[id]:piece.text})&&inputDigest(r.candidates)===inputDigest(Object.entries(prepared.question.criteria).map(([name,description])=>({name,description})))&&r.instructions===prepared.question.instructions,'判断输入或选项不符；回读树后重跑 place');
-   const top=topChoice(r.answer);if(shouldDescend(r.answer,calibration.threshold!)){const name=prepared.options.get(top.choice);const child=narrowed.find(v=>v.name===name);need(child,'判断缺目标子节点；重跑 place');path=child.path;supporting=hash;probability=top.p;}else stopped=true;used.set(hash,r);
+  for(const hash of p.judgments){witness=String(hash);const r=all.get(hash);ensure(r,'judgment_missing','该 --out 里没有这些判断记录；用 place 的 --out 运行 submit');ensure(r&&r.requested_model===input.model&&r.returned_model===input.model&&r.exact_model===input.model,'model_mismatch','判断模型与提议不一致；用原确切版本重跑 place');ensure(!stopped,'after_stop','停止后的判断不能下降；重跑 place');
+   const prefix=`Classify the passage \`${r.question_id}\` under knowledge node `;const suffix='. Choose a child or none.';ensure(typeof r.instructions==='string'&&r.instructions.startsWith(prefix)&&r.instructions.endsWith(suffix),'question_mismatch','判断不是归位问题；重跑 place');const at=r.instructions.slice(prefix.length,-suffix.length);ensure(at.startsWith('/')&&(path===null||path===at),'descent_mismatch','判断链路径不连续；重跑 place');path=at;
+   const id='q'+inputDigest({piece:piece.sha256,path}).slice(0,40);const narrowed=narrowCandidates(await tree.children(path!,source.entry),piece.text);ensure(narrowed,'node_unavailable','判断节点不能提问；重跑 place');const prepared=question(id,path!,narrowed);
+   ensure(r.question_type==='choice'&&r.question_id===id&&r.input_digest===inputDigest(piece.text)&&r.state_digest===inputDigest({[id]:piece.text})&&inputDigest(r.candidates)===inputDigest(Object.entries(prepared.question.criteria).map(([name,description])=>({name,description})))&&r.instructions===prepared.question.instructions,'input_mismatch','判断输入或选项不符；回读树后重跑 place');
+   const top=topChoice(r.answer);if(shouldDescend(r.answer,calibration.threshold!)){const name=prepared.options.get(top.choice);const child=narrowed.find(v=>v.name===name);ensure(child,'target_missing','判断缺目标子节点；重跑 place');path=child.path;supporting=hash;probability=top.p;}else stopped=true;used.set(hash,r);
   }
-  need(supporting!==null&&probability!==null&&supporting===p.supporting_judgment&&path===p.data.path,'提议目标或支持判断不符；重跑 place');need(p.text===proposalText(path!,input.model,probability!,calibration),'提议模型、概率或校准文字被修改；重跑 place');
+  ensure(supporting!==null&&probability!==null&&supporting===p.supporting_judgment&&path===p.data.path,'support_mismatch','提议目标或支持判断不符；重跑 place');ensure(p.text===proposalText(path!,input.model,probability!,calibration),'text_mismatch','提议模型或概率文字与已核记录不一致；重跑 place');
+  }catch(error){if(error instanceof ProposalRefusal)throw error;if(error instanceof Refusal)throw new ProposalRefusal('tree_read',error.message,item,index,witness);throw error;}
  }
  return [...used.values()];
 }
-async function submit(c:Context):Promise<number>{const {values:v,hub,store,io}=c;need(v.proposals&&v.product&&v.build,'submit 缺少 --proposals、--product 或 --build；补齐后重跑');const input=await readJsonFile(v.proposals,io.cwd,store.guard);store.guard(input);need(record(input)&&Array.isArray(input.items)&&typeof input.model==='string','提议文件不完整；重跑 place');const judgments=await verifyProposals(input,hub,store);const skip=new Map<string,string>();for(const value of v.skip??[]){const at=value.indexOf('=');need(at>0&&value.slice(at+1).trim()!=='','--skip 须为条目=具体理由');skip.set(value.slice(0,at),value.slice(at+1));}
+async function submit(c:Context):Promise<number>{const {values:v,hub,store,io}=c;need(v.proposals&&v.product&&v.build,'submit 缺少 --proposals、--product 或 --build；补齐后重跑');const input=await readJsonFile(v.proposals,io.cwd,store.guard);store.guard(input);need(record(input)&&Array.isArray(input.items)&&typeof input.model==='string','提议文件不完整；重跑 place');const skip=new Map<string,string>();for(const value of v.skip??[]){const at=value.indexOf('=');need(at>0&&value.slice(at+1).trim()!=='','--skip 须为条目=具体理由');skip.set(value.slice(0,at),value.slice(at+1));}
  need([...skip.keys()].every(id=>input.items.some((p:any)=>p.id===id)),'--skip 指向清单外条目；从回执照抄本批条目标识和理由后重跑');
- const manifest={items:input.items.map((p:any,i:number)=>({id:p.id,title:`${i+1} ${p.data.path}`}))};const run=await start(hub,manifest,v.product,v.build,inputDigest({manifest,product:v.product,build:v.build}));need(input.items.every((p:any)=>p.data.root===run.root)&&input.root===run.root,`place 读取的根与这次锁定根不同；下一步用本次根 ${run.root} 重跑 place 和 submit`);
+ const judgments=await verifyProposals(input,hub,store,new Set(skip.keys()));
+ const manifest={items:input.items.map((p:any,i:number)=>({id:p.id,title:`${i+1} ${p.data?.path??'已跳过'}`}))};const run=await start(hub,manifest,v.product,v.build,inputDigest({manifest,product:v.product,build:v.build}));need(input.items.every((p:any)=>skip.has(p.id)||p.data.root===run.root)&&input.root===run.root,`place 读取的根与这次锁定根不同；下一步用本次根 ${run.root} 重跑 place 和 submit`);
  const notes=await upload(hub,{judgments});
  const items=input.items.map((p:any)=>skip.has(p.id)?{item:p.id,handling:'skipped',reason:skip.get(p.id)}:{item:p.id,handling:'handled',slots:{contribution:[{code:p.code,text:p.text,data:p.data}]}});
  const result=await hub.call('submit_result',{run:run.run,model:`${input.model}（Circle 技能 jev，${GENERATED.id}@${run.pack_digest}）`,items,notes});
