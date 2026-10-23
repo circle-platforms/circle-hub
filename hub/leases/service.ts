@@ -38,6 +38,7 @@ export type ChangeOutcome =
 export interface HolderSnapshot {
   key: string;
   lease: string;
+  /** Monotonic operation counter: extend and release also raise it; equality alone is not continuity. */
   fencing: number;
   user: string;
   run: string;

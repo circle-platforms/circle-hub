@@ -423,7 +423,7 @@ export class DispatchService {
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
-    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && a.fencing === b.fencing && !b.released && Date.parse(b.expires_at) > this.now().getTime()));
+    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && b.fencing >= a.fencing && !b.released && Date.parse(b.expires_at) > this.now().getTime()));
   }
   private async secret(id: string): Promise<string> { const secret = await this.options.records.vault.getText(`executor.${id}.bearer`); if (!secret) throw new Error('执行器密钥不可用'); return secret; }
   private async pinned(binding: JobBinding): Promise<ExecutorDefinition> {

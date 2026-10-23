@@ -212,3 +212,10 @@ test('R28 failed preconditions identify their pointers without publishing observ
   assert.equal(failed[0].pointer,'/build');assert.equal(failed[0].operator,'equals');assert.equal(failed[0].actual,undefined);
   assert.ok(state.failed_conditions?.some(v=>v.pointer==='/build'));
 });
+
+test('R34 an ordinary lineage renewal preserves the lease and is not reported as drift',async t=>{
+  let c:Awaited<ReturnType<typeof setup>>;
+  c=await setup({onSubmit:async()=>{const result=await c.leases.extend({keys:c.executor.definition.resources,holder:{user:c.owner.id,run:c.run},ttlSeconds:3600,maxTtlSeconds:3600});assert.equal(result.ok,true);}});t.after(()=>c.close());
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const source=await c.kit.artifacts.source(c.owner,state.result!.slice(4));assert.ok(source?.bytes);
+  const result=JSON.parse(new TextDecoder().decode(source.bytes));assert.equal(result.lease_drift,false);
+});
