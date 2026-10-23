@@ -74,6 +74,7 @@ function renderV4(value: bigint): string {
 }
 
 function parseV6(text: string): bigint | null {
+  if(text.includes('.')){const colon=text.lastIndexOf(':');if(colon<0)return null;const tail=parseV4(text.slice(colon+1));if(tail===null)return null;text=text.slice(0,colon+1)+((tail>>16n)&0xffffn).toString(16)+':'+(tail&0xffffn).toString(16);}
   if (!/^[0-9a-fA-F:]+$/.test(text)) return null;
   const halves = text.split('::');
   if (halves.length > 2) return null;
@@ -138,6 +139,7 @@ export function addressKey(text: string): string | null {
   const v4 = addressValue('ipv4', text);
   if (v4 !== null) return `ipv4:${v4.toString(16)}`;
   const v6 = addressValue('ipv6', text);
+  if(v6!==null&&(v6>>32n)===0xffffn)return `ipv4:${(v6&0xffffffffn).toString(16)}`;
   return v6 === null ? null : `ipv6:${v6.toString(16)}`;
 }
 

@@ -30,7 +30,7 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
   for (const v of values) {
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
     else if (!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
-    if (typeof v.value === 'string' && !hasBalancedCommandText(v.value)) issue('param_value', v.pointer, '引号必须成对，值不能以反斜杠结尾；修正该值后重新提交');
+    if (typeof v.value === 'string' && !hasBalancedCommandText(v.value)) issue('param_value', v.pointer, '按 POSIX 引号规则修正：单引号内的反斜杠不是转义；可用双引号包住含单引号的文字，且值不能以反斜杠结尾');
   }
   return { values, problems };
 }
@@ -41,7 +41,7 @@ export function hasBalancedCommandText(text: string): boolean {
   let quote: string | null = null; let escaped = false;
   for (const char of text) {
     if (escaped) { escaped = false; continue; }
-    if (char === '\\') { escaped = true; continue; }
+    if (char === '\\' && quote!=="'") { escaped = true; continue; }
     if (quote !== null) { if (char === quote) quote = null; }
     else if (char === '"' || char === "'") quote = char;
   }
@@ -51,4 +51,23 @@ export function hasBalancedCommandText(text: string): boolean {
 /** Shared cell-format policy; literal assertions do not use the ordinary command quote lexer. */
 export function hasSingleLineValue(value: unknown): value is string {
   return typeof value === 'string' && value.isWellFormed() && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029\u0000-\u0008\u000e-\u001f\uFFFE\uFFFF]/.test(value) && !/\{(?:0)?\}/.test(value) && !value.startsWith('=') && !/_x[0-9a-fA-F]{4}_/.test(value);
+}
+
+/** POSIX expansions are active outside single quotes; glob and control syntax only outside quotes. */
+export function hasShellDynamicSyntax(text:string):boolean {
+  let quote:string|null=null;
+  for(let i=0;i<text.length;i++){
+    const char=text[i];
+    if(quote==="'"){if(char==="'")quote=null;continue;}
+    if(char==='\\'){
+      const next=text[i+1];if(next===undefined)return true;
+      if(quote==='"'&&!['$','`','"','\\','\n'].includes(next))continue;
+      i++;continue;
+    }
+    if(char==='"'){quote=quote==='"'?null:'"';continue;}
+    if(char==="'"&&quote===null){quote="'";continue;}
+    if(char==='$'||char==='`')return true;
+    if(quote===null&&'*?[]{}~;|&<>'.includes(char))return true;
+  }
+  return false;
 }

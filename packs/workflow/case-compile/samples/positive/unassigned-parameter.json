@@ -405,7 +405,8 @@
           "method": "configure",
           "parameters": {
             "line": "device_cli"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-host",
@@ -413,21 +414,24 @@
           "parameters": {
             "command": "host_shell",
             "then": "host_shell"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-check",
           "method": "literal",
           "parameters": {
             "expected": "literal_assertion"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-clock",
           "method": "pause",
           "parameters": {
             "seconds": "wait"
-          }
+          },
+          "reviewed": true
         }
       ],
       "denied": {

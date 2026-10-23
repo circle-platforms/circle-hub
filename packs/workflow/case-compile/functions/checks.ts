@@ -7,8 +7,8 @@ import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
 import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
-import { bindArguments, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
-import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasAmbiguousIpv4 } from './addresses.ts';
+import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
+import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasNoncanonicalDottedQuad, hasAmbiguousIpv4 } from './addresses.ts';
 interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -19,7 +19,7 @@ function subjectOf(input: unknown): CheckSubject {
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
-function refute(s: CheckSubject, code: string, statement: string, pointer: string): Outcome { return { verdict: 'refute', code: `case-compile.${code}`, statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, pointer }; }
+function refute(s: CheckSubject, code: string, statement: string, pointer: string, data?:Record<string,unknown>): Outcome { return { verdict: 'refute', code: `case-compile.${code}`, statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, pointer, ...(data?{data}: {}) }; }
 function prerequisites(s: CheckSubject): Outcome[] | null {
   if (s.contract && s.profile) return null;
   const details = s.problems.map((v) => `${v.document}${v.pointer}：${v.message}`);
@@ -37,19 +37,19 @@ export function checkContractShape(input: unknown): Outcome[] {
     const at = `/data/steps/${i}`; const beforeStep=out.length;
     const method = runtimeMethod(s.contract!, step.object, step.method);
     if (!method) { out.push(refute(s, 'method_forbidden', `第 ${i + 1} 步不是合约启用的组合`, at)); continue; }
-    const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
+    const allowed=allowedCall(s.profile!,step.object,step.method);if(!allowed){out.push(refute(s,'method_not_allowed','该启用组合当前未开；换用配置已开放的组合。扩展角色须由集成者另写一页、重新发布后新开运行',at,{unassigned_parameters:method.parameters.map(p=>p.name)}));continue;}
     if (Object.values(allowed.parameters).some((role) => role === 'literal_assertion')) { out.push(refute(s, 'assertion_in_steps', '断言写进 expects，带引文和 after', at)); continue; }
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
       if (method.parameters.some((param) => param.name === v.name && param.redacted)) continue;
       const role = allowed.parameters[v.name];
-      if (!Object.hasOwn(allowed.parameters, v.name)) { out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色；先在运行环境配置里给它定角色，再按角色筛查`, v.pointer)); continue; }
+      if (!Object.hasOwn(allowed.parameters, v.name)) { out.push(refute(s, 'param_unassigned', `参数 ${v.name} 在已开放组合中没有角色；去掉该参数或换用配置已开放的组合。集成者补角色后重新发布、新开运行`, v.pointer)); continue; }
       if ((role === 'device_cli' || role === 'host_shell') && typeof v.value !== 'string') { out.push(refute(s, 'param_value', '命令角色必须是单行文字', v.pointer)); continue; }
       if (role === 'wait' && (v.pointer.includes('/keywords/') && Object.values(allowed.parameters).every((role) => role === 'wait') || !/^[0-9]+$/.test(String(v.value)) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
       if (role === 'device_cli' && !hasBalancedCommandText(String(v.value).normalize('NFKC')) && !bound.problems.some((problem) => problem.code === 'param_value' && problem.pointer === v.pointer)) out.push(refute(s, 'param_value', '命令目录正规化后的引号必须成对，不能以反斜杠结尾；先修正命令文字', v.pointer));
       if (role === 'device_cli' && deniedCommand(String(v.value), s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
-      if (role === 'host_shell' && /[$`*?\[\]{}~;|&<>]/.test(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
+      if (role === 'host_shell' && hasShellDynamicSyntax(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
       if (role === 'host_shell' && deniedCommand(String(v.value), s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
@@ -73,7 +73,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
   }
   const examine = (value: string, pointer: string, device: string | null, role?: string): void => {
-    if (role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '主机命令含非标准 IPv4 数字记法，无法唯一核对目标；如为地址请写标准点分四段，如非地址请拆出并明确用途', pointer));
+    if (hasNoncanonicalDottedQuad(value) || role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '命令含非标准或有歧义的 IPv4 数字记法；地址写规范四段点分，非地址选项改用更小单位的整数或明确等待步骤', pointer));
     for (const address of literalAddresses(value)) {
       if (!isHostLiteral(address, value, bed)) continue;
       count++;
@@ -86,8 +86,9 @@ export function checkAddresses(input: unknown): Outcome[] {
   };
   for (const [i, step] of slots.steps.entries()) {
     const method = runtimeMethod(s.contract!, step.object, step.method); const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
+    if(method&&!allowedCall(s.profile!,step.object,step.method))out.push(refute(s,'method_not_allowed','该启用组合当前未开；换用配置已开放的组合',`/data/steps/${i}`,{unassigned_parameters:method.parameters.map(p=>p.name)}));
     const bound = method ? bindArguments(method, step, `/data/steps/${i}`).values : [];
-    for (const v of bound) if (allowed && !Object.hasOwn(allowed.parameters, v.name) && !method?.parameters.some((p) => p.name === v.name && p.redacted)) out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色，地址用途无法核对；请在运行环境配置里给它定角色`, v.pointer));
+    for (const v of bound) if (allowedCall(s.profile!,step.object,step.method) && !Object.hasOwn(allowed.parameters, v.name) && !method?.parameters.some((p) => p.name === v.name && p.redacted)) out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色，地址用途无法核对；去掉该参数或换用配置已开放的组合，集成者补角色后才能新开运行`, v.pointer));
     const seat = s.profile!.seats.find((v) => v.object === step.object);
     const values = [...step.args.map((value, k) => ({ value, pointer: `/data/steps/${i}/args/${k}` })), ...Object.entries(step.keywords).map(([name, value]) => ({ value, pointer: `/data/steps/${i}/keywords/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` }))];
     for (const v of values) {

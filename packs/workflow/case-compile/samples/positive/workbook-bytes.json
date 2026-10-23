@@ -395,28 +395,32 @@
           "method": "configure",
           "parameters": {
             "line": "device_cli"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-host",
           "method": "shell",
           "parameters": {
             "command": "host_shell"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-check",
           "method": "literal",
           "parameters": {
             "expected": "literal_assertion"
-          }
+          },
+          "reviewed": true
         },
         {
           "object": "widget-clock",
           "method": "pause",
           "parameters": {
             "seconds": "wait"
-          }
+          },
+          "reviewed": true
         }
       ],
       "denied": {
@@ -537,7 +541,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@2.2.0"
+      "generator": "case-compile@2.3.0"
     },
     "workbook": {
       "model": {
@@ -635,14 +639,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@2.2.0",
+                    "text": "case-compile@2.3.0",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "7945696d62785e29e480c8df9d15e0603c6d1f3c0727e860e7b4b8489762bbe9",
+                    "text": "e7887199b2e42f6262973e7471a0054740380976e84a252a6d03ff5d20827e4a",
                     "formula": false,
                     "style": null
                   }
@@ -976,7 +980,7 @@
           }
         ]
       },
-      "sha256": "9577b7bfc672f71c0e2c166284ab6bc6c8d133c95a31ec681d2c681d4bb1bf38"
+      "sha256": "2c95193f3ce91d1f31329da2abc45a576b9690d7095b00cc9f7b744221216e8a"
     }
   },
   "expect": [
