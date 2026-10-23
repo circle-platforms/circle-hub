@@ -9,7 +9,7 @@
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -1348,6 +1348,16 @@ describe('secret import', () => {
       assert.equal(result.code, 1); assert.ok(!result.text.includes(file)); assert.ok(!result.text.includes(value.slice(0, 12)));
       assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
     }
+    const emptyFile = await importFile(admin, `PORTAL_USER=\nPORTAL_PASSWORD=${value}`);
+    const empty = await admin.run(importArgs(emptyFile, id));
+    assert.equal(empty.code, 1); assert.match(empty.text, /PORTAL_USER：找到，长度 0/);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    const linked = join(admin.deployment.dataDir, 'linked.env');
+    await symlink(join(admin.deployment.dataDir, 'synthetic.env'), linked);
+    for (const path of [admin.deployment.dataDir, linked]) {
+      const refused = await admin.run(importArgs(path, id));
+      assert.equal(refused.code, 1); assert.ok(!refused.text.includes(path));
+    }
     const file = await importFile(admin, `PORTAL_USER=has:colon\nPORTAL_PASSWORD=${value}`); secrets.add('has:colon');
     assert.equal((await admin.run(['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${id}/username`])).code, 1);
     assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
@@ -1373,8 +1383,9 @@ describe('secret import', () => {
 });
 
 
+const temporaryKeychainAvailable = process.platform === 'darwin' && await access('/usr/bin/security').then(() => true, () => false);
 describe('reimport after key loss', () => {
-  for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && process.platform !== 'darwin' ? 'skipped: /usr/bin/security is only on macOS' : false }, async () => {
+  for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && !temporaryKeychainAvailable ? 'skipped: /usr/bin/security is unavailable (requires macOS)' : false }, async () => {
     const directory = await mkdtemp(join(harness.scratch, 'key-loss-'));
     const file = join(directory, 'synthetic.keychain-db');
     const service = `circle-hub-synthetic-${randomBytes(12).toString('hex')}`;

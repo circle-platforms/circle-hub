@@ -151,6 +151,15 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   Output contains only the bound system pack/read name, completion or failure code, each artifact's declared name,
   digest and size, and the manifest digest. The command suppresses the assembly's free-text event sink so keys, remote
   reasons, content and metadata do not reach the terminal. Read details remain in the manifest and administrator records.
+- **Integrator smoke script**: `node scripts/real/smoke-connectors.ts --logs <logs> --read <resource>:<read-name>:<key> [--read …]`.
+  Per integrator answer 9 on the plan-evidence task, this checks command output (including any command events) and only
+  the newly appended bytes of `hub.out.log`/`hub.err.log`; it does not treat CLI reads as MCP calls or export a call log.
+  Each response artifact is exported to a temporary 0700 directory and checked against its reported SHA-256 and size,
+  then removed. JSON string values or HTML/text fragments of at least eight characters are searched raw and JSON-escaped
+  in both outputs, excluding standalone digests and text already in the request key. Only counts and hit locations are
+  printed. Completion, intact exports and zero hits are all required; missing, rotated, truncated or unreadable logs,
+  undecodable text artifacts and export failures cannot pass. A log increment over 64 MiB also refuses the check.
+  Reads are sequential, never retried; actual connector smoke runs belong to the integrator, not these synthetic tests.
 - **Held-back sources** (B02 R[4]): a read whose bytes the credential scan flags is stored `retain_only`: no function gets its text. `source held` lists scan-hit sources (sha256, size, the external object, detectors), with current effective tier and direct/derived/no acceptance, `source findings <sha256>` shows each finding as a position and the shape of the line around it (letters as x, digits as 9), never the value, `source accept <sha256> --note <why>` records an administrator's acceptance bound to that exact scan (the note may not copy the matched text), and `source withdraw <sha256>` takes it back. An acceptance lifts only bytes the Hub read or made, never an upload, and never a truncated scan; stored tiers remain historical: current acceptance lifts a scan-imposed hold, while an explicit requested retain-only policy stays in force. Derived coverage is established once at admission; ordinary reads validate stored scan facts and live dependency decisions without re-scanning source bytes (records decisions 19–20).
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
   `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).

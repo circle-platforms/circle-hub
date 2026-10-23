@@ -228,14 +228,6 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    (`rollback: true`). A failure before the data moved restarts the current release; after it, the service is stopped and
    unloaded (or the message says it may still run), the progress stays, and the next `rollback` continues: it sets the
    partial state aside and restores again.
-10. **Rehearsal key loss**: when `security` is available, creates a temporary keychain file under the throwaway root,
-   with a one-off service and two random 32-byte items (vault key and operator token). Every security invocation explicitly
-   targets that file, including cleanup. Scans every backup file for either value as raw bytes and lowercase/uppercase
-   hex; any occurrence rejects the rehearsal without displaying the value. Deletes both items before restore, checks
-   that neither is restored, moves the restored vault to `set-aside/<time>-key-loss/vault` and creates a fresh master key.
-   The report lists item count, backup hits, remaining items and moved vault file count. If security is absent, key loss
-   is explicitly skipped, not passed; the other comparisons still run. The temporary keychain is deleted even with
-   `--keep` and on failure. This does not exercise a real deployment or the login keychain.
 10. **Rehearsal**: a throwaway root `chr-*` in the temporary directory with a marker file: init, synthetic records set up
    as the Hub's are (two tables with an identity column and an append-only trigger, created by the superuser role, which
    grants the application role SELECT and INSERT; the rows, with text, JSON, numeric, float, timestamp and bytea values,
@@ -247,6 +239,14 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    unchanged, and check that the role owns nothing and is still refused
    (42501) DELETE, TRUNCATE, DROP, ALTER and DISABLE TRIGGER on both tables and CREATE TABLE; the root is removed unless
    `--keep` (its read-only directories are made writable first, `removeTree` in `files.ts`).
+   **Key loss**: when `security` is available, creates a temporary keychain file under the throwaway root,
+   with a one-off service and two random 32-byte items (vault key and operator token). Every security invocation explicitly
+   targets that file, including cleanup. Scans every backup file for either value as raw bytes and lowercase/uppercase
+   hex; any occurrence rejects the rehearsal without displaying the value. Deletes both items before restore, checks
+   that neither is restored, moves the restored vault to `set-aside/<time>-key-loss/vault` and creates a fresh master key.
+   The report lists item count, backup hits, remaining items and moved vault file count. If security is absent, key loss
+   is explicitly skipped, not passed; the other comparisons still run. The temporary keychain is deleted even with
+   `--keep` and on failure. This does not exercise a real deployment or the login keychain.
 11. **One lock** (`run/platform.lock`) serialises deploy, rollback, backup and restore. It holds `<pid> <token>`, is
    created complete (written beside it, then hard-linked), and a lock of a dead process is taken over only by the one
    taker that holds `platform.lock.break`, and only while it still holds exactly the dead content. A lock that cannot be

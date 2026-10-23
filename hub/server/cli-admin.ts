@@ -7,7 +7,7 @@
 // keychain item that cannot be read only costs a notice. Reads are not an access boundary: without any token they act as
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
-// or a secret value: secrets and tokens come from standard input only, never from argv.
+// or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
@@ -174,7 +174,7 @@ class Session {
    */
   hub(requireVaultKey = false, quiet = false): Promise<AssembledHub> {
     this.#hub ??= (async () =>
-      assembleHub(this.config(), await this.records(), { ...this.options.assembly, log: quiet ? () => {} : (line) => this.err(line), requireVaultKey, command: true }))();
+      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet ? { log: () => {} } : {}), requireVaultKey, command: true }))();
     return this.#hub;
   }
 
@@ -678,8 +678,8 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
     let missing = false;
     for (const key of keys) {
       const value = found.get(key);
-      if (!value) { session.out(`${key}：没有`); missing = true; }
-      else session.out(`${key}：找到，长度 ${value.length}`);
+      if (value === undefined) { session.out(`${key}：没有`); missing = true; }
+      else { session.out(`${key}：找到，长度 ${value.length}`); if (value.length === 0) missing = true; }
     }
     if (missing) return 1;
     const grouped = new Map<string, Record<string, string>>();
