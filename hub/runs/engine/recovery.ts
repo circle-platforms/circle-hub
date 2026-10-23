@@ -35,7 +35,8 @@ export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome
     gaps.unshift({ reason: layer.reason, missing: RULES[layer.reason].missing, exit: requestExit(RULES[layer.reason], context) });
   }
   const primary = gaps.find(gap => gap.reason === layer.reason)!;
-  return { ...layer, missing: primary.missing, exit: primary.exit, ...(gaps.length > 1 ? { gaps } : {}) };
+  const additional = gaps.filter(gap => gap !== primary);
+  return { ...layer, missing: primary.missing, exit: primary.exit, ...(additional.length ? { gaps: additional } : {}) };
 }
 
 function requestExit(rule: Rule, context: RecoveryContext): UnknownExit {

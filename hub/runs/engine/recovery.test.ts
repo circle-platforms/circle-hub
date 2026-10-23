@@ -89,7 +89,8 @@ test('integrity_unproven carries its own missing fact and named exit', () => {
 test('one layer preserves independent reasons and their separate facts', () => {
   const outcomes = [unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '缺少来源甲'), unknown({ tier: 'advisory', grounds: [] }, 'timeout', '缺少检查乙的完成结果')];
   const layer = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, outcomes, context);
-  assert.deepEqual(layer.gaps?.map(g => g.reason), ['missing_input', 'timeout']);
+  assert.deepEqual([layer.reason, ...(layer.gaps ?? []).map(g => g.reason)], ['missing_input', 'timeout']);
+  assert.equal(layer.gaps?.length, 1, 'additional causes must not repeat the primary exit');
   assert.ok(LayerResult.safeParse(layer).success);
 });
 test('withheld source waits for an administrator while an unavailable source is reread', () => {
