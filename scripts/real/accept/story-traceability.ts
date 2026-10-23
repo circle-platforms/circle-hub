@@ -43,13 +43,15 @@ export default function scenario(gold: StoryGold): Scenario {
           const correct = Number(count?.[1]) === row.cases.length && listed.length === Math.min(5, row.cases.length) && new Set(listed).size === listed.length && listed.every(id => row.cases.some(c => c.id === id));
           add(`${label} 用例连接`, correct, `${row.cases.length} 个，展示 ${Math.min(5, row.cases.length)} 个`, correct ? '一致' : `展示 ${listed.length} 个，连接或计数不符`);
         }
-        add(`${label} 原样状态与阶段`, claim.includes(`状态：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('status') ? '字段未提供' : String(row.status)}；阶段：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('stage') ? '字段未提供' : String(row.stage)}`));
+        add(`${label} 原样状态与阶段`, claim.includes(`状态：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('status') ? '字段未提供' : row.fields_nonscalar?.includes('status') ? 'PLM 返回的值不是单个值' : String(row.status)}；阶段：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('stage') ? '字段未提供' : row.fields_nonscalar?.includes('stage') ? 'PLM 返回的值不是单个值' : String(row.stage)}`));
         if (!row.plm_returned) add(`${label} PLM 未返回`, claim.includes(`PLM 应答里没有编号 ${row.story}`));
       }
       const counts = `需求 ${gold.stories.length} 个：已追溯 ${gold.traced} 个，未追溯 ${gold.untraced} 个；PLM 没返回 ${gold.plm_unread} 个`;
       add('运行计数', text.includes(counts), counts, text.includes(counts) ? counts : '不一致或未出现');
       const states = `原样状态计数：${gold.statuses.map(s => `${String(s.status)} ${s.count} 个`).join('、')}`;
-      add('按原样状态分组', text.includes(states), `${gold.statuses.length} 组，SHA-256 ${hash(states)}`);
+      add('非单个状态单列计数', text.includes(`PLM 返回的状态不是单个值的有 ${gold.status_nonscalar} 个，没有按状态计数`), `${gold.status_nonscalar} 个`);
+      add('非单个阶段单列计数', text.includes(`PLM 返回的阶段不是单个值的有 ${gold.stage_nonscalar} 个`), `${gold.stage_nonscalar} 个`);
+      add('按原样状态分组', text.includes(states) && (gold.statuses.length > 0 || /原样状态计数：[ \t]*(?:$|\r?\n|；用例明细)/m.test(text)), `${gold.statuses.length} 组，SHA-256 ${hash(states)}`);
       checks.push(lengthBounded(area, turns));
       return checks;
     },

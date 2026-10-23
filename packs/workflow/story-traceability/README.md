@@ -1,6 +1,6 @@
 # 需求追溯矩阵
 
-独立工作流包 story-traceability 1.0.3。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
+独立工作流包 story-traceability 1.0.4。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
 
 可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
@@ -60,3 +60,13 @@ uses missing_input for absent ids and is outside this task's edits. No package/r
 Version 1.0.3 is re-signed with these per-id semantics.
 
 Closure review 3: adopted the shared raw-id extraction fix from gold-trace 36455d4 and removed the stand-in allocation entirely. Label numbers and dates no longer compete for a global or local numeric pool. The independent oracle still imports no Hub or pack runtime. Notes-only maps are classified by NoCaseNodesError at the throw site, never by matching exception messages.
+
+## Non-scalar PLM observations
+
+Scalar status and stage retain their values; fields_absent, fields_nonscalar and an explicit null are separate facts.
+A non-scalar field has a null placeholder plus its name in fields_nonscalar; its original JSON remains in the PLM original
+response. It is excluded from scalar state groups, never inferred as a lifecycle state and never counted in the null group.
+status_nonscalar and stage_nonscalar are top-level summary counts, not new vocabulary values. Counts are written before
+the possibly long status list, in both summary data and the statement: PLM 返回的状态不是单个值的有 k 个，没有按状态计数.
+A long-state regression checks that the non-scalar counts remain in the first 500 characters. The independent raw-input
+gold and its checker use the same rule; a missing counter or an invented null group fails verification. Version 1.0.4.

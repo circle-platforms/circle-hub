@@ -8,10 +8,17 @@ import { extractAssociatedIds, locationsGold } from './locations.ts';
 import { parseDocumentList } from './trace.ts';
 
 export type Scalar = string | number | boolean | null;
-const scalar = (value: unknown): Scalar => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null;
+const scalar = (value: unknown): Scalar => typeof value === 'string' || typeof value === 'number' && Number.isFinite(value) || typeof value === 'boolean' ? value : null;
 export type StoryRecord = { id: string | number; status?: unknown; stage?: unknown; title?: unknown };
-export type StoryGoldRow = { story: string; status: Scalar; stage: Scalar; fields_absent?: string[]; plm_returned: boolean; cases: Array<{ id: string; title: string }> };
-export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; status_absent?: number; statuses: Array<{ status: Scalar; count: number }>; documents: number; documents_without_cases: number; missing_documents: string[]; scope: ProvenanceType };
+const absentFields = (row: StoryRecord): string[] => ['status', 'stage'].filter(key => !Object.hasOwn(row, key) || row[key as 'status' | 'stage'] === undefined);
+const nonscalarFields = (row: StoryRecord): string[] => ['status', 'stage'].filter(key => {
+  const value = row[key as 'status' | 'stage'];
+  return value !== undefined && value !== null && typeof value !== 'string' && typeof value !== 'boolean'
+    && !(typeof value === 'number' && Number.isFinite(value));
+});
+
+export type StoryGoldRow = { story: string; status: Scalar; stage: Scalar; fields_absent?: string[]; fields_nonscalar?: string[]; plm_returned: boolean; cases: Array<{ id: string; title: string }> };
+export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; status_absent?: number; status_nonscalar: number; stage_nonscalar: number; statuses: Array<{ status: Scalar; count: number }>; documents: number; documents_without_cases: number; missing_documents: string[]; scope: ProvenanceType };
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const norm = (id: string): string => id.replace(/^0+/, '') || '0';
 const isId = (id: string): boolean => /^[0-9]{1,15}$/.test(id) && norm(id) !== '0';
@@ -52,14 +59,17 @@ export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Ar
   const stories = ids.map((id): StoryGoldRow => {
     const returned = options.plm.filter(r => norm(String(r.id)) === id);
     const first = returned[0];
-    if (returned.some(r => JSON.stringify([r.status ?? null, r.stage ?? null]) !== JSON.stringify([first.status ?? null, first.stage ?? null]))) throw new Error('需求原件冲突');
-    return { story: id, status: scalar(first?.status), stage: scalar(first?.stage), fields_absent: first ? ['status', 'stage'].filter(key => !Object.hasOwn(first, key)) : [], plm_returned: returned.length > 0,
+    if (returned.some(r => JSON.stringify([scalar(r.status), scalar(r.stage), absentFields(r), nonscalarFields(r)]) !== JSON.stringify([scalar(first.status), scalar(first.stage), absentFields(first), nonscalarFields(first)]))) throw new Error('需求原件冲突');
+    return { story: id, status: scalar(first?.status), stage: scalar(first?.stage), fields_absent: first ? absentFields(first) : [],
+      fields_nonscalar: first ? nonscalarFields(first) : [], plm_returned: returned.length > 0,
       cases: cases.filter(c => c.stories.some(s => s === id)).map(c => ({ id: c.id, title: c.title })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
   });
   const traced = stories.filter(s => s.cases.length > 0).length;
   const states = new Map<Scalar, number>();
-  for (const s of stories) if (s.plm_returned && !s.fields_absent?.includes('status')) states.set(s.status, (states.get(s.status) ?? 0) + 1);
+  for (const s of stories) if (s.plm_returned && !s.fields_absent?.includes('status') && !s.fields_nonscalar?.includes('status')) states.set(s.status, (states.get(s.status) ?? 0) + 1);
   return { product: options.product, build: options.build, stories, traced, untraced: stories.length - traced, plm_unread: stories.filter(s => !s.plm_returned).length,
+    status_nonscalar: stories.filter(s => s.plm_returned && s.fields_nonscalar?.includes('status')).length,
+    stage_nonscalar: stories.filter(s => s.plm_returned && s.fields_nonscalar?.includes('stage')).length,
     status_absent: stories.filter(s => s.plm_returned && s.fields_absent?.includes('status')).length, statuses: [...states].sort(([a], [b]) => JSON.stringify([typeof a, a]) < JSON.stringify([typeof b, b]) ? -1 : JSON.stringify([typeof a, a]) > JSON.stringify([typeof b, b]) ? 1 : 0).map(([status, count]) => ({ status, count })), documents: options.maps.length, documents_without_cases: documentsWithoutCases,
     missing_documents: options.missingDocuments ?? [], scope: 'declared' };
 }
@@ -88,7 +98,7 @@ export function main(argv: string[]): number {
     const gold = storyGold({ ids: parseStoryIds(read(value('stories')!)), plm, maps, tree: read(value('tree')!), product: value('product')!, build: value('build')!, caseRule, missingDocuments });
     const text = JSON.stringify(gold, null, 2) + '\n';
     writeFileSync(resolve(value('out')!), text);
-    process.stdout.write(`需求 ${gold.stories.length}；已追溯 ${gold.traced}；未追溯 ${gold.untraced}；PLM 未返回 ${gold.plm_unread}；文档 ${maps.length}；无用例文档 ${gold.documents_without_cases}；缺原件 ${missingDocuments.length}；SHA-256 ${createHash('sha256').update(text).digest('hex').slice(0, 12)}；${missingDocuments.length ? '不通过' : '通过'}\n`);
+    process.stdout.write(`需求 ${gold.stories.length}；已追溯 ${gold.traced}；未追溯 ${gold.untraced}；PLM 未返回 ${gold.plm_unread}；非单个状态 ${gold.status_nonscalar}；非单个阶段 ${gold.stage_nonscalar}；文档 ${maps.length}；无用例文档 ${gold.documents_without_cases}；缺原件 ${missingDocuments.length}；SHA-256 ${createHash('sha256').update(text).digest('hex').slice(0, 12)}；${missingDocuments.length ? '不通过' : '通过'}\n`);
     return missingDocuments.length ? 1 : 0;
   } catch (error) { process.stderr.write('生成需求独立答案不通过；请核对输入原件和编号清单\n'); return 1; }
 }

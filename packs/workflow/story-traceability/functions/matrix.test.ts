@@ -217,3 +217,28 @@ test('listed digest links without bodies are positive index facts, not an absenc
   assert.match(outcome.statement, /至少 2 个已索引条目/);
   assert.doesNotMatch(outcome.statement, /没有条目携带/);
 });
+
+test('non-scalar PLM fields are determinate observations counted apart from explicit null', () => {
+  const i = input(['21', '22']);
+  i.inputs[0].model = { stories: [{ id: '21', status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: '22', status: null, stage: null }], unread: [] };
+  const s = projected(i); const outcomes = check({ subject: s }) as any[];
+  assert.deepEqual(outcomes[0].data.fields_nonscalar, ['status', 'stage']);
+  assert.equal(outcomes[0].verdict, 'support'); assert.match(outcomes[0].statement, /不是单个值/);
+  const [total] = counts({ subject: s }) as any[];
+  assert.deepEqual([total.data.status_nonscalar, total.data.stage_nonscalar, total.data.status_absent], [1, 1, 0]);
+  assert.deepEqual(total.data.statuses, [{ status: null, count: 1 }]);
+  assert.match(total.statement, /PLM 返回的状态不是单个值的有 1 个，没有按状态计数/);
+  const long = projected(i); long.items[1].fields.status = 'synthetic'.repeat(1000);
+  const [summary] = counts({ subject: long }) as any[];
+  assert.match(summary.statement.slice(0, 500), /状态不是单个值的有 1 个/);
+  assert.match(summary.statement.slice(0, 500), /阶段不是单个值的有 1 个/);
+});
+
+test('build-derived details retain non-scalar markers from the system projection', () => {
+  const cases = input().inputs.filter(source => source.slot === 'cases');
+  const build = boundView('build', { builds: [{ id: '7', stories: ['21'] }] }, 'plm:builds:5');
+  const s = projected({ inputs: [...cases, build], parameters: { build_id: '7' } });
+  const sources = { ['src:' + 'c'.repeat(64)]: JSON.stringify({ stories: [{ id: '21', status: null, stage: null, fields_absent: [], fields_nonscalar: ['status'] }], unread: [] }) };
+  const [total] = counts({ subject: s, sources }) as any[];
+  assert.equal(total.data.status_nonscalar, 1); assert.deepEqual(total.data.statuses, []);
+});

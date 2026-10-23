@@ -81,3 +81,10 @@ test('ordinary step and time numbers cannot exhaust the identifier oracle', () =
   const gold = storyGold({ ids: ['21'], plm: [], maps: [{ document: 'synthetic-doc', map: corpus }], tree: [], product: 'synthetic', build: 'Synthetic_10_6' });
   assert.equal(gold.stories[0].cases.length, 2);
 });
+
+test('the independent gold counts non-scalar state separately from explicit null', () => {
+  const gold = storyGold({ ids: ['21', '22'], plm: [{ id: 21, status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: 22, status: null, stage: null }], maps: [], tree: [], product: 'synthetic', build: 'Synthetic_10_6' });
+  assert.deepEqual(gold.stories[0].fields_nonscalar, ['status', 'stage']);
+  assert.deepEqual([gold.status_nonscalar, gold.stage_nonscalar, gold.status_absent], [1, 1, 0]);
+  assert.deepEqual(gold.statuses, [{ status: null, count: 1 }]);
+});

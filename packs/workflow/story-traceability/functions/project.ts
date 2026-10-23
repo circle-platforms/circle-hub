@@ -1,13 +1,13 @@
 // Pure projection: caller-supplied ids, or ids explicitly declared by a configured build record.
 import type { BoundInput, ProjectedItem } from '../../../../contracts/src/pack.ts';
-import { absent, scalar, type Scalar } from './plm-fields.ts';
+import { absent, nonscalar, scalar, type Scalar } from './plm-fields.ts';
 import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 import { scopeText } from './scope.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, strings, shown, utf8Length } from './text.ts';
 import { readIndexView } from './views.ts';
 
-export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
+export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; fields_nonscalar: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
 export type Row = Story & { plm_returned: boolean; plm_responded: boolean; indexed_match_count: number; case_count_lower_bound: boolean; coverage_complete: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
@@ -36,10 +36,10 @@ export function projectItems(input: unknown): unknown {
     const id = normalizeId(raw);
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
-      status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
+      status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [], fields_nonscalar: r ? nonscalar(r) : [],
       plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), indexed_match_count: 0, case_count_lower_bound: false, coverage_complete: false, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
-    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new ProjectionRefusal('同一需求的 PLM 原件内容冲突', '请重新导出一致原件并重新绑定需求来源');
+    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent, previous.fields_nonscalar]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent, next.fields_nonscalar])) throw new ProjectionRefusal('同一需求的 PLM 原件内容冲突', '请重新导出一致原件并重新绑定需求来源');
     if (!previous || (!previous.plm_returned && next.plm_returned)) { rows.set(id, next); locations.set(id, { source: source.sha256, selector, slot: source.slot }); }
   }
   if (storyInputs.length > 0) {
@@ -107,7 +107,7 @@ export function projectItems(input: unknown): unknown {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;
     return { id: row.id, label: shown(`需求 ${row.id}${row.title ? ` ${row.title}` : ''}`),
-      summary: shown(`${row.indexed_match_count ? `${row.case_count_lower_bound ? '至少 ' : ''}${row.indexed_match_count} 个已索引条目` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
+      summary: shown(`${row.indexed_match_count ? row.case_count_lower_bound ? `至少 ${row.indexed_match_count} 个已索引条目` : `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
