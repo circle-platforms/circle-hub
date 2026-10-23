@@ -132,10 +132,12 @@ Producers (K02, K04, C07)
   `text` on manual entries (examples also `data.example`), `data.status` `fixed` or `known` on defects. An unplaced span's
   `kind` is the kind its entry will have.
 - Producer placement: only `manual` declares `placement: "judgment_allowed"`. Its markdown path now places every block
-  (section nodes under `/manual/<手册>`, existence-checked signatures at /commands), so the only spans it can still return
-  unplaced are the transitional catalog JSON's; the release-note defects keep `path: null`. Both wait for the bot's
-  placement proposals, verified by the Hub (not implemented yet, K04 R[6]). `command-tree`, `release-notes`, and `cases`
-  keep default `code_only` to prevent internal defects and test case titles from leaving the Hub.
+  (section nodes under `/manual/<手册>`, existence-checked signatures at /commands). The transitional catalog JSON is
+  reachable only through direct calls of `produceManualEntries` or the default export: the producer reads markdown@1
+  slots only, so no catalog span reaches a production. The release-note defects keep `path: null` under the default
+  `code_only`: they stay unplaced at the root and nothing leaves the Hub; offering them to the bot's verified placement
+  proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
+  prevent internal defects and test case titles from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
   `data` is catalog-entry@1 without `reference`. Types: STRING and XSTRING → string, U16 → int 0..65535, U32 → int
   0..4294967295, DOTTEDIP → ipv4, IPADDR → ipv4 or ipv6, IPMASK → mask or int 0..128; other types → string with a
@@ -170,11 +172,13 @@ Producers (K02, K04, C07)
   which follows the current command, or stays at the section node. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
-  command lines after a prompt in code blocks, and every signature — is recorded as written in `data.command_literals`
-  (sorted, deduped, capped at 100 per block with `command_literals_cut`), never resolved at production time, so the
-  manual subtree of a line is shared by its builds (K01 R[1]). Resolution belongs to read time, against the locked
-  root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve are listed in the production
-  warnings as drift candidates (the first 50, with the count).
+  command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
+  written in `data.command_literals` (sorted, deduped, capped at 100 per block with `command_literals_cut`), never
+  resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
+  manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
+  read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
+  are listed in the production warnings as drift candidates: the count covers every literal found (past the per-entry
+  cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
   table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
   row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
@@ -185,7 +189,9 @@ Producers (K02, K04, C07)
   exceptions (以外/之外/外) and partial listings are not read at all — the condition stays in the entry's text.
   `builds` is never set on a manual entry: which builds use a manual is said by the per-build root and its composition.
 - Manual (catalog JSON): the `ist.manual-command-catalog` JSON keeps being read (signatures, value domains, worked
-  examples) as a transition, until the adoc producer replaces it. Each signature is a signature entry (fragment
+  examples) as a transition, until the adoc producer replaces it. It is reachable only through direct calls of
+  `produceManualEntries` or the default export: the production's manual producer reads markdown@1 slots only, so no
+  catalog span reaches a production. Each signature is a signature entry (fragment
   `p/signatures/<k>/signature_verbatim`). A "signature" whose head holds a quoted value or a number after a known head is
   a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
   number with no known head before it stays a command word. Value domains and worked examples become text entries at the
@@ -330,8 +336,13 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   recorded too and then shows up in the drift candidates; what is a command is decided when a literal is resolved at
   read time.
 - Only pipe tables split by row; a grid, multiline or simple table stays one block at its section node.
-- The section-opening scope of applicability (a section's conditions count for its own entries, never a subsection's)
-  is provisional and waits on the owner's confirmation.
+- The section-opening scope of applicability is gone: every entry reads only its own text (a section-wide rule waits on
+  the owner's decision).
+- The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
+  backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
+  only the section placement reads the neutral block path. The task asks for dependence on a document model with
+  section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to the
+  adoc task (K4), which can plan for it from this note.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not

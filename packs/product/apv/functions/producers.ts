@@ -7,8 +7,8 @@
 //   the tree slot (the build's command tree): it decides which signatures hang at existing /commands nodes and gives
 //   the drift list of the author-marked literals the tree cannot resolve; the rest hangs at /manual/<slot>/<章节路径>
 // - releaseNotes: slot notes (the fixed-bug list of the build: html@1 of the build site's page, or a markdown@1 release
-//   note) -> defect entries with path null (they stay unplaced at the root until the bot's verified placement proposals
-//   exist, K04 R[6]), applicable to the build
+//   note) -> defect entries with path null (code_only: they stay unplaced at the root; offering them to the bot's
+//   verified placement proposals is an owner decision, K04 R[6]), applicable to the build
 import type { ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
 import { produceCommandEntries } from './command-tree.ts';

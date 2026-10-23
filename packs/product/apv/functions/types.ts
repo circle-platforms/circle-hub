@@ -243,8 +243,8 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
  * cli or app); `catalog` is the build's command catalog (cases-commands `commandCatalog` of the command tree) — with it,
  * signatures and command-table rows hang at /commands only at nodes the tree has, and the warnings list the literals the
- * tree cannot resolve as drift candidates. The entries themselves never depend on the tree (K01 R[1]: the manual
- * subtrees of a line's builds are shared).
+ * tree cannot resolve as drift candidates. What an entry's digest covers never depends on the tree; placement does
+ * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
  */
 export type ManualOptions = { name?: string; catalog?: CommandCatalog | null };
 

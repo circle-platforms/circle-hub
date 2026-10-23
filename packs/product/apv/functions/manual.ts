@@ -11,9 +11,9 @@
 //     the namespace root); no manual paragraph is left at the tree root.
 //   What an entry's digest covers (kind, statement, data, applicability) never depends on the build's tree: the literals
 //   the author marked (bold, backticks, quotes, command lines in code blocks, signatures) are recorded as written in
-//   `data.command_literals`, never resolved at production time (K01 R[1]: the manual subtrees of a line's builds stay
-//   shared). Placement still uses the tree (the existence checks), and with a tree the literals it cannot resolve are
-//   listed in the warnings as drift candidates.
+//   `data.command_literals`, never resolved at production time. Placement still uses the tree (the existence checks),
+//   so two builds share the manual subtree exactly when their trees place the manual's signatures the same way (K01
+//   R[1]); with a tree, the literals it cannot resolve are listed in the warnings as drift candidates.
 // - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
 // Signatures are definitions and the text under a command (descriptions, value domains, examples) behaviours (K02 R[3]);
 // `data.form` says signature or text.
