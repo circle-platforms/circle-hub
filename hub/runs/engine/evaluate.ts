@@ -694,7 +694,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
       const outcomes = outcomesFor(t, it.id);
-      const raw = staticTerminal({
+      let raw = staticTerminal({
         producer: t.accepted_producer,
         hasProducer,
         checks: t.checks.filter((id) => checks.has(id)).length+(outcomes.some(o=>o.check===ADMISSION_CHECK)?1:0),
@@ -704,6 +704,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
+      if ((raw.reason === 'declared_skip' || raw.reason === 'not_covered') && roundsLeftOf(t) === 0) raw = {...raw, reason:'repair_exhausted'};
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0, outcomes);
       const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
       const layers = [] as typeof unresolved;
@@ -789,6 +790,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         const check=checks.get(outcome.check);
         errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
+      if ((handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
+        problems.add(t.key);
+        const reason=entry?.entry.handling==='skipped'?entry.entry.reason:'没有提交这个条目的处理声明';
+        errors.push({code:roundsLeftOf(t)===0?'repair_exhausted':handling==='skipped'?'declared_skip':'not_covered',message:`条目 ${it.id}：${reason}`,item:it.id,requirement:t.key,path:entry?pointerOf('items',entry.index):'/items',rounds_left:roundsLeftOf(t),fix:'用 submit_result 对同一运行重交完整提交；完整的新提交仍可取代本次结果'});
+      }
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
@@ -815,6 +821,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       notCovered,
       rejection,
       ...(carried ? { carriedOver: carried.reuse } : {}),
+      ...(entry?.entry.handling==='skipped'?{skipReason:entry.entry.reason}:{}),
     });
   }
 

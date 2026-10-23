@@ -567,3 +567,7 @@ never enter the distinct-submission repair ledger; the same bytes with a session
 Every unknown outcome is named in errors with its item, requirement, missing fact, submission path and remaining
 repair rounds; the requirement is charged once per distinct submission. Cause selectors route alongside exact
 codes without treating reason strings as interpreter codes. Repair routing is restricted to the artifact provider.
+
+Skipped items retain their verbatim submitted `skip_reason`, including on delivered target-fact items. Every affected
+requirement is named in errors with that reason and remaining rounds; one distinct submission charges one round per
+requirement. At zero remaining rounds, missing artifact work becomes `repair_exhausted`, not another coverage prompt.

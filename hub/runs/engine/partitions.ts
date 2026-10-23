@@ -16,6 +16,7 @@ export interface PartitionInput {
   /** Code of a blocking violation, routed to reject, of a check that judges the artifact under verification (V05 R[2]). */
   rejection: string | null;
   carriedOver?: string;
+  skipReason?: string;
   /** Steps 1 to 3 (effects, dispositions, abandonment): unused in milestone 1. */
   hooks?: { quarantine?: Reason; dispositionReject?: string; abandon?: boolean };
 }
@@ -46,6 +47,7 @@ export function partitionItems(inputs: readonly PartitionInput[], itemIds: reado
     location: input.location,
     ...(input.carriedOver !== undefined ? { carried_over: input.carriedOver } : {}),
     requirements: input.requirements,
+    ...(input.skipReason !== undefined ? {skip_reason: input.skipReason} : {}),
   });
   for (const input of inputs) {
     const hooks = input.hooks ?? {};
