@@ -233,11 +233,35 @@ function parseFrame(raw: Buffer, nonce: string): Frame | 'invalid' | undefined {
  * Runs `export` (default `default`) of `module` inside `packDir` with `input` (any JSON value) and returns its JSON output.
  * Throws SandboxError for every failure of the function or the sandbox; TypeError or RangeError for an invalid call.
  */
-export async function callPackFunction(
+export type SandboxBatchItem = { ok: true; result: SandboxResult } | { ok: false; error: SandboxError };
+
+export async function callPackFunction(target: PackFunctionTarget, input: unknown, limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxResult> {
+  return executePack(target, input, limits, options, false);
+}
+
+/** One pure module invocation per item inside one evaluation-scoped isolated process. */
+export async function callPackFunctionBatch(target: PackFunctionTarget, inputs: readonly unknown[], limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxBatchItem[]> {
+  if (!Array.isArray(inputs)) throw new TypeError('批量输入必须是数组');
+  if (!inputs.length) return [];
+  const batch = await executePack(target, inputs, limits, options, true);
+  if (!Array.isArray(batch.output) || batch.output.length !== inputs.length) throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_frame' });
+  return batch.output.map((item: unknown): SandboxBatchItem => {
+    if (item === null || typeof item !== 'object') throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+    const row = item as Record<string, unknown>;
+    if (typeof row.stdout !== 'string' || typeof row.stderr !== 'string' || typeof row.truncated !== 'boolean' || typeof row.durationMs !== 'number') throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+    const logs = { stdout: row.stdout, stderr: row.stderr };
+    if (row.ok === true && Object.hasOwn(row, 'output')) return { ok: true, result: { ...batch, ...logs, output: row.output, durationMs: row.durationMs, truncated: row.truncated } };
+    if (row.ok === false && isSandboxErrorCode(row.code) && row.detail !== null && typeof row.detail === 'object') return { ok: false, error: new SandboxError(row.code, row.detail as Record<string, unknown>, logs) };
+    throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+  });
+}
+
+async function executePack(
   target: PackFunctionTarget,
   input: unknown,
   limits: Partial<SandboxLimits> = {},
-  options: SandboxOptions = {},
+  options: SandboxOptions,
+  batch: boolean,
 ): Promise<SandboxResult> {
   const epoch = stopEpoch;
   const lim = resolveLimits(limits);
@@ -251,17 +275,18 @@ export async function callPackFunction(
       const inputText = serializeInput(input, lim.inputBytes);
       const pack = await preparePack(target);
       if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
-      return runChild(pack, inputText, lim, os);
+      return runChild(pack, inputText, lim, os, batch);
     });
   }, lim.timeoutMs, options.onAttempt);
 }
 
-function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean): Promise<SandboxResult> {
+function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {
   const deps = declaredDependencies();
   const nonce = randomBytes(16).toString('hex');
   const dirUrl = (dir: string): string => `${pathToFileURL(dir).href}/`;
   const header = JSON.stringify({
     nonce,
+    batch,
     pack: dirUrl(pack.dir),
     entry: pathToFileURL(pack.entry).href,
     exportName: pack.exportName,

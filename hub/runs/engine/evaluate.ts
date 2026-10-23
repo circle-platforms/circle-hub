@@ -14,11 +14,12 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
-import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
+import { type EngineContext } from './deps.ts';
 import { retryRead, type ReadFailureReason } from './retry-read.ts';
-import { SubjectCopyError, createSubjectBuilder } from './subjects.ts';
+import { createFunctionBatches } from './function-batches.ts';
+import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
@@ -36,7 +37,7 @@ import {
   type Handling,
   type JudgedOutcome,
 } from './terminals.ts';
-import { isObject, mapLimited, pointerOf, tooDeep, unique } from './util.ts';
+import { isObject, pointerOf, tooDeep, unique } from './util.ts';
 
 /** An item the submission handled by carrying the predecessor's fragment over (C08 R[4]). */
 export interface CarriedItem {
@@ -194,10 +195,10 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
   const retryAttempts: Array<Record<string, unknown>> = [];
-  const sandboxFor = (operation: string, module?: string, item?: string): SandboxOptions => ({
+  const sandboxFor = (operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
     onAttempt: attempt => {
-      if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation,
+      if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation, ...extra,
         ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}), ...attempt });
       try { ctx.deps.sandbox?.onAttempt?.(attempt); } catch { /* Diagnostics cannot change a check. */ }
     },
@@ -492,14 +493,27 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         sources: gradedSourceView(texts),
         unreadSources,
         sandbox: sandboxFor('check', check.function?.module, item),
+        ...(item !== undefined && check.function !== undefined ? { functionRunner: functionBatches.runner(check.id, item) } : {}),
         onError,
       },
     );
     return outcomes.map((o) => bounded(check, unreadSources.length ? { ...o, data: { ...o.data, unread_sources: unreadSources } } : o));
   };
-  const subjectBuilder = () => createSubjectBuilder(async (target, subjectInput) =>
-    (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, sandboxFor('subject', target.module,
-      isObject(subjectInput) && isObject(subjectInput.item) && typeof subjectInput.item.id === 'string' ? subjectInput.item.id : undefined))).output);
+  const prepared = new Map<string, SandboxBatchItem>();
+  let subjectCancelled = false; let subjectCancellation: unknown;
+  const functionBatches = createFunctionBatches((check, target, count) => sandboxFor('check_batch', target.module, undefined, { check, items: count, export: target.export ?? 'default' }), error => { subjectCancelled = true; subjectCancellation = error; });
+  const subjectBuilder = () => createSubjectBuilder(async (target, subjectInput) => {
+    if (subjectCancelled) throw subjectCancellation;
+    const key = subjectKey(target, JSON.stringify(subjectInput));
+    const cached = prepared.get(key);
+    if (cached) {
+      if (cached.ok || !(cached.error.code === 'SANDBOX_UNAVAILABLE' && cached.error.detail.reason === 'stopping')) prepared.delete(key);
+      if (cached.ok) return cached.result.output;
+      throw cached.error;
+    }
+    return (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, sandboxFor('subject', target.module,
+      isObject(subjectInput) && isObject(subjectInput.item) && typeof subjectInput.item.id === 'string' ? subjectInput.item.id : undefined))).output;
+  });
   const buildSubject = async (subjectFor: ReturnType<typeof createSubjectBuilder>, check: CheckEntry, builderInput: unknown, fallback: () => unknown): Promise<{ subject: unknown } | { failure: CheckOutcome }> => {
     if (check.subject === undefined) return { subject: fallback() };
     try {
@@ -548,28 +562,56 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     runOutcomes.set(check.id, { own, loose });
   }
   const perItem = used.filter((c) => c.applies === 'item');
-  await mapLimited(items, CHECK_PARALLELISM, async (it) => {
-    const itemSubjects = subjectBuilder();
-    const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id);
-    const ev = evidenceOf(it.id);
-    for (const check of perItem) {
-      if (artifactCheck(check) && missingItemArtifact(it.id)) continue;
-      if (judgmentOnly(check) && (handlingOf(it.id) !== 'handled' || exclude.has(it.id) || submission === null)) continue;
-      const evidence = slots === null ? [] : ev.evidence;
-      const built = await buildSubject(itemSubjects, check, { applies: 'item', item: subjectItem(it), slots, evidence, context }, () => ({
-        item: it.id,
-        label: it.label,
-        location: it.location,
-        fields: it.fields,
-        slots,
-        evidence,
-      }));
-      const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, ev.texts, it.id);
-      let byItem = itemOutcomes.get(check.id);
-      if (!byItem) itemOutcomes.set(check.id, (byItem = new Map()));
-      byItem.set(it.id, outcomes);
+  const eligible = (check: CheckEntry, id: string): boolean => !(artifactCheck(check) && missingItemArtifact(id))
+    && !(judgmentOnly(check) && (handlingOf(id) !== 'handled' || exclude.has(id) || submission === null));
+  const builderInput = (it: ItemProjection) => {
+    const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
+    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context };
+  };
+  const builders = new Map<string, { target: PackFunctionTarget; entries: Map<string, unknown> }>();
+  for (const check of perItem) {
+    const ids = items.filter(it => eligible(check, it.id)).map(it => it.id);
+    if (check.function) functionBatches.define(check.id, ids);
+    if (!check.subject) continue;
+    const target = { packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export };
+    const identity = JSON.stringify([target.module, target.export ?? 'default']);
+    const group = builders.get(identity) ?? { target, entries: new Map<string, unknown>() }; builders.set(identity, group);
+    for (const it of items) if (eligible(check, it.id)) {
+      const value = builderInput(it); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
     }
-  });
+  }
+  for (const group of builders.values()) {
+    if (group.entries.size < 2) continue;
+    try {
+      const values = [...group.entries.values()];
+      const result = await callPackFunctionBatch(group.target, values, ctx.deps.sandboxLimits,
+        sandboxFor('subject_batch', group.target.module, undefined, { items: values.length, export: group.target.export ?? 'default' }));
+      const keys = [...group.entries.keys()]; for (const [index, value] of result.entries()) prepared.set(keys[index], value);
+    } catch (error) {
+      if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') {
+        functionBatches.cancel(error); break;
+      } else onError(error, `${group.target.module} subject batch; using individual calls`);
+    }
+  }
+  try {
+    await Promise.all(items.map(async it => {
+      const itemSubjects = subjectBuilder(); const ev = evidenceOf(it.id);
+      for (const check of perItem) {
+        if (!eligible(check, it.id)) continue;
+        try {
+          const itemInput = builderInput(it);
+          const built = await buildSubject(itemSubjects, check, itemInput, () => ({
+            item: it.id, label: it.label, location: it.location, fields: it.fields,
+            slots: itemInput.slots, evidence: itemInput.evidence,
+          }));
+          const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, ev.texts, it.id);
+          let byItem = itemOutcomes.get(check.id);
+          if (!byItem) itemOutcomes.set(check.id, (byItem = new Map()));
+          byItem.set(it.id, outcomes);
+        } finally { functionBatches.finish(check.id, it.id); }
+      }
+    }));
+  } catch (error) { functionBatches.cancel(error); throw error; }
 
   const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] =>
     template.checks.flatMap((cid) => {

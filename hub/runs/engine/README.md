@@ -449,3 +449,31 @@ or parse failure retains the successful build/text and is identified as subject_
 FUNCTION_THREW. Tests exercise 4000 levels through real isolated builders and both item/run checks, plus an injected copy
 failure, independent mutation, retained launch count and byte-identical completed receipt replay. JSON-wire numeric zero
 is used in fixtures because a child's JSON serialization has already normalized negative zero before the parent sees it.
+
+
+## Scenario 19 submission latency under load
+
+The earlier two-call 67-item sample measured reduced launches, not a structural fix for ten concurrent MCP deadlines.
+The committed hub/server/submit-load.test.ts now exercises the exact scenario-19 shape through the real MCP client:
+ten distinct runs, 67 items each, default 60000 ms request timeout, all accepted receipts and one stored result per run.
+Eight bounded synthetic CPU workers run throughout the submission phase. Setup/start_run time is excluded. It asserts
+40 physical sandbox launches: per evaluation, one run subject, one run check, one item-subject batch and one item-check
+batch. Every item/check still has its own validation, JSON copy, outcome and failure; completed replay remains unchanged.
+
+Observed submission-phase samples on this branch, with the same eight synthetic workers (other terminal load varied):
+- Before evaluation batching: 1360 launches, ten receipts at 47452..48968 ms; loadavg before 66.77/40.00/31.14.
+- After batching: 40 launches, ten receipts at 3504..4154 ms; loadavg before 33.90/44.64/38.99.
+- Final-code repeat: 40 launches, ten receipts at 2957..3577 ms; loadavg before 23.27/26.10/28.31.
+These are observations, not a claim that arbitrary background loads or arbitrary pack functions have a universal SLA.
+The test itself enforces the existing 60-second MCP deadline, rather than raising it; diagnostics report each completion,
+launch count, worker count and loadavg. It drains observed server work even after a failing baseline so abandoned work
+cannot poison the next case. Owned load workers have a watchdog and are always terminated during cleanup.
+
+Batches never span evaluations, users, pack versions, modules or check declarations. A pure module is loaded once in its
+isolated process and each eligible input is invoked and serialized independently, with per-item diagnostics and errors.
+All namespace, tier, output and source checks still run through runCheck. OS/permission/import policy, memory, time,
+input/output and global child-slot caps stay unchanged. Boundary violations invalidate the physical batch; aggregate
+limits, timeout or violation trigger bounded individual fallback under the old caps, so one bad item cannot hide others.
+Stopping/cancellation is never revived by fallback. Ordinary per-item throws remain per-item outcomes. Skipped checks and
+failed subject construction explicitly complete their collector slot to avoid deadlock. The parent may stage item calls
+concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.

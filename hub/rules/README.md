@@ -310,3 +310,11 @@ retry. The parent-only onAttempt observer receives fixed codes, durations and ba
 A throwing observer cannot change execution. Retrying is centralized here: checks and subject builders do not multiply it.
 stopAll invalidates outstanding calls by generation, so backoff cannot resurrect a cancelled child; independent later
 calls can still start. Exhausted errors retain their existing conversion by runCheck; exit fields await hub-unknown-model.
+
+
+Evaluation-scoped callPackFunctionBatch lifts a declared pure function over independent JSON inputs in one fresh isolated
+child. The module is imported once, captures are kept per item, outputs/errors are ordered, and boundary violations remain
+fatal to the physical batch even when caught. Per-item and aggregate JSON budgets are enforced without raising limits.
+The engine falls back to original individual calls for aggregate failure and never falls back after stopping. The trusted
+functionRunner binding only replaces parent execution; every runCheck output still receives the same schema/namespace/tier
+validation. Neither callback nor batch mode is supplied by pack JSON or an MCP client. No module process survives an eval.

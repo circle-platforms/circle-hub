@@ -8,6 +8,10 @@ export class SubjectCopyError extends Error {
 
 type Build = (target: PackFunctionTarget, input: unknown) => Promise<unknown>;
 
+export function subjectKey(target: PackFunctionTarget, wire: string): string {
+  return createHash('sha256').update(JSON.stringify([target.packDir, target.module, target.export ?? 'default'])).update('\n').update(wire).digest('hex');
+}
+
 /** Create for one evaluation's run subject or one item, never across submissions. Checks still run independently. */
 export function createSubjectBuilder(build: Build): Build {
   const pending = new Map<string, { build: Promise<unknown>; json?: string }>();
@@ -17,7 +21,7 @@ export function createSubjectBuilder(build: Build): Build {
     let wire: string | undefined;
     try { wire = JSON.stringify(input); } catch { return build(target, input); }
     if (wire === undefined) return build(target, input);
-    const key = createHash('sha256').update(JSON.stringify([target.packDir, target.module, target.export ?? 'default'])).update('\n').update(wire).digest('hex');
+    const key = subjectKey(target, wire);
     let task = pending.get(key);
     if (task === undefined) {
       let snapshot: unknown;
