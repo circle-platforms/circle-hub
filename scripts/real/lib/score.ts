@@ -176,13 +176,16 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     }
   }
   const seen = seenOn(result);
-  const documentGaps = [...seen.values()].filter(s => s.reviewed).flatMap(s => s.findings.filter(code => code === 'negative_gap' || code === 'coverage_gap'));
+  const gapNodes = [...seen.entries()].filter(([,s]) => s.reviewed && s.findings.some(code => code === 'negative_gap' || code === 'coverage_gap')).map(([node])=>node);
+  const documentGaps = gapNodes.flatMap(node => seen.get(node)!.findings.filter(code => code === 'negative_gap' || code === 'coverage_gap'));
   const eligible = options.literal === undefined ? undefined : new Set(options.literal.cases.map(c => c.id));
   // Hub gives missing/duplicate ids positional or suffixed identities. Only exact unique raw ids are scoreable;
   // do not guess fallback identities, which may collide with real ids in the same document.
   if (eligible !== undefined) for (const node of seen.keys()) if (!eligible.has(node)) seen.delete(node);
   const before = options.baseline === undefined ? new Map<string, Seen>() : seenOn(options.baseline);
   const verified = options.verify === undefined ? new Map<string, { newFindings: string[]; confirmed: boolean; refuted: boolean }>() : verifyOn(options.verify);
+  const documentVerified = new Map(verified);
+  const verifyGapProbes = [...documentVerified.values()].flatMap(v=>v.newFindings.filter(p=>p==='negative_gap' || p==='coverage_gap'));
   if (eligible !== undefined) for (const node of verified.keys()) if (!eligible.has(node)) verified.delete(node);
   const unscoreableIds = new Set(options.literal?.noUniqueId.map(c => c.id) ?? []);
   const scoreableGold = gold.filter(e => e.deletedCases !== undefined || eligible?.has(e.node) || !unscoreableIds.has(e.node));
@@ -194,7 +197,6 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   for (const s of seen.values()) if (s.reviewed) anyReviewed = true;
 
   // A verify run's negative-gap or coverage-gap probe anywhere also finds a deleted negative group.
-  const verifyGapProbes = options.verify === undefined ? [] : [...verified.values()].flatMap((v) => v.newFindings.filter((p) => p === 'negative_gap' || p === 'coverage_gap'));
 
   const detections = scoreableGold.map((entry): Detection => {
     const at = (n: string): Seen | undefined => seen.get(n);
@@ -204,7 +206,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
       const findings = [...new Set([...here.flatMap((s) => s.findings), ...documentGaps])];
       const groupGap = documentGaps.length > 0;
       const draft = findings.length > 0;
-      const confirmNodes = nodes.map((n) => verified.get(n)).filter((v): v is NonNullable<typeof v> => v !== undefined);
+      const confirmNodes = [...new Set([...nodes,...gapNodes])].map((n) => documentVerified.get(n)).filter((v): v is NonNullable<typeof v> => v !== undefined);
       const vNew = confirmNodes.some((v) => v.newFindings.length > 0) || verifyGapProbes.length > 0;
       const vConfirmed = confirmNodes.some((v) => v.confirmed);
       const merged: Seen = { reviewed: anyReviewed, marks: [], findings, unattributedRefutes: [], modelStatementRefutes: [], literalUnscored: false };
@@ -215,7 +217,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
         draft,
         verify: vNew,
         confirmed: vConfirmed,
-        combined: options.verify === undefined ? draft : vConfirmed || vNew || groupGap,
+        combined: options.verify === undefined ? draft : vConfirmed || vNew,
         detected: draft || vNew || groupGap,
       };
     }

@@ -279,3 +279,17 @@ const invalidFixtures = () => {
   req('literal', [], { terminal: 'skipped' });
 };
 void invalidFixtures;
+
+test('closure deleted groups combine only confirmed draft gaps and all document-wide new probes', () => {
+ const gold=[entry({kind:'delete_negative_group',node:'gone',deletedCases:['gone-case']})];
+ const draft=result([item('remaining',req('findings',[judgment('negative_gap')]))]);
+ for(const disposition of ['refuted','verified','partial']) {
+  const scored=score(gold,draft,{verify:result([item('remaining',req('verification',[judgment(disposition)]))])});
+  assert.equal(scored.detections[0].combined,disposition!=='refuted');
+  assert.equal(scored.detections[0].confirmed,disposition!=='refuted');
+ }
+ const answer={cases:[{id:'healthy',codes:[]}],noUniqueId:[{id:'same',count:2,reason:'duplicate'}]};
+ const probe=result([item('same#1',req('verification',[{statement:{code:'new_finding',data:{probe:'negative_gap'}}}]))]);
+ const scored=score(gold,result([]),{verify:probe,literal:answer});
+ assert.equal(scored.detections[0].verify,true); assert.equal(scored.detections[0].combined,true);
+});
