@@ -1,5 +1,6 @@
 // Checks of the docs package against the repository: see docs-rules.ts for what each rule means.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, lstatSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -179,8 +180,9 @@ describe('recorded decisions name their source', () => {
 const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
   .filter((path) => path && !path.startsWith('foundation/') && !path.startsWith('references/'))
   .flatMap((path) => {
-    const text = trackedFileText(join(ROOT, path));
-    return text === null ? [] : [{ path, text }];
+    let byteDigest: string | undefined;
+    const text = trackedFileText(join(ROOT, path), bytes => { byteDigest = createHash('sha256').update(bytes).digest('hex'); });
+    return text === null ? [] : [{ path, text, byteDigest }];
   });
 
 describe('tracked blobs are never skipped because of NULs or symbolic links', () => {
@@ -191,7 +193,10 @@ describe('tracked blobs are never skipped because of NULs or symbolic links', ()
       const home = '/' + 'Users/operator/project';
       const build = ['Rel', 'Synthetic', '10', '4', '2'].join('_');
       writeFileSync(path, Buffer.from(home + '\n' + build, 'utf16le'));
-      const text = trackedFileText(path)!;
+      let byteDigest: string | undefined;
+      const text = trackedFileText(path, bytes => { byteDigest = createHash('sha256').update(bytes).digest('hex'); })!;
+      assert.equal(byteDigest, createHash('sha256').update(readFileSync(path)).digest('hex'));
+      assert.notEqual(byteDigest, createHash('sha256').update(text).digest('hex'));
       assert.equal(localPathProblems('fixture.md', text).length, 1);
       assert.equal(buildNameProblems('fixture.md', text).length, 1);
       assert.ok(!text.includes('\0'));
@@ -308,6 +313,17 @@ describe('no machine paths in repository text', () => {
     assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…; ~/Library/LaunchAgents; /usr/bin/node; /srv/mirror; /old/root/backups; /moved/var/cache; replace(/~/g, token)'), []);
   });
 
+  it('accepts the upstream synthetic example only at its pinned vendor path and byte digest', () => {
+    const file = 'packs/product/apv/functions/adoc/vendor/core.mjs';
+    const text = readFileSync(join(ROOT, file), 'utf8');
+    const digest = createHash('sha256').update(text).digest('hex');
+    assert.deepEqual(localPathProblems(file, text, digest), []);
+    assert.ok(localPathProblems(file, text, createHash('sha256').update(text + '\0').digest('hex')).length > 0);
+    assert.ok(localPathProblems('packs/product/other/functions/vendor/core.mjs', text, digest).length > 0);
+    assert.ok(localPathProblems(file, text + '\n', digest).length > 0);
+    assert.ok(localPathProblems(file, text + '\n/' + 'Users/operator/project', digest).length > 0);
+  });
+
   it('covers docs, root Markdown, CI, code and tests without reading the frozen archives', () => {
     for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts']) {
       assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
@@ -316,7 +332,7 @@ describe('no machine paths in repository text', () => {
   });
 
   it('no tracked text has an unapproved machine path', () => {
-    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => localPathProblems(path, text)), []);
+    assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text, byteDigest }) => localPathProblems(path, text, byteDigest)), []);
   });
 });
 
