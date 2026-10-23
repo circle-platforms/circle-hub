@@ -24,7 +24,7 @@ The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Re
 
 ## The answer
 
-Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<earlier build>?kind=case&by=commands`, matching the impact product and starting root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. `command_exists` adds a support disclosure: N cases have no parsed command and were excluded from the sweep. This does not change the items, reasons or detail tables. The client skill continues by listing those cases for the user to establish command ownership.
+Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<earlier build>?kind=case&by=commands`, matching the impact product and starting root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. The client reads the bound facet source and relays a hint disclosure: N cases have no parsed command and were excluded from the sweep. This does not change the items, reasons or detail tables. The client skill continues by listing those cases for the user to establish command ownership.
 
 
 Each item is one case of the earlier build, id `<document>:<node>`, sorted by id. A case on several maintenance paths is
@@ -48,8 +48,7 @@ they are compared as an array (`/0/...`). One definition on each side is compare
 
 The run note always says that nothing is claimed about cases the index does not hold. When `skipped.from` is above zero
 it also says the earlier build's index lacks that many listed documents, so a clean result is not proof that no case is
-stale. The same sentence is an unknown cross-item claim (`missing_input`) from `command_exists` whenever the projection
-note is present. A truncated view adds `integrity_unproven`. A bound view that names no catalog adds one conclusion
+stale. Skipped sources add an unknown cross-item claim (`missing_input`) from `command_exists`. Unplaced counts remain hints in the run note and the client reads the bound facet source to disclose them in its answer, never as validation claims. A truncated view adds `integrity_unproven`. A bound view that names no catalog adds one conclusion
 line (`catalog-hint`): the changes were then counted by entry kind alone, and another producer's entries on the same
 path may be mixed in. Before those, `command_unchanged` leads with one cross-item fact: the whole command diff, one
 line per changed path (path, change kind, earlier-build case count from `note.diff`, every changed path — added
@@ -81,12 +80,11 @@ node packs/workflow/maintenance-sweep/pack-files.ts --check
 The function tests build impact views by hand: a removed path with two cases, a modified signature, modified help text,
 a behaviour-only change, both reasons on one case, `ignore_fields`, a clean pair, 5,000 cases, and order independence.
 `publish.test.ts` and `production.test.ts` use a temporary PostgreSQL and are skipped where `sandbox-exec` is absent.
-A skip is not a pass. `production.test.ts` has one `it.todo` for the real knowledge reader, which waits until the
-product pack's cases index is committed.
+A skip is not a pass. The real knowledge reader test uses synthetic cases including one unplaced case in the earlier build.
 
 ## Limits
 
-- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a definite disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a hint disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
 
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.
@@ -105,7 +103,7 @@ product pack's cases index is committed.
 
 
 - **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): done — empty item sets are accepted as legal answers, storing an empty validation result and carrying the projection's explanation.
-- **product pack** (cases producer): confirm the case entry fields. Until that producer is committed, the real-reader end-to-end test stays a todo.
+- **product pack** (cases producer): confirm the case entry fields. The real-reader test uses a synthetic producer.
 - **knowledge pack**: this pack only parses `impact-view@1`.
 
 ## 生成词表与包版本
@@ -114,4 +112,10 @@ maintenance-sweep@1.6.1 改用生成词表的类型及包内运行时快照。�
 
 ## Unplaced disclosure decision
 
-The integration owner clarified that positive unplaced counts are support disclosures and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes. No vocabulary axis was added. Facet tests cover required binding, zero and positive counts, wrong roots and fields, and truncation refusal. The real knowledge reader test uses a synthetic producer with one unplaced case in the earlier build.
+The integration owner clarified that positive unplaced counts are hint disclosures with no support or refutation claims and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes. No vocabulary axis was added. Facet tests cover required binding, zero and positive counts, wrong roots and fields, and truncation refusal. The real knowledge reader test uses a synthetic producer with one unplaced case in the earlier build.
+
+The bound facets are hints (A03 R[6]): zero and positive counts produce no support or refutation claim. Because run summaries omit projection groups, the skill explicitly reads the bound facet source before answering, then reads root entries page by page to list unplaced cases. No core rendering change is needed.
+
+## Client acceptance boundary
+
+The scenario requires `caseCommandsUnplaced`: copy `totals.unplaced` from the independent `case-commands.ts` gold for the selected build (later for regression scope, earlier for maintenance sweep). After `start_run`, it reads the **bound** facets source via MCP `get_nodes`, follows every source page and automatically compares its null-row count with that independent count. Missing pages, skipped sources and truncated views fail this mandatory check. Optional `unplaced` separately checks the disclosure sentence in replays containing client text. Numeric correctness is checked automatically; whether the real client follows SKILL, reads the hint and discloses it to the user is accepted by the integrator. No real-client run was performed in this worktree.

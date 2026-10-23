@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "9506db0936403d861e5e4e898a109ab3e8d114e572dd5e5c168e437346d4d1ad",
-      "size": 2912
+      "sha256": "94c9dfff35b3fc3012c2161b3a980963e1fe0029fd238dacf5d3e39ef5acfcf9",
+      "size": 3451
     },
     {
       "path": "checks.json",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "3c47888e757b17d6f508581b799069159302eb5d8fe7aec810c066ff8dc2308b",
-      "size": 17023
+      "sha256": "a50027a6ef4924def0f0ea94c63274237406937487ed41b3e64ccf0d59012cf6",
+      "size": 16651
     },
     {
       "path": "functions/diff.ts",
@@ -33,7 +33,7 @@
     },
     {
       "path": "functions/facets.ts",
-      "sha256": "0c49f48b97c484e4fdab3c141fb9d3e1b0b0e6b0869b0ce570d27a37601c3923",
+      "sha256": "432abd5cabfc6abb9005f84f714b0c2d4965fa8d229855ccf1185aba5b2c10db",
       "size": 2915
     },
     {
@@ -68,8 +68,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "74e1732f34c4a7c4aaba97f31de5a2a6f21e716030455cff3f21a5473942658a",
-      "size": 1464
+      "sha256": "5250dbb0959e2e01a39e8e2775359483fb60bb3fc5d583bb0aa7888838382859",
+      "size": 1401
     },
     {
       "path": "samples/negative/command-changed.json",

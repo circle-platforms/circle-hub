@@ -8,13 +8,14 @@ function project(count: number, mutate?: (v: Record<string, any>) => void) {
   const facets = facetInput(impact, count); mutate?.(facets);
   return projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: impact }, facets] }) as { items: unknown[]; groups: Record<string, unknown>[]; error?: { code: string; fix: string; message: string } };
 }
-for (const n of [0, 3]) test(`unplaced ${n} is a definite disclosure and never changes sweep`, () => {
+for (const n of [0, 3]) test(`unplaced ${n} is a hint disclosure and never changes sweep`, () => {
   const out = project(n); assert.ok(!out.error);
   assert.deepEqual(out.items, project(0).items);
   assert.deepEqual(out.groups[0].details, project(0).groups[0].details);
   const claims = checkOutcomes('command_exists', { items: out.items, note: out.groups[0] });
-  const disclosure = claims.find((c) => c.data?.unplaced === n)!;
-  assert.equal(disclosure.verdict, 'support'); assert.match(disclosure.statement, new RegExp(`${n} 个用例没有解析出命令`));
+  assert.ok(claims.every((c) => !c.statement.includes('个用例没有解析出命令')));
+  assert.equal(out.groups[0].unplaced, n);
+  assert.match(String(out.groups[0].message), new RegExp(`${n} 个用例没有解析出命令`));
   assert.ok(!JSON.stringify(out.groups[0]).includes('"rows"'));
 });
 test('missing required facets refuses instead of ending in unknown', () => {
@@ -38,4 +39,9 @@ test('a clean projection has no fabricated check error for its empty item set', 
   const result = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view }, facetInput(view)] }) as { items: unknown[]; groups: unknown[] };
   const claims = checkOutcomes('command_unchanged', { items: result.items, note: result.groups[0] });
   assert.ok(claims.length > 0); assert.ok(claims.every((c) => c.verdict === 'support'));
+});
+
+test('hint disclosure changes no check claims at zero or a positive count', () => {
+  const zero = project(0); const positive = project(3);
+  for (const check of ['command_exists', 'command_unchanged']) assert.deepEqual(checkOutcomes(check, { items: zero.items, note: zero.groups[0] }), checkOutcomes(check, { items: positive.items, note: positive.groups[0] }));
 });

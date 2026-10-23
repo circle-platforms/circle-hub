@@ -1,3 +1,4 @@
+import { facetCountCheck } from '../../../scripts/real/accept/regression-scope.ts';
 // A production run end to end: the published pack, the real run engine, and a fake reader serving hand-built impact
 // views. start_run computes and stores the validation result. The real knowledge reader waits on the cases index.
 import assert from 'node:assert/strict';
@@ -123,8 +124,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     }
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
     assert.equal(unknown.length, 0);
-    const disclosure = result.cross_item.find((claim) => claim.statement.text.includes('0 个用例没有解析出命令'))!;
-    assert.equal(disclosure.statement.verdict, 'support');
+    assert.ok(result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     const stored = (await hub.service.getRun(hub.alice, run.run))!;
     assert.match(String((stored.run.groups?.[0] as { message?: string }).message), /有 4 条用例需要维护/);
   });
@@ -208,7 +208,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     assert.equal(read.isError, false);
     assert.match(read.content[0].text, /覆盖：完整：已查 0，共 0/);
     assert.match(read.content[0].text, /条目明细：没有条目/);
-    assert.match(read.content[0].text, /0 个用例没有解析出命令/);
+    assert.ok(!read.content[0].text.includes('个用例没有解析出命令'), 'hint counts are not validation claims');
     const content = (read.structuredContent as { content: { text: string; reference: string; readable: boolean } }).content;
     assert.equal(content.reference, detail.answer.result!.reference);
     assert.equal(content.readable, true);
@@ -287,7 +287,24 @@ describe('the real knowledge reader', () => {
     const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference }, facets: { external: 'knowledge:facets:acme:Rel_WDG_7_7_7?kind=case&by=commands' } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(detail.answer.run!.items.length > 0, 'the real reader answers an impact view the sweep projects');
-    assert.ok(detail.production!.result.cross_item.some((claim) => claim.statement.text.includes('1 个用例没有解析出命令')));
+    const storedRun = (await runHub.service.getRun(runHub.alice, detail.answer.run!.run))!;
+    assert.equal(storedRun.run.groups?.[0].unplaced, 1);
+    // Read the already-bound hint over the same MCP tool boundary used by the scripted client.
+    const facetSource = detail.answer.run!.sources.find((source) => source.slot === 'facets')!;
+    const context = call('synthetic-facet-client');
+    const response = await callTool({ records: runHub.kit, runs: runHub.service, packs: createPacksPort(runHub.registry), knowledge: w.knowledge, now: () => new Date() } as unknown as Parameters<typeof callTool>[0], {
+      principal: runHub.alice, traceId: context.traceId, sessionId: context.sessionId,
+      context: { ...context, adminNote: () => {} }, state: {},
+    } as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: facetSource.reference });
+    assert.equal(response.isError, false);
+    const numeric = facetCountCheck('synthetic', 1, [
+      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 'start', text: `- 线索 ${facetSource.reference}（输入 facets）`, isError: false }] },
+      { index: 2, tools: [], toolResults: [{ id: 'read', text: response.content[0].text, isError: false }] },
+    ]);
+    assert.equal(numeric.ok, true, JSON.stringify(numeric));
+
+    assert.match(String(storedRun.run.groups?.[0].message), /1 个用例没有解析出命令/);
+    assert.ok(detail.production!.result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     await runHub.close();
     await w.close();
   });
