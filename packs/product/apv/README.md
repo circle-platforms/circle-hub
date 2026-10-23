@@ -517,3 +517,6 @@ View-scope: build timestamps also accept time followed by a slash date. A timest
 listing failure, with its build name and a repair instruction; the sync plan excludes it from successful builds.
 Needs: catalog parameter address roles, address/hostname alternatives and singular limit await the hub-unknown-model
 contracts and matcher change owned by codex-b. Those fields are not emitted before the strict contract accepts them.
+
+未打有效标签的用例在 data.tags_note 和陈述中写明“正负向和测试类型未声明”；negative 仍是 null，
+不能据此推断正向或任何测试类型。空白标签与未打标签相同。

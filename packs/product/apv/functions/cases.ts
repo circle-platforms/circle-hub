@@ -16,7 +16,7 @@
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
-import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, negativeOf } from './cases-rules.ts';
+import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, isBlank, negativeOf } from './cases-rules.ts';
 import { idsFromTitle } from './ids.ts';
 import { locateFromAncestors } from './locate.ts';
 import { lineKey } from './naming.ts';
@@ -97,6 +97,7 @@ export function caseStatement(data: Record<string, unknown>): string {
   lines.push(`上级节点：${listOf(data.path_labels, ' › ', LABEL)}`);
   const priority = typeof data.priority === 'string' ? JSON.stringify(data.priority) : valueOf(data.priority, '无');
   lines.push(`优先级：${priority}；标签：${listOf(data.tags, '、', ITEM)}；负向：${yesNo(data.negative, '未标注')}`);
+  if (data.tags_note === '正负向和测试类型未声明') lines.push(data.tags_note);
   lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${data.vague_expected === true ? '笼统' : '不笼统'}）；步骤：${valueOf(data.steps_count, '无')} 个`);
   lines.push(`命令：${listOf(data.commands, '、', ITEM)}`);
   lines.push(`需求：${listOf(data.stories, '、', ITEM)}；缺陷：${listOf(data.defects, '、', ITEM)}`);
@@ -333,6 +334,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         priority: typeof node.priority === 'string' ? storable(node.priority, MAX_TAG) : node.priority,
         tags: node.tags.slice(0, MAX_TAGS).map((tag) => storable(tag, MAX_TAG)),
         negative: negativeOf(node.tags),
+        ...(!node.tags.some(tag => !isBlank(tag)) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: node.expectedCount,
         has_expected: node.hasExpected,
         vague_expected: node.vague,
