@@ -74,7 +74,28 @@ test('a verbatim bold signature paragraph is a signature; a title, prose bold an
 
 test('command-table rows are signatures under a header that names commands; value rows are not (K1 rules apply)', async () => {
   const result = await entriesOf({
-    'book.adoc': '= Book\n\n== 配置命令\n\n|===\n| 命令 | 说明\n| **demo pool add** *\\<name\\>* | 添加成员 |\n| **demo route static** *\\<net\\>* | 静态路由 |\n|===\n\n**demo pool state** *\\<value\\>*\n\n|===\n| 取值 | 说明\n| **enable** | 启用 |\n| **disable** | 停用 |\n|===\n',
+    'book.adoc': [
+      '= Book',
+      '',
+      '== 配置命令',
+      '',
+      '[cols="2,3",options="header"]',
+      '|===',
+      '| 命令 | 说明',
+      '| *demo pool add* _<name>_ | 添加成员',
+      '| *demo route static* _<net>_ | 静态路由',
+      '|===',
+      '',
+      '**demo pool state** *\\<value\\>*',
+      '',
+      '[cols="1,2",options="header"]',
+      '|===',
+      '| 取值 | 说明',
+      '| *enable* | 启用',
+      '| *disable* | 停用',
+      '|===',
+      '',
+    ].join('\n'),
   });
   const signatures = result.entries.filter((entry) => entry.data.form === 'signature').map((entry) => entry.statement);
   assert.deepEqual([...signatures].sort(), ['demo pool add <name>', 'demo pool state <value>', 'demo route static <net>'], JSON.stringify(signatures));

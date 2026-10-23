@@ -446,7 +446,7 @@ accepted.
 - `k1-model.ts` maps the expanded model to the markdown@1 shape: the `=` levels become sections (a `[discrete]` heading is
   a block, not a section; a `=======` line is reported by step one and stays an ordinary block), blocks carry their section
   path, and every block carries its citation: the chapter file's digest and the plain text@1 `l/<a>-<b>` line selector of
-  the range step one verified, as two fields (a table block's citation is the first verified source among its cells). K1's
+  the range step one verified, as two fields (a table block's citation covers every line of its verified cells). K1's
   placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures hang at /commands,
   table rows split, text entries hang at their section node.
 - K1 copies a block's `selector` verbatim into the fragments of the entries it makes and stamps its own parser key on them
@@ -463,11 +463,12 @@ accepted.
   `uncited` with its kind, file, line, reason and next action, plus one warning line for the production: it is never
   handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
   from the knowledge with only a count left behind.
-- A paragraph entry cites the RAW source line (the one step one verified verbatim), not the engine's inline HTML:
-  `**cmd** *\<param\>*` as written is K1's signature grammar. A table's rows are rebuilt from the verified line numbers
-  (the engine splits a multi-cell row into single-cell rows) and one delimiter row (`| --- | --- |`) is synthesized so the
-  markdown pipe-table reader accepts it; the synthesized delimiter is a produced line, never a source line, and the
-  fragment references point at source rows only.
+- A paragraph entry cites the source line step one verified verbatim, and a table is mapped as the engine's own rows, one
+  line each, in the order head, body and foot give them, with the delimiter row (`| --- | --- |`) K1's pipe-table reader
+  needs under the header. The delimiter is a produced line and carries no citation; every row line carries that row's own:
+  the range covering the row's verified cells. A row entry therefore cites the line the row is written on, never the
+  header's line and never a byte range inside the mapped text. A row whose cells were not verified is left out of the
+  mapped table and reported with the table's file and line; it never borrows another row's source line.
 - Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
   bold runs joined by a slash also split), every line of a `[role=signature]` block (a line without marks gains the bold
   marks the role declares), and a bold signature paragraph that verifies verbatim. A title, ordinary bold prose and an

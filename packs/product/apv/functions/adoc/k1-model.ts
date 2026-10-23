@@ -11,6 +11,7 @@
 import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
 import { inlineMarkdown, plainText } from './text.ts';
+import { utf8Offsets } from '../util.ts';
 
 /**
  * One fragment of one chapter file: the file's digest and the text@1 line selector of the verified range, kept apart.
@@ -110,59 +111,94 @@ function signatureShape(text: string): string {
   return out;
 }
 
-/** The first verified origin among a table's cells (the block's own is often lost). */
-function tableOrigin(block: Block): VerifiedRange | null {
-  if (block.rows === undefined) return null;
-  for (const row of [...block.rows.head, ...block.rows.body, ...block.rows.foot]) {
-    for (const cell of row) if (cell.origins.length > 0) return cell.origins[0]!;
-  }
-  return null;
+/** One cell's text in the mapped table: the engine's own inline output in K1's spelling, kept on one row line. */
+function cellText(cell: { raw: string }): string {
+  return signatureShape(inlineMarkdown(cell.raw)).replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
-function rowOf(cells: Array<{ text: string; line: number | null }>): string {
-  return `| ${cells.map((cell) => cell.text).join(' | ')} |`;
+/** One row line of the mapped table text, in the `|`-pipe spelling K1's manual producer splits. */
+function rowOf(cells: readonly string[]): string {
+  return `| ${cells.join(' | ')} |`;
 }
 
-function tableText(block: Block): string {
-  if (block.rows === undefined) return block.expanded;
-  const raw = [...block.rows.head, ...block.rows.body, ...block.rows.foot];
-  const cells: Array<{ text: string; line: number | null }> = [];
-  for (const row of raw) {
-    for (const cell of row) {
-      if (cell.raw === '' && cell.origins.length === 0) continue;
-      cells.push({ text: signatureShape(inlineMarkdown(cell.raw)).replaceAll('|', '\\|'), line: cell.origins[0]?.from ?? null });
+/**
+ * The citation that covers a set of verified ranges: they must be of one file and leave no line between them, so the
+ * cited range is exactly the lines that were read back. Null when there is nothing verified, or a gap.
+ */
+function mergedCitation(origins: readonly VerifiedRange[], digestOf: (file: string) => string): Citation | null {
+  if (origins.length === 0) return null;
+  const file = origins[0]!.file;
+  if (origins.some((origin) => origin.file !== file)) return null;
+  const sorted = [...origins].sort((a, b) => a.from - b.from);
+  let next = sorted[0]!.from;
+  for (const origin of sorted) {
+    if (origin.from > next) return null;
+    next = Math.max(next, origin.to + 1);
+  }
+  const from = sorted[0]!.from;
+  const to = next - 1;
+  return { file, sha256: digestOf(file), selector: from === to ? `l/${from}` : `l/${from}-${to}` };
+}
+
+/** The distinct verified ranges of one engine row's cells. */
+function cellOrigins(row: ReadonlyArray<{ origins: VerifiedRange[] }>): VerifiedRange[] {
+  const parts: VerifiedRange[] = [];
+  for (const cell of row) {
+    const origin = cell.origins[0];
+    if (origin !== undefined && !parts.some((part) => part.file === origin.file && part.from === origin.from && part.to === origin.to)) parts.push(origin);
+  }
+  return parts;
+}
+
+/**
+ * The mapped text of a table and the citation of every line K1 can cite: the engine's own rows, one line each, in the
+ * order head, body and foot give them, with the delimiter row K1's pipe-table reader needs under the header (a produced
+ * line, never a source line, so it carries no citation). A row whose cells were not verified is left out and reported:
+ * it never borrows another row's line. The byte ranges are computed exactly as K1 computes them over this text, so the
+ * range in a fragment K1 makes finds the row it names.
+ */
+function tableOf(block: Block, digestOf: (file: string) => string): { text: string; rowCites: RowCite[]; dropped: number[]; cite: Citation | null } {
+  if (block.rows === undefined) return { text: block.expanded, rowCites: [], dropped: [], cite: mergedCitation(block.origins, digestOf) };
+  const rows = [...block.rows.head, ...block.rows.body, ...block.rows.foot];
+  const kept: Array<{ line: string; cells: number; cite: Citation }> = [];
+  const dropped: number[] = [];
+  const verified: VerifiedRange[] = [];
+  rows.forEach((row, index) => {
+    const origins = cellOrigins(row);
+    for (const origin of origins) if (!verified.some((one) => one === origin)) verified.push(origin);
+    const cite = mergedCitation(origins, digestOf);
+    if (cite === null) {
+      dropped.push(index);
+      return;
+    }
+    const cells = row.map(cellText);
+    kept.push({ line: rowOf(cells), cells: cells.length, cite });
+  });
+  const cite = mergedCitation(verified, digestOf);
+  if (kept.length === 0) return { text: '', rowCites: [], dropped, cite: null };
+  const delimiter = rowOf(Array.from({ length: kept[0]!.cells }, () => '---'));
+  const lines = [kept[0]!.line, delimiter, ...kept.slice(1).map((row) => row.line)];
+  const cites: Array<Citation | null> = [kept[0]!.cite, null, ...kept.slice(1).map((row) => row.cite)];
+  const text = lines.join('\n');
+  // The byte ranges of the lines of this text, as K1's lineRanges computes them: [start of the line, offset of its
+  // line break or of the end of the text].
+  const offsets = utf8Offsets(text);
+  const rowCites: RowCite[] = [];
+  let start = 0;
+  let line = 0;
+  for (let i = 0; i <= text.length; i++) {
+    if (i === text.length || text.charCodeAt(i) === 0x0a) {
+      const one = cites[line];
+      if (one !== null && one !== undefined) rowCites.push({ range: [offsets[start], offsets[i]], cite: one });
+      start = i + 1;
+      line++;
     }
   }
-  // The engine's row model loses the row structure of a multi-cell line (it emits one row per cell). Rows are
-  // rebuilt from the verified line numbers: a verified line opens a row holding the lineless cells collected since
-  // the previous verified line (a cell whose origin the inline rewrite lost rides with the next verified line)
-  // followed by its own cell — so `**cmd** *\<p\>* | 说明` of source line 7 is one row: [cmd, 说明].
-  const rows: Array<Array<{ text: string; line: number | null }>> = [];
-  let pending: Array<{ text: string; line: number | null }> = [];
-  for (const cell of cells) {
-    if (cell.line === null) {
-      pending.push(cell);
-      continue;
-    }
-    const last = rows.at(-1);
-    if (last !== undefined && last.every((c) => c.line === null || c.line === cell.line)) {
-      last.push(...pending, cell);
-    } else {
-      rows.push([...pending, cell]);
-    }
-    pending = [];
-  }
-  if (pending.length > 0) rows.push(pending);
-  // K1's pipe-table reader needs a delimiter row under the header; an adoc table has none, so one is synthesized
-  // from the header's cell count (a produced line, never a source line: the fragment ranges cite source rows only).
-  const headerCells = rows[0]?.length ?? 2;
-  const delimiter = `| ${Array.from({ length: headerCells }, () => '---').join(' | ')} |`;
-  return [rows.length > 0 ? rowOf(rows[0]!) : '', delimiter, ...rows.slice(1).map(rowOf)].join('\n');
+  return { text, rowCites, dropped, cite };
 }
 
 /** The text this block carries into the mapped model; '' for a container whose children carry its content. */
 function textOf(block: Block): string {
-  if (block.rows !== undefined) return tableText(block);
   // A list item's own text is the engine's converted text: the reader's spelling (markdown-shaped inline marks), not
   // the engine's tags. A listing stays verbatim (the engine substitutes nothing inside it).
   if (block.kind === 'list_item') return inlineMarkdown(block.raw).trim();
@@ -223,26 +259,25 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     byPath.set(key, at);
     return at;
   };
-  const citationOf = (origin: VerifiedRange): Citation => ({
-    file: origin.file,
-    sha256: composition.files.find((file) => file.file === origin.file)?.sha256 ?? '',
-    selector: origin.selector,
-  });
+  const digestOf = (file: string): string => composition.files.find((one) => one.file === file)?.sha256 ?? '';
+  const citationOf = (origin: VerifiedRange): Citation => ({ file: origin.file, sha256: digestOf(origin.file), selector: origin.selector });
   /** One mapped block: the citation key K1 carries into its fragments, and the citation the key stands for. */
-  const emit = (block: Block, kind: string, text: string, origin: VerifiedRange): void => {
+  const emit = (block: Block, kind: string, text: string, cite: Citation, rowCites?: RowCite[]): void => {
     const section = sectionOf(block.path);
     const index = sections[section]!.blocks.length;
+    const [from, to] = linesOf(cite.selector);
     sections[section]!.blocks.push(blocks.length);
     blocks.push({
       kind,
       section,
       index,
-      line: origin.from - 1,
-      lines: origin.to - origin.from + 1,
+      line: from - 1,
+      lines: to - from + 1,
       text,
       selector: citeKey(blocks.length),
       path: block.path.map((s) => s.title),
-      cite: citationOf(origin),
+      cite,
+      ...(rowCites === undefined ? {} : { rowCites }),
     });
   };
   const uncited: Uncited[] = [];
@@ -254,56 +289,69 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       // the role declares; a marked line stays as written), citing the line's own verified origin.
       const origin = block.origins[0] ?? null;
       if (origin === null) {
-        uncited.push(uncitedOf(model, block));
+        uncited.push(uncitedOf(model, block, 'signature 块的行没有已核对的原文行'));
         continue;
       }
       for (const line of block.raw.split('\n')) {
         const marked = /^\*\*/.test(line) ? line : `**${line}**`;
         const lineOrigin = block.origins.find((one) => one.verbatim.split('\n').includes(line)) ?? origin;
-        emit(block, 'paragraph', marked, lineOrigin);
+        emit(block, 'paragraph', marked, citationOf(lineOrigin));
       }
       continue;
     }
-    const text = textOf(block);
-    // A container with no text of its own (a list, an example, an open or sidebar block, a table's own node) is not
-    // mapped: the engine gives a block for each of its children, and each of those carries and cites its own text.
-    if (text === '' && block.rows === undefined) continue;
+    const table = block.rows === undefined ? null : tableOf(block, digestOf);
+    const text = table === null ? textOf(block) : table.text;
+    // A container with no text of its own (a list, an example, an open or sidebar block) is not mapped: the engine gives
+    // a block for each of its children, and each of those carries and cites its own text.
+    if (text === '' && table === null) continue;
     if (block.kind === 'list_item' && block.listAt !== null && model.blocks[block.listAt]?.kind === 'dlist') {
       const entry = describedEntry(block, model.blocks[at + 1]);
       if (entry !== null) {
-        emit(block, kindOf(block), entry.text, entry.origin);
+        emit(block, kindOf(block), entry.text, citationOf(entry.origin));
         at++;
         continue;
       }
     }
-    const origin = block.origins[0] ?? (block.rows !== undefined ? tableOrigin(block) : null);
-    if (origin === null) {
-      uncited.push(uncitedOf(model, block));
+    const cite = table === null ? (block.origins.length > 0 ? citationOf(block.origins[0]!) : null) : table.cite;
+    if (cite === null) {
+      uncited.push(uncitedOf(model, block, table === null ? '' : '表格的单元格都回核不到原文行'));
       continue;
     }
-    emit(block, kindOf(block), text, origin);
+    for (const row of table?.dropped ?? []) {
+      uncited.push(uncitedOf(model, block, `表格的第 ${row + 1} 行（按引擎的行模型数）没有已核对的单元格，这一行没有进映射，也没有借用别的行的来源行`));
+    }
+    emit(block, kindOf(block), text, cite, table === null ? undefined : table.rowCites);
   }
   const warnings: string[] = [];
   if (uncited.length > 0) {
     const shown = uncited.slice(0, 5).map((one) => `${one.kind} ${one.file ?? '展开文本'}${one.line === null ? '' : `:${one.line}`}`).join('、');
     warnings.push(
-      `有 ${uncited.length} 个块回核不到原文行，没有交给落点代码（不给它们发引用，也不让它们被当成“格式不对”悄悄丢掉）：${shown}${uncited.length > 5 ? ' 等' : ''}。` +
-        '下一步：按这些文件和行号核对源行，修好源或定位器后按同一修订号重跑；在那之前这些块的文字没有进知识。',
+      `有 ${uncited.length} 个块或表格行回核不到原文行，没有交给落点代码（不给它们发引用，也不让它们被当成“格式不对”悄悄丢掉）：${shown}${uncited.length > 5 ? ' 等' : ''}。` +
+        '下一步：按这些文件和行号核对源行，修好源或定位器后按同一修订号重跑；在那之前这些文字没有进知识。',
     );
   }
   void manualName;
   return { model: { charset: 'utf-8', lines: model.line_map.length, sections, blocks, nulRemoved: 0 }, warnings, uncited };
 }
 
-/** A block the mapping does not place: what the engine reported for it, where, and why no citation exists. */
-function uncitedOf(model: ExpandedModel, block: Block): Uncited {
+/** The first and last line of a text@1 line selector. */
+function linesOf(selector: string): [number, number] {
+  const body = selector.replace(/^l\//, '');
+  const dash = body.indexOf('-');
+  const from = Number(dash < 0 ? body : body.slice(0, dash));
+  const to = Number(dash < 0 ? body : body.slice(dash + 1));
+  return [Number.isFinite(from) ? from : 1, Number.isFinite(to) ? to : from];
+}
+
+/** A block or row the mapping does not place: what the engine reported for it, where, and why no citation exists. */
+function uncitedOf(model: ExpandedModel, block: Block, reason: string): Uncited {
   const line = block.reportedLine;
   const file = line !== null && line >= 1 && line <= model.line_map.length ? model.line_map[line - 1]!.file : null;
   return {
     kind: block.kind,
     file,
     line,
-    reason: block.unverifiedReason === '' ? '没有已核对的原文行' : block.unverifiedReason,
+    reason: reason === '' ? (block.unverifiedReason === '' ? '没有已核对的原文行' : block.unverifiedReason) : reason,
     next_action: '按文件和行号核对源行（定位器已在 sourcemap 邻近行做过逐字比较，含结构标记、属性展开、行内标记、字符引用和排版替换的归一）；修好源或定位器后按同一修订号重跑',
   };
 }

@@ -122,3 +122,82 @@ test('a fragment the mapping cannot resolve refuses the group instead of going o
     assert.equal('entries' in produced, false);
   }
 });
+
+const COMMAND_FILES: Record<string, string> = {
+  'book.adoc': '= Synthetic\n\ninclude::commands.adoc[]\n',
+  'commands.adoc': [
+    '== 配置命令',                              // 1
+    '',                                        // 2
+    '[cols="2,3",options="header"]',            // 3
+    '|===',                                     // 4
+    '| 命令 | 说明',                             // 5
+    '| *demo pool add* _<name>_ | 添加成员',     // 6
+    '| *demo pool del* _<name>_ | 删除成员',     // 7
+    '|===',                                     // 8
+    '',                                        // 9
+  ].join('\n'),
+};
+
+/** The Hub's own check over every fragment of every entry, against a text@1 parse of the file each fragment names. */
+const checkFragments = (entries: Array<{ statement: string; fragments: Array<{ slot?: string; source?: string; parser: string; selector: string; range?: [number, number] }> }>, files: Record<string, string>): void => {
+  const { sources, bySha } = sourcesOf(files);
+  for (const entry of entries) {
+    assert.ok(entry.fragments.length > 0, JSON.stringify(entry));
+    for (const fragment of entry.fragments) {
+      assert.equal(fragment.parser, ADOC_PARSER, JSON.stringify(fragment));
+      assert.equal(fragment.slot, 'manual');
+      assert.match(fragment.selector, /^l\/[1-9][0-9]*(?:-[1-9][0-9]*)?$/, JSON.stringify(fragment));
+      assert.ok(bySha.has(fragment.source ?? ''), `${JSON.stringify(fragment)} names no file of the group`);
+      const verified = verifyFragment(fragment as never, sources, loader);
+      assert.ok(verified.ok, `${entry.statement} ${JSON.stringify(fragment)}: ${verified.ok ? '' : verified.reason}`);
+    }
+  }
+};
+
+test('every row of a command table cites its own source line, not the header line of the table', async () => {
+  const out = await compile(COMMAND_FILES);
+  const mapped = toK1Model(out.model, out.composition, 'cli-apv');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli-apv', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const digest = sha(COMMAND_FILES['commands.adoc']!);
+  const signatures = produced.entries.filter((entry) => entry.data.form === 'signature');
+  assert.deepEqual(
+    signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.source, entry.fragments[0]!.selector]),
+    [
+      ['demo pool add <name>', '/commands/demo/pool/add', digest, 'l/6'],
+      ['demo pool del <name>', '/commands/demo/pool/del', digest, 'l/7'],
+    ],
+    JSON.stringify(signatures.map((entry) => [entry.statement, entry.fragments])),
+  );
+  // The row's own text cites the same line, and no entry cites a byte range inside a mapped table text.
+  const described = produced.entries.filter((entry) => String(entry.statement).includes('成员'));
+  assert.deepEqual(described.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]), [
+    ['添加成员', '/commands/demo/pool/add', 'l/6'],
+    ['删除成员', '/commands/demo/pool/del', 'l/7'],
+  ]);
+  checkFragments(produced.entries, COMMAND_FILES);
+});
+
+test('a table row whose cells were not verified is reported and does not borrow another row\'s line', async () => {
+  const out = await compile(COMMAND_FILES);
+  const model = structuredClone(out.model);
+  const table = model.blocks.find((block) => block.rows !== undefined);
+  assert.ok(table !== undefined && table.rows !== undefined);
+  // Constructed: the second body row loses the verification of its cells.
+  for (const cell of table.rows.body[1]!) cell.origins = [];
+  const mapped = toK1Model(model, out.composition, 'cli-apv');
+  assert.ok(
+    mapped.uncited.some((one) => one.kind === 'table' && one.file === 'commands.adoc' && one.reason.includes('没有已核对的单元格')),
+    JSON.stringify(mapped.uncited),
+  );
+  assert.ok(mapped.model.blocks.every((block) => !block.text.includes('删除成员')), 'the uncited row stays out of the mapped text');
+  const produced = produceAdocEntries(mapped, { name: 'cli-apv', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.ok(produced.entries.every((entry) => !String(entry.statement).includes('删除成员')));
+  assert.ok(produced.warnings.some((warning) => warning.includes('回核不到原文行')), produced.warnings.join('；'));
+  // What stays is cited on its own line: the surviving row does not move onto the dropped row's line or the header's.
+  const kept = produced.entries.filter((entry) => entry.data.form === 'signature');
+  assert.deepEqual(kept.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]), [['demo pool add <name>', 'l/6']]);
+  checkFragments(produced.entries, COMMAND_FILES);
+});
