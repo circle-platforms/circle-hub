@@ -291,3 +291,13 @@ test('the table bytes and canonical manifest must bind to the run locked pack', 
  assert.equal(report.expected.length,0); assert.ok(report.requests.some(r=>r.input==='manifest' || r.input==='table'));
  }
 });
+
+test('missing Hub pointer or command is an output mismatch rather than a missing gold input', async () => {
+ const {compareCatalogMarks}=await import('./catalog-marks.ts');
+ for(const field of ['pointer','command']) {
+  const mark=hubMark() as any; if(field==='pointer')delete mark.pointer; else delete mark.statement.data.command;
+  const report=compareCatalogMarks({treeXml:tree,source,submission,run:run([mark])});
+  assert.equal(report.requests.length,0); assert.equal(report.missed.length,1); assert.equal(report.extra.length,1);
+  assert.match(report.extra[0].output_error ?? '',/输出缺字段/);
+ }
+});

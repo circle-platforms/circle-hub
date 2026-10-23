@@ -344,9 +344,9 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         const statement = claim.statement, qualifier = claim.qualifier;
         if (statement.verdict !== 'refute' || typeof statement.code !== 'string' || !statement.code.startsWith('core.catalog.') || qualifier.nature !== 'fact' || qualifier.source_role !== 'subject') { report.summary.ignored_hub_claims++; return; }
         const at = { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/requirements/${j}/claims/${k}` };
-        if (typeof claim.pointer !== 'string') { report.requests.push(request({ ...at, pointer: at.pointer + '/pointer' }, '反驳来自 cited_commands 的局部指针', '补该主张的检查身份或 /phrases/<序号> 指针；不能只按码名猜检查来源')); return; }
+        if (typeof claim.pointer !== 'string') { report.observed.push({item:value.item as string,node:target.id,command:object(statement.data) && typeof statement.data.command === 'string' ? statement.data.command : '',code:statement.code,pointer:'<missing>',output_error:'输出缺字段：pointer'}); return; }
         if (!/^\/phrases\/[0-9]+$/.test(claim.pointer)) { report.summary.ignored_hub_claims++; return; }
-        if (!object(statement.data) || typeof statement.data.command !== 'string') { report.requests.push(request({ ...at, pointer: at.pointer + '/statement/data/command' }, '这条反驳实际判定的命令行', '补取该位置完整的命令行 data.command 后重跑，不拿金标准填充 Hub 输出')); return; }
+        if (!object(statement.data) || typeof statement.data.command !== 'string') { report.observed.push({item:value.item as string,node:target.id,command:'',code:statement.code,pointer:claim.pointer,output_error:'输出缺字段：data.command'}); return; }
         if (blocked.has(JSON.stringify([value.item, claim.pointer]))) return;
         const original = phrases.get(value.item as string)?.[Number(claim.pointer.slice('/phrases/'.length))];
         const command = original !== undefined && displayCommand(original) === fold(statement.data.command) ? original : statement.data.command;
