@@ -145,3 +145,14 @@ test('zero argument opening still requires reviewed true rather than an empty al
   const opened = draftProfile({ ready: true, device_count: 2 }, MANIFEST_DOC, contract, { ...decisions, allowed: decisions.allowed.map(v => ({ ...v, reviewed: true })) });
   assert.equal((opened.allowed[index] as Record<string, unknown>).reviewed, true);
 });
+
+test('optional parameter guidance names unsupplied and redacted roles have their own refusal', () => {
+  const original = runtimeDocument();
+  const contract = signRuntime({ ...original, entries: original.entries.map(v => v.f === 'shell' ? entry('widget-host', 'shell', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }, { name: 'label', kind: 'positional_or_keyword', required: false, default: 'synthetic' }]) : v) });
+  const draft = draftProfile({ ready: true, device_count: 2 }, MANIFEST_DOC, contract);
+  assert.ok(draft.pending.some(p => p.pointer.endsWith('/parameters/label') && p.next.includes('unsupplied')));
+  const { profile, contract: base, manifest } = setup();
+  const allowed = profile.allowed.map(v => v.method === 'configure' ? { ...v, parameters: { ...v.parameters, auth_token: 'device_cli' } } : v);
+  assert.throws(() => checkProfile({ ...profile, allowed }, manifest, base), /脱敏参数不能定角色.*删去.*--check/);
+  assert.throws(() => draftProfile({ ready: true, device_count: 2 }, manifest, base, { ...profile, allowed }), /脱敏参数不能定角色.*删去/);
+});

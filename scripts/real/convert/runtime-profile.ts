@@ -58,6 +58,7 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
   const allowed = wanted.enabled.filter(method => !unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))).map((method, i) => {
     const found = given.find((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method));
     const roles = record(found) && record(found.parameters) ? found.parameters : {};
+    for (const parameter of method.parameters) requireFact(!parameter.redacted || !Object.hasOwn(roles, parameter.name), `/allowed/${i}/parameters/${pointerPart(parameter.name)} 脱敏参数不能定角色；删去该角色后重跑 --check`);
     const omitted = unsupplied(method, record(found) ? found : {});
     const policy = dispatchPolicy(method);
     const parameters = Object.fromEntries(method.parameters.filter(p => !p.redacted && !omitted.has(p.name)).map((parameter) => {
@@ -65,7 +66,7 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
       const pointer = `/allowed/${i}/parameters/${pointerPart(parameter.name)}`;
       if (role !== undefined) requireFact(typeof role === 'string' && policy.roles.some(candidate => candidate === role), `${pointer} 的角色不在该派发方式的包格式表中；集成者按 dispatch-roles.json 改正或列为 unopened 后重跑`);
       if (typeof role === 'string') return [parameter.name, role];
-      add(pointer, '签名不能证明参数角色', '集成者核对参数语义后填写包表中的角色；不能归入角色则移到 unopened 并另开包检查任务');
+      add(pointer, '签名不能证明参数角色', `集成者核对参数语义后填写包表中的角色${parameter.required ? '' : '，或在该 allowed 项 unsupplied 中声明永不传入'}；不能归入角色则移到 unopened 并另开包检查任务`);
       return [parameter.name, null];
     }));
     const review = methodReview(method);
@@ -97,6 +98,7 @@ export function checkCoverage(profile: unknown, contract: RuntimeContract): void
     requireFact(method && !seen.has(key), '组合不是启用子集或重复出现；逐项核对 allowed 和 unopened'); seen.add(key);
     if (list === 'allowed') {
       requireFact(!blockedCredentials(method), '必需脱敏参数或仅有脱敏参数的组合不能开放；集成者核对认证接入并列为未开');
+      if (record(value.parameters)) for (const parameter of method.parameters) requireFact(!parameter.redacted || !Object.hasOwn(value.parameters, parameter.name), `/allowed/${index}/parameters/${pointerPart(parameter.name)} 脱敏参数不能定角色；删去该角色后重跑 --check`);
       const policy = dispatchPolicy(method);
       const pointer = `/allowed/${index}`;
       requireFact(policy.roles.length > 0, `${pointer} 的派发方式当前没有可核验角色；${policy.missing}；${policy.next}`);
