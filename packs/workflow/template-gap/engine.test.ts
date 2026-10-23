@@ -9,12 +9,14 @@ import { RunSummary } from '../../../contracts/src/run.ts';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
-import { createPacksPort, createWorkflowStore, productPack, temporaryDirectory, writePack, type StartRunDetail } from '../../../hub/runs/api.ts';
+import { createPacksPort, createWorkflowStore, temporaryDirectory, writePack, type StartRunDetail } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
+import { assignedCases, indexView, bindIndex, LOCK, PRODUCT, BUILD, ROOT } from './testing/index.ts';
 import { PACK_DIR } from './api.ts';
 import { openBed, type Bed } from './testing/bed.ts';
 import { baseDocument, bytesOf, outlineDocument, renamed, shuffled, withCase, withoutCategory, witnessCase, type DocumentSpec } from './testing/mindmap.ts';
-import { bind, project, sha256, table } from './testing/support.ts';
+import { bind, isFailure, projectionInput, sha256, table } from './testing/support.ts';
+import { projectDocuments } from './functions/project.ts';
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const CATEGORIES = (table('template-v3.json') as { categories: Array<{ id: string }> }).categories.map((category) => category.id);
@@ -31,7 +33,7 @@ after(async () => {
   await postgres?.stop();
 });
 
-const FOLDERS = ['示例产品', '030：示例测试项目', '101：2.1.0', '201: 2.1.0-R1-2026/1', '探测'];
+const FOLDERS = ['合成产品线', '030：合成测试项目', '101：10.6.8', '201: 10.6.8-R1-2026/1', '探测'];
 /** Puts a synthetic document on the fake agile platform and returns its external id. */
 const onAgile = (id: string, doc: DocumentSpec, title = doc.title, on: Bed = bed): string => on.agile.put(id, { bytes: bytesOf(doc), title, folders: FOLDERS });
 
@@ -44,22 +46,22 @@ function requirementOf(result: ValidationResult, item: string): { partition: str
 }
 
 async function start(input: Record<string, unknown>, user = bed?.runner, on: Bed = bed): Promise<StartRunDetail> {
-  return on.service.startRunDetailed(user, { pack: 'template-gap', ...input } as Parameters<Bed['service']['startRunDetailed']>[1], on.call());
+  return on.service.startRunDetailed(user, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, ...input } as Parameters<Bed['service']['startRunDetailed']>[1], on.call());
 }
 
 describe('publication', { skip }, () => {
-  it('the publish check passes on the real registry; the pack is listed for the assigned user only, with no product', async () => {
+  it('the publish check passes on the real registry; the pack is listed for the assigned user only, with the command-catalog product', async () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
     assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.0.1', 'workflow', false]);
-    assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [6, 6, []]);
-    assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']]]);
+    assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [13, 13, []]);
+    assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const [summary] = await store.summaries(bed.runner);
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.0.1', 'workflow', []]);
-    assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true]]);
-    assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'fact', ['static'], 'bookkeeping', 0]]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.0.1', 'workflow', ['Synthetic Template', 'MEADOW']]);
+    assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
+    assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'fact', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual(await store.summaries(bed.stranger), []);
   });
 
@@ -105,17 +107,21 @@ describe('a production run', { skip }, () => {
     const run = RunSummary.parse(detail.answer.run);
     assert.equal((await bed.service.listRuns(bed.runner)).items.length, before + 1);
 
-    // The run: no product, version, build or root; no slots; the procedure is SKILL.md.
-    assert.deepEqual([run.product, run.version, run.build, run.root, run.slots, run.target_basis], [undefined, undefined, undefined, undefined, undefined, []]);
+    // The run locks a catalog-bearing product/root; all requirements are facts, so there are no result slots.
+    assert.deepEqual([run.product, run.version, run.build, run.root, run.slots], [PRODUCT, '10.6', BUILD, ROOT, undefined]);
+    assert.ok(run.target_basis.length > 0);
     assert.equal(run.instructions, await readFile(join(PACK_DIR, 'SKILL.md'), 'utf8'));
     assert.deepEqual(run.sources.map((s) => [s.role, s.slot, s.external ?? null]), [['subject', 'documents', null], ...removed.map((r) => ['subject', 'documents', `agile:mindmap:${r.id}@1`]), ['subject', 'documents', 'agile:mindmap:900301@1'], ['subject', 'documents', 'agile:mindmap:900302@1']]);
 
     // The items are what the pack's projection gives in process for the same inputs.
     const meta = (doc: DocumentSpec) => ({ title: doc.title, folders: FOLDERS, found: true });
-    const expected = project(
+    const expectedInput = projectionInput(
       [bind(base), ...removed.map((r) => bind(r.doc, { external: `agile:mindmap:${r.id}@1`, meta: meta(r.doc) })), bind(restored, { external: 'agile:mindmap:900301@1', meta: meta(restored) }), bind(skippedDoc, { external: 'agile:mindmap:900302@1', meta: meta(skippedDoc) })],
       parameters,
-    ).items;
+    );
+    const expectedProjection = projectDocuments({ ...expectedInput, context: { ...LOCK, parameters } });
+    assert.ok(!isFailure(expectedProjection));
+    const expected = expectedProjection.items;
     assert.deepEqual(
       run.items.map((it) => ({ id: it.id, label: it.label, summary: it.summary, fields: it.fields })),
       expected.map((it) => ({ id: it.id, label: it.label, summary: it.summary, fields: it.fields })),
@@ -130,7 +136,7 @@ describe('a production run', { skip }, () => {
     assert.ok(production !== null);
     const result = ValidationResult.parse(production.result);
     assert.deepEqual([result.acceptance, result.errors, result.cross_item, result.coverage], ['accepted', [], [], { complete: true, examined: documents.length, total: documents.length }]);
-    assert.deepEqual(production.counts, { delivered: documents.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+    assert.deepEqual(production.counts, { delivered: documents.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: documents.length - 1 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
     assert.equal(production.reference, `rec:${production.record}`);
     // StartRunOutput.result (contracts): the answer names the stored result. Filled by the engine change in progress at the
@@ -241,7 +247,7 @@ describe('refusals at start_run', { skip }, () => {
     assert.equal((await bed.service.listRuns(bed.runner)).items.length, runs, 'nothing is stored');
   });
 
-  it('an unknown product name is refused (the pack declares no catalogs), and a user without the pack gets the neutral answer', async () => {
+  it('a product outside the required command-catalog products is refused, and a user without the pack gets the neutral answer', async () => {
     const documents = [{ external: onAgile('900901', renamed(baseDocument(), 'r0e2eprod001')) }];
     const named = await start({ inputs: { documents }, product: 'Widget' });
     assert.deepEqual(named.answer.errors.map((e) => [e.code, e.path]), [['REFERENCE_UNRESOLVED', '/product']]);
@@ -249,20 +255,20 @@ describe('refusals at start_run', { skip }, () => {
     assert.deepEqual(stranger.answer.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
   });
 
-  it('binds no product line while one is active on the Hub', async () => {
+  it('exposes only catalog-bearing products while another product is active', async () => {
     const withProduct = await openBed(postgres);
     const dir = await temporaryDirectory('circle-hub-template-gap-product-');
     try {
-      await writePack(dir.path, productPack());
+      await writePack(dir.path, { id: 'other-synthetic', version: '1.0.0', kind: 'product', title: '无目录合成产品线', description: '验证无命令目录时不向此工作流暴露产品线', files: { 'product.json': { schema: 'product@1', id: 'other-synthetic', title: '无目录合成产品线', names: ['Other Synthetic'], catalogs: [], producers: [] } } });
       const published = await withProduct.registry.publish(withProduct.owner, dir.path);
       assert.ok(published.ok, JSON.stringify(!published.ok && published.problems));
-      await withProduct.registry.activate(withProduct.admin, 'widget');
+      await withProduct.registry.activate(withProduct.admin, 'other-synthetic');
       const [summary] = await createWorkflowStore(withProduct.registry).summaries(withProduct.runner);
       const readable = await createPacksPort(withProduct.registry).readableProducts(withProduct.runner);
-      const named = await start({ inputs: { documents: [{ external: onAgile('900951', renamed(baseDocument(), 'r0e2eprod002'), undefined, withProduct) }] }, product: 'Widget' }, withProduct.runner, withProduct);
+      const named = await start({ inputs: { documents: [{ external: onAgile('900951', renamed(baseDocument(), 'r0e2eprod002'), undefined, withProduct) }] }, product: 'Other Synthetic' }, withProduct.runner, withProduct);
       assert.deepEqual(
         { products: summary.products, readable: [...readable], errors: named.answer.errors.map((e) => [e.code, e.path]) },
-        { products: [], readable: [], errors: [['REFERENCE_UNRESOLVED', '/product']] },
+        { products: ['Synthetic Template', 'MEADOW'], readable: [PRODUCT], errors: [['REFERENCE_UNRESOLVED', '/product']] },
       );
     } finally {
       await dir.remove();
@@ -285,7 +291,7 @@ describe('a subject builder that fails', { skip }, () => {
     try {
       assert.ok(failing.publication.ok, JSON.stringify(!failing.publication.ok && failing.publication.problems));
       const ref = await failing.upload(failing.runner, bytesOf(renamed(baseDocument(), 'r0e2ebld0001')));
-      const detail = await failing.service.startRunDetailed(failing.runner, { pack: 'template-gap', inputs: { documents: [{ reference: ref }] } }, failing.call());
+      const detail = await failing.service.startRunDetailed(failing.runner, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, inputs: { documents: [{ reference: ref }] } }, failing.call());
       const result = detail.production!.result;
       const id = detail.answer.run!.items[0].id;
       const { result: requirement } = requirementOf(result, id);
@@ -312,7 +318,7 @@ describe("the brief's `* -> unknown` row (记未知保留反驳，归责待定)"
     try {
       assert.ok(literal.publication.ok, JSON.stringify(!literal.publication.ok && literal.publication.problems));
       const ref = await literal.upload(literal.runner, bytesOf(renamed(withoutCategory(baseDocument(), 'stress'), 'r0e2elit0001')));
-      const detail = await literal.service.startRunDetailed(literal.runner, { pack: 'template-gap', inputs: { documents: [{ reference: ref }] } }, literal.call());
+      const detail = await literal.service.startRunDetailed(literal.runner, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, inputs: { documents: [{ reference: ref }] } }, literal.call());
       const production = detail.production!;
       const [item] = production.result.partitions.delivered;
       // 记未知保留反驳，归责待定：终态为 violation、码 core.coverage.shortfall、档 advisory，归责为 unattributed，状态为 unsatisfied，未知计数为 0
@@ -324,4 +330,55 @@ describe("the brief's `* -> unknown` row (记未知保留反驳，归责待定)"
       await literal.close();
     }
   });
+});
+
+
+it('locks the command catalog and judges both requirements over agile documents and an upload', { skip }, async () => {
+  assert.ok(bed.publication.ok, JSON.stringify(!bed.publication.ok && bed.publication.problems));
+  const complete = renamed(baseDocument(), 'dual-complete');
+  const short = renamed(withoutCategory(baseDocument(), 'audit_log'), 'dual-short');
+  const noCommands = renamed(baseDocument(), 'dual-commandless');
+  const absent = renamed(baseDocument(), 'dual-absent');
+  const before = renamed(baseDocument(), 'dual-before');
+  const drift = renamed(before, before.rootId, '修订后的合成脑图标题');
+  const maps = [complete, short, noCommands, absent, drift];
+  const ids = maps.map((_, i) => `98000${i + 1}`);
+  const entries = maps.flatMap((source, i) => i === 3 ? [] : assignedCases(i === 4 ? before : source, ids[i]!, () => i === 2 ? [] : ['CLI/widget/probe']));
+  const view = indexView(entries, ids);
+  const external = bindIndex(view).external!;
+  bed.agile.documents.set(external, { bytes: new TextEncoder().encode(JSON.stringify(view)), title: '合成用例索引', folders: [] });
+  const upload = await bed.upload(bed.runner, bytesOf(renamed(baseDocument(), 'dual-upload')));
+  const detail = await start({ product: LOCK.names[0], build: BUILD, inputs: { documents: [...maps.map((source, i) => ({ external: onAgile(ids[i]!, source) })), { reference: upload }], case_index: { external } } });
+  assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+  assert.equal(detail.answer.run!.root, ROOT);
+  assert.deepEqual(detail.production!.counts, { delivered: 6, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
+  for (const item of detail.production!.result.partitions.delivered) {
+    const command = item.requirements.find(r => r.requirement === 'command_coverage')!;
+    const coverage = item.requirements.find(r => r.requirement === 'coverage')!;
+    if (item.item === ids[0]) { assert.equal(coverage.status, 'satisfied'); assert.deepEqual(command.layers, [{ layer: 'static', terminal: 'pass' }]); }
+    else if (item.item === ids[1]) { assert.equal(coverage.status, 'unsatisfied'); assert.equal(command.layers[0]!.code, 'template-gap.command_shortfall'); }
+    else if (item.item === ids[2]) assert.equal(command.layers[0]!.code, 'template-gap.no_commands');
+    else if (item.item === ids[4]) { assert.equal(command.layers[0]!.terminal, 'unchecked'); assert.ok(command.claims.some(c => c.statement.data?.next_action)); }
+    else assert.equal(command.layers[0]!.code, 'template-gap.not_indexed');
+  }
+});
+
+it('runs each paired transitional example through the real registry and engine with bounded recovery', { skip }, async () => {
+  const { commandTransitionalExamples } = await import('./testing/command-samples.ts');
+  for (const pair of commandTransitionalExamples()) for (const [inputs, sample] of [[pair.inputs, pair.pending], [pair.restored_inputs, pair.restored]] as const) {
+    const bytes = new TextEncoder().encode(JSON.stringify(inputs.document));
+    const external = bed.agile.put('900001', { bytes, title: inputs.document.root.data.text as string, folders: [] });
+    const index = inputs.index ? bindIndex(inputs.index).external! : null;
+    if (index) bed.agile.documents.set(index, { bytes: new TextEncoder().encode(JSON.stringify(inputs.index)), title: '合成过渡索引', folders: [] });
+    const detail = await start({ inputs: { documents: [{ external }], ...(index ? { case_index: { external: index } } : {}) } });
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const command = detail.production!.result.partitions.delivered[0]!.requirements.find(r => r.requirement === 'command_coverage')!;
+    assert.deepEqual(command.claims.map(c => c.statement.verdict), sample.expect.map(e => e.verdict), sample.id);
+    for (const claim of command.claims.filter(c => c.statement.verdict === 'unknown')) {
+      const data = claim.statement.data!;
+      assert.ok((data.missing as unknown[]).length > 0);
+      const recovery = data.recovery as { action: string; object: { document: string }; deadline: string; attempts: number };
+      assert.ok(recovery.action.includes('重跑')); assert.equal(recovery.object.document, '900001'); assert.match(recovery.deadline, /本轮最终回报前/); assert.equal(recovery.attempts, 1);
+    }
+  }
 });

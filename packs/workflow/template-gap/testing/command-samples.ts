@@ -1,8 +1,12 @@
 // Synthetic subject snapshots paired by the fact that is removed/restored. No real knowledge or external reads.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { withoutCategory, withCase, witnessCase, render, type DocumentSpec } from './mindmap.ts';
+import { bind, isFailure, projectionInput } from './support.ts';
+import { projectDocuments } from '../functions/project.ts';
+import { commandSubject } from '../functions/command-subject.ts';
 import TEMPLATE from '../tables/template-v3.json' with { type: 'json' };
-import { BUILD, LOCK, ROOT, digest, indexView } from './index.ts';
+import { BUILD, LOCK, ROOT, assignedCases, bindIndex, digest, indexView } from './index.ts';
 const document = '900001';
 const categories = TEMPLATE.categories.filter(c => c.group === 'command');
 export function commandSampleSubjects(): { id: string; polarity: 'positive' | 'negative'; note: string; subject: any; verdicts: string[] }[] {
@@ -23,11 +27,36 @@ export function commandSampleSubjects(): { id: string; polarity: 'positive' | 'n
     make('command_unmatched', 'negative', '脑图多了未收录用例：保留已知支持并追加文档缺输入；同步收录后为完整正例', ['support', 'unknown'], s => { s.cases.push({ id: `${document}:fresh`, visit: s.nodes.texts.length, categories: [] }); s.nodes.texts.push('新增用例'); s.nodes.parents.push(0); s.case_count++; }),
   ];
 }
+function declaredSample(example: ReturnType<typeof commandSampleSubjects>[number]) {
+  const codes: Record<string, string> = { command_shortfall: 'template-gap.command_shortfall', command_absent: 'template-gap.not_indexed', command_upload: 'template-gap.not_indexed', command_none: 'template-gap.no_commands', command_rule_mismatch: 'template-gap.case_rule_mismatch' };
+  return { id: example.id, source: 'author', check: 'command_coverage', note: example.note, subject: example.subject, expect: example.verdicts.map(verdict => ({ verdict, ...(verdict === 'refute' ? { code: codes[example.id] } : {}), ...(verdict === 'unknown' ? { reason: 'missing_input' } : {}), item: document, tier: 'advisory' })) };
+}
+export function commandTransitionalExamples() {
+  return commandSampleSubjects().filter(e => e.verdicts.includes('unknown')).map(example => {
+    const baseline: DocumentSpec = { rootId: `transition-${example.id}`, title: '合成按命令覆盖场景', children: [{ kind: 'group', id: 'transition-group', created: 0, text: '其他', shows: [], children: categories.map((category, i) => witnessCase(category.id, 2000 + i)) }] };
+    const source = example.id === 'command_partial_shortfall' ? withoutCategory(baseline, 'audit_log') : example.id === 'command_unmatched' ? withCase(baseline, '其他', witnessCase('audit_log', 9876)) : baseline;
+    const pendingView = example.id === 'command_unbound' ? null : indexView(assignedCases(example.id === 'command_unmatched' ? baseline : source, document), [document]);
+    if (pendingView && example.id.startsWith('command_partial')) { pendingView.skipped = 2; pendingView.notes = ['未归位条目 3 个，标在根下']; }
+    const restoredView = indexView(assignedCases(source, document), [document]);
+    restoredView.notes = pendingView?.notes.filter(note => note.startsWith('未归位')) ?? [];
+    const snapshot = (view: ReturnType<typeof indexView> | null) => {
+      const brain = bind(source, { external: `agile:mindmap:${document}` });
+      const projected = projectDocuments({ ...projectionInput([brain, ...(view ? [bindIndex(view)] : [])]), context: LOCK });
+      if (isFailure(projected)) throw new Error(projected.error.message);
+      const item = projected.items[0]!;
+      return commandSubject({ item: { ...item, location: `src:${brain.sha256}/${item.location.parser}/${item.location.selector}` }, context: { ...LOCK, groups: projected.groups } });
+    };
+    const refute = example.id === 'command_partial_shortfall';
+    const pending = declaredSample({ ...example, subject: snapshot(pendingView) });
+    const restored = declaredSample({ ...example, id: `${example.id}_restored`, subject: snapshot(restoredView), verdicts: [refute ? 'refute' : 'support'] });
+    if (refute) restored.expect[0]!.code = 'template-gap.command_shortfall';
+    return { schema: 'template-gap.transitional-example@1', id: example.id, note: '成对的合成脑图、索引输入、过渡未知及补齐后的确定结果；当前样例合约不接受期望未知，模型修订后迁入 samples/', inputs: { document: render(source), index: pendingView }, restored_inputs: { document: render(source), index: restoredView }, pending, restored };
+  });
+}
 export async function writeCommandSamples(dir: string): Promise<void> {
-  for (const example of commandSampleSubjects()) {
-    const codes: Record<string, string> = { command_shortfall: 'template-gap.command_shortfall', command_absent: 'template-gap.not_indexed', command_upload: 'template-gap.not_indexed', command_none: 'template-gap.no_commands', command_rule_mismatch: 'template-gap.case_rule_mismatch' };
-    const sample = { id: example.id, source: 'author', check: 'command_coverage', note: example.note, subject: example.subject, expect: example.verdicts.map(verdict => ({ verdict, ...(verdict === 'refute' ? { code: codes[example.id] } : {}), ...(verdict === 'unknown' ? { reason: 'missing_input' } : {}), item: document, tier: 'advisory' })) };
-    await writeFile(join(dir, `samples/${example.polarity}/${example.id}.json`), `${JSON.stringify(sample, null, 2)}\n`);
+  for (const example of commandSampleSubjects().filter(e => !e.verdicts.includes('unknown'))) {
+    await writeFile(join(dir, `samples/${example.polarity}/${example.id}.json`), `${JSON.stringify(declaredSample(example), null, 2)}\n`);
   }
+  for (const example of commandTransitionalExamples()) await writeFile(join(dir, `examples/${example.id}.json`), `${JSON.stringify(example, null, 2)}\n`);
 }
 if (import.meta.main) await writeCommandSamples(new URL('../', import.meta.url).pathname);

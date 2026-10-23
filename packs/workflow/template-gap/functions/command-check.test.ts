@@ -78,7 +78,27 @@ test('declared command samples are schema-valid and every unknown carries missin
     assert.deepEqual(outcomes.map(o => o.verdict), sample.verdicts, sample.id);
     for (const outcome of outcomes) {
       assert.equal(CheckOutcome.safeParse(outcome).success, true, sample.id);
-      if (outcome.verdict === 'unknown') { assert.ok((outcome.data?.missing as unknown[]).length > 0); assert.ok(outcome.data?.next_action); }
+      if (outcome.verdict === 'unknown') {
+        assert.ok((outcome.data?.missing as unknown[]).length > 0); assert.ok(outcome.data?.next_action);
+        const recovery = outcome.data!.recovery as { action: string; object: object; deadline: string; attempts: number };
+        assert.ok(recovery.action); assert.ok(Object.keys(recovery.object).length > 0); assert.match(recovery.deadline, /本轮最终回报前/); assert.equal(recovery.attempts, 1);
+      }
     }
+  }
+});
+
+test('paired transitional examples resolve after facts are supplied and every unknown has a bounded recovery', async () => {
+  const { commandTransitionalExamples } = await import('../testing/command-samples.ts');
+  for (const pair of commandTransitionalExamples()) {
+    for (const sample of [pair.pending, pair.restored]) {
+      const outcomes = commandOutcomes(sample.subject);
+      assert.deepEqual(outcomes.map(o => o.verdict), sample.expect.map(e => e.verdict), sample.id);
+      for (const outcome of outcomes.filter(o => o.verdict === 'unknown')) {
+        assert.ok((outcome.data!.missing as unknown[]).length > 0);
+        const recovery = outcome.data!.recovery as { action: string; object: { document: string }; deadline: string; attempts: number };
+        assert.ok(recovery.action.includes('重跑')); assert.equal(recovery.object.document, '900001'); assert.match(recovery.deadline, /本轮最终回报前/); assert.equal(recovery.attempts, 1);
+      }
+    }
+    assert.ok(commandOutcomes(pair.restored.subject).every(o => o.verdict !== 'unknown'));
   }
 });
