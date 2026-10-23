@@ -147,13 +147,16 @@ export class SourceLoader {
     const cached = known === undefined ? undefined : this.#documents.get(`${source.sha256}\u0000${known}`);
     if (known !== undefined && cached !== undefined) return { ok: true, value: { ...source, parser: known, document: cached } };
     let found: ReturnType<typeof recognize>;
+    let rejected: ParseError | undefined;
     try {
-      found = recognize(this.#deps.parsers, source.bytes, source.mediaType);
+      found = recognize(this.#deps.parsers, source.bytes, source.mediaType, {}, error => { rejected = error; });
     } catch (error) {
       return { ok: false, sha256: source.sha256, reason: `源文件 ${source.sha256}（${source.external}）解析时出错：${describeError(error)}` };
     }
     if (found === null) {
-      return { ok: false, sha256: source.sha256, reason: `源文件 ${source.sha256}（${source.external}，${source.mediaType}）不能用任何核心解析器解析` };
+      return { ok: false, sha256: source.sha256, reason: rejected === undefined
+        ? `源文件 ${source.sha256}（${source.external}，${source.mediaType}）没有支持此媒体类型的核心解析器；请管理员核对源文件媒体类型后重读`
+        : `源文件 ${source.sha256}（${source.external}）被 ${rejected.parser} 拒绝：${rejected.message}${rejected.offset === null ? '' : `（字节 ${rejected.offset}）`}；${rejected.fix}` };
     }
     const parser = parserKey(found.parser);
     this.#documents.set(`${source.sha256}\u0000${parser}`, found.document);

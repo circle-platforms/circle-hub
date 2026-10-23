@@ -238,7 +238,7 @@ describe('producing a root', () => {
       ['Rel_ACME_1_2_1', { bytes: catalogXml(BASE_CATALOG), mediaType: XML, readTier: 'function_bytes_only' }, /读取档位是“只许函数按引用读字节”/],
       ['Rel_ACME_1_2_2', { bytes: catalogXml(BASE_CATALOG), mediaType: XML, personal: true }, /个人凭据读到的源文件不进知识树/],
       ['Rel_ACME_1_2_3', { bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]), mediaType: 'image/png' }, /不是凭据扫描能检查的文本/],
-      ['Rel_ACME_1_2_4', { bytes: 'plain words, no structure', mediaType: 'application/x-unknown' }, /不能用任何核心解析器解析/],
+      ['Rel_ACME_1_2_4', { bytes: 'plain words, no structure', mediaType: 'application/x-unknown' }, /没有支持此媒体类型的核心解析器/],
     ];
     for (const [name, object, reason] of cases) {
       w.external.set(`site:tree:${name}`, object);

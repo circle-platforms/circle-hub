@@ -840,3 +840,7 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 
 
 合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。
+
+View-scope task 7: sync source-load failures retain the core parser identity, safe ParseError message, original-byte
+offset and constructor-defined recovery instruction. Raw parser-library detail and source text are not copied into
+the sync report. No supporting parser is distinguished from a registered parser rejecting invalid bytes.
