@@ -579,3 +579,7 @@ before any plan, login or request; malformed identities and unknown types do not
 cover the real createTestHub start_run path, executeRead, and absence of request/key echoes.
 
 External-id size advice in core is deliberately generic (缩短读取键后重读). Product-specific name-set or product-id advice remains in the system pack. The non-PLM oversized-key regression checks the actual reader entry.
+
+Counted identity refusals carry a typed inputError only for an active Hub reader. The engine exposes this deterministic
+caller-input fact only after workflow access checks, using its existing input-schema code and a shortening instruction.
+Other read failures stay neutral; neither the supplied key nor resource existence/permission is disclosed by this field.

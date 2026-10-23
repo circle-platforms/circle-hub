@@ -76,3 +76,7 @@ Version 1.3.1 closes the counted external-id entry path with the connector core.
 Closure c3 #2: signed stories text distinguishes scalar, absent and non-scalar fields and the observed unread list.
 The connector owns the identity byte limit and normal callers receive its generic shortening instruction; this package
 does not claim its defensive direct-call size advice is visible through the connector.
+
+c3 #4：有权启动本任务包的有效读者看到确定的标识超长错误：实际 UTF-8 字节数、900 字节上限、缩短读取键的办法；不回显键，不发请求。沿用 inputs.ts 其他参数校验的 SUBMISSION_SCHEMA_VIOLATION，统一 start_run 参数码由模型修订决定。未分配任务包或无效读者仍只得到中性答复。
+
+范围边界：超过 ExternalObjectId 的 8192 字符上层模式限制时，start_run 在输入绑定前已经拒绝，仍用上层模式的说明；本批没有改 contracts 或 start.ts。若要让这一层也给出同样的字节计数提示，由模型修订者在统一 start_run 参数拒绝契约时安排。

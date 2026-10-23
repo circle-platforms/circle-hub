@@ -286,7 +286,11 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       const shown = typeof id === 'string' ? id : String(id);
       try {
         const sizeReason = typeof id === 'string' ? externalSizeReason(id) : null;
-        if (sizeReason !== null) return { ok: false, id: shown, reason: sizeReason };
+        if (sizeReason !== null) {
+          const account = await records.principals.get(context.principal.id);
+          return { ok: false, id: shown, reason: sizeReason,
+            ...(account !== null && !account.disabled ? { inputError: {message:sizeReason,fix:'缩短读取键后重读'} } : {}) };
+        }
         const subject = typeof id === 'string' ? parseExternal(id) : null;
         if (subject === null) return { ok: false, id: shown, reason: `${redactor.text(shown)} 不是外部对象标识` };
         const candidates = await resolve(`${subject.system}:${subject.type}`);

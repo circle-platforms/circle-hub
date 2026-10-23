@@ -99,11 +99,12 @@ export interface ExternalArtifact {
  * Result of reading one external object. On success the artifact named `original` is the response as received (stored by
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
- * is for the admin log, callers show the neutral SOURCE_UNAVAILABLE.
+ * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
+ * while other failures show the neutral SOURCE_UNAVAILABLE.
  */
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string };
+  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
