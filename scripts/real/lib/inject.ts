@@ -152,7 +152,7 @@ const expectedLeaves = (caseNode: MindNode): MindNode[] => {
   const out: MindNode[] = [];
   const walk = (node: MindNode): void => {
     for (const child of node.children ?? []) {
-      if (Array.isArray(child.data.resource) && child.data.resource.length > 0) continue;
+      if (Array.isArray(child.data.resource) && child.data.resource.some(tag => typeof tag === 'string' && tag.trim() !== '')) continue;
       if ((child.children ?? []).length === 0) {
         if (child.data.priority === 3) continue;
         out.push(child);
@@ -203,6 +203,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
     }
 
     if (op.kind === 'contradict_manual') {
+      if ([op.from, op.to, op.quote].some(text => typeof text !== 'string' || !text.trim())) throw new Error('from、to、quote 必须是非空文本');
       if (seen_by !== 'judgment') throw new Error('contradict_manual 只有模型判断才看得见，seen_by 必须是 judgment');
       if (options.manual === undefined) throw new Error('计划里有 contradict_manual，却没有给手册片段（inject-defects.ts 的 --manual）');
       if (!noWhiteSpace(options.manual.text).includes(noWhiteSpace(op.quote))) {
@@ -228,6 +229,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       });
       continue;
     } else if (op.kind === 'vague_expected') {
+      if (typeof op.text !== 'string' || !op.text.trim()) throw new Error('text 必须是非空文本');
       if (seen_by !== 'judgment') throw new Error('vague_expected 只有模型判断才看得见，seen_by 必须是 judgment');
       if (!vague(op.text)) throw new Error(`text（${op.text}）不在含糊期望词表里`);
       if (!caseIdsOf(copy, options.caseRule ?? 'marked').has(op.node)) {
@@ -241,7 +243,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       const after = vagueCasesOf(copy, options.caseRule ?? 'marked');
       const flipped = [...after].filter((id) => !before.has(id));
       if (flipped.length !== 1 || flipped[0] !== op.node) {
-        throw new Error(`注入后从不含糊变成含糊的用例不止这一个：${flipped.join('、')}`);
+        throw new Error(flipped.length === 0 ? '注入后这个用例没有变成含糊（没有可确认的新增身份）' : `注入后从不含糊变成含糊的用例不止这一个：${flipped.join('、')}`);
       }
       gold.push({ label, seen_by, kind: op.kind, node: op.node, note: `每条期望结果都换成了同一句含糊的“${op.text}”` });
       continue;

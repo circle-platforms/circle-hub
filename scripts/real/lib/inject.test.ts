@@ -239,3 +239,11 @@ test('every gold entry carries the injection kind', () => {
   const { gold } = inject(manualDoc(), plan);
   assert.deepEqual(gold.map((g) => g.kind), ['delete_expected', 'duplicate']);
 });
+
+test('review 18: expected leaves use filtered nested-case tags and empty operands are refused', () => {
+  const source: MindTree = { root: group('r', 'synthetic', { data: { id: 'c1', text: 'case', priority: 2, resource: ['configuration'] }, children: [{ data: { id: 'inner', text: 'step', resource: [' '] }, children: [leaf('e', 'before 10')] }] }) };
+  assert.equal(inject(source, [{ label: 'vague', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]).gold.length, 1);
+  for (const over of [{ from: '' }, { quote: ' ' }, { to: '' }]) assert.throws(() => inject(source, [{ label: 'manual', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: 'before', to: 'after', quote: 'before allowed', ...over } }], { manual: { text: 'before allowed', sha256: 'a'.repeat(64) } }));
+  const duplicated: MindTree = { root: group('r', 'synthetic', kase('c1', 'first', 'before 10'), kase('c1', 'second', '正常')) };
+  assert.throws(() => inject(duplicated, [{ label: 'vague', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]), error => error instanceof Error && 'detail' in error && String(error.detail).includes('没有变成含糊'));
+});
