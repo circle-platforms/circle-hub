@@ -146,3 +146,12 @@ npx tsc --noEmit
 ```
 
 The first test of `generator.test.ts` fails whenever a source or a registered shape changed without `npm run gen:contracts`: that is the drift check, not a flaky test. The tests cover: every axis generated with labels (`vocabulary.test.ts`); the generated files current and deterministic across fresh processes, a second in-process generation seeing changed sources, a root reached through a symbolic link, `--check` naming every drifting file, bad input reported (labels, name clashes with the barrel, a scheme without grammar, malformed format proposals), the lock and write failures with exit status 3 (`generator.test.ts`, on a temporary copy, including a type check of axes named `record` and `readonly`); the D06 annotation table and the conservative default (`annotations.test.ts`); valid and invalid references, URIs, grounds, external ids, input bindings, claims and value resolutions, submissions, validation results, envelopes, ids, runs and records, with a negative case per rule (`shapes.test.ts`); every tool's input and output, success and error answers, against zod and against `tools.json` through the SDK's Ajv validator, refinement-only cases named (`tool-shapes.test.ts`); the record schemas against the same validator, formats limited to 2020-12, compilation without warnings (`published.test.ts`); `tools.json` structure and the literal D06 annotations (`tools.test.ts`); protocol and core codes (`codes.test.ts`); the element viewer (`show-element.test.ts`). Synthetic examples live in `contracts/src/fixtures.ts` (test support, not part of the API).
+
+
+`LinkDeclaration` selects exactly one of `field` (a string or string-list data property) and `alternatives_field` (a list of
+strict `{primary: string, alternatives: nonempty string[]}` groups). Alternative groups require generated `link_match`
+`exact`: an eligible exact primary wins; only when absent are the expanded alternatives checked individually, against the
+same namespace, kind, normalization and producer restrictions. Counts describe the effective checked spellings, grouped
+by rule and normalized literal; identical spellings under different rules remain separate groups. Group structure is
+validated when the reader evaluates producer data; malformed data is an entry diagnostic, never a whole-production error.
+The declaration's cross-field requirements are runtime refinements, in addition to the generated schema properties.

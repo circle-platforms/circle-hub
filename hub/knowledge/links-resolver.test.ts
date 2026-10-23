@@ -30,3 +30,15 @@ test('producer filters prevent a source definition from satisfying its own targe
   assert.equal(facts.diagnostics[0].reference.includes('2'.repeat(64)),true);
   assert.equal(facts.diagnostics[0].reason,'no_check');assert.match(facts.diagnostics[0].next_action,/重新生产/);
 });
+
+test('alternative groups prefer an exact primary definition then check each expanded alternative',()=>{
+  const grouped=LinkDeclaration.parse({id:'groups',alternatives_field:'groups',namespace:'/terms',match:'exact',entry_kind:'definition'});
+  const source=(primary:string,alternatives:string[])=>({path:'/notes',entry:'b'.repeat(64),content:{kind:'behaviour' as const,statement:'Synthetic grouped literals',data:{groups:[{primary,alternatives}]},applicability:null}});
+  const graph=new Map<string,ReadonlySet<string>>([['/terms',new Set()],['/terms/mode',new Set(['definition'])],['/terms/health',new Set()],['/terms/health/tcp',new Set(['definition'])]]);
+  const primary=relationFacts('a'.repeat(64),[grouped],graph,[source('mode',['mode rr','mode lc','mode hash'])]);
+  assert.deepEqual(primary.links.map(edge=>edge.literal),['mode']);assert.deepEqual(primary.drift,[]);
+  const expanded=relationFacts('a'.repeat(64),[grouped],graph,[source('health',['health tcp','health udp'])]);
+  assert.deepEqual(expanded.links.map(edge=>edge.literal),['health tcp']);assert.deepEqual(expanded.drift.map(group=>group.literal),['health udp']);
+  for(const bad of [{...grouped,field:'ordinary'},{...grouped,match:'longest_prefix'},{...grouped,alternatives_field:undefined}])assert.equal(LinkDeclaration.safeParse(bad).success,false);
+  const malformed=relationFacts('a'.repeat(64),[grouped],graph,[source('mode',[])]) ;assert.equal(malformed.diagnostics.length,1);
+});

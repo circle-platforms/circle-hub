@@ -39,3 +39,42 @@ test('production and paged reading agree on all 150 drift literals, while ordina
   }while(cursor);
   assert.ok(pages>1);assert.equal(linked,1);assert.deepEqual(drift.sort(),literals.sort());
 });
+
+
+test('declared signature matching rejects extending signatures and retains positive no variants',async()=>{
+  const {produceManualEntries}=await import('./manual.ts');
+  const {commandCatalog}=await import('./cases-commands.ts');
+  const {manualRelations}=await import('../testing/relations.ts');
+  const {markdown,xml}=await import('../testing/test-support.ts');
+  const catalog=commandCatalog(xml(tree)).catalog;
+  const result=produceManualEntries(markdown('**demo pool add extra** *\\<name\\>*\n\n**[no] demo pool add** *\\<name\\>*\n'),null,{catalog});
+  const facts=manualRelations(result,catalog);
+  assert.deepEqual(facts.drift.map(group=>group.literal),['demo pool add extra']);
+  assert.deepEqual(facts.links.map(link=>link.literal),['demo pool add']);
+});
+
+test('the fixed manual fixture has identical declared production drift and paged read drift',async t=>{
+  const {fixtureBytes}=await import('../testing/test-support.ts');
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
+  const external=new Manuals(kit),packs=new FakePacks(),directory=fileURLToPath(new URL('../',import.meta.url));
+  const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  const handle:ProductHandle={id:'apv',version:'1.3.0',digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
+  external.set('site:tree:links',{bytes:fixtureBytes('command-tree.xml'),mediaType:'application/xml'});external.set('manual:cli:10.6.1',{bytes:fixtureBytes('manual.md'),mediaType:'text/markdown'});
+  const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const build:KnownBuild={name:'Rel_APV_10_6_1_99',family:'APV',line:'10.6.1',base:'Rel_APV_10_6_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
+  const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
+  assert.deepEqual(produced.warnings.filter(warning=>warning.startsWith('链接声明 ')),[
+    '链接声明 manual-literals：有 3 个字面在此根没有可匹配目标（漂移事实）：demo broken、demo pool create、enable',
+    '链接声明 manual-signatures：有 3 个字面在此根没有可匹配目标（漂移事实）：?、demo probe、enable',
+  ]);
+  const reader=createKnowledgeReader(knowledge),drift:string[][]=[];let cursor:string|null=null;
+  do{
+    const id='knowledge:links:apv:10.6.1?limit=3'+(cursor?'&cursor='+cursor:'');
+    const result=await reader.read(id,{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
+    const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);
+    const again=await reader.read(id,{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(again.ok);assert.equal(result.artifacts[0].artifact.body.sha256,again.artifacts[0].artifact.body.sha256);
+    const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));assert.equal(view.totals?.drift_literals,6);
+    drift.push(...view.drift.map(group=>[group.rule,group.literal]));cursor=view.next;
+  }while(cursor);
+  assert.deepEqual([...new Map(drift.map(pair=>[JSON.stringify(pair),pair])).values()],[['manual-literals','demo broken'],['manual-literals','demo pool create'],['manual-literals','enable'],['manual-signatures','?'],['manual-signatures','demo probe'],['manual-signatures','enable']]);
+});

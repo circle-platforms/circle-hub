@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "d8b0a6d32927f5abacbb60583acb1c237274960827621793f13daab32d9c5500",
-      "size": 63826
+      "sha256": "3f5db0ba6fd785e9db5d1da12c377c72f6e1e07ff7c622c4a1364b7501473563",
+      "size": 61919
     },
     {
       "path": "functions/naming.ts",
@@ -128,8 +128,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "8c39637263abb0ac32f766511e862fa9408c9ba385f55a0343e099ccce92add9",
-      "size": 2125
+      "sha256": "63be67e95f2370c77c0fcb4e04949743597d336626a0ef94d930c58e06e46c47",
+      "size": 2725
     }
   ]
 }

@@ -835,6 +835,12 @@
             "pattern": "^[a-z][a-z0-9_-]{0,40}$"
           },
           "field": {
+            "description": "Data field holding ordinary literals; mutually exclusive with alternatives_field",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "alternatives_field": {
+            "description": "Data field holding groups {primary: string, alternatives: nonempty string[]}; exact primary definition wins, otherwise each alternative is matched exactly",
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]{0,40}$"
           },
@@ -901,7 +907,6 @@
         },
         "required": [
           "id",
-          "field",
           "namespace",
           "match"
         ],

@@ -1,6 +1,8 @@
 // The product@1 entry points of product.json: the sync plan over rounds of pages, the build choice, the three producers,
 // checked against the contract shapes (contracts/src/product.ts) and run unchanged in the Hub sandbox.
 import assert from 'node:assert/strict';
+import {manualRelations} from '../testing/relations.ts';
+import {commandCatalog} from './cases-commands.ts';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import { ProducerOutput, ProductDeclaration, SelectBuildOutput, SyncPlanOutput, type KnownBuild } from '../../../../contracts/src/product.ts';
@@ -262,11 +264,8 @@ describe('the producers', () => {
     assert.deepEqual(mention?.data.command_literals, ['demo pool mode']);
     const note = out.entries.find((e) => e.fragments[0].selector === 'b/7/基本配置');
     assert.deepEqual(note?.data.command_literals, ['demo pool create']);
-    // The adapter preserves literals; whole-root drift is evaluated from the product declaration by the Hub.
-    const literals = new Set(out.entries.flatMap((entry) => entry.data.command_literals ?? []));
-    for (const literal of ['?', 'demo broken', 'demo pool create', 'demo probe', 'enable']) {
-      assert.ok(literals.has(literal), literal);
-    }
+    const facts=manualRelations(out,commandCatalog(xml(fixtureBytes('command-tree.xml'))).catalog);
+    assert.deepEqual([...new Set(facts.drift.map(group=>group.literal))].sort(),['?', 'demo broken', 'demo pool create', 'demo probe', 'enable']);
     assert.ok(!out.warnings.some((warning) => warning.includes('漂移')));
     // Without the tree slot no unchecked command path is created.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
@@ -331,8 +330,8 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     const treeXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${args}</arguments></item></menu></scope></commands>`;
     const slots = { tree: slot('xml@1', xml(treeXml)), cli: slot('markdown@1', markdown('**demo gone** *\\<x\\>*\n\n说明。\n')) };
     const out = manual({ build: knownBuild, slots: { ...slots, app: null }, params: {} });
-    const drift = out.warnings.filter((w) => w.includes('漂移候选'));
-    assert.ok(drift.length > 0, out.warnings.slice(0, 3).join('\n'));
+    const drift=manualRelations(out,commandCatalog(xml(treeXml)).catalog).drift;
+    assert.deepEqual(drift.map(group=>group.literal),['demo gone']);
     const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
     assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
     assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));

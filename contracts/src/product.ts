@@ -267,7 +267,8 @@ export type ProducerOutput = z.infer<typeof ProducerOutput>;
 /** A declarative relation from a literal data field to a namespace; no product dialect enters the reader. */
 export const LinkDeclaration = z.strictObject({
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,40}$/),
-  field: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/),
+  field: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/).optional().describe('Data field holding ordinary literals; mutually exclusive with alternatives_field'),
+  alternatives_field: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/).optional().describe('Data field holding groups {primary: string, alternatives: nonempty string[]}; exact primary definition wins, otherwise each alternative is matched exactly'),
   namespace: TreePath,
   match: LinkMatchSchema,
   entry_kind: EntryKindSchema.optional().describe('required by longest-prefix matching; optional restriction for exact matching'),
@@ -275,6 +276,8 @@ export const LinkDeclaration = z.strictObject({
   source_producers:z.array(z.string().min(1)).min(1).max(32).optional(),
   normalize: z.strictObject({ lowercase: z.boolean().optional(), nfc: z.boolean().optional(), nfkc: z.boolean().optional(), strip_nul: z.boolean().optional() }).optional(),
 }).superRefine((value, ctx) => {
+  if ((value.field===undefined)===(value.alternatives_field===undefined))ctx.addIssue({code:'custom',path:['field'],message:'declare exactly one literal field or alternative-group field'});
+  if (value.alternatives_field!==undefined&&value.match!==LINK_MATCH[0])ctx.addIssue({code:'custom',path:['match'],message:'alternative groups require exact matching'});
   if (value.match === LINK_MATCH[1] && value.entry_kind === undefined) ctx.addIssue({code:'custom',path:['entry_kind'],message:'longest-prefix matching needs a declared entry kind'});
   if (value.normalize?.nfc && value.normalize?.nfkc) ctx.addIssue({code:'custom',path:['normalize'],message:'choose one Unicode normalization form'});
 });

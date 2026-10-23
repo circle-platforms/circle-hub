@@ -15,7 +15,8 @@
 //     the namespace root); no manual paragraph is left at the tree root.
 //   What an entry's digest covers (kind, statement, data, applicability) never depends on the build's tree: the literals
 //   the author marked (bold, backticks, quotes, command lines in code blocks, signatures) are recorded as written in
-//   `data.command_literals`, never resolved at production time. Placement still uses the tree (the existence checks),
+//   prose/code in `data.command_literals`, signatures in `data.signature_literals` groups, never resolved in entry data.
+//   Placement still uses the tree (the existence checks),
 //   so two builds share the manual subtree exactly when their trees place the manual's signatures the same way (K01
 //   R[1]); the complete literals are checked by the shared relation evaluator using the product declaration.
 // - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
@@ -336,23 +337,8 @@ function existingPath(catalog: CommandCatalog, words: readonly string[]): string
   return node.path;
 }
 
-/** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
-/** A head word never contains the slash: two bold runs glued by a plain character are two commands, not one. */
+/** A head word never contains a slash: two bold runs glued by a plain character are two commands. */
 const HEAD_WORD = /^[A-Za-z][A-Za-z0-9_-]*$/;
-
-function resolves(catalog: CommandCatalog, literal: string): boolean {
-  let words = literal.split(' ');
-  // A leading optional or required group ([no], {no|clear}) is not a word of the tree.
-  if (words.length > 0 && /^(?:\[.*\]|\{.*\})$/.test(words[0])) words = words.slice(1);
-  let node = catalog.root;
-  for (const word of words) {
-    const next = node.children.get(word.toLowerCase());
-    if (next === undefined) return false;
-    node = next;
-    if (node.path !== null) return true;
-  }
-  return false;
-}
 
 /**
  * The tree path of an anchor: the exact key words when the command exists; for a signature with head alternatives, the
@@ -624,26 +610,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     return path;
   };
-  // Every literal found, past the per-entry cap: the drift total counts them all.
-  const allLiterals = new Set<string>();
-  // Signature literals are decided by the placement check, never by the leading-run rule: a signature placed at
-  // /commands resolves by placement, and one that is not lists exactly its literals as drift candidates.
-  const placedSignatureLiterals = new Set<string>();
-  const unplacedSignatureLiterals = new Set<string>();
-  const noteSignature = (entry: ProducedEntry): void => {
-    for (const literal of asStrings(entry.data.command_literals)) {
-      allLiterals.add(literal);
-      if (entry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
-      else unplacedSignatureLiterals.add(literal);
-    }
-  };
-/** Adds one literal to an entry's command_literals (a mention or a signature spelling), capped as putLiterals caps. */
+  /** Adds a prose mention without silently truncating the literal collection. */
   const putLiteral = (entry: ProducedEntry, literal: string): void => {
     if (literal === '') return;
     const literals = asStrings(entry.data.command_literals);
     if (!literals.includes(literal)) entry.data.command_literals = [...literals, literal].sort(compareText);
   };
-
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
     const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
     const unique = [...new Set(found)].sort(compareText);
@@ -702,7 +674,6 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     headingAnchors.set(index, { anchor, path: placed });
     const sectionCite = options.sectionSelector === undefined ? (section.selector as string) : options.sectionSelector(sectionSegments(index) ?? []);
     const entry = signatureEntry(anchor, placed, { parser: parserOf(options), selector: sectionCite });
-    noteSignature(entry);
     entry.applicability = toApplicability(conditionsOf(section.title));
     entries.push(entry);
   });
@@ -936,24 +907,11 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const lca = commonPrefix(found.map(({ anchor: some }) => some.words));
             if (lca.length >= 1) placed = (paths[0] as string).split('/').slice(0, 2 + lca.length).join('/');
           }
-          // The row keeps its cross-links (closure 17): its command_literals are the union of the anchors' positive
-          // variants and the prose mentions of the other cells; the drift sets take the same anchors' spellings.
-          const rowLiteralSet = new Set<string>();
-          for (const { anchor: some } of found) {
-            const positive = positiveVariantsOf(some);
-            for (const literal of [...new Set((positive ?? [some.words]).map((words) => words.join(' ')))]) {
-              rowLiteralSet.add(literal);
-              allLiterals.add(literal);
-            }
-          }
+          // Keep positive signature variants separate from the other cells' prose mentions (closure 17).
           const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
-          const rowEntryPathPlaced = rowEntry.path?.startsWith('/commands/') === true;
-          for (const literal of rowLiteralSet) {
-            if (rowEntryPathPlaced) placedSignatureLiterals.add(literal);
-            else unplacedSignatureLiterals.add(literal);
-          }
-          for (const literal of [...rowLiteralSet].sort()) putLiteral(rowEntry, literal);
-          for (const cell of row.cells) for (const literal of proseLiterals(cell)) putLiteral(rowEntry, literal);
+          rowEntry.data.signature_literals=found.map(({anchor:some})=>({primary:some.words.join(' '),alternatives:[...new Set((positiveVariantsOf(some)??[some.words]).map(words=>words.join(' ')))].sort(compareText)}));
+          const signatureCells=new Set(found.map(item=>item.cell));
+          row.cells.forEach((cell,index)=>{if(!signatureCells.has(index))for(const literal of proseLiterals(cell))putLiteral(rowEntry,literal);});
           split.push(rowEntry);
         }
         const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
@@ -1040,7 +998,7 @@ function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): Pr
   // variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the tree).
   const positive = positiveVariantsOf(anchor);
   const literals = [...new Set((positive ?? [anchor.words]).map((words) => words.join(' ')))].sort(compareText);
-  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, command_literals: literals };
+  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, signature_literals: [{primary:anchor.words.join(' '),alternatives:literals}] };
   if (anchor.variants !== null) data.variants = anchor.variants;
   return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
 }

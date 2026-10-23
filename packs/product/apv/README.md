@@ -176,15 +176,18 @@ Producers (K02, K04, C07)
   text entry, which follows the current command, or stays at the section node; a row that states its own condition
   becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
-- Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
-  command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
-  written in `data.command_literals` (sorted and deduped, retained in full; core entry-byte limits still reject oversized output), never
-  resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
-  manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
-  read time, against the composition's declaration snapshot and its root's /commands. Production warnings use the
-  same declaration and resolver as the read view: totals cover all retained literals, while warning details are cut
-  to fit one stored warning (800 characters, then 等). A drift is a missing target in this root, without a judgment
-  about the manual or implementation.
+- Literal relations (K05 R[2]): prose and code mentions are stored in `data.command_literals` and use the declared
+  longest-prefix rule. Signatures and multi-signature rows instead store `data.signature_literals`, groups of
+  `{primary, alternatives}`: the positive head and its expanded positive variants (never the leading optional no-form).
+  Both fields retain every deduplicated literal without the former 100-item cap. The Hub checks the exact primary against
+  command-tree definitions first; if present it links once and ignores alternatives, otherwise it checks every expanded
+  alternative exactly. Thus a parameter-value group after an existing head creates no false drift, while a missing
+  extending signature cannot borrow a shorter head. Entry data remains independent of the build's tree.
+  Only the manual producer supplies sources and only command-tree definitions supply targets; both sides use NFC,
+  lowercase and NUL removal. Production warnings and reading share the same composition-pinned generic evaluator.
+  Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
+  The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
+  mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
   table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
   row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only

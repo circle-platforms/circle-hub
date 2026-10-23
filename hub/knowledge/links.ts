@@ -77,13 +77,18 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
   const resolvers=new Map(rules.map(rule=>[rule.id,resolverOf(rule,nodes)]));
   for(const source of new Map(sources.map(s=>[s.path+'\0'+s.entry,s])).values())for(const rule of rules){
     if(rule.source_producers!==undefined&&!rule.source_producers.some(producer=>source.producers?.includes(producer)))continue;
-    if(!Object.hasOwn(source.content.data,rule.field))continue;
-    const raw=source.content.data[rule.field];
+    const field=rule.alternatives_field??rule.field!;
+    if(!Object.hasOwn(source.content.data,field))continue;
+    const raw=source.content.data[field];
     const reference=treeReference(root,source.unplaced?'/':source.path,source.entry),occurrence={reference,path:source.path,summary:summaryOf(source.content.statement)};
-    const values=typeof raw==='string'?[raw]:Array.isArray(raw)&&raw.every(value=>typeof value==='string')?raw:null;
+    let values:string[]|null=null;
+    if(rule.alternatives_field===undefined)values=typeof raw==='string'?[raw]:Array.isArray(raw)&&raw.every(value=>typeof value==='string')?raw:null;
+    else if(Array.isArray(raw)&&raw.every(group=>group!==null&&typeof group==='object'&&!Array.isArray(group)&&Object.keys(group).every(key=>key==='primary'||key==='alternatives')&&typeof group.primary==='string'&&group.primary.trim()!==''&&Array.isArray(group.alternatives)&&group.alternatives.length>0&&group.alternatives.every((literal:unknown)=>typeof literal==='string'&&literal.trim()!==''))){
+      values=raw.flatMap(group=>resolvers.get(rule.id)!(group.primary).target!==null?[group.primary]:group.alternatives);
+    }
     if(values===null){
       entries.add(reference);
-      diagnostics.push({...occurrence,rule:rule.id,reason:REASON.find(reason=>reason==='no_check')!,message:'字面字段 '+rule.field+' 不符合声明的文字或文字列表形状',next_action:'修正生产器的 '+rule.field+' 输出，重新生产这条线后重读'});
+      diagnostics.push({...occurrence,rule:rule.id,reason:REASON.find(reason=>reason==='no_check')!,message:'字面字段 '+field+' 不符合声明的'+(rule.alternatives_field===undefined?'文字或文字列表':'备选字面组')+'形状',next_action:'修正生产器的 '+field+' 输出，重新生产这条线后重读'});
       continue;
     }
     for(const literal of new Set(values)){

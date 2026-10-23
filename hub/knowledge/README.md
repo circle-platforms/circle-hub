@@ -784,3 +784,12 @@ id for reading the complete reverse view; a detail limit never changes the count
 
 Production drift warnings preserve the exact group count. Their detail list fits 800 characters by retaining whole literals
 and appending ` 等` when more remain; a literal longer than the detail budget is deferred intact to the relation view.
+
+
+Alternative groups (integrator authorization, kb-links review finding 1) use `alternatives_field` instead of `field` in a
+link declaration, with `match: exact`. The data value is a list of `{primary: string, alternatives: nonempty string[]}`.
+The same target-kind and producer filters apply to both. An exact primary hit contributes one link and no alternative
+checks; otherwise each distinct expanded alternative contributes a link or drift. Neither a missing primary nor unused
+alternatives are counted separately. Malformed groups produce entry diagnostics. The producer and read-time view share
+`relationFacts`; declarations are frozen in the composition as before. These are source spellings, never build-dependent
+entry edits. Ordinary-field declarations and their counts keep their existing behavior.

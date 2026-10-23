@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import manual, { canonicalSignature, parseAnchor, produceManualEntries } from './manual.ts';
+import {manualRelations} from '../testing/relations.ts';
 import { commandCatalog } from './cases-commands.ts';
 import { canonicalJson } from './util.ts';
 import type { ManualCatalog, ManualResult, MarkdownModel } from './types.ts';
@@ -173,7 +174,7 @@ describe('entries from the converted manual', () => {
       words: ['demo', 'route', 'static'],
       form: 'signature',
       signature: '[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]',
-      command_literals: ['demo route static'],
+      signature_literals: [{primary:'demo route static',alternatives:['demo route static']}],
       params: [
         { name: 'network', required: true },
         { name: 'netmask|prefix', required: true },
@@ -401,7 +402,7 @@ describe('author-marked command literals', () => {
   it('records the command lines of code blocks (after the prompt) and the signature of a signature entry', () => {
     const result = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n示例：\n\n    Box(config)#demo pool add p1 192.0.2.5\n    成员添加成功\n'));
     const [signature, , code] = result.entries;
-    assert.deepEqual(signature.data.command_literals, ['demo pool add']);
+    assert.deepEqual(signature.data.signature_literals, [{primary:'demo pool add',alternatives:['demo pool add']}]);
     assert.deepEqual(code.data.command_literals, ['demo pool add p1 192.0.2.5'], 'the output line is not a command line');
   });
 
@@ -586,25 +587,26 @@ describe('placement against the build’s command tree', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item><item name="add" help_string="a2"><arguments></arguments></item></menu><item name="probe" help_string="p"><arguments></arguments></item></menu><menu name="show"><item name="demo" help_string="d"><arguments></arguments></item></menu></scope></commands>')).catalog;
     // A variant signature with one variant present: only the missing one is drift.
     const variant = produceManualEntries(markdown('# 章\n\n**demo {pool\\|probe} add** *\\<name\\>*\n\n说明。\n'), null, { catalog: tree });
-    assert.ok(variant.warnings.some((w) => w.includes('漂移候选：demo probe add')), variant.warnings.join('；'));
-    assert.ok(!variant.warnings.some((w) => /漂移候选[^：]*：demo pool add/.test(w)), variant.warnings.join('；'));
+    assert.deepEqual(manualRelations(variant,tree).drift.map(g=>g.literal),['demo probe add']);
+    assert.ok(!manualRelations(variant,tree).drift.some(g=>g.literal==='demo pool add'));
     // A multi-command row whose commands all exist at /commands/demo: no drift at all.
     const rowBoth = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** 与 **demo route static** | 跨分支 |\n'), null, { catalog: tree });
-    assert.ok(!rowBoth.warnings.some((w) => w.includes('漂移候选')), rowBoth.warnings.join('；'));
+    assert.deepEqual(manualRelations(rowBoth,tree).drift,[]);
     // An unplaced multi-command row records the union of its anchors' literals and its prose mentions.
     const rowText = rowBoth.entries.find((entry) => String(entry.statement).includes('跨分支'));
     assert.ok(rowText !== undefined, JSON.stringify(rowBoth.entries.map((e) => e.path)));
-    assert.deepEqual(([...((rowText.data.command_literals ?? []) as string[])]).sort(), ['demo pool add', 'demo route static'], JSON.stringify(rowText.data.command_literals));
+    assert.deepEqual(([...(((rowText.data.signature_literals as {primary:string;alternatives:string[]}[]|undefined)?.flatMap(group=>group.alternatives) ?? []) as string[])]).sort(), ['demo pool add', 'demo route static'], JSON.stringify(rowText.data.command_literals));
     const withMention = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo probe** 与 **show demo status** | 配合，见 \`demo pool mode\` |\n'), null, { catalog: tree });
     const mentionEntry = withMention.entries.find((entry) => String(entry.statement).includes('配合'));
     assert.ok(mentionEntry !== undefined);
-    assert.deepEqual(([...((mentionEntry.data.command_literals ?? []) as string[])]).sort(), ['demo pool mode', 'demo probe', 'show demo status'], JSON.stringify(mentionEntry.data.command_literals));
-    assert.ok(withMention.warnings.some((w) => /漂移候选：show demo status/.test(w)), withMention.warnings.join('；'));
-    assert.ok(!withMention.warnings.some((w) => /漂移候选[^：]*：(demo probe|demo pool mode)/.test(w)), withMention.warnings.join('；'));
+    assert.deepEqual(mentionEntry.data.command_literals,['demo pool mode']);
+    assert.deepEqual(mentionEntry.data.signature_literals,[{primary:'demo probe',alternatives:['demo probe']},{primary:'show demo status',alternatives:['show demo status']}]);
+    assert.deepEqual(manualRelations(withMention,tree).drift.map(g=>g.literal),['show demo status']);
+    assert.ok(!manualRelations(withMention,tree).drift.some(g=>['demo probe','demo pool mode'].includes(g.literal)));
     // A value row that mentions an existing command: no word-level drift (closure 5/21).
     const treeWithCreate = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item><item name="create" help_string="c"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     const mentionCell = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| name | 名称，先用 **demo pool create** 创建 |\n'), null, { catalog: treeWithCreate });
-    assert.ok(!mentionCell.warnings.some((w) => w.includes('漂移候选')), mentionCell.warnings.join('；'));
+    assert.deepEqual(manualRelations(mentionCell,treeWithCreate).drift,[]);
   });
 
 
@@ -629,21 +631,21 @@ describe('placement against the build’s command tree', () => {
       '<commands><scope type="global"><menu name="demo"><menu name="pool" help_string="p"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
     const extendsTree = commandCatalog(xml(treeWithPool)).catalog;
     const missing = produceManualEntries(markdown('# 章\n\n**demo pool mode** *\\<name\\>*\n\n该命令用于设置。\n'), null, { catalog: extendsTree });
-    assert.ok(missing.warnings.some((warning) => /漂移候选：demo pool mode/.test(warning)), missing.warnings.join('；'));
+    assert.deepEqual(manualRelations(missing,extendsTree).drift.map(g=>g.literal),['demo pool mode']);
     // A variant signature whose key node exists: only the missing variants are drift, never the bare key.
     const treeWithDemoRoute = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="route"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     const variant = produceManualEntries(markdown('# 章\n\n**demo {pool\\|route} add** *\\<name\\>*\n\n该命令用于添加。\n'), null, { catalog: treeWithDemoRoute });
-    assert.ok(variant.warnings.some((warning) => /漂移候选：demo pool add/.test(warning)), variant.warnings.join('；'));
+    assert.deepEqual(manualRelations(variant,treeWithDemoRoute).drift.map(g=>g.literal),['demo pool add']);
     assert.ok(!variant.warnings.some((warning) => /漂移候选[^：]*：demo（|demo、|、demo[^ ]/.test(warning) && /：demo/.test(warning)), 'the bare key demo is never a drift candidate');
     // A leading [no] group places at the key like resolves(): both variants existing is enough.
     const bothTcpUdp = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="health"><item name="tcp" help_string="t"><arguments></arguments></item><item name="udp" help_string="u"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     const noGroup = produceManualEntries(markdown('# 章\n\n**[no] demo health {tcp\\|udp}**\n\n该命令用于探测。\n'), null, { catalog: bothTcpUdp });
     assert.equal(noGroup.entries[0].path, '/commands/demo/health', 'a leading [no] group places at the key when its positive variants exist');
-    assert.ok(!noGroup.warnings.some((warning) => warning.includes('漂移候选')), noGroup.warnings.join('；'));
+    assert.deepEqual(manualRelations(noGroup,bothTcpUdp).drift,[]);
     // A multi-command row that the placement check placed lists no drift literal of its own.
     const rowTree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="add" help_string="a2"><arguments></arguments></item><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     const row = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo {pool\\|route} add** 与 **demo route static** | 配合 |\n'), null, { catalog: rowTree });
-    assert.ok(!row.warnings.some((warning) => warning.includes('漂移候选')), row.warnings.join('；'));
+    assert.deepEqual(manualRelations(row,rowTree).drift,[]);
   });
 
   it('hangs a variant signature at the common node of its variants when every variant exists', () => {
@@ -680,13 +682,13 @@ describe('placement against the build’s command tree', () => {
     const catalog = commandCatalog(xml(tree)).catalog;
     const result = produceManualEntries(markdown('**demo acl permit {tcp\\|udp}** *\\<source_ip\\>*\n\n该命令用于放行。\n'), null, { catalog });
     assert.deepEqual(result.entries[0].path, '/commands/demo/acl/permit');
-    assert.deepEqual(result.entries[0].data.command_literals, ['demo acl permit', 'demo acl permit tcp', 'demo acl permit udp']);
+    assert.deepEqual(result.entries[0].data.signature_literals, [{primary:'demo acl permit',alternatives:['demo acl permit tcp','demo acl permit udp']}]);
   });
 
   it('retains resolvable and unresolved literals without judging them in isolation', () => {
     const text = '**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n\n**demo probe** *\\<name\\>*\n\n该命令用于探测，先执行 “demo pool create”。\n';
     const result = produceManualEntries(markdown(text), null, { catalog });
-    assert.deepEqual([...new Set(result.entries.flatMap(entry => (entry.data.command_literals as string[] | undefined) ?? []))].sort(), ['demo pool add', 'demo pool create', 'demo probe']);
+    assert.deepEqual([...new Set(result.entries.flatMap(entry => [...((entry.data.command_literals as string[] | undefined) ?? []),...((entry.data.signature_literals as {primary:string;alternatives:string[]}[]|undefined)?.flatMap(group=>group.alternatives)??[])]))].sort(), ['demo pool add', 'demo pool create', 'demo probe']);
   });
 });
 
