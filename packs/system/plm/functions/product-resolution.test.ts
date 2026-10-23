@@ -19,3 +19,12 @@ test('repeated rows for one product id do not create an ambiguous product', () =
   const out = buildsPlan(request([{ id: 410, name: 'Alpha/Beta' }, { id: '410', name: 'Alpha/Beta' }]));
   assert.deepEqual(out.requests, [{ key: 'builds', route: 'builds', query: { product: '410' } }]);
 });
+
+test('whole product names normalize before slash splitting, while requested aliases may not contain either slash spelling', () => {
+  for (const name of ['Alpha/Beta', 'Ａｌｐｈａ／Ｂｅｔａ']) assert.equal(buildsPlan(request([{ id: 410, name }])).requests[0]?.route, 'builds');
+  for (const key of ['A%2FB', encodeURIComponent('A／B')]) {
+    const input = { external: { type: 'builds', key }, responses: {}, original: 'products' };
+    assert.deepEqual(buildsPlan(input).requests, []);
+    const out = buildsProject(input) as any; assert.equal(out.error.code, 'plm.invalid_key'); assert.match(out.error.message, /不能有.*\//);
+  }
+});

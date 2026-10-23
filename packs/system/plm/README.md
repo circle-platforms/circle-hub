@@ -39,7 +39,7 @@ Needs: none.
 `plm:builds` 现在使用规划函数，最多两次请求：
 
 - 数字键保留原来的产品编号查询，只读构建列表。content.product 为 `{id, name: null}`：编号由调用方明确给出，未查询产品名，不虚构名字；product_resolution 为 resolved 不表示另行证明产品存在。
-- 名字键是逐个 URI 编码的名字，以字面的 `+` 分开；名字中的加号编码为 `%2B`。产品名按 `/` 分开，NFKC、去两端空白、小写后逐个别名精确匹配，必须包含请求的每个名字。先读产品列表，正好一条匹配才按其编号读构建列表；零条为 unresolved，多条为 ambiguous，二者都不请求构建。
+- 名字键是逐个 URI 编码的名字，以字面的 `+` 分开；名字中的加号编码为 `%2B`。产品名整串先 NFKC，再按 `/` 切开（全角 ／ 经 NFKC 也成为分隔符），各段 trim、String.prototype.toLowerCase 后逐个别名精确匹配，必须包含请求的每个名字。先读产品列表，正好一条匹配才按其编号读构建列表；零条为 unresolved，多条为 ambiguous，二者都不请求构建。
 - content 为 `{product, product_resolution, builds}`。每个构建为 `{id, name, stories, scope_note}`，保留 story-trace 的配置需求范围行为；name 原样取记录的 name，没有则为 null。原始构建数组不改，不推断发布状态。
 - `settings.build_story_field` 仍只表示部署声明的顶层需求字段；无声明或字段不可用时 stories 为 null，scope_note 写明缺哪个事实并请求需求编号。产品原件无法解析时读取失败，要求重读产品列表并核实 id/name，不把不可读当零个匹配。
 
@@ -56,3 +56,5 @@ The unreleased package stays at 1.2.0; story projection fixes only require re-si
 复核 8：构建需求数组每个值先由 idText 去首尾空白，再按正整数规则验证，并用同一份文字去前导零、去重、数值排序。不会把已通过验证的值再按未去空白的原串输出；空白、纯零和非整数仍不是有效需求编号。原始应答和原数组不变。
 
 第二轮复核 1：产品未唯一解析时 builds 为 null（没有读构建列表），与已读的空数组区分；content 带 requested_names、按不同产品编号去重的 candidates 及下一步 note，投影 complete:false 同时进入读取清单。重复一条产品记录不制造歧义。story-traceability 已先检查 product_resolution，不能把未读列表当“没有该构建”。
+
+第二轮复核 2：上述次序由集成者确认，独立金标准采用相同规则；toLowerCase 不承诺完整 Unicode case folding。请求名字规范化后若仍含 / 则为无效键，必须每族名字分别编码后用 + 连接，不读取产品列表后再伪报未找到。

@@ -206,7 +206,7 @@ function buildKey(key: string): BuildKey | null {
   if (!key || key.length > 4096) return null;
   try {
     const names = [...new Set(key.split('+').map((part) => nameKey(decodeURIComponent(part))))];
-    return names.length && names.every((name) => name !== '') ? { names } : null;
+    return names.length && names.every((name) => name !== '' && !name.includes('/')) ? { names } : null;
   } catch { return null; }
 }
 
@@ -218,7 +218,7 @@ function chooseProduct(key: BuildKey, responses: Record<string, Response>): Prod
   const data = isRecord(response?.json) ? response.json.data : undefined;
   if (response?.ok === false || !Array.isArray(data) || data.some((item) => !isRecord(item) || typeof item.name !== 'string')) return null;
   const matches = data.filter((item) => isRecord(item) && typeof item.name === 'string' &&
-    key.names.every((name) => (item.name as string).normalize('NFKC').split('/').map(nameKey).includes(name)));
+    key.names.every((name) => (item.name as string).normalize('NFKC').split('/').map((alias) => alias.trim().toLowerCase()).includes(name)));
   const distinct = new Map<string, Product>();
   for (const row of matches) {
     const id = idText(row.id);
@@ -245,7 +245,10 @@ export function buildsPlan(input: unknown): PlanOutput {
 export function buildsProject(input: unknown): unknown {
   const { type, key: rawKey, responses, original } = partsOf(input);
   const key = type === 'builds' ? buildKey(rawKey) : null;
-  if (key === null) return { error: { code: 'plm.invalid_key', message: '构建列表标识无效：提供产品编号，或逐个 URI 编码后以 + 连接的产品名字' } };
+  if (key === null) {
+    let slash = false; try { slash = rawKey.split('+').some((part) => nameKey(decodeURIComponent(part)).includes('/')); } catch { /* Other key errors are reported separately. */ }
+    return { error: { code: 'plm.invalid_key', message: slash ? '名字里不能有 /；每族名字单独编码后用 + 连接' : '构建列表标识无效：提供产品编号，或逐个 URI 编码后以 + 连接的产品名字' } };
+  }
   const choice = chooseProduct(key, responses);
   if (choice === null) return { error: { code: 'plm.no_products', message: '产品列表不能证明产品身份；重新读取产品列表并核实 id 和 name 字段' } };
   if (choice.product === null) {

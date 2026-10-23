@@ -256,7 +256,7 @@
     {
       "name": "builds",
       "external": "plm:builds",
-      "description": "一个产品的构建列表：数字键直接读取；名字键将各名字分别 URI 编码后以 + 连接，先按 NFKC、首尾空白和大小写折叠匹配产品名的 / 分隔别名，唯一匹配才读构建。settings.build_story_field 指定构建需求字段，不猜字段名；产品未唯一解析时 builds 为 null（未读），列出按编号去重的候选、缺口与下一步，覆盖不完整",
+      "description": "一个产品的构建列表：数字键直接读取；名字键将各名字分别 URI 编码后以 + 连接，产品名整串先 NFKC 再按 / 切开，各段 trim、String.prototype.toLowerCase 后精确匹配；请求的每族名字规范化后不能含 /，唯一匹配才读构建。settings.build_story_field 指定构建需求字段，不猜字段名；产品未唯一解析时 builds 为 null（未读），列出按编号去重的候选、缺口与下一步，覆盖不完整",
       "max_requests": 2,
       "project": {
         "module": "functions/plm.ts",
