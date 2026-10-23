@@ -171,3 +171,9 @@ test('the owner probe logs in, reads the actual console and logs out on syntheti
   assert.equal(stats.status, 200); assert.equal(stats.csp, true); assert.equal(stats.scripts, 0);
   assert.equal(stats.externalAddresses, 0); assert.deepEqual(stats.tableRows, [7]); assert.equal(stats.logoutStatus, 303);
 });
+
+test('independent probe sessions print the same digest for the same synthetic result page',async()=>{
+  const user=await server.createUser('摘要');const id=await start(user);
+  const options={url:server.url,path:`/console/results/${id}`,token:user.token};
+  assert.equal((await probeConsole(options)).sha256,(await probeConsole(options)).sha256);
+});

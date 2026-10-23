@@ -12,6 +12,9 @@ export interface PageMetrics {
 
 /** Counts markup only, without interpreting stored case names as executable HTML. */
 export function summarizePage(body: string): PageMetrics {
+  // Session nonces are not page content; leave every other byte in the evidence digest unchanged.
+  const stableBody=body.replace(/<input\b[^>]*>/gi,tag=>/(?:\s)name\s*=\s*["']csrf["']/i.test(tag)
+    ? tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i,(_all,prefix:string,quote:string)=>`${prefix}${quote}[csrf]${quote}`) : tag);
   return {
     scripts: (body.match(/<script\b/gi) ?? []).length,
     externalAddresses: (body.match(/https?:\/\/[^\s"'<>]+|(?:href|src|action)\s*=\s*["']\/\/[^"']+/gi) ?? []).length,
@@ -19,7 +22,7 @@ export function summarizePage(body: string): PageMetrics {
       const content = match[1].replace(/<thead\b[^>]*>[\s\S]*?<\/thead>/gi, '');
       return [...content.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].filter((row) => /<td\b/i.test(row[1])).length;
     }),
-    sha256: createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 12),
+    sha256: createHash('sha256').update(stableBody, 'utf8').digest('hex').slice(0, 12),
   };
 }
 

@@ -251,7 +251,9 @@ links are fixed paths with encoded query parameters).
 - **Integrator probe**: `node scripts/real/console-page.ts --token-file <file> --path <console path> [--url <Hub origin>]`
   signs in through the CSRF form, reads one page and signs out in a `finally` block. It only accepts a loopback HTTP
   origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
-  script/external-address counts, table body row counts and the first 12 hex characters of the body hash. Page content,
+  script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
+  values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
+  remains covered. Page content,
   paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
   makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
   and real-data checks belong to the integrator.
