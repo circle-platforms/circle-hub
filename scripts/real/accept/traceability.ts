@@ -172,8 +172,22 @@ export default function scenario(gold: TraceGold): Scenario {
         }
       }
 
-      if (gold.closed_defects !== undefined) {
-        const expectedCounts = `已关闭缺陷 ${gold.closed_defects} 个：已追溯 ${gold.closed_traced ?? 0} 个，未追溯 ${gold.closed_untraced ?? 0} 个`;
+      // A status that was never read is not 0. When the gold carries no closed status AT ALL (no aggregate, no
+      // per-defect status — a trace.ts run without --plm), the check fails loudly and names the rerun instead of
+      // comparing the Hub's counts with an invented 0 (item 5).
+      const anyClosedStatus = gold.closed_defects !== undefined || gold.defects.some((d) => d.closed !== undefined);
+      if (!anyClosedStatus) {
+        checks.push({
+          area,
+          name: '已关闭缺陷统计与独立依据一致',
+          expected: '标准答案写出已关闭统计',
+          actual: '标准答案没有已关闭状态：重跑 trace.ts，加 --plm --closed-statuses',
+          ok: false,
+        });
+      } else {
+        const closedRows = gold.defects.filter((d) => d.closed === true);
+        const closedDefects = gold.closed_defects ?? closedRows.length;
+        const expectedCounts = `已关闭缺陷 ${closedDefects} 个：已追溯 ${gold.closed_traced ?? closedRows.filter((d) => d.cases.length > 0).length} 个，未追溯 ${gold.closed_untraced ?? closedRows.filter((d) => d.cases.length === 0).length} 个`;
         const hasClosedCounts = text.includes(expectedCounts);
         checks.push({
           area,

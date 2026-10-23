@@ -59,6 +59,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -82,6 +83,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -102,6 +104,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:wrong-case 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -122,6 +125,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -142,6 +146,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -388,4 +393,17 @@ describe('traceability scenario respond flow', () => {
     assert.ok(positive !== undefined && !positive.ok);
     assert.match(String(positive.actual), /重跑 trace\.ts，加 --plm --closed-statuses/);
     assert.ok(!String(positive.actual).includes('导出其他构建'));
+  });
+
+  test('a trace.ts gold made without --plm has no closed status anywhere and the scenario fails loudly on it', async () => {
+    const { traceGold } = await import('../gold/trace.ts');
+    const html = '<a href="?m=bug&f=view&id=910001">910001</a>';
+    const gold = traceGold({ html, maps: [] }) as TraceGold;
+    assert.equal(gold.closed_defects, undefined, 'joinGold never wrote an invented 0');
+    assert.ok(gold.defects.every((d) => d.closed === undefined), 'no per-defect closed status either');
+    const scenario = traceability({ product: 'apv', build: 'Rel_APV_10_6_1_57', defects: gold.defects });
+    const checks = scenario.check(turnsOf(['运行 run_9 完成。缺陷 1 个：已追溯 0 个，未追溯 1 个。未知 0 个。']));
+    const counts = checks.find((c) => c.name === '已关闭缺陷统计与独立依据一致');
+    assert.ok(counts !== undefined && !counts.ok, 'the count comparison must not run against an invented 0');
+    assert.match(String(counts.actual), /标准答案没有已关闭状态：重跑 trace\.ts，加 --plm --closed-statuses/);
   });

@@ -396,9 +396,9 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
     product: options.product ?? 'apv',
     build: options.build ?? 'unknown-build',
     defects,
-    closed_defects: joinResult.closed_defects,
-    closed_traced: joinResult.closed_traced,
-    closed_untraced: joinResult.closed_untraced,
+    // Closed counts exist only when PLM was read: a status that was never read is not 0 (the owner's rule), so a
+    // gold made without --plm carries no closed status at all and the scenario says so.
+    ...(options.plm !== undefined ? { closed_defects: joinResult.closed_defects, closed_traced: joinResult.closed_traced, closed_untraced: joinResult.closed_untraced } : {}),
     ...(joinResult.status_unknown !== undefined ? { status_unknown: joinResult.status_unknown } : {}),
   };
 }
