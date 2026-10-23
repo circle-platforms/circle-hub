@@ -22,7 +22,7 @@ describe('parser registry', () => {
   it('registers the six core parsers by id@version', () => {
     assert.deepEqual(
       registry.list().map((parser) => `${parser.id}@${parser.version}`),
-      ['kityminder@1', 'xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1'],
+      ['kityminder@1', 'xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1', 'xlsx@1'],
     );
     assert.equal(registry.get('kityminder@1')?.id, 'kityminder');
     assert.equal(registry.get('kityminder'), undefined);
@@ -43,7 +43,7 @@ describe('parser registry', () => {
     const bad = { ...textParser, id: 'Bad Name' } as Parser;
     assert.throws(() => createParserRegistry([bad]));
     assert.throws(() => createParserRegistry([{ ...textParser, version: -1 } as Parser]));
-    assert.equal(createParserRegistry(defaultParsers()).list().length, 6);
+    assert.equal(createParserRegistry(defaultParsers()).list().length, 7);
   });
 
   it('recognizes a file with the first parser that accepts it', () => {
