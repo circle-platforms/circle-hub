@@ -65,7 +65,7 @@ function parseReportedTotals(text: string): ParsedTotals | null {
 function parseGroups(text: string): Map<string, string> {
   const groups = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
-    const match = /^\s*[-*] ([^|]+)\s*\|(?:[^|]*\|)?\s*(用例[^\n]*)$/.exec(line);
+    const match = /^\s*[-*] ([^|]+)\s*\|(?:[^|]*\|)?\s*(用例[^|\n]*)/.exec(line);
     if (match) groups.set(match[1].trim(), match[2]);
   }
   return groups;

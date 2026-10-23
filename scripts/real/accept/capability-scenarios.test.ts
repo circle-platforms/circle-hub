@@ -250,3 +250,18 @@ test('a quality-board item-2 gold binds only the 1.0.1 facets slot (placement wa
   const start2 = reply2.find((r) => r.tool === 'hub_start_run');
   assert.deepEqual(Object.keys(start2!.input!.inputs ?? {}).sort(), ['facets', 'placement']);
 });
+
+test('a one-group board with the appended location column parses the types coverage correctly', async () => {
+  const { default: qualityBoard, parseGroups } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Rel_APV_10_6_1_57', types: true, unplaced: 3 });
+  const text = [
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%；未打标签 3 个；没有用例带这些类型的标签：压力测试、兼容性测试 | 位置 src:aaaa/json@1/p/rows',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。3 个用例没有解析出命令。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n');
+  const parsed = parseGroups(text);
+  const summary = parsed.get('10.6/SSL') ?? '';
+  const missing = /没有用例带这些类型的标签：([^；\n]+)/.exec(summary)?.[1];
+  assert.equal(missing, '压力测试、兼容性测试', 'the location column must not be captured into the summary');
+  void scenario;
+});
