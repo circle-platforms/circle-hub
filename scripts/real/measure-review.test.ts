@@ -2,7 +2,7 @@
 // real client, no real model, no real Hub. The fixtures are synthetic mind maps and run details.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -207,4 +207,61 @@ test('measurement reports each catalog mark as lacking an independent answer wit
   assert.equal(measureReview({ ...options(out), source, plan: planPath }, drivers, line => lines.push(line)), 0);
   assert.ok(lines.some(l => l.includes('目录类标记还没有独立答案 2 条')));
   assert.ok(!lines.join('\n').includes('core.catalog'));
+});
+
+const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmission?: boolean; code?: string | null } = {}) => {
+  const tree = document(1); tree.root.children![0].children![0].data.text = 'widget port 21';
+  const files = fixtures(tree, []); t.after(() => rmSync(files.out, { recursive: true, force: true }));
+  const commandTree = join(files.out, 'commands.xml');
+  writeFileSync(commandTree, '<catalog version="10.8.1"><menu name="widget"><item name="port"><arguments><arg name="port" type="U16" limit="[1 - 20]"/></arguments></item></menu></catalog>');
+  const original = join(files.out, 'submission-{n}.json');
+  let round = 0;
+  const driver: Drivers = {
+    review: (_session, _prompt, dir, name) => { round++; const calls = callLine('rn_catalog', 'accepted'); writeFileSync(join(dir, `${name}.calls.jsonl`), calls); return { code: 0, calls }; },
+    show: () => {
+      const body = Buffer.from(JSON.stringify({ run: 'rn_catalog', items: [{ item: 'doc:c1', handling: 'handled', slots: { findings: [{ text: '合成引用', commands: [{ command: 'widget port 21' }] }] } }] }));
+      if (over.provideSubmission !== false) writeFileSync(original.replace('{n}', String(round)), body);
+      const code = over.code === undefined ? 'core.catalog.param_out_of_range' : over.code;
+      const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', attribution: 'author_input' }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+      const value = JSON.parse(runDetail({ run: 'rn_catalog', items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered }));
+      value.run.root = 'a'.repeat(64); value.run.sources[0].role = 'subject';
+      value.latest.result.run = 'rn_catalog'; value.latest.result.submission = createHash('sha256').update(body).digest('hex');
+      return { code: 0, json: JSON.stringify(value) };
+    },
+  };
+  return { ...files, commandTree, original, driver };
+};
+
+test('with --tree the measurement scores independent catalog marks and keeps source values off screen', t => {
+  const f = catalogFixture(t), screen: string[] = [];
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, tree: f.commandTree, submission: f.original, repeat: 3 }, f.driver, line => screen.push(line)), 0);
+  assert.ok(screen.some(line => line.includes('目录独立核对') && line.includes('一致 3') && line.includes('设计缺口 0')));
+  assert.ok(!screen.some(line => line.includes('目录类标记还没有独立答案')));
+  for (const value of ['widget port', 'rn_catalog', 'doc:c1', 'core.catalog']) assert.ok(!screen.join('').includes(value));
+  assert.equal(statSync(join(f.out, 'r1/catalog/catalog-marks.json')).mode & 0o777, 0o600);
+});
+test('with --tree but without original submission bytes the measurement records a design gap and exits one', t => {
+  const f = catalogFixture(t, { provideSubmission: false }), screen: string[] = [];
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, tree: f.commandTree }, f.driver, line => screen.push(line)), 1);
+  const requests = JSON.parse(readFileSync(join(f.out, 'r1/catalog/evidence-requests.json'), 'utf8'));
+  assert.ok(requests.some((r: { input: string; next_action: string }) => r.input === 'submission' && r.next_action.includes('circle-hub original export')));
+});
+for (const [label, code] of [['missed', null], ['wrong code', 'core.catalog.arity_mismatch']] as const) test(`independent catalog ${label} makes the measurement fail`, t => {
+  const f = catalogFixture(t, { code });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, tree: f.commandTree, submission: f.original }, f.driver, () => {}), 1);
+});
+test('without --tree catalog marks remain unscored and say which input and action are missing', t => {
+  const f = catalogFixture(t), screen: string[] = [];
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, f.driver, line => screen.push(line)), 0);
+  assert.ok(screen.some(line => line.includes('还没有独立答案') && line.includes('缺 --tree')));
+});
+
+test('unsupported catalog scope is rejected before any review session starts', t => {
+  const f = catalogFixture(t), declaration = join(f.out, 'unsupported-table.json');
+  writeFileSync(declaration, JSON.stringify({ schema: 'catalog@1', scope: 'all' }));
+  let calls = 0;
+  const driver: Drivers = { ...f.driver, review: () => { calls++; throw new Error('must not start'); } };
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, tree: f.commandTree, catalogTable: declaration }, driver, () => {}), 1);
+  assert.equal(calls, 0);
+  assert.ok(JSON.parse(readFileSync(join(f.out, 'catalog-preflight/evidence-requests.json'), 'utf8')).some((r: { pointer: string }) => r.pointer === '/scope'));
 });

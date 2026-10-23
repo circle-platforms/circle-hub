@@ -9,7 +9,9 @@
 // reason it failed for.
 //   HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <mindmap.json> --plan <plan.json> [--keep <n>]
 //     [--manual <fragment>] [--case-rule marked|tagged] --draft <session.json> [--verify <session.json>] [--repeat 3]
-//     [--baseline <previous --out>] --out <dir>
+//     [--baseline <previous --out>] [--tree <command XML>] [--submission <raw-file-{n}.json>]
+//     [--catalog-table <declaration.json>] --out <dir>
+// Missing accepted bytes generate an export-by-digest request and exit 1; marks are never reverse engineered.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -17,6 +19,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
+import { catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -64,6 +67,7 @@ export interface RoundOutcome {
   verifyReason?: InvalidReason;
   verifyRun?: string;
   score?: Score;
+  catalog?: CatalogReport;
 }
 
 export interface MeasureOptions {
@@ -76,6 +80,10 @@ export interface MeasureOptions {
   verify?: SessionSpec;
   repeat: number;
   baseline?: string;
+  tree?: string;
+  /** Raw submission path; {n} expands to the round number. */
+  submission?: string;
+  catalogTable?: string;
   out: string;
 }
 
@@ -121,7 +129,7 @@ export function judgeRun(
 }
 
 /** The summary counts of the fixed screen lines; no node id, title or text appears here. */
-export function summaryLines(options: { copySha: string; goldSha: string; manualSha: string | null; cases: number; injected: number; repeat: number; hasVerify: boolean; rounds: RoundOutcome[]; totals: ReturnType<typeof aggregate>; untouched: number }): string[] {
+export function summaryLines(options: { copySha: string; goldSha: string; manualSha: string | null; cases: number; injected: number; repeat: number; hasVerify: boolean; rounds: RoundOutcome[]; totals: ReturnType<typeof aggregate>; untouched: number; catalogProvided?: boolean }): string[] {
   const valid = options.rounds.filter((r) => r.draftValid && (options.hasVerify ? r.verifyValid : true));
   const lines = [
     `副本 sha256 ${options.copySha}；标准答案 sha256 ${options.goldSha}${options.manualSha === null ? '' : `；片段 sha256 ${options.manualSha}`}；用例 ${options.cases} 个，注入 ${options.injected} 处；重复 ${options.repeat} 次，有效 ${valid.length} 次`,
@@ -138,14 +146,20 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   }
   const scores = valid.map((r) => r.score!).filter((s): s is Score => s !== undefined);
   const sum = (pick: (s: Score) => number): number => scores.reduce((n, s) => n + pick(s), 0);
+  const catalogs = valid.flatMap(round => round.catalog ? [round.catalog] : []);
+  const catSum = (pick: (report: CatalogReport) => number): number => catalogs.reduce((n, report) => n + pick(report), 0);
+  const catalogText = options.catalogProvided
+    ? `目录独立核对：一致 ${catSum(r => r.supported.length)}，Hub 漏了 ${catSum(r => r.missed.length)}，Hub 多了 ${catSum(r => r.extra.length)}；反向预期 ${catSum(r => r.negative_expected.length)}；设计缺口 ${catSum(r => r.requests.length)}`
+    : `目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；缺 --tree，下一步补锁定根的命令树原件后重跑`;
+
   lines.push(
-    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh)}）；目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
+    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.total) : 0)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh) - (options.catalogProvided ? sum(s => s.otherMarks.catalog.fresh) : 0)}）；${catalogText}；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
   );
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
   );
   const mechanicalAllFound = options.totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
-  const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0);
+  const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0) && (!options.catalogProvided || catalogs.length === valid.length && catalogs.every(r => !r.requests.length && !r.missed.length && !r.extra.length));
   lines.push(
     `通过：Hub 看得见的注入缺陷全部查出 ${mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
   );
@@ -175,6 +189,24 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   if (caseCount > MAX_CASES) {
     say(`拒绝：副本有 ${caseCount} 个用例，超过一次运行的 ${MAX_CASES} 个上限`);
     return 2;
+  }
+
+  // Catalog declaration drift is refused before starting any review session.
+  let catalogInput: { treeXml: string; table: unknown } | undefined;
+  if (options.tree !== undefined) {
+    let preflight: CatalogReport | undefined;
+    try {
+      const treeBytes = readCatalogInput(options.tree), declaration = readDeclaration(options.catalogTable);
+      const treeXml = new TextDecoder('utf-8', { fatal: true }).decode(treeBytes);
+      const requests = catalogPreflight(treeXml, declaration.table);
+      if (requests.length) preflight = catalogGapReport(requests, { tree_sha256: createHash('sha256').update(treeBytes).digest('hex'), source_sha256: copySha });
+      else catalogInput = { treeXml, table: declaration.table };
+    } catch { preflight = catalogGapReport([{ input: 'tree/table', pointer: '/', fact: '可读取的命令树原件和目录表声明', next_action: '请集成者补 --tree 原件与匹配的表声明，再启动度量；脚本尚未启动评审会话' }]); }
+    if (preflight !== undefined) {
+      writeCatalogReport(join(options.out, 'catalog-preflight'), preflight);
+      say(catalogSummary(preflight)); say('设计缺口 ' + preflight.requests.length + '；下一步按私有补证文件修正声明后重跑；评审会话未启动');
+      return 1;
+    }
   }
 
   // 2. The baseline rounds (an earlier empty-plan --out): their draft results mark what the unchanged review already had.
@@ -220,6 +252,21 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       round = { n, draftPack: (draftJudged.detail as { run?: { pack?: string } } | undefined)?.run?.pack ?? '', draftValid: false, draftReason: draftJudged.reason, verifyPack: '', verifyValid: options.verify === undefined };
       if (draftJudged.detail !== undefined) writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
     }
+    if (catalogInput !== undefined && round.draftValid) {
+      let original: Uint8Array | undefined;
+      if (options.submission !== undefined) {
+        try { original = readCatalogInput(options.submission.replaceAll('{n}', String(n))); } catch { /* The report requests accepted bytes by digest. */ }
+      }
+      const shown = JSON.parse(readFileSync(join(dir, 'draft.run.json'), 'utf8')) as unknown;
+      const excludeNodes = injected.gold.flatMap(entry => [entry.node, ...(entry.copy === undefined ? [] : [entry.copy]), ...(entry.deletedCases ?? [])]);
+      round.catalog = catalogMarks({ treeXml: catalogInput.treeXml, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, excludeNodes });
+      for (const pending of round.catalog.requests) {
+        pending.next_action += '；补证后运行 follow_up 参数里的独立核对，不要为重新计分再次开模型会话；提交原件路径和输出目录用新的仓库外文件';
+        pending.follow_up = { program: 'node', args: ['scripts/real/gold/catalog-marks.ts', '--tree', options.tree!, '--source', join(options.out, 'mutated.json'), '--run', join(dir, 'draft.run.json'), '--submission', '<已导出的提交原件文件>', '--gold', join(options.out, 'gold.json'), ...(options.catalogTable === undefined ? [] : ['--table', options.catalogTable]), '--out', '<仓库外新核对目录>'] };
+      }
+      writeCatalogReport(join(dir, 'catalog'), round.catalog);
+      writeFileSync(join(dir, 'catalog-counts.json'), JSON.stringify(round.catalog.summary, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    }
     if (round.score !== undefined) writeFileSync(join(dir, 'score.json'), `${JSON.stringify(round.score, null, 2)}\n`);
     rounds.push(round);
   }
@@ -231,12 +278,12 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   }), answer);
   const touched = new Set(gold.flatMap((g) => [g.node, ...(g.copy === undefined ? [] : [g.copy]), ...(g.deletedCases ?? [])]));
   const untouched = answer.cases.filter((c) => !touched.has(c.id)).length;
-  const lines = summaryLines({ copySha, goldSha: createHash('sha256').update(goldBytes).digest('hex'), manualSha: manual?.sha256 ?? null, cases: caseCount, injected: gold.length, repeat: options.repeat, hasVerify: options.verify !== undefined, rounds, totals, untouched });
+  const lines = summaryLines({ copySha, goldSha: createHash('sha256').update(goldBytes).digest('hex'), manualSha: manual?.sha256 ?? null, cases: caseCount, injected: gold.length, repeat: options.repeat, hasVerify: options.verify !== undefined, rounds, totals, untouched, catalogProvided: options.tree !== undefined });
   for (const line of lines) say(line);
   const validRounds = rounds.filter((r) => r.draftValid && (options.verify === undefined ? true : r.verifyValid));
   const mechanicalAllFound = totals.kinds.every((k) => k.mechanical === k.injected * k.validRuns);
   const scores = validRounds.map((r) => r.score).filter((s): s is Score => s !== undefined);
-  const structureClean = scores.length > 0 && scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0);
+  const structureClean = scores.length > 0 && scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0) && (options.tree === undefined || validRounds.every(r => r.catalog !== undefined && !r.catalog.requests.length && !r.catalog.missed.length && !r.catalog.extra.length));
   return validRounds.length === rounds.length && rounds.length > 0 && mechanicalAllFound && structureClean ? 0 : 1;
 }
 
@@ -270,7 +317,7 @@ function main(): number {
   const draftPath = arg('draft');
   const repeat = Number(arg('repeat') ?? 3);
   if (!source || !plan || !out || !draftPath) {
-    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <脑图 json> --plan <计划 json> [--keep <n>] [--manual <片段>] [--case-rule marked|tagged] --draft <会话 json> [--verify <会话 json>] [--repeat 3] [--baseline <基线目录>] --out <目录>');
+    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/measure-review.ts --source <脑图 json> --plan <计划 json> [--keep <n>] [--manual <片段>] [--case-rule marked|tagged] --draft <会话 json> [--verify <会话 json>] [--repeat 3] [--baseline <基线目录>] [--tree <命令树原件>] [--submission <原件路径，{n}为轮次>] [--catalog-table <目录表>] --out <目录>');
     return 2;
   }
   if (!outAllowed(out)) {
@@ -295,6 +342,9 @@ function main(): number {
         ...(arg('verify') === undefined ? {} : { verify: parseSession(readFileSync(arg('verify')!, 'utf8'), '--verify') }),
         repeat,
         ...(arg('baseline') === undefined ? {} : { baseline: arg('baseline') }),
+        ...(arg('tree') === undefined ? {} : { tree: arg('tree') }),
+        ...(arg('submission') === undefined ? {} : { submission: arg('submission') }),
+        ...(arg('catalog-table') === undefined ? {} : { catalogTable: arg('catalog-table') }),
         out,
       },
       realDrivers,

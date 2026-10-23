@@ -12,7 +12,7 @@ import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import type { CoreViolationCode } from '../../../contracts/generated/protocol.ts';
 
 export interface Position { input: string; pointer: string; line?: number; column?: number }
-export interface EvidenceRequest extends Position { fact: string; next_action: string; item?: string; command?: string; related?: Position[] }
+export interface EvidenceRequest extends Position { fact: string; next_action: string; item?: string; command?: string; related?: Position[]; follow_up?: { program: string; args: string[] } }
 interface Argument { name: string; type: string; limit?: string; length?: string; optional: boolean; optionalRaw?: string; help: string; at: Position }
 interface Signature { args: Argument[]; at: Position }
 interface Command { words: string[]; signatures: Signature[]; at: Position }
@@ -125,6 +125,7 @@ function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest
   if (type === 'DOTTEDIP' && /\bor\b|host\s*name|https?:|\burl\b/i.test(raw.help)) requests.push(request(raw.at, 'IPv4 参数帮助中声明的其他输入形式', '请集成者补取该参数的正式类型或锁定根的类型覆盖声明，再核对；不能把其他形式硬判为 IPv4 错误'));
   const limit = constraint(raw.limit, raw.at, 'limit', type === 'STRING' || type === 'XSTRING');
   const length = constraint(raw.length, raw.at, 'length', true);
+  if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者提供此位置 limit 的正式含义；不把数值约束直接当地址字符串长度'));
   return { value: { raw, type, limit: limit.value, length: length.value }, requests: [...requests, ...limit.requests, ...length.requests] };
 }
 function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
@@ -441,3 +442,16 @@ export function main(argv: string[], say: (line: string) => void = line => proce
   return passed ? 0 : 1;
 }
 if (import.meta.main) process.exitCode = main(process.argv.slice(2));
+
+/** Shared by the measurement driver; an unavailable input is a design gap, never an empty success. */
+export function catalogGapReport(requests: EvidenceRequest[], inputs: Partial<CatalogReport['inputs']> = {}): CatalogReport {
+  const report = emptyGap({ input: 'run', pointer: '/' }, '', '');
+  return { ...report, requests, summary: { ...report.summary, design_gaps: requests.length }, inputs: { ...report.inputs, ...inputs } };
+}
+export function catalogPreflight(treeXml: string, table: unknown): EvidenceRequest[] {
+  const requests = tableRequests(table);
+  if (requests.length) return requests;
+  try { return readCatalog(treeXml).requests; }
+  catch { return [request({ input: 'tree', pointer: '/' }, '可完整解析的锁定根命令树', '请集成者补取正确编码和结构的命令树原件后重跑；评审尚未启动')]; }
+}
+export function readCatalogInput(file: string): Uint8Array { return readFileSync(outsideGit(file)); }
