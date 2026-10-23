@@ -23,6 +23,8 @@
 
 ## 版本说明
 
+- **1.4.1**：
+  - 仍按提交 pointer 对照 Hub 的 final 支持事实，但整体结论的 `reference` 使用模型 final 主张在结果记录 `cross_item` 数组中的实际下标；两种下标不能混用。验收场景 26 同时核对支持事实和引用指向的模型结论。
 - **1.4.0**：
   - 没交付的条目按真实分区名判定（delivered、rejected、quarantined、incomplete 里只要不是 delivered 都算），此前比对的是不存在的分区名 `unfinished`，哪一块都没交付的条目从来不会被列为缺漏；
   - `finalOf` 只采信 Hub 对这块结论给出支持事实（final 要求项、指针对得上）的那一条：被 Hub 驳回或记未知的块，结论记为未知，不再取 cross_item 里第一条带结论码的主张；
