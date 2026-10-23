@@ -3,6 +3,7 @@
 // unknown) and the two checks (the overall fact and the report agreement over cross_item claims), driven on the same
 // synthetic two-block shape the samples use. Pure functions, no Hub, no database.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import { describe, it } from 'node:test';
 import {kityminderParser} from '../../../../hub/refs/api.ts';
 import type { ProjectedItem } from '../../../../contracts/src/pack.ts';
@@ -282,24 +283,19 @@ describe('the checks of case-review-report', () => {
     assert.match(outMissing.statement, /c9/);
   });
 
-  it('the report check wants every non-refuted finding cited, none refuted, none invented', () => {
-    const agree = subjectWith([verdictClaim('PARTIAL', 'P5', refs)]);
-    assert.equal(reportCheck({ subject: agree })[0]!.verdict, 'support');
-    const missing = subjectWith([verdictClaim('PARTIAL', 'P5', refs.slice(0, 2))]);
-    const missingOut = reportCheck({ subject: missing });
-    assert.ok(missingOut.some((o) => o.code === 'case-review-report.finding_missing'));
-    const refuted = subjectWith([verdictClaim('PARTIAL', 'P5', [...refs, refutedRef])]);
-    assert.ok(reportCheck({ subject: refuted }).some((o) => o.code === 'case-review-report.finding_refuted'));
-    const invented = subjectWith([verdictClaim('PARTIAL', 'P5', [...refs, 'rec:' + '9'.repeat(64) + '#/x'])]);
-    assert.ok(reportCheck({ subject: invented }).some((o) => o.code === 'case-review-report.finding_unknown'));
+  it('the report check verifies the overall and level without demanding individual finding citations',()=>{
+    for(const grounds of [[],refs,[...refs,refutedRef]]){
+      assert.equal(reportCheck({subject:subjectWith([verdictClaim('PARTIAL','P5',grounds)])})[0]!.verdict,'support');
+    }
+    assert.equal(reportCheck({subject:subjectWith([verdictClaim('PASS','P5',[])])})[0]!.code,'case-review-report.verdict_mismatch');
+    assert.equal(reportCheck({subject:subjectWith([verdictClaim('PARTIAL','P1',[])])})[0]!.code,'case-review-report.level_mismatch');
   });
 
-  it('a suggestion without all three labeled parts is refused', () => {
-    const partial = subjectWith([verdictClaim('PARTIAL', 'P5', refs), { nature: 'judgment', statement: '补反向用例', grounds: [], code: 'suggestion' }]);
-    assert.ok(reportCheck({ subject: partial }).some((o) => o.code === 'case-review-report.suggestion_incomplete'));
-    const whole = subjectWith([verdictClaim('PARTIAL', 'P5', refs), { nature: 'judgment', statement: '补：反向用例；因为：边界未覆盖；期望：非法输入被拒绝', grounds: [], code: 'suggestion' }]);
-    assert.equal(reportCheck({ subject: whole })[0]!.verdict, 'support');
+  it('the report slot no longer accepts suggestion codes',()=>{
+    const slots=JSON.parse(readFileSync(new URL('../slots.schema.json',import.meta.url),'utf8'));
+    assert.ok(!slots.run.report.codes.some((code:{code:string})=>code.code==='suggestion'),'suggestions must be made by the verifier and placed in the verified table');
   });
+
 });
 
 describe('the table projection binding',()=>{
