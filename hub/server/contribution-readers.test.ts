@@ -10,13 +10,16 @@ let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 test('contribution rec reads use the product reader rule before the administrator and run branches',async t=>{
   const w=await makeWorld(postgres);t.after(()=>w.close());
-  const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('original'),mediaType:'text/plain',origin:{read:{object:'site:document:original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+  const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('original'),mediaType:'text/plain',origin:{read:{object:'site:document:original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
   const body=KnowledgeContributionBody.parse({layer:'contribution',product:'acme',root:'1'.repeat(64),path:'/node',cited_fragment:'2'.repeat(64),kind:'assertion',statement:'合成回注',source:{reference:`src:${original.body.sha256}`,quote:'original',fragment:'4'.repeat(64),provenance:'observed',records:[original.digest],sources:[original.body.sha256]},submitted_by:w.user.id,session:'observed-session',submitted_at:'2026-10-23T08:00:00.000Z',run:'run_01arz3ndektsv4rrffq69g5fav',submission:'6'.repeat(64),model:'synthetic-integration@1',basis_rank:'judgment',applicability:null});
   const record=await w.kit.store.put({kind:'claim',schema:'knowledge-contribution@1',provenance:'declared',body});
   const runs=new FakeRuns(w.kit,new FakeWorkflows(w.kit,[]),()=>new Date());
   const read=(reader:typeof w.user,layer=w.knowledge.layers.contributions)=>recordReaderFor(w.kit,runs,reader,()=>{},layer).read(record.digest,{user:reader.id,role:reader.role});
   const found=await read(w.user);assert.deepEqual(found?.body,body);
   assert.equal(await read(w.outsider),null);
+  w.packs.readers.set(w.outsider.id,new Set(['acme']));
+  assert.equal(await w.kit.artifacts.source(w.outsider,original.body.sha256),null);
+  assert.equal(await read(w.outsider),null,'product readership never opens the original quote');
   const previous=w.packs.readableProducts.bind(w.packs);
   w.packs.readableProducts=async reader=>reader.id===w.admin.id?new Set():previous(reader);
   assert.equal(await read(w.admin),null,'admin cannot bypass a denied product');

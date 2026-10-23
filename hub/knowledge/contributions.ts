@@ -187,20 +187,24 @@ export class ContributionLayer {
   /** A copied quotation does not bypass a later credential hold on its original. Tier-aware reads do not rescan. */
   async #groundsReadable(body: KnowledgeContributionBody, reader: Principal, cache: Map<string, Promise<boolean>>): Promise<boolean> {
     for (const source of [body.source, ...(body.relation === undefined ? [] : [body.relation.other])]) {
+      const tree = parseReference(source.reference).scheme === 'tree';
       for (const digest of source.records) {
-        let readable = cache.get(digest);
+        // Public tree text only needs its original's current tier checked. Raw src/rec quotations must
+        // remain within the actual reader's source ACL. Never reuse a tree-tier result for a raw endpoint.
+        const key = `${tree ? 'tree' : 'original'}:${digest}`;
+        let readable = cache.get(key);
         if (readable === undefined) {
           readable = (async () => {
             const record = await this.#context.records.store.get(digest);
             if (record === null) return false;
-            if (record.kind !== 'source_artifact') return true; // record relays also carry their rooted original records
+            if (record.kind !== 'source_artifact') return tree;
             const original = record as SourceArtifact;
             if (!original.body.visibility.admins) return false;
-            const custodian = await this.#custodian(reader);
-            const current = await this.#context.records.artifacts.source(custodian, original.body.sha256, {consumer:'model',record:digest});
+            const principal = tree ? await this.#custodian(reader) : reader;
+            const current = await this.#context.records.artifacts.source(principal, original.body.sha256, {consumer:'model',record:digest});
             return current !== null && current.bytes !== null;
           })();
-          cache.set(digest, readable);
+          cache.set(key, readable);
         }
         if (!(await readable)) return false;
       }

@@ -18,10 +18,26 @@ after(async () => { await postgres?.stop(); });
 const build = (name: string) => ({name, family:'ACME',line:'1.2',base:name,platform:null,built_at:'2026-01-02T10:00:00.000Z',released_at:'2026-01-03T10:00:00.000Z',sources:{tree:`site:tree:${name}`},root:null});
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'integration-session'};
 
-async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean} = {}) {
+test('raw original and relation quotations never escape the actual reader source permissions',async t=>{
+  const w=await setup(t,{hiddenOriginal:true});
+  const args=w.args();const hidden='仅原件中存在的合成说明';
+  args.items[0].slots.contribution[0].text=hidden;
+  args.items[0].slots.contribution[0].data.source={reference:`src:${w.original}`,quote:hidden};
+  args.items[3].slots.contribution[0].data.relation!.other={reference:`src:${w.original}`,quote:hidden};
+  const answer=await w.service.submitResult(w.admin,args,call);
+  assert.equal(answer.result?.contributions?.stored.length,4,JSON.stringify(answer.errors));
+  assert.equal(await w.kit.artifacts.source(w.user,w.original),null);
+  for(const index of [0,3])assert.equal(await w.knowledge.layers.contributions.read(answer.result!.contributions!.stored[index].record,w.user),null);
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  assert.equal(page!.nodes[0].contributions?.length,2,'tree quotations stay readable, raw originals remain protected');
+  assert.ok(!JSON.stringify(page).includes(hidden));
+  assert.ok(!toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}).includes(hidden));
+});
+
+async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean} = {}) {
   const w = await makeWorld(postgres); t.after(()=>w.close());
   const b = build('Rel_ACME_1_2_15');
-  w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)),mediaType:'application/xml'});
+  w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)+(options.hiddenOriginal?'<!-- 仅原件中存在的合成说明 -->':'')),mediaType:'application/xml'});
   if(options.declaredRoot || options.wrappedDeclaration) {
     const upload = await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)),mediaType:'application/xml',origin:{upload:{session:'session-only',message:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false}});
     const artifact = options.wrappedDeclaration ? await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)),mediaType:'application/xml',origin:{generated:{generator:'synthetic-wrapper@1',inputs:[`src:${upload.body.sha256}`]}},author:{user:null},provenanceType:'projected',visibility:{readers:[],admins:true,packs:[],shareable:false}}) : upload;
@@ -54,7 +70,7 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:bool
   const started = await service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:b.name,inputs:{subject:{reference:`src:${manifest.body.sha256}`},originals:{reference:`src:${original}`}}},call);
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
   const run = started.run!;
-  const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:'/commands/system/show',source:{reference:`src:${original}`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
+  const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:'/commands/system/show',source:{reference:`tree:${root}/commands/system/show`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
   return {...w,root,b,run,service,args,original};
 }
 
@@ -75,7 +91,7 @@ test('all four document outputs enter only after requirements pass, remain outsi
   assert.deepEqual(entries.map(v=>v.contribution.kind),DOCUMENT_OUTPUT_KIND);
   for(const v of entries) {
     assert.equal(v.contribution.submitted_by,w.admin.id);assert.equal(v.contribution.session,'integration-session');
-    assert.equal(v.contribution.source.provenance,'observed');assert.equal(v.contribution.basis_rank,'judgment');
+    assert.equal(v.contribution.source.provenance,'projected');assert.equal(v.contribution.basis_rank,'judgment');
     assert.equal(v.contribution.applicability,null); assert.equal(v.status,'valid');
     assert.ok(v.contribution.submitted_at); assert.ok(await w.knowledge.layers.contributions.read(v.record,w.user));
     assert.equal(await w.knowledge.layers.contributions.read(v.record,w.outsider),null);
