@@ -21,7 +21,9 @@ export interface ExtractedCase {
   id: string;
   title: string;
   tags: string[];
-  priority: number | null;
+  priority: string | null;
+  autoid: string | null;
+  auto: string | null;
   negative: boolean;
   steps: CaseStep[];
   expected: string[];
@@ -62,12 +64,16 @@ function tagsOf(data: { [key: string]: unknown }): string[] {
 }
 
 function priorityOf(data: { [key: string]: unknown }): number | null {
-  const priority = data.priority;
+  const priority = typeof data.priority === 'string' && /^[1-9]$/.test(data.priority) ? Number(data.priority) : data.priority;
   return typeof priority === 'number' && Number.isInteger(priority) && priority >= 1 && priority <= 9 ? priority : null;
 }
 
-function textOf(node: MindNode): string {
-  return node.text.trim();
+function textOf(node: MindNode): string { return node.text; }
+// Strings are opaque metadata. Safe scalars retain their textual form; imprecise numeric ids cannot be recovered.
+function metadata(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean' || typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  return null;
 }
 
 /** The document id of a bound mind map: the external id's name, the parser meta id, else the root node's id. */
@@ -119,11 +125,18 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
           steps.push({ text: textOf(child), expected: stepExpected });
         }
       }
+      // A case body with only a leaf expectation is one authored operation; no steps are invented or rewritten.
+      if (steps.length === 0 && expected.length === 1) {
+        steps.push({ text: textOf(node), expected: [...expected] });
+        expected.length = 0;
+      }
       cases.push({
         id: typeof node.data.id === 'string' && node.data.id !== '' ? node.data.id : `n${index}`,
         title: textOf(node),
         tags,
-        priority,
+        priority: metadata(node.data.priority),
+        autoid: metadata(node.data.autoid),
+        auto: metadata(node.data.auto),
         negative: node.data.negative === true,
         steps,
         expected,

@@ -85,6 +85,10 @@ export function projectItems(input: unknown): unknown {
   }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
   const extraction = extractCases(subject.model, rule);
+  if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
+  const selected = extraction.cases.filter((found) => found.autoid === parameters.autoid);
+  if (selected.length === 0) return refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
+  if (selected.length > 1) return refusal('autoid_ambiguous', '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
   const model = isRecord(subject.model) ? subject.model : {};
   const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, extraction.cases[0]?.id ?? null);
   const warnings: PackWarning[] = [];
@@ -93,7 +97,7 @@ export function projectItems(input: unknown): unknown {
   const context = isRecord(params.context) ? params.context : {};
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
-  const items = extraction.cases.map((found) => ({
+  const items = selected.map((found) => ({
     id: `${documentId}:${found.id}`,
     label: found.title.slice(0, MAX_TITLE),
     summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}`,
@@ -102,6 +106,8 @@ export function projectItems(input: unknown): unknown {
       title: found.title,
       tags: found.tags,
       priority: found.priority,
+      autoid: found.autoid,
+      auto: found.auto,
       negative: found.negative,
       steps: found.steps,
       expected: found.expected,
