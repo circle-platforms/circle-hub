@@ -175,7 +175,7 @@ test('several credentials in one call: every value is checked before any is stor
   // The removal fails: the message names every credential stored.
   const vault = k.records.vault;
   const refused = () => Promise.reject(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));
-  const cli = k.make({ records: { ...k.records, vault: { initKey: () => vault.initKey(), put: (n, v) => vault.put(n, v), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), list: () => vault.list(), remove: refused } } });
+  const cli = k.make({ records: { ...k.records, vault: { initKey: () => vault.initKey(), put: (n, v) => vault.put(n, v), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), stat: (n) => vault.stat(n), list: () => vault.list(), remove: refused } } });
   await assert.rejects(cli.admin.setCredentials(k.admin, record.id, { username: 'reader', password: 'Synthetic#Pass43' }), (error: unknown) => error instanceof ConnectorError && error.code === 'STORE_FAILED' && /凭据 password、username 已存进密钥库.*（EACCES）/.test(error.message));
   // A value that cannot be stored after another was: the error names what was stored, and the session is kept.
   await vault.put(`connector.${record.id}.session`, JSON.stringify({ v: 1, binding: 'x', token: null, stopped: true }));
@@ -183,7 +183,7 @@ test('several credentials in one call: every value is checked before any is stor
   const full = k.make({
     records: {
       ...k.records,
-      vault: { initKey: () => vault.initKey(), put: (n, v) => (n === record.credentials.username ? putRefused(n) : vault.put(n, v)), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), list: () => vault.list(), remove: (n) => vault.remove(n) },
+      vault: { initKey: () => vault.initKey(), put: (n, v) => (n === record.credentials.username ? putRefused(n) : vault.put(n, v)), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), stat: (n) => vault.stat(n), list: () => vault.list(), remove: (n) => vault.remove(n) },
     },
   });
   await assert.rejects(
@@ -246,7 +246,7 @@ test('describe: one resource for admins, enabled or not, with its credential nam
   assert.deepEqual((await k.connectors.admin.describe(k.admin, site.id))?.credentials, []);
   const vault = k.records.vault;
   const noKey = () => Promise.reject(new Error('密钥库主密钥不存在'));
-  const keyless: Vault = { initKey: noKey, put: noKey, get: noKey, getText: noKey, has: (name) => vault.has(name), list: () => vault.list(), remove: (name) => vault.remove(name) };
+  const keyless: Vault = { initKey: noKey, put: noKey, get: noKey, getText: noKey, has: (name) => vault.has(name), stat: (n) => vault.stat(n), list: () => vault.list(), remove: (name) => vault.remove(name) };
   const cli = k.make({ records: { ...k.records, vault: keyless } });
   assert.equal((await cli.admin.describe(k.admin, record.id))?.credentials[0].set, true, 'presence only, without the key');
 });
@@ -257,7 +257,7 @@ test('a reset or a new credential whose session entry cannot be removed is an er
   await k.connectors.admin.setCredential(k.admin, record.id, 'username', 'reader');
   const vault = k.records.vault;
   const refused = () => Promise.reject(Object.assign(new Error('EACCES: permission denied, unlink synthetic-vault/connector.x.session.sealed'), { code: 'EACCES' }));
-  const stuck: Vault = { initKey: () => vault.initKey(), put: (name, value) => vault.put(name, value), get: (name) => vault.get(name), getText: (name) => vault.getText(name), has: (name) => vault.has(name), list: () => vault.list(), remove: refused };
+  const stuck: Vault = { initKey: () => vault.initKey(), put: (name, value) => vault.put(name, value), get: (name) => vault.get(name), getText: (name) => vault.getText(name), has: (name) => vault.has(name), stat: (n) => vault.stat(n), list: () => vault.list(), remove: refused };
   const failed = async (promise: Promise<unknown>): Promise<string> => {
     try {
       await promise;
