@@ -30,6 +30,23 @@ test('R02 rekeying an occupied executor cannot hide an unresolved effect',async 
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
 
+test('R02 simultaneous reservations serialize shared targets and origins despite different resource names',async t=>{
+  const {newJob,digestOfValue}=await import('./journal.ts');
+  for(const shared of ['target','origin'] as const) {
+    const c=await setup();t.after(()=>c.close());
+    const second=await c.registry.add(c.admin,{...c.executor.definition,resources:['synthetic/device/c'],...(shared==='target'?{endpoint:'http://127.0.0.1:1/'}:{target:'synthetic-other-target'})},'synthetic-other-secret');
+    const binding=(executor:typeof c.executor):import('./journal.ts').JobBinding=>({job:newJob(),initiated_by:c.admin.id,executor:executor.id,executor_digest:executor.digest,target_key:digestOfValue(executor.definition.resources),scope:{target:executor.definition.target,origin:new URL(executor.definition.endpoint).origin},input:null,user:c.owner.id,resources:executor.definition.resources});
+    const original=c.service.journal.blockers.bind(c.service.journal);let arrived=0;
+    let release!:()=>void;const both=new Promise<void>(resolve=>{release=resolve;});
+    c.service.journal.blockers=async(...args)=>{const blockers=await original(...args);if(++arrived===2)release();await both;return blockers;};
+    const reserve=c.service as unknown as {reserve(binding:import('./journal.ts').JobBinding):Promise<void>};
+    const results=await Promise.allSettled([reserve.reserve(binding(c.executor)),reserve.reserve(binding(second))]);
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,1,`shared ${shared} must permit only one reservation`);
+    const failed=results.find(r=>r.status==='rejected') as PromiseRejectedResult;assert.match(String(failed.reason),/预留/);
+    assert.equal(c.calls.length,0);await c.close();
+  }
+});
+
 test('R03 accepted work awaiting a readable terminal cannot be disposed as if its effect were unknown',async t=>{
   for(const choice of ['mark_failed','keep_unknown','reconcile'] as const) {
     const c=await setup({alter:(name,v)=>name==='inspect_blob'?{ok:false,error:'synthetic unavailable'}:v});t.after(()=>c.close());

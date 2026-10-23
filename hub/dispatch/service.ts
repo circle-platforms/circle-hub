@@ -1,4 +1,4 @@
-import { canonicalBytes, canonicalize, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
@@ -405,11 +405,19 @@ export class DispatchService {
 
   private async reserve(binding: JobBinding): Promise<void> {
     const definition=await this.pinned(binding);
+    // Read the CAS heads before checking occupancy. A reservation committed during
+    // that check must either be observed as a blocker or invalidate our CAS head.
+    const history=await this.options.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation']});
     const blocked=await this.journal.blockers(binding.executor,definition.target,new URL(definition.endpoint).origin,binding.resources);
     if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new Error(`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
-    const history = await this.journal.targets(binding.resources);
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
+    const identities=[['executor',binding.executor],['target',definition.target],['origin',new URL(definition.endpoint).origin]].map(digestOfValue).sort();
     await this.options.records.store.withTransaction(async tx => {
+      for(const identity of identities) {
+        const previous=[...history].reverse().find(e=>e.body.detail.reserved_identity===identity);
+        const claim=await this.journal.append(binding,'reservation','validate','completed',{binding,reserved_identity:identity,previous_reservation:previous?.digest??null},previous?[`rec:${previous.digest}`]:[],`dispatch.reserve.identity:${identity}:${previous?.digest??'first'}`,tx);
+        if(!claim.created)throw new Error('另一进程已经预留执行器或目标；未提交');
+      }
       for (const resource of resources) {
         const previous = [...history].reverse().find(e => e.body.detail.phase === 'reservation' && e.body.detail.reserved_resource === resource);
         const claim = await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, reserved_resource: resource, previous_reservation: previous?.digest ?? null }, previous ? [`rec:${previous.digest}`] : [], `dispatch.reserve:${resource}:${previous?.digest ?? 'first'}`, tx);
