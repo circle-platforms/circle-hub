@@ -497,3 +497,20 @@ test('ordinary partial cross item errors keep original indexes and do not charge
   const actions=await w.kit.store.find({key:'runs.action.run',value:w.run.run,kind:'action',limit:100});
   for(const action of actions.items) {const repair=(action.body as {detail?:{repair?:string[]}}).detail?.repair; if(repair) assert.ok(!repair.includes('second'));}
 });
+
+test('the minimum accepted node budget cannot repeat a contribution cursor without progress',async t=>{
+  const w=await setup(t,{pageBytes:1024});await w.service.submitResult(w.admin,w.args(),call);
+  let cursor:string|null=null;const seen=new Set<string>();let complete=false;
+  for(let count=0;count<16;count++){
+    try {
+      const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0,cursor},w.user);assert.ok(page);
+      for(const node of page.nodes)for(const contribution of node.contributions??[])seen.add(contribution.record);
+      if(page.next===null){complete=true;break;}
+      assert.notEqual(page.next,cursor,'an empty page must not point back to itself');cursor=page.next;
+    } catch(error) {
+      assert.ok(error instanceof Error && 'code'in error && error.code==='SOURCE_UNAVAILABLE');
+      assert.match(error.message,/预算.*引用.*管理员.*第一页/);return;
+    }
+  }
+  assert.ok(complete);assert.equal(seen.size,4);
+});

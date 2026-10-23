@@ -286,6 +286,11 @@ export class ContributionLayer {
     const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
     const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
     const items:KnowledgeContributionPageView[]=[];
+    const deferred = () => {
+      const next = encode();
+      if (items.length === 0 && next !== null && next === options.cursor) throw new KnowledgeError('回注页预算不足以承载当前节点的引用标记；请管理员提高 pageBytes 后，保持原查询从第一页重读', {code:'SOURCE_UNAVAILABLE',detail:{budget,path}});
+      return {items,next};
+    };
     while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
       const before=cursor;const selected=await this.#context.store.records.find({key:'knowledge.contribution.node',value:digestOf({product:products[at],path}),kind:'claim',cursor,limit:1,newestFirst:true});
       const record=selected.items[0];scanned++;
@@ -295,16 +300,16 @@ export class ContributionLayer {
       if(view!==undefined){
         let shown:KnowledgeContributionPageView=view;let size=canonicalSize(view)+1;
         if(size>budget-bytes){
-          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return {items,next:encode()};
+          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return deferred();
           shown={record:view.record,status:view.status,note:(view.note??'')+'；本条回注超过节点页字节上限，缺少本页正文；用 get_nodes 按 rec:'+view.record+' 游标分段读取'};
           size=canonicalSize(shown)+1;
-          if(size>budget-bytes)return {items,next:encode()};
+          if(size>budget-bytes)return deferred();
         }
         items.push(shown);bytes+=size;
       }
       cursor=selected.next;if(cursor===null)at++;
     }
-    return {items,next:encode()};
+    return deferred();
   }
 
   /** Small-result convenience only. Larger callers must follow page.next; never silently return an incomplete array. */
