@@ -236,11 +236,43 @@
       ],
       "accepted_producer": "fact",
       "checks": [
-        "workbook_verified"
+        "workbook_verified",
+        "commands_catalog",
+        "expected_quotes"
       ],
       "error_handling": [
         {
           "code": "case-compile.workbook_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.not_member",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.arity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_out_of_range",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "REFERENCE_UNRESOLVED",
           "action": "repair",
           "max_rounds": 2
         }

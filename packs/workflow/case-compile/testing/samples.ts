@@ -3,6 +3,9 @@ import { readdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { goodData, subjectOf, QUOTE, CATALOG_SPEC } from '../functions/test-support.ts';
+import { generateWorkbook } from '../functions/generate.ts';
+import { generationFixture } from './workbook.ts';
+import { workbookCheckInput } from './workbook-model.ts';
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
@@ -45,6 +48,10 @@ export function writeSamples(): void {
     save('positive', name, 'commands_catalog', { item: 'doc-1:c-1', location: QUOTE.reference, phrases: ['widget health interval 60'], negative: false }, undefined, { catalog: CATALOG_SPEC });
     save('negative', name, 'commands_catalog', { item: 'doc-1:c-1', location: QUOTE.reference, phrases: [phrase], negative: false }, code, { catalog: CATALOG_SPEC });
   }
+  const bytes = Buffer.from(generateWorkbook(generationFixture()));
+  save('positive', 'workbook-bytes', 'workbook_verified', workbookCheckInput(bytes).subject);
+  bytes[10] ^= 1;
+  save('negative', 'workbook-bytes', 'workbook_verified', workbookCheckInput(bytes).subject, 'case-compile.workbook_invalid');
   for (const polarity of ['positive', 'negative']) save(polarity, 'quote-mismatch', 'expected_quotes', { item: 'doc-1:c-1', quotes: [{ reference: QUOTE.reference, text: polarity === 'positive' ? QUOTE.text : '不存在的引文' }] }, polarity === 'negative' ? 'QUOTE_MISMATCH' : undefined, { sources: { [QUOTE.reference]: QUOTE.text } });
 }
 if (process.argv[1]?.endsWith('/testing/samples.ts')) writeSamples();

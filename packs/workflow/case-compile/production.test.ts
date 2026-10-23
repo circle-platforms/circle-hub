@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { satisfiedRecipe } from './scripts/generate-workbook.ts';
+import { generateWorkbook, GENERATOR } from './functions/generate.ts';
 // Real run engine and temporary PostgreSQL; every contract, profile, document, device and model is synthetic.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
@@ -45,14 +48,15 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: 'a'.repeat(32) }).success);
     const run = detail.answer.run!; assert.deepEqual(run.items.map((v) => v.id), ['doc-1:c-1']);
     assert.deepEqual([run.items[0].fields.autoid, run.items[0].fields.auto, run.items[0].fields.priority], [AUTOID, '1', '2']);
-    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded']);
+    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded', 'workbook_verified']);
     const answer = await hub.service.submitResult(hub.alice, submission(run.run), call());
     assert.ok(SubmitResultOutput.safeParse({ ...answer, trace: 'a'.repeat(32) }).success, JSON.stringify(answer));
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors)); const result = ValidationResult.parse(answer.result);
     const requirements = result.partitions.delivered[0].requirements;
-    assert.ok(requirements.every((v) => v.status === 'satisfied'), JSON.stringify(requirements));
+    assert.ok(requirements.filter((v) => v.requirement !== 'workbook_verified').every((v) => v.status === 'satisfied'), JSON.stringify(requirements));
+    const pending = requirements.find((v) => v.requirement === 'workbook_verified')!; assert.notEqual(pending.status, 'satisfied'); assert.ok(pending.claims.some((v) => v.statement.verdict === 'unknown' && v.statement.reason === 'missing_input'));
     const claims = requirements.flatMap((v) => v.claims);
-    const own = claims.filter((v) => v.warrant.id.startsWith('case-compile.'));
+    const own = requirements.filter((v) => v.requirement !== 'workbook_verified').flatMap((v) => v.claims).filter((v) => v.warrant.id.startsWith('case-compile.'));
     assert.ok(own.length); for (const claim of own) { assert.equal(claim.statement.verdict, 'support'); assert.match(claim.statement.text, /按合成合约核对/); assert.match(claim.statement.text, /不证明在真实设备上跑得通/); }
     const receipt = own.find((v) => v.statement.data?.contract_sha256 === CONTRACT_DOC.contract_sha256)!;
     assert.equal(receipt.statement.data?.runtime_version, CONTRACT_DOC.runtime.minimum_version);
@@ -102,6 +106,20 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
       const noLineage = planSubject({ item: 'doc-1:c-1', slots: { plan: [{ data }] }, context: { groups: other.run.groups } });
       assert.ok(checkAddresses({ subject: noLineage }).some((v) => v.code === 'case-compile.address_off_bed'));
     } finally { await temp.remove(); }
+  });
+  it('generates from a satisfied plan then verifies the original artifact in a successor run', async () => {
+    const first = await hub.service.startRunDetailed(hub.alice, start(), call()); const planRun = first.answer.run!;
+    const sent = submission(planRun.run); const answer = await hub.service.submitResult(hub.alice, sent, call()); assert.equal(answer.acceptance, 'accepted');
+    const contract = Buffer.from(JSON.stringify(CONTRACT_DOC)); const profile = Buffer.from(JSON.stringify(PROFILE_DOC)); const inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
+    const recipe = satisfiedRecipe({ run: first.answer, result: answer, submission: sent, contract, profile, inventory });
+    const bytes = generateWorkbook(recipe);
+    await hub.kit.artifacts.ingest({ bytes, mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', origin: { read: { object: 'fixture:workbook:synthetic' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [hub.alice.id], admins: true, packs: [], shareable: false }, name: 'fixture.xlsx' });
+    const second = await hub.service.startRunDetailed(hub.alice, { ...start(), predecessor: planRun.run, parameters: { ...start().parameters, plan_run: planRun.run }, inputs: { ...start().inputs, workbook: { reference: `src:${createHash('sha256').update(bytes).digest('hex')}` } } }, call());
+    assert.equal(second.answer.call_result, 'ok', JSON.stringify(second.answer.errors));
+    const verified = await hub.service.submitResult(hub.alice, submission(second.answer.run!.run), call()); assert.equal(verified.acceptance, 'accepted', JSON.stringify(verified.errors));
+    const result = ValidationResult.parse(verified.result); const requirements = result.partitions.delivered[0].requirements; assert.ok(requirements.every((v) => v.status === 'satisfied'), JSON.stringify(requirements));
+    const receipt = requirements.find((v) => v.requirement === 'workbook_verified')!.claims.find((v) => v.statement.data?.sha256)!;
+    assert.deepEqual(receipt.statement.data, { sha256: createHash('sha256').update(bytes).digest('hex'), autoids: [AUTOID], bed: { id: 'bed-a', manifest_sha256: sha(JSON.stringify(MANIFEST_DOC)) }, build: 'Fixture_Build_A', generator: GENERATOR, plan_run: planRun.run });
   });
   it('keeps the pack unavailable to an unassigned user', async () => { const result = await hub.service.startRunDetailed(hub.bob, start(), call()); assert.equal(result.answer.call_result, 'error'); });
 });

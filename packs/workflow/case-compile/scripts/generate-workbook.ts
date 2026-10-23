@@ -32,7 +32,7 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   if (!Array.isArray(run.requirements) || !Array.isArray(itemResult.requirements)) throw new Error('缺少完整的计划要求项状态');
   const coverage = record(result.coverage, '缺少核对覆盖范围'); if (coverage.complete !== true || coverage.total !== 1 || coverage.examined !== 1) throw new Error('结果没有完整核对这个唯一用例');
   for (const template of REQUIREMENTS.requirements.filter((v) => v.required && v.key !== 'workbook_verified')) {
-    if (!run.requirements.some((v) => isRecord(v) && v.key === template.key && v.required === true)) throw new Error('运行缺少当前包的必需计划要求项');
+    if (!run.requirements.some((v) => isRecord(v) && v.key === template.key && v.accepted_producer === template.accepted_producer)) throw new Error('运行缺少当前包的必需计划要求项');
     const required = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === template.key);
     if (required.length !== 1 || !isRecord(required[0]) || required[0].status !== 'satisfied') throw new Error('计划必需要求项尚未全部满足；工作簿缺输入一项不能掩盖其他未决或反驳');
   }

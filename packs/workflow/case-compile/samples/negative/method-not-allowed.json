@@ -337,6 +337,8 @@
         "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
       },
       "bed": "bed-a",
+      "device_count": 2,
+      "fold_newlines": [],
       "workbook": {
         "sheet": "FixtureSheet",
         "header": [

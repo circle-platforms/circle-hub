@@ -35,6 +35,8 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   const assertions = profile.allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
   if (assertions.length !== 1 || !runtimeMethod(contract, assertions[0].object, assertions[0].method)) reject('/profile/allowed', '生成器需要唯一的已启用字面断言组合');
   if (!slots.expects.length) reject('/expects', '至少一条溯源期望才可生成');
+  const assertionSeat = profile.seats.find((v) => v.object === assertions[0].object);
+  if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
   const identity: Array<string | number> = [profile.workbook.identity_marker, contract.runtimeVersion, contract.digest, '', ''];
   identity[FORMAT.identity_generator_column - 1] = GENERATOR;
   identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.digest }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
