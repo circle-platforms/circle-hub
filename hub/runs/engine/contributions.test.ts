@@ -4,10 +4,11 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
+import { KnowledgeContributionBody, KnowledgeContributionView } from '../../../contracts/src/contributions.ts';
 import { canonicalize, LimitError } from '../../records/api.ts';
 import { createDefaultRegistry } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
-import { makeWorld, catalogXml, BASE_CATALOG } from '../../knowledge/test-support.ts';
+import { makeWorld, catalogXml, BASE_CATALOG, DEFAULT_PRODUCERS, extraProducer } from '../../knowledge/test-support.ts';
 import { createRunsService } from './api.ts';
 import { FakeWorkflowStore } from './testing/workflows.ts';
 import { toolText } from '../../server/text.ts';
@@ -68,8 +69,8 @@ test('a refused digest stays refused after source recovery; a new submission can
   assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
 });
 
-async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean} = {}) {
-  const w = await makeWorld(postgres); t.after(()=>w.close());
+async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number} = {}) {
+  const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},...(options.treeEntries?{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('large_tree',{entries:Array.from({length:options.treeEntries},(_,i)=>({kind:'behaviour',path:'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))})]}}}:{})}); t.after(()=>w.close());
   const b = build('Rel_ACME_1_2_15');
   w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)+(options.hiddenOriginal?'<!-- 仅原件中存在的合成说明 -->':'')),mediaType:'application/xml'});
   if(options.declaredRoot || options.wrappedDeclaration) {
@@ -220,12 +221,13 @@ test('all four document outputs enter only after requirements pass, remain outsi
   assert.equal(receipt.stored.length,4,JSON.stringify(answer.result)); assert.equal(receipt.not_stored.length,0);
   const page = await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
   assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
-  const entries = page!.nodes[0].contributions!;
+  const entries = page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view));
   assert.match(toolText('submit_result',{...answer,trace:call.traceId}),/回注：提交 4 条，入层 4 条，未入层 0 条/);
   const rendered=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes});
   assert.match(rendered,/回注层/);assert.match(rendered,/提交人/);assert.match(rendered,/依据/);assert.match(rendered,new RegExp(receipt.stored[0].record));
   assert.match(rendered.split('\n').find(line=>line.includes(`rec:${receipt.stored[0].record}`))!,/适用 未声明/);
-  assert.deepEqual(entries.map(v=>v.contribution.kind),DOCUMENT_OUTPUT_KIND);
+  assert.deepEqual(entries.map(v=>v.contribution.kind).sort(),[...DOCUMENT_OUTPUT_KIND].sort());
+  assert.deepEqual(entries.map(v=>v.contribution.submitted_at),entries.map(v=>v.contribution.submitted_at).sort().reverse(),'node contribution pages are newest first');
   const storedRelation=entries.find(v=>v.contribution.kind==='relation')!.contribution.relation!;
   assert.equal(storedRelation.kind,'same_subject');assert.equal(storedRelation.other.reference,`tree:${w.root}/commands/net/ping`);
   assert.equal(storedRelation.other.provenance,'projected');assert.ok(storedRelation.other.records.length>0);assert.ok(storedRelation.other.sources.length>0);
@@ -249,7 +251,7 @@ test('a stored contradiction records its endpoints without editing the second no
   const args=w.args();args.items[3].slots.contribution[0].data.relation!.kind='contradicts';
   const result=await w.service.submitResult(w.admin,args,call);assert.equal(result.result?.contributions?.stored.length,4);
   const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
-  const relation=page!.nodes[0].contributions!.find(v=>v.contribution.kind==='relation')!.contribution.relation!;
+  const relation=page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view)).find(v=>v.contribution.kind==='relation')!.contribution.relation!;
   assert.equal(relation.kind,'contradicts');assert.equal(relation.other.reference,`tree:${w.root}/commands/net/ping`);
   assert.deepEqual((await w.knowledge.getNodes({root:w.root,paths:['/commands/net/ping'],depth:0},w.user))!.nodes,before!.nodes);
   assert.match(toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}),new RegExp(`关系 ${labelOf('relation_kind','contradicts')} →`));
@@ -277,10 +279,47 @@ test('a nonadmin writes tree-grounded contributions but cannot bind an admin-onl
   const started=await w.service.startRun(w.user,input,{...call,sessionId:'user-session'});assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
   const result=await w.service.submitResult(w.user,{...w.args(),run:started.run!.run},{...call,sessionId:'user-session'});assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
   const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
-  assert.ok(page!.nodes[0].contributions!.every(v=>v.contribution.submitted_by===w.user.id));
+  assert.ok(page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view)).every(v=>v.contribution.submitted_by===w.user.id));
   assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
   const denied=await w.service.startRun(w.user,{...input,inputs:{...input.inputs,originals:{reference:`src:${w.original}`}}},call);
   assert.equal(denied.call_result,'error');assert.ok(denied.errors.some(e=>e.code==='SOURCE_UNAVAILABLE'&&Boolean(e.fix)));
+});
+
+test('node contribution pages are bounded, use limited index queries and resume without loss or duplication',async t=>{
+  const w=await setup(t);const result=await w.service.submitResult(w.admin,w.args(),call);
+  const stored=await w.knowledge.layers.contributions.read(result.result!.contributions!.stored[0].record,w.admin);
+  const {submitted_at:_at,model:_model,session:_session,...prepared}=KnowledgeContributionBody.parse(stored!.body);
+  await w.kit.store.withTransaction(async tx=>{for(let i=0;i<121;i++)await w.knowledge.layers.contributions.append({...prepared,statement:`分页事实 ${i}`},{run:w.run.run,submission:'a'.repeat(64),session:null,model:'synthetic'},tx);});
+  const find=w.kit.store.find.bind(w.kit.store);let queries=0;
+  w.kit.store.find=async(query,tx)=>{if(query.key==='knowledge.contribution.node'){queries++;assert.ok((query.limit??1000)<=100,'a page must not load the entire index');}return find(query,tx);};
+  const all=new Set<string>();let cursor:string|null=null;let pages=0;
+  do{
+    const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0,cursor},w.user);assert.ok(page);
+    assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
+    assert.ok(Buffer.byteLength(JSON.stringify(page.nodes),'utf8')<=2*1024*1024);
+    for(const node of page.nodes){assert.ok((node.contributions?.length??0)<=100);for(const view of node.contributions??[]){assert.ok(!all.has(view.record),'record repeated across pages');all.add(view.record);}}
+    if(page.next!==null){assert.equal(page.coverage.complete,false);assert.match(page.coverage.note??'',/回注/);}
+    if(pages===0&&page.next!==null)await assert.rejects(w.knowledge.getNodes({root:w.root,paths:['/commands/net/ping'],depth:0,cursor:page.next},w.user),/游标/);
+    cursor=page.next;assert.ok(++pages<10,'paging must advance');
+  }while(cursor!==null);
+  assert.equal(all.size,125);assert.ok(pages>1);assert.ok(queries<400);
+});
+
+test('large contribution bodies use bounded references and split tree pages do not repeat overlays',async t=>{
+  const large=await setup(t,{pageBytes:8192});const args=large.args();for(const item of args.items)item.slots.contribution[0].text+='安全内容'.repeat(2000);
+  const result=await large.service.submitResult(large.admin,args,call);assert.equal(result.result?.contributions?.stored.length,4);
+  const page=await large.knowledge.getNodes({root:large.root,paths:['/commands/system/show'],depth:0},large.user);assert.ok(page);
+  assert.ok(Buffer.byteLength(JSON.stringify(page.nodes))<=8192);
+  assert.ok(page.nodes.flatMap(n=>n.contributions??[]).every(view=>view.contribution===undefined&&view.note?.includes('get_nodes')));
+  assert.equal(page.coverage.complete,false);assert.match(page.coverage.note??'',/正文|引用/);
+  const w=await setup(t,{pageBytes:6000,treeEntries:7});const submitted=await w.service.submitResult(w.admin,w.args(),call);assert.equal(submitted.result?.contributions?.stored.length,4);
+  const records=new Set<string>(),entries=new Set<string>();let cursor:string|null=null,count=0;
+  do{
+    const read=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0,cursor},w.user);assert.ok(read);
+    for(const node of read.nodes){for(const entry of node.entries){assert.ok(!entries.has(entry.entry));entries.add(entry.entry);}for(const view of node.contributions??[]){assert.ok(!records.has(view.record));records.add(view.record);}}
+    cursor=read.next;assert.ok(++count<20);
+  }while(cursor!==null);
+  assert.equal(records.size,4);assert.ok(entries.size>=8);assert.ok(count>1);
 });
 
 for(const kind of DOCUMENT_OUTPUT_KIND) test(`${kind}: a non-verbatim quotation refuses admission`,async t=>{

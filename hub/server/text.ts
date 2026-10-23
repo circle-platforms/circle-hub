@@ -961,8 +961,9 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}`, omitted: clip.omitted };
   });
   for (const view of node.contributions ?? []) {
-    const c = view.contribution;
     const clip = new Clip(`rec:${view.record}`);
+    const c = view.contribution;
+    if(c===undefined){entries.push({text:`  · [${labelOf('knowledge_layer','contribution')}] ${clip.field(view.note,CLIP.field,'回注说明的超出部分')}；引用 rec:${view.record}`,omitted:clip.omitted});continue;}
     if(!('statement'in c)){
       entries.push({text:`  · [${labelOf('knowledge_layer',c.layer)}] ${clip.field(view.note??labelOf('validity_status',view.status),CLIP.field,'受限说明的超出部分')}；来源 ${c.source.reference}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}`,omitted:clip.omitted});
       continue;

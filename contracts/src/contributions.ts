@@ -45,3 +45,9 @@ export const KnowledgeContributionView=z.union([
   z.strictObject({record:Sha256,contribution:WithheldContributionBody,status:ValidityStatusSchema.extract(['credential_unreadable']),note:z.string()}),
 ]);
 export type KnowledgeContributionView=z.infer<typeof KnowledgeContributionView>;
+export const MAX_NODE_CONTRIBUTIONS=100;
+/** A bounded node page can defer a large body to its separately paginated immutable record. */
+export const KnowledgeContributionPageView=z.union([KnowledgeContributionView,z.strictObject({
+  record:Sha256,contribution:z.never().optional(),status:ValidityStatusSchema.extract(['valid','cited_fragment_changed','credential_unreadable']),note:z.string(),
+})]);
+export type KnowledgeContributionPageView=z.infer<typeof KnowledgeContributionPageView>;

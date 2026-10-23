@@ -13,6 +13,7 @@ import { DEFAULT_KNOWLEDGE_LIMITS, DEFAULT_SANDBOX, WriteQueue, requireAdmin, ty
 import { compareText, cutText } from './digest.ts';
 import { ObservationLayer } from './layers.ts';
 import { ContributionLayer } from './contributions.ts';
+import { contributionNodes } from './contribution-pages.ts';
 import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type PlacementOutcome, type PlacementSpan, type PlacementTree } from './placement.ts';
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
@@ -195,15 +196,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     rootInfo: (root) => builds.rootInfo(root),
     catalog: (root, catalogId): Promise<CatalogView | null> => reading.catalog(root, catalogId),
     treeReader: (lock?: TreeLock | null): TreeReader => reading.treeReader(lock ?? null),
-    async getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null> {
-      const page = await reading.getNodes(query, reader);
-      if (page === null) return null;
-      const items = await contributions.list(query.root, page.nodes.map(n => n.path), reader);
-      return { ...page, nodes: page.nodes.map(node => {
-        const attached = items.filter(v => v.contribution.path === node.path);
-        return attached.length === 0 ? node : { ...node, contributions: attached };
-      }) };
-    },
+    getNodes:(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>contributionNodes(context,reading,contributions,query,reader),
     diffRoots: (from, to): Promise<RootDiff | null> => reading.diff(from, to),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => reading.diffEntries(from, to, diffOptions),
 

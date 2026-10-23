@@ -1,6 +1,6 @@
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
-import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
+import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, MAX_NODE_CONTRIBUTIONS, type KnowledgeContributionPageView, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
@@ -11,6 +11,7 @@ import type { KnowledgeContext } from './context.ts';
 import { CompositionView } from './composition.ts';
 import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
+import { canonicalSize } from './digest.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -261,20 +262,64 @@ export class ContributionLayer {
     return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:'valid',note:null};
   }
 
-  async list(root: string, paths: readonly string[], reader: Principal): Promise<KnowledgeContributionView[]> {
-    const products = new Set((await this.#reading.compositionsOf(root)).map(c => c.body.product));
-    const records: StoredRecord[] = [];
-    for (const product of products) {
-      if (!(await this.mayRead(product, reader))) continue;
-      for (const path of new Set(paths)) records.push(...await this.#context.store.all({key:'knowledge.contribution.node',value:digestOf({product,path}),kind:'claim'}));
+  async has(root:string,reader:Principal):Promise<boolean>{
+    for(const product of await this.#reading.productsOfRoot(root))if(await this.mayRead(product,reader)){
+      if((await this.#context.store.records.find({key:INDEX.contribution,value:product,kind:'claim',limit:1})).items.length>0)return true;
     }
+    return false;
+  }
+
+  /** Keyset page of the node index. Query size and returned bytes are bounded even when source ACLs hide rows. */
+  async page(root:string,path:string,reader:Principal,options:{cursor?:string|null;limit?:number;bytes?:number}={}):Promise<{items:KnowledgeContributionPageView[];next:string|null}>{
+    const products:string[]=[];for(const product of [...await this.#reading.productsOfRoot(root)].sort())if(await this.mayRead(product,reader))products.push(product);
+    const q=digestOf({root,path});let product=products[0];let cursor:string|null=null;
+    if(options.cursor){try{const saved=JSON.parse(Buffer.from(options.cursor,'base64url').toString());if(saved.q!==q||typeof saved.p!=='string'||!(saved.c===null||typeof saved.c==='string'))throw new Error();product=saved.p;cursor=saved.c;}catch{throw new KnowledgeError('回注游标不属于此根和路径；按原查询重新读取第一页',{code:'REFERENCE_UNRESOLVED'});}}
+    let at=product===undefined?products.length:products.indexOf(product);if(at<0){at=products.findIndex(p=>p>product!);cursor=null;}if(at<0)at=products.length;
+    const encode=()=>at>=products.length?null:Buffer.from(JSON.stringify({q,p:products[at],c:cursor})).toString('base64url');
+    const limit=Math.min(MAX_NODE_CONTRIBUTIONS,Math.max(1,options.limit??MAX_NODE_CONTRIBUTIONS));
+    const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
+    const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
+    const items:KnowledgeContributionPageView[]=[];
+    while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
+      const before=cursor;const selected=await this.#context.store.records.find({key:'knowledge.contribution.node',value:digestOf({product:products[at],path}),kind:'claim',cursor,limit:1,newestFirst:true});
+      const record=selected.items[0];scanned++;
+      if(record===undefined){at++;cursor=null;continue;}
+      const body=KnowledgeStore.contributionOf(record);
+      const view=body?.product===products[at]&&body.path===path?(await this.#views(root,[record],reader,cache))[0]:undefined;
+      if(view!==undefined){
+        let shown:KnowledgeContributionPageView=view;let size=canonicalSize(view)+1;
+        if(size>budget-bytes){
+          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return {items,next:encode()};
+          shown={record:view.record,status:view.status,note:(view.note??'')+'；本条回注超过节点页字节上限，缺少本页正文；用 get_nodes 按 rec:'+view.record+' 游标分段读取'};
+          size=canonicalSize(shown)+1;
+          if(size>budget-bytes)return {items,next:encode()};
+        }
+        items.push(shown);bytes+=size;
+      }
+      cursor=selected.next;if(cursor===null)at++;
+    }
+    return {items,next:encode()};
+  }
+
+  /** Small-result convenience only. Larger callers must follow page.next; never silently return an incomplete array. */
+  async list(root:string,paths:readonly string[],reader:Principal):Promise<KnowledgeContributionView[]>{
+    const items:KnowledgeContributionView[]=[];
+    let bytes=0;
+    for(const path of new Set(paths)){
+      if(items.length>=MAX_NODE_CONTRIBUTIONS)throw new KnowledgeError('查询达到单页上限，剩余路径尚未核验；请改用 page 并持续读取 next',{code:'REFERENCE_UNRESOLVED'});
+      const page=await this.page(root,path,reader,{limit:MAX_NODE_CONTRIBUTIONS-items.length,bytes:Math.max(0,this.#context.limits.pageBytes-bytes)});
+      if(page.next!==null||page.items.some(v=>v.contribution===undefined))throw new KnowledgeError('回注超过单页范围，缺少剩余正文；请改用 page 并持续读取 next，或用 get_nodes 游标续读',{code:'REFERENCE_UNRESOLVED'});
+      for(const view of page.items)if(view.contribution!==undefined){items.push(view as KnowledgeContributionView);bytes+=canonicalSize(view)+1;}
+    }
+    return items;
+  }
+
+  async #views(root:string,records:StoredRecord[],reader:Principal,cache:{digests:Map<string,string|null>;endpoints:Map<string,Promise<string|null>>;readable:Map<string,Promise<GroundState>>}):Promise<KnowledgeContributionView[]>{
     const out: KnowledgeContributionView[] = [];
-    const digests = new Map<string, string | null>();
-    const endpoints=new Map<string,Promise<string|null>>();
-    const readable = new Map<string, Promise<GroundState>>();
+    const {digests,endpoints,readable}=cache;
     for (const record of records) {
       const body = KnowledgeStore.contributionOf(record);
-      if (body === null || !paths.includes(body.path)) continue;
+      if (body === null) continue;
       const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
       if(state.held){out.push(this.#withheld(record.digest,body));continue;}
       if (!digests.has(body.path)) {
