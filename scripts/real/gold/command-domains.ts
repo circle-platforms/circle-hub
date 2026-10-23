@@ -43,7 +43,6 @@ export function commandDomains(xml: string): Domains {
         otherForm: /\bor\b|host\s*name|\burl\b|[a-z]+:\/\//i.test(`${text(arg)} ${helpBodies[argument++] ?? ''}`),
       })));
       out.set(head, [...(out.get(head) ?? []), ...overloads]);
-      out.set(`no ${head}`, out.get(head)!);
       return;
     }
     for (const child of kids(node)) if (!['arguments', 'arg', 'results'].includes(child.name)) walk(child, words);
@@ -57,7 +56,6 @@ export function commandDomains(xml: string): Domains {
       otherForm: out.get(head)?.[overload]?.[position]?.otherForm ?? false,
     }))));
   }
-  for (const [head, overloads] of [...domains]) if (!domains.has(`no ${head}`)) domains.set(`no ${head}`, overloads);
   return domains;
 }
 

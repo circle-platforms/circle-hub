@@ -72,3 +72,10 @@ test('known gold verdicts disagree with missing, pending and duplicated Hub requ
     assert.equal(report.items[0].comparison,'different');assert.ok(report.differences.some(d=>d.category==='hub_output_missing'));
   }
 });
+test('no forms have argument domains only when the original tree declares them',()=>{
+  const tree=xml('<arg name="" type="U16"/>'),domains=commandDomains(tree);
+  for(const parameters of [[],['5']])assert.equal(judgeCommand({head:'no widget set',parameters},domains).category,'not_member');
+  const submission={items:[{item:'i',slots:{cases:[{data:{steps:[{command:'no widget set 5'}]}}]}}]};
+  assert.equal(domainReport(submission,{},tree).notMember,1);
+  assert.equal(judgeCommand({head:'no widget set',parameters:['5']},commandDomains(tree.replace('name="widget"','name="no widget"'))).verdict,'support');
+});
