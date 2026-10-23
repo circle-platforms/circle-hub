@@ -14,7 +14,8 @@ import { satisfiedRecipe } from '../../packs/workflow/case-compile/scripts/gener
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage } from '../../packs/workflow/case-compile/pack-files.ts';
@@ -85,7 +86,15 @@ async function plan(booked: string, index = 0, repair = false) {
   assert.ok(requirements.filter(r => r.requirement !== 'workbook_verified').every(r => r.status === 'satisfied'), JSON.stringify(requirements));
   assert.notEqual(requirements.find(r => r.requirement === 'workbook_verified')!.status, 'satisfied');
   const recipe = satisfiedRecipe({ run: started, result: accepted!, submission: sent, contract: bytes(CONTRACT_DOC), profile: bytes(PROFILE_DOC), inventory: bytes(MANIFEST_DOC) });
-  return { input, run, recipe, sent, payload: Buffer.from(generateWorkbook(recipe)) };
+  const directory = await mkdtemp(join(staged, 'client-generator-'));
+  const artifacts = { run: bytes(started), result: bytes(accepted!), submission: bytes(sent), contract: bytes(CONTRACT_DOC), profile: bytes(PROFILE_DOC), inventory: bytes(MANIFEST_DOC) };
+  const argv: string[] = [];
+  for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, file); }
+  const output = join(directory, 'case.xlsx');
+  // Execute the published tools/ entry, not a source-directory shortcut or Hub generation.
+  const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
+  const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
+  return { input, run, recipe, sent, payload };
 }
 async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = false) {
   const payload = Buffer.from(p.payload);
