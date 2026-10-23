@@ -12,6 +12,57 @@ import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
+/** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
+const DISTRIBUTION_REUSE_MS = 60_000;
+const DISTRIBUTION_CACHE_MAX = 32;
+type LoadedForDownload = NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>;
+const distributionCache = new Map<string, { at: number; loaded: LoadedForDownload }>();
+const ABSENCE_NOTE = {
+  unknown: '版本不存在',
+  unassigned: '版本没有分配给这个用户',
+  withdrawn: '版本已下架',
+  disabled: '账号已停用',
+} as const;
+
+export function clearDistributionCache(): void {
+  distributionCache.clear();
+}
+
+function rememberDistribution(key: string, loaded: LoadedForDownload): void {
+  distributionCache.delete(key);
+  distributionCache.set(key, { at: Date.now(), loaded });
+  while (distributionCache.size > DISTRIBUTION_CACHE_MAX) {
+    const oldest = distributionCache.keys().next().value;
+    if (oldest === undefined) break;
+    distributionCache.delete(oldest);
+  }
+}
+
+async function openForDownload(deps: ServerDeps, principal: Principal, ref: string): Promise<LoadedForDownload | null> {
+  const key = `${principal.id}\0${ref}`;
+  const hit = distributionCache.get(key);
+  const ask = deps.workflows.absence;
+  if (hit !== undefined && ask !== undefined && Date.now() - hit.at < DISTRIBUTION_REUSE_MS) {
+    const why = await ask(principal, ref);
+    if (why === null) {
+      hit.at = Date.now();
+      return hit.loaded;
+    }
+    distributionCache.delete(key);
+    return null;
+  }
+  const loaded = await deps.workflows.forUser(principal, ref);
+  if (loaded !== null && ask !== undefined) rememberDistribution(key, loaded);
+  return loaded;
+}
+
+async function absenceNote(deps: ServerDeps, principal: Principal, ref: string): Promise<string> {
+  const ask = deps.workflows.absence;
+  if (ask === undefined) return '版本不存在、未分配或已下架';
+  const why = await ask(principal, ref);
+  if (why === null) return '版本已发布并分配，但不能作为本地工具下发';
+  return ABSENCE_NOTE[why];
+}
 export const digestHeader = (bytes: Uint8Array): string => `sha-256=:${Buffer.from(sha256Hex(bytes), 'hex').toString('base64')}:`;
 export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:[\/\\%]|$)/i.test(target ?? ''); }
 function rawPath(target: string): string { return target.replace(/^http:\/\/[^/]+/i, ''); }
@@ -36,10 +87,16 @@ export async function handleLocalTools(request: IncomingMessage, response: Serve
     if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
     else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
     else {
-      status = 404; bytes = ABSENT; note = '路径或版本不可用';
+      status = 404; bytes = ABSENT;
       const parsed = parsePackRef(ref);
-      if (raw.startsWith(PREFIX) && !/[?%#\\]/.test(raw) && parsed?.version && (path === '' && slash < 0 || path !== '' && packPathProblem(path) === null)) {
-        const loaded = await deps.workflows.forUser(principal, ref);
+      const pathShape = path === '' && slash < 0 || (path !== '' && packPathProblem(path) === null);
+      if (!raw.startsWith(PREFIX)) note = '版本引用格式不对';
+      else if (/[?%#\\]/.test(raw)) note = '路径含编码分隔符或保留字符';
+      else if (!parsed?.version) note = '版本引用格式不对';
+      else if (path.split('/').includes('..')) note = '路径含 ..';
+      else if (!pathShape) note = '路径不在包内文件的形状里';
+      else {
+        const loaded = await openForDownload(deps, principal, ref);
         if (loaded && loaded.manifest.files.some((file) => file.path.startsWith('tools/'))) {
           digest = loaded.pack.digest;
           const manifest = PackManifest.parse(loaded.manifest); const canonical = Buffer.from(canonicalBytes(manifest));
@@ -52,7 +109,8 @@ export async function handleLocalTools(request: IncomingMessage, response: Serve
             headers['content-digest'] = digestHeader(bytes); headers.etag = `"${sha256Hex(bytes)}"`;
             headers['content-type'] = path === '' ? 'application/json' : 'application/octet-stream';
           } else note = '清单外路径';
-        } else note = '不存在、无权、下架或没有本地工具';
+        } else if (loaded) note = '这个版本没有本地工具';
+        else note = await absenceNote(deps, principal, ref);
       }
     }
   } catch { status = 500; bytes = Buffer.from('Hub 内部错误\n'); note = '存储被改动过或读取失败'; log('本地工具出口：存储被改动过或读取失败'); }

@@ -85,7 +85,7 @@ interface ImportUse {
 interface ModuleFacts {
   imports: ImportUse[];
   /** Dynamic imports whose specifier is not a string literal, and builtins taken by getBuiltinModule in a way not checkable. */
-  computed: { line: number; what: 'import' | 'builtin' }[];
+  computed: { line: number; what: 'import' | 'builtin' | 'createRequire' }[];
   unsupported: { what: string; line: number }[];
   syntax: { message: string; line: number }[];
   exports: Set<string>;
@@ -164,6 +164,21 @@ function namespaceHasValues(ts: typeof TS, node: TS.ModuleDeclaration): boolean 
   return body.statements.some((s) => !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s) && !(ts.isModuleDeclaration(s) && !namespaceHasValues(ts, s)));
 }
 
+const CREATE_REQUIRE_FIX = "删掉 createRequire，也不要 getBuiltinModule('module' 或 'node:module')；本地工具只用 import 导入包内文件或 Node 内置模块";
+
+/** A tools file that can reach createRequire: the module loader, by name, default, namespace or dynamic import. */
+function exposesCreateRequire(ts: typeof TS, node: TS.ImportDeclaration): boolean {
+  const spec = literalText(ts, node.moduleSpecifier);
+  if (spec !== 'module' && spec !== 'node:module') return false;
+  const clause = node.importClause;
+  if (clause === undefined || clause.phaseModifier === ts.SyntaxKind.TypeKeyword) return false;
+  if (clause.name !== undefined) return true;
+  const named = clause.namedBindings;
+  if (named === undefined) return false;
+  if (ts.isNamespaceImport(named)) return true;
+  return named.elements.some((element) => !element.isTypeOnly && (element.propertyName ?? element.name).text === 'createRequire');
+}
+
 function analyze(ts: typeof TS, path: string, text: string, tools = false): ModuleFacts {
   const facts: ModuleFacts = { imports: [], computed: [], unsupported: [], syntax: [], exports: new Set(), star: [], esm: false };
   const kind = TYPESCRIPT.includes(posix.extname(path)) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
@@ -188,6 +203,7 @@ function analyze(ts: typeof TS, path: string, text: string, tools = false): Modu
       if (!typeOnly) facts.esm = true;
       const specifier = literalText(ts, node.moduleSpecifier);
       if (!typeOnly && specifier !== undefined) facts.imports.push({ specifier, line: lineOf(node), json: jsonAttribute(ts, node.attributes), builtinOnly: false });
+      if (tools && exposesCreateRequire(ts, node)) facts.computed.push({ line: lineOf(node), what: 'createRequire' });
       return;
     }
     if (ts.isExportDeclaration(node)) {
@@ -225,14 +241,16 @@ function analyze(ts: typeof TS, path: string, text: string, tools = false): Modu
       if (property) facts.unsupported.push({ what: 'constructor parameter property', line: lineOf(node) });
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const specifier = literalText(ts, node.arguments[0]);
-      if (specifier === undefined) facts.computed.push({ line: lineOf(node), what: 'import' });
+      if (tools && (specifier === 'module' || specifier === 'node:module')) facts.computed.push({ line: lineOf(node), what: 'createRequire' });
+      else if (specifier === undefined) facts.computed.push({ line: lineOf(node), what: 'import' });
       else facts.imports.push({ specifier, line: lineOf(node), json: dynamicJsonAttribute(ts, node.arguments[1]), builtinOnly: false });
     } else if (isGetBuiltinModule(ts, node)) {
       // Only a direct call with a literal name can be checked; any other use of it (a computed name, a reference kept for
-      // later) is reported like a computed import.
+      // later) is reported like a computed import. The module builtin exposes createRequire, which loads any package.
       const call = node.parent;
       const specifier = ts.isCallExpression(call) && call.expression === node ? literalText(ts, call.arguments[0]) : undefined;
-      if (specifier !== undefined) facts.imports.push({ specifier, line: lineOf(node), json: false, builtinOnly: true });
+      if (tools && (specifier === 'module' || specifier === 'node:module')) facts.computed.push({ line: lineOf(node), what: 'createRequire' });
+      else if (specifier !== undefined) facts.imports.push({ specifier, line: lineOf(node), json: false, builtinOnly: true });
       else facts.computed.push({ line: lineOf(node), what: 'builtin' });
     } else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
       // `const { getBuiltinModule } = process`: the property taken out of an object.
@@ -336,7 +354,9 @@ async function scanModules(files: ReadonlyMap<string, Uint8Array>, entries: read
       problems.push(
         what === 'import'
           ? problem('functions.import_computed', path, `${path} 第 ${line} 行的动态 import 的模块名不是字符串字面量，发布时无法核对`, '用字符串字面量写模块名', { line })
-          : problem('functions.import_computed', path, `${path} 第 ${line} 行取 getBuiltinModule 的方式发布时无法核对（只认直接以字符串字面量调用）`, "写成 process.getBuiltinModule('node:<模块名>')；包内函数只能用纯计算的内置模块", { line }),
+          : what === 'createRequire'
+            ? problem('functions.import_computed', path, `${path} 第 ${line} 行通过 createRequire 或 module 的加载器导入，发布时无法核对，而且能加载任意包`, CREATE_REQUIRE_FIX, { line })
+            : problem('functions.import_computed', path, `${path} 第 ${line} 行取 getBuiltinModule 的方式发布时无法核对（只认直接以字符串字面量调用）`, "写成 process.getBuiltinModule('node:<模块名>')；包内函数只能用纯计算的内置模块", { line }),
       );
     }
     if (DETECTED.includes(posix.extname(path)) && !module.esm && module.syntax.length === 0) {
@@ -436,12 +456,22 @@ export function scanFunctions(files: ReadonlyMap<string, Uint8Array>, entries: r
   return scanModules(files, entries, policy);
 }
 /** Client-side tools have no Hub dependencies: all builtins, no third-party packages, no required export. */
+const COMMONJS_EXT = new Set(['.cjs', '.cts']);
+
 export async function scanTools(files: ReadonlyMap<string, Uint8Array>): Promise<PackProblem[]> {
+  const direct: PackProblem[] = [];
+  for (const path of files.keys()) {
+    if (!path.startsWith('tools/') || !COMMONJS_EXT.has(posix.extname(path))) continue;
+    direct.push(problem('tools.module_format', path, `${path} 是 CommonJS 模块（${posix.extname(path)}）；本地工具只运行 ES 模块，不能用 require 加载包`, '改成 .mjs、.js、.mts 或 .ts，用 import 和 export，不要用 require', { line: 1 }));
+  }
   const entries = [...files.keys()].filter((path) => path.startsWith('tools/') && CODE.includes(posix.extname(path))).map((module) => ({ module, export: '', file: module, field: '' }));
   const found = await scanModules(files, entries, { builtins: [], packages: [] }, true);
-  return found.map((p) => ({
-    ...p, line: p.line ?? 1, rule: p.rule.replace(/^functions\./, 'tools.'),
-    message: p.rule === 'functions.import_package' ? `${p.file} 第 ${p.line ?? 1} 行导入了第三方包；本地工具只能用 Node 内置模块和包内文件` : p.message.replaceAll('包内函数', '本地工具').replaceAll('沙箱只运行', '本地工具只运行'),
-    fix: p.rule === 'functions.import_package' ? '本地工具只能导入 Node 内置模块和清单里的包内文件；移除第三方依赖' : p.rule === 'functions.unsupported_syntax' ? '改用 ES 模块 import/export 和可擦除的 TypeScript 语法；不使用 CommonJS' : p.rule === 'functions.import_computed' ? '把模块名写成字符串字面量；本地工具只导入包内文件或 Node 内置模块' : p.fix,
-  }));
+  return [
+    ...direct,
+    ...found.map((p) => ({
+      ...p, line: p.line ?? 1, rule: p.rule.replace(/^functions\./, 'tools.'),
+      message: p.rule === 'functions.import_package' ? `${p.file} 第 ${p.line ?? 1} 行导入了第三方包；本地工具只能用 Node 内置模块和包内文件` : p.message.replaceAll('包内函数', '本地工具').replaceAll('沙箱只运行', '本地工具只运行'),
+      fix: p.rule === 'functions.import_package' ? '本地工具只能导入 Node 内置模块和清单里的包内文件；移除第三方依赖' : p.rule === 'functions.unsupported_syntax' ? '改用 ES 模块 import/export 和可擦除的 TypeScript 语法；不使用 CommonJS' : p.rule === 'functions.import_computed' && p.fix !== CREATE_REQUIRE_FIX ? '把模块名写成字符串字面量；本地工具只导入包内文件或 Node 内置模块' : p.fix,
+    })),
+  ];
 }

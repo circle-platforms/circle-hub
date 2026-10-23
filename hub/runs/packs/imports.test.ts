@@ -195,3 +195,27 @@ test('local tools accept every Node builtin including prefix-only builtins', asy
   const { scanTools } = await import('./imports.ts');
   for (const name of builtinModules) assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode(`import '${specifierOf(name)}';`)]])), [], name);
 });
+
+test('local tools refuse CommonJS files and createRequire package loads', async () => {
+  const { scanTools } = await import('./imports.ts');
+  const fix = "删掉 createRequire，也不要 getBuiltinModule('module' 或 'node:module')；本地工具只用 import 导入包内文件或 Node 内置模块";
+  for (const path of ['tools/run.cjs', 'tools/run.cts']) {
+    const problems = await scanTools(new Map([[path, encode("require('zod');\n")]]));
+    assert.equal(problems.length, 1, JSON.stringify(problems));
+    assert.equal(problems[0]?.rule, 'tools.module_format');
+    assert.equal(problems[0]?.file, path);
+    assert.equal(problems[0]?.fix.includes('require'), true);
+  }
+  assert.deepEqual(await scanTools(new Map([['tools/task.mjs', encode("import { builtinModules } from 'node:module';\nvoid builtinModules;\n")]])), []);
+  for (const source of [
+    "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('zod');\n",
+    "import { createRequire } from 'module';\ncreateRequire(import.meta.url)('zod');\n",
+    "process.getBuiltinModule('node:module').createRequire(import.meta.url)('zod');\n",
+    "process.getBuiltinModule('module').createRequire(import.meta.url)('zod');\n",
+  ]) {
+    const problems = await scanTools(new Map([['tools/task.mjs', encode(source)]]));
+    const hit = problems.find((item) => item.rule === 'tools.import_computed');
+    assert.ok(hit, JSON.stringify(problems));
+    assert.equal(hit.fix, fix);
+  }
+});
