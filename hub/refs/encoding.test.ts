@@ -81,3 +81,9 @@ test('GBK four-byte sequences retain every decodable prefix boundary and later l
     assert.throws(() => decodeEncoding('text@1', bad, 'gbk'), (error: unknown) => error instanceof ParseEncodingError && error.offset === prefix.length + 5);
   }
 });
+
+test('DTD processing instructions cannot hide declarations or create false ENTITY tokens', () => {
+  assert.throws(() => xmlParser.parse(Buffer.from(`<!DOCTYPE x [<?pi don't?><!ENTITY a "b">]><x/>`)), ParseForbiddenError);
+  assert.equal(xmlParser.parse(Buffer.from('<!DOCTYPE x [<?pi <!ENTITY ?>]><x/>')).model.root.name, 'x');
+  assert.equal(xmlParser.parse(Buffer.from(`<!DOCTYPE x [<?pi "'< !ENTITY ?> <!-- <!ENTITY a "b"> -->]><x/>`)).model.root.name, 'x');
+});

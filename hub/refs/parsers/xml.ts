@@ -358,6 +358,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
   parser.on('doctype', (value) => {
     for (let i = 0; i < value.length; i++) {
       if (value.startsWith('<!--', i)) { const end = value.indexOf('-->', i + 4); i = end < 0 ? value.length : end + 2; }
+      else if (value.startsWith('<?', i)) { const end = value.indexOf('?>', i + 2); if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部的处理指令没有结束', here()); i = end + 1; }
       else if (value[i] === '"' || value[i] === "'") { const end = value.indexOf(value[i], i + 1); i = end < 0 ? value.length : end; }
       else if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
     }
