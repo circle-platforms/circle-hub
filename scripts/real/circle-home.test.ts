@@ -295,7 +295,7 @@ test('readonly file tools require every path inside the configured workspace', a
     const inside = join(f.workdir, 'inside.txt'); writeFileSync(inside, 'synthetic'); const outside = join(f.dir, 'outside.txt'); writeFileSync(outside, 'synthetic');
     symlinkSync(outside, join(f.workdir, 'escape.txt'));
     for (const tool of ['read_file', 'ls', 'glob', 'grep']) {
-      assert.equal(f.decide(f.input(tool, {}, [inside])).decision, 'allow');
+      assert.equal(f.decide(f.input(tool, tool === 'glob' ? {pattern:'**/*'} : {}, [inside])).decision, 'allow');
       for (const paths of [[], [outside], [inside, outside], [join(f.workdir, 'escape.txt')], [1], ['']]) assert.equal(f.decide(f.input(tool, {}, paths)).decision, 'deny', tool);
     }
   } finally { f.close(); }
@@ -401,5 +401,14 @@ test('only the installed script spelling can reach a skill send approval hook',a
     assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --send`})).decision,'ask');
     for(const name of ['T.ts','t.TS'])assert.equal(f.decide(f.input('execute',{command:`node ${join(f.root,'tools',name)} --send`})).decision,'deny');
     const alias=join(f.root,'tools','alias.ts');symlinkSync(f.script,alias);assert.equal(f.decide(f.input('execute',{command:`node ${alias} --send`})).decision,'deny');
+  }finally{f.close();}
+});
+
+test('glob patterns cannot escape the workspace independently of their reported path',()=>{
+  const f=skillsFixture();
+  try{
+    for(const pattern of [join(f.dir,'outside','**/*'),'../../**/*.yml','~/private/**/*','{../outside,safe}/**/*','{safe,/outside}/**/*',String.raw`nested/\.\./\.\./outside/*`])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'deny',pattern);
+    for(const pattern of ['**/*.ts','{src,test}/**/*.ts','name..literal/*'])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'allow',pattern);
+    assert.equal(f.decide(f.input('read_file',{path:'large_tool_results/example'},[join(f.workdir,'large_tool_results/example')])).decision,'allow','Circle-owned offload reads retain their existing semantics');
   }finally{f.close();}
 });

@@ -132,6 +132,17 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     while (!exists(parent)) { const next = path.dirname(parent); if (next === parent) throw new Error('path unavailable'); tail.unshift(path.basename(parent)); parent = next; }
     return path.resolve(fs.realpathSync.native(parent), ...tail);
   };
+  const safeGlob = (value: unknown): boolean => {
+    if (typeof value !== 'string' || !value.length || /[\0\r\n]/.test(value)) return false;
+    // Inspect literal, escaped and separator spellings before the backend expands braces or globs.
+    const forms = [value, value.replace(/\\([\s\S])/g, '$1'), value.replaceAll('\\', '/')];
+    return forms.every(form => {
+      const normalized = form.replaceAll('\\', '/');
+      return !path.isAbsolute(form) && !path.win32.isAbsolute(form) && !normalized.startsWith('~')
+        && !normalized.split(/[/{},()|]/).some(segment => segment === '..')
+        && !/(?:^|[{,(|])(?:~|\/|[A-Za-z]:)/.test(normalized);
+    });
+  };
   const scriptOf = (command: string, root: string): string | null => {
     let line = command;
     if (command.includes('\n')) {
@@ -265,6 +276,7 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some(file => typeof file !== 'string'))) throw new Error('invalid paths');
     if (allowed.includes(input.tool_name)) result = allow();
     else if (['read_file', 'ls', 'glob', 'grep'].includes(input.tool_name)) {
+      if(input.tool_name==='glob'&&!safeGlob(input.tool_input.pattern))throw new Error('invalid glob pattern');
       const root = canonical(workspace);
       if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid cwd');
       if (Array.isArray(input.paths) && input.paths.length && input.paths.every(file => typeof file === 'string' && file.length > 0 && under(canonical(path.resolve(input.cwd as string, file)), root))) result = allow();
