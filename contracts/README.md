@@ -121,6 +121,11 @@ Rules for a stub:
 
 ## Needs from other packages
 
+- **hub-unknown-exits (codex-b), review item 5:** connect reason selectors in terminals.ts routeOf and evaluate.ts routing,
+  and make repairRounds match the reachable routes. Currently reasons do not route but may raise the repair budget;
+  contract/publication validation is not a substitute for that runtime work. Define and test exact-code/reason/wildcard
+  precedence there. This repair intentionally does not edit terminals.ts or any unknown producer.
+
 - **records**: `hub/records/store.ts` accepts only `/^[a-z_]+@[0-9]+$/` as a schema name, so storing a body registered as `catalog-entry@1`, `check-outcome@1`, `run-summary@1`, `pack-summary@1` or `submission-received@1` throws `schema must be name@major`. Please validate schema names with contracts' `SchemaId` (which also refuses leading-zero majors).
 - **rules**: `CheckOutcome.grounds` in `contracts/src/tables.ts` should be `z.array(Ground)` (import it from `./reference.ts`), so an outcome never rests on a bare `entry:` (B01 R[5]); `JsonPointer` can be imported from `./common.ts` instead of declared twice; give `JsonPath` its `.max(512, { abort: true })` and `JsonPointer` a length cap the same way, since their patterns overflow on megabytes. Then run `npm run gen:contracts` or ask here.
 - **rules, refs, packs, records**: the reference grammar is tighter (decision 3) and every shape is strict (decision 5); please rerun your tests against this version. The contracts owner ran only `contracts/**` tests.
@@ -163,3 +168,131 @@ and never part of drift counts. Rule diagnostics are separate from malformed sou
 entry reference. Prefix/rule filters apply to the unchecked totals as they do to checked source occurrences.
 
 经集成者作为契约负责人授权，core.contribution.* 收录核心回注准入核对的十个码。codes.json 的历史 interpreter 字段在这里表示核心发出方 contribution，不表示新增已安装解释器；when/fix 只在核心登记。凭据拒绝沿用 CREDENTIAL_IN_UPLOAD。
+
+## Unknown-sweep contract handoff
+
+Model 10 owns the rules. `keep_unknown` stays the compatibility disposition code; its generated label is now 带期限的暂缓
+(source: the model owner, 2026-10-24). The label does not implement scheduling: expiry, reconciliation and request creation
+remain the consuming engine's work. Exit actions come from generated `exit_action`, including automatic reevaluation;
+`keep_unknown` is not an exit action.
+
+### Recovery fields (task item 3; input and history boundaries)
+
+`CheckOutcome` with unknown requires top-level `missing` and `reason`; `data.missing` is not an alias. `exit` is optional
+there: a package need not know the runner or publisher account. The Hub resolves the cause and binds its exit before
+writing a new transitional `LayerResult`. New unchecked, incomplete, not_run and no_verdict layers require `missing` plus
+`exit`. `gaps` retains additional independent causes with their own facts and exits. It supplements the primary cause.
+
+`UnknownExit` uses generated `exit_action` and request_kind. Automatic actions have `audience: {hub:true}`; requests have a
+named `{user: <Hub account id>}` or `{external: {mapping: <rec reference>, identity: <mapped identity>}}`, request_kind and
+an absolute ISO due time. Roles such as “runner” or “admin” are not named recipients. The engine must verify mapping,
+visibility and scheduling; the schema does not perform effects or authorize a recipient. A request kind is forbidden on
+automatic actions. Dates are validated structurally, never against wall time when reading history.
+
+`ValidationResult` is the new-write boundary. `StoredValidationResult` / `readStoredValidationResult` are read-only legacy
+entry points: the latter returns `{result, notices}` with paths and “出口未写” / “缺失事实未写”, without backfilling either
+field in the record. Consumers must switch history rendering to this reader; no historical records are rewritten here.
+The new conditional requirements are also emitted in JSON Schema, not only Zod refinements. The generator's full-snapshot
+symlink test now sizes its capture buffer from the actual serialized expected snapshot; no production or timeout limit is
+changed. hub-unknown-exits must derive actions/create requests, preserve gaps, and use the strict writer after binding exits.
+
+### Table absence and empty aggregates (task item 6)
+
+The required flags describe a verified refutation (`core.structure.required_empty`, `data.missing`) attributed to whoever
+provided the subject. They never convert a mandatory absent location into unknown. Optional absence is distinct from an
+empty selected collection. `range@1` min/max thresholds accept `empty: refute|support`, omission meaning refute; count and sum
+keep their defined empty numeric value and do not accept the min/max-only option. This is a table-format selector derived
+from the generated verdict axis. The range interpreter executes the empty min/max decision with `data.empty: true`;
+required-location attribution remains hub-retry-split's work. Complete catalog absence
+is a refutation; an incomplete catalog needs its missing sources and recovery, not a fabricated complete scope. View scope
+fields are deliberately left to the owner of views.ts.
+
+### Cause routing and skipped work (task item 7)
+
+ErrorHandlingRow selects exactly one `code` or generated `reason`; duplicate selectors are checked in separate namespaces.
+The existing repair/max_rounds contract is unchanged. Static pack validation recognizes reason selectors without pretending
+that a reason is an installed interpreter code. Runtime cause routing, repair exhaustion and B07 records remain
+hub-unknown-exits's work. Skipped submissions may name remaining work/intent; their required reason is preserved in the
+new result `skip_reason` field when the consumer projects it, rather than being lost behind the declared_skip code.
+
+### Publication and check-work declarations (task item 5 and the limits part of item 10)
+
+`PublishableRequirementsFile` is the strict new-publication guard: a static fact layer has a check, and a dynamic fact
+layer names its P07 `observation` contract. Judgment-capable requirements are not forced to install a fact check. The base
+`RequirementsFile` remains the frozen legacy-file reader. `hub/runs/packs/validate.ts` now uses the strict guard
+at publication, preserving per-field checks/observation refusal paths; `load.ts` keeps the historical reader. These guards do not claim that a referenced observation has actually happened.
+
+`CheckEntry.limits` has the sandbox's camel-case work controls (timeoutMs, memoryMb, outputBytes, logBytes, inputBytes).
+Bounds are refused, not silently clamped; omission inherits service defaults. A source-only cross-check test anchors the
+contract's capacities to the runtime sandbox constants without importing/executing the sandbox. These are check-work limits,
+not P11 effect counts/durations. hub-retry-split must pass them into execution, split/retry work and attach actual recovery.
+
+### Submission deadline and successor declarations (task item 8)
+
+`StartRunInput.submission_due` carries a requested absolute deadline; `RunSummary` and the readable `RunRecord` preserve it
+when recorded, with omission retained on history. `NewRunRecord` is the strict write boundary: a deadline is mandatory and
+later than creation. It never derives a deadline from wall time on a historical read. The engine must bind policy/defaults
+before that write and implement expiry/requests; adding this field alone schedules nothing.
+
+`workflow@1.predecessor: required` is an explicit start constraint, separate from independent judgment. A Hub-hosted
+event successor must name its predecessor and runner and contain only fact requirements; the original standing-obligation
+reader remains supported. The service must prove the same runner and actual root-update event from records, not merely
+trust these shape fields. `RequirementSummary.observation` exposes the declared dynamic observation identity when copied.
+run.ts also changes in hub-read-absence; the integrator must retain both sets of optional historical fields when merging.
+
+### Read absence and routing declarations (task item 9)
+
+`ReadProjectionOutput` can return `artifacts: []` plus `absent: {code: SOURCE_ABSENT, system, object, observed_at, responses?}`.
+It is an observation of a named object, not an error or a permission denial. Found content and incomplete lookup cannot be
+mixed with whole-object absence; the JSON Schema repeats those constraints. The service must verify actual responses,
+permission and timestamps and bind originals before treating it as observed (hub-read-absence's work).
+
+Routes can declare finite pagination and same-origin redirect capacities. Each follow-up is a separately planned, allowed,
+recorded request; the declaration does not enable a hidden transport follow. `ReadResourceRoutingSet` is the activation
+boundary for registry-provided enabled/type/environment facts: different enabled resources cannot claim the same type in
+the same environment. The registry must call it during activation/routing; this task does not alter a real resource.
+
+### Catalog syntax and remaining ownership (task item 10)
+
+The existing catalog table-language primitive list adds `hostname` and `ip_or_hostname`; they are external-format parameter
+types, like the existing int/ipv4/enum syntax, not a new Hub vocabulary axis. `address_role` names a role from the bound
+published runtime contract; the schema never invents a device role. Minimal parameter checks accept bounded ASCII DNS labels
+(single labels, final dot and ASCII punycode spelling), IPv4/IPv6 or that host union; no DNS lookup, URL coercion or real device
+operation happens. New branch tests include synthetic valid/invalid words and declared length bounds.
+
+A raw scalar source `limit` is not accepted as a universal CatalogParam field. The source producer must interpret its own
+format and emit existing semantic constraints: singleton numeric minimum=maximum, numeric ceiling maximum, enum member
+values, or string length maxLength. hub-view-scope owns the APV command-tree translation, actual address-role mapping,
+automatic credential acceptance/scanner pagination and validity evaluation. `not_evaluated` was already in model 10 and its
+generated vocabulary on this baseline. Those runtime operations are not implemented by adding these contract declarations.
+
+### Scope and rollout
+
+Model/theory text for task items 1/2/4 and the high-level rules was already committed by the integrator in model 10; this
+branch does not rewrite it. Besides the explicitly approved label/source note it changes shapes, generated files and tests.
+The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
+still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
+runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
+
+History rendering is connected through `readStoredValidationResult` and `StoredPartitionItem`: `get_nodes` retains
+counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as
+“出口未写” and “缺失事实未写”, including partition/item pointers and paged results. Reading never backfills those fields
+or changes stored bytes; current admission remains strict.
+
+### Required vocabulary scan for contract changes
+
+In addition to focused contract tests and generation checks, run:
+
+```sh
+node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts
+```
+
+The existing `.github/workflows/checks.yml` Unit tests job runs `npm run test:unit`; its `packs/**/*.test.ts` pattern
+already includes this scan. No extra CI job or relaxed exception is needed. Review item 6's old dispatch comparisons are
+fixed on this baseline. The narrow scan still reports unrelated lease_op comparisons in `hub/server/cli-admin.ts` and
+`packs/workflow/test-bed/functions/check-bed.ts`; those remain visible failures, not exclusions or verified passes.
+Their owners must fix the generated types; this branch does not edit the pack's unknown producers.
+
+The check-work contract now names both `CHECK_LIMITS_MIN` and `CHECK_LIMITS_MAX`; source-only tests anchor each bound
+to the independent sandbox protocol constants and reject values below the lower bound. `MappedIdentity` describes a
+mapped external account; it deliberately has its own diagnostic instead of reusing the missing-fact field type.

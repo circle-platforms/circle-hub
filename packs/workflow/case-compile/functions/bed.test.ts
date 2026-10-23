@@ -103,3 +103,10 @@ it('literal addresses in invalid extra arguments are still examined', () => {
   const data = goodData(); data.steps[0].args.push('192.0.2.250', '192.0.2.251');
   assert.ok(checkAddresses(subjectOf(data)).some((v) => v.code === 'case-compile.address_off_bed'));
 });
+
+it('lineage addresses held without expiry remain allocated while another user cannot use them',()=>{
+  const bed=bedsOf()[0];const now='2036-10-24T08:00:00.000Z';
+  const lease={key:`bed/${bed.name}/ip/192.0.2.20`,until:null,mine:true};
+  assert.deepEqual(readAddress(bed,[lease],now,'192.0.2.20'),{kind:'allocated'});
+  assert.deepEqual(readAddress(bed,[{...lease,mine:false}],now,'192.0.2.20'),{kind:'off_bed'});
+});

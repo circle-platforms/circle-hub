@@ -394,6 +394,12 @@ read; results, run records and production results over the record limit; queries
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
 
+### 生产投影的确定说明
+
+只有显式标记 nature=fact、verdict=support 的组会升格，且每条 grounds 都按本次运行的读取范围核验。说明对象只接收 nature、verdict、message、grounds 和可选 data；considered、details、view 等附加元数据必须显式放在 data 内，不静默丢弃额外键。message 和 grounds 分别进入主张文字和根据，data 原样进入 statement.data。pointer 保留 /groups/<序号> 以回读冻结输出；投影输出不合格的拒绝不伪造调用参数 path，而在消息和包维护人的修正动作中说明位置与规则。
+
+投影说明统一是 cross_item 的提示用途事实，没有 requirement，不参与要求项满足或分区计数。Claim 不承载检查 tier，构造时也不传这个无效字段；回答按上述结构化位置和函数凭据标出“投影说明（提示，不参与要求项）”，不把它和条目检查事实混为同一用途，也不改变根据等级。
+
 ### Standing obligations and current read tiers
 
 A standing obligation reads source bytes as its configuring administrator through
@@ -545,3 +551,28 @@ effective read permissions, not a trusted byte bypass. Unexpected function-read 
 K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
+
+A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
+extend is refused for the whole request before effects, and release still requires the same user and predecessor
+lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
+unbounded; fences, holder identity and lineage remain mandatory.
+
+Lease views freeze `since`, `run`, `until`, `mine`, unfinished `jobs` and authorized `holder` identities, plus registration
+rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_registrations` are retained on the run;
+evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
+read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
+`DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.
+
+Owner `force_release` checks every key, owner/admin authority, active row, nonempty reason and unfinished dispatch job
+before any operation executes. Unfinished jobs refuse with job status/disposition instructions; local release cannot
+stop remote work. The service rechecks owner authorization under the registration lock, increments fences, and records
+the acting user, reason and original holders. Run records preserve released keys and their prior runs; originals remain
+append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
+read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
+later acquire or run-record write fails; their action records remain the source of truth.
+
+The final force-release guard runs under the same database lock used by dispatch reservation insertion. It re-reads
+unfinished jobs while the lock is held; a competing reservation rechecks fences in that transaction before it commits.
+The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
+Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
+older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.

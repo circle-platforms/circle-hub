@@ -1,3 +1,4 @@
+import { occupancyText } from './ownership.ts';
 import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
 // conclude: the one computation the search/facts/acquire conclusions rest on, shared by the projection
 // (functions/project.ts) and the check (functions/check-bed.ts), so the check recomputes exactly what the projection
@@ -9,19 +10,19 @@ import { bedFacts } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
-export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'extend' | 'release'>;
+export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'release' | 'register' | 'unregister' | 'force_release'>;
 
 /** A need as the projection and the check see it (parameters normalized). */
 export interface BedNeed {
   devices: NeedDevice[];
   build?: string;
-  hours: number;
 }
 
 /** The frozen lease view (RunContext.leases), or its rows as matchNeed reads them. */
 export interface FrozenLeases {
   now: string;
-  entries: Array<{ key: string; until: string; mine?: boolean }>;
+  entries: Array<{ key: string; until: string | null; mine?: boolean; since?: string; run?: string; holder?: {user:string;name:string}; jobs?: string[] }>;
+  registrations?: Array<{prefix:string;mine:boolean;owner?:{user:string;name:string}}>;
 }
 
 export interface Normalized {
@@ -31,6 +32,8 @@ export interface Normalized {
   addresses: { segment: string; count: number } | null;
   /** The booking run's id (extend and release; required there, ignored elsewhere). */
   booking: string | null;
+  reason: string;
+  devices: string[] | null;
 }
 
 export interface PlanFailure {
@@ -39,10 +42,8 @@ export interface PlanFailure {
   fix: string;
 }
 
-export const MAX_HOURS = 8;
-export const DEFAULT_HOURS = 2;
 
-export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', extend: '续期预订', release: '释放预订' };
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', release: '释放预订', register:'登记台架', unregister:'注销台架', force_release:'强制释放' };
 
 export function isAction(value: unknown): value is Action {
   return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
@@ -52,15 +53,17 @@ export function isAction(value: unknown): value is Action {
 export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, LeaseEntry> {
   const out: Record<string, LeaseEntry> = {};
   for (const entry of frozen?.entries ?? []) {
-    if (typeof entry?.key === 'string' && typeof entry.until === 'string') out[entry.key] = { until: entry.until };
+    if (typeof entry?.key === 'string' && (entry.until === null || typeof entry.until === 'string')) out[entry.key] = { until: entry.until };
   }
   return out;
 }
 
 /** Parameters of a run call: action (default search), need, bed, addresses and booking, every problem named with its fix. */
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
-  const action: Action = isAction(params.action) ? params.action : 'search';
   const needRaw = isRecord(params.need) ? params.need : {};
+  if (params.action === 'extend' || Object.hasOwn(params,'hours') || Object.hasOwn(needRaw,'hours')) return {code:'test-bed.duration_removed',message:'不再接受 hours 或 extend',fix:'台架预订不限时长，用完由运行释放'};
+  if (params.action !== undefined && !isAction(params.action)) return {code:'test-bed.bad_action',message:'不认识的台架动作',fix:'使用 search、facts、acquire、release、register、unregister 或 force_release'};
+  const action: Action = isAction(params.action) ? params.action : 'search';
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
   for (const raw of rawDevices) {
@@ -73,10 +76,6 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
     devices.push({ type, count });
   }
   const build = typeof needRaw.build === 'string' && needRaw.build !== '' ? needRaw.build : undefined;
-  const hoursRaw = params.hours ?? needRaw.hours ?? DEFAULT_HOURS;
-  if (typeof hoursRaw !== 'number' || !Number.isInteger(hoursRaw) || hoursRaw < 1 || hoursRaw > MAX_HOURS) {
-    return { code: 'test-bed.bad_hours', message: `hours ${JSON.stringify(hoursRaw)} 不是 1 到 ${MAX_HOURS} 的整数小时`, fix: `hours 写 1 到 ${MAX_HOURS}（单次最多 ${MAX_HOURS} 小时）` };
-  }
   const bed = typeof params.bed === 'string' && params.bed !== '' ? params.bed : null;
   let addresses: Normalized['addresses'] = null;
   if (params.addresses !== undefined && params.addresses !== null) {
@@ -90,13 +89,17 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
     addresses = { segment: params.addresses.segment, count };
   }
   const booking = typeof params.booking === 'string' && params.booking !== '' ? params.booking : null;
-  if ((action === 'extend' || action === 'release') && booking === null) {
+  if ((action === 'release') && booking === null) {
     return { code: 'test-bed.bad_booking', message: `${ACTION_LABEL[action]}要 booking 参数（预订那次运行的编号）`, fix: 'booking 写预订运行的编号（run_…），开始这次运行时 predecessor 写同一个编号' };
   }
-  return { action, need: { devices, build, hours: hoursRaw }, bed, addresses, booking };
+  const reason=typeof params.reason==='string'?params.reason:'';
+  if ((action==='unregister'||action==='force_release')&&!reason.trim()) return {code:'test-bed.reason_required',message:'必须写释放或注销的理由',fix:'reason 照用户原话填写'};
+  if ((action==='register'||action==='unregister'||action==='force_release')&&bed===null) return {code:'test-bed.unknown_bed',message:'必须指定台架',fix:'bed 写当前清单里的台架名'};
+  if(params.devices!==undefined && (!Array.isArray(params.devices)||params.devices.length===0||params.devices.some(d=>typeof d!=='string')||new Set(params.devices).size!==params.devices.length))return {code:'test-bed.bad_devices',message:'devices 须为不重复的设备名数组',fix:'devices 写清单里的设备名，不写表示整个台架'};
+  return { action, need: { devices, build }, bed, addresses, booking, reason, devices:Array.isArray(params.devices)?params.devices as string[]:null };
 }
 
-const matchNeedOf = (need: BedNeed): Need => ({ devices: need.devices, hours: need.hours, ...(need.build === undefined ? {} : { build: need.build }) });
+const matchNeedOf = (need: BedNeed): Need => ({ devices: need.devices, ...(need.build === undefined ? {} : { build: need.build }) });
 
 /** The manifest beds, or the problems the projection fails the whole call with. */
 export function manifestBeds(model: unknown): { ok: true; beds: ManifestBed[] } | { ok: false; problems: Array<{ pointer: string; message: string; fix: string }> } {
@@ -133,7 +136,7 @@ export function declaredInstalls(beds: readonly ManifestBed[]): { installed: Rec
 }
 
 /** One search conclusion per bed (matchNeed's order); the build verdict reads the manifest's declared installs. */
-export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string): SearchFields[] {
+export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string, frozen?: FrozenLeases): SearchFields[] {
   // The manifest's installed entries are the phase-1 install records (declared, unchecked; the observed tier comes
   // with the executor). A device without one stays 没有记录（未知）, never a mismatch.
   const { installed, builds } = declaredInstalls(beds);
@@ -146,7 +149,7 @@ export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<
     build_ok: m.buildOk,
     build_source: m.buildSource,
     spare_devices: m.spareDevices,
-    conclusion: m.conclusion,
+    conclusion: m.conclusion+ (frozen ? '；'+occupancyText(beds.find(b=>b.name===m.bed)!,frozen).join('；') : ''),
   }));
 }
 
@@ -158,18 +161,19 @@ export interface FactsFields {
   backends: unknown[];
   unknowns: unknown[];
   /** The manifest's declared installs of this bed's devices (声明，未核对); empty when none. */
+  occupancy: string[];
   installed: Array<{ device: string; build: string; base: string | null }>;
 }
 
 /** One facts conclusion per bed (the manifest's order). */
-export function factsFields(beds: ManifestBed[]): FactsFields[] {
+export function factsFields(beds: ManifestBed[], frozen?: FrozenLeases): FactsFields[] {
   return beds.map((bed) => {
     const facts = bedFacts(bed);
     const installed = bed.devices.flatMap((device) => {
       const record = device.installed ?? null;
       return record === null ? [] : [{ device: device.name, build: record.build, base: record.base }];
     });
-    return { bed: bed.name, segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed };
+    return { bed: bed.name, occupancy: frozen ? occupancyText(bed,frozen) : [], segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed };
   });
 }
 
@@ -178,7 +182,6 @@ export interface AcquirePlan {
   devices: string[];
   addresses: string[];
   keys: string[];
-  ttl_seconds: number;
   conclusion: string;
 }
 
@@ -213,7 +216,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
     const taken = new Set<bigint>();
     for (const device of bed.devices) for (const a of [...device.ipv4, ...device.ipv6]) if (a.subnet === addressesParam.segment) taken.add(a.value);
     for (const [key, entry] of Object.entries(leases)) {
-      if (key.startsWith(`bed/${bed.name}/ip/`) && Date.parse(entry.until) > Date.parse(now)) {
+      if (key.startsWith(`bed/${bed.name}/ip/`) && (entry.until === null || Date.parse(entry.until) > Date.parse(now))) {
         const value = parseIp(key.slice(`bed/${bed.name}/ip/`.length));
         if (value !== null && subnetContains(subnet, value)) taken.add(value);
       }
@@ -233,8 +236,8 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
   const parts = [`预订 ${bed.name}`];
   if (picked.length > 0) parts.push(`设备 ${picked.join('、')}`);
   if (addresses.length > 0) parts.push(`地址 ${addresses.join('、')}`);
-  parts.push(`${need.hours} 小时`);
-  return { ok: true, plan: { bed: bed.name, devices: picked, addresses, keys, ttl_seconds: need.hours * 3600, conclusion: parts.join('，') } };
+  parts.push('不限时长，用完由运行释放');
+  return { ok: true, plan: { bed: bed.name, devices: picked, addresses, keys, conclusion: parts.join('，') } };
 }
 
 /** The keys this run's lineage holds: the frozen view's rows marked mine (D04 R[0], the Hub marks them before the projection). */
@@ -251,8 +254,6 @@ export interface HeldPlan {
   keys: string[];
   conclusion: string;
 }
-
-export type ExtendPlan = HeldPlan & { ttl_seconds: number };
 
 /** The device keys, the address keys and the leftover keys of a held set, each sorted. */
 function splitKeys(keys: string[]): { bed: string | null; devices: string[]; addresses: string[]; keys: string[] } {
@@ -294,16 +295,6 @@ const NOT_HELD: (booking: string) => PlanFailure = (booking) => ({
   message: `你没有持有这个预订（${booking}）：这次运行的血缘里没有未过期的租约行`,
   fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；别人的预订不能续期或释放',
 });
-
-/** The extend plan: every lineage-held key grows by hours from now (the Hub judges the cumulative cap). */
-export function extendPlan(frozen: FrozenLeases | undefined, booking: string, hours: number): { ok: true; plan: ExtendPlan } | { ok: false; failure: PlanFailure } {
-  const held = heldKeys(frozen);
-  if (held.length === 0) return { ok: false, failure: NOT_HELD(booking) };
-  const split = splitKeys(held);
-  const parts = heldParts('续期', split, booking);
-  parts.push(`延长 ${hours} 小时`);
-  return { ok: true, plan: { booking, bed: split.bed, devices: split.devices, addresses: split.addresses, keys: split.keys, ttl_seconds: hours * 3600, conclusion: parts.join('，') } };
-}
 
 /** The release plan: every lineage-held key ends now (irreversible, even when the run later fails). */
 export function releasePlan(frozen: FrozenLeases | undefined, booking: string): { ok: true; plan: HeldPlan } | { ok: false; failure: PlanFailure } {

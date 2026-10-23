@@ -66,11 +66,16 @@ test('a facet view counts entries by the values of data fields', () => {
       { values: { line: null, has_expected: true }, count: 1 },
     ],
     total: 15,
+    totals: {empty:{line:1,has_expected:0}},
     truncated: false,
     skipped: 0,
     notes: [],
   };
   assert.ok(FacetView.safeParse(facet).success);
+  assert.ok(!FacetView.safeParse({...facet,totals:undefined}).success, 'empty counts are always present');
+  for (const empty of [{line:1},{line:1,has_expected:-1},{line:16,has_expected:0},{line:1,has_expected:0,extra:0}]) {
+    assert.ok(!FacetView.safeParse({...facet,totals:{empty}}).success);
+  }
   assert.ok(!FacetView.safeParse({ ...facet, by: [] }).success, 'at least one field');
   assert.ok(!FacetView.safeParse({ ...facet, by: ['Line'] }).success, 'a field name is lower case');
   assert.ok(!FacetView.safeParse({ ...facet, rows: [{ values: { line: { nested: 1 } }, count: 1 }] }).success, 'values are scalars');

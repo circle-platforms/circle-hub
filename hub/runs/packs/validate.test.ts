@@ -446,3 +446,24 @@ test('core emitter usage follows the configured contribution requirement rather 
   const catalog=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.catalog.not_member',action:'repair',max_rounds:2});}));
   assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
 });
+
+test('reason selectors remain typed causes rather than installed-interpreter codes',async()=>{
+  const result=await accepted(requirements(value=>{value.requirements[0].error_handling.unshift({reason:'timeout',action:'repair',max_rounds:2});}));
+  assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+});
+
+test('publication rejects static facts without checks and dynamic facts without an observation',async()=>{
+  for(const target of ['item','run']){
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['static'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/checks'});
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/observation'});
+  }
+});
+
+test('publication accepts explicitly observed dynamic facts without requiring a static check',async()=>{
+  for(const target of ['item','run'])await accepted(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],observation:'synthetic.observe@1',error_handling:[]});}));
+});
+
+test('publication refuses reject by reason even when an artifact blocking check is installed',async()=>{
+  const pack=checks(file=>{file.checks[0].judges='artifact_under_verification';});
+  await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
+});

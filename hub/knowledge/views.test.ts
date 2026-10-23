@@ -261,6 +261,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
       { values: { module: 'M2', has_expected: true }, count: 2 },
     ]);
     assert.equal(view.total, 6);
+    assert.deepEqual(view.totals.empty, {module:0,has_expected:0});
     assert.equal(view.truncated, false);
     assert.equal(view.notes.some((note) => note.startsWith('未归位')), false);
     // Rows are in code-unit order of the canonical JSON text of their values: "100" and "200" before null.
@@ -270,15 +271,53 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
       { values: { defects: '200' }, count: 1 },
       { values: { defects: null }, count: 4 },
     ]);
+    assert.deepEqual(defects.totals.empty, {defects:4});
     const priority = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${A}?kind=case&by=priority,missing`))).value);
     assert.deepEqual(priority.rows, [{ values: { priority: 1, missing: null }, count: 5 }]);
+    assert.deepEqual(priority.totals.empty, {priority:0,missing:5});
     const definitions = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=definition&by=words`))).value);
     assert.equal(definitions.total, 5);
     assert.deepEqual(definitions.rows.find((r) => r.values.words === 'system')?.count, 2);
     // A root without entries of the kind is a valid answer with a note.
     const none = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=defect&by=module`))).value);
     assert.deepEqual([none.total, none.rows], [0, []]);
+    assert.deepEqual(none.totals.empty, {module:0});
     assert.match(none.notes[0], /没有缺陷种类的条目/);
+  });
+
+  test('empty totals survive byte truncation and combination limits, independently for each field', async (t) => {
+    const data: Record<string, unknown>[] = [
+      {commands:['listed'], module:'M'}, {}, {commands:null}, {commands:[]},
+      {commands:[null,null,'listed'],module:false}, {commands:0,module:''},
+      {commands:['many','values'],module:['A','B'],absent:null},
+    ];
+    const entries = data.map((data,i) => ({kind:'case',path:'/commands/system/show',statement:`合成计数 ${i}`,data,fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}));
+    const w = await makeWorld(postgres, {pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('empty_counts',{entries})]}},knowledge:{limits:{maxViewBytes:64*1024+60,facetCombinations:1}}});
+    t.after(()=>w.close());
+    w.external.set(`site:tree:${A}`,{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+    const produced=await w.knowledge.produceTree({product:w.product,build:{...build(A,[]),sources:{tree:`site:tree:${A}`}}});
+    assert.ok(produced.ok,produced.reason ?? '');
+    const reader=createKnowledgeReader(w.knowledge);
+    const read=async()=>{
+      const result=await reader.read(`knowledge:facets:acme:${A}?kind=case&by=commands,module,absent`,{principal:w.user,run:null,purpose:'synthetic totals'});
+      assert.ok(result.ok,result.ok?'':result.reason);
+      const source=await w.kit.artifacts.source(w.user,result.artifacts[0].artifact.body.sha256,{consumer:'model'});
+      assert.ok(source?.bytes);return source.bytes;
+    };
+    const first=await read();const view=FacetView.parse(JSON.parse(new TextDecoder().decode(first)));
+    assert.equal(view.truncated,true);
+    assert.ok(view.rows.length < 2);
+    assert.deepEqual(view.totals.empty,{commands:4,module:3,absent:7});
+    assert.equal(view.total,7);
+    assert.deepEqual(await read(),first);
+  });
+
+  test('the null row can be cut by the byte budget without losing its empty total', async (t) => {
+    const f=await fixture(t,{knowledge:{limits:{maxViewBytes:64*1024+60}}});
+    const view=FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=case&by=defects`))).value);
+    assert.equal(view.truncated,true);
+    assert.deepEqual(view.rows,[{values:{defects:'100'},count:2}]);
+    assert.deepEqual(view.totals.empty,{defects:4});
   });
 
   test('a list field cross product beyond the combination cap is left out and flagged', async (t) => {
@@ -289,10 +328,11 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     f.w.external.set('site:tree:Rel_ACME_1_2_17', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
     const produced = await f.w.knowledge.produceTree({ product: f.w.product, build: build('Rel_ACME_1_2_17', ['store:mindmap:d9']) });
     assert.equal(produced.ok, true, produced.reason ?? '');
-    const view = FacetView.parse((await f.json(await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=tags,defects'))).value);
+    const view = FacetView.parse((await f.json(await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=tags,defects,missing'))).value);
     assert.equal(view.total, 1);
     assert.deepEqual(view.rows, []);
     assert.equal(view.truncated, true);
+    assert.deepEqual(view.totals.empty,{tags:0,defects:0,missing:1});
     assert.ok(view.notes.some((note) => /超过 4096 种/.test(note)));
   });
 

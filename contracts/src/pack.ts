@@ -11,6 +11,7 @@ import {
   DoneRuleSchema,
   ErrorHandlingSchema,
   LayerSchema,
+  ReasonSchema,
   LeaseOpSchema,
   PackKindSchema,
   SAMPLE_SOURCE,
@@ -115,13 +116,16 @@ const Key = z.string().regex(/^[a-z][a-z0-9_]*$/, 'lowercase letters, digits and
 /** One row of the error handling table: a violation code (or * for any other) and what happens to a requirement that shows it. */
 export const ErrorHandlingRow = z
   .strictObject({
-    code: z.string().min(1).describe('a core violation code, a pack code, or * for any other'),
+    code: z.string().min(1).optional().describe('A violation code or *, mutually exclusive with reason'),
+    reason:ReasonSchema.optional().describe('A generated cause selector, mutually exclusive with code'),
     action: ErrorHandlingSchema,
     max_rounds: z.number().int().min(1).max(10).optional().describe('repair rounds for the whole requirement; required when the action is repair'),
   })
   .superRefine((r, ctx) => {
+    if((r.code===undefined)===(r.reason===undefined))ctx.addIssue({code:'custom',path:['code'],message:'select exactly one code or reason'});
+    if (r.reason !== undefined && r.action === 'reject') ctx.addIssue({code:'custom',path:['action'],message:'reject selects a blocking artifact check code, never an unknown reason'});
     if ((r.action === 'repair') !== (r.max_rounds !== undefined)) ctx.addIssue({ code: 'custom', path: ['max_rounds'], message: 'a repair row names its rounds and only a repair row does' });
-  });
+  }).meta({not:{required:['reason','action'],properties:{reason:{},action:{const:'reject'}}}});
 export type ErrorHandlingRow = z.infer<typeof ErrorHandlingRow>;
 
 /**
@@ -155,6 +159,7 @@ export const RequirementTemplate = z
     accepts_declared_independence: z.boolean().optional().describe('accept the independence the client declares (A04 R[4]); not accepted when absent'),
     checks: z.array(Key).describe('ids from checks.json that judge this requirement; none means no check is installed (reason no_check)'),
     expected: ExpectedOutcome.optional(),
+    observation:Versioned.optional().describe('P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine'),
     error_handling: z.array(ErrorHandlingRow),
     requires_discrimination: z.boolean().optional(),
   })
@@ -162,12 +167,12 @@ export const RequirementTemplate = z
     if ((r.accepted_producer === 'independent_judgment') !== (r.independent_of !== undefined)) {
       ctx.addIssue({ code: 'custom', path: ['independent_of'], message: 'an independent judgment names what it is independent of, and only one does' });
     }
-    if (r.accepted_producer === 'fact' && r.target === 'run' && r.checks.length === 0) {
+    if (r.accepted_producer === 'fact' && r.target === 'run' && r.layers.includes('static') && r.checks.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['checks'], message: 'a fact over the whole target needs a check' });
     }
-    const codes = r.error_handling.map((e) => e.code);
+    const codes = r.error_handling.map(e=>e.code!==undefined?'code:'+e.code:'reason:'+e.reason);
     codes.forEach((c, i) => {
-      if (codes.indexOf(c) !== i) ctx.addIssue({ code: 'custom', path: ['error_handling', i, 'code'], message: `code ${c} is handled twice` });
+      if (codes.indexOf(c) !== i) ctx.addIssue({ code: 'custom', path: ['error_handling', i, r.error_handling[i].reason!==undefined?'reason':'code'], message: `selector ${c} is handled twice` });
     });
   });
 export type RequirementTemplate = z.infer<typeof RequirementTemplate>;
@@ -183,6 +188,27 @@ export const RequirementsFile = z
     });
   });
 export type RequirementsFile = z.infer<typeof RequirementsFile>;
+
+/** New publication boundary; the base file shape remains available for older frozen publications. */
+export const PublishableRequirementsFile=RequirementsFile.superRefine((file,ctx)=>{
+  file.requirements.forEach((requirement,index)=>{
+    if(requirement.accepted_producer!=='fact')return;
+    if(requirement.layers.includes('static')&&requirement.checks.length===0)ctx.addIssue({code:'custom',path:['requirements',index,'checks'],message:'a declared static fact layer has an installed check at publication'});
+    if(requirement.layers.includes('dynamic')&&requirement.observation===undefined)ctx.addIssue({code:'custom',path:['requirements',index,'observation'],message:'a dynamic fact layer names the P07 observation contract'});
+  });
+});
+
+/** These are the sandbox protocol capacities, not effect counts or effect durations. */
+export const CHECK_LIMITS_MAX={timeoutMs:120_000,memoryMb:4096,outputBytes:64*1024*1024,logBytes:1024*1024,inputBytes:128*1024*1024} as const;
+export const CHECK_LIMITS_MIN={timeoutMs:100,memoryMb:32,outputBytes:1024,logBytes:0,inputBytes:1024} as const;
+export const CheckWorkLimits=z.strictObject({
+  timeoutMs:z.number().int().min(CHECK_LIMITS_MIN.timeoutMs).max(CHECK_LIMITS_MAX.timeoutMs).optional(),
+  memoryMb:z.number().int().min(CHECK_LIMITS_MIN.memoryMb).max(CHECK_LIMITS_MAX.memoryMb).optional(),
+  outputBytes:z.number().int().min(CHECK_LIMITS_MIN.outputBytes).max(CHECK_LIMITS_MAX.outputBytes).optional(),
+  logBytes:z.number().int().min(CHECK_LIMITS_MIN.logBytes).max(CHECK_LIMITS_MAX.logBytes).optional(),
+  inputBytes:z.number().int().min(CHECK_LIMITS_MIN.inputBytes).max(CHECK_LIMITS_MAX.inputBytes).optional(),
+});
+export type CheckWorkLimits=z.infer<typeof CheckWorkLimits>;
 
 // ---------------------------------------------------------------- checks.json (C05)
 
@@ -205,6 +231,13 @@ export type ContextKey = (typeof CONTEXT_KEY)[number];
 export const ContextKeySchema = z.enum(CONTEXT_KEY);
 
 /** Facts about the run that checks and pack functions may use. */
+export const LeaseContextRow = z.strictObject({
+  key: z.string().min(1), since: IsoTime, until: IsoTime.nullable(), run: z.string().min(1), mine: z.boolean(),
+  holder: z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional(),
+  jobs: z.array(z.string().min(1)),
+});
+export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
+  owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
   product: z.string().nullable(),
   names: z.array(z.string()).describe('every name of the bound product line (all of them name one line); empty when the run has no product'),
@@ -222,9 +255,10 @@ export const RunContext = z.strictObject({
   leases: z
     .strictObject({
       now: IsoTime.describe('the moment the lease table was frozen for this run'),
+      registrations: z.array(LeaseRegistrationRow).default([]),
       entries: z
-        .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
-        .describe('the unexpired, unreleased rows of the declared prefixes at the frozen moment; no tokens, no other holders\' names — visibility is undecided (D04 changes5)'),
+        .array(LeaseContextRow)
+        .describe('active rows at the frozen moment; every viewer sees run and since; only registered owners and admins see holder identity; no tokens'),
     })
     .optional()
     .describe('present only when the workflow asked for the leases context (workflow.context)'),
@@ -291,6 +325,7 @@ export const CheckEntry = z
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
     tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
+    limits:CheckWorkLimits.optional().describe('Per-check work limits within sandbox capacity; omission inherits service defaults, never an effect budget'),
     reads: CheckReads.optional().describe('bound sources of these roles are read into sources for this check'),
   })
   .superRefine((c, ctx) => {
@@ -401,6 +436,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    predecessor:z.literal('required').optional().describe('The service must reject start_run without an explicit predecessor; not an independent_of inference'),
     inputs: z.array(WorkflowInput).min(1),
     parameters: z.array(WorkflowParameter),
     product: z
@@ -421,7 +457,7 @@ export const WorkflowFile = z
     leases: z
       .strictObject({
         prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
-        max_ttl_seconds: z.number().int().positive().max(2_592_000).describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
+        max_ttl_seconds: z.number().int().positive().max(2_592_000).optional().describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
       })
       .optional()
       .describe('the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)'),
@@ -498,8 +534,11 @@ export const ProjectionOutput = z.union([
     lease_requests: z
       .array(
         z.union([
-          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
+          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive().optional() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
           z.strictObject({ op: LeaseOpSchema.extract(['extend']), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
+          z.strictObject({ op: LeaseOpSchema.extract(['register']), prefix:z.string().min(1) }),
+          z.strictObject({ op: LeaseOpSchema.extract(['unregister']), prefix:z.string().min(1), reason:z.string().min(1).refine(value => value.trim().length > 0, "reason must contain non-whitespace text") }),
+          z.strictObject({ op: LeaseOpSchema.extract(['force_release']), keys:z.array(z.string().min(1)).min(1), reason:z.string().min(1).refine(value => value.trim().length > 0, "reason must contain non-whitespace text") }),
           z.strictObject({ op: LeaseOpSchema.extract(['release']), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
         ]),
       )

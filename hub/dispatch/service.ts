@@ -1,7 +1,7 @@
-import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
+import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
-import { labelOf, EffectOutcomeSchema, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition, isEffectOutcome } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, readDeclaredTime, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
@@ -14,10 +14,16 @@ import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
 import { verifyInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
+/** Only validated generated outcomes can prove a submission retry is safe. */
+function retrySafeOutcome(value:unknown):boolean {
+  if(!isEffectOutcome(value))return false;
+  const outcome:EffectOutcome=value;
+  return outcome==='target_rejected'||outcome==='proven_not_executed';
+}
 export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
-  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
+  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
 export interface JobStatus { failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
@@ -31,7 +37,6 @@ const fixedForReading = (d:ExecutorDefinition) => {
  const {status:statusCall,result:resultCall,query,...calls}=fixed.calls;
  return {...fixed,calls};
 };
-const noDeviceEffect=(value:unknown)=>value===EffectOutcomeSchema.enum.target_rejected||value===EffectOutcomeSchema.enum.proven_not_executed;
 const same = (a: unknown, b: unknown) => a !== undefined && b !== undefined && canonicalize(a) === canonicalize(b);
 function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_checks']> {
   return events.filter(e=>e.body.detail.phase==='device_probe' || e.body.detail.phase==='precheck.failure' || e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase))).flatMap(e=>{
@@ -59,7 +64,7 @@ export class DispatchService {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
     const probeIntent=eventOf(events,'probe_intent');
-    const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || noDeviceEffect(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
+    const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || retrySafeOutcome(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
@@ -72,7 +77,7 @@ export class DispatchService {
     const gap=!riskDisposed&&lastCredential?.body.detail.phase==='session_unavailable'?lastCredential.body.detail:undefined;
     const failedChecks=precheckIssues(events);
     return { job,...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
-      outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && noDeviceEffect(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
+      outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
@@ -81,6 +86,22 @@ export class DispatchService {
     if(!current)throw new Error('执行器对你不可用；先用 executor list 核对编号');
     const jobs=await this.journal.blockers(executor,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
     return Promise.all(jobs.map(job=>this.status(by,job)));
+  }
+  /** Trusted lease boundary: unresolved effects block local release even after a terminal observation. */
+  async activeLeaseJobs(keys: readonly string[]): Promise<Array<{key:string;job:string}>> {
+    if (!keys.length) return [];
+    const keysSet=new Set(keys);const events=await this.journal.targets(keys);
+    const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort();
+    const rows:Array<{key:string;job:string}>=[];
+    for(const job of jobs){
+      const history=await this.journal.events(job);
+      const reservation=history.find(e=>e.body.detail.phase==='reservation');
+      const binding=reservation?.body.detail.binding as JobBinding|undefined;
+      if(!binding)throw new Error('作业缺少资源登记，请管理员恢复作业登记后核验');
+      if(reservation?.body.detail.read_only===true || isDone(history) && !isFrozen(history))continue;
+      for(const key of binding.resources)if(keysSet.has(key))rows.push({key,job});
+    }
+    return rows.sort((a,b)=>a.key.localeCompare(b.key)||a.job.localeCompare(b.job));
   }
   async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
     await this.registry.admin(by);
@@ -123,7 +144,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
     const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
     let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
@@ -204,14 +225,14 @@ export class DispatchService {
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
-      if (!end || isFrozen(priorEvents) || !(noDeviceEffect(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
+      if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
     if (!source?.bytes) throw new Error('核验字节不可读取，未提交');
     const initial = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms+d.max_run_ms);
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const secret=await this.secret(binding,d);if(secret===null)return this.credentialUnavailable(by,binding,true);
     const session = this.session(binding, d, secret);
@@ -372,7 +393,7 @@ export class DispatchService {
     const known=receiptOf(events)?.body.detail.remote_id;
     const remoteId=options.remote_id ?? known;
     if(known!==undefined && options.remote_id!==undefined && !same(known,remoteId))throw new Error('已有原回执，不得改绑为其他远端编号；请按原作业对账');
-    if (options.choice !== 'reconcile' || remoteId === undefined) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
+    if (options.choice !== 'reconcile' || remoteId === undefined) throw new Error(`本轮只允许${labelOf('disposition','reconcile')}、${labelOf('disposition','keep_unknown')}或${labelOf('disposition','mark_failed')}；核对必须给远端编号`);
     const d = await this.readingDefinition(binding); const material=await this.secret(binding,d);if(material===null)return this.status(by,job);const client = this.session(binding, d, material);
     const originalLease=intent.body.detail.remote_lease as unknown as RemoteLease;
     const context={...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,remote_id:remoteId,lease_id:originalLease.id,lease_token:originalLease.token};
@@ -520,8 +541,9 @@ export class DispatchService {
     return true;
   }
 
-  private async reserve(binding: JobBinding): Promise<void> {
+  private async reserve(binding: JobBinding, tx?: Transaction): Promise<void> {
     await this.assertNoSecrets(binding);
+    if(binding.fences?.length && !this.sameFences(binding.fences,await this.options.leases.holderSnapshot(binding.resources,tx)))throw new Error('预留前围栏或血缘已改变，尚未提交；重新读取登记和租约后重开核验');
     const definition=await this.pinned(binding);
     // Read the CAS heads before checking occupancy. A reservation committed during
     // that check must either be observed as a blocker or invalidate our CAS head.
@@ -548,11 +570,11 @@ export class DispatchService {
   }
   private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
     const rows = await this.options.leases.holderSnapshot(keys);
-    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || Date.parse(r.expires_at) <= this.now().getTime() + requiredMs)) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
+    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || (r.expires_at !== null && Date.parse(r.expires_at) <= this.now().getTime() + requiredMs))) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
-    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && b.fencing >= a.fencing && !b.released && Date.parse(b.expires_at) > this.now().getTime()));
+    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && b.fencing >= a.fencing && !b.released && (b.expires_at === null || Date.parse(b.expires_at) > this.now().getTime())));
   }
   private async assertNoSecrets(value:unknown):Promise<void>{
     for(const material of await this.options.records.variables.recentSecrets()){
@@ -743,7 +765,7 @@ export class DispatchService {
       const response = await this.retryRead(binding, client, 'status', context, deadline);
       const observedHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
       if (!drift && !this.sameFences(fences, observedHolders)) {
-        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:observedHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
+        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:observedHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
       }
       const mapping = mapped(d.status.map, at(response.value, d.status.pointer));
       if (!mapping || mapping.effect_outcome === 'unknown' || mapping.action_result === 'unknown' || mapping.acceptance === 'not_accepted' || mapping.effect_outcome === 'read_back_mismatch' || mapping.effect_outcome === 'target_rejected' || mapping.effect_outcome === 'not_dispatched' || mapping.effect_outcome === 'proven_not_executed') { await this.unknown(binding, '目标状态不能作为可信终态（未映射或缺拒绝阶段、未执行证明）；下一步管理员对账', [response.source], { reported_state: mapping ?? null }); return this.status(by, binding.job); }
@@ -761,7 +783,7 @@ export class DispatchService {
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
     const finalHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
     if (!drift && !this.sameFences(fences, finalHolders)) {
-      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
+      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
     }
     await stopHeartbeat();
     const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);

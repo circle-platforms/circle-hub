@@ -10,7 +10,7 @@ import {
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
-  RequirementsFile,
+  PublishableRequirementsFile,
   SlotsFile,
   WorkflowFile,
   type CheckEntry,
@@ -241,7 +241,7 @@ function judgmentRequirement(r: { accepted_producer: string }): boolean {
 async function validateWorkflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<{ declarations: WorkflowDeclarations; samples: LoadedSample[] } | null> {
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
-  const requirements = c.parse('requirements.shape', 'requirements.json', RequirementsFile, 'requirements@1');
+  const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);
@@ -362,7 +362,12 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       });
       const interpreters = new Set(r.checks.map((id) => interpreterOf.get(id)).filter((x): x is string => x !== undefined));
       r.error_handling.forEach((row, k) => {
-        const field = `/requirements/${i}/error_handling/${k}/code`;
+        const field = `/requirements/${i}/error_handling/${k}/${row.reason!==undefined?'reason':'code'}`;
+        const selector=row.reason!==undefined?'原因 '+labelOf('reason',row.reason):row.code;
+        if(row.reason!==undefined && row.action==='reject'){
+          c.add(problem('requirements.reject_scope','requirements.json','原因行不能处理为进已拒收；进已拒收只用于待判定产物上的阻断检查码','按原因声明修复或其他允许动作，按检查码声明已拒收',{field:'/requirements/'+i+'/error_handling/'+k+'/action'}));
+          return;
+        }
         if (row.action === 'reject' && !r.checks.some((id) => blockingOnArtifact.has(id))) {
           const artifact = labelOf('source_role', 'artifact_under_verification');
           const others = ERROR_HANDLING.filter((a) => a !== 'reject').map((a) => labelOf('error_handling', a));
@@ -370,12 +375,14 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
             problem(
               'requirements.reject_scope',
               'requirements.json',
-              `要求项 ${r.key} 把 ${row.code} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
+              `要求项 ${r.key} 把 ${selector} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
               `改成${others.join('、')}之一，或者让这个要求项带一个判定${artifact}的${tierText('blocking')}检查`,
               { field: `/requirements/${i}/error_handling/${k}/action` },
             ),
           );
         }
+        // Cause selectors were checked by the generated ReasonSchema, not an installed interpreter.
+        if(row.code===undefined)return;
         if (!isKnownCode(row.code, manifest.id)) {
           c.add(problem('requirements.unknown_code', 'requirements.json', `要求项 ${r.key} 的错误处理行用了未知的码 ${row.code}`, `用 *、核心违规码、协议码，或者包自己的码（${manifest.id}.<码>）`, { field }));
         } else if (Object.hasOwn(CORE_VIOLATION_CODES, row.code)) {

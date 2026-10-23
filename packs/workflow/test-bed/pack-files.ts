@@ -14,15 +14,15 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'test-bed',
-  version: '1.1.3',
+  version: '1.2.0',
   kind: 'workflow',
   title: '设备台架',
-  description: '读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，单次最多 8 小时）；只含事实要求项，开始运行时由 Hub 直接算出结果',
+  description: '读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'samples', 'examples'];
+const FOLDERS = ['functions', 'samples', 'examples', 'tables'];
 /** Tests and their helpers live beside the functions but are never loaded by a pack function, so they stay out. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts';
 

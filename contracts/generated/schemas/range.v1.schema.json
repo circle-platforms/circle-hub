@@ -155,6 +155,15 @@
                   },
                   "exclusiveMaximum": {
                     "type": "number"
+                  },
+                  "empty": {
+                    "default": "refute",
+                    "description": "Only min/max on an empty set: support or refute, omission means refute; count and sum keep their defined numeric zero",
+                    "type": "string",
+                    "enum": [
+                      "refute",
+                      "support"
+                    ]
                   }
                 },
                 "required": [
@@ -208,7 +217,7 @@
       "additionalProperties": false
     },
     "required": {
-      "description": "When true, a check whose location is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing",
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
       "type": "boolean"
     }
   },

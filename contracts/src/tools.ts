@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { IsoTime, Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
@@ -96,6 +96,7 @@ export const StartRunInput = z.strictObject({
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
   parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
+  submission_due:IsoTime.optional().describe('Requested absolute submission deadline; the service binds its actual finite policy before writing the run'),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
   client_key: z
     .string()

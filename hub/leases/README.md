@@ -6,7 +6,7 @@ The vocabulary stays neutral (the core names no device, bench or product): a key
 
 ## Decisions
 
-- **One clock.** Expiry is decided everywhere by the service's clock, `now` (D04 changes5 kept this out of the model text): the default asks the database (`SELECT now()`), tests inject a fixed one. The takeover `WHERE`, the `view` filter and the orphan rule all compare through the same injected moment — two clocks (SQL `now()` here, a process clock there) would answer differently under drift, and the review's answer to that was one clock: the database's.
+- **One clock.** Expiry is decided everywhere by the service's clock, `now` (D04 changes5 kept this out of the model text): the default asks the database (`SELECT clock_timestamp()`), tests inject a fixed one. The takeover `WHERE`, the `view` filter and the orphan rule all compare through the same injected moment — two clocks (SQL `now()` here, a process clock there) would answer differently under drift, and the review's answer to that was one clock: the database's.
 - **Acquire is all or nothing.** Every key of one request is taken in one transaction; a busy key aborts the transaction (a `RefusedLease` thrown inside rolls it back, the outcome survives at the call's edge), so the keys taken over before the busy one leave no trace. The race loser reads the earliest free moment for its refusal (`LEASE_UNAVAILABLE`).
 - **No CAS retry loop.** The unique constraint decides the winner of two acquirers of one key (`INSERT ... ON CONFLICT (key) DO NOTHING`, so the transaction stays usable to read the busy row — an errored-out transaction can run no further statement). `ON CONFLICT DO NOTHING` against an uncommitted concurrent insert blocks until that transaction commits, then misses — exactly one winner, verified by 50 rounds of two connections.
 - **Take-over, not delete.** An expired or released row is `UPDATE`d in place (`expires_at <= now OR released_at IS NOT NULL`) with `token + 1`: the row never disappears, so a key's fencing token never repeats. The take-over mints a new lease identity — the old lease ended.
@@ -21,7 +21,7 @@ A projection's `lease_requests` carry an operation: `acquire` (the default, the 
 ## Limits
 
 - Keys are `[a-z0-9][a-z0-9:._/-]{0,199}` (the same shape the pointers table allows); a lease identity is `lse_` plus a 26-character Crockford base32 id.
-- `view(prefix)` lists the unexpired, unreleased rows with their until moments only — no tokens, no holders' names (visibility is an open question in D04 changes5; the run context carries `mine` only).
+- `view(prefix)` lists active rows with run, since and nullable expiry. Trusted callers can ask for user ids; the engine filters identities by registered ownership and administrator role. Tokens stay internal.
 - The action records this service writes go straight into `records` with the digest of the canonical envelope; `actionLog(prefix)` reads them back (the audit line, and the replay test rebuilds the table from them).
 
 ## How it is tested
@@ -40,3 +40,30 @@ Snapshots reject fences outside JavaScript's safe integer range rather than roun
 
 租约动作的取值类型统一来自生成词表 `LeaseOp`；内部续租/释放共用路径使用其 `Extract` 子集，
 不另写租约操作轴。
+
+A workflow may omit `max_ttl_seconds`: its acquisitions have `until: null`, with no wall-clock expiry.
+Every active-row query, trusted snapshot, orphan cleanup and release treats null as unbounded.
+Extending such rows is refused before mutation; a lineage releases them explicitly. Capped workflows keep their TTL
+and cumulative extension rules. Migration 4 only removes the expiry NOT NULL constraint; applied migrations stay fixed.
+
+Ownership is independent of holding: `register` assigns a strictly nested slash-terminated prefix to its first user.
+Registrations may never contain each other. Administrators may reassign an exact existing prefix with a reason;
+ordinary users cannot reveal or overwrite its owner. `unregister` requires the owner or an administrator and refuses
+while any active row remains below it. A database advisory lock serializes overlap checks, registration changes and
+acquisition, including two connections registering overlapping prefixes. Migration 5 adds only the current ownership
+table and its runtime grant; each mutation appends its registration action atomically. `actionLog` includes owner,
+previous owner, actor, reason and prefix so the current table can be rebuilt. Public run views filter these trusted rows.
+
+Every current row view now includes the acquisition moment (`since`), holder run and nullable expiry. Trusted callers
+may request the user id. The engine separately decides identity visibility using the registration table: registered
+owners and administrators see holder id/name; everyone sees the run, since, mine and unfinished job ids. Registration
+rows expose only prefix/mine except in administrator runs. Fences never enter either frozen view.
+
+Reservation insertion and guarded force-release share a durable advisory lock. `withMutationLock` hands its existing
+transaction to the trusted snapshot check, so it does not borrow another lease-pool connection while holding the lock.
+Force-release runs its job guard under the same lock immediately before changing rows. A reservation that wins first
+blocks release; a release that wins first changes fences and blocks reservation. No network operation holds this lock.
+The default database clock also uses the mutation transaction's connection, preventing starvation in a two-connection pool.
+
+The mutation clock is database wall time after lock acquisition, rather than the BEGIN timestamp, so a queued capped
+acquisition cannot start already backdated by the time spent waiting for another mutation.

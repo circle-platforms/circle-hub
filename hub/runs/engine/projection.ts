@@ -1,3 +1,4 @@
+import type { LeaseRequest } from './start.ts';
 // Items (W01) and expected sources. The workflow's projection function runs in the sandbox over the parsed inputs; its
 // output is validated; a refusal refuses the whole start_run with the pack's fix (W01 R[3]: only a source whose own
 // structure yields no items, or ambiguous production input ids, is refused wholesale — a projection that succeeds with an
@@ -34,7 +35,7 @@ export interface Projection {
   groups: Record<string, unknown>[];
   warnings: PackWarning[];
   /** The lease operations the run asks the Hub to perform before it is stored (absent when the function asked for none). */
-  leaseRequests: Array<{ op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] }>;
+  leaseRequests: LeaseRequest[];
 }
 
 function refusal(path: string, message: string, fix: string, note: string | null = null): Refusal {

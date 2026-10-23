@@ -7,6 +7,71 @@
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
   "files": [
     {
+      "path": "functions/adoc/engine.ts",
+      "sha256": "9621cb0b7201d24f11c97a0569455025858306ce96bee25727d9416d9fa44805",
+      "size": 2957
+    },
+    {
+      "path": "functions/adoc/entries.ts",
+      "sha256": "c00924dc96a3590812f264b89a60742feff619c2add449a45995a72e42e6a1c2",
+      "size": 8696
+    },
+    {
+      "path": "functions/adoc/families.ts",
+      "sha256": "18a183f132ed37f6febbf6f1573a0ccb2948fe23d3a282f0462ac46e3a6c26da",
+      "size": 5044
+    },
+    {
+      "path": "functions/adoc/includes.ts",
+      "sha256": "9ab224df79161214f253a911138907b0b80b1fea2dee95d36574c2f3e0d8f7ee",
+      "size": 4625
+    },
+    {
+      "path": "functions/adoc/index.ts",
+      "sha256": "d454e1c24a04f225f0f43d240b2fca753a4f88ef0c2fb8db4d2d46e55b6326c8",
+      "size": 13425
+    },
+    {
+      "path": "functions/adoc/input.ts",
+      "sha256": "d72617576e0c452988bba7b4c4798960631cccbb77f5797b769e3c2574f2a310",
+      "size": 6166
+    },
+    {
+      "path": "functions/adoc/k1-model.ts",
+      "sha256": "12f7de7c495abd9dd31792af2cf4962d6f79f480aa8cc36c59160952f1772f6b",
+      "size": 39359
+    },
+    {
+      "path": "functions/adoc/origins.ts",
+      "sha256": "7e77ddbc5a92812c383082a92ad56d453561bcc2584df37aedee84faccde3efe",
+      "size": 13717
+    },
+    {
+      "path": "functions/adoc/text.ts",
+      "sha256": "b8b1a802ccf42483959db593027fa7fa3e7cee9291a5bd3e187717e8d669326e",
+      "size": 10277
+    },
+    {
+      "path": "functions/adoc/types.ts",
+      "sha256": "ac6fad2ff412dceba8c315896d4929ff079cbb535e0fde074c1ece6bb60faef9",
+      "size": 4334
+    },
+    {
+      "path": "functions/adoc/vendor/LICENSE.txt",
+      "sha256": "5dc8600d56eb0cae83dcdecde260d5b5568e7a5431fb9a9cf7906d02818bac7e",
+      "size": 1147
+    },
+    {
+      "path": "functions/adoc/vendor/core.d.mts",
+      "sha256": "1709dd334f70a4c1947414fa8e851e653cab16621b72b744eeb8f2435070ec57",
+      "size": 1545
+    },
+    {
+      "path": "functions/adoc/vendor/core.mjs",
+      "sha256": "5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d",
+      "size": 990496
+    },
+    {
       "path": "functions/builds.ts",
       "sha256": "68af6e099fead50fcd8cadbe380a8eb2d55241ecb03c1e72546f75f34cf86075",
       "size": 1382

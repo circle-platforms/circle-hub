@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
+import { after, before, test } from 'node:test';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { StartRunOutput } from '../../../contracts/src/tools.ts';
 import type { ActionBody } from '../../records/api.ts';
-import { resolveReference, createDefaultRegistry } from '../../refs/api.ts';
+import { resolveReference, createDefaultRegistry, recognize } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { sourceReader } from './readers.ts';
 import { INDEX } from './store.ts';
@@ -168,11 +168,15 @@ test('inputs: required slots, unknown slots, accepted types, readable references
   const refused = await start({ map: { reference: notMap } });
   assert.deepEqual(refused.errors.map((e) => [e.code, e.path]), [['toy-review.invalid_input', '/inputs/map']]);
   assert.match(refused.errors[0].message, /不是脑图/);
-  const garbage = await h.upload(h.alice, new TextEncoder().encode('{ not json'));
+  const garbageBytes=new TextEncoder().encode('{ not json');
+  let parserFix:string|undefined;
+  recognize(createDefaultRegistry(),garbageBytes,'application/json',{},error=>{parserFix=error.fix;});
+  assert.ok(parserFix,'the refusing parser supplies the remedy');
+  const garbage = await h.upload(h.alice, garbageBytes);
   const unparsed = await start({ map: { reference: garbage } });
   assert.deepEqual(unparsed.errors.map((e) => [e.code, e.path]), [['SOURCE_UNPARSEABLE', '/inputs/map']]);
   assert.match(unparsed.errors[0].message, /json@1.*不是有效的 JSON/);
-  assert.equal(unparsed.errors[0].fix, PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix);
+  assert.equal(unparsed.errors[0].fix, parserFix);
   // a slot that takes many sources binds each with the slot's role
   const one = await h.upload(h.alice, new TextEncoder().encode('# 历史清单一\n\n设置 2 区浇灌。\n'), 'text/markdown');
   const two = await h.upload(h.alice, new TextEncoder().encode('历史清单二：查看分区。\n'), 'text/plain');

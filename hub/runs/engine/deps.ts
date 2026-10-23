@@ -41,6 +41,8 @@ export interface RunsEngineDeps {
   adminLog?: (entry: AdminLogEntry) => void;
   /** The lease service (D04 R[0]); without it a workflow that declares leases cannot start. */
   leases?: LeaseService;
+  /** Trusted, read-only unfinished jobs by resource key; no fencing data leaves this port. */
+  leaseJobs?: (keys: readonly string[]) => Promise<Array<{ key: string; job: string }>>;
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

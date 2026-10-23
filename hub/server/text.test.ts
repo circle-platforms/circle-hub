@@ -547,6 +547,21 @@ describe('start_run text', () => {
 // ---------------------------------------------------------------- production runs
 
 describe('a production run in the start_run text', () => {
+  test('production explanations render only valid support facts produced by functions', () => {
+    const list=items(1);const result=resultOf(list,{production:true});
+    const good=fact(list[0].id,'structure','检查算出 2 个空组');
+    const requirement=Object.values(result.partitions).flat()[0].requirements[0];
+    requirement.claims=[good,
+      {...good,statement:{text:'尚未取得的说明',verdict:'unknown',reason:'missing_input'},qualifier:{...good.qualifier,nature:'unknown',basis_rank:undefined}},
+      {...good,statement:{text:'模型伪称的说明',verdict:'support'},warrant:{producer:'model',id:'synthetic-model'}},
+      {...good,statement:{text:'被引片段已变的说明',verdict:'support'},validity:{...good.validity,status:'cited_fragment_changed'}},
+    ];
+    const text=toolText('start_run',startAnswer(runOf(list,{production:true}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}}),{...PAGING,production:result,record:RUN_RECORD});
+    const section=text.slice(text.indexOf('生产运行说明')).split('问题与未知')[0];
+    assert.match(section,/支持事实，1 条/);assert.match(section,/检查算出 2 个空组/);
+    for(const absent of ['尚未取得的说明','模型伪称的说明','被引片段已变的说明'])assert.ok(!section.includes(absent));
+    withinBudget(text,'known production explanations');
+  });
   for (const n of SIZES) {
     test(`${n} items: the result first (counts, every requirement, where the whole is), then every problem and unknown, then the rest`, () => {
       const list = items(n);
@@ -567,6 +582,7 @@ describe('a production run in the start_run text', () => {
       const fullAt = at(`完整结果 ${RESULT_RECORD}：`);
       const problemsAt = at('问题与未知');
       const itemsAt = at('条目（');
+      if(n===400){assert.ok(itemsAt>=0,'support facts cannot remove the item list');assert.equal(new Set(itemIdsOf(lines.slice(itemsAt+1).join('\n'))).size,400,'support facts cannot displace any of the 400 item rows');}
       assert.ok(fullAt > 3 && fullAt < problemsAt && problemsAt < at('规程：') && (itemsAt < 0 || problemsAt < itemsAt), `${fullAt} ${problemsAt} ${itemsAt}`);
       assert.ok(lines[fullAt].includes(`get_nodes {"reference":"${RESULT_RECORD}"}`), 'how to read the full result');
       const problems = lines.slice(problemsAt + 1).filter((l) => /^- doc7:n[0-9]+ \| .* \| (已交付|已拒收|未完成)/.test(l) && l.split(' | ').length >= 6);

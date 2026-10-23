@@ -13,7 +13,7 @@ export interface NeedDevice {
 export interface Need {
   devices: NeedDevice[];
   build?: string;
-  hours: number;
+  hours?: number;
 }
 
 /** What one device holds: the reported build, where the report came from, and when. */
@@ -26,7 +26,7 @@ export interface Installed {
 
 /** A lease as matchNeed sees it: only the key and when it ends. */
 export interface LeaseEntry {
-  until: string;
+  until: string | null;
 }
 
 export interface BedMatch {
@@ -39,6 +39,7 @@ export interface BedMatch {
   buildSource: Extract<ProvenanceType, 'observed' | 'declared'> | 'none';
   /** When the needed devices are all free (the maximum of their leases' ends), null when idle now. */
   earliestFree: string | null;
+  occupied: boolean;
   /** How many devices of the needed types the bed has beyond the need (the ordering's third key). */
   spareDevices: number;
   /** The one-line conclusion a person reads. */
@@ -51,17 +52,15 @@ const baseOf = (builds: Record<string, string>, name: string): string => builds[
 /** The pick of devices of one type when the need wants count of them: the ones without an active lease first,
  * then by name; when fewer free ones exist than wanted, leased ones join (the bed then has an earliest-free time).
  * Exported for the acquire projection: the lease keys are the picked devices. */
-export function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: string[] } {
+export function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: Array<string|null> } {
   const of = bed.devices.filter((d) => d.type === type);
-  const active = (device: string): string | null => {
-    const entry = leases[`bed/${bed.name}/${device}`];
-    if (entry === undefined) return null;
-    return Date.parse(entry.until) > Date.parse(now) ? entry.until : null;
+  const active=(device:string):LeaseEntry|undefined=>{
+    const row=leases['bed/'+bed.name+'/'+device];return row&&(row.until===null||Date.parse(row.until)>Date.parse(now))?row:undefined;
   };
-  const free = of.filter((d) => active(d.name) === null).map((d) => d.name).sort(compareText);
-  const taken = of.filter((d) => active(d.name) !== null).map((d) => d.name).sort(compareText);
-  const picked = [...free, ...taken].slice(0, count);
-  return { picked, leasedUntil: picked.map((name) => active(name)).filter((x): x is string => x !== null) };
+  const free=of.filter(d=>!active(d.name)).map(d=>d.name).sort(compareText);
+  const taken=of.filter(d=>!!active(d.name)).map(d=>d.name).sort(compareText);
+  const picked=[...free,...taken].slice(0,count);
+  return {picked,leasedUntil:picked.flatMap(name=>{const row=active(name);return row?[row.until]:[];})};
 }
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -98,7 +97,7 @@ export function matchNeed(
     const devicesOk = missing.length === 0;
     // The pick of needed devices (free first) decides the build verdict and the earliest-free time.
     const picks: string[] = [];
-    const leaseEnds: string[] = [];
+    const leaseEnds: Array<string|null> = [];
     if (devicesOk) {
       for (const { type, count } of need.devices) {
         const pick = pickDevices(bed, leases, now, type, count);
@@ -106,7 +105,9 @@ export function matchNeed(
         leaseEnds.push(...pick.leasedUntil);
       }
     }
-    const earliestFree = leaseEnds.length === 0 ? null : leaseEnds.reduce((a, b) => (a > b ? a : b));
+    if(need.devices.length===0)for(const device of bed.devices){const row=leases['bed/'+bed.name+'/'+device.name];if(row&&(row.until===null||Date.parse(row.until)>Date.parse(now)))leaseEnds.push(row.until);}
+    const occupied=leaseEnds.length>0;
+    const earliestFree=leaseEnds.length===0||leaseEnds.includes(null)?null:(leaseEnds as string[]).reduce((a,b)=>a>b?a:b);
     // Build: over the picked devices of the load-balancer type (the device under test), or every picked device
     // when the need names no load balancer.
     const deciding = picks.filter((name) => {
@@ -137,12 +138,12 @@ export function matchNeed(
     }
     const parts: string[] = [];
     if (!devicesOk) parts.push(missing.join('；'));
-    if (devicesOk) parts.push(freeText(earliestFree));
+    if (devicesOk) parts.push(occupied&&earliestFree===null?'Hub 记录里被占用，没有到期时刻（未排除本地操作）':freeText(earliestFree));
     if (buildText !== '') parts.push(buildText);
-    return { bed: bed.name, devicesOk, buildOk, buildSource, earliestFree, spareDevices: spare, conclusion: parts.join('；') };
+    return { bed: bed.name, devicesOk, buildOk, buildSource, earliestFree, occupied, spareDevices: spare, conclusion: parts.join('；') };
   });
-  const rankFree = (m: BedMatch): number => (m.devicesOk && m.earliestFree === null ? 0 : 1);
-  const rankTime = (m: BedMatch): number => (m.earliestFree === null ? 0 : Date.parse(m.earliestFree));
+  const rankFree = (m: BedMatch): number => (m.devicesOk && !m.occupied ? 0 : 1);
+  const rankTime = (m: BedMatch): number => (!m.occupied ? 0 : m.earliestFree === null ? Infinity : Date.parse(m.earliestFree));
   return answers.sort((a, b) => rankFree(a) - rankFree(b) || rankTime(a) - rankTime(b) || a.spareDevices - b.spareDevices || compareText(a.bed, b.bed));
 }
 
