@@ -48,6 +48,12 @@ export class DispatchService {
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(missingFact ? { missing_fact: missingFact } : {}),
       ...(unknown || missingReceipt ? { next_action: `请管理员取证后运行 circle-hub job dispose ${job} --reconcile <远端作业编号>；不能重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
+  async list(by:Principal,executor:string):Promise<JobStatus[]> {
+    await this.registry.admin(by);const current=await this.registry.get(executor);
+    if(!current)throw new Error('执行器对你不可用；先用 executor list 核对编号');
+    const jobs=await this.journal.blockers(executor,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
+    return Promise.all(jobs.map(job=>this.status(by,job)));
+  }
   async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
@@ -385,7 +391,7 @@ export class DispatchService {
   private async reserve(binding: JobBinding): Promise<void> {
     const definition=await this.pinned(binding);
     const blocked=await this.journal.blockers(binding.executor,definition.target,new URL(definition.endpoint).origin,binding.resources);
-    if(blocked.length)throw new Error(`物理目标被未结束或冻结的作业 ${blocked.join('、')} 占用；先查询并运行 circle-hub job resume ${blocked[0]}，冻结时先完成对账处置`);
+    if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new Error(`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
     const history = await this.journal.targets(binding.resources);
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     await this.options.records.store.withTransaction(async tx => {

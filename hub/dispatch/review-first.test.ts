@@ -63,3 +63,10 @@ test('R05 action records separate an intent from a submission with no trustworth
   const reply=events.find(e=>e.body.detail.phase==='submit.response')!;assert.equal(reply.body.action,'dispatch');assert.equal(reply.body.result,'unknown');assert.equal(reply.body.error_code,null);
   const unknown=events.find(e=>e.body.detail.phase==='unknown')!;assert.equal(unknown.body.action,'validate');
 });
+
+test('R06 unresolved jobs are discoverable without remembering a lost terminal digest',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const jobs=await c.service.list(c.admin,c.executor.id);
+  assert.ok(jobs.some(job=>job.job===first.job && job.frozen && job.next_action));
+});
