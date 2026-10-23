@@ -392,3 +392,6 @@ accepted with its header/length framing checked, as defined by APPNOTE 4.3.14; a
 Row `ht` retains the literal height or null, and `customHeight` retains the boolean flag. `hidden` means explicit
 hidden=true or customHeight=true with numeric height zero; hiddenRows uses that same definition. Column visibility
 is not interpreted by this model, so hiddenRows is not a statement about column visibility or whole-sheet rendering.
+
+Each sheet preserves `relationshipId` and literal `relationshipType`; an empty chartsheet or another opaque part is
+therefore distinguishable from an empty worksheet without guessing from its filename or dropping its identity.

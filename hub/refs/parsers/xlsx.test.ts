@@ -337,3 +337,11 @@ test('contradictory row coordinates and dangling defined name scopes are refused
     badWorkbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData>${rows}</sheetData></worksheet>` }, /行号.*不一致|行号.*递增/);
   badWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="合成" sheetId="1" r:id="sheet"/></sheets><definedNames><definedName name="合成名" localSheetId="1">A1</definedName></definedNames></workbook>` }, /作用域.*不存在/);
 });
+
+test('non-worksheet sheets disclose the relationship id and literal type', () => {
+  for (const type of ['chartsheet', 'styles']) {
+    const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: name.endsWith('workbook.xml.rels') ? bytes.toString().replace('/worksheet"', `/${type}"`) : name.endsWith('sheet1.xml') ? `<${type} xmlns="${MAIN}"/>` : bytes.toString() }));
+    const sheet = xlsxParser.parse(zip(members)).model.sheets[0];
+    assert.equal(sheet.relationshipId, 'sheet'); assert.equal(sheet.relationshipType, `${DOC_REL}/${type}`); assert.deepEqual(sheet.rows, []);
+  }
+});

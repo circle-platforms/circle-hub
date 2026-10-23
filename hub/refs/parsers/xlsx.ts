@@ -294,6 +294,8 @@ export type XlsxRow = {
   cells: XlsxCell[];
 };
 export type XlsxSheet = {
+  relationshipId: string;
+  relationshipType: string;
   name: string;
   state: string;
   part: string;
@@ -670,7 +672,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       const customHeight = bool(attribute(row, 'customHeight'));
       rows.push({ number, hidden: bool(attribute(row, 'hidden')) || (customHeight && ht !== null && ht.trim() !== '' && Number(ht) === 0), ht, customHeight, cells });
     }
-    sheets.push({ name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
+    sheets.push({ relationshipId: relationship.id, relationshipType: relationship.type, name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
   }
   if (definedNames.some((name) => name.scope !== null && name.scope >= sheets.length)) syntax('XLSX 定义名作用域指向不存在的工作表');
   const model: XlsxModel = { nulRemoved, members, relationships, sheets, sharedStrings, definedNames };
