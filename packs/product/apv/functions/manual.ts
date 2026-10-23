@@ -773,7 +773,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     return tails.length > 0 ? tails : null;
   };
 
-  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null): boolean => {
+  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null, currentParams: readonly { name: string }[] = []): boolean => {
     if (currentWords === null) return false;
     const lowered = currentWords.map((word) => word.toLowerCase());
     if (cellAnchor.params.length > 0 && cellAnchor.words.length === lowered.length + cellAnchor.params.length
@@ -783,8 +783,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     if (cellAnchor.params.length === 0 && variantTail !== null) {
       const text = cellAnchor.words.join(' ').toLowerCase();
-      return variantTail.some((option) => option === text);
+      if (variantTail.some((option) => option === text)) return true;
     }
+    // A cell whose HEAD equals one of the current signature's parameter names (with or without its value syntax,
+    // weight / weight <1-100>), or one enumerated alternative of its variant group, is a value row (c3 item 5,
+    // previous finding 2's asked rule).
+    const headText = cellAnchor.words.map((word) => word.toLowerCase()).join(' ');
+    if (headText !== '' && !lowered.includes(headText) && currentParams.some((param) => param.name.toLowerCase() === headText)) return true;
+    if (variantTail !== null && headText !== '' && !lowered.includes(headText) && variantTail.some((option) => option === headText)) return true;
     return false;
   };
 
@@ -939,8 +945,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   // The command the blocks describe: set by a heading anchor when its section starts, by a paragraph anchor, and ended by
   // a new section or a paragraph written as a signature that does not parse.
   let section: number | null = null;
-  let current: { path: string; words: string[] } | null = null;
-  let currentVariantTails: string[] | null = null;
+  // The current command's own state: words, parameter names and variant-group alternatives. Every assignment sets
+  // ALL of it (a heading anchor, a paragraph anchor, a new section or a rejected signature) — a stale variant tail
+  // from an earlier command never reaches a later one (c3 item 5).
+  let current: { path: string; words: string[]; params: { name: string }[]; variantTails: string[] | null } | null = null;
   for (const value of asArray(model.blocks)) {
     if (!isRecord(value) || typeof value.kind !== 'string' || !Number.isInteger(value.section) || typeof value.text !== 'string' || typeof value.selector !== 'string') {
       invalid++;
@@ -950,7 +958,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (block.section !== section) {
       section = block.section;
       const heading = headingAnchors.get(block.section);
-      current = heading !== undefined && heading.path !== null ? { path: heading.path, words: heading.anchor.words } : null;
+      current = heading !== undefined && heading.path !== null ? { path: heading.path, words: heading.anchor.words, params: heading.anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(heading.anchor) } : null;
     }
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
@@ -964,8 +972,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       noteSignature(entry);
       entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
-      current = { path: placed, words: anchor.words };
-      currentVariantTails = variantTailsOf(anchor);
+      current = { path: placed, words: anchor.words, params: anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(anchor) };
       continue;
     }
     // A command table is split by row, decided by the manual alone: every row that carries a signature becomes its own
@@ -992,14 +999,19 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
+        // Rows whose bold cells are ALL values of the current command: their bold spans are values, not mentions,
+        // and no command literals are recorded from them (c3 item 5).
+        const valueOnlyRows = new Set<number>();
         let signatureRows = 0;
         for (const row of table.rows) {
-          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
-            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, currentVariantTails))
-            .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
+          const anchorsOf = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex)));
+          const found = anchorsOf
+            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, current?.variantTails ?? null, current?.params ?? []))
+            .map((cellAnchor, cellIndex) => ({ cell: cellIndex, anchor: cellAnchor }));
           if (found.length === 0) {
             // A bare bold word is a value, parameter name or term: the row stays in the remainder. Its bold spans are
             // recorded as literals by the remainder's own putLiterals, as written — no word-level sweep (closure 5/21).
+            if (anchorsOf.length > 0) valueOnlyRows.add(row.line);
             remainder.push(row.line);
             continue;
           }
@@ -1075,8 +1087,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
               statement: lines.join('\n'),
               block: 'table',
               section: block.section,
-              fragments: (withHeader ? [0] : []).concat(quiet).map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
+              fragments: (withHeader ? [0] : []).concat(quiet).map((line) => ({ parser: parserOf(options), selector: block.selector, range: ranges[line] }) as FragmentRef),
               ...(current !== null ? { words: current.words } : {}),
+              // A remainder made only of value rows records no command literals (their bold spans are values).
+              ...(quiet.every((line) => valueOnlyRows.has(line)) ? { noLiterals: true } : {}),
             }),
           );
         };

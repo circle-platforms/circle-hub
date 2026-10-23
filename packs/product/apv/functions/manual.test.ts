@@ -1102,6 +1102,25 @@ describe('applicability from explicit conditions', () => {
 
 
 
+
+  it('a parameter or enumerated-alternative cell is a value row of the current command, and the current state resets (closure c3 item 5)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="acl"><item name="permit" help_string="p"><arguments></arguments></item></menu></menu><menu name="enable"><item name="config" help_string="c"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    // Parameter rows under a two-parameter signature stay value rows: no definition, no drift.
+    const params = produceManualEntries(markdown('**demo pool add** *\\<name\\> \\[*weight*\\]*\n\n| 参数 | 说明 |\n|---|---|\n| **weight** *\\<1-100\\>* | 权重 |\n| **name** *\\<string\\>* | 成员名 |\n'), null, { catalog: tree });
+    assert.ok(!params.entries.some((entry) => entry.kind === 'definition' && String(entry.statement).startsWith('weight')), JSON.stringify(params.entries.map((e) => [e.kind, String(e.statement).slice(0, 20)])));
+    assert.ok(!params.entries.some((entry) => entry.kind === 'definition' && String(entry.statement).startsWith('name')));
+    assert.ok(!params.warnings.some((w) => w.includes('漂移候选')), params.warnings.join('；'));
+    // The variant tails RESET at a heading anchor: a later bold cell that happens to equal an EARLIER variant's
+    // alternative is a signature again, not a value row of the unrelated current command.
+    const variant = produceManualEntries(markdown('**demo acl permit {enable\\|disable}**\n\n## **demo pool add** *\\<name\\>*\n\n| 命令 | 说明 |\n|---|---|\n| **enable** | 进入特权模式 |\n'), null, { catalog: tree });
+    const enableDef = variant.entries.find((entry) => entry.kind === 'definition' && String(entry.statement) === 'enable');
+    assert.ok(enableDef !== undefined, JSON.stringify(variant.entries.map((e) => [e.kind, e.path, String(e.statement).slice(0, 24)])));
+    // While the variant signature IS current, its alternative is a value row.
+    const variantCurrent = produceManualEntries(markdown('**demo acl permit {enable\\|disable}**\n\n| 命令 | 说明 |\n|---|---|\n| **enable** | 进入特权模式 |\n'), null, { catalog: tree });
+    assert.ok(!variantCurrent.entries.some((entry) => entry.kind === 'definition' && String(entry.statement) === 'enable'), JSON.stringify(variantCurrent.entries.map((e) => [e.kind, String(e.statement).slice(0, 24)])));
+    assert.ok(!variantCurrent.warnings.some((w) => w.includes('漂移候选')), variantCurrent.warnings.join('；'));
+  });
+
   it('a shared multi-row entry carries a condition only when every row states it (closure finding 8)', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     // A grid table (not split by row): one row conditioned, one not — the shared entry stays 未声明.
