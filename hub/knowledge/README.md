@@ -718,3 +718,23 @@ Milestone 2:
   documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
+
+
+## 有效条件状态（B01 R[2]）：解析时计算，矛盾只打标
+
+读知识树条目和解析记录引用时，有效条件状态按可机器检查的规则计算（`TreeReading.read`、`hub/refs/resolve.ts`），不由写入方声明：
+
+| 状态 | 数据来源 | 现状 |
+| --- | --- | --- |
+| `rule_withdrawn` 规则已撤回 | 组成行的 `decided_by`（决定该条目的包 id@version）；读时查包端口，下架即标 | 有数据，已算 |
+| `cited_fragment_changed` 被引片段已变 | 同一根的各组成记录里同一路径的条目摘要，与主张所引条目不同即标 | 有数据，已算 |
+| `expired` 已过期 | 记录主张 `validity.expires_at`，解析时按当前时刻重读（B01 R[3]）；树条目自身无过期字段，不算 | 记录主张有数据，已算；树条目无来源 |
+| `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下 | 合成关系记录已算；候选层的提议通道由另一终端在建 |
+| `grounds_withdrawn` 根据已撤回 | 无撤回记录通道 | 无数据来源，先不算 |
+| `premise_failed` 前提失效 | 前提的认证状态没有机器可读记录 | 无数据来源，先不算 |
+
+### 矛盾关系怎样存、怎样查
+
+一条矛盾关系是一条 `claim` 记录：`body.relation = 'contradicts'`、`body.at`（关系成立时间）、`body.other`（对方的树地址）、`body.claim`（本方的树地址），索引键 `knowledge.claim.contradiction` 上按**两个**条目摘要各写一行（双方都能按自己的摘要查到）。候选层的关系提议（另一终端的通道）最终也落成这个形状；确定性的规则可以直接写。谁能看由 `claim` 记录本身的权限规则决定（和观察层一致）。
+
+读条目时按条目摘要查这个键：命中的关系进 `validity.contradictions`（每条带 `source`（关系记录的 rec: 引用）、`at`、`other`），状态标 `contradicted`。**不裁决**：矛盾双方都原样返回（`hub/knowledge/validity.test.ts` 钉住：另一方不被隐藏、任何一方的文字与依据等级不变、双方状态同为 contradicted 各带自己的来源和时间）。

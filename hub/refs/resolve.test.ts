@@ -462,3 +462,20 @@ describe('document cache and fragment digests', () => {
     assert.equal(fragmentDigest({ text: 'abc' }), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 });
+
+describe('resolveReference: the validity of a record claim (B01 R[3])', () => {
+  const recordOf = (validity: Record<string, unknown>) => ({ kind: 'claim', schema: 'claim@1', provenance: 'observed', created_at: '2026-10-21T08:00:00.000Z', body: { at: '1970-01-01T00:00:00.000Z', validity } });
+
+  it('re-reads expires_at: a past expiry surfaces as expired, a future one keeps the stored status', async () => {
+    const past = recordOf({ status: 'valid', bound: [], expires_at: '2020-01-01T00:00:00.000Z', premises: [] }) as unknown as RecordRead;
+    const pastDigest = recordDigest(past);
+    const expired = await resolveReference(`rec:${pastDigest}`, { ...context({ records: { read: () => past } }).ctx });
+    assert.equal(expired.resolved, true);
+    assert.equal(((expired as unknown as { validity: { status: string } }).validity).status, 'expired');
+
+    const future = recordOf({ status: 'valid', bound: [], expires_at: '2099-01-01T00:00:00.000Z', premises: [] }) as unknown as RecordRead;
+    const futureDigest = recordDigest(future);
+    const valid = await resolveReference(`rec:${futureDigest}`, { ...context({ records: { read: () => future } }).ctx });
+    assert.equal(((valid as unknown as { validity: { status: string } }).validity).status, 'valid');
+  });
+});

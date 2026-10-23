@@ -4,7 +4,7 @@
 // (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
 // through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
-import { EntryKindSchema, type ChangeKind, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { EntryKindSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
@@ -15,6 +15,7 @@ import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReferen
 import type { JsonValue, ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import { createCatalogView, type CatalogEntry, type CatalogView } from '../rules/api.ts';
 import { CompositionView, type ReadRow } from './composition.ts';
+import { CONTRADICTION } from './store.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
@@ -408,11 +409,51 @@ export class TreeReading {
       });
       return { grounds, tagged };
     };
+    // The machine-checkable validity of what is read (B01 R[2]): rule_withdrawn (the deciding pack version is
+    // unpublished), cited_fragment_changed (another composition of this root carries a different entry digest at the
+    // same path than the one the caller cited), contradicted (a verified contradiction relation names a claim here).
+    // grounds_withdrawn and premise_failed have no data source today and are never claimed (README); tree entries
+    // carry no expiry of their own, so expired is computed for record claims only (hub/refs).
+    const validityOfRows = async (digests: readonly string[]): Promise<{ status: ValidityStatus; bound: string[]; contradictions: Array<{ source: string; at: string; other: string }> }> => {
+      const bound = [root, ...digests];
+      let status: ValidityStatus = 'valid';
+      const decidedBy = new Set<string>();
+      for (const c of compositions) for (const digest of digests) {
+        const row = (await c.rowsAt(canonical)).get(digest);
+        if (row !== undefined) decidedBy.add(row.decided_by);
+      }
+      for (const ref of decidedBy) {
+        const pack = await this.#context.packs.pack(ref);
+        if (pack === null) { status = 'rule_withdrawn'; break; }
+      }
+      if (status === 'valid' && digests.length === 1) {
+        // The caller cited one entry: another composition of this root carrying any different entry at the same path
+        // means the cited fragment has changed under this root (the reader's lock is the root, B01 R[2]).
+        for (const c of compositions) {
+          const rows = await c.rowsAt(canonical);
+          if (rows.size === 0) continue;
+          if (!rows.has(digests[0]!)) { status = 'cited_fragment_changed'; break; }
+        }
+      }
+      const contradictions: Array<{ source: string; at: string; other: string }> = [];
+      for (const digest of digests) {
+        const page = await this.#context.store.records.find<{ relation?: string; at?: string; other?: string }>({ key: CONTRADICTION, value: digest, kind: 'claim', limit: 10 });
+        for (const record of page.items) {
+          const body = record.body as { relation?: string; at?: string; other?: string };
+          if (body.relation !== 'contradicts') continue;
+          contradictions.push({ source: `rec:${record.digest}`, at: body.at ?? record.created_at, other: body.other ?? '' });
+        }
+      }
+      if (contradictions.length > 0) status = 'contradicted';
+      return { status, bound, contradictions };
+    };
+
     if (entry !== null) {
       if (!found.node.entries.includes(entry)) return null;
       const content = await this.#contentOf(rowsOf[0] ?? null, entry);
       if (content === null) return null;
       const { grounds, tagged } = groundsOf([entry]);
+      const validity = await validityOfRows([entry]);
       return {
         text: content.statement,
         mediaType: 'text/plain',
@@ -420,15 +461,15 @@ export class TreeReading {
         data: { kind: content.kind, data: content.data, applicability: content.applicability } as JsonValue,
         grounds,
         validity: {
-          status: 'valid',
-          bound: [root, entry],
+          ...validity,
           premises: content.applicability === null ? [...premises, `适用条件：${UNDECLARED}`] : premises,
           compositions: tagged,
-        },
+        } as JsonValue,
       };
     }
     const entries = await this.#entriesAt(rowsOf[0] ?? null, found.node.entries);
     const { grounds, tagged } = groundsOf(entries.map((e) => e.digest));
+    const validity = await validityOfRows(entries.map((e) => e.digest));
     const text = entries.length > 0 ? entries.map((e) => e.content.statement).join('\n\n') : found.node.children.map((c) => c.name).join('\n');
     return {
       text,
@@ -436,7 +477,7 @@ export class TreeReading {
       readTier: 'model_readable',
       data: { name: found.node.name, level: found.node.level, children: found.node.children.map((c) => c.name), entries: [...found.node.entries] },
       grounds,
-      validity: { status: 'valid', bound: [root], premises, compositions: tagged },
+      validity: { ...validity, premises, compositions: tagged } as JsonValue,
     };
   }
 

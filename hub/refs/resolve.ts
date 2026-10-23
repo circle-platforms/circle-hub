@@ -328,6 +328,14 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
       }
       let value: unknown = record.body;
       let validity: unknown = validityOf(value);
+      // B01 R[3] (re-read before relying): an expires_at in the record's own validity is checked at read time — a
+      // past expiry surfaces as expired instead of the stale status stored with the claim.
+      if (validity !== undefined && typeof validity === 'object' && validity !== null) {
+        const at = (validity as { expires_at?: unknown }).expires_at;
+        if (typeof at === 'string' && Date.parse(at) <= Date.now() && (validity as { status?: unknown }).status !== 'expired') {
+          validity = { ...(validity as Record<string, unknown>), status: 'expired' };
+        }
+      }
       if (ref.pointer !== undefined) {
         for (const token of pointerTokens(ref.pointer)) {
           const next = step(value, token);
