@@ -47,12 +47,8 @@ describe('hand-built drafts and checks coverage', () => {
     const groundOutcomes = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(groundOutcomes[0].verdict, 'support');
 
-    // The narrowed view (only=show health detail) does not cover the good draft's command: unknown, honestly.
-    const narrowed = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW }));
-    assert.equal(narrowed[0].verdict, 'unknown');
-    assert.match(narrowed[0].statement, /没有收窄到/);
-    // On the complete view the same draft is decidable and supported.
-    const dupOutcomes = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW_COMPLETE }));
+    // The narrowing now rides the bound URI (narrowed-dedup.test covers its rules); the plain view is complete here.
+    const dupOutcomes = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW }));
     assert.equal(dupOutcomes[0].verdict, 'support');
   });
 

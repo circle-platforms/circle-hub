@@ -1,116 +1,143 @@
-// The decidability rules of deduplication on a narrowed index (the real-scale task): the binding may narrow the index
-// with only=<命令路径>（the commands the drafts will use）; a draft is decidable when its command set meets the only
-// list (its duplicate, if any, carries every command of the set, so it must appear under one of those keys); a draft
-// whose commands all sit outside the only list is unknown, with the reason named. After narrowing, an entry's command
-// set comes from its own commands field (a narrowed entry appears only under the listed keys, the keys no longer rebuild
-// the whole set); an entry without a commands field is unknown, never "no commands". Without only, the old rule stands:
-// decidable only when the view is complete; a truncated view is unknown.
+// The decidability rules of deduplication on a narrowed index, at real scale. Three sources of truth:
+// - The narrowing comes from the bound URI's only=… parameter (comma-separated, each percent-decoded, a trailing
+//   @<64-hex> or @<hex>..<hex> revision stripped first); the view's own output carries no only field (README Needs).
+// - The core caps every key at 2000 entries and says so in prose only: a key listing exactly the cap may have been cut.
+// - Case entries carry no expected-text field: the comparison rests on the command-set key, the negative flag and the
+//   title. A draft is decidable when some key of its command set sits in only and not every such key is possibly cut.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { IndexView } from '../../../../contracts/src/views.ts';
 import { checkDuplicate } from './checks.ts';
-import { buildCompactIndex, isCompactIndex } from './compact-index.ts';
+import { buildCompactIndex, isCompactIndex, MAX_INDEX_PER_KEY, onlyOfExternal } from './compact-index.ts';
 import { goodDraft, SYNTHETIC_INDEX_VIEW, SYNTHETIC_INDEX_VIEW_COMPLETE } from '../testing/fixtures.ts';
 
 const HEX2 = '2'.repeat(64);
-
-/** A narrowed index view: only the show health detail key, entries carry their own commands field. */
-/** The Hub echoes the narrowing in the view's notes (only=<keys>); entries keep their own commands field. */
-const NARROWED_VIEW: IndexView = {
-  ...SYNTHETIC_INDEX_VIEW,
-  keys: { 'show health detail': [HEX2] },
-  total_keys: 1,
-  truncated: true,
-  notes: ['only=show health detail'],
-} as unknown as IndexView;
+const NARROWED = 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative';
 
 const inputOf = (options: { drafts?: unknown[]; indexed_cases?: unknown }): unknown => ({
   subject: {
     item: '74001',
     drafts: options.drafts ?? [goodDraft()],
-    indexed_cases: options.indexed_cases ?? NARROWED_VIEW,
+    indexed_cases: options.indexed_cases ?? SYNTHETIC_INDEX_VIEW,
   },
 });
 
-describe('dedup on a narrowed index', () => {
-  it('a draft whose command set meets the only list is decidable: a duplicate is refuted', () => {
-    // The duplicate draft uses exactly the narrowed key's command (show health detail).
-    const duplicate = goodDraft({ title: '健康检查详细信息查看', expected: [{ text: '健康检查状态显示正常', quote: { reference: 'src:x', text: '健康检查状态显示正常' } }] });
+describe('onlyOfExternal reads the bound URI', () => {
+  it('splits on commas, percent-decodes each value and strips a trailing revision', () => {
+    assert.deepEqual(onlyOfExternal(NARROWED), ['show health detail']);
+    const two = 'knowledge:index:p:b?kind=case&key=commands&only=show%20health%20detail,widget%20health%20interval';
+    assert.deepEqual(onlyOfExternal(two), ['show health detail', 'widget health interval']);
+    const revised = `knowledge:index:p:b@${'a'.repeat(64)}?kind=case&key=commands&only=reboot@${'b'.repeat(64)}..${'c'.repeat(64)},ping`;
+    assert.deepEqual(onlyOfExternal(revised), ['reboot', 'ping']);
+  });
+
+  it('no only parameter means not narrowed (null), an empty one too', () => {
+    assert.equal(onlyOfExternal('knowledge:index:p:b?kind=case&key=commands'), null);
+    assert.equal(onlyOfExternal('knowledge:index:p:b?kind=case&key=commands&only='), null);
+    assert.equal(onlyOfExternal(null), null);
+  });
+});
+
+describe('dedup narrowed by the bound URI', () => {
+  it('a draft whose command set meets only is decidable: a duplicate is refuted on the title', () => {
+    // The duplicate rides the narrowed key's command and shares the indexed case's title.
+    const duplicate = goodDraft({ title: '健康检查详细信息查看' });
     const draftOnKey = { ...duplicate, steps: [{ command: 'show health detail', note: '查看' }] };
-    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey] }));
+    const compact = buildCompactIndex(SYNTHETIC_INDEX_VIEW, undefined, NARROWED);
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }));
     assert.equal(outcomes[0].verdict, 'refute');
     assert.equal(outcomes[0].code, 'defect-to-case.duplicate_case');
   });
 
-  it('a draft on the narrowed key without a duplicate is supported (decidable, not unknown)', () => {
+  it('a draft on the narrowed key with a different title is supported (decidable, no duplicate)', () => {
     const draftOnKey = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
-    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey] }));
+    const compact = buildCompactIndex(SYNTHETIC_INDEX_VIEW, undefined, NARROWED);
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }));
     assert.equal(outcomes.length, 1);
     assert.equal(outcomes[0].verdict, 'support');
   });
 
-  it('a draft whose commands all sit outside the only list is unknown, with the reason named', () => {
+  it('a draft whose commands all sit outside only is unknown, with the reason named', () => {
     const outside = { ...goodDraft(), steps: [{ command: 'widget health interval 60', note: '设置' }] };
-    const outcomes = checkDuplicate(inputOf({ drafts: [outside] }));
+    const compact = buildCompactIndex(SYNTHETIC_INDEX_VIEW, undefined, NARROWED);
+    const outcomes = checkDuplicate(inputOf({ drafts: [outside], indexed_cases: compact }));
     assert.equal(outcomes[0].verdict, 'unknown');
     assert.equal(outcomes[0].reason, 'missing_input');
     assert.match(outcomes[0].statement, /索引没有收窄到/);
     assert.match(outcomes[0].statement, /widget health interval/);
   });
 
-  it('a draft with commands both inside and outside the only list is decidable (at least one inside)', () => {
-    const mixed = { ...goodDraft(), steps: [{ command: 'show health detail', note: 'a' }, { command: 'widget health interval 60', note: 'b' }] };
-    const outcomes = checkDuplicate(inputOf({ drafts: [mixed] }));
-    assert.equal(outcomes[0].verdict, 'support', 'one command of the set inside the narrowing is enough');
+  it('the same view without an only parameter keeps the old rule: complete view supports, truncated is unknown', () => {
+    const support = buildCompactIndex(SYNTHETIC_INDEX_VIEW_COMPLETE, undefined, 'knowledge:index:p:b?kind=case&key=commands');
+    assert.equal(checkDuplicate(inputOf({ indexed_cases: support }))[0].verdict, 'support');
+    const truncated = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW_COMPLETE, truncated: true }, undefined, 'knowledge:index:p:b?kind=case&key=commands');
+    assert.equal(checkDuplicate(inputOf({ indexed_cases: truncated }))[0].verdict, 'unknown');
   });
 
-  it('an entry without a commands field on a narrowed index is unknown, never treated as command-less', () => {
-    const missing: IndexView = {
-      ...NARROWED_VIEW,
-      entries: { [HEX2]: { ...NARROWED_VIEW.entries[HEX2]!, data: { ...NARROWED_VIEW.entries[HEX2]!.data, commands: undefined } } },
-    };
-    const draftOnKey = { ...goodDraft({ title: '健康检查详细信息查看' }), steps: [{ command: 'show health detail', note: '查看' }] };
-    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: missing }));
-    assert.equal(outcomes[0].verdict, 'unknown');
-    assert.match(outcomes[0].statement, /没有带 commands 字段|缺少 commands/);
-  });
-
-  it('without narrowing the old rule stands: a truncated view keeps "no duplicate" unknown', () => {
-    const full: IndexView = { ...SYNTHETIC_INDEX_VIEW_COMPLETE, truncated: true, notes: ['truncated'] };
-    const outcomes = checkDuplicate(inputOf({ indexed_cases: full }));
-    assert.equal(outcomes[0].verdict, 'unknown');
-    assert.equal(outcomes[0].reason, 'integrity_unproven');
-  });
-
-  it('without narrowing a complete view still supports a non-duplicate', () => {
-    const outcomes = checkDuplicate(inputOf({ indexed_cases: SYNTHETIC_INDEX_VIEW_COMPLETE }));
-    assert.equal(outcomes[0].verdict, 'support');
+  it('entries carry no expected-text field: a shared title with a different expected text still duplicates', () => {
+    // The index entry has no expected texts to compare; the title (and the command-set key) decides.
+    const duplicate = goodDraft({ title: '健康检查详细信息查看', expected: [{ text: '完全不同的期望', quote: { reference: 'src:x', text: '完全不同的期望' } }] });
+    const draftOnKey = { ...duplicate, steps: [{ command: 'show health detail', note: '查看' }] };
+    const compact = buildCompactIndex(SYNTHETIC_INDEX_VIEW, undefined, NARROWED);
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }));
+    assert.equal(outcomes[0].verdict, 'refute', 'the title alone decides when the entries carry no expected texts');
   });
 });
 
-describe('the compact index after narrowing', () => {
-  it('builds an entry\'s command set from its own commands field, not from the keys', () => {
-    const compact = buildCompactIndex(NARROWED_VIEW);
+describe('the per-key cap of the core (2000 entries)', () => {
+  /** A view whose single key lists exactly MAX_INDEX_PER_KEY digests: possibly cut (a prose note is all the core gives). */
+  const cappedView = (): IndexView => {
+    const digests = Array.from({ length: MAX_INDEX_PER_KEY }, (_, i) => String(i + 1).padStart(64, '0'));
+    const entries: IndexView['entries'] = {};
+    for (const digest of digests) {
+      entries[digest] = { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!, entry: digest, data: { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!.data } };
+    }
+    return { ...SYNTHETIC_INDEX_VIEW, keys: { 'show health detail': digests }, entries, total_keys: 1, total_entries: digests.length };
+  };
+
+  it('the compact index names the key as possibly cut and the check keeps such drafts unknown', () => {
+    const compact = buildCompactIndex(cappedView(), 64 * 1024 * 1024, NARROWED);
     assert.ok(isCompactIndex(compact));
-    const bucket = compact.by_commands['show health detail'];
-    assert.ok(bucket !== undefined && bucket.length === 1, JSON.stringify(Object.keys(compact.by_commands)));
-    assert.equal(bucket[0].document, 'doc_101');
+    assert.deepEqual(compact.cappedKeys, ['show health detail']);
+    const draftOnKey = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }));
+    assert.equal(outcomes[0].verdict, 'unknown');
+    assert.equal(outcomes[0].reason, 'integrity_unproven');
+    assert.match(outcomes[0].statement, /每键上限/);
   });
 
-  it('an entry whose data has no commands field and no usable key reconstruction counts as unknown-worthy, not empty', () => {
+  it('a draft with one key under the cap and one capped key stays decidable (not every intersecting key is cut)', () => {
+    // The widget key also carries a real entry under the cap (the capped digests all file under the show key).
+    // A large byte budget keeps the compacting from dropping entries, so only the cap rule is under test.
+    const mixed = buildCompactIndex({
+      ...cappedView(),
+      keys: { 'show health detail': Array.from({ length: MAX_INDEX_PER_KEY }, (_, i) => String(i + 1).padStart(64, '0')), 'widget health interval': [HEX2] },
+      total_entries: MAX_INDEX_PER_KEY + 1,
+    }, 64 * 1024 * 1024, 'knowledge:index:p:b?kind=case&key=commands&only=show%20health%20detail,widget%20health%20interval');
+    const draftBoth = { ...goodDraft(), steps: [{ command: 'show health detail', note: 'a' }, { command: 'widget health interval', note: 'b' }] };
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftBoth], indexed_cases: mixed }));
+    assert.equal(outcomes[0].verdict, 'support', 'the under-cap key in the intersection keeps the draft decidable');
+  });
+
+  it('a key under the cap is not named: the draft stays decidable (negative example of the cap rule)', () => {
+    const compact = buildCompactIndex(SYNTHETIC_INDEX_VIEW, undefined, NARROWED);
+    assert.deepEqual(compact.cappedKeys, []);
+    const draftOnKey = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
+    assert.equal(checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }))[0].verdict, 'support');
+  });
+});
+
+describe('entries without a commands field', () => {
+  it('counts them apart and keeps the no-duplicate claim unknown, never treating them as command-less', () => {
     const missing: IndexView = {
-      ...NARROWED_VIEW,
-      keys: {},
-      entries: { [HEX2]: { ...NARROWED_VIEW.entries[HEX2]!, data: { ...NARROWED_VIEW.entries[HEX2]!.data, commands: undefined } } },
+      ...SYNTHETIC_INDEX_VIEW,
+      entries: { [HEX2]: { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!, data: { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!.data, commands: undefined } } },
     };
-    const compact = buildCompactIndex(missing);
-    assert.ok(compact.unplacedCommands >= 1, `unplaced commands counted: ${compact.unplacedCommands}`);
-    assert.equal(compact.total, 0);
-  });
-
-  it('a complete un-narrowed view with commands fields still buckets normally', () => {
-    const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, truncated: false });
-    assert.equal(compact.total, 1);
-    assert.ok(compact.by_commands['show health detail'] !== undefined);
+    const compact = buildCompactIndex(missing, undefined, NARROWED);
+    assert.ok(compact.unplacedCommands >= 1);
+    const draftOnKey = { ...goodDraft({ title: '健康检查详细信息查看' }), steps: [{ command: 'show health detail', note: '查看' }] };
+    const outcomes = checkDuplicate(inputOf({ drafts: [draftOnKey], indexed_cases: compact }));
+    assert.equal(outcomes[0].verdict, 'unknown');
+    assert.match(outcomes[0].statement, /commands 字段/);
   });
 });

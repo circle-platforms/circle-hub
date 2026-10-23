@@ -40,7 +40,7 @@ describe('defect-to-case end to end run', { skip }, () => {
             { external: 'plm:bug:71010' },
           ],
           indexed_cases: {
-            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,expected_texts',
+            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',
           },
         },
       },
@@ -177,7 +177,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         inputs: {
           defects: [{ external: 'plm:bug:74001' }],
           indexed_cases: {
-            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,expected_texts',
+            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',
           },
         },
       },

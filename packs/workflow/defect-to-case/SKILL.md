@@ -5,7 +5,7 @@
 ## 1. 任务目标与输入
 
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单，收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,expected_texts`）。`only` 在读完缺陷、动笔起草后、开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单，收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。`only` 在读完缺陷、动笔起草后、开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。

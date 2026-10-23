@@ -14,7 +14,7 @@
         }
       ],
       "indexed_cases": {
-        "external": "knowledge:index:<产品名称>:<构建标识>?kind=case&key=commands&only=show%20health%20detail,widget%20health%20interval&fields=commands,document,node,title,negative,expected_texts"
+        "external": "knowledge:index:<产品名称>:<构建标识>?kind=case&key=commands&only=show%20health%20detail,widget%20health%20interval&fields=commands,document,node,title,negative"
       }
     },
     "parameters": {

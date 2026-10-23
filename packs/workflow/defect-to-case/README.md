@@ -38,8 +38,8 @@
 
 1. **沙箱输入上限与字段裁剪**：
    - Hub 沙箱调用的输入上限为 8 MiB（`SANDBOX_INPUT_MAX`）。真实构建的全量用例索引视图（如 APV 构建）包含大量 AST、长 statement 和复杂元数据，整体体积达 12 至 15 MiB，直接作为输入会导致超限。
-   - 只裁字段不够：真实构建（APV 10.6.1）的用例索引视图即使只带 `document,node,title` 三个字段也有 14.7 MB，视图的字节预算只放得下约 45,000 个条目中的 27,102 个（被截断，查重只能记未知）。
-   - 收窄写法：`knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,expected_texts`。`only` 列草稿要用的命令（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`），由模型在读完缺陷后、开始运行时写上；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其他字段也要列上。
+   - 只裁字段不够：一个真实构建的用例索引视图即使只带 `document,node,title` 三个字段也有 14.7 MB，视图的字节预算只放得下约 45,000 个条目中的 27,102 个（被截断，查重只能记未知）。
+   - 收窄写法：`knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`。`only` 列草稿要用的命令（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`），由模型在读完缺陷后、开始运行时写上；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其他字段也要列上。
    - 判得出来的范围：草稿的命令集合 S 里至少有一个命令在 `only` 里才判得出来；S 与 `only` 不相交的草稿记为未知（说明索引没有收窄到它用的命令）。不传 `only` 时照旧：视图完整才判得出来，被截断就记未知。
 
 2. **紧凑索引与沙箱输出上限**：
@@ -74,3 +74,8 @@ node --test --test-concurrency=2 "packs/workflow/defect-to-case/**/*.test.ts"
 # 执行 TypeScript 静态类型检查
 npx tsc --noEmit
 ```
+
+
+## 需要别的包做的事
+
+- 索引视图应当把 `only` 和被截断的键作为机器可读的字段给出：现在视图的回答里既没有 `only_keys` 字段，也没有「only=…」的说明，收窄只能从绑定的 URI 的查询参数里读；每个键的条目上限（2000）截断也只有一句 prose 说明，只能靠「正好列到 2000」推断。这两条都是核心（hub/knowledge 的视图）要给的，给了以后这个包可以不再推断。

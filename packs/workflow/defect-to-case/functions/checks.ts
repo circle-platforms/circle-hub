@@ -505,16 +505,24 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   // The narrowed keys (only=…), normalized the same way as the bucket keys. Null: the view is complete (no narrowing).
   // A hand-built compact index may predate the field; undefined means un-narrowed.
   const only = compactIndex.only ?? null;
-  const decidable = (cmds: readonly string[]): boolean => {
-    if (only === null) return true;
-    const normalized = new Set(cmds.map(normalizeCommand).filter((c) => c !== ''));
-    if (normalized.size === 0) return true;
-    return only.some((k) => normalized.has(normalizeCommand(k)));
+  const capped = new Set((compactIndex.cappedKeys ?? []).map(normalizeCommand));
+  // Decidable: some key of the draft's command set sits in only AND is not one of the possibly-cut keys. A key that
+  // listed exactly the per-key cap (2000) may have been truncated by the core (a prose note only), so a draft whose
+  // whole intersection falls on capped keys stays unknown.
+  const keyState = (cmds: readonly string[]): { covered: boolean; onlyCapped: boolean } => {
+    const normalized = [...new Set(cmds.map(normalizeCommand).filter((c) => c !== ''))];
+    if (normalized.length === 0) return { covered: only === null, onlyCapped: false };
+    const inOnly = only === null ? normalized : normalized.filter((c) => only.some((k) => normalizeCommand(k) === c));
+    if (inOnly.length === 0) return { covered: false, onlyCapped: false };
+    return { covered: true, onlyCapped: inOnly.every((c) => capped.has(c)) };
   };
   const undecidable = new Set<unknown>();
+  const cappedOnly = new Set<unknown>();
   for (const draft of drafts) {
     const cmds = draft.steps.map((s) => s.command).filter(Boolean);
-    if (!decidable(cmds)) undecidable.add(draft);
+    const state = keyState(cmds);
+    if (!state.covered) undecidable.add(draft);
+    else if (state.onlyCapped) cappedOnly.add(draft);
   }
 
   for (let i = 0; i < drafts.length; i++) {
@@ -528,27 +536,18 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     if (!candidates || candidates.length === 0) continue;
 
     const draftTitle = normalizeText(draft.title);
-    const draftExpected = draft.expected.map((e) => normalizeText(e.text));
 
     for (const cand of candidates) {
       // 1. Same negative flag
       const candNegative = cand.negative === true;
       if (draft.negative !== candNegative) continue;
 
-      // 2. Normalised titles equal OR normalised expected texts equal
+      // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
+      // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
       const candTitle = normalizeText(cand.title);
       const titlesEqual = draftTitle === candTitle && draftTitle !== '';
 
-      let expectedEqual = false;
-      const candExpList = cand.expected ?? [];
-      const candNormExp = candExpList.map(normalizeText);
-      if (draftExpected.length > 0 && candNormExp.length > 0) {
-        if (draftExpected.some((de) => candNormExp.includes(de))) {
-          expectedEqual = true;
-        }
-      }
-
-      if (titlesEqual || expectedEqual) {
+      if (titlesEqual) {
         const doc = cand.document || '未知文档';
         const node = cand.node || '未知节点';
         const title = cand.title || '未知标题';
@@ -580,6 +579,18 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       verdict: 'unknown',
       reason: 'missing_input',
       statement: `起草用例“${sample.title ?? '（无标题）'}”用的命令（${cmds}）不在索引收窄的命令里，索引没有收窄到它用的命令，无法核对重复`,
+      grounds: [],
+      tier: 'advisory',
+      ...own,
+    });
+  }
+  // Drafts whose whole intersection with only sits on possibly-cut keys: unknown (the cap may have hidden a duplicate).
+  if (cappedOnly.size > 0) {
+    const sample = [...cappedOnly][0] as { title?: string };
+    outcomes.push({
+      verdict: 'unknown',
+      reason: 'integrity_unproven',
+      statement: `起草用例“${sample.title ?? '（无标题）'}”的命令所在键的条目正好列到每键上限 ${2000} 个，可能被截断，无法断定未重复`,
       grounds: [],
       tier: 'advisory',
       ...own,
