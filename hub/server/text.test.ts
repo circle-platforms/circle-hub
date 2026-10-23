@@ -582,6 +582,7 @@ describe('a production run in the start_run text', () => {
       const fullAt = at(`完整结果 ${RESULT_RECORD}：`);
       const problemsAt = at('问题与未知');
       const itemsAt = at('条目（');
+      if(n===400){assert.ok(itemsAt>=0,'support facts cannot remove the item list');assert.equal(new Set(itemIdsOf(lines.slice(itemsAt+1).join('\n'))).size,400,'support facts cannot displace any of the 400 item rows');}
       assert.ok(fullAt > 3 && fullAt < problemsAt && problemsAt < at('规程：') && (itemsAt < 0 || problemsAt < itemsAt), `${fullAt} ${problemsAt} ${itemsAt}`);
       assert.ok(lines[fullAt].includes(`get_nodes {"reference":"${RESULT_RECORD}"}`), 'how to read the full result');
       const problems = lines.slice(problemsAt + 1).filter((l) => /^- doc7:n[0-9]+ \| .* \| (已交付|已拒收|未完成)/.test(l) && l.split(' | ').length >= 6);

@@ -791,6 +791,7 @@ function startText(v: StartOut, context: TextContext): string {
   const record = context.record ?? null;
   const paging = context.paging === true;
   const blocks: Block[] = [];
+  let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
   const head = [`运行 ${r.run}：任务包 ${headClip.field(r.pack, CLIP.name, '任务包编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
   const production = v.result ?? null;
@@ -829,14 +830,14 @@ function startText(v: StartOut, context: TextContext): string {
       item.requirements.flatMap((requirement, r) => requirement.claims.flatMap((claim, c) =>
         claim.qualifier.nature === 'fact' && claim.statement.verdict === 'support' && claim.warrant.producer === 'function' && claim.validity.status === 'valid'
           ? [{claim, tokens:['partitions',partition,String(index),'requirements',String(r),'claims',String(c)]}] : [])));
-    if (supported.length > 0) pushCapped(blocks, {
-      priority: 3, head: [`生产运行说明（条目检查的支持事实，${supported.length} 条）：`],
+    if (supported.length > 0) supportedBlock = {
+      priority: 4, head: [`生产运行说明（条目检查的支持事实，${supported.length} 条）：`],
       entries: supported.map(({claim, tokens}) => {
         const clip = new Clip(`${production.reference}#/${tokens.join('/')}`);
         return clip.entry(`- ${clip.field(claim.item ?? '', CLIP.name, '条目编号的超出部分')}：${claimText(claim, clip, CLIP.field)}`);
       }),
       unit:'支持事实',measure:'条',more:from => `其余支持事实：${resultWay(production.reference, 0, supported[from].tokens, false)}`,
-    }, 4);
+    };
     const problems = problemLines(full, production.reference, null);
     pushCapped(
       blocks,
@@ -908,6 +909,7 @@ function startText(v: StartOut, context: TextContext): string {
     return `条目：${seeConsole(r.run)}`;
   };
   blocks.push({ priority: 3, head: items.head, entries: items.entries, unit: '条目', measure: '个', more: itemsMore });
+  if(supportedBlock)pushCapped(blocks,supportedBlock,5);
   if (r.slots !== undefined) {
     const schemaWay = record === null ? seeConsole(r.run) : `${readCall(`${record}#/slots/schema`)}${paging ? '，再按每页末尾给出的 cursor 接着读' : ''}`;
     const schema = slotSchemaLines(r.slots, `完整的槽位模式：${schemaWay}`);
