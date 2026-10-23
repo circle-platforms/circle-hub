@@ -171,3 +171,11 @@ describe('version lines and build names', () => {
     assert.equal(writtenBuilds([Array.from({ length: 40 }, (_, k) => `Rel_APV_10_6_1_${k}`).join(' ')], names, 5).names.length, 5);
   });
 });
+
+it('build versions follow the product naming rule without importing it in the runtime pack', async () => {
+  const { parseBuildName } = await import('../../../product/apv/functions/naming.ts');
+  const { buildVersionsOf } = await import('./convention.ts');
+  for (const name of ['Rel_APV_10_9_1_37', 'Beta_NSAE_10_8_42', 'Rel_APV_10_9', 'Rel_APV_010_009_001_037']) {
+    assert.equal(buildVersionsOf(parseLabel(`${name} 回归`), ['APV', 'NSAE'])[0].version, parseBuildName(name).line);
+  }
+});

@@ -23,3 +23,26 @@ for (const ancestors of paths) for (const declared of [undefined, { line: '10.6.
     assert.equal(answer.conflicts.filter(conflict => conflict.field === 'line').length, 0);
   });
 }
+
+for (const [name, version] of [['Rel_NSAE_10_9_1_37', '10.9.1'], ['Beta_APV_10_8_42', '10.8']] as const) {
+  test(`a bound build name supplies its folder version: ${name}`, () => {
+    const result = locateItem({ ...context, ancestors: [`${name} 回归`] });
+    assert.equal(result.judgment.verdict, 'support'); assert.equal(result.answer.confidence, 'high');
+    assert.equal(result.answer.version, version); assert.equal(result.answer.line, version);
+    assert.deepEqual(result.answer.build_names, [name]);
+    assert.match(result.answer.notes.join('；'), /版本取自目录名里的构建名/);
+  });
+}
+test('a folder build name agrees with a line node or proves their conflict', () => {
+  for (const [version, verdict] of [['10.9.1', 'support'], ['10.8.1', 'refute']] as const) {
+    const result = locateItem({ ...context, ancestors: ['Rel_NSAE_10_9_1_37 回归', `060：${version}`] });
+    assert.equal(result.judgment.verdict, verdict); assert.equal(result.answer.version, '10.9.1');
+  }
+});
+test('foreign builds and builds below the version level remain references', () => {
+  const foreign = locateItem({ ...context, ancestors: ['Rel_OTHER_10_9_1_37 回归'] });
+  assert.equal(foreign.judgment.verdict, 'unknown'); assert.equal(foreign.answer.version, null);
+  const below = locateItem({ ...context, ancestors: ['060：10.8.1', 'Rel_NSAE_10_9_1_37 回归'] });
+  assert.equal(below.judgment.verdict, 'support'); assert.equal(below.answer.version, '10.8.1');
+  assert.deepEqual(below.answer.build_names, ['Rel_NSAE_10_9_1_37']);
+});

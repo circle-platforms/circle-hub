@@ -235,3 +235,13 @@ export function writtenBuilds(texts: readonly string[], names: readonly string[]
   }
   return { names: own, foreign };
 }
+
+/** Bound-family build names in this label, with the product naming rule for their version line. */
+export function buildVersionsOf(label: Label, names: readonly string[]): Array<{ name: string; version: string }> {
+  const own = new Set(writtenBuilds([label.text], names, 24).names);
+  return buildNames(label.text).filter(build => own.has(build.name)).map(build => {
+    const numbers = build.numbers.split(build.separator);
+    const version = lineKey(numbers.slice(0, numbers.length >= 4 ? 3 : numbers.length === 3 ? 2 : numbers.length).join('.'));
+    return { name: build.name, version };
+  });
+}

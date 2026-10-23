@@ -11,6 +11,7 @@
 // tree gives the product line and a consistent version level.
 import {
   CONFLICT_CODE,
+  buildVersionsOf,
   LABELS,
   lineKey,
   lineOfLabel,
@@ -122,9 +123,10 @@ type Level = {
  * The version level of the folders: the labels from the root to the release train (or the first line node, or the first
  * label that is only a version), with every line node of the path. Its versions must name one version line.
  */
-function versionLevel(labels: readonly Label[], conv: Convention): Level {
+function versionLevel(labels: readonly Label[], conv: Convention, names: readonly string[], notes: Notes): Level {
   const pure = labels.map(pureVersionOf);
-  const firstPure = pure.findIndex((v) => v !== null);
+  const builds = labels.map(label => buildVersionsOf(label, names));
+  const firstPure = pure.findIndex((v, at) => v !== null || builds[at].length > 0);
   const end = conv.trainAt >= 0 ? conv.trainAt : conv.lineNodes.length > 0 ? conv.lineNodes[0].at : firstPure;
   if (end < 0) return { end: -1, value: null, labels: new Set(), disagreement: null, values: [] };
   const values: Array<{ at: number; value: string }> = [];
@@ -133,6 +135,10 @@ function versionLevel(labels: readonly Label[], conv: Convention): Level {
     if (node !== undefined) values.push({ at, value: node.line });
     else if (at === conv.trainAt && conv.trainVersion !== null) values.push({ at, value: conv.trainVersion });
     else if (pure[at] !== null) values.push({ at, value: pure[at]! });
+    else for (const build of builds[at]) {
+      values.push({ at, value: build.version });
+      note(notes, `版本取自目录名里的构建名 ${build.name}`);
+    }
   }
   for (const n of conv.lineNodes) if (n.at > end) values.push({ at: n.at, value: n.line });
   const level = { end, values, value: values[0].value, labels: new Set(values.map((v) => v.at)) };
@@ -227,7 +233,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
 
   // ---- line, train, module and the version level
   const conv = convention(labels, notes);
-  const level = versionLevel(labels, conv);
+  const level = versionLevel(labels, conv, names, notes);
   const scans = labels.map((l) => schemeScan(l.text));
   const titleScan = title === null ? null : schemeScan(parseLabel(title).text);
   scans.forEach((s) => rejected(s.rejects, '目录', notes));
@@ -318,7 +324,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     else productDoubts.push({ text: `产品线定不出（目录树的根${quoted(root)}不是产品线的名称）`, brief: `根${quoted(root)}不是产品名称` });
   } else if (filled.includes('product_line')) productDoubts.push({ text: '产品线来自调用方声明，未经目录树核对', brief: '产品线是声明的' });
 
-  let line = conv.line;
+  let line = conv.line ?? labels.slice(0, level.end + 1).flatMap(label => buildVersionsOf(label, names))[0]?.version ?? null;
   if (declared.line !== null) {
     if (level.value !== null) {
       // Against every value the tree gives at the version level: the version it reports, the line node and the train.

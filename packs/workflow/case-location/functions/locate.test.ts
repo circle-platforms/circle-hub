@@ -329,7 +329,7 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, 'Rel_NSAE_10_6_1_57 回归'],
     title: '回归',
-    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build_names: ['Rel_NSAE_10_6_1_57'] },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build_names: ['Rel_NSAE_10_6_1_57'] },
   },
   {
     id: 'older-line-build-name',
@@ -751,7 +751,8 @@ describe('metamorphic properties', () => {
         assert.deepEqual(rest, expectedRest, `${row.id} + ${quote}`);
         // Anywhere below the folder that gives the version: the version, its source and its confidence stay.
         const labels = row.ancestors.filter((a) => a !== row.root);
-        const at = labels.findIndex((label) => label.normalize('NFKC').includes(before.version!));
+        const versionLabel = before.version_values.find(value => value.version === before.version);
+        const at = versionLabel ? versionLabel.level - 1 : labels.findIndex((label) => label.normalize('NFKC').includes(before.version!));
         assert.ok(at >= 0, row.id);
         for (let k = at + 1; k <= labels.length; k++) {
           const inserted = locate(inputOf(row, { ancestors: [...labels.slice(0, k), quote, ...labels.slice(k)] }));
