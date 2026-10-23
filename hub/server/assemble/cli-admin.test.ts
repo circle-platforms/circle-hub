@@ -1627,3 +1627,34 @@ test('lease release refuses an unfinished dispatch job before changing the row',
   assert.match(refused.text,/还没有终态/);assert.match(refused.text,/job dispose/);
   assert.equal((await leases.holders([key]))[0]!.released,false);
 });
+
+test('lease ownership commands audit reassignment and list owner, holder and run without internal identities',async t=>{
+  const admin=await setup();
+  const {stage}=await import('../../../packs/workflow/test-bed/pack-files.ts');
+  const directory=await mkdtemp(join(tmpdir(),'ownership-cli-pack-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  await stage(directory);
+  await expectOk(admin,['pack','grant-publish','根管理员']);await expectOk(admin,['pack','publish',directory]);
+  await expectOk(admin,['user','create','合成主人']);await expectOk(admin,['user','create','合成后继主人']);
+  const kit=await admin.kit();t.after(()=>kit.close());
+  const owner=(await kit.principals.findByName('合成主人'))!;
+  const next=(await kit.principals.findByName('合成后继主人'))!;
+  await expectOk(admin,['lease','register','bed/sample/','--owner',owner.name,'--reason','合成登记']);
+  const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const leases=new LeaseService(db,{records:kit.store});const key='bed/sample/client';
+  const {newId}=await import('../../records/api.ts');const run=newId('run');
+  assert.ok((await leases.acquire({keys:[key],prefix:'bed/',holder:{user:next.id,run}})).ok);
+  const listed=await expectOk(admin,['lease','list']);
+  assert.ok(listed.text.includes(owner.name)&&listed.text.includes(next.name)&&listed.text.includes(run),listed.text);
+  assert.ok(!listed.text.includes('lse_')&&!listed.text.includes('fencing'));
+  await expectOk(admin,['lease','register','bed/sample/','--owner',next.id,'--reason','合成归属更正']);
+  assert.equal((await leases.registrations('bed/'))[0]!.owner,next.id);
+  const busy=await admin.run(['lease','unregister','bed/sample/','--reason','合成注销']);
+  assert.equal(busy.code,1);assert.match(busy.text,/先强制释放，或等它释放/);
+  await expectOk(admin,['lease','release',key,'--reason','合成主人要求收回']);
+  await expectOk(admin,['lease','unregister','bed/sample/','--reason','合成注销']);
+  assert.deepEqual(await leases.registrations('bed/'),[]);
+  const actions=await leases.actionLog('bed/');
+  assert.ok(actions.some(row=>row.op==='register'&&row.owner===next.id&&row.previous_owner===owner.id&&row.reason==='合成归属更正'));
+  assert.ok(actions.some(row=>row.op==='unregister'&&row.owner===next.id));
+  assert.equal((await admin.run(['lease','register','bed/sample/','--owner',next.id])).code,2);
+});
