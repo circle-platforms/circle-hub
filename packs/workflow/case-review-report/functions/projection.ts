@@ -101,6 +101,12 @@ export function dispositionsOf(result: Record<string, unknown>, block: { record:
   return out;
 }
 
+function legacySnapshot(result: Record<string, unknown>): boolean {
+  const locked = isRecord(result.locks) && typeof result.locks.pack === 'string' ? result.locks.pack : '';
+  const version = /^case-review-verify@(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.*)?$/.exec(locked);
+  return version !== null && (Number(version[1]) < 1 || Number(version[1]) === 1 && (Number(version[2]) < 1 || Number(version[2]) === 1 && Number(version[3]) === 0 && version[4] !== undefined));
+}
+
 /** Admission is decided from stored structured statuses, never from human error text. */
 function unsettled(result: Record<string, unknown>, block: number): ReturnType<typeof failure> | null {
   const next = `先按第 ${block} 块的回执修复并重交复核；轮数耗尽或独立性不足时，另开会话、换不同模型家族重新复核，再用新回执开始终稿`;
@@ -238,15 +244,19 @@ export default function project(input: unknown): unknown {
       const item=Array.isArray(raw)?raw.find(value=>isRecord(value)&&value.item===entry.item):undefined;
       const kept=isRecord(item)&&Array.isArray(item.requirements)&&item.requirements.some(requirement=>isRecord(requirement)&&Array.isArray(requirement.claims)&&requirement.claims.some(claim=>
         isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='support'&&isRecord(claim.statement.data)&&Array.isArray(claim.statement.data.source_facts)));
-      return kept?[]:[{block:index+1,item:entry.item}];
+      return kept?[]:[{block:index+1,item:entry.item,legacy:legacySnapshot(block.result)}];
     }));
+    const sourceGapFix = '下一步：' + [
+      missingSourceFacts.some(gap=>gap.legacy) ? '旧版块用具备初评快照的新版独立复核后重开终稿' : '',
+      missingSourceFacts.some(gap=>!gap.legacy) ? '按当前块原回执补齐处置核对支持事实，修复并重交复核，再用新回执重开终稿' : '',
+    ].filter(Boolean).join('；');
     const complete=missing.length===0&&missingBlocks.length===0&&missingSourceFacts.length===0&&verdict!==null;
     const reportSummary=missing.length>0
       ? '覆盖不完整：'+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'）；下一步：把缺的条目重新初评、复核后，再开终稿运行'
       : missingBlocks.length>0
         ? '第 '+missingBlocks.join('、')+' 块缺少可读的结论或等级；下一步：把这些块复核完成后，再开终稿运行'
         : missingSourceFacts.length>0
-          ? '第 '+missingSourceFacts.map(gap=>gap.block+' 块条目 '+gap.item).join('、')+' 缺少初评 Hub 核对快照；下一步：用新版复核包重新复核这些条目，再开终稿运行'
+          ? sourceGapFix+'；缺初评 Hub 核对快照：'+missingSourceFacts.slice(0,3).map(gap=>gap.block+' 块条目 '+gap.item.slice(0,50)).join('、')+(missingSourceFacts.length>3?' 等共 '+missingSourceFacts.length+' 项':'')
           : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
     const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null}):null;
     if(rendered&&'error'in rendered)return rendered;
@@ -264,6 +274,7 @@ export default function project(input: unknown): unknown {
         missing_items:missing,
         missing_blocks:missingBlocks,
         missing_source_facts:missingSourceFacts,
+        ...(missingSourceFacts.length?{source_gap_fix:sourceGapFix}:{}),
       },
     };
     const output = { items:[reportItem,...items],warnings:[] };
@@ -286,4 +297,3 @@ function entriesOf(result: Record<string, unknown>): Array<{ partition: string; 
   }
   return out;
 }
-

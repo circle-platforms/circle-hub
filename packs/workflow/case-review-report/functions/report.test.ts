@@ -326,7 +326,7 @@ it('an older verification without the original Hub fact snapshot cannot imply no
   for(const requirement of (result.partitions as any).delivered[0].requirements)requirement.claims=requirement.claims.filter((claim:any)=>claim.warrant?.producer!=='function');
   const report=reportItemOf(run([{result}]));
   assert.equal(report.fields.review_tables,undefined);assert.equal(report.fields.overall,null);
-  assert.match(report.summary??'',/初评 Hub 核对快照.*下一步.*新版复核.*终稿/);
+  assert.match(report.summary??'',/^下一步.*新版独立复核.*终稿.*初评 Hub 核对快照/);
 });
 
 it('the initial reviewer procedure ends both single-block and multi-block reviews through the table report',()=>{
@@ -396,4 +396,11 @@ it('the complete 500 case projection budget includes every populated field rathe
 });
 it('oversized complete projections return a measured typed refusal and a smaller-block next action',()=>{
   const output=crowdedReport(2000);assert.equal(output.error?.code,'case-review-report.too_large');assert.match(output.error?.message??'',/\d+.*字节.*8388608/);assert.match(output.error?.fix??'',/分块.*复核.*终稿/);
+});
+
+it('modern missing disposition support asks for the current receipt instead of a fictitious upgrade',()=>{
+  const result=block({verdict:'PARTIAL',level:'P5',entries:[{item:'c1'}]});(result.locks as any).pack='case-review-verify@1.1.1';
+  for(const requirement of (result.partitions as any).delivered[0].requirements)requirement.claims=requirement.claims.filter((claim:any)=>claim.warrant?.producer!=='function');
+  const report=reportItemOf(run([{result}]));assert.equal(report.fields.overall,null);assert.match(report.summary??'',/^下一步：.*处置.*重交/);assert.doesNotMatch(report.summary??'',/新版|升级/);
+  const checked=overallCheck({subject:{items:[{id:'report',fields:report.fields}],cross_item:[{code:'PARTIAL',rank:'P5'}]}});assert.ok(checked[0].verdict==='unknown');assert.doesNotMatch(checked[0].statement,/新版|升级/);
 });
