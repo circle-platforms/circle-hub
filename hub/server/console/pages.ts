@@ -260,6 +260,10 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     run.items.map((item) => [code(item.id), item.label, code(item.location), item.digest ? code(item.digest) : '', item.reuse ? code(item.reuse) : '']),
     '没有条目',
   );
+  const stringFields=run.items.flatMap(item=>Object.entries(item.fields).flatMap(([key,value])=>
+    typeof value==='string'?[[code(item.id),code(key),pre(value)]]:[]));
+  const projectedFields=stringFields.length===0?'':section('投影字符串字段（只读）',
+    html`<details><summary>查看原文（全文，不截断）</summary>${table(['条目','字段','原文'],stringFields)}</details>`);
   return {
     status: 200,
     body: page(
@@ -269,6 +273,7 @@ ${section('版本依据', basis)}
 ${section('来源', sources)}
 ${section('要求项', requirements)}
 ${section(`条目（${run.items.length}）`, items)}
+${projectedFields}
 ${section('分区清单', results)}
 ${section('提交与回执', submissions)}
 ${section('调用日志', callTable(calls.items, ctx.admin, await names(ctx, calls.items)))}`,
