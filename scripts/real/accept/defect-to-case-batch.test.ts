@@ -92,10 +92,10 @@ test('a pending requirement fails without writing or replacing the observed Hub 
     assert.equal(writes,0);assert.equal(report.code,1);assert.equal(JSON.stringify(detail),before);
   }finally{f.close();}
 });
-test('a client that skips the task is automatically rerun once rather than left unknown',async()=>{
+test('an explicit retry option reruns unfinished client work once',async()=>{
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const review=f.deps.review;let attempts=0;
     f.deps.review=async(args,out)=>++attempts===1?{calls:'',complete:true}:review(args,out);
-    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic',retries:1},f.deps);
     assert.equal(attempts,2);assert.equal(report.code,0);assert.ok(report.totals.recovery_actions>0);
   }finally{f.close();}
 });
@@ -111,7 +111,7 @@ test('an unreadable run is not falsely reported as absent after the automatic re
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);let reads=0;
     f.deps.show=async()=>{reads++;throw new Error('PRIVATE_TRANSPORT_DETAIL');};
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
-    assert.equal(report.code,1);assert.equal(reads,4);assert.match(report.text,/run_record_read_defect/);assert.doesNotMatch(report.text,/no_defect_to_case_run|PRIVATE_TRANSPORT_DETAIL/);
+    assert.equal(report.code,1);assert.equal(reads,2);assert.match(report.text,/run_record_read_defect/);assert.doesNotMatch(report.text,/no_defect_to_case_run|PRIVATE_TRANSPORT_DETAIL/);
   }finally{f.close();}
 });
 test('missing repair-round facts fail without resubmitting the accepted body',async()=>{
@@ -213,5 +213,13 @@ test('follow-ups record vocabulary reasons and a written file without claiming a
     assert.equal(report.code,1);const questions=JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8'));
     assert.ok(questions.some((q:any)=>q.reason==='no_check'));assert.ok(questions.every((q:any)=>!('action_status' in q)));
     assert.match(report.text,/清单已写入/);assert.doesNotMatch(report.text,/已请求|已发送/);
+  }finally{f.close();}
+});
+
+test('a skipped task launches the client only once unless retries were explicitly requested',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);let attempts=0;f.deps.review=async()=>{attempts++;return {calls:'',complete:true};};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(attempts,1);assert.equal(report.code,1);assert.match(report.text,/no_defect_to_case_run/);
+    assert.ok(JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8')).some((q:any)=>q.next_action==='rerun_pairing_with_explicit_retries'));
   }finally{f.close();}
 });

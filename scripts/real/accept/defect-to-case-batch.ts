@@ -1,5 +1,6 @@
 // Integrator-only driver. Pairing JSON: {product,prompt,fix_field,pairings:[{defect,build,commands,manual,regression_map,document,indexes?}]}.
 // Optional product_declaration names an exported product@1 JSON file; compare CLI uses --product for the same input.
+// --retries N explicitly budgets extra client turns (default zero); re-reading stored evidence never resubmits a run.
 // Original files, pairing lists, client evidence and positional reports stay outside every Git worktree.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, readdirSync, chmodSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
@@ -20,7 +21,7 @@ const HEX=/^[a-f0-9]{64}$/;
 const validRounds=(result:any)=>object(result.rounds)&&Number.isInteger(result.rounds.used)&&Number.isInteger(result.rounds.max)&&result.rounds.used>=0&&result.rounds.used<=result.rounds.max;
 export interface Pairing {defect:string;build:string;commands:string;manual:string;regression_map:string;document:string;indexes?:string[]}
 export interface Pairings {product:string;prompt:string;fix_field:string;pairings:Pairing[];product_declaration?:string}
-export interface BatchOptions {out:string;endpointArgs:string[];token:string;url?:string}
+export interface BatchOptions {out:string;endpointArgs:string[];token:string;url?:string;retries?:number}
 export interface BatchDeps {
   assertAdmin(evidenceDir:string):Promise<void>;
   review(args:string[],out:string):Promise<{calls:string;complete:boolean}>;
@@ -49,6 +50,7 @@ function gates(c:Comparison) {
 }
 export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDeps):Promise<{code:number;text:string;totals:Record<string,number>}> {
   validatePairings(config);
+  const retries=options.retries??0;if(!Number.isInteger(retries)||retries<0||retries>10)throw new Error('invalid retries');
   const prepared=[];
   for(const [position,pair] of config.pairings.entries()){
     let field='commands',cause='pairing_input_invalid';
@@ -80,8 +82,8 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       const prompt=config.prompt.replace(/\{(defect|product|build)\}/g,(_,key:string)=>key==='product'?config.product:pair[key as 'defect'|'build']);
       let selected:any;
       const allRuns=new Map<string,any>();
-      // An unfinished client turn or a skipped task is work to retry, not a terminal unknown.
-      for(let attempt=1;attempt<=2&&!selected;attempt++) {
+      // Extra client/model turns require an explicit retry budget in the integrator command.
+      for(let attempt=1;attempt<=1+retries&&!selected;attempt++) {
         const reviewDir=join(dir,`review-${attempt}`);mkdirSync(reviewDir,{mode:0o700});
         const from=deps.now().getTime();
         category='client_run_failed';
@@ -194,7 +196,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
     }catch{
       const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','export_integrity_mismatch','index_view_schema_or_identity_defect','invalid_run'].includes(category);
       if(definite)totals.defects++;
-      if(!definite&&!requests.length)requests.push({category:'design_gap',reason:MISSING,missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'complete_client_task_after_automatic_retry':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
+      if(!definite&&!requests.length)requests.push({category:'design_gap',reason:MISSING,missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'rerun_pairing_with_explicit_retries':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
       totals.design_gaps+=requests.length;totals.failed++;
       lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；不通过；${definite?'确定缺陷':labelOf('reason',MISSING)} ${category}`);
       writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:definite?'confirmed_defect':'design_gap',finding:category});
@@ -249,15 +251,17 @@ export function createBatchDeps(options:BatchOptions,processRunner?:ProcessRunne
 export async function main(argv=process.argv.slice(2),injected?:BatchDeps):Promise<number>{
   const value=(name:string)=>{const i=argv.indexOf('--'+name);return i<0?undefined:argv[i+1];};
   const endpointArgs:string[]=[],allowed=new Set(['--endpoint-from','--circle-dir','--env-file','--provider','--model','--section','--hub-url','--circle-cli','--timeout-ms']);
-  for(let i=0;i<argv.length;i++){if(['--pairings','--out'].includes(argv[i])){i++;continue;}if(!allowed.has(argv[i])||!argv[i+1]||argv[i+1].startsWith('--')){process.stderr.write('用法参数：不通过\n');return 2;}endpointArgs.push(argv[i],argv[++i]);}
+  for(let i=0;i<argv.length;i++){if(['--pairings','--out','--retries'].includes(argv[i])){if(!argv[i+1]||argv[i+1].startsWith('--')){process.stderr.write('用法参数：不通过\n');return 2;}i++;continue;}if(!allowed.has(argv[i])||!argv[i+1]||argv[i+1].startsWith('--')){process.stderr.write('用法参数：不通过\n');return 2;}endpointArgs.push(argv[i],argv[++i]);}
   if(!value('pairings')||!value('out')||(!injected&&!process.env.HUB_REAL_TOKEN)){process.stderr.write('用法：--pairings <清单> --out <Git 外空目录>；令牌来自 HUB_REAL_TOKEN\n');return 2;}
+  const retries=value('retries')===undefined?0:Number(value('retries'));
+  if(!Number.isInteger(retries)||retries<0||retries>10){process.stderr.write('用法参数：--retries 要给出 0 到 10 的整数\n');return 2;}
   let inputField='--pairings';
   let config:Pairings;try{config=validatePairings(JSON.parse(readFileSync(outsideGit(value('pairings')!),'utf8')));inputField='--out';const target=outsideGit(value('out')!);if(existsSync(target)&&(!lstatSync(target).isDirectory()||readdirSync(target).length!==0))throw new Error('invalid output');}catch{process.stderr.write(`输入不通过：${inputField}\n`);return 2;}
   if(!injected){
     const mode=value('endpoint-from');
     if(mode!==undefined?(mode!=='circle'||['env-file','provider','section'].some(k=>value(k)!==undefined)):(!value('env-file')||!['qwen','glm'].includes(value('provider')??'')||!value('model'))){process.stderr.write('端点参数：不通过\n');return 2;}
   }
-  const options={out:value('out')!,endpointArgs,token:injected?'synthetic':process.env.HUB_REAL_TOKEN!,url:value('hub-url')};
+  const options={out:value('out')!,endpointArgs,retries,token:injected?'synthetic':process.env.HUB_REAL_TOKEN!,url:value('hub-url')};
   try{const report=await runBatch(config,options,injected??createBatchDeps(options));process.stdout.write(report.text+'\n');return report.code;}catch{process.stderr.write('批跑执行：不通过（执行未完成）\n');return 1;}
 }
 if(import.meta.main)process.exitCode=await main();
