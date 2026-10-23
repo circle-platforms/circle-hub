@@ -314,3 +314,14 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
   `check_error`, attribution as the error table says) instead of refusing the submission; `reason` is not enumerable
   and never needs stripping.
 - **rules**: none; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
+
+## xlsx@1 container limits
+
+The in-memory container decoder uses Node zlib and CRC-32, without extraction or network access. Hard caps are
+16 MiB input, 256 members, 16 MiB per expanded member, 32 MiB total expanded bytes and a 100:1 expansion ratio per
+member. It checks declarations before allocation, caps actual inflater output, checks consumed compressed bytes,
+actual sizes and CRC, and compares local headers with the central directory. Duplicate names, encryption, unsafe
+paths, links, malformed records and broken streams reject the whole source with a deterministic typed reason.
+STORE and Deflate, ZIP64 sizes/directories, data descriptors, comments and ordinary extra fields are supported.
+This is a generic format boundary; workbook visibility, formulas, string storage and extra package parts are data,
+not workflow-specific reasons to reject a workbook.
