@@ -193,7 +193,7 @@ const key: Handler = async (args, context, io) => {
   const store = keychainFor(context, await settingsOf(context));
   const item = `服务 ${store.service}，账户 ${store.account}`;
   if (action === 'init') {
-    if (!(await isMissingOrEmpty(context.layout.vault))) throw new PlatformError('密钥库非空，不新建主密钥', '先恢复原来的钥匙串项；找不回时停服务，把 vault/ 移到 set-aside/<时间>-key-loss/，再 key init、operator-token reissue、secret import，最后起服务');
+    if (!(await isMissingOrEmpty(context.layout.vault))) throw new PlatformError('密钥库非空，不新建主密钥', '已有主密钥时不需要 key init，用 circle-hub key status 查看；只有主密钥丢失且找不回时，才停服务，把 vault/ 移到 set-aside/<时间>-key-loss/，再 key init、secret import，最后起服务；操作令牌也丢失时才运行 operator-token reissue');
     await store.init();
     io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
     return 0;

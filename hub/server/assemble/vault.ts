@@ -8,7 +8,7 @@ import { AssemblyError, hintOf, messageOf } from './errors.ts';
 /** What to do when the key is unavailable and the vault holds nothing yet (the first deployment, or a key that went missing). */
 const FIRST_KEY_HINT = '第一次部署时用 circle-hub key init 建立主密钥；已有密钥库时恢复原来的钥匙串项，不要新建';
 /** The vault holds entries sealed with the original key: only that key opens them, so a new key would lose them. */
-const RESTORE_KEY_HINT = '密钥库里已有用原来的主密钥封存的条目：恢复原来的钥匙串项；不要运行 circle-hub key init，新建的主密钥打不开这些条目。找不回原来的钥匙串项时：停服务，把 vault/ 移到 set-aside/<时间>-key-loss/，运行 circle-hub key init、circle-hub operator-token reissue、circle-hub secret import，最后起服务';
+const RESTORE_KEY_HINT = '密钥库里已有用原来的主密钥封存的条目：恢复原来的钥匙串项；不要运行 circle-hub key init，新建的主密钥打不开这些条目。找不回原来的钥匙串项时：停服务，把 vault/ 移到 set-aside/<时间>-key-loss/，运行 circle-hub key init、circle-hub secret import，最后起服务；操作令牌也丢失时才运行 circle-hub operator-token reissue';
 
 /**
  * The operator's next step when the key is unavailable. A vault that holds entries proves a key existed (listing names needs

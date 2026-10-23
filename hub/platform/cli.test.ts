@@ -213,6 +213,20 @@ describe('platform CLI', () => {
     for (const call of system.calls) assert.ok(!call.args.some((arg) => arg.includes(system.state.key!)));
   });
 
+  test('review 7: a healthy nonempty vault receives conditional recovery guidance without keychain access', async () => {
+    const entry = join(root, 'vault', 'synthetic-healthy-entry');
+    await writeFile(entry, 'synthetic sealed content');
+    const before = system.calls.length;
+    try {
+      const result = await run('key', 'init');
+      assert.equal(result.code, 1); assert.equal(system.calls.length, before);
+      assert.match(result.err, /已有主密钥时不需要.*key init/);
+      assert.match(result.err, /key status/);
+      assert.match(result.err, /主密钥.*丢失.*找不回/);
+      assert.match(result.err, /操作令牌也丢失时才.*operator-token reissue/);
+    } finally { await rm(entry); }
+  });
+
   test('service install needs a release; then install, status and stop go through launchctl only', async () => {
     const early = await run('service', 'install');
     assert.equal(early.code, 1);
