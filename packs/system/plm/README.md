@@ -9,7 +9,7 @@ route one by one (method and path template) and has no write route.
 | `plm:bug:<id>`, `plm:story:<id>` | the original answer, content `{id, kind, title, fields, html_fields}` (every HTML field as plain text, empty lines dropped) and meta `{id, kind, title: "缺陷 <id> <title>" or "需求 <id> <title>", status}`; an id the service does not know is a failed read (unavailable to callers) |
 | `plm:bugs:<id>+<id>+...` | the original answer, content `{bugs: [{id, status, title}], unread: [<ids>]}` (up to 50 ids, sorted numerically, deduplicated); unreturned ids listed in unread |
 | `plm:products:<any>` | the product list (`GET /plmquery/product/all/`) |
-| `plm:builds:<product id or encoded names>` | a product resolved by explicit id or all requested names, and its build list; content `{product, product_resolution, builds: [{id, name, stories, scope_note}]}`; the original build answer is still a plain array |
+| `plm:builds:<product id or encoded names>` | a product resolved by explicit id or all requested names, and its build list; content `{product, product_resolution, builds: [{id, name, stories, scope_note}]}`; the original is the build array after product selection, or the enveloped product list when names remain unresolved or ambiguous |
 
 Profile: roles `plm-oauth` (the same login as the agile platform: the token works for both) and `plm-api`; auth
 `login_token` (password `sha512_base64`, envelope code 1000 ok); routes `products`, `builds`, `bug-detail`
