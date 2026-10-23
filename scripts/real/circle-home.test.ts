@@ -337,7 +337,7 @@ test('every matching hook runs and deny wins over ask and allow', () => {
   try {
     const marker = join(f.root, 'last-ran');
     skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }, { source: 'console.log(JSON.stringify({decision:"deny",reason:"合成拒绝"}));' }, { source: `import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(marker)},'yes');console.log(JSON.stringify({decision:'allow'}));` }]);
-    const reply = f.decide(f.input()); assert.equal(reply.decision, 'deny'); assert.equal(reply.reason, '合成拒绝'); assert.equal(readFileSync(marker, 'utf8'), 'yes');
+    const reply = f.decide(f.input()); assert.equal(reply.decision, 'deny'); assert.match(reply.reason, /synthetic-1.*合成拒绝/); assert.equal(readFileSync(marker, 'utf8'), 'yes');
     skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }, { source: 'console.log(JSON.stringify({decision:"allow"}));' }]); assert.equal(f.decide(f.input()).decision, 'ask');
   } finally { f.close(); }
 });
@@ -428,5 +428,24 @@ test('here document separators use shell spaces and tabs rather than JavaScript 
   try{
     for(const separator of ['\u00a0','\v','\f','\r','\u3000','\u2028','\ufeff'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'deny',JSON.stringify(separator));
     for(const separator of [' ','\t'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'allow');
+  }finally{f.close();}
+});
+
+test('refusal sites disclose their own missing fact and recovery action',async()=>{
+  const {renameSync,symlinkSync}=await import('node:fs');const f=skillsFixture();
+  try{
+    const outside=join(f.dir,'outside.txt');writeFileSync(outside,'synthetic');const refused=f.decide(f.input('read_file',{path:outside},[outside]));
+    assert.equal(refused.decision,'deny');assert.ok(refused.reason.includes(outside));assert.match(refused.reason,/工作目录.*改用/);
+    assert.match(f.decide(f.input('ls',{},[])).reason,/ls.*路径.*重试/);
+    writeFileSync(join(f.root,'hooks.json'),'not JSON');const malformed=f.decide(f.input());assert.match(malformed.reason,/技能.*x.*hooks\.json.*JSON.*安装.*verify/);
+    rmSync(join(f.root,'hooks.json'));renameSync(join(f.home,'skills'),join(f.home,'saved-skills'));mkdirSync(join(f.dir,'other-skills'));symlinkSync(join(f.dir,'other-skills'),join(f.home,'skills'));
+    assert.match(f.decide(f.input()).reason,/skills.*根.*恢复/);
+  }finally{f.close();}
+});
+test('delegated decisions identify the skill and hook even when the hook omits its reason',()=>{
+  const f=skillsFixture();
+  try{
+    skillHooks(f,[{source:'console.log(JSON.stringify({decision:"ask"}));'}]);const result=f.decide(f.input());assert.equal(result.decision,'ask');assert.match(result.reason,/技能.*x.*synthetic-0.*确认/);
+    skillHooks(f,[{source:'process.exit(1);'}]);const failed=f.decide(f.input());assert.equal(failed.decision,'deny');assert.match(failed.reason,/技能.*x.*synthetic-0.*退出码 1.*verify/);
   }finally{f.close();}
 });

@@ -123,14 +123,16 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
   const fs = await import('node:fs');
   const path = await import('node:path');
   const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
-  const deny = () => ({ decision: 'deny', reason: '这个目录只放行技能目录里的脚本' });
+  class GuardRefusal extends Error {}
+  const refuse: (reason: string) => never = (reason) => { throw new GuardRefusal(reason); };
+  const deny = (reason = '这个目录只放行技能目录里的脚本；请按实际安装的绝对路径使用 node 脚本命令后重试') => ({ decision: 'deny', reason });
   const allow = () => ({ decision: 'allow', reason: '本目录允许的工具' });
   const under = (file: string, root: string) => { const relative = path.relative(root, file); return relative === '' || relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative); };
-  const exists = (file: string) => { try { fs.lstatSync(file); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; } };
+  const exists = (file: string) => { try { fs.lstatSync(file); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; refuse(`路径 ${JSON.stringify(file)} 元数据不可读；请核对读取权限后重试`); } };
   const canonical = (file: string): string => {
     const tail: string[] = []; let parent = path.resolve(file);
-    while (!exists(parent)) { const next = path.dirname(parent); if (next === parent) throw new Error('path unavailable'); tail.unshift(path.basename(parent)); parent = next; }
-    return path.resolve(fs.realpathSync.native(parent), ...tail);
+    while (!exists(parent)) { const next = path.dirname(parent); if (next === parent) refuse(`路径 ${JSON.stringify(file)} 缺少可核验的父目录；请补齐目标路径后重试`); tail.unshift(path.basename(parent)); parent = next; }
+    try { return path.resolve(fs.realpathSync.native(parent), ...tail); } catch { refuse(`路径 ${JSON.stringify(file)} 无法规范化；请核对权限和软链接后重试`); }
   };
   const safeGlob = (value: unknown): boolean => {
     if (typeof value !== 'string' || !value.length || /[\0\r\n]/.test(value)) return false;
@@ -164,7 +166,8 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     const script = words[1];
     if (words[0] !== 'node' || !script || !path.isAbsolute(script) || script.split(/[\\/]/).includes('..') || script.includes('%') || !script.endsWith('.ts')) return null;
     const lexical = path.resolve(script); if (!under(lexical, path.resolve(home, 'skills')) && !under(lexical, root)) return null;
-    const physical = fs.realpathSync.native(lexical); if (!under(physical, root)) return null;
+    let physical: string; try { physical = fs.realpathSync.native(lexical); } catch { refuse('缺少已安装技能脚本的实际路径；请集成者安装并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后按真实路径重试'); }
+    if (!under(physical, root)) return null;
     if (path.relative(root, physical) !== path.relative(path.resolve(home, 'skills'), lexical)) return null;
     return physical;
   };
@@ -203,7 +206,7 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
         else expression += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
       return new RegExp(expression + '$').test(target);
-    } catch { return false; }
+    } catch (error) { if (error instanceof GuardRefusal) throw error; refuse('技能钩子的路径匹配配置无法核验；请修复 hooks.json 并核对安装后重试'); }
   };
   const matches = (hook: Record<string, unknown>, input: Record<string, unknown>): boolean => {
     const matcher = hook.tools ?? hook.matcher;
@@ -221,76 +224,101 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     const timeout = Math.max(100, Math.min(600000, Math.floor(setting)));
     return new Promise(done => {
       const child = spawn(hook.command as string, { cwd, shell: true, detached: process.platform !== 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-      let stdout = '', failed = false, settled = false;
+      let stdout = '', failureReason: string | null = null, settled = false;
       let force: ReturnType<typeof setTimeout> | undefined;
       const kill = (signal: NodeJS.Signals) => {
         if (!child.pid) return;
         if (process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], () => {});
         else try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch { /* Already gone. */ } }
       };
-      const stop = () => { if (failed) return; failed = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 500); };
-      const interrupted = () => { stopping = true; failed = true; kill('SIGKILL'); };
+      const stop = (reason: string) => { if (failureReason !== null) return; failureReason = reason; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 500); };
+      const interrupted = () => { stopping = true; failureReason = '技能钩子被宿主停止，缺少完整决定；请重新发起调用'; kill('SIGKILL'); };
       process.once('SIGTERM', interrupted); process.once('SIGINT', interrupted);
-      const timer = setTimeout(stop, timeout);
+      const timer = setTimeout(() => stop('技能钩子超过配置时限，缺少完整决定；请修复耗时并运行 verify 核对安装后重试'), timeout);
       const finish = (decision: { decision: string; reason: string }) => {
         if (settled) return; settled = true; clearTimeout(timer); if (force) clearTimeout(force);
         process.removeListener('SIGTERM', interrupted); process.removeListener('SIGINT', interrupted); done(decision);
       };
-      child.stdout.on('data', chunk => { if (failed) return; stdout += chunk.toString('utf8'); if (stdout.length > 100000) stop(); });
+      child.stdout.on('data', chunk => { if (failureReason !== null) return; stdout += chunk.toString('utf8'); if (stdout.length > 100000) stop('技能钩子输出超过上限，缺少完整 JSON；请修复输出并运行 verify 后重试'); });
       child.stderr.resume(); child.stdin.on('error', () => {}); child.stdin.end(raw);
-      child.once('error', () => finish({ decision: 'deny', reason: '技能钩子启动失败' }));
+      child.once('error', () => finish({ decision: 'deny', reason: '技能钩子启动失败；请核对工作目录和安装并运行 verify 后重试' }));
       child.once('close', code => {
-        if (failed || code !== 0) { finish({ decision: 'deny', reason: '技能钩子失败、超时或被停止' }); return; }
+        if (failureReason !== null) { finish(deny(failureReason)); return; }
+        if (code !== 0) { finish(deny(`技能钩子退出码 ${code ?? '未知'}，缺少允许决定；请修正参数或钩子安装并运行 verify 后重试`)); return; }
         try {
           const reply: unknown = JSON.parse(stdout.trim());
           if (!object(reply)) throw new Error('not an object');
           const word = typeof reply.decision === 'string' ? reply.decision.trim() : '';
           const decision = word === 'deny' || word === 'ask' ? word : 'allow';
-          const reason = typeof reply.reason === 'string' ? reply.reason : typeof reply.context === 'string' ? reply.context : '技能钩子的决定';
+          const reason = (typeof reply.reason === 'string' ? reply.reason.trim() : typeof reply.context === 'string' ? reply.context.trim() : '') || (decision === 'ask' ? '需要确认；请核对本次工具调用后明确允许或拒绝' : decision === 'deny' ? '拒绝本次调用；请按技能约束修正参数后重试' : '允许本次调用');
           finish({ decision, reason });
-        } catch { finish({ decision: 'deny', reason: '技能钩子未输出 JSON 对象' }); }
+        } catch { finish({ decision: 'deny', reason: '技能钩子未输出 JSON 对象；请修复脚本输出并运行 verify 后重试' }); }
       });
     });
   };
   const delegated = async (script: string, root: string, input: Record<string, unknown>, raw: string) => {
     const skill = skillDirectory(script, root); const file = path.join(skill, 'hooks.json');
-    if (!exists(file)) return allow();
-    if (!under(canonical(file), skill)) return deny();
-    const declaration: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!object(declaration) || declaration.version !== undefined && declaration.version !== 1 || declaration.hooks !== undefined && !object(declaration.hooks)) return deny();
+    const who = `技能 ${JSON.stringify(path.relative(root, skill) || '.')}`;
+    const recover = '请重新安装技能，并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后重试';
+    let present: boolean;
+    try { present = exists(file); } catch { refuse(`${who} 的 hooks.json 元数据不可读；${recover}`); }
+    if (!present) return allow();
+    let real: string;
+    try { real = canonical(file); } catch { refuse(`${who} 的 hooks.json 路径无法核验；${recover}`); }
+    if (!under(real, skill)) refuse(`${who} 的 hooks.json 指向技能目录之外；${recover}`);
+    let contents: string;
+    try { contents = fs.readFileSync(file, 'utf8'); } catch { refuse(`${who} 的 hooks.json 不可读；${recover}`); }
+    let declaration: unknown;
+    try { declaration = JSON.parse(contents); } catch { refuse(`${who} 的 hooks.json JSON 语法无效；${recover}`); }
+    if (!object(declaration) || declaration.version !== undefined && declaration.version !== 1 || declaration.hooks !== undefined && !object(declaration.hooks)) refuse(`${who} 的 hooks.json 对象或版本不受支持；${recover}`);
     const entries = object(declaration.hooks) ? declaration.hooks.before_tool ?? [] : [];
-    if (!Array.isArray(entries) || entries.length > 100 || entries.some(hook => !object(hook) || typeof hook.command !== 'string' || !hook.command.trim() || hook.command.length > 4000 || hook.command.includes('\0'))) return deny();
-    let strictest = allow();
-    for (const hook of entries as Record<string, unknown>[]) {
-      if (stopping) return deny();
-      if (!matches(hook, input)) continue;
+    if (!Array.isArray(entries) || entries.length > 100 || entries.some(hook => !object(hook) || typeof hook.command !== 'string' || !hook.command.trim() || hook.command.length > 4000 || hook.command.includes('\0'))) refuse(`${who} 的 hooks.json.before_tool 缺少可执行的命令列表或超过上限；${recover}`);
+    let strictest = allow(); let matched = false;
+    for (const [index, hook] of (entries as Record<string, unknown>[]).entries()) {
+      const named = typeof hook.name === 'string' && hook.name.trim() ? hook.name.trim() : `before_tool[${index + 1}]`;
+      const identity = `${who} / 钩子 ${JSON.stringify(named.length > 80 ? named.slice(0, 80) + '…' : named)}（第 ${index + 1} 项）`;
+      if (stopping) refuse(`${identity} 被宿主停止，缺少完整决定；请重新发起调用以重新核对`);
+      let selected: boolean;
+      try { selected = matches(hook, input); } catch (error) { refuse(`${identity} 的匹配检查未完成；${error instanceof GuardRefusal ? error.message : recover}`); }
+      if (!selected) continue;
       const decision = await runHook(hook, raw, String(input.cwd));
-      if (decision.decision === 'deny' || decision.decision === 'ask' && strictest.decision === 'allow') strictest = decision;
+      decision.reason = `${identity}：${decision.reason}`;
+      if (!matched || decision.decision === 'deny' && strictest.decision !== 'deny' || decision.decision === 'ask' && strictest.decision === 'allow') strictest = decision;
+      else if (decision.decision === strictest.decision && decision.decision !== 'allow') strictest = {...strictest, reason: strictest.reason + '；' + decision.reason};
+      matched = true;
     }
     return strictest;
   };
   let raw = ''; process.stdin.setEncoding('utf8'); for await (const chunk of process.stdin) raw += chunk;
   let result = deny();
   try {
-    const input: unknown = JSON.parse(raw);
-    if (!object(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !object(input.tool_input)) throw new Error('invalid input');
-    if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some(file => typeof file !== 'string'))) throw new Error('invalid paths');
+    let input: unknown;
+    try { input = JSON.parse(raw); } catch { refuse('钩子输入不是完整 JSON；请宿主用完整的 before_tool 对象重新发起调用'); }
+    if (!object(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !object(input.tool_input)) refuse('钩子缺少 before_tool、tool_name 或 tool_input 对象；请宿主补齐输入后重试');
+    if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some(file => typeof file !== 'string'))) refuse('工具 paths 不是文字路径列表；请用工作目录内的完整路径重新发起调用');
     if (allowed.includes(input.tool_name)) result = allow();
     else if (['read_file', 'ls', 'glob', 'grep'].includes(input.tool_name)) {
-      if(input.tool_name==='glob'&&!safeGlob(input.tool_input.pattern))throw new Error('invalid glob pattern');
+      if (input.tool_name === 'glob' && !safeGlob(input.tool_input.pattern)) refuse('glob 的 pattern 不是工作目录内的相对模式；请改用不含绝对路径、~ 或父目录分支的模式后重试');
       const root = canonical(workspace);
-      if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid cwd');
-      if (Array.isArray(input.paths) && input.paths.length && input.paths.every(file => typeof file === 'string' && file.length > 0 && under(canonical(path.resolve(input.cwd as string, file)), root))) result = allow();
-    } else if (input.tool_name === 'execute') {
-      if (Object.keys(input.tool_input).some(key => !['command', 'background', 'timeout'].includes(key)) || input.tool_input.background !== undefined && typeof input.tool_input.background !== 'boolean' || input.tool_input.timeout !== undefined && (typeof input.tool_input.timeout !== 'number' || !Number.isFinite(input.tool_input.timeout))) throw new Error('invalid execute fields');
-      if (typeof input.tool_input.command !== 'string' || typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid execute');
-      const root = path.join(canonical(home), 'skills'); if (canonical(root) !== root) throw new Error('skills root changed');
-      const script = scriptOf(input.tool_input.command, root);
-      if (script) {
-        result = await delegated(script, root, input, raw);
+      if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) refuse('文件工具缺少绝对 cwd；请在专用工作目录重新发起调用');
+      if (!Array.isArray(input.paths) || !input.paths.length) refuse(`${input.tool_name} 缺少路径；请填写工作目录内的 path 或 file_path 后重试`);
+      for (const file of input.paths) {
+        if (typeof file !== 'string' || !file.length) refuse(`${input.tool_name} 含空路径；请补齐工作目录内的路径后重试`);
+        if (!under(canonical(path.resolve(input.cwd, file)), root)) refuse(`只读目标 ${JSON.stringify(file)} 不在工作目录 ${JSON.stringify(root)} 内；请改用工作目录内路径，其他目录由集成者另行设置专用主目录`);
       }
-    }
-  } catch { result = deny(); }
+      result = allow();
+    } else if (input.tool_name === 'execute') {
+      if (Object.keys(input.tool_input).some(key => !['command', 'background', 'timeout'].includes(key)) || input.tool_input.background !== undefined && typeof input.tool_input.background !== 'boolean' || input.tool_input.timeout !== undefined && (typeof input.tool_input.timeout !== 'number' || !Number.isFinite(input.tool_input.timeout))) refuse('execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用');
+      if (typeof input.tool_input.command !== 'string' || typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) refuse('execute 缺少 command 文字或绝对 cwd；请宿主补齐工具调用后重试');
+      const root = path.join(canonical(home), 'skills');
+      if (!exists(root) || !fs.lstatSync(root).isDirectory() || canonical(root) !== root) refuse('skills 目录根已改变或缺失；请集成者恢复专用主目录的真实 skills 目录并核对安装后重试');
+      const script = scriptOf(input.tool_input.command, root);
+      if (script) result = await delegated(script, root, input, raw);
+      else result = deny();
+    } else result = deny('该工具不在本主目录授权范围；请使用 Hub、skill 或工作目录内只读工具，写操作交给集成者处理');
+  } catch (error) {
+    result = deny(error instanceof GuardRefusal ? error.message : '本主目录守卫未完成检查，缺少可信决定；请集成者核对守卫安装后重新发起调用');
+  }
   process.stdout.write(JSON.stringify(result));
 }
 
