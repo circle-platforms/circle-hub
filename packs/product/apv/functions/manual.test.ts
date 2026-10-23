@@ -585,6 +585,32 @@ describe('placement against the build’s command tree', () => {
     assert.ok(rowText !== undefined && (rowText.data.command_literals as string[]).includes('demo pool mode'), 'the mention stays a literal of the row text');
   });
 
+
+  it('lists as drift only the literals the tree cannot resolve, and records row literals (closure findings 4, 17, 20, 21)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item><item name="add" help_string="a2"><arguments></arguments></item></menu><item name="probe" help_string="p"><arguments></arguments></item></menu><menu name="show"><item name="demo" help_string="d"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    // A variant signature with one variant present: only the missing one is drift.
+    const variant = produceManualEntries(markdown('# 章\n\n**demo {pool\\|probe} add** *\\<name\\>*\n\n说明。\n'), null, { catalog: tree });
+    assert.ok(variant.warnings.some((w) => w.includes('漂移候选：demo probe add')), variant.warnings.join('；'));
+    assert.ok(!variant.warnings.some((w) => /漂移候选[^：]*：demo pool add/.test(w)), variant.warnings.join('；'));
+    // A multi-command row whose commands all exist at /commands/demo: no drift at all.
+    const rowBoth = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** 与 **demo route static** | 跨分支 |\n'), null, { catalog: tree });
+    assert.ok(!rowBoth.warnings.some((w) => w.includes('漂移候选')), rowBoth.warnings.join('；'));
+    // An unplaced multi-command row records the union of its anchors' literals and its prose mentions.
+    const rowText = rowBoth.entries.find((entry) => String(entry.statement).includes('跨分支'));
+    assert.ok(rowText !== undefined, JSON.stringify(rowBoth.entries.map((e) => e.path)));
+    assert.deepEqual(([...((rowText.data.command_literals ?? []) as string[])]).sort(), ['demo pool add', 'demo route static'], JSON.stringify(rowText.data.command_literals));
+    const withMention = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo probe** 与 **show demo status** | 配合，见 \`demo pool mode\` |\n'), null, { catalog: tree });
+    const mentionEntry = withMention.entries.find((entry) => String(entry.statement).includes('配合'));
+    assert.ok(mentionEntry !== undefined);
+    assert.deepEqual(([...((mentionEntry.data.command_literals ?? []) as string[])]).sort(), ['demo pool mode', 'demo probe', 'show demo status'], JSON.stringify(mentionEntry.data.command_literals));
+    assert.ok(withMention.warnings.some((w) => /漂移候选：show demo status/.test(w)), withMention.warnings.join('；'));
+    assert.ok(!withMention.warnings.some((w) => /漂移候选[^：]*：(demo probe|demo pool mode)/.test(w)), withMention.warnings.join('；'));
+    // A value row that mentions an existing command: no word-level drift (closure 5/21).
+    const treeWithCreate = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item><item name="create" help_string="c"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const mentionCell = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| name | 名称，先用 **demo pool create** 创建 |\n'), null, { catalog: treeWithCreate });
+    assert.ok(!mentionCell.warnings.some((w) => w.includes('漂移候选')), mentionCell.warnings.join('；'));
+  });
+
   it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
     // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
     // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.

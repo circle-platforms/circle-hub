@@ -588,6 +588,17 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       else unplacedSignatureLiterals.add(literal);
     }
   };
+/** Adds one literal to an entry's command_literals (a mention or a signature spelling), capped as putLiterals caps. */
+  const putLiteral = (entry: ProducedEntry, literal: string): void => {
+    if (literal === '') return;
+    const literals = asStrings(entry.data.command_literals);
+    if (literals.length >= MAX_LITERALS) {
+      entry.data.literals_cut = true;
+      return;
+    }
+    if (!literals.includes(literal)) entry.data.command_literals = [...literals, literal].sort(compareText);
+  };
+
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
     const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
     const unique = [...new Set(found)].sort(compareText);
@@ -843,22 +854,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
-        const valueLiterals = new Set<string>();
         let signatureRows = 0;
         for (const row of table.rows) {
           const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
             .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, currentVariantTails))
             .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
-            // A bare bold word in a cell is a value, parameter name or term: the row stays in the remainder and the
-            // word is a command literal only (a mention, research 2 rule 4), never a signature.
-            if (row.cells.some((cell) => cell.includes('**'))) {
-              for (const cell of row.cells) {
-                for (const word of cell.replaceAll('**', ' ').split(/\s+/u)) {
-                  if (word !== '' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(word)) valueLiterals.add(word.toLowerCase());
-                }
-              }
-            }
+            // A bare bold word is a value, parameter name or term: the row stays in the remainder. Its bold spans are
+            // recorded as literals by the remainder's own putLiterals, as written — no word-level sweep (closure 5/21).
             remainder.push(row.line);
             continue;
           }
@@ -882,19 +885,26 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const lca = commonPrefix(found.map(({ anchor: some }) => some.words));
             if (lca.length >= 1) placed = (paths[0] as string).split('/').slice(0, 2 + lca.length).join('/');
           }
-          const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
-          // The row's own anchors are signature literals (the placement check decides them), not prose spans.
+          // The row keeps its cross-links (closure 17): its command_literals are the union of the anchors' positive
+          // variants and the prose mentions of the other cells; the drift sets take the same anchors' spellings.
+          const rowLiteralSet = new Set<string>();
           for (const { anchor: some } of found) {
             const positive = positiveVariantsOf(some);
             for (const literal of [...new Set((positive ?? [some.words]).map((words) => words.join(' ')))]) {
+              rowLiteralSet.add(literal);
               allLiterals.add(literal);
-              if (rowEntry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
-              else unplacedSignatureLiterals.add(literal);
             }
           }
+          const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
+          const rowEntryPathPlaced = rowEntry.path?.startsWith('/commands/') === true;
+          for (const literal of rowLiteralSet) {
+            if (rowEntryPathPlaced) placedSignatureLiterals.add(literal);
+            else unplacedSignatureLiterals.add(literal);
+          }
+          for (const literal of [...rowLiteralSet].sort()) putLiteral(rowEntry, literal);
+          for (const cell of row.cells) for (const literal of proseLiterals(cell)) putLiteral(rowEntry, literal);
           split.push(rowEntry);
         }
-        for (const literal of valueLiterals) allLiterals.add(literal);
         const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
         // Rows that state their own condition become their own row entries (a row's condition is read from that row
         // alone, never shared with the other rows of the entry); the unconditioned rows keep the shared entry, whose
@@ -964,7 +974,11 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const unresolved = new Set<string>();
     for (const literal of allLiterals) {
       if (placedSignatureLiterals.has(literal)) continue;
-      if (unplacedSignatureLiterals.has(literal)) { unresolved.add(literal); continue; }
+      if (unplacedSignatureLiterals.has(literal)) {
+        // Only the spellings the tree lacks (closure 4/20): a variant or row anchor that exists never drifts.
+        if (existingPath(catalog, literal.split(' ')) === null) unresolved.add(literal);
+        continue;
+      }
       if (!resolves(catalog, literal)) unresolved.add(literal);
     }
     if (unresolved.size > 0) {
