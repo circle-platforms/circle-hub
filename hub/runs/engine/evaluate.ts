@@ -16,6 +16,7 @@ import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
+import { bindRecovery } from './recovery.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
@@ -105,7 +106,7 @@ function sandboxReason(error: SandboxError): Reason {
 /** The unknown outcome a failed subject builder gives, marked as a sandbox failure like runCheck's. */
 function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
   if (error instanceof SubjectCopyError) return {
-    verdict: 'unknown', reason: 'check_error', tier: check.tier ?? 'advisory', grounds: [],
+    verdict: 'unknown', reason: 'check_error', missing: `检查 ${check.id} 的可复制被判对象；下一步：修复复制能力后重核`, tier: check.tier ?? 'advisory', grounds: [],
     statement: `Hub 复制检查 ${check.id} 的被判对象数据失败；请 Hub 维护人恢复复制能力后重试`,
     data: { phase: 'subject_copy', module: check.subject?.module ?? null },
   };
@@ -114,6 +115,7 @@ function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
   return {
     verdict: 'unknown',
     reason,
+    missing: `检查 ${check.id} 的被判对象；下一步：修复或重试构建后重核`,
     statement: `未知（检查 ${check.id} 的被判对象没有构建出来）：${sandbox ? error.message : '包内函数无法运行'}`,
     grounds: [],
     tier: check.tier ?? (check.basis ? 'blocking' : 'advisory'),
@@ -127,6 +129,7 @@ function bounded(check: CheckEntry, outcome: CheckOutcome): CheckOutcome {
   return {
     verdict: 'unknown',
     reason: 'check_error',
+    missing: `检查 ${check.id} 在存储深度上限内的判定结果；下一步：包主人修复输出后重跑`,
     statement: `未知（检查出错）：检查 ${check.id} 给出的 data 嵌套超过 ${MAX_OUTCOME_DATA_DEPTH} 层`,
     grounds: [],
     tier: outcome.tier,
@@ -138,6 +141,7 @@ function tableFailure(check: CheckEntry): CheckOutcome {
   return {
     verdict: 'unknown',
     reason: 'check_error',
+    missing: `检查 ${check.id} 的可读规则表 ${check.table ?? ''}；下一步：包主人补齐规则表后重跑`,
     statement: `未知（检查出错）：检查 ${check.id} 的表 ${check.table ?? ''} 读不到`,
     grounds: [],
     tier: check.tier ?? (check.basis ? 'blocking' : 'advisory'),
@@ -199,6 +203,9 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
+  const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
+    .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
+  const recovery = { now: ctx.now(), runner: run.runner ?? run.configurer!, owner: workflow.owner ?? null, admin: administrators[0]?.id ?? null };
   const retryAttempts: Array<Record<string, unknown>> = [];
   const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
@@ -523,7 +530,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       const blocked = SubjectBlocked.safeParse(subject);
       if (blocked.success) {
         const rows = blocked.data.blocked;
-        return { failure: { verdict: 'unknown', reason: 'awaiting_step', code: rows[0].code, pointer: rows[0].pointer, statement: `前置驳回：${rows.map(row => `${row.check}${row.pointer}（${row.code}）`).join('；')}。下一步：修正这些驳回后自动重核`, grounds: [], tier: check.tier ?? 'blocking', data: { blocked: rows } } };
+        return { failure: { verdict: 'unknown', reason: 'awaiting_step', missing: `前置 ${rows.map(row => `${row.check}${row.pointer}（${row.code}）`).join('；')} 修正后的事实；下一步：修正这些驳回后自动重核`, code: rows[0].code, pointer: rows[0].pointer, statement: `前置驳回：${rows.map(row => `${row.check}${row.pointer}（${row.code}）`).join('；')}。下一步：修正这些驳回后自动重核`, grounds: [], tier: check.tier ?? 'blocking', data: { blocked: rows } } };
       }
       return { subject };
     } catch (error) {
@@ -704,7 +711,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
-      const layers = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
+      const layers = t.layers.map((layer) => bindRecovery(layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed), layer === 'static' ? outcomes.map(o => o.outcome) : [], recovery));
       const status = requirementStatus({
         layers,
         hasProducer,

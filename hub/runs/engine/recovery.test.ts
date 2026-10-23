@@ -86,3 +86,25 @@ test('integrity_unproven carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('完整的来源目'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+test('one layer preserves independent reasons and their separate facts', () => {
+  const outcomes = [unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '缺少来源甲'), unknown({ tier: 'advisory', grounds: [] }, 'timeout', '缺少检查乙的完成结果')];
+  const layer = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, outcomes, context);
+  assert.deepEqual(layer.gaps?.map(g => g.reason), ['missing_input', 'timeout']);
+  assert.ok(LayerResult.safeParse(layer).success);
+});
+test('withheld source waits for an administrator while an unavailable source is reread', () => {
+  const retained = unknown({ tier: 'advisory', grounds: [] }, 'awaiting_step', '管理员尚未接受来源', { data: { unread_sources: [{ reason: 'credential_unreadable' }] } });
+  const temporary = unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '暂不可读的片段原文', { data: { why: 'unavailable' } });
+  assert.deepEqual(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [retained], context).exit?.audience, { user: context.admin });
+  assert.equal(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, [temporary], context).exit?.action, 'reread');
+});
+test('digest mismatch requests trusted backup restoration instead of rereading bytes', () => {
+  const outcome = unknown({ tier: 'advisory', grounds: [] }, 'integrity_unproven', '缺与摘要一致的可信原文；下一步：管理员从可信备份恢复', { data: { why: 'integrity_unproven' } });
+  const layer = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'integrity_unproven' }, [outcome], context);
+  assert.deepEqual(layer.exit?.audience, { user: context.admin });
+  assert.equal(layer.exit?.action, 'request');
+});
+test('exhausted transient sandbox availability schedules reevaluation', () => {
+  const outcome = unknown({ tier: 'advisory', grounds: [] }, 'check_error', '可用的沙箱', { data: { sandbox: 'SANDBOX_UNAVAILABLE' } });
+  assert.equal(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'check_error' }, [outcome], context).exit?.action, 'reevaluate');
+});
