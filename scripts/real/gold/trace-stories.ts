@@ -1,4 +1,5 @@
 // Independent raw-input oracle. No runtime imports from Hub or packs.
+import type { ProvenanceType } from '../../../contracts/generated/vocabulary.ts';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -10,7 +11,7 @@ export type Scalar = string | number | boolean | null;
 const scalar = (value: unknown): Scalar => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null;
 export type StoryRecord = { id: string | number; status?: unknown; stage?: unknown; title?: unknown };
 export type StoryGoldRow = { story: string; status: Scalar; stage: Scalar; fields_absent?: string[]; plm_returned: boolean; cases: Array<{ id: string; title: string }> };
-export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; status_absent?: number; statuses: Array<{ status: Scalar; count: number }>; documents: number; documents_without_cases: number; missing_documents: string[]; scope: string };
+export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; status_absent?: number; statuses: Array<{ status: Scalar; count: number }>; documents: number; documents_without_cases: number; missing_documents: string[]; scope: ProvenanceType };
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const norm = (id: string): string => id.replace(/^0+/, '') || '0';
 const isId = (id: string): boolean => /^[0-9]{1,15}$/.test(id) && norm(id) !== '0';
@@ -100,7 +101,7 @@ export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Ar
   for (const s of stories) if (s.plm_returned && !s.fields_absent?.includes('status')) states.set(s.status, (states.get(s.status) ?? 0) + 1);
   return { product: options.product, build: options.build, stories, traced, untraced: stories.length - traced, plm_unread: stories.filter(s => !s.plm_returned).length,
     status_absent: stories.filter(s => s.plm_returned && s.fields_absent?.includes('status')).length, statuses: [...states].sort(([a], [b]) => JSON.stringify([typeof a, a]) < JSON.stringify([typeof b, b]) ? -1 : JSON.stringify([typeof a, a]) > JSON.stringify([typeof b, b]) ? 1 : 0).map(([status, count]) => ({ status, count })), documents: options.maps.length, documents_without_cases: documentsWithoutCases,
-    missing_documents: options.missingDocuments ?? [], scope: '需求范围由用户提供' };
+    missing_documents: options.missingDocuments ?? [], scope: 'declared' };
 }
 export function main(argv: string[]): number {
   const value = (name: string) => { const i = argv.indexOf(`--${name}`); return i < 0 ? undefined : argv[i + 1]; };

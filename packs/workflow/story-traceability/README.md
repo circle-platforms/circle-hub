@@ -2,7 +2,7 @@
 
 独立工作流包 story-traceability 1.0.1。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。只有视图未截断、没有未读来源、缺正文或裁剪键且计数完整时才投影；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
 
-可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。有效范围在条目摘要和事实数据明确注明“需求范围取自构建记录”。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
+可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
 ## 决定与限制
 
@@ -31,3 +31,5 @@
 复核 5：文档清单中没有用例节点的合法脑图计入 documents_without_cases，不影响其他文档连接；只有明确的“无用例节点”错误可跳过，坏脑图仍整份拒绝。终端只增加无用例文档个数。
 
 复核 6：只有在成功应答的 unread 中列出的编号才计没返回；不可读或未绑定的详情批次单列 plm_unavailable，不能伪称已收到应答。构建路径已自动尝试详情读取，失败记录由客户端与管理员核对；验收拒绝详情来源未读到的运行。
+
+复核 7：范围依据只用 provenance_type 代码，expected_sources 只比较 observed，不依赖显示文案。包内标签快照由 testing/generate-vocabulary.ts 从 contracts/generated 生成，--check 和回归测试校验未漂移；不手写词表、不改全局生成器。buildsProject 的旧 scope_note 字段在这里不再驱动逻辑，其清理由 plm-fields 分支处理，避免修改同一函数。

@@ -32,7 +32,7 @@ describe('synthetic story production run', { skip }, () => {
     const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
     assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
     assert.ok(result.production);
-    assert.match(result.answer.run!.items[0].summary!, /需求范围取自构建记录/);
+    assert.match(result.answer.run!.items[0].summary!, /需求范围依据：观察/);
     const total = result.production.result.cross_item.find(c => c.requirement === 'counts')!;
     assert.equal(total.statement.data?.plm_unread, 1);
   });

@@ -68,7 +68,7 @@ test('configured build scope is optional and missing field requests ids without 
   const build = boundView('build', { builds: [{ id: '7', stories: ['21', '23'], scope_note: '需求范围取自构建记录' }] }, 'plm:builds:5');
   const p = project({ inputs: [...cases, build], parameters: { build_id: '7' } }) as any;
   assert.deepEqual(p.items.map((i: any) => i.id), ['21', '23']);
-  assert.match(p.items[0].summary, /需求范围取自构建记录/);
+  assert.equal(p.items[0].fields.scope, 'observed');
   build.model = { builds: [{ id: '7', stories: null, scope_note: '缺少设置 settings.build_story_field' }] };
   const absent = project({ inputs: [...cases, build], parameters: { build_id: '7' } }) as any;
   assert.match(absent.error.message, /构建记录里没有需求字段，请给出需求编号/);
@@ -102,7 +102,7 @@ test('corrupt and conflicting inputs remain refused', () => {
 
 test('build-derived detail reads are split into fifty ids and record absent fields without actions', async () => {
   const { default: expected } = await import('./expected.ts');
-  const items = Array.from({ length: 123 }, (_, i) => ({ id: String(i + 1), fields: { scope: '需求范围取自构建记录' } }));
+  const items = Array.from({ length: 123 }, (_, i) => ({ id: String(i + 1), fields: { scope: 'observed' } }));
   const e = expected({ items }) as any;
   assert.deepEqual(e.sources.map((s: any) => s.external.split(':')[2].split('+').length), [50, 50, 23]);
   const s = projected();
@@ -146,4 +146,22 @@ test('failed detail sources are distinct from a successful PLM response without 
   assert.match(outcomes[1].statement, /应答里没有编号 23/); assert.ok(outcomes[1].grounds.includes(reference));
   const ignored = counts({ subject: s, sources, unread_sources: [reference] }) as any[];
   assert.equal(ignored[0].data.plm_unavailable, 2);
+});
+
+
+test('scope codes come from provenance_type and labels never drive expected reads', async () => {
+  const { default: expected } = await import('./expected.ts');
+  const user = projected(); assert.equal(user.items[0].fields.scope, 'declared');
+  assert.deepEqual((expected({ items: user.items }) as any).sources, []);
+  const items = [{ id: '21', fields: { scope: 'observed', scope_label: '任意显示文案' } }];
+  assert.equal((expected({ items }) as any).sources[0].external, 'plm:stories:21');
+});
+
+test('pack label snapshot equals the authoritative generated vocabulary', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { vocabularyText } = await import('../testing/generate-vocabulary.ts');
+  const { PROVENANCE_TYPE, labelOf } = await import('../../../../contracts/generated/vocabulary.ts');
+  const snapshot = await import('./generated/vocabulary.ts');
+  assert.equal(await readFile(new URL('./generated/vocabulary.ts', import.meta.url), 'utf8'), vocabularyText());
+  for (const code of PROVENANCE_TYPE) assert.equal(snapshot.labelOf('provenance_type', code), labelOf('provenance_type', code));
 });

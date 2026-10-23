@@ -1,5 +1,6 @@
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { absent, scalar, rawText } from './plm-fields.ts';
+import { scopeText } from './scope.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, clip, shown } from './text.ts';
 import type { Row } from './project.ts';
@@ -45,7 +46,7 @@ export default function check(input: unknown): CheckOutcome[] {
       if (offending.length) return { ...base, verdict: 'refute', code: 'story-traceability.join_mismatch', statement: '列出的用例原始需求编号不含被判需求；请任务包维护人修复索引连接后重跑' };
       const partial = view.truncated === true || Number(view.skipped) > 0 || Number(view.missing) > 0 ? '；来源部分可读' : '';
       const status = rawText(row, 'status'); const stage = rawText(row, 'stage');
-      let statement = `需求 ${row.id}（状态：${status}；阶段：${stage}）：${row.cases.length} 个已索引用例${row.cases.length ? `追溯：${row.cases.slice(0, 5).map(c => `${c.document ?? ''}:${c.case} ${shown(c.title, 30)}`).join('；')}${row.cases.length > 5 ? `；另有 ${row.cases.length - 5} 个` : ''}` : ''}${partial}；${row.scope}${row.plm_returned ? '' : row.plm_responded ? `；PLM 应答里没有编号 ${row.id}；请用户确认需求编号` : '；PLM 需求详情没有读到（来源不可用）；请管理员核对详情批次的读取记录与访问'}`;
+      let statement = `需求 ${row.id}（状态：${status}；阶段：${stage}）：${row.cases.length} 个已索引用例${row.cases.length ? `追溯：${row.cases.slice(0, 5).map(c => `${c.document ?? ''}:${c.case} ${shown(c.title, 30)}`).join('；')}${row.cases.length > 5 ? `；另有 ${row.cases.length - 5} 个` : ''}` : ''}${partial}；${scopeText(row.scope)}${row.plm_returned ? '' : row.plm_responded ? `；PLM 应答里没有编号 ${row.id}；请用户确认需求编号` : '；PLM 需求详情没有读到（来源不可用）；请管理员核对详情批次的读取记录与访问'}`;
       if (!row.cases.length) statement += `；在构建 ${row.build}、知识根 ${facts.root} 的完整需求号索引视图（已读 ${view.listed_entries} 个用例条目）里，没有条目携带需求号 ${row.id}；不推断未索引用例`;
 
       return { ...base, verdict: 'support', statement: clip(statement, 500) };

@@ -1,4 +1,5 @@
 // The real-client oracle reads only client-visible text; every diagnostic is anonymised.
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { createHash } from 'node:crypto';
 import { resultTexts, type Scenario } from '../lib/accept.ts';
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
@@ -26,6 +27,7 @@ export default function scenario(gold: StoryGold): Scenario {
       const add = (name: string, ok: boolean, expected: string = '一致', actual: string = ok ? '一致' : '不一致或未出现') => checks.push({ area, name, expected, actual, ok });
       add('运行结果可读', text.includes('运行 run_') && !turns.some(t => t.toolResults.some(r => r.isError)));
       add('PLM 详情来源完整', text.includes('PLM 详情未读到 0 个'));
+      add('需求范围依据', text.includes(`需求范围依据：${labelOf('provenance_type', gold.scope)}`));
       add('原件完整', gold.missing_documents.length === 0, '缺原件 0 份', `缺原件 ${gold.missing_documents.length} 份`);
       for (const [at, row] of gold.stories.entries()) {
         const label = `#${at + 1} ${hash(row.story)}`;

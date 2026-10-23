@@ -8,7 +8,7 @@
       {
         "id": "21",
         "label": "需求 21 合成需求",
-        "summary": "1 个用例；需求范围由用户提供",
+        "summary": "1 个用例；需求范围依据：声明",
         "location": {
           "slot": "stories",
           "source": "2f068929f0640f85885d11a9446f2872f8a0e805b49f4a1e881477648dc81f11",
@@ -38,7 +38,7 @@
             "src:2f068929f0640f85885d11a9446f2872f8a0e805b49f4a1e881477648dc81f11/json@1/p/stories/0"
           ],
           "build": "Rel_APV_10_6_1_57",
-          "scope": "需求范围由用户提供"
+          "scope": "declared"
         }
       }
     ],
@@ -48,7 +48,7 @@
           "product": "apv",
           "build": "Rel_APV_10_6_1_57",
           "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
-          "scope": "需求范围由用户提供",
+          "scope": "declared",
           "view": {
             "source": "src:0ed6028f89377d795017343e132cc5163c1d0718e70112665a84680b92c9bd94",
             "truncated": false,

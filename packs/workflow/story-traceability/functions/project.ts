@@ -1,13 +1,15 @@
 // Pure projection: caller-supplied ids, or ids explicitly declared by a configured build record.
 import type { BoundInput, ProjectedItem } from '../../../../contracts/src/pack.ts';
 import { absent, scalar, type Scalar } from './plm-fields.ts';
+import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import { scopeText } from './scope.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, strings, shown, utf8Length } from './text.ts';
 import { readIndexView } from './views.ts';
 
 export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
-export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: string };
+export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
 const fail = (message: string, fix: string) => ({ error: { code: 'story-traceability.invalid_input', message, fix } });
 
@@ -25,7 +27,7 @@ export function projectItems(input: unknown): unknown {
 
   const rows = new Map<string, Row>();
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
-  const scope = storyInputs.length > 0 ? '需求范围由用户提供' : '需求范围取自构建记录';
+  const scope: ProvenanceType = storyInputs.length > 0 ? 'declared' : 'observed';
   function add(raw: string, record: unknown, source: BoundInput, selector: string) {
     if (!validId(raw)) throw new Error('需求编号应为最多 15 位正整数');
     const id = normalizeId(raw);
@@ -83,7 +85,7 @@ export function projectItems(input: unknown): unknown {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;
     return { id: row.id, label: shown(`需求 ${row.id}${row.title ? ` ${row.title}` : ''}`),
-      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scope}`),
+      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
