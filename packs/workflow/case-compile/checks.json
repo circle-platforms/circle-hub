@@ -1,0 +1,68 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "contract_shape",
+      "title": "步骤的（对象，方法）和参数符合合约",
+      "function": { "module": "functions/checks.ts", "export": "checkContractShape" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "planSubject" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 contract_methods：每一步的（对象，方法）在合约里、没被禁用，参数个数和类型对；槽位形状不合合约时整份计划不可核对"
+    },
+    {
+      "id": "bed_addresses",
+      "title": "字面地址解析为台架地址",
+      "function": { "module": "functions/checks.ts", "export": "checkAddresses" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "planSubject" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 bed_addresses：字面地址解析成台架上的设备接口地址或分配到的地址；监听是被测设备接口且同网段有触发设备；盲地址不当监听或虚拟地址；后端是服务器设备；台架之外的地址拒绝"
+    },
+    {
+      "id": "commands_catalog",
+      "title": "命令行在目标构建的命令目录里",
+      "interpreter": "catalog@1",
+      "table": "tables/commands.json",
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "commandSubject" },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 commands_known：执行计划里的命令行在锁定构建的命令目录中解析，参数类型、取值范围和枚举合法"
+    },
+    {
+      "id": "expected_sources",
+      "title": "期望结果带有逐字来源",
+      "function": { "module": "functions/checks.ts", "export": "checkExpectedSources" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "planSubject" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 expected_grounded：每个期望结果带逐字引文（用例原文、缺陷修复说明或手册），不能是模型自己写的"
+    },
+    {
+      "id": "expected_quotes",
+      "title": "期望结果引文逐字核对",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "quoteSubject" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里"
+    },
+    {
+      "id": "deterministic_plan",
+      "title": "执行计划确定性重读一致",
+      "function": { "module": "functions/checks.ts", "export": "checkDeterministic" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts", "export": "planSubject" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 plan_deterministic：执行计划由确定性生成器从槽位出，Hub 重新生成并逐字节比对；不一致说明计划不是由槽位确定性出的"
+    }
+  ]
+}

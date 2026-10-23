@@ -1,0 +1,126 @@
+// Synthetic fixtures for the case-compile tests: an invented compile contract (names copied from no old system), a
+// small bed inventory inside 192.0.2.0/24 and 2001:db8::/32, and a reviewed case document. Not a pack file.
+import { parseContract, type Contract } from './contract.ts';
+import { parseManifest, type ManifestBed } from './manifest.ts';
+import { generatePlanJson, type PlanExpect, type PlanSlots, type PlanStep } from './plan.ts';
+import type { PlanSubject } from './subject.ts';
+
+export const CONTRACT_DOC = {
+  schema: 'compile-contract@1',
+  synthetic: true,
+  objects: [
+    {
+      name: 'dut',
+      methods: [
+        { name: 'cli', params: [{ name: 'line', type: 'string', minLength: 1, maxLength: 200, command: true }] },
+        { name: 'save', params: [] },
+        { name: 'reboot', params: [] },
+        { name: 'listen', params: [{ name: 'address', type: 'ipv4', address: 'listen' }, { name: 'port', type: 'port' }] },
+        { name: 'listen6', params: [{ name: 'address', type: 'ipv6', address: 'listen' }] },
+        { name: 'vip', params: [{ name: 'address', type: 'ipv4', address: 'virtual' }] },
+      ],
+    },
+    {
+      name: 'client',
+      methods: [
+        { name: 'request', params: [{ name: 'target', type: 'ipv4', address: 'target' }, { name: 'count', type: 'int', minimum: 1, maximum: 1000, optional: true, default: '1' }] },
+      ],
+    },
+    {
+      name: 'server',
+      methods: [
+        { name: 'respond', params: [{ name: 'backend', type: 'ipv4', address: 'backend' }, { name: 'status', type: 'int', minimum: 100, maximum: 599 }] },
+      ],
+    },
+  ],
+  forbidden: [{ object: 'dut', method: 'reboot' }],
+};
+
+export const MANIFEST_DOC = {
+  schema: 'test-bed-manifest@1',
+  beds: [
+    {
+      name: 'bed-a',
+      devices: [
+        { name: 'dut0', type: 'load-balancer', product: 'widget', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: ['2001:db8:1::10/64'] },
+        { name: 'dut1', type: 'load-balancer', product: 'widget', ipv4: ['192.0.2.130/26'], ipv6: [] },
+        { name: 'router0', type: 'router', product: null, ipv4: ['192.0.2.1/26'], ipv6: ['2001:db8:1::1/64'] },
+        { name: 'client0', type: 'client', product: null, ipv4: ['192.0.2.80/26'], ipv6: [] },
+        { name: 'server0', type: 'server', product: null, ipv4: ['192.0.2.90/26'], ipv6: [] },
+        { name: 'console0', type: 'console', product: null, ipv4: ['192.0.2.140/26'], ipv6: [] },
+      ],
+      services: [{ host: 'server0', ip: '192.0.2.90', proto: 'tcp', port: 80 }],
+      reserved: [],
+    },
+  ],
+};
+
+export function contractOf(doc: unknown = CONTRACT_DOC): Contract {
+  const read = parseContract(doc);
+  if (!read.ok) throw new Error(`fixture contract invalid: ${JSON.stringify(read.problems)}`);
+  return read.contract;
+}
+
+export function bedsOf(doc: unknown = MANIFEST_DOC): ManifestBed[] {
+  const read = parseManifest(doc);
+  if (!read.ok) throw new Error(`fixture manifest invalid: ${JSON.stringify(read.problems)}`);
+  return read.beds;
+}
+
+export const QUOTE = { reference: `src:${'a'.repeat(64)}/kityminder@1/s/c-1-s1/0`, text: '健康检查间隔设置成功' };
+
+/** The submitted claim data of a valid plan (bucket/blocks/steps/expects/plan_json), the plan text generated from it. */
+export function goodData(contract: Contract = contractOf()): { bucket: string; blocks: string[]; steps: PlanStep[]; expects: PlanExpect[]; plan_json: string } {
+  const slots: PlanSlots = {
+    bucket: 'bed-a',
+    blocks: ['setup'],
+    steps: [
+      { object: 'dut', method: 'listen', params: { address: '192.0.2.10', port: 8080 } },
+      { object: 'dut', method: 'cli', params: { line: 'widget health interval 60' } },
+      { object: 'client', method: 'request', params: { target: '192.0.2.90', count: 3 } },
+      { object: 'server', method: 'respond', params: { backend: '192.0.2.90', status: 200 } },
+    ],
+    expects: [{ text: '健康检查间隔设置成功', quote: QUOTE }],
+    planJson: '',
+  };
+  const planJson = generatePlanJson('doc-1:c-1', slots, contract) as string;
+  return { bucket: slots.bucket, blocks: slots.blocks, steps: slots.steps, expects: slots.expects, plan_json: planJson };
+}
+
+export function subjectOf(data: unknown, options: { contractDoc?: unknown; manifestDoc?: unknown; leases?: PlanSubject['leases']; item?: string } = {}): { subject: PlanSubject } {
+  return {
+    subject: {
+      item: options.item ?? 'doc-1:c-1',
+      location: QUOTE.reference,
+      data,
+      contract: options.contractDoc ?? CONTRACT_DOC,
+      manifest: options.manifestDoc ?? MANIFEST_DOC,
+      leases: options.leases ?? [],
+      now: '2026-10-23T02:00:00.000Z',
+    },
+  };
+}
+
+/** The kityminder@1 model of the reviewed document: a tagged case and a marked-only case, each with a step and leaves. */
+export const MINDMAP_MODEL = {
+  meta: { id: 'doc-1' },
+  nodes: [
+    { text: '文档 doc-1', data: { id: 'doc-1' }, children: [1] },
+    { text: '功能', data: { id: 'g-1', priority: 1 }, children: [2, 5] },
+    { text: '健康检查间隔配置测试', data: { id: 'c-1', resource: ['功能'], priority: 2 }, children: [3], selector: 's/c-1' },
+    { text: '配置健康检查间隔 widget health interval 60', data: { id: 'c-1-s1' }, children: [4], selector: 's/c-1-s1' },
+    { text: '健康检查间隔设置成功', data: { id: 'c-1-e1' }, children: [], selector: 's/c-1-e1' },
+    { text: '会话保持基本功能测试', data: { id: 'c-2', priority: 2 }, children: [6], selector: 's/c-2' },
+    { text: '开启会话保持', data: { id: 'c-2-s1' }, children: [7], selector: 's/c-2-s1' },
+    { text: '会话保持生效', data: { id: 'c-2-e1' }, children: [], selector: 's/c-2-e1' },
+  ],
+};
+
+export const CATALOG_SPEC = {
+  root: 'c'.repeat(64),
+  complete: true,
+  entries: [
+    { head: 'widget health interval', signatures: [[{ name: 'seconds', type: 'int', minimum: 1, maximum: 300 }]], summary: 'set the health check interval' },
+    { head: 'widget session persistence', signatures: [[{ name: 'mode', type: 'enum', values: ['source-address', 'cookie'] }]], summary: 'set the persistence mode' },
+  ],
+};

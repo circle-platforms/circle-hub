@@ -1,0 +1,14 @@
+{
+  "schema": "catalog@1",
+  "origin": "决定：case-compile 的步骤里合约标记为命令行的参数值必须在目标构建的命令目录里（编译设计第 2 节）",
+  "description": "执行计划的命令行参数值（subject 的 phrases）按锁定构建的 commands@1 目录核对：头部解析不出是 not_member，参数个数、类型、取值范围和枚举按签名核对",
+  "tier": "blocking",
+  "basis": "要求项 commands_known：命令行在锁定构建的命令目录中解析，参数类型、取值范围和枚举合法",
+  "item": "/item",
+  "location": "/location",
+  "catalog": "commands@1",
+  "commands": ["$.phrases[*]"],
+  "required": false,
+  "scope": "resolved",
+  "match": { "unicode": "nfkc", "case": "insensitive", "whitespace": "collapse" }
+}

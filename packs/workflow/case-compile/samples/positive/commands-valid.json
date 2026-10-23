@@ -1,0 +1,57 @@
+{
+  "id": "commands_valid",
+  "source": "author",
+  "check": "commands_catalog",
+  "note": "合成正例：命令行在目录里，参数在范围内",
+  "subject": {
+    "item": "doc-1:c-1",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+    "phrases": [
+      "widget health interval 60"
+    ],
+    "negative": false
+  },
+  "catalog": {
+    "root": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "set the health check interval"
+      },
+      {
+        "head": "widget session persistence",
+        "signatures": [
+          [
+            {
+              "name": "mode",
+              "type": "enum",
+              "values": [
+                "source-address",
+                "cookie"
+              ]
+            }
+          ]
+        ],
+        "summary": "set the persistence mode"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}
