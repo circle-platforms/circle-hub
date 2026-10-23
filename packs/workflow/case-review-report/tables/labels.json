@@ -1,0 +1,192 @@
+{
+  "schema": "case-review-report.labels@1",
+  "origin": "处置取自 case-review-verify/slots.schema.json 的 item.verification；严重程度和问题类别取自 case-review/tables/codes.json 的 ranks、findings。Hub 核对名称取自 contracts/codes.json 的 when，以及 case-review/tables/codes.json 的 checks；本表只为已存事实提供显示名称，不新增判断。整体等级次序取自 case-review-verify/slots.schema.json 的 run.final.ranks。",
+  "dispositions": [
+    {
+      "code": "verified",
+      "label": "证实：位置存在，描述与内容相符，严重程度合理",
+      "display": "证实"
+    },
+    {
+      "code": "refuted",
+      "label": "推翻：位置不存在、描述与内容不符或产品语义弄反了",
+      "display": "推翻"
+    },
+    {
+      "code": "partial",
+      "label": "部分正确：方向对，但描述、位置或严重程度要修正",
+      "display": "部分正确"
+    },
+    {
+      "code": "new_finding",
+      "label": "新发现：初评遗漏的问题（data.probe 写七类问题之一）",
+      "display": "新增"
+    }
+  ],
+  "ranks": [
+    {
+      "code": "critical",
+      "label": "严重"
+    },
+    {
+      "code": "major",
+      "label": "主要"
+    },
+    {
+      "code": "minor",
+      "label": "次要"
+    }
+  ],
+  "probes": [
+    {
+      "code": "literal_issue",
+      "label": "字面问题"
+    },
+    {
+      "code": "coverage_gap",
+      "label": "覆盖缺口"
+    },
+    {
+      "code": "differentiation_gap",
+      "label": "区分缺口"
+    },
+    {
+      "code": "edge_case_gap",
+      "label": "边界用例缺口"
+    },
+    {
+      "code": "negative_gap",
+      "label": "反向用例缺口"
+    },
+    {
+      "code": "block_structure_mismatch",
+      "label": "分块结构不符"
+    },
+    {
+      "code": "self_contradiction",
+      "label": "业务自相矛盾"
+    }
+  ],
+  "finalCodes": [
+    {
+      "code": "PASS",
+      "label": "PASS：初评基本正确，没有补充重要问题"
+    },
+    {
+      "code": "PARTIAL",
+      "label": "PARTIAL：基本正确，但遗漏了问题，或等级偏松、偏紧"
+    },
+    {
+      "code": "FAIL",
+      "label": "FAIL：有重大事实错误（误判、位置错误、产品语义颠倒）"
+    }
+  ],
+  "hubCodes": [
+    {
+      "code": "core.structure.duplicate_key",
+      "label": "要求唯一的键在两个条目上重复"
+    },
+    {
+      "code": "core.structure.required_empty",
+      "label": "必填字段缺失或为空"
+    },
+    {
+      "code": "core.structure.type_mismatch",
+      "label": "字段取值的类型或形状不对"
+    },
+    {
+      "code": "core.structure.cardinality",
+      "label": "节点的子节点数少于或多于结构允许的数目"
+    },
+    {
+      "code": "core.catalog.not_member",
+      "label": "取值不在所锁定版本的封闭目录里"
+    },
+    {
+      "code": "core.catalog.membership_contradicted",
+      "label": "陈述说某个成员不存在（或存在），目录却说相反"
+    },
+    {
+      "code": "core.catalog.param_out_of_range",
+      "label": "参数取值超出目录声明的范围"
+    },
+    {
+      "code": "core.catalog.param_type_mismatch",
+      "label": "参数取值不符合声明的类型"
+    },
+    {
+      "code": "core.catalog.arity_mismatch",
+      "label": "命令的参数个数与所有已声明的签名都不符"
+    },
+    {
+      "code": "core.membership.not_in_set",
+      "label": "取值不在任务包声明的封闭集合里"
+    },
+    {
+      "code": "core.pattern.no_match",
+      "label": "取值不符合声明的模式"
+    },
+    {
+      "code": "core.range.out_of_bounds",
+      "label": "数值、前缀或阈值检验不通过"
+    },
+    {
+      "code": "core.coverage.shortfall",
+      "label": "覆盖到的集合没有包含表要求的全部成员"
+    },
+    {
+      "code": "case-review.location_missing",
+      "label": "检查 findings_sources：一条评审发现没有写位置（location）"
+    },
+    {
+      "code": "case-review.quote_missing",
+      "label": "检查 findings_sources：一条评审发现没有逐字引文（只有 grounds 或什么都没有）"
+    },
+    {
+      "code": "case-review.hint_only",
+      "label": "检查 findings_sources：一条评审发现的根据和引文全都来自线索（历史测试清单、测试策略），没有产品方面的根据"
+    },
+    {
+      "code": "case-review.command_not_in_case",
+      "label": "检查 findings_sources：一条评审发现不写 present 引用的命令行不在这个用例的文字里（整条比对，只忽略空白、全半角和大小写；删了或加了参数也算不在）"
+    },
+    {
+      "code": "case-review.tag_variant",
+      "label": "检查 tags：一个用例的类别标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）写法和本文档这一类别最常用的写法不同"
+    }
+  ],
+  "finalRanks": [
+    {
+      "code": "P0",
+      "label": "P0：覆盖全部功能细节，兼容性、反向、压力、边角用例和极端场景非常丰富"
+    },
+    {
+      "code": "P1",
+      "label": "P1：覆盖全部功能细节，兼容性、反向、压力用例丰富"
+    },
+    {
+      "code": "P2",
+      "label": "P2：覆盖全部功能细节，兼容性、反向、压力用例比较丰富"
+    },
+    {
+      "code": "P3",
+      "label": "P3：覆盖全部功能细节，有一些兼容性、反向、压力用例"
+    },
+    {
+      "code": "P4",
+      "label": "P4：覆盖全部功能细节，有一些反向和压力用例，兼容性不足"
+    },
+    {
+      "code": "P5",
+      "label": "P5：覆盖全部功能，有一些反向和压力用例，功能细节的深度不够"
+    },
+    {
+      "code": "P6",
+      "label": "P6：覆盖基本功能，有反向和压力类型，功能细节覆盖不完整"
+    },
+    {
+      "code": "P7",
+      "label": "P7：没有覆盖基本功能，没有反向和压力类型"
+    }
+  ]
+}

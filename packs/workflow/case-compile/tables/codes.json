@@ -112,6 +112,11 @@
       "code": "case-compile.method_not_allowed",
       "when": "合约启用但运行环境配置没有开放的组合",
       "fix": "换用配置已开放的组合；需要扩展时由集成者补角色和检查，重新发布配置并开始新运行"
+    },
+    {
+      "code": "case-compile.workbook_invalid",
+      "when": "工作簿原件、行结构、绑定身份或重算字节与已核验计划不一致",
+      "fix": "按驳回指针修正计划或工作簿，在客户端用当前生成器重新生成并上传原件，以已满足计划运行为前驱开始新核验运行"
     }
   ],
   "refusals": [
@@ -184,6 +189,16 @@
       "code": "case-compile.autoid_imprecise",
       "when": "case autoid 是超出安全整数范围的 JSON 数值",
       "fix": "从原文以文本重新导出编号或请求核心的无损数字解析，不从已舍入数值猜编号"
+    },
+    {
+      "code": "case-compile.workbook_input",
+      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过单用例核验预算",
+      "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少该用例的非必要内容后重新生成，不截断模型或删除执行行"
+    },
+    {
+      "code": "case-compile.workbook_context",
+      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run",
+      "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
     }
   ],
   "warnings": [

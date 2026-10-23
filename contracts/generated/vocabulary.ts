@@ -27,7 +27,7 @@ export const AXES = {
   execution_host: { label: '执行宿主', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle' }, { code: 'bot', label: 'bot' }, { code: 'hub', label: 'Hub（仅确定性函数）' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
   action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根' }, { code: 'lease', label: '租约' }] },
-  lease_op: { label: '租约操作', owner: 'D04', values: [{ code: 'acquire', label: '取得' }, { code: 'extend', label: '续租' }, { code: 'release', label: '释放' }, { code: 'force_release', label: '强制释放' }, { code: 'take_over', label: '接管' }] },
+  lease_op: { label: '租约操作', owner: 'D04', values: [{ code: 'acquire', label: '取得' }, { code: 'extend', label: '续租' }, { code: 'release', label: '释放' }, { code: 'force_release', label: '强制释放' }, { code: 'take_over', label: '接管' }, { code: 'register', label: '登记' }, { code: 'unregister', label: '注销' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
   call_result: { label: '调用结果', owner: 'B08', values: [{ code: 'ok', label: '正常' }, { code: 'error', label: '出错' }, { code: 'transport_failure', label: '传输失败' }] },
@@ -39,7 +39,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '保持未知' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
-  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'candidate', label: '候选层' }] },
+  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干' }, { code: 'branch', label: '枝' }, { code: 'leaf', label: '叶' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
@@ -54,14 +54,19 @@ export const AXES = {
   environment: { label: '环境类别', owner: 'D01', values: [{ code: 'test', label: '测试' }, { code: 'shared', label: '共享' }, { code: 'production', label: '生产' }] },
   permission_role: { label: '权限角色', owner: 'R01', values: [{ code: 'user', label: '用户' }, { code: 'admin', label: '管理员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
-  validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }] },
-  qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }] },
+  validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
+  qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }] },
   reason: { label: '未知与未完成的原因', owner: 'V03', values: [{ code: 'no_check', label: '未装检查' }, { code: 'check_error', label: '检查出错' }, { code: 'timeout', label: '超时' }, { code: 'missing_input', label: '缺输入' }, { code: 'declared_skip', label: '模型声明跳过' }, { code: 'not_covered', label: '提交未覆盖' }, { code: 'awaiting_step', label: '在等某一步' }, { code: 'output_failed', label: '出件失败' }, { code: 'repair_exhausted', label: '修复轮数用完' }, { code: 'budget_exhausted', label: '预算用完' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
   sample_source: { label: '样例来源', owner: 'T02', values: [{ code: 'author', label: '作者' }, { code: 'returned_counterexample', label: '回流反例' }, { code: 'retained_delivery', label: '外部留存交付' }] },
   target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
-  fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '未绑定到本运行' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'retain_only', label: '只保留不可读' }, { code: 'too_large', label: '超过大小上限' }, { code: 'unavailable', label: '暂时读不到' }] },
+  fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '不是这次运行的输入' }, { code: 'not_groundable', label: '这类记录不能作根据' }, { code: 'entry_unaddressed', label: '知识条目单独引用了，没写树地址' }, { code: 'malformed', label: '引用写法不对' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'too_large', label: '超过大小上限' }, { code: 'retain_only', label: '只保留、不可读' }, { code: 'unavailable', label: '暂时读不到' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
+  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }] },
+  task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
+  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
+  exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
+  work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -283,9 +288,9 @@ export function isActionKind(value: unknown): value is ActionKind {
 }
 
 /** 租约操作 (D04) */
-export const LEASE_OP = ['acquire', 'extend', 'release', 'force_release', 'take_over'] as const;
+export const LEASE_OP = ['acquire', 'extend', 'release', 'force_release', 'take_over', 'register', 'unregister'] as const;
 export type LeaseOp = (typeof LEASE_OP)[number];
-export const LEASE_OP_LABEL = { 'acquire': '取得', 'extend': '续租', 'release': '释放', 'force_release': '强制释放', 'take_over': '接管' } as const satisfies { readonly [K in LeaseOp]: string };
+export const LEASE_OP_LABEL = { 'acquire': '取得', 'extend': '续租', 'release': '释放', 'force_release': '强制释放', 'take_over': '接管', 'register': '登记', 'unregister': '注销' } as const satisfies { readonly [K in LeaseOp]: string };
 export const LeaseOpSchema = z.enum(LEASE_OP);
 export function isLeaseOp(value: unknown): value is LeaseOp {
   return (LEASE_OP as readonly unknown[]).includes(value);
@@ -391,9 +396,9 @@ export function isPermissionKind(value: unknown): value is PermissionKind {
 }
 
 /** 知识层 (K03) */
-export const KNOWLEDGE_LAYER = ['tree', 'observation', 'candidate'] as const;
+export const KNOWLEDGE_LAYER = ['tree', 'observation', 'contribution'] as const;
 export type KnowledgeLayer = (typeof KNOWLEDGE_LAYER)[number];
-export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'candidate': '候选层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
+export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'contribution': '回注层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
 export const KnowledgeLayerSchema = z.enum(KNOWLEDGE_LAYER);
 export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
   return (KNOWLEDGE_LAYER as readonly unknown[]).includes(value);
@@ -526,18 +531,18 @@ export function isReferenceScheme(value: unknown): value is ReferenceScheme {
 }
 
 /** 有效条件状态 (B01) */
-export const VALIDITY_STATUS = ['valid', 'rule_withdrawn', 'grounds_withdrawn', 'cited_fragment_changed', 'credential_unreadable', 'premise_failed', 'expired', 'contradicted'] as const;
+export const VALIDITY_STATUS = ['valid', 'rule_withdrawn', 'grounds_withdrawn', 'cited_fragment_changed', 'credential_unreadable', 'premise_failed', 'expired', 'contradicted', 'not_evaluated'] as const;
 export type ValidityStatus = (typeof VALIDITY_STATUS)[number];
-export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张' } as const satisfies { readonly [K in ValidityStatus]: string };
+export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张', 'not_evaluated': '未评估' } as const satisfies { readonly [K in ValidityStatus]: string };
 export const ValidityStatusSchema = z.enum(VALIDITY_STATUS);
 export function isValidityStatus(value: unknown): value is ValidityStatus {
   return (VALIDITY_STATUS as readonly unknown[]).includes(value);
 }
 
 /** 限定标记 (B01) */
-export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded', 'human_intervention', 'discrimination_not_established', 'semantics_unasserted', 'unverified_submission', 'client_preview', 'model_relay', 'no_reuse', 'author_samples_only', 'conditional_on_judgment', 'independence_declared', 'not_realtime', 'partial'] as const;
+export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded', 'human_intervention', 'discrimination_not_established', 'semantics_unasserted', 'unverified_submission', 'client_preview', 'model_relay', 'no_reuse', 'author_samples_only', 'conditional_on_judgment', 'independence_declared', 'not_realtime', 'partial', 'intermittent', 'decision_shape_unruled'] as const;
 export type QualifierMark = (typeof QUALIFIER_MARK)[number];
-export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分' } as const satisfies { readonly [K in QualifierMark]: string };
+export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分', 'intermittent': '间歇', 'decision_shape_unruled': '判定形状未裁定' } as const satisfies { readonly [K in QualifierMark]: string };
 export const QualifierMarkSchema = z.enum(QUALIFIER_MARK);
 export function isQualifierMark(value: unknown): value is QualifierMark {
   return (QUALIFIER_MARK as readonly unknown[]).includes(value);
@@ -589,12 +594,57 @@ export function isPlacement(value: unknown): value is Placement {
 }
 
 /** 片段读取状态 (T04) */
-export const FRAGMENT_READ = ['bound', 'not_bound', 'no_fragment', 'retain_only', 'too_large', 'unavailable'] as const;
+export const FRAGMENT_READ = ['bound', 'not_bound', 'not_groundable', 'entry_unaddressed', 'malformed', 'no_fragment', 'too_large', 'retain_only', 'unavailable', 'integrity_unproven'] as const;
 export type FragmentRead = (typeof FRAGMENT_READ)[number];
-export const FRAGMENT_READ_LABEL = { 'bound': '已绑定可读', 'not_bound': '未绑定到本运行', 'no_fragment': '找不到片段', 'retain_only': '只保留不可读', 'too_large': '超过大小上限', 'unavailable': '暂时读不到' } as const satisfies { readonly [K in FragmentRead]: string };
+export const FRAGMENT_READ_LABEL = { 'bound': '已绑定可读', 'not_bound': '不是这次运行的输入', 'not_groundable': '这类记录不能作根据', 'entry_unaddressed': '知识条目单独引用了，没写树地址', 'malformed': '引用写法不对', 'no_fragment': '找不到片段', 'too_large': '超过大小上限', 'retain_only': '只保留、不可读', 'unavailable': '暂时读不到', 'integrity_unproven': '完整性未证明' } as const satisfies { readonly [K in FragmentRead]: string };
 export const FragmentReadSchema = z.enum(FRAGMENT_READ);
 export function isFragmentRead(value: unknown): value is FragmentRead {
   return (FRAGMENT_READ as readonly unknown[]).includes(value);
+}
+
+/** 按文档的产出种类 (K03) */
+export const DOCUMENT_OUTPUT_KIND = ['classification', 'placement_proposal', 'assertion', 'relation'] as const;
+export type DocumentOutputKind = (typeof DOCUMENT_OUTPUT_KIND)[number];
+export const DOCUMENT_OUTPUT_KIND_LABEL = { 'classification': '分类', 'placement_proposal': '归位提议', 'assertion': '声明', 'relation': '关系' } as const satisfies { readonly [K in DocumentOutputKind]: string };
+export const DocumentOutputKindSchema = z.enum(DOCUMENT_OUTPUT_KIND);
+export function isDocumentOutputKind(value: unknown): value is DocumentOutputKind {
+  return (DOCUMENT_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 按任务的产出种类 (W07) */
+export const TASK_OUTPUT_KIND = ['ranking', 'selection', 'score'] as const;
+export type TaskOutputKind = (typeof TASK_OUTPUT_KIND)[number];
+export const TASK_OUTPUT_KIND_LABEL = { 'ranking': '排序', 'selection': '取舍', 'score': '分数' } as const satisfies { readonly [K in TaskOutputKind]: string };
+export const TaskOutputKindSchema = z.enum(TASK_OUTPUT_KIND);
+export function isTaskOutputKind(value: unknown): value is TaskOutputKind {
+  return (TASK_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 关系种类 (K03) */
+export const RELATION_KIND = ['same_subject', 'contradicts'] as const;
+export type RelationKind = (typeof RELATION_KIND)[number];
+export const RELATION_KIND_LABEL = { 'same_subject': '说的是同一件事', 'contradicts': '互相矛盾' } as const satisfies { readonly [K in RelationKind]: string };
+export const RelationKindSchema = z.enum(RELATION_KIND);
+export function isRelationKind(value: unknown): value is RelationKind {
+  return (RELATION_KIND as readonly unknown[]).includes(value);
+}
+
+/** 出口动作 (A06) */
+export const EXIT_ACTION = ['reread', 'reconcile', 'observe', 'request', 'rerun', 'reevaluate'] as const;
+export type ExitAction = (typeof EXIT_ACTION)[number];
+export const EXIT_ACTION_LABEL = { 'reread': '重读', 'reconcile': '核对', 'observe': '观察', 'request': '发请求', 'rerun': '新修订重跑', 'reevaluate': '重评' } as const satisfies { readonly [K in ExitAction]: string };
+export const ExitActionSchema = z.enum(EXIT_ACTION);
+export function isExitAction(value: unknown): value is ExitAction {
+  return (EXIT_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 工作类 (V07) */
+export const WORK_CLASS = ['verification', 'reproduction', 'web'] as const;
+export type WorkClass = (typeof WORK_CLASS)[number];
+export const WORK_CLASS_LABEL = { 'verification': '验证', 'reproduction': '复现', 'web': 'Web' } as const satisfies { readonly [K in WorkClass]: string };
+export const WorkClassSchema = z.enum(WORK_CLASS);
+export function isWorkClass(value: unknown): value is WorkClass {
+  return (WORK_CLASS as readonly unknown[]).includes(value);
 }
 
 export interface AxisValues {
@@ -657,6 +707,11 @@ export interface AxisValues {
   measure: Measure;
   placement: Placement;
   fragment_read: FragmentRead;
+  document_output_kind: DocumentOutputKind;
+  task_output_kind: TaskOutputKind;
+  relation_kind: RelationKind;
+  exit_action: ExitAction;
+  work_class: WorkClass;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -719,6 +774,11 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   measure: MEASURE_LABEL,
   placement: PLACEMENT_LABEL,
   fragment_read: FRAGMENT_READ_LABEL,
+  document_output_kind: DOCUMENT_OUTPUT_KIND_LABEL,
+  task_output_kind: TASK_OUTPUT_KIND_LABEL,
+  relation_kind: RELATION_KIND_LABEL,
+  exit_action: EXIT_ACTION_LABEL,
+  work_class: WORK_CLASS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

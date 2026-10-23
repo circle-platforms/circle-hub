@@ -1,0 +1,47 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "traced",
+      "title": "需求追溯判定",
+      "function": {
+        "module": "functions/check.ts"
+      },
+      "reads": {
+        "roles": [
+          "expected"
+        ],
+        "types": [
+          "plm:stories"
+        ]
+      },
+      "applies": "run",
+      "judges": "subject",
+      "tier": "advisory",
+      "subject": {
+        "module": "functions/subject.ts"
+      }
+    },
+    {
+      "id": "counts",
+      "title": "需求追溯统计",
+      "function": {
+        "module": "functions/counts.ts"
+      },
+      "reads": {
+        "roles": [
+          "expected"
+        ],
+        "types": [
+          "plm:stories"
+        ]
+      },
+      "applies": "run",
+      "judges": "subject",
+      "tier": "advisory",
+      "subject": {
+        "module": "functions/subject.ts"
+      }
+    }
+  ]
+}

@@ -149,7 +149,7 @@ test('case CLI discloses safe parser causes and distinguishes limit recovery fro
 });
 
 test('local file handoff preserves the original digest through the Circle normalization step', async () => {
-  const { normalizeMindmap } = await import('../../../packs/workflow/case-compile/scripts/normalize-mindmap.ts');
+  const { normalizeMindmap } = await import('../../../packs/workflow/case-compile/tools/normalize-mindmap.ts');
   const guide = readFileSync('scripts/real/convert/README.md', 'utf8');
   assert.match(guide, /交给 Circle 的是原始导出文件/);
   assert.match(guide, /before_sha256.*sha256.*after_sha256.*normalized_sha256/);

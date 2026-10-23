@@ -1,9 +1,5 @@
-// Capability 6, the quality board, through the real client: the Hub's board of one build is compared against the
-// independent case counts in the gold file (cases, missing expected, vague expected, negative). The scenario checks
-// the "合计" sentence for exact counts and rounded percentages, and verifies that the sum of each group's case count
-// equals the total case count. Note: group attribution is calculated by Hub based on the commands touched by each case,
-// not an independent gold fact, so group breakdown is checked by sum rather than per-group attribution.
-// The board describes the indexed cases only — the limitation the pack's own statement carries is checked to be shown too.
+// Independently compare every (version line, module) group from agile tree locations and mindmap counts.
+import { createPagerState, pagedRespond } from '../lib/pager.ts';
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
 import { lengthBounded, runStarted } from './checks.ts';
@@ -16,6 +12,7 @@ export interface BoardTotalsGold {
 }
 
 export interface BoardGroupGold {
+  coverage?: { present: string[]; missing: string[]; untagged: number };
   /** The group label: '版本线/模块'（模块 unplaced when the module is null）. */
   label: string;
   cases: number;
@@ -25,6 +22,11 @@ export interface BoardGroupGold {
 }
 
 export interface BoardGold {
+  types?: boolean;
+  /** Bind the placement view (quality-board 1.1+): set by board.ts --types/--unplaced or by hand. Without it the
+   * scenario sends the 1.0.x request, which has no placement slot. */
+  placement?: boolean;
+  unplaced?: number;
   product: string;
   build: string;
   totals?: BoardTotalsGold;
@@ -60,15 +62,20 @@ function parseReportedTotals(text: string): ParsedTotals | null {
   };
 }
 
-function parseGroupCases(text: string): number[] {
-  const withoutTotals = text.replace(/合计[：:][^\n。]+(?:。|\n|$)/g, '');
-  const matches = [...withoutTotals.matchAll(/(?:(?:分组|条目)\s*[^：:\n|]+[：:|]|[-*]\s*[\w./-]+\s*\|\s*)?用例\s*(\d+)\s*个/g)];
-  return matches.map((m) => Number(m[1]));
+export function parseGroups(text: string): Map<string, string> {
+  const groups = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*[-*] ([^|]+)\s*\|(?:[^|]*\|)?\s*(用例[^|\n]*)/.exec(line);
+    // Both sides trimmed: the Hub separates columns with ' | ', and the summary must not keep the space before it.
+    if (match) groups.set(match[1].trim(), match[2].trim());
+  }
+  return groups;
 }
 
 export default function scenario(gold: BoardGold): Scenario {
   const area = '质量看板';
   const pack = 'quality-board';
+  const pager = createPagerState();
 
   const totals: BoardTotalsGold = gold.totals ?? (
     gold.groups && gold.groups.length > 0
@@ -85,10 +92,15 @@ export default function scenario(gold: BoardGold): Scenario {
     name: 'quality-board',
     area,
     prompt: `请对构建 ${gold.build} 出用例质量看板。`,
-    respond: (turn) =>
-      turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { facets: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` } } } }]
-        : [{ text: '看板完成。' }],
+    respond: (turn) => pagedRespond(turn, pager, () => [{ tool: 'hub_start_run', input: { pack, inputs: {
+      facets: gold.types ? [
+        { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
+        { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,tags` },
+      ] : { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
+      // Placement is bound only when the gold asks for it (board.ts --types/--unplaced or by hand): the deployed
+      // 1.0.1 pack has no placement slot and refuses the run (hub/runs/engine/inputs.ts).
+      ...(gold.placement === true || gold.unplaced !== undefined || gold.types === true ? { placement: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=commands` } } : {}),
+    } } }], '看板完成。'),
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
       const checks: Check[] = [runStarted(area, turns)];
@@ -128,19 +140,37 @@ export default function scenario(gold: BoardGold): Scenario {
         ok: percentOk,
       });
 
-      const groupCases = parseGroupCases(text);
-      const groupSum = groupCases.reduce((a, b) => a + b, 0);
-      const groupSumOk = groupCases.length > 0 && groupSum === totals.cases;
+      const reported = parseGroups(text);
+      const expectedGroups = gold.groups ?? [];
+      const expectedLabels = new Set(expectedGroups.map((g) => g.label));
+      const extra = [...reported.keys()].filter((label) => !expectedLabels.has(label)).length;
+      const absent = expectedGroups.filter((g) => !reported.has(g.label)).length;
+      checks.push({ area, name: '分组集合与独立依据一致', expected: `${expectedGroups.length} 组`, actual: `${reported.size} 组；多 ${extra} 组；少 ${absent} 组`, ok: extra === 0 && absent === 0 });
+      for (const [index, group] of expectedGroups.entries()) {
+        const summary = reported.get(group.label) ?? '';
+        const cases = /用例\s*(\d+)\s*个/.exec(summary);
+        let ok = cases !== null && Number(cases[1]) === group.cases;
+        for (const [name, key] of [['无期望结果', 'missing'], ['含糊期望', 'vague'], ['负面用例', 'negative']] as const) {
+          const match = new RegExp(`${name}\\s*(?:(\\d+)\\s*个（)?([0-9.]+)%`).exec(summary);
+          ok = ok && match !== null && `${match[2]}%` === percentOf(group[key], group.cases) && (match[1] === undefined || Number(match[1]) === group[key]);
+        }
+        if (gold.types && group.coverage) {
+          const untagged = /未打标签 (\d+) 个/.exec(summary);
+          const missing = /没有用例带这些类型的标签：([^；\n]+)/.exec(summary);
+          const reportedMissing = missing?.[1] === undefined ? undefined : missing[1].trim() === '无' ? [] : missing[1].split('、').map((type) => type.trim()).filter((type) => type !== '').sort();
+          ok = ok && untagged !== null && Number(untagged[1]) === group.coverage.untagged && JSON.stringify(reportedMissing) === JSON.stringify([...group.coverage.missing].sort()) && !summary.includes('部分');
+        }
+        checks.push({ area, name: `#${index + 1} 分组指标一致`, expected: `${group.cases} 个；${group.missing}、${group.vague}、${group.negative}`, actual: ok ? '一致' : '缺组或计数、比例不一致', ok });
+      }
 
-      checks.push({
-        area,
-        name: '各分组用例数之和与合计用例数一致',
-        expected: `各组之和等于 ${totals.cases}`,
-        actual: groupCases.length > 0
-          ? `共 ${groupCases.length} 组，各组用例数之和为 ${groupSum}（${groupCases.join(' + ')}）`
-          : '未找到分组用例数',
-        ok: groupSumOk,
-      });
+      // Whenever placement is bound the Hub states the unplaced count; without a gold number a missing sentence is
+      // a mismatch (a Hub output never given is 不符), with one the numbers must agree.
+      if (gold.placement === true || gold.unplaced !== undefined || gold.types === true) {
+        const count = /(\d+) 个用例没有解析出命令/.exec(text);
+        const bound = gold.placement === true || gold.unplaced !== undefined || gold.types === true;
+        const ok = bound && count !== null && (gold.unplaced === undefined || Number(count[1]) === gold.unplaced);
+        checks.push({ area, name: gold.unplaced === undefined ? 'Hub 写出未归位用例数' : '未归位用例数与独立依据一致', expected: gold.unplaced === undefined ? '摘要里有“N 个用例没有解析出命令”' : `${gold.unplaced}`, actual: count ? `${count[1]}` : '未读到', ok });
+      }
 
       checks.push({
         area,

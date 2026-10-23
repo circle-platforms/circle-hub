@@ -17,9 +17,9 @@ describe('ids in titles', () => {
     assert.deepEqual(ids('Bug-to-Case-缺陷71001'), ['bug:71001']);
   });
 
-  it('leaves the numbers after "bug to case" and PLM unmarked, misspellings included', () => {
-    for (const title of ['bug to case 90101 会话', 'Bug2case 90101', 'bugtocase90101', 'but-to-case 90101', 'Butocase 90101', 'bug ro case 90101', 'Bug-to-Case-90101', 'bugt-to-case 90101', 'PLM90101-导出']) {
-      assert.deepEqual(ids(title), ['?:90101'], title);
+  it('reads bug-to-case numbers as defects, including misspellings', () => {
+    for (const title of ['bug to case 90101 会话', 'Bug2case 90101', 'bugtocase90101', 'but-to-case 90101', 'Butocase 90101', 'bug ro case 90101', 'Bug-to-Case-90101', 'bugt-to-case 90101']) {
+      assert.deepEqual(ids(title), ['bug:90101'], title);
     }
   });
 
@@ -49,7 +49,7 @@ describe('ids in titles', () => {
     assert.deepEqual(ids('61001-会话保持', { leading: false }), []);
     assert.deepEqual(ids('10000 并发握手', { leading: false }), []);
     assert.deepEqual(ids('bug 61001 会话保持', { leading: false }), ['bug:61001']);
-    assert.deepEqual(ids('bug to case 61001', { leading: false }), ['?:61001']);
+    assert.deepEqual(ids('bug to case 61001', { leading: false }), ['bug:61001']);
     assert.deepEqual(ids('需求20931 证书', { leading: false }), ['story:20931']);
   });
 
@@ -67,7 +67,6 @@ describe('ids in titles', () => {
       'option28 参数',
       'debug 61001',
       'history 61001',
-      'bug 0612',
       'bug 1',
       '需求 1234567890',
       'SSL 证书 3a',
@@ -99,4 +98,43 @@ describe('ids in titles', () => {
     assert.ok(performance.now() - started < 2000);
     assert.deepEqual(ids('\ud800 bug 61001 \udfff'), ['bug:61001']);
   });
+});
+
+it('PLM remains unmarked', () => { assert.deepEqual(ids('PLM90101-导出'), ['?:90101']); });
+
+it('normalizes identifier identity while retaining every original zero-padded spelling', () => {
+  for (const raw of ['0123', '001234', '００１２３４']) {
+    const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+    const found = extractIds(`bug ${raw}`);
+    assert.equal(found.length, 1); assert.equal(found[0].id, id);
+    assert.deepEqual(found[0].spellings ?? [found[0].id], [raw]);
+  }
+  const found = extractIds('bug 0123 and 123 and 00123');
+  assert.equal(found.length, 1); assert.equal(found[0].id, '123');
+  assert.deepEqual(found[0].spellings, ['0123', '123', '00123']);
+});
+
+it('uses the same decimal identity rule as the product pack', async () => {
+  const product = await import('../../../product/apv/functions/ids.ts');
+  for (const raw of ['0123', '001234', '００１２３４']) {
+    assert.deepEqual(extractIds(`bug ${raw}`).map(found => found.id), product.idsFromTitle(`bug ${raw}`).bugs);
+  }
+});
+
+it('rejects single marked digits and all-zero strings before normalization', () => {
+  for (const title of ['bug 1', 'bug 0', '缺陷 00', '需求 00', 'PLM0', 'bug to case 00',
+    '0', '00', '00000', '000000', 'bug 000000000', '缺陷 ００']) {
+    const found = extractIds(title);
+    assert.deepEqual(found.map(entry => entry.id), [], title);
+  }
+});
+it('applies written digit lengths before stripping only nonzero leading zeros', () => {
+  for (const [title, expected] of [
+    ['bug 01', ['1']], ['bug 000000001', ['1']], ['bug 0000000001', []],
+    ['0123 合成文档', []], ['00123 合成文档', ['123']],
+    ['001234 合成文档', ['1234']], ['00000001 合成文档', []],
+  ] as const) {
+    const found = extractIds(title);
+    assert.deepEqual(found.map(entry => entry.id), expected, title);
+  }
 });

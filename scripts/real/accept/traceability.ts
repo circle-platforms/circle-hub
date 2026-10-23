@@ -1,6 +1,7 @@
 // Capability 5, the traceability matrix, through the real client: the Hub's matrix of one build is compared with the
 // independent double-loop join in the gold file — every defect's listed cases are the same, a defect with no case is
 // reported as unknown.
+import { createHash } from 'node:crypto';
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
 import type { Check } from '../lib/report.ts';
@@ -95,14 +96,15 @@ export default function scenario(gold: TraceGold): Scenario {
       const lines = text.split(/\r?\n/);
       const checks: Check[] = [runStarted(area, turns)];
 
-      for (const defect of gold.defects) {
+      for (const [index, defect] of gold.defects.entries()) {
+        const label = `#${index + 1} ${createHash('sha256').update(defect.bug).digest('hex').slice(0, 12)}`;
         const linePrefix = `- ${defect.bug} | 缺陷 ${defect.bug} |`;
         const matchingLines = lines.filter((line) => line.trim().startsWith(linePrefix));
 
         if (matchingLines.length === 0) {
           checks.push({
             area,
-            name: defect.cases.length === 0 ? `没有用例的缺陷 ${defect.bug} 是未知` : `缺陷 ${defect.bug} 列出的用例与独立连接一致`,
+            name: defect.cases.length === 0 ? `${label} 没有用例的缺陷是未知` : `${label} 列出的用例与独立连接一致`,
             expected: defect.cases.length === 0 ? '无已索引用例（未知）' : `${defect.cases.length} 个用例`,
             actual: '条目未出现',
             ok: false,
@@ -114,9 +116,9 @@ export default function scenario(gold: TraceGold): Scenario {
           const isUnknown = matchingLines.some((l) => l.includes('无已索引用例（未知）'));
           checks.push({
             area,
-            name: `没有用例的缺陷 ${defect.bug} 是未知`,
+            name: `${label} 没有用例的缺陷是未知`,
             expected: '无已索引用例（未知）',
-            actual: isUnknown ? '无已索引用例（未知）' : matchingLines.map((l) => l.trim()).join('；'),
+            actual: isUnknown ? '无已索引用例（未知）' : '状态不一致',
             ok: isUnknown,
           });
         } else {
@@ -138,7 +140,7 @@ export default function scenario(gold: TraceGold): Scenario {
           } else if (!casesOk) {
             const notInGold = reportedCaseIds.filter((id) => !goldCaseIds.has(id));
             if (notInGold.length > 0) {
-              actual = `用例号不属于独立依据（${notInGold.join('、')}）`;
+              actual = `不属于独立依据的用例 ${notInGold.length} 个`;
             } else {
               actual = `列出用例数不足（报告 ${reportedCaseIds.length} 个，期望 ${expectedListedCount} 个）`;
             }
@@ -146,7 +148,7 @@ export default function scenario(gold: TraceGold): Scenario {
 
           checks.push({
             area,
-            name: `缺陷 ${defect.bug} 列出的用例与独立连接一致`,
+            name: `${label} 列出的用例与独立连接一致`,
             expected: `${defect.cases.length} 个用例（前 ${expectedListedCount} 个属于独立依据）`,
             actual,
             ok,
@@ -162,16 +164,30 @@ export default function scenario(gold: TraceGold): Scenario {
           const hasStatus = statusPattern.test(text);
           checks.push({
             area,
-            name: `缺陷 ${defect.bug} 的缺陷系统状态与独立依据一致`,
-            expected: `缺陷系统：${expectedStatus}`,
-            actual: hasStatus ? `缺陷系统：${expectedStatus}` : '状态不一致或未出现',
+            name: `${label} 缺陷系统状态与独立依据一致`,
+            expected: '状态一致',
+            actual: hasStatus ? '状态一致' : '状态不一致或未出现',
             ok: hasStatus,
           });
         }
       }
 
-      if (gold.closed_defects !== undefined) {
-        const expectedCounts = `已关闭缺陷 ${gold.closed_defects} 个：已追溯 ${gold.closed_traced ?? 0} 个，未追溯 ${gold.closed_untraced ?? 0} 个`;
+      // A status that was never read is not 0. When the gold carries no closed status AT ALL (no aggregate, no
+      // per-defect status — a trace.ts run without --plm), the check fails loudly and names the rerun instead of
+      // comparing the Hub's counts with an invented 0 (item 5).
+      const anyClosedStatus = gold.closed_defects !== undefined || gold.defects.some((d) => d.closed !== undefined);
+      if (!anyClosedStatus) {
+        checks.push({
+          area,
+          name: '已关闭缺陷统计与独立依据一致',
+          expected: '标准答案写出已关闭统计',
+          actual: '标准答案没有已关闭状态：重跑 trace.ts，加 --plm --closed-statuses',
+          ok: false,
+        });
+      } else {
+        const closedRows = gold.defects.filter((d) => d.closed === true);
+        const closedDefects = gold.closed_defects ?? closedRows.length;
+        const expectedCounts = `已关闭缺陷 ${closedDefects} 个：已追溯 ${gold.closed_traced ?? closedRows.filter((d) => d.cases.length > 0).length} 个，未追溯 ${gold.closed_untraced ?? closedRows.filter((d) => d.cases.length === 0).length} 个`;
         const hasClosedCounts = text.includes(expectedCounts);
         checks.push({
           area,
@@ -194,6 +210,11 @@ export default function scenario(gold: TraceGold): Scenario {
         });
       }
 
+      const positive = gold.defects.filter((d) => d.closed === true && d.cases.length > 0).length;
+      // Without closed statuses the missing fact is which defects are closed and the next action is re-reading PLM;
+      // only a gold that DID read statuses and found nothing points at other builds.
+      const hasClosedStatus = gold.defects.some((d) => d.closed !== undefined) || gold.closed_defects !== undefined;
+      checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : hasClosedStatus ? '0 个，正例没核到；导出其他构建并执行 trace-scan' : '未读：标准答案没有已关闭状态；重跑 trace.ts，加 --plm --closed-statuses', ok: positive > 0 });
       checks.push(lengthBounded(area, turns));
       return checks;
     },

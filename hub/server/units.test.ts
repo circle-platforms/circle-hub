@@ -17,7 +17,7 @@ import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, page } from './console
 import { SessionStore, cookie } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
 import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
-import { CANDIDATE_SCHEMA, runOfRecord } from './readers.ts';
+import { runOfRecord } from './readers.ts';
 import { countsLine } from './text.ts';
 import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, schemaErrors } from './tools.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
@@ -227,8 +227,8 @@ test('admin notes are what records accept: no NUL, no lone surrogate, cut betwee
   const mockError = new Error('simulated failure');
   mockError.stack = [
     'Error: simulated failure',
-    '    at callTool (/Users/jiangyongze/Public/circle-hub/hub/server/tools.ts:163:10)',
-    '    at async guarded (file:///Users/jiangyongze/Public/circle-hub/hub/server/mcp.ts:244:14)',
+    '    at callTool (/synthetic/circle-hub/hub/server/tools.ts:163:10)',
+    '    at async guarded (file:///synthetic/circle-hub/hub/server/mcp.ts:244:14)',
     '    at runScriptInThisContext (node:internal/vm:219:10)',
   ].join('\n');
   const cleaned = cleanStack(mockError);
@@ -270,7 +270,6 @@ test('the run of a run-scoped record, by the runs engine\'s shapes; other kinds 
   assert.equal(runOfRecord('claim', { run }), null);
   assert.equal(runOfRecord('call_log', { run }), null);
   assert.equal(runOfRecord('action', { run: null }), null);
-  assert.equal(CANDIDATE_SCHEMA, 'knowledge-candidate@1');
 });
 
 test('an input slot reads an external system when it accepts system:type, never a media type', () => {

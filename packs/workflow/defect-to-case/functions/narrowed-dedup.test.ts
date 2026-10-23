@@ -169,7 +169,7 @@ describe('index metadata fields take precedence over URI and cap inference', () 
     const checked = outcome(view, NARROWED);
     assert.deepEqual(checked.compact.only, ['widget health interval']);
     assert.equal(checked.result.verdict, 'unknown');
-    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'unknown');
+    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'refute');
   });
 
   it('a truncated narrowed view stays unknown even with authoritative metadata', () => {
@@ -239,7 +239,7 @@ describe('requested keys missing from narrowed views', () => {
   const draft = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
   const check = (view: unknown) => checkDuplicate(inputOf({ drafts: [draft], indexed_cases: buildCompactIndex(view, undefined, NARROWED) }))[0];
   it('missing keys are unknown and name what must be read again', () => {
-    const result = check({ ...SYNTHETIC_INDEX_VIEW, keys: {}, entries: {}, only: ['show health detail'], cut_keys: [] });
+    const result = check({ ...SYNTHETIC_INDEX_VIEW, keys: {}, entries: {}, only: ['show health detail'], cut_keys: [], truncated: true });
     assert.equal(result.verdict, 'unknown');
     assert.equal(result.reason, 'integrity_unproven');
     assert.match(result.statement, /缺少.*show health detail/);
@@ -249,10 +249,52 @@ describe('requested keys missing from narrowed views', () => {
     assert.equal(check(view).verdict, 'support');
     assert.equal(check({ ...view, truncated: true }).verdict, 'unknown');
   });
-  it('truncation stays unknown even when a visible candidate looks like a duplicate', () => {
+  it('a visible duplicate remains refuted in a truncated source view', () => {
     const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: true });
     const result = checkDuplicate(inputOf({ drafts: [{ ...draft, title: '健康检查详细信息查看' }], indexed_cases: compact }))[0];
-    assert.equal(result.verdict, 'unknown');
-    assert.match(result.statement, /截断/);
+    assert.equal(result.verdict, 'refute');
+    assert.equal(result.code, 'defect-to-case.duplicate_case');
   });
+});
+
+ it('one visible duplicate does not suppress another draft needing coverage', () => {
+ const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: ['show health detail'], truncated: true });
+ const drafts = ['健康检查详细信息查看', '另一份合成用例'].map(title => ({ ...goodDraft({ title }), steps: [{ command: 'show health detail' }] }));
+ const results = checkDuplicate(inputOf({drafts, indexed_cases: compact}));
+ assert.ok(results.some(r => r.verdict === 'refute'));
+ assert.ok(results.some(r => r.verdict === 'unknown' && r.statement.includes('另一份合成用例') && /集成者/.test(r.statement)));
+});
+
+it('compacting preserves the exact skipped-document fact needed to repair coverage', () => {
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: false, skipped: 3 });
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft(), steps: [{ command: 'show health detail' }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /缺少 3 份文档.*新根/);
+});
+
+it('skipped composition sources cannot be repaired by rereading an absent key', () => {
+  const command = 'widget health interval';
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: [command], cut_keys: [], truncated: false, skipped: 3 });
+  assert.deepEqual(compact.missingKeys, []);
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft(), steps: [{ command }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /3 份文档.*新根/);
+  assert.doesNotMatch(result.statement, /提高预算|重新读取这些键/);
+});
+it('per-key caps name a capability gap rather than an impossible budget increase', () => {
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: ['show health detail'], truncated: true });
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft({ title: '合成的新草稿' }), steps: [{ command: 'show health detail' }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /每键上限.*集成者/);
+  assert.doesNotMatch(result.statement, /提高预算/);
+});
+
+it('c3 skipped sources and a draft outside only name both independent recovery steps',()=>{
+ const compact=buildCompactIndex({...SYNTHETIC_INDEX_VIEW,only:['show health detail'],cut_keys:[],truncated:false,skipped:3});
+ const outcome=checkDuplicate(inputOf({drafts:[goodDraft()],indexed_cases:compact}))[0];assert.equal(outcome.verdict,'unknown');assert.equal(outcome.reason,'integrity_unproven');
+ assert.match(outcome.statement,/3 份文档.*新根/);assert.match(outcome.statement,/草稿命令.*only/);
+});
+it('c3 malformed cut keys name core metadata rather than nonexistent missing sources',()=>{
+ const compact=buildCompactIndex({...SYNTHETIC_INDEX_VIEW,only:['widget health interval'],cut_keys:'show health detail',truncated:false,skipped:0});
+ const outcome=checkDuplicate(inputOf({drafts:[goodDraft()],indexed_cases:compact}))[0];assert.equal(outcome.verdict,'unknown');assert.match(outcome.statement,/only.*cut_keys.*字段形状无效/);assert.match(outcome.statement,/集成者/);assert.doesNotMatch(outcome.statement,/修复缺失来源/);
 });

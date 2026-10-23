@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import ts from 'typescript';
+import {createHash} from 'node:crypto';
 import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
 import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
 import { parseRuntimeContract } from './functions/runtime-contract.ts';
@@ -10,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.3.1'); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.3.4'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -59,4 +61,35 @@ test('the examples use the original synthetic contract, matching profile and fin
 });
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= 8000); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
+});
+
+function emittedCodes():Set<string>{
+ const used=new Set<string>();
+ for(const name of readdirSync(join(PACK_DIR,'functions')).filter(name=>name.endsWith('.ts')&&!name.endsWith('.test.ts')&&name!=='test-support.ts')){
+  const file=ts.createSourceFile(name,read('functions/'+name),ts.ScriptTarget.Latest,true);
+  const addArgument=(node:ts.Node):void=>{if(ts.isStringLiteralLike(node)&&/^[a-z][a-z0-9_]*$/.test(node.text))used.add('case-compile.'+node.text);else if(ts.isConditionalExpression(node)){addArgument(node.whenTrue);addArgument(node.whenFalse);}};
+  const visit=(node:ts.Node):void=>{
+   if(ts.isStringLiteralLike(node)&&/^case-compile\.[a-z0-9_]+$/.test(node.text))used.add(node.text);
+   // binding.issue emits pack codes; workbook.issue records internal reader rules under workbook_invalid.
+   if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)){const kind=node.expression.text;if(kind==='refusal'||kind==='issue'&&name==='binding.ts'){if(node.arguments[0])addArgument(node.arguments[0]);}else if(kind==='refute'&&node.arguments[1])addArgument(node.arguments[1]);}
+   ts.forEachChild(node,visit);
+  };visit(file);
+ }return used;
+}
+test('every emitted pack code and every pack repair code is declared',()=>{
+ const table=json('tables/codes.json');const declared=new Set<string>([...table.violations,...table.refusals,...table.warnings].map(v=>v.code));
+ const used=emittedCodes();assert.ok(used.size>20);for(const code of used)assert.ok(declared.has(code),`emitted code missing from tables/codes.json: ${code}`);
+ for(const row of json('requirements.json').requirements.flatMap((r:any)=>r.error_handling))if(row.code.startsWith('case-compile.'))assert.ok(declared.has(row.code),`repair code missing from tables/codes.json: ${row.code}`);
+});
+
+test('published skill heading never advertises a stale pack version',()=>{
+ const heading=read('SKILL.md').split('\n')[0];const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
+});
+
+test('repository manifest paths directly name ordinary files with their declared bytes',()=>{
+  for(const file of json('pack.json').files) {
+    const path=join(PACK_DIR,file.path);assert.equal(lstatSync(path).isFile(),true,file.path);
+    const bytes=readFileSync(path);assert.equal(bytes.byteLength,file.size,file.path);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
+  }
 });

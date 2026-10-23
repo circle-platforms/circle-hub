@@ -19,7 +19,7 @@ describe('normalizeId', () => {
   it('keeps anything that is not a pure digit run exactly as written', () => {
     assert.equal(normalizeId('74001a'), '74001a');
     assert.equal(normalizeId('0071a'), '0071a');
-    assert.equal(normalizeId('７１００９'), '７１００９');
+    assert.equal(normalizeId('７４００１'), '７４００１');
     assert.equal(normalizeId(''), '');
     assert.equal(normalizeId(' 74001'), ' 74001');
   });

@@ -13,7 +13,7 @@ K04. Everything product-specific comes from the product pack the run binds (name
 | `requirements.json` | `literal` (fact, item: checks structure, node_ids, tags), `catalog` (fact, item: cited_commands, command_claims; a negative case expects `core.catalog.param_out_of_range`, `param_type_mismatch` or `arity_mismatch`), `findings` (judgment, item: findings_quotes, command_claims, findings_sources; repair rows, two rounds, for `core.catalog.membership_contradicted`, `case-review.hint_only`, `case-review.location_missing`, `case-review.quote_missing`, `case-review.command_not_in_case`, `QUOTE_MISMATCH`), `level` (judgment, run) |
 | `checks.json` | eight checks (table below); `case_commands` is listed by no requirement: the optional scan, off |
 | `slots.schema.json` | item `findings`: codes the seven probe names, ranks critical, major, minor (with their level bands), evidence required (the check `findings_sources` asks for a verbatim quotation besides), at most 20; run `level`: code `level`, ranks P0-P7 with the brief's definitions, exactly one |
-| `SKILL.md` | the drafter's procedure (about 4,000 characters): target, blocks and slices, the six evidence groups in order and how to read them, findings (location, verbatim quotation, command lines as the case writes them), severity bands, levels, submission with the context digest, repair, revision runs with `predecessor` and `reuse`, the Chinese report |
+| `SKILL.md` | the drafter's procedure (about 4,000 characters): target, blocks and slices, the six evidence groups in order and how to read them, findings (location, verbatim quotation, command lines as the case writes them), severity bands, levels, submission with the context digest, repair, revision runs with `predecessor` and `reuse`, the mandatory case-review-report table view after every review (single block included), followed by short overall prose |
 | `functions/` | the adapters (`projection.ts`, `expected.ts`, `subjects.ts`, `checks.ts`) on the pure functions (`project.ts`, `expected-sources.ts`, `subject.ts`, `lines.ts`, `tags.ts`, `template-coverage.ts`, `text.ts`, `common.ts`, `types.ts`) |
 | `tables/` | the check tables, `codes.json` (every pack code with Chinese when/fix, the finding codes, bands and levels), the template tables |
 | `samples/` | 23 samples (`pack-sample@1`, source author; 11 positive, 12 negative) written by `testing/samples.ts`: every check has positive and negative ones |
@@ -397,39 +397,64 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 case-review@1.0.4 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
 
-### 全仓词表扫描的待完成项
+### 全仓词表扫描的收尾记录
 
-`packs.test.ts` 扫描 hub 与全部包，不设手写轴例外或临时债务基线。只把生成器明确列出的包内快照当生成物，且仍逐字核对生成结果。当前以下 K2 文件尚未修改；在这些命中清完前，全仓扫描失败，本项不能合并：
+02a0066e 已将原 K2 清单的 6 处命中全部改为生成词表约束，均已修复：
 
-| 文件 | 当前行 | 轴 | 处理方 |
-| --- | --- | --- | --- |
-| hub/knowledge/lists.ts | 284 | action_result | K2 |
-| hub/knowledge/test-support.ts | 179 | placement | K2 |
-| hub/knowledge/test-support.ts | 385 | read_tier | K2 |
-| hub/knowledge/views.ts | 47 | entry_kind | K2 |
-| hub/server/tools.ts | 508 | call_result | K2 |
-| hub/runs/engine/submit.ts | 179 | acceptance | K2，合并后由 core-fixes 补完剩余 |
+| 文件 | 原命中 | 修复依据 |
+| --- | --- | --- |
+| hub/knowledge/lists.ts | memoAction 的 action_result | 生成类型 |
+| hub/knowledge/test-support.ts | placement | 生成类型 |
+| hub/knowledge/test-support.ts | read_tier | 生成类型 |
+| hub/knowledge/views.ts | DEFAULT_CHANGED_KINDS 的 entry_kind | 从生成 ENTRY_KIND 派生 |
+| hub/runs/engine/submit.ts | action 的 acceptance | 生成类型 |
+| hub/server/tools.ts | call_result | 生成类型 |
 
-行号是本任务工作树的定位，不代表 K2 分支合并后的行号。第 4 项需要新增的轴只有已获模型负责人授权的 T04 `fragment_read`；其他命中使用既有轴。
+原收尾记录的 1,188 项中 1 项扫描失败、1 项环境反向分支跳过，是上述修复前的历史结果，不能用作当前阻塞依据。
+02a0066e 后复核的 packs.test.ts 为 17/17 通过；本轮扩展扫描和自测后为 19/19 通过，全仓扫描通过且未增加债务基线。
+本轮还修复字符串标签表与无类型比较链的漏扫，边界见下节。编号范围的 min/max 是结构字段，不属于 measure 轴。
 
-### 本次验证记录（第 4 项尚未完成）
-
-类型检查 `npx tsc --noEmit` 和 `node tools/gen-contracts.ts --check` 通过；后者核对 63 份核心生成物及 5 份包内快照。
-
-以下串行命令共运行 1,439 项：1,436 通过，2 失败，1 跳过。失败之一为上表 6 处 K2 命中的全仓扫描；另一项是本包静态导入测试原本只允许平铺文件，尚未允许已获授权的包内生成文件。后者已改为只额外允许 `./generated/vocabulary.ts`，保持禁止包外运行时导入；其所在 `functions/tables.test.ts` 复测 11 项全部通过。`packs.test.ts` 最后复测为 16 项、15 通过、1 失败，唯一失败仍是 K2 清单。跳过的是 `without sandbox-exec the default refuses to run`，原因是本机具备 sandbox-exec，因此该反向环境分支不适用；没有把跳过计作通过。
+本轮验证命令均仅用合成数据，node --test 的并发为 1；真实系统未运行。类型检查 npx tsc --noEmit、
+node tools/gen-contracts.ts --check 通过，生成检查核对 65 份核心生成物和声明的包快照。
+本轮两组串行回归分别为 381/381 和 235/235 通过，均零失败、零跳过；两组重复包含 2 项片段词表测试。
+第一组覆盖四个改动包、全仓扫描、词表生成器、回答文本、片段解释器与真实引擎的合成引用；
+第二组覆盖全部 contracts 测试与本 README 的过期阻塞回归。这些结果不代替真实系统验收。
 
 ```sh
-node --test --test-concurrency=1 \
-  "hub/runs/**/*.test.ts" "hub/rules/**/*.test.ts" "hub/records/**/*.test.ts" \
-  hub/leases/service.test.ts \
-  "packs/workflow/case-review/**/*.test.ts" "packs/workflow/case-review-verify/**/*.test.ts" \
-  "packs/workflow/case-location/**/*.test.ts" "packs/workflow/case-compile/**/*.test.ts" \
+node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts tools/gen-contracts.pack-vocabulary.test.ts \
   "packs/workflow/maintenance-sweep/**/*.test.ts" "packs/workflow/regression-scope/**/*.test.ts" \
-  "packs/workflow/test-bed/**/*.test.ts" "packs/workflow/quality-board/**/*.test.ts" \
-  "packs/workflow/traceability/**/*.test.ts" \
-  tools/gen-contracts.pack-vocabulary.test.ts contracts/src/generator.test.ts
-node --test --test-concurrency=1 packs/workflow/case-review/functions/tables.test.ts
-node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
+  "packs/workflow/test-bed/**/*.test.ts" "packs/workflow/defect-to-case/**/*.test.ts" \
+  hub/server/text.test.ts hub/server/claims.test.ts hub/rules/interpreters/quote.grades.test.ts \
+  hub/runs/engine/quote-fragments.test.ts contracts/src/fragment-read.test.ts
+node --test --test-concurrency=1 "contracts/**/*.test.ts" packs/workflow/case-review/readme.test.ts
 ```
 
-生成器定向测试（`tools/gen-contracts.pack-vocabulary.test.ts` 与 `contracts/src/generator.test.ts`）22 项通过，覆盖包快照缺失、被改动、词表变化及 CLI 检查。第 3 项缺陷转用例的完整测试另运行 `node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"`，65 项通过。
+### 词表扫描语义边界（收尾复核）
+
+对象仅扫描键为轴代码、值为字符串标签的映射，不把结构字段当轴；显式 Record 或 satisfies 检查的映射放行。
+比较链在同一表达式上比较同轴两个以上代码即检查，包括子集；已有生成轴类型或 Extract 子集约束的业务分支放行。
+扫描使用 TypeScript 类型信息追踪这些约束，手写联合类型仍由原有扫描检查，不能用手写类型逃避检测。
+CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固定查重预算的出口和完整性片段分级另有定向回归。
+
+决定 41 扫描补充：标签表只在上下文类型明确约束了键时豁免，包括生成轴的 Record、映射类型、别名及声明的结构类型；Record<string, string> 没有限定键，不豁免。比较值须是生成轴或 Extract 子集，或声明结构类型的 keyof；类型参数使用其约束，轴类型与 string 的联合不算受约束。结构不按 run/item/min/max 的名字或路径豁免；CLI 命令说明表显式声明结构类型。
+
+比较链同时检查 ===/== 与 ||、!==/!= 与 &&；结构键的运行时验证使用满足 Record<keyof IdRange, boolean> 的字段表，不按字段名字豁免。相关包函数变动均升补丁版并重签。
+
+### 合并前历史验证（不代表当前阻塞）
+
+本轮 9 条复核的最终验证（全部合成，node --test --test-concurrency=1）：
+
+| 范围 | 测试 | 通过 | 失败 | 跳过 |
+| --- | ---: | ---: | ---: | ---: |
+| hub/runs、hub/rules、hub/records、defect-to-case | 659 | 658 | 0 | 1 |
+| 片段轴/生成器、case-location、两评审包 functions、CLI | 368 | 368 | 0 | 0 |
+| maintenance-sweep、test-bed | 144 | 144 | 0 | 0 |
+| case-review/packs.test.ts（含全仓扫描） | 17 | 16 | 1 | 0 |
+
+合计 1,188 项，1,186 通过、1 失败、1 跳过。该历史轮次唯一失败是当时 K2 的 6 处扫描命中，未加任何基线或例外；相关类型修复已在上节记录完成，本次合并另行复跑，不沿用此历史阻塞。跳过项为本机没有 sandbox-exec 时默认拒绝运行的反向环境测试，本机具备 sandbox-exec，不能将它计作通过。npx tsc --noEmit、node tools/gen-contracts.ts --check 均通过；未做真实系统验收。每条问题的改前失败日志、全量测试日志留在 Git 外。
+
+
+评审最后一步（决定 35，集成者 2026-10-23）：不分块也开 case-review-report，target 与各块一致，precondition_priority 沿用初评。
+按终稿包说明逐页读取并原样贴出 review_tables，再写简短评审意见、等级理由和证据缺口，不逐条转录发现或另写建议。
+
+评审最后一步照终稿包的容量协议：放不下整表时依据冻结字符边界标明部分、已贴范围，并给权威运行页与完整记录，不能静默截断。

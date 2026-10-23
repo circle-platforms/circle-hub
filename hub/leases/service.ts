@@ -38,6 +38,7 @@ export type ChangeOutcome =
 export interface HolderSnapshot {
   key: string;
   lease: string;
+  /** Monotonic operation counter: extend and release also raise it; equality alone is not continuity. */
   fencing: number;
   user: string;
   run: string;
@@ -242,7 +243,7 @@ export class LeaseService {
         if (body.action !== 'lease') continue;
         const keys = (body.detail?.keys as string[] | undefined) ?? [];
         if (!keys.some(key => key.startsWith(prefix))) continue;
-        out.push({ op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
+        out.push({ ...(record.integrity_note?{integrity_note:record.integrity_note}:{}),op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
       }
       cursor = page.next;
     } while (cursor);

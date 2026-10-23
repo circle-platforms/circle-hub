@@ -1,6 +1,7 @@
 // Projection function for defect-to-case: turns bound defects into run items.
 import type {
   BoundInput,
+  PackWarning,
   ProjectedItem,
   ProjectionInput,
   ProjectionOutput,
@@ -14,18 +15,6 @@ export const MAX_DEFECTS = 20;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 export function projectDefects(input: unknown): ProjectionOutput {
@@ -63,6 +52,18 @@ export function projectDefects(input: unknown): ProjectionOutput {
       warnings: [],
     };
   }
+
+  const context = isRecord(input.context) ? input.context : {};
+  const line = typeof context.line === 'string' && context.line.trim() ? context.line : null;
+  const manuals = inputs.filter((b) => b.slot === 'manual');
+  if (manuals.length > 1 || (manuals.length === 1 && (line === null || manuals[0].external?.split('@')[0] !== `manual:cli:${line}`))) {
+    const bound = manuals.map(m => m.external ?? '无外部身份的来源').join('、');
+    const message = line === null ? `运行没有版本线，不能绑定版本线手册（已绑定：${bound}）` : manuals.length > 1 ? `绑定了 ${manuals.length} 份手册（${bound}），本次版本线 ${line} 最多绑定一份 manual:cli:${line}` : `绑定的手册 ${bound} 不是本次版本线 ${line} 的 manual:cli:${line}`;
+    const fix = line === null ? '不绑定 manual，只引用已配置的修复说明字段；需要手册时先选择有明确版本线的构建，再重新开始运行' : `改绑 manual:cli:${line}；这条线没有手册时不绑定 manual，只引用修复说明字段；重新开始运行`;
+    return { error: { code: `${PACK}.manual_mismatch`, message: `输入槽 manual：${message}`, fix }, warnings: [] };
+  }
+  const manual = manuals[0] ?? null;
+  const warnings: PackWarning[] = [];
 
   const indexInput = inputs.find((i) => i.slot === INDEXED_CASES_SLOT);
   const groups: Record<string, unknown>[] = [];
@@ -103,18 +104,18 @@ export function projectDefects(input: unknown): ProjectionOutput {
     }
     seenIds.add(id);
 
+    const fixField = typeof model.fix_field === 'string' && model.fix_field.trim() !== '' ? model.fix_field : null;
+    if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: `缺陷 ${id} 缺少设置 settings.bug_fix_field：缺陷内容没有 fix_field`, fix: '请集成者在 PLM 资源中配置 settings.bug_fix_field，并让 PLM 系统包在缺陷 content 回传 fix_field；自动重新读取缺陷后重试，不得猜字段名' }, warnings: [] };
+
+    if (!isRecord(model.fields) || typeof model.fields[fixField] !== 'string' || (model.fields[fixField] as string).trim() === '') return { error: { code: `${PACK}.fix_text_missing`, message: `缺陷 ${id} 的修复说明字段 ${fixField} 不存在、不是文字或为空`, fix: '核对 PLM 资源 settings.bug_fix_field 并重新读取，或换有修复说明的缺陷；不进入运行或消耗修复轮' }, warnings: [] };
+    if (manual === null) warnings.push({ code: `${PACK}.manual_missing`, item: id, message: `版本线 ${line ?? '未确定'} 没有绑定手册 manual:cli:${line ?? '<版本线>'}：本次期望结果只能引用缺陷 ${id} 的修复说明字段 ${fixField}；自动先核实该版本线的手册是否可读，存在时在 inputs.manual 绑定后重开运行，不存在则保留本条来源限制` });
     const title = typeof model.title === 'string' && model.title.trim() !== '' ? model.title.trim() : (b.meta && typeof b.meta.title === 'string' ? b.meta.title : `缺陷 ${id}`);
     const status = (isRecord(model.fields) && typeof model.fields.status === 'string' ? model.fields.status : (b.meta && typeof b.meta.status === 'string' ? b.meta.status : '未知'));
 
-    // Convert HTML fields to plain text
-    const plainHtmlFields: Record<string, string> = {};
-    if (isRecord(model.html_fields)) {
-      for (const [k, v] of Object.entries(model.html_fields)) {
-        if (typeof v === 'string') plainHtmlFields[k] = stripHtml(v);
-      }
-    }
+    // PLM has already converted HTML values to plain text in fields; html_fields lists their names.
+    const htmlFields = Array.isArray(model.html_fields) ? model.html_fields.filter((name): name is string => typeof name === 'string') : [];
 
-    const summaryText = `缺陷 ${id} · ${status} · 起草 0 个用例`;
+    const summaryText = `缺陷 ${id} · ${status} · 起草 0 个用例${manual === null ? '；未绑定手册，仅修复字段可引' : ''}`;
     const summary = summaryText.length > 200 ? `${summaryText.slice(0, 197)}...` : summaryText;
     const selector = isRecord(model) && Object.hasOwn(model, id)
       ? `p/${id}`
@@ -134,8 +135,9 @@ export function projectDefects(input: unknown): ProjectionOutput {
         id,
         title,
         status,
+        allowed_quote_sources: { defect: b.sha256, fix_field: fixField, manual: manual?.sha256 ?? null },
         fields: isRecord(model.fields) ? model.fields : {},
-        html_fields: plainHtmlFields,
+        html_fields: htmlFields,
       },
     });
   }
@@ -143,7 +145,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
   return {
     items,
     ...(groups.length > 0 ? { groups } : {}),
-    warnings: [],
+    warnings,
   };
 }
 

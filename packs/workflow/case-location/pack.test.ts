@@ -27,7 +27,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', '1.3.1', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', '1.4.1', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/locate.ts') && files.includes('samples/negative/declared-line-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -148,11 +148,11 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [7, 7, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [9, 9, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
       [
-        ['locate', 'advisory', 2, 3, ['author_samples_only']],
+        ['locate', 'advisory', 3, 4, ['author_samples_only']],
         ['candidates', 'advisory', 1, 1, ['author_samples_only']],
       ],
     );

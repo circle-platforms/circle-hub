@@ -28,7 +28,7 @@ test('a process killed during submission is recovered as unknown and never submi
   const c = await setup({ onSubmit: async () => { child!.kill('SIGKILL'); } }); t.after(() => c.close());
   const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
   const exit = await w.exited; assert.equal(exit.signal, 'SIGKILL');
-  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}`);
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
   assert.ok(intent);
   const state = await c.service.resume(c.admin, intent.body.detail.job);
   assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
@@ -60,7 +60,7 @@ test('an accepted job resumes status reads after restart without a new submissio
   } }); t.after(() => c.close());
   const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
   assert.equal((await w.exited).signal, 'SIGKILL');
-  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}`);
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
   const state = await c.service.resume(c.admin, intent!.body.detail.job);
   assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
@@ -75,15 +75,41 @@ test('transient status and result read failures retry only reads and do not turn
   }
 });
 
-test('a committed intent with a lost database acknowledgement is conservatively frozen without submitting', async t => {
+test('a committed intent with a lost acknowledgement is locally proven not dispatched', async t => {
   const c = await setup(); t.after(() => c.close());
   const transaction = c.kit.store.withTransaction.bind(c.kit.store); let injected = false;
   c.kit.store.withTransaction = async (fn, outer) => {
     const value = await transaction(fn, outer);
-    if (!injected && await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}`)) { injected = true; throw new Error('synthetic commit acknowledgement loss'); }
+    if (!injected && await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:1`)) { injected = true; throw new Error('synthetic commit acknowledgement loss'); }
     return value;
   };
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
+  assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
+});
+
+test('a process killed after journal admission resumes by request identity without a second submission', {timeout:30000},async t=>{
+  const {setupJournal}=await import('./testing/journal.ts');let child:ChildProcess|undefined;
+  const c=await setupJournal({lost:true,onSubmit:async()=>{child!.kill('SIGKILL');}});t.after(()=>c.close());
+  const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
+  assert.equal((await w.exited).signal,'SIGKILL');
+  const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:1`);assert.ok(intent);
+  const state=await c.service.resume(c.admin,intent.body.detail.job);
+  assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
+  assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));
+});
+
+test('a compatible observation policy repair lets an administrator reconcile the original job without retransmission',async t=>{
+  const c=await setup({mode:'unmapped'});t.after(()=>c.close());
+  const original=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(original.frozen,true);
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,status:{...c.executor.definition.status,map:{...c.executor.definition.status.map,unmapped:{action_result:'completed',effect_outcome:'effective'}}}});
+  const result=await c.service.dispose(c.admin,original.job,{choice:'reconcile',remote_id:'synthetic-remote'});
+  assert.equal(result.outcome,'effective');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+});
+
+test('R15 terminal hangup during the one submission does not cancel it',{timeout:30000},async t=>{
+  let child:ChildProcess|undefined;
+  const c=await setup({onSubmit:async()=>{child!.kill('SIGHUP');await new Promise(resolve=>setTimeout(resolve,30));}});t.after(()=>c.close());
+  const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
+  const exit=await w.exited;assert.equal(exit.code,0);assert.equal(exit.signal,null);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });

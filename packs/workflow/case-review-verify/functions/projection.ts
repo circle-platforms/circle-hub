@@ -6,11 +6,13 @@
 // reference a disposition names in data.finding) and the draft level in fields.draft_level; the groups carry the draft level
 // ({ kind: draft_level }) and the draft ({ kind: draft }), frozen with the run. The receiver inherits the items and the
 // references, not the judgments: the checks of this pack re-run on its own boundary.
+import type {Attribution} from '../../../../contracts/generated/vocabulary.ts';
 import type { BoundInput, ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord, warningSink, PACK } from './common.ts';
 import { clip, collapseWhitespace } from './text.ts';
 import type { KityMinderModel, PackError, Warning } from './types.ts';
 
+const SOURCE_ERROR='author_input' satisfies Attribution;
 export const TARGET_SLOT = 'target';
 export const DRAFT_SLOT = 'draft';
 /** The draft pack's requirement keys whose claims this pack verifies. */
@@ -73,7 +75,7 @@ function findingOf(claim: Record<string, unknown>, reference: string): DraftFind
   };
 }
 
-type DraftItem = { id: string; label: string; partition: string; selector: string; sha: string; findings: DraftFinding[] };
+type DraftItem = { id: string; label: string; partition: string; selector: string; sha: string; findings: DraftFinding[];sourceFacts:Record<string,unknown>[] };
 
 /** One line for the model: the draft findings of the case by code and rank, the draft partition and the path. */
 export function summaryOf(findings: readonly DraftFinding[], partition: string, path: readonly string[]): string {
@@ -132,16 +134,21 @@ export function projection(input: unknown): ProjectionOutput {
         continue;
       }
       if (located[1] !== target.sha256) otherSource ??= located[1];
-      const findings: DraftFinding[] = [];
-      const requirements = Array.isArray(entry.requirements) ? entry.requirements : [];
-      requirements.forEach((requirement, r) => {
-        if (!isRecord(requirement) || requirement.requirement !== FINDINGS || !Array.isArray(requirement.claims)) return;
-        requirement.claims.forEach((claim, c) => {
-          if (isModelJudgment(claim)) findings.push(findingOf(claim, recReference(record, base, ['partitions', partition, n, 'requirements', r, 'claims', c])));
+      const findings:DraftFinding[]=[],sourceFacts:Record<string,unknown>[]=[];
+      const requirements=Array.isArray(entry.requirements)?entry.requirements:[];
+      requirements.forEach((requirement,r)=>{
+        if(!isRecord(requirement)||!Array.isArray(requirement.claims))return;
+        requirement.claims.forEach((claim,c)=>{
+          const reference=recReference(record,base,['partitions',partition,n,'requirements',r,'claims',c]);
+          if(requirement.requirement===FINDINGS&&isModelJudgment(claim))findings.push(findingOf(claim,reference));
+          const attributed=Array.isArray(requirement.layers)?requirement.layers.find(layer=>isRecord(layer)&&layer.layer==='static'&&layer.attribution===SOURCE_ERROR):undefined;
+          if(attributed&&isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&claim.qualifier.source_role==='subject'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='refute'&&!(isRecord(claim.statement.data)&&claim.statement.data.expected===true)){
+            sourceFacts.push({reference,location:entry.location,layer:attributed,claim});
+          }
         });
       });
       findingCount += findings.length;
-      items.push({ id: entry.item, label: typeof entry.label === 'string' ? entry.label : entry.item, partition, selector: located[2], sha: located[1], findings });
+      items.push({ id: entry.item, label: typeof entry.label === 'string' ? entry.label : entry.item, partition, selector: located[2], sha: located[1], findings,sourceFacts });
     }
   }
   if (otherSource !== null) {
@@ -233,6 +240,7 @@ export function projection(input: unknown): ProjectionOutput {
         title: node.text,
         draft_partition: item.partition,
         draft_findings: item.findings,
+        draft_source_facts:item.sourceFacts,
         draft_level: draftLevel,
         case_rule: caseRule,
         marked_only,

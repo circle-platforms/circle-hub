@@ -11,6 +11,9 @@ import { callPackFunction, getInterpreter, osIsolationAvailable } from '../../..
 import { readPackDirectory, refusalsOf, runPublishCheck, temporaryDirectory, validatePack } from '../../../hub/runs/api.ts';
 import { PACK_DIR, isPackFile, manifestProblems, packFiles, readManifest, stagePack } from './api.ts';
 import projectDefault, { projectDocuments } from './functions/project.ts';
+import { commandOutcomes } from './functions/command-check.ts';
+import { commandSampleSubjects, commandTransitionalExamples } from './testing/command-samples.ts';
+import { bindIndex, indexView } from './testing/index.ts';
 import subjectDefault from './functions/subject.ts';
 import type { PackWarning } from './functions/types.ts';
 import { EXAMPLE_INPUT, EXAMPLE_RESULT, exampleBytes, exampleResult } from './testing/examples.ts';
@@ -32,7 +35,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.0.1', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.1.2', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -57,20 +60,20 @@ describe('the pack directory', () => {
     assert.deepEqual(validation.pack.warnings, []);
     const report = await runPublishCheck({ pack: validation.pack, packDir: staged.path });
     assert.deepEqual(refusalsOf(report, validation.pack), []);
-    assert.deepEqual(report.samples, { total: 6, passed: 6, failed: 0, sources: { author: 6, returned_counterexample: 0, retained_delivery: 0 } });
-    assert.deepEqual(report.checks, [{ check: 'coverage', tier: 'advisory', positive: 2, negative: 4, sources: { author: 6, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }]);
+    assert.deepEqual(report.samples, { total: 13, passed: 13, failed: 0, sources: { author: 13, returned_counterexample: 0, retained_delivery: 0 } });
+    assert.deepEqual(report.checks, [{ check: 'coverage', tier: 'advisory', positive: 2, negative: 4, sources: { author: 6, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }, { check: 'command_coverage', tier: 'advisory', positive: 2, negative: 5, sources: { author: 7, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }]);
     assert.deepEqual(report.unsampled, []);
     // Honest about the samples: all written by the author, so what the check supports is marked author_samples_only.
-    assert.deepEqual(report.warnings.map((w) => w.rule), ['publish.author_samples_only']);
+    assert.deepEqual(report.warnings.map((w) => w.rule), ['publish.author_samples_only', 'publish.author_samples_only']);
   });
 });
 
 describe('the declaration files', () => {
-  it('workflow.json: one required subject slot taking many agile mind maps or JSON uploads, the skipped parameter, no product, no expected sources', () => {
+  it('workflow.json: one required subject slot taking many agile mind maps or JSON uploads, a scoped case index and command-catalog product binding', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
-    assert.deepEqual(workflow.inputs.map((i) => [i.slot, i.role, i.accepts, i.required, i.many]), [['documents', 'subject', ['agile:mindmap', 'application/json'], true, true]]);
+    assert.deepEqual(workflow.inputs.map((i) => [i.slot, i.role, i.accepts, i.required, i.many]), [['documents', 'subject', ['agile:mindmap', 'application/json'], true, true], ['case_index', 'expected', ['knowledge:index'], false, false]]);
     assert.equal(workflow.subject, 'documents');
-    assert.deepEqual(workflow.product, { catalogs: [] });
+    assert.deepEqual(workflow.product, { catalogs: ['commands@1'] });
     assert.deepEqual(workflow.projection, { module: 'functions/project.ts' });
     assert.equal(workflow.expected_sources, undefined);
     assert.deepEqual(workflow.parameters.map((p) => [p.name, p.required]), [['skipped', false], ['case_rule', false]]);
@@ -92,9 +95,11 @@ describe('the declaration files', () => {
     assert.doesNotMatch(JSON.stringify(schema), /"pattern(Properties)?"/, 'no regular expression: the engine refuses those (fail closed)');
   });
 
-  it('requirements.json: one fact requirement on every item, static layer, bookkeeping, required, judged by the coverage check', () => {
+  it('requirements.json: two fact requirements on every item, static layer, bookkeeping, required, judged by the coverage check', () => {
     const { requirements } = RequirementsFile.parse(json('requirements.json'));
-    assert.equal(requirements.length, 1);
+    assert.equal(requirements.length, 2);
+    assert.deepEqual(requirements[1].checks, ["command_coverage"]);
+    assert.deepEqual([requirements[1].target, requirements[1].accepted_producer, requirements[1].done_rule, requirements[1].layers], ["item", "fact", "bookkeeping", ["static"]]);
     const [r] = requirements;
     assert.deepEqual([r.key, r.target, r.accepted_producer, r.layers, r.done_rule, r.required, r.checks], ['coverage', 'item', 'fact', ['static'], 'bookkeeping', true, ['coverage']]);
     // With or without `* -> unknown`, a gap stays a violation (engine decision 6 aligns action unknown
@@ -104,7 +109,8 @@ describe('the declaration files', () => {
 
   it('checks.json: coverage@1 over the subject built by functions/subject.ts, per item, judging the subject', () => {
     const { checks } = ChecksFile.parse(json('checks.json'));
-    assert.deepEqual(checks, [{ id: 'coverage', title: '模板类别覆盖', interpreter: 'coverage@1', table: 'tables/template-v3-coverage.json', applies: 'item', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' }]);
+    assert.deepEqual(checks[0], { id: 'coverage', title: '模板类别覆盖', interpreter: 'coverage@1', table: 'tables/template-v3-coverage.json', applies: 'item', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' });
+    assert.deepEqual(checks[1], { id: 'command_coverage', title: '按命令的模板类别覆盖', function: { module: 'functions/command-check.ts' }, applies: 'item', subject: { module: 'functions/command-subject.ts' }, judges: 'subject', tier: 'advisory' });
   });
 
   it('slots.schema.json declares nothing: the model fills no slot', () => {
@@ -127,21 +133,24 @@ describe('the declaration files', () => {
   it('samples: pack-sample@1 of the coverage check, both kinds, every one tagged with its source, subjects shaped like subject.ts builds them', () => {
     const manifest = PackManifest.parse(json('pack.json'));
     const samples = manifest.files.filter((f) => f.path.startsWith('samples/')).map((f) => ({ path: f.path, sample: PackSample.parse(json(f.path)) }));
-    assert.equal(samples.length, 6);
+    assert.equal(samples.length, 13);
     const keys = Object.keys(subjectDefault({ item: { id: 'x', location: 'src:x', fields: { document: 'x', categories: [], skipped: [] } } }) as object).sort();
     for (const { path, sample } of samples) {
-      assert.equal(sample.check, 'coverage', path);
+      assert.ok(['coverage', 'command_coverage'].includes(sample.check), path);
+      assert.ok(!sample.expect.some(e => e.verdict === 'unknown'), 'current publication polarity cannot express a transitional unknown');
       assert.equal(sample.source, 'author', path);
-      assert.deepEqual(Object.keys(sample.subject as object).sort(), keys, path);
+      if (sample.check === 'coverage') assert.deepEqual(Object.keys(sample.subject as object).sort(), keys, path);
       assert.ok(sample.note !== undefined && HAN.test(sample.note), path);
     }
   });
 
-  it('SKILL.md: relays the result unchanged, marks commentary as model relay, binds no product and names every template category', async () => {
+  it('SKILL.md: relays the result unchanged, marks commentary as model relay, binds a catalog product and names every template category', async () => {
     const skill = await readFile(join(PACK_DIR, 'SKILL.md'), 'utf8');
     assert.ok(skill.includes(labelOf('qualifier_mark', 'model_relay')), 'the commentary mark is the vocabulary label');
     assert.match(skill, /原样转述/);
-    assert.match(skill, /不要写 product、version、build/);
+    assert.match(skill, /product 和 build/);
+    assert.match(skill, /fields=document,node,commands,title,path_labels/);
+    assert.match(skill, /默认.*marked/);
     for (const category of TEMPLATE.categories) assert.ok(skill.includes(`${category.id} ${category.label}`), category.id);
     assert.match(skill, /24 个类别都要覆盖/);
     assert.ok(skill.length < 4000, 'the procedure travels in every start_run answer');
@@ -163,11 +172,11 @@ describe('the declaration files', () => {
 });
 
 describe('codes.json', () => {
-  const codes = json('tables/codes.json') as { refusals: Array<{ code: string; when: string; fix: string }>; warnings: Array<{ code: string; when: string; fix: string }> };
-  const declared = new Set([...codes.refusals, ...codes.warnings].map((entry) => entry.code));
+  const codes = json('tables/codes.json') as { refusals: Array<{ code: string; when: string; fix: string }>; warnings: Array<{ code: string; when: string; fix: string }>; violations: Array<{ code: string; when: string; fix: string }> };
+  const declared = new Set([...codes.refusals, ...codes.warnings, ...codes.violations].map((entry) => entry.code));
 
   it('declares each code once, under the pack name, in Chinese', () => {
-    const all = [...codes.refusals, ...codes.warnings];
+    const all = [...codes.refusals, ...codes.warnings, ...codes.violations];
     assert.equal(declared.size, all.length);
     for (const entry of all) {
       assert.match(entry.code, /^template-gap\.[a-z][a-z_]*$/);
@@ -178,6 +187,8 @@ describe('codes.json', () => {
   it('covers every code the functions emit, and every declared code is reachable', () => {
     const emitted = new Set<string>();
     const collect = (out: unknown): void => {
+      if (Array.isArray(out)) { out.forEach(collect); return; }
+      if (out && typeof out === 'object' && 'code' in out && typeof out.code === 'string') emitted.add(out.code);
       const value = out as { error?: { code: string }; warnings?: PackWarning[] };
       if (value.error) emitted.add(value.error.code);
       for (const warning of value.warnings ?? []) emitted.add(warning.code);
@@ -195,13 +206,15 @@ describe('codes.json', () => {
     collect(projectDefault(projectionInput([bind(base)], { skipped: [{ category: 'stress', reason: 'x', document: '999999' }] })));
     collect(projectDefault(projectionInput([model([{ data: { id: 'r', text: '根' }, children: [1, 2, 3, 4, 9] }, tagged('d'), tagged('d'), tagged(null), tagged('x'.repeat(300), { resource: ['Function', null] })])])));
     collect(projectDefault(projectionInput([model(Array.from({ length: 205 }, (_, i) => ({ data: { id: `n${i}`, text: 'x', ...(i === 1 ? { priority: 2, resource: ['Stress'] } : {}) }, children: i < 204 ? [i + 1] : [] })))])));
+    for (const example of commandSampleSubjects()) collect(commandOutcomes(example.subject));
+    collect(projectDefault(projectionInput([bind(base, { external: 'agile:mindmap:900001' }), bindIndex(indexView([], ['900001']))])));
     for (const code of emitted) assert.ok(declared.has(code), `${code} is not declared in tables/codes.json`);
     for (const code of declared) assert.ok(emitted.has(code), `${code} is declared but no scenario emits it`);
   });
 });
 
 describe('the pack functions', () => {
-  const sources = ['functions/cases.ts', 'functions/common.ts', 'functions/project.ts', 'functions/subject.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
+  const sources = ['functions/cases.ts', 'functions/command-check.ts', 'functions/command-subject.ts', 'functions/commands.ts', 'functions/common.ts', 'functions/index.ts', 'functions/project.ts', 'functions/subject.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
 
   it('are exactly the listed modules, import only the pack at run time and use no clock, randomness or I/O', async () => {
     assert.deepEqual((await readManifest()).files.map((f) => f.path).filter((p) => p.startsWith('functions/')), sources);
@@ -268,4 +281,17 @@ describe('the examples', () => {
     assert.deepEqual(json(EXAMPLE_RESULT), await exampleResult(bytes));
     assert.deepEqual(json(EXAMPLE_RESULT).item.fields.missing, ['stress']);
   });
+});
+
+it('records decision 35 item 19 while keeping all 24 template categories required', async () => {
+  const readme = await readFile(join(PACK_DIR, 'README.md'), 'utf8');
+  assert.match(readme, /1\. .*已定（决定 35 第 19 项）/);
+  assert.equal(TEMPLATE.categories.length, 24);
+  assert.ok(TEMPLATE.categories.every(category => category.required !== false));
+});
+
+it('documents the transitional-sample contract gap and the unversioned follow-up without inventing an interface', async () => {
+  const readme = await readFile(join(PACK_DIR, 'README.md'), 'utf8');
+  assert.match(readme, /期望过渡未知/); assert.match(readme, /合约缺口/); assert.match(readme, /kb-unversioned/);
+  for (const pair of commandTransitionalExamples()) assert.deepEqual(json(`examples/${pair.id}.json`), pair);
 });

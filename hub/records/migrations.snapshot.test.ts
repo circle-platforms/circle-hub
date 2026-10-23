@@ -15,6 +15,11 @@ const APPLIED = [
     "version": 2,
     "name": "leases",
     "sha256": "fe77184d95212c1d0ba2291028aeeec2de36ce54c362bafee2859d173046aa3d"
+  },
+  {
+    "version": 3,
+    "name": "record_keys",
+    "sha256": "309e57b14819d63582f79e6389b927d0963321295349ff24c502065aab375f95"
   }
 ];
 

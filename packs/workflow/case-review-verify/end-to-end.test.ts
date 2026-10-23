@@ -267,7 +267,7 @@ describe('the draft review (case-review) and its independent verification (case-
     const claims = dispositions(verify, {});
     const interval = one(verify, 'widget health interval pool1 5');
     claims.set(interval.id, [...(claims.get(interval.id) ?? []), { text: '缺少探测间隔为 0 的反向用例', code: 'new_finding', rank: 'minor', location: interval.location, quotes: [{ reference: interval.location, text: interval.label }], data: { probe: 'negative_gap' } }]);
-    const partial = await bed.service.submitResult(bed.reviewer, { run: verify.run, model: VERIFIER, items: handled(verify, 'verification', claims), cross_item: [{ nature: 'judgment', statement: '结论理由：初评基本正确，遗漏了一个反向用例；对初评等级的质疑：P4 合适', grounds: [interval.location], code: 'PARTIAL', rank: 'P4' }, { nature: 'judgment', statement: '补一个探测间隔为 0 的反向用例；期望结果：提示参数超出范围 1-60', grounds: [], code: 'suggestion', rank: 'minor' }] }, bed.call('sess-verify'));
+    const partial = await bed.service.submitResult(bed.reviewer, { run: verify.run, model: VERIFIER, items: handled(verify, 'verification', claims), cross_item: [{ nature: 'judgment', statement: '结论理由：初评基本正确，遗漏了一个反向用例；对初评等级的质疑：P4 合适', grounds: [interval.location], code: 'PARTIAL', rank: 'P4' }, { nature: 'judgment', statement: '补：探测间隔为 0 的反向用例；因为：只覆盖上界外的 61；期望：提示参数超出范围 1-60', grounds: [interval.location], code: 'suggestion', rank: 'minor' }] }, bed.call('sess-verify'));
     assert.equal(partial.acceptance, 'accepted');
     assert.deepEqual(partial.errors.filter((e) => e.rounds_left !== undefined), [], JSON.stringify(partial.errors).slice(0, 1500));
     const status = requirement(partial.result!, interval.id, 'verification');

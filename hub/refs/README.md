@@ -82,10 +82,11 @@ Parser details:
   fields as given, ordered child indices, the parent index (the parent chain) and the canonical selector. Duplicate or
   missing ids are reported (`duplicateIds`, `missingIds`); such nodes, ids starting with `@`, and ids whose `n/`
   selector would be too long are addressed by position. Numeric ids and texts are written as decimal text.
-- **xml@1** uses saxes. A DOCTYPE is refused outright, so no entity is ever declared, expanded or fetched. Charset by
-  RFC 7303 section 3.2: a byte order mark (UTF-8; UTF-16 is refused), else the `charset` parameter of the media type,
-  else the encoding declaration; a BOM that disagrees with either is refused. UTF-8, ISO-8859-1 (true Latin-1, as the
-  XML specification reads it) and US-ASCII. Start tags whose attribute values contain their own quote character or a
+- **xml@1** uses saxes. Entity-free external DOCTYPE identifiers are accepted and never fetched. Internal subsets accept only comments
+  and processing instructions; entities, attribute lists, other markup declarations and parameter references are refused.
+  The model and summary record DOCTYPE presence and that external subsets were not read.
+  Charset precedence is BOM, media-type charset, then XML declaration; contradictory BOM declarations are refused.
+  UTF-8, BOM-marked UTF-16LE/BE, GB18030, GBK, Big5, true ISO-8859-1 and US-ASCII are supported. Start tags whose attribute values contain their own quote character or a
   `<` are repaired before parsing by swapping those characters for unused private-use placeholders (same length, so
   positions stay exact) and swapping them back in the values: the closing quote of a value is the first one followed by
   the end of the tag, or by white space and another attribute. The repair is linear: whether a quote can close a value
@@ -103,14 +104,18 @@ Parser details:
   `{tag: 'font', attributes: {color: 'red'}}`. Runs inside the same wrappers share one wrapper list. `href` is the
   attribute value as parsed (quoted or not, entities decoded, never resolved against a base). Charset: BOM, then the
   media type parameter, then a `<meta>` charset, then UTF-8 if the bytes are valid UTF-8, else windows-1252. ISO-8859-1
-  and ASCII labels mean windows-1252 (WHATWG). Other legacy charsets decode without byte ranges.
+  and ASCII labels mean windows-1252 (WHATWG). BOM-marked UTF-16 and declared GB18030/GBK/Big5 retain byte
+  ranges; other legacy charsets keep the existing decoder behavior without byte ranges.
 - **markdown@1** is line based and linear time (heading clean-up included: closing `#` runs, trimming and pandoc
   attribute blocks are found by scanning back from the end of the line). ATX and setext headings make the tree; blocks
   are paragraphs, lists, block quotes, fenced and indented code, HTML blocks, thematic breaks, a leading YAML metadata
   block, and tables: pipe tables, pandoc grid, multiline and simple tables. Headings inside code fences or tables are not
   headings. A heading segment is the heading text with white space collapsed and a trailing pandoc attribute block
   (`{#id}`) removed; `[k]` is appended when the text repeats among siblings (from the second), when the text itself ends
-  in `[digits]`, or when it is empty. NUL is removed from texts, never from byte ranges.
+  in `[digits]`, or when it is empty. NUL is removed from texts, never from byte ranges. Every block also carries
+  `path`: the decoded heading segments of its section, spelled exactly as in its `h/` selector (`[]` before the first
+  heading, null when the section has no selector), so a reader sees the section path without decoding selectors; a
+  skipped heading level nests under the nearest lower one and adds no segment.
 - **json@1** keeps the parsed value; member names are compared as own properties only (`__proto__` is an ordinary
   key). Empty member names cannot be addressed. Member order of a re-serialized object follows ECMAScript rules.
 - **text@1** splits on CRLF, CR and LF; a final terminator does not open an extra line.
@@ -150,15 +155,12 @@ of tags with 500 attributes each takes about 2 s; every hostile input in the tes
 
 ## Quotations (T04 R[1])
 
-`quoteMatches(fragmentText, quote)`: every run of Unicode `White_Space` (spaces, tabs, CR, LF, NEL, NBSP, U+3000 and the
-other space separators) counts as one space, both ends are trimmed, then the quote must be contained verbatim. How long
-a white-space run is does not matter; whether there is one does (a line break between two Chinese characters must be
-quoted as a space; an open question below). Case, punctuation, character width, zero-width characters and the Unicode
-normalization form stay significant. An empty quote never matches, nor does one with an unpaired surrogate (it could
-match half of a character). One matcher implements this everywhere: KMP over the text with each white-space run read as
-one symbol, linear and without a collapsed copy. The 27 vectors of `hub/rules/quote-vectors.json` run in the refs
-tests, so this check and the rules package's `quote@1` stay equal. `locateQuote` maps the match back to UTF-8 byte
-offsets of the original text.
+`quoteMatches(fragmentText, quote)` uses decision 37: a Unicode White_Space run adjacent to a W/F code point is
+removed; other interior runs count as one space and both ends are trimmed. The normalized quote must be a non-empty
+verbatim substring. Case, punctuation, character width, zero-width characters and Unicode normalization form stay
+significant. An unpaired surrogate never matches half a character. The same contextual function serves normalization
+and the streaming KMP matcher, without a collapsed copy per candidate. The 29 shared vectors run on both refs and
+rules; `locateQuote` maps matches back to UTF-8 byte offsets in the original unmodified fragment text.
 
 `findQuote(candidates, quote)` returns the resolution (`resolved`, `ambiguous`, `unresolved`, from the vocabulary) over
 candidate fragments. Every occurrence belongs to the innermost candidate around it, and the places are the candidates
@@ -220,9 +222,9 @@ update is retained and disclosed to the integrator as a scope deviation; this re
 
 1. `Parser.parse` is synchronous for the core parsers. A pack-provided parser run in the sandbox would need an
    asynchronous adapter; none exists in milestone 1.
-2. `ParseError.code` is `SUBMISSION_SCHEMA_VIOLATION`, the closest registered code (start_run refuses an input that does
-   not parse, which is an item projection failure). resolveReference maps parse failures to `REFERENCE_UNRESOLVED`
-   itself. A dedicated code is requested below.
+2. `ParseError.code` is `SOURCE_UNPARSEABLE` (decision 37). resolveReference continues to map fragment parsing
+   failures to `REFERENCE_UNRESOLVED`. recognize keeps its first-success/null API; its optional onRejected callback
+   receives only the last ParseError when every candidate refuses, with no callback on success or an empty registry.
 3. Reference objects hold canonical (escaped) text in `selector`, `path` and `pointer` instead of decoded values, which
    keeps the parser's selector opaque to refs and makes text and object exact inverses. For ordinary pointers the
    field is literally the RFC 6901 pointer.
@@ -247,6 +249,10 @@ update is retained and disclosed to the integrator as a scope deviation; this re
 11. `html@1` gained the selector `b/<a>-<b>`, mirroring text@1's `l/<a>-<b>`; existing selectors keep their meaning.
 12. New optional model fields: `XmlModel.nulRemoved` and `KityMinderModel.surrogatesReplaced` (the parsers always set
     them; optional so that models written by hand in pack tests still type-check).
+13. New optional model field `MarkdownBlock.path`: the decoded heading segments of the block's section (selector
+    spelling, ordinals included), `[]` for the preamble and null exactly when the section's selector is null. The array
+    is shared by the blocks of one section and, like the rest of the model, must be treated as read-only; a heading
+    path past `MAX_SELECTOR_LENGTH` gives null, so a long path is never repeated per block.
 
 ## Known limits
 
@@ -265,7 +271,8 @@ update is retained and disclosed to the integrator as a scope deviation; this re
   callers that show matches should cut it.
 - The XML repair heuristic can misplace a closing quote when a help text contains white space, a word and `=` right
   after an inner quote (`"... "key=value" ..."`); such elements are flagged `irregular` with the start tag as written.
-- HTML in UTF-16, and XML in any encoding other than UTF-8, ISO-8859-1 and US-ASCII, is refused.
+- XML supports only the encodings declared above. UTF-16 requires a BOM. Other legacy HTML encodings retain the
+  existing platform decoder behavior and have no byte-range map.
 
 ## Tests
 
@@ -289,31 +296,69 @@ fragments, links, mind-map fields, JSON values, cross-line and cross-block quota
 (tiers, retain-only probing, indistinguishable unavailability with the internal reason, visible and invisible tree
 roots, digest re-verification, ranges, unwritable canonical selectors, cache); canonical JSON refusals.
 
-## Open questions
+## Quotation whitespace (decision 37)
 
-- **White space presence in quotations** (owner decision needed; T04 R[1], brief section 6). Today a quotation must
-  have white space wherever the source has it, only the length of a run is free. A Chinese manual hard-wrapped between
-  two characters (`会话保持超时\n时间`) therefore needs the quote `会话保持超时 时间`, and `设为0时` does not match
-  `设为 0 时`. The not-found diagnostic now says so (it used to claim white space never matters). A proposal: also drop a
-  white-space run when a character on either side is East Asian wide or fullwidth (CJK text has no word spaces);
-  Latin tokens stay separated (`set 10 0` still differs from `set 100`). It would flip two vectors of
-  `hub/rules/quote-vectors.json` ("white space is collapsed, not removed" and "an extra space in the quote differs"),
-  so hub/rules and hub/refs must change together, after the owner decides.
+A run of Unicode White_Space is removed when either adjacent code point has East_Asian_Width W or F. Other interior
+runs collapse to one ASCII space; leading/trailing whitespace is trimmed. Case, punctuation, character width and
+normalization form remain significant: `set 10 0` differs from `set 100`, while `超时\n时间` matches `超时时间`.
+Classification is the frozen [Unicode 17.0.0 W/F data](https://www.unicode.org/Public/17.0.0/ucd/EastAsianWidth.txt)
+in quote-whitespace.ts, including supplementary characters and wide emoji; ambiguous-width and halfwidth characters
+are not treated as W/F. The Unicode license is included in unicode-license.txt.
+
+One contextual function decides whitespace for normalization and streaming search. Matching, occurrence counts,
+byte-range pinning and the not-found diagnostic use that rule; ranges still point into the unmodified fragment.
+Rules independently implements the same quotation rule and reads the shared vectors; ordinary rules table matching retains its original whitespace
+normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
+
+## Independent gold quotation alignment
+
+`compile-check.ts` checkVerbatimQuote now independently implements decision 37. It uses a local regular-expression
+classifier derived directly from Unicode 17.0.0 W/F source data (`scripts/real/gold/quote-widths.ts`, with source digest and Unicode license), with no Hub or pack imports.
+Its ordinary collapseWhitespace utility remains unchanged for the separate expected-text containment contract.
+Missing exported source bytes still produce the existing unknown receipt; this change does not make unavailable evidence pass.
+
+The conformance harness lives in `hub/refs/gold-quotes.test.ts`: only that test imports both implementations. It reads
+the same 29 synthetic rules vectors, adds Chinese hard-wrap, mixed-width, Latin-boundary and Unicode edge cases, and
+compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are literal
+booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack modules.
+
+Read-only audit of the 120 local branch heads (committed snapshots, excluding uncommitted work; 39 distinct production
+file versions below scripts/real/gold before this follow-up), plus quotation-related scripts/real call sites:
+
+| Snapshot | Implementation / caller | Current rule and integration action |
+| --- | --- | --- |
+| Current branch | `scripts/real/gold/compile-check.ts`: compileCheck expected-text containment (`case-compile.expect_not_in_quote`); corresponding `packs/workflow/case-compile/functions/checks.ts`: foldText/checkExpectedSources | Still uses ordinary whitespace collapse for the separate package check. A hard wrap can pass the generic source-quotation check and fail this containment check. Arrange package-contract and independent gold alignment together; this follow-up changes checkVerbatimQuote only. |
+| `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
+| `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
+| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
+| `gold-catalog` at `c50ecb72` | `scripts/real/gold/catalog-marks.ts`: quoteFromCase | Command excerpt matching uses NFKC, case folding and token/argument boundaries. It is not the generic verbatim quotation rule; do not replace its command semantics with decision 37. |
+
+The older defect-to-case comparison in this branch reports Hub grounding claims rather than independently matching
+quotation text. The gold-d2c version delegates to gold/quotes.ts above. Other matches in cases, duplicate/title,
+board-location, command and regression-document readers normalize identifiers or command spellings, not verbatim
+quotations. The template-gap driver compares whole summaries. Those comparisons were left unchanged. No other branch
+or worktree was changed and no real-system script was run; only synthetic tests of the pure readers ran.
 
 ## Needs from other packages
+
+- **model / integrator**: align T03 DEF with the owner-approved upload boundary: credential scan plus definite parsing
+  refusals for declared/recognized-extension media types; sniffing alone is advisory and cannot refuse storage.
+
+- **contracts / rules owner**: update the QuoteTable description in contracts/src/tables.ts to decision 37: remove
+  W/F-adjacent whitespace, collapse other interior runs and trim ends. Regenerate
+  contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
+  These contract files are outside this task's paths; no contract edit is claimed here.
+
+- **runs**: reject an oversized aggregate bound input before sandbox serialization, naming the input slot(s), measured
+  byte budget and cap, with a split/reduce action. Do not report it as a pack-author function defect. The per-model XLSX
+  budget cannot by itself bound several models plus context in one projection input.
 
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
 
-- **runs / server**: surface the last ParseError message when all parsers for the declared media type refuse.
-  Both start_run and upload_file must return that definite reason and a corrective action; recognize currently drops
-  it, so this branch cannot claim caller-visible refusal diagnostics until the owners add this handoff. This is an
-  integration need outside the XLSX parser task's allowed paths.
 
-- **contracts**: (1) a protocol code for "the source does not parse with the declared parser" (for example
-  `SOURCE_UNPARSEABLE`, fix "上传能按声明格式解析的文件，或换用对应的解析器"), or confirmation that
-  `SUBMISSION_SCHEMA_VIOLATION` is meant; (2) move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs
-  share one implementation (until then `recordDigest` here must stay byte-identical to the records digest); (3) update
+- **contracts**: move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs
+  share one implementation (until then `recordDigest` here must stay byte-identical to the records digest); update
   the stale reference example in contracts/src/reference.ts to `src:<sha256>/kityminder@1/n/<data.id>`.
 - **records**: implement `SourceReader` (bytes, media type, recorded size, read tier; null for absent and forbidden
   alike). `Artifacts.source()` withholds bytes by consumer; refs enforces the tier itself and needs the bytes of
@@ -327,7 +372,7 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
   `QuoteMatch.text` for display); when an `Unresolved` carries `reason`, record unknown with that reason (and, for
   `check_error`, attribution as the error table says) instead of refusing the submission; `reason` is not enumerable
   and never needs stripping.
-- **rules**: none; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
+- **rules**: independently maintain the same quote rule; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
 
 ## xlsx@1
 
@@ -372,7 +417,7 @@ No ambiguous name selector is listed or resolved; no occurrence is discarded. Ea
 fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
 order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
 paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also
-apply. XML encodings follow xml@1 (UTF-8, ISO-8859-1 and US-ASCII; UTF-16 is not supported). The same bytes and
+apply. XML encodings follow xml@1, including BOM-marked UTF-16 and declared GB18030/GBK/Big5. The same bytes and
 options produce the same model and deterministic ParseError reasons on rejection.
 
 References for format fields: [PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT),
@@ -395,9 +440,12 @@ name required in the local header. A version-1 Info-ZIP Unicode Path field is ac
 CRC and the exact same decoded name, in either header; it never renames a member. Unsafe or duplicate raw names are
 refused before optional metadata can hide them. Invalid or contradictory path metadata is a generic ZIP refusal.
 
-XLSX cell value text has an additional aggregate 32 MiB UTF-8 budget: every resolved shared-string use, inline value
-and v-value is charged before insertion into the model. The shared-string dictionary remains under the ZIP expansion
-cap. A small dictionary referenced many times cannot defer a huge-model failure to sandbox input serialization.
+XLSX has a conservative 16 MiB serialized-model JSON budget. Strings are charged at their JSON-escaped UTF-8 size
+(including quotes, backslashes and C0 escapes); each shared-string use is charged separately, the dictionary and defined
+names once, plus conservative fixed costs per member, relationship, sheet, row and cell. The charge bounds the complete
+model, not just cell value bytes, before building an oversized array or allocating an escaped model string. It leaves
+headroom under a single sandbox input's default 32 MiB cap. Multiple bound models/context can still exceed that cap.
+
 
 For xlsx@1, nulRemoved counts escaped U+0000 removed once per decoded source string (including shared-string entries,
 sheet names and defined names), rather than once per shared-string use. Raw NUL in XML still refuses as repaired XML.
@@ -411,3 +459,48 @@ is not interpreted by this model, so hiddenRows is not a statement about column 
 
 Each sheet preserves `relationshipId` and literal `relationshipType`; an empty chartsheet or another opaque part is
 therefore distinguishable from an empty worksheet without guessing from its filename or dropping its identity.
+
+## Refusal diagnostics
+
+Upload checks an explicitly given media type or recognized filename extension before ingesting bytes. A definite parser refusal returns SOURCE_UNPARSEABLE, the
+parser id, rule/reason and the generated fix; it creates no upload receipt. No candidate parser still permits an opaque
+upload, while input binding refuses that media type explicitly. Successful fallback is still accepted. Input binding
+uses the same last refusal with the input path. Guessed types are hints: a guessed-format refusal preserves the upload, retries text/plain where possible, and discloses the guess plus how to set media_type. Unexpected parser failures stay internal errors. Raw source text and
+underlying library details are not included; XML assigns a fixed syntax rejection at its library adapter and keeps native prose in detail only; it does not infer reasons from message patterns.
+
+## Declared encodings (decision 37)
+
+Text and Markdown use BOM precedence, otherwise the media-type charset; XML additionally uses its encoding declaration.
+HTML accepts UTF-16 BOMs and declared GB18030, GBK and Big5. New multibyte decoding is fatal (no replacement on error),
+uses Node TextDecoder, and reports the encoding and zero-based first invalid sequence byte. UTF-16 without a BOM is
+refused. Byte maps retain original sequence boundaries for line, element and HTML fragment ranges; a supplementary
+character or a platform Big5 expansion shares one original sequence. No Unicode normalization is applied.
+The [Encoding Standard](https://encoding.spec.whatwg.org/) documents the decoder API and sequence layouts; legacy
+character mappings follow the installed Node/ICU decoder, including its Big5 special-pair mapping.
+
+Scope disclosure for decision 37: the owner explicitly authorized rules/text.ts, quote.test.ts and its conformance
+fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. The first
+runtime refs import violated `rules -> refs(types)` and is now removed. This review adds rules-local W/F data; no
+production quotation implementation imports the other. Shared vectors are the independent agreement check.
+
+HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.
+
+DTD capability boundary: xml@1 does not implement DTD attribute defaults or tokenized-attribute normalization. It
+accepts entity-free ELEMENT/NOTATION declarations without validation or fetching, and refuses internal ATTLIST
+and parameter references rather than silently showing incomplete attributes; no defaults
+are invented. This is a format capability refusal, not a claim that such XML is invalid. External identifiers are never
+fetched, and doctype metadata discloses that policy. See [XML 1.0 section 5.1](https://www.w3.org/TR/REC-xml/#proc-types).
+
+Limit recovery is constructed at the throw site (with typed limit/max defaults); HTML derived work, wrapper and
+merged-attribute budgets provide their own effective recovery, then passed intact by upload and input
+binding. It is not guessed from message text. Caller-declared/extension formats can refuse; a byte-sniffed format
+cannot by itself reject an upload. The upload-size gate still precedes parsing and keeps its own cap-specific fix.
+
+XLSX rejection locations are assigned before central/local member checks. Central framing failures use that central
+record's offset until a validated local header is known; archive-level checks clear member context. The archive retains
+private member-location metadata for part/schema failures. Sheet/row context is selected before interpreting its values;
+boolean checks name the actual attribute. No public filename or source value is needed to locate the failure.
+
+OPC member identity is ASCII case-insensitive throughout: required metadata, relationship suffix/directory recognition,
+source/target lookup and duplicate detection all use that equivalence. Original spellings remain in members and no
+relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.

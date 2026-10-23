@@ -83,7 +83,7 @@ describe('parser registry', () => {
         assert.fail(`${parser.id} accepted invalid bytes`);
       } catch (error) {
         assert.ok(error instanceof ParseError, parser.id);
-        assert.equal(error.code, 'SUBMISSION_SCHEMA_VIOLATION');
+        assert.equal(error.code, 'SOURCE_UNPARSEABLE');
         assert.equal(error.parser, `${parser.id}@${parser.version}`);
         assert.match(error.message, /\p{Script=Han}/u);
       }

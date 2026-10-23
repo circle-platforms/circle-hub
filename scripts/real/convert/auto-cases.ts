@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { normalizeMindmap } from '../../../packs/workflow/case-compile/scripts/normalize-mindmap.ts';
+import { normalizeMindmap } from '../../../packs/workflow/case-compile/tools/normalize-mindmap.ts';
 import { kityminderParser, ParseError, ParseLimitError } from '../../../hub/refs/api.ts';
 import { extractCases, type CaseRule } from '../../../packs/workflow/case-compile/functions/cases.ts';
 import { argumentsOf, jsonBytes, main, output, record, readJson, requireFact, sha256 } from './io.ts';

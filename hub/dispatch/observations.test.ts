@@ -19,3 +19,11 @@ test('array tool values and SSE are decoded without inventing missing values', (
   const sse = new TextEncoder().encode(`event: message\ndata: ${JSON.stringify(result)}\n\n`);
   assert.equal(observationHashes(sse, '/0/a').canonical_content_sha256, observationHashes(bytes(result), '/0/a').canonical_content_sha256);
 });
+
+test('negative proofs accept only declared numeric units or valid UTC ISO timestamps',async()=>{
+  const {readDeclaredTime}=await import('./definition.ts');
+  assert.equal(readDeclaredTime(1,1000),1000);
+  for(const value of ['9999','1','2026-10-23T00:00:00Z'])assert.ok(Number.isNaN(readDeclaredTime(value,1000)));
+  for(const value of [1,'9999','2026-02-31T00:00:00Z','2026-10-23T00:00:00'])assert.ok(Number.isNaN(readDeclaredTime(value)));
+  assert.equal(readDeclaredTime('2026-10-23T00:00:00Z'),Date.parse('2026-10-23T00:00:00Z'));
+});

@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 53 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 61 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -103,7 +103,7 @@ Rules for a stub:
 
 ## Limits
 
-- Shapes for effects, requests, dispositions, leases, hypothesis sets, in-run checks, criterion change declarations, candidate-layer writes, control-interval details and executor registries are not written yet; their vocabulary is generated.
+- Shapes for effects, requests, dispositions, leases, hypothesis sets, in-run checks, criterion change declarations, control-interval details and executor registries are not written yet; their vocabulary is generated.
 - Bodies of `source_artifact`, `authorization`, `action` and `call_log` records are defined by the records package (`hub/records`) and have no generated JSON Schema.
 - Rules only zod checks (refinements; a validator that reads only the published JSON Schema, such as an MCP client's, accepts these): the order of a byte range; astral format characters and unpaired surrogates in references and external ids; an item, a requirement or a layer listed twice; premises that do not point to an earlier entry; slots beside reuse; the presence rules of decisions 2, 10 and 11 (codes, reasons, attribution, unsatisfied reasons, result, counts, run, resolution, references, receipt and call result agreeing, node and entry references equal to root and path); rounds and coverage consistency; the base64 length rule. `tool-shapes.test.ts` names each of them case by case. The SDK's default validator is draft-07 Ajv: it ignores `prefixItems` (the tuple of `SrcReference.range`).
 - A local path made only of base64 characters, with a length divisible by four, passes as base64; the server can only notice that the bytes do not parse.
@@ -146,3 +146,5 @@ npx tsc --noEmit
 ```
 
 The first test of `generator.test.ts` fails whenever a source or a registered shape changed without `npm run gen:contracts`: that is the drift check, not a flaky test. The tests cover: every axis generated with labels (`vocabulary.test.ts`); the generated files current and deterministic across fresh processes, a second in-process generation seeing changed sources, a root reached through a symbolic link, `--check` naming every drifting file, bad input reported (labels, name clashes with the barrel, a scheme without grammar, malformed format proposals), the lock and write failures with exit status 3 (`generator.test.ts`, on a temporary copy, including a type check of axes named `record` and `readonly`); the D06 annotation table and the conservative default (`annotations.test.ts`); valid and invalid references, URIs, grounds, external ids, input bindings, claims and value resolutions, submissions, validation results, envelopes, ids, runs and records, with a negative case per rule (`shapes.test.ts`); every tool's input and output, success and error answers, against zod and against `tools.json` through the SDK's Ajv validator, refinement-only cases named (`tool-shapes.test.ts`); the record schemas against the same validator, formats limited to 2020-12, compilation without warnings (`published.test.ts`); `tools.json` structure and the literal D06 annotations (`tools.test.ts`); protocol and core codes (`codes.test.ts`); the element viewer (`show-element.test.ts`). Synthetic examples live in `contracts/src/fixtures.ts` (test support, not part of the API).
+
+经集成者作为契约负责人授权，core.contribution.* 收录核心回注准入核对的十个码。codes.json 的历史 interpreter 字段在这里表示核心发出方 contribution，不表示新增已安装解释器；when/fix 只在核心登记。凭据拒绝沿用 CREDENTIAL_IN_UPLOAD。

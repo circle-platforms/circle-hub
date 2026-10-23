@@ -6,6 +6,62 @@
       "type": "string",
       "const": "validation@1"
     },
+    "contributions": {
+      "description": "Dedicated contribution run receipt; ordinary submissions never write the knowledge layer",
+      "type": "object",
+      "properties": {
+        "submitted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stored": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "item",
+              "record"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "not_stored": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "item",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "submitted",
+        "stored",
+        "not_stored"
+      ],
+      "additionalProperties": false
+    },
     "run": {
       "type": "string",
       "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
@@ -420,7 +476,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -586,7 +644,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -976,7 +1035,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -1142,7 +1203,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -1545,7 +1607,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -1711,7 +1775,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -2114,7 +2179,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -2280,7 +2347,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -2485,7 +2553,9 @@
                     "conditional_on_judgment",
                     "independence_declared",
                     "not_realtime",
-                    "partial"
+                    "partial",
+                    "intermittent",
+                    "decision_shape_unruled"
                   ]
                 }
               },
@@ -2651,7 +2721,8 @@
                   "credential_unreadable",
                   "premise_failed",
                   "expired",
-                  "contradicted"
+                  "contradicted",
+                  "not_evaluated"
                 ]
               },
               "bound": {

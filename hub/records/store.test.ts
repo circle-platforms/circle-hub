@@ -191,7 +191,7 @@ test('a submission canonicalize refuses (a lone surrogate) is kept verbatim as a
 test('records and the other history tables are append-only: UPDATE, DELETE and TRUNCATE are rejected', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
-  const record = await kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { x: 1 }, index: [{ key: 'test.key', value: 'v' }] });
+  const record = await kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { x: 1 }, unique_key:'synthetic-record-key',index: [{ key: 'test.key', value: 'v' }] });
   await kit.objects.put(Buffer.from('bytes'), 'text/plain');
   const admin = await kit.principals.bootstrapAdmin('管理员');
   await kit.callLog.append({ traceId: 'a'.repeat(32), userId: admin.user.id, sessionId: null, tool: 'list_task_packs', runId: null, arguments: {}, callResult: 'ok', durationMs: 1, adminNote: '管理员可见的原因' });
@@ -213,6 +213,9 @@ test('records and the other history tables are append-only: UPDATE, DELETE and T
     ['call_notes', "UPDATE call_notes SET note = 'x'"],
     ['call_notes', 'DELETE FROM call_notes'],
     ['call_notes', 'TRUNCATE call_notes'],
+    ['record_keys',"UPDATE record_keys SET key='changed'"],
+    ['record_keys','DELETE FROM record_keys'],
+    ['record_keys','TRUNCATE record_keys'],
   ];
   for (const [table, statement] of attempts) {
     await assert.rejects(sql(kit.database, statement), (error: unknown) => {

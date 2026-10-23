@@ -32,8 +32,9 @@ test('incomplete channels and empty or unmapped rows have no verdict; mismatched
 
 test('heartbeat deadlines and interruptions are recorded while status reads continue; fencing changes are disclosed', async t => {
   for (const mode of ['heartbeat-failure', 'fencing']) {
-    const c = await setup({ mode, ttl: 30 }); t.after(() => c.close());
+    const c = await setup({ mode, ...(mode==='heartbeat-failure'?{ttl:60,delay:{inspect_slot:160}}:{}) }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    if(mode==='heartbeat-failure'){assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);continue;}
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
     const events = await c.service.journal.events(state.job);
     if (mode === 'heartbeat-failure') {
@@ -77,4 +78,35 @@ test('deployment-specific limitations are copied as executor declarations rather
   assert.equal(result.executor_declarations.provenance, 'declared');
   assert.deepEqual(result.executor_declarations.limitations, ['合成运行环境使用实时文件，内容一致性未认证']);
   assert.ok(result.executor_declarations.definition_sha256);
+});
+
+test('runner declarations are observations of saved literal markers even in an incomplete result',async t=>{
+  const c=await setup({alter:(name,value)=>name==='read_blob'?{...value,complete:false,rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_PRESENT',sessions:{'synthetic.txt':'another session'}}]}:value});t.after(()=>c.close());
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,result:{...c.executor.definition.result,log:'/log',sessions:'/sessions'},side_effects:[{message:'合成动作一',marker:'SYNTHETIC_PRESENT'},{message:'合成动作二',marker:'SYNTHETIC_ABSENT'},{message:'合成声明'}]});
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.result!);
+  assert.equal(value.side_effects[0].marker_present,true);assert.equal(value.side_effects[1].marker_present,false);
+  assert.match(value.side_effects[0].text,/本次日志里有这一项的标记/);assert.match(value.side_effects[1].text,/本次日志里没有这一项的标记/);
+  assert.match(value.side_effects[2].text,/运行器会这样做（执行器定义声明，Hub 看不见）/);
+  assert.match(value.side_effects[0].reference,/^src:[a-f0-9]{64}$/);
+  assert.equal(value.rows[0].dynamic_terminal,'no_verdict');
+});
+
+test('certified owned reports become qualified judgments only after per-seat proof and exact closing logs',async t=>{
+  for(const outcome of ['good','bad']) {
+    const {probes}=await import('./testing/probes.ts');
+    const {canonicalBytes}=await import('../records/api.ts');
+    const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>{
+      const last=c.endpoint.calls.filter(e=>e.params.name===name).at(-1)?.params.arguments as Record<string,unknown>;
+      if(name==='inspect_seat')return {output:last.command==='inspect version'?'version: synthetic-build':`address: 192.0.2.${Number(last.seat)+1}/24`};
+      if(name==='read_blob')return {...value,ownership:'staging_directory',rows:[{id:'synthetic-case',outcome,log:'SYNTHETIC_END',stale:false}]};
+      return value;
+    }});t.after(()=>c.close());
+    const manifest=await c.kit.artifacts.ingest({bytes:canonicalBytes({id:'synthetic-bed',devices:[1,2].map(n=>({interfaces:[{address:`192.0.2.${n}/24`}]}))}),mediaType:'application/json',origin:{upload:{session:'synthetic'}},author:{user:c.owner.id},provenanceType:'declared',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
+    c.detail.run.sources=c.detail.run.sources.map(s=>s.slot==='synthetic-manifest'?{...s,reference:`src:${manifest.body.sha256}`}:s);
+    (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any).bed.manifest_sha256=manifest.body.sha256;
+    const proof=await c.kit.artifacts.ingest({bytes:new TextEncoder().encode('synthetic ownership certification'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:c.admin.id},provenanceType:'declared',visibility:{readers:[c.admin.id],admins:true,packs:[],shareable:false}});
+    await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,manifest_sha256:manifest.body.sha256,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes,premises:{result_ownership:{version:'1',evidence:[`src:${proof.body.sha256}`]}},result:{...c.executor.definition.result,ownership:{pointer:'/ownership',value:'staging_directory',reason:'/ownership_reason'},request_id:'/request',log:'/log',log_stale:'/stale',closing_marker:'SYNTHETIC_END'}});
+    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.result!);
+    assert.equal(value.rows[0].dynamic_terminal,outcome==='good'?'pass':'fail');assert.equal(value.rows[0].qualifier.nature,'judgment');assert.equal(value.rows[0].accepted_as_fact,false);
+  }
 });

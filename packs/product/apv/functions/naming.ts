@@ -136,9 +136,9 @@ function pageTokens(name: string): string[] | null {
 export type HubNameParts = { family: Family; line: string | null; tokens: string[] };
 
 /**
- * A hub page by its name: a product name without `rel_`, followed only by version numbers (apv_10_5, apv_10_4_6: the
+ * A hub page by its name: a product name without `rel_`, followed only by version numbers (apv_10_7, apv_10_6_4: the
  * hub of that line) or by no version at all (apv_trunk, apv_10_x_patch). Hub pages link listing pages (brief section 8).
- * Null for anything else: `rel_` names, and product names with a version and more words (apv_10_4_3_special) are listing
+ * Null for anything else: `rel_` names, and product names with a version and more words (apv_10_6_3_special) are listing
  * pages.
  */
 export function parseHubName(name: string): HubNameParts | null {

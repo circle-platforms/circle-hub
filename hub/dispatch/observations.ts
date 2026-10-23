@@ -15,8 +15,8 @@ export function rpcResponse(text: string, id?: number): Record<string, unknown> 
   if (replies.length !== 1 || replies[0].error !== undefined || !isObject(replies[0].result)) throw new Error('目标 JSON-RPC 回答无效或不唯一；原文先保存');
   return replies[0].result;
 }
-export function toolContent(result: Record<string, unknown>): unknown {
-  if (result.isError === true) throw new Error('目标工具报告错误；回答已保存');
+export function toolContent(result: Record<string, unknown>, allowError = false): unknown {
+  if (result.isError === true && !allowError) throw new Error('目标工具报告错误；回答已保存');
   if (Object.hasOwn(result, 'structuredContent')) {
     if (!isObject(result.structuredContent)) throw new Error('目标结构化回答不是对象；回答已保存');
     return result.structuredContent;
@@ -25,9 +25,9 @@ export function toolContent(result: Record<string, unknown>): unknown {
   try { return parseStrictJson(text); } catch { throw new Error('目标工具回答不是有效 JSON；回答已保存'); }
 }
 /** The pointer addresses the decoded tool value, never the transport's request id or envelope. */
-export function observationHashes(bytes: Uint8Array, pointer: string): { pointer: string; original_sha256: string; canonical_content_sha256: string } {
+export function observationHashes(bytes: Uint8Array, pointer: string, allowError = false): { pointer: string; original_sha256: string; canonical_content_sha256: string } {
   if (pointer !== '' && !/^\/(?:[^~]|~[01])*$/.test(pointer)) throw new Error('观察指针不是有效 JSON 指针');
-  const value = at(toolContent(rpcResponse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))), pointer);
+  const value = at(toolContent(rpcResponse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)),allowError), pointer);
   if (value === undefined) throw new Error('观察指针缺少事实，不能用 null 代替');
   return { pointer, original_sha256: sha256Hex(bytes), canonical_content_sha256: sha256Hex(canonicalBytes(value)) };
 }

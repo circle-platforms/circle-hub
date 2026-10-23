@@ -1,4 +1,3 @@
-import { MEASURE, type Measure } from './generated/vocabulary.ts';
 // The run parameters of the pack (workflow.json declares them): the product name and the version line the caller declares,
 // the granularity of the items and the id ranges of the defect system. The engine checks them against their schemas; this
 // reader is defensive anyway (a direct call, a sample) and reports what it ignores.
@@ -15,15 +14,17 @@ function declaredText(value: unknown, max: number): string | null {
   return text === '' || [...text].length > max ? null : text;
 }
 
+const ID_RANGE_FIELDS = {min:true,max:true} satisfies Record<keyof IdRange,boolean>;
+
 function rangeOf(value: unknown): IdRange | null | undefined {
   if (value === undefined) return null;
-  if (!isRecord(value) || Object.keys(value).some((key) => key !== 'min' && key !== 'max')) return undefined;
+  if (!isRecord(value) || Object.keys(value).some(key=>!Object.hasOwn(ID_RANGE_FIELDS,key))) return undefined;
   const range: IdRange = {};
-  for (const key of MEASURE.filter((key): key is Extract<Measure, 'min' | 'max'> => key === 'min' || key === 'max')) {
-    const bound = value[key];
+  for (const [key, bound] of Object.entries(value)) {
     if (bound === undefined) continue;
     if (typeof bound !== 'number' || !Number.isSafeInteger(bound) || bound < 0) return undefined;
-    range[key] = bound;
+    if (key === 'min') range.min = bound;
+    else range.max = bound;
   }
   if (range.min !== undefined && range.max !== undefined && range.min > range.max) return undefined;
   return range;

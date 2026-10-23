@@ -4,7 +4,7 @@
 // (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
 // through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
-import { EntryKindSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
+import { EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
@@ -197,7 +197,7 @@ export class TreeReading {
    * it; a node whose entries do not fit is split over pages by an entry offset in the cursor. A cursor is bound to its query
    * and must point inside the walk; coverage is complete only on the last page.
    */
-  async getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null> {
+  async getNodes(query: NodesQuery, reader: Principal, budget?:number): Promise<NodesPage | null> {
     const root = query.root;
     if (typeof root !== 'string' || !SHA256.test(root)) return null;
     if (!(await this.mayReadRoot(reader, root))) return null;
@@ -240,7 +240,8 @@ export class TreeReading {
     }
     if ((await this.#context.store.node(root)) === null) return null;
     const composition = await this.compositionOf(root);
-    const { pageNodes, pageBytes } = this.#context.limits;
+    const { pageNodes } = this.#context.limits;
+    const pageBytes=budget??this.#context.limits.pageBytes;
 
     const missing: string[] = [];
     // Each node is emitted when it is first reached; the levels still to go when it was reached, at most.
@@ -437,8 +438,9 @@ export class TreeReading {
       }
       return hit;
     };
-    type Condition = 'rule_withdrawn' | 'cited_fragment_changed' | 'contradicted';
-    const ORDER: readonly Condition[] = ['rule_withdrawn', 'cited_fragment_changed', 'contradicted'];
+    const CONDITIONS = ValidityStatusSchema.extract(['rule_withdrawn', 'cited_fragment_changed', 'contradicted']);
+    type Condition = (typeof CONDITIONS.options)[number];
+    const ORDER: readonly Condition[] = CONDITIONS.options;
     type Relation = { digest: string; source: string; at: string; other: string; by: string; provenance: string };
     /** Every contradiction relation of these digests: ONE findMany per read (all digests at once — the query count
      * never grows with the entry count); findMany pages internally until exhausted, so nothing is silently capped. */
@@ -778,4 +780,9 @@ function decodeCursor(cursor: string): { o: number; e: number; q: string } | nul
   } catch {
     return null;
   }
+}
+
+/** Internal paging metadata: a resumed node's tree entries must not repeat its contribution overlay. */
+export function continuesNodeEntries(cursor:string|null|undefined):boolean {
+  return cursor===null||cursor===undefined?false:(decodeCursor(cursor)?.e??0)>0;
 }

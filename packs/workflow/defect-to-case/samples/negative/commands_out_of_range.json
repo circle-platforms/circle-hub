@@ -37,6 +37,13 @@
         "summary": "查看健康检查状态"
       },
       {
+        "head": "show health detail",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查详细信息"
+      },
+      {
         "head": "service http port",
         "signatures": [
           [

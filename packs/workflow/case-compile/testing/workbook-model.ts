@@ -2,7 +2,7 @@ import { createDefaultRegistry, recognize, parserKey } from '../../../../hub/ref
 import { unzipSync } from 'fflate';
 import { readWorkbookModel, type WorkbookModel } from '../functions/xlsx-model.ts';
 import { zipStore } from '../functions/zip-store.ts';
-import { generateWorkbook } from '../functions/generate.ts';
+import { generateWorkbook, GENERATOR } from '../functions/generate.ts';
 import { generationFixture } from './workbook.ts';
 import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, subjectOf } from '../functions/test-support.ts';
 import { createHash } from 'node:crypto';
@@ -18,5 +18,5 @@ export function changedWorkbook(edit: (parts: Map<string, string>) => void): Uin
 }
 export function workbookCheckInput(bytes = generateWorkbook(generationFixture())) {
   const recipe = generationFixture(); const base = subjectOf(recipe.slots).subject;
-  return { subject: { ...base, fields: recipe.fields, contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC, manifest_sha256: digest(Buffer.from(JSON.stringify(MANIFEST_DOC))), generation: { plan_run: recipe.plan_run, build: recipe.build, generator: 'case-compile@2.3.1' }, workbook: { model: coreModel(bytes), sha256: digest(bytes) } } };
+  return { subject: { ...base, fields: recipe.fields, contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC, manifest_sha256: digest(Buffer.from(JSON.stringify(MANIFEST_DOC))), generation: { plan_run: recipe.plan_run, build: recipe.build, generator: GENERATOR }, workbook: { model: coreModel(bytes), sha256: digest(bytes) } } };
 }

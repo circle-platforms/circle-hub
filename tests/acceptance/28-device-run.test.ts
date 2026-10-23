@@ -11,7 +11,7 @@ import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
 import { signRuntime, entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
-import { satisfiedRecipe } from '../../packs/workflow/case-compile/scripts/generate-workbook.ts';
+import { satisfiedRecipe } from '../../packs/workflow/case-compile/tools/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
 import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';

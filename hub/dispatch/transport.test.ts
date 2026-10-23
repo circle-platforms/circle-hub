@@ -15,7 +15,7 @@ test('tools are checked before calling, extra management tools are never called,
   assert.equal((result.value as any).echo, 'Bearer [已隐藏]');
   assert.ok(saved.some(s => s.includes('echo')));
   assert.ok(saved.every(s => !s.includes('synthetic-secret')));
-  assert.ok(server.calls.every(c => c.headers.authorization === 'Bearer synthetic-secret' && c.headers['x-circle-hub-operator'] === 'synthetic-job'));
+  assert.ok(server.calls.every(c => c.headers.authorization === 'Bearer synthetic-secret' && c.headers['x-circle-hub-actor'] === 'synthetic-job'));
   assert.deepEqual(server.calls.filter(c => c.method === 'tools/call').map(c => c.params.name), ['inspect_slot']);
 });
 
@@ -74,7 +74,7 @@ test('a storage refusal takes precedence over interpreting an invalid remote rep
     if (operation === 'precheck') { saved = true; throw new Error('synthetic storage refusal'); }
     return 'src:' + 'a'.repeat(64);
   });
-  await client.connect(); await assert.rejects(client.call('precheck', {}), /synthetic storage refusal/); assert.equal(saved, true);
+  await client.connect(); await assert.rejects(client.call('precheck', {}), /原件未能保存/); assert.equal(saved, true);
 });
 
 test('a complete matching SSE response is accepted even when the server keeps its stream open', async t => {
@@ -86,4 +86,48 @@ test('a complete matching SSE response is accepted even when the server keeps it
   let boundary = false;
   const client = new RpcClient(ExecutorDefinition.parse(cfg), 'synthetic-secret', 'synthetic-job', async (_bytes, _status, role, _complete, metadata) => { if (role === 'precheck') boundary = metadata?.stream_cut_at_response === true; return 'src:' + 'a'.repeat(64); });
   await client.connect(); assert.equal(((await client.call('precheck', {})).value as any).ok, true); assert.equal(boundary, true);
+});
+
+test('the represented actor header comes only from deployment data and invalid actors never reach the endpoint', async t => {
+  const server = await startEndpoint(definition('x').allowed_tools, () => ({ ok: true })); t.after(() => server.close());
+  const d = ExecutorDefinition.parse({ ...definition(server.endpoint), actor: { header: 'X-Circle-Hub-Actor', pattern: '^[A-Za-z0-9][A-Za-z0-9._@/-]{0,127}$', max_length: 128 } });
+  const client = new RpcClient(d, 'synthetic-secret', 'synthetic-user/synthetic-job', async () => 'src:' + 'a'.repeat(64));
+  await client.connect();
+  assert.ok(server.calls.every(c => c.headers['x-circle-hub-actor'] === 'synthetic-user/synthetic-job' && c.headers['x-circle-hub-operator'] === undefined));
+  const count = server.calls.length;
+  await assert.rejects(async () => new RpcClient(d, 'synthetic-secret', 'invalid actor', async () => 'src:' + 'a'.repeat(64)).connect());
+  assert.equal(server.calls.length, count);
+});
+
+test('forbidden capabilities stop at tools listing before any lifecycle tool call',async t=>{
+  const server=await startEndpoint([...definition('x').allowed_tools,'synthetic_admin_reset'],()=>({ok:true}));t.after(()=>server.close());
+  const d=ExecutorDefinition.parse({...definition(server.endpoint),refused_tools:['synthetic_admin_reset']});
+  const client=new RpcClient(d,'synthetic-secret','synthetic-job',async()=> 'src:'+'a'.repeat(64));
+  await assert.rejects(client.connect(),/密钥权限超出运行权限/);
+  assert.equal(server.calls.filter(c=>c.method==='tools/call').length,0);
+});
+
+test('retry classification is declared from the generated vocabulary without enabling retransmission',()=>{
+  assert.equal(ExecutorDefinition.parse({...definition('http://127.0.0.1:1/'),retry_safety:'dedup_window'}).retry_safety,'dedup_window');
+  assert.equal(ExecutorDefinition.safeParse({...definition('http://127.0.0.1:1/'),retry_safety:'invented'}).success,false);
+});
+
+test('conformance payloads must be distinct nonempty bytes rather than different spellings of one base64 value',()=>{
+  const base=definition('http://127.0.0.1:1/');
+  for(const payloads of [['=','=='],['YQ==','YR=='],['YQ==','YQ==']])assert.equal(ExecutorDefinition.safeParse({...base,conformance:{expected_stage:'guard',payloads}}).success,false);
+  assert.ok(ExecutorDefinition.safeParse({...base,conformance:{expected_stage:'guard',payloads:['YQ==','Yg==']}}).success);
+});
+
+test('published parameter names prevent silent legacy fallback when request bindings use undeclared fields',async t=>{
+  const server=await startEndpoint(definition('x').allowed_tools,()=>({ok:true}),undefined,{send_blob:{type:'object',properties:{blob:{},request:{},until:{},ticket:{},ids:{},digest:{}},required:['blob','request','until'],additionalProperties:false}});t.after(()=>server.close());
+  const base=definition(server.endpoint);base.calls.submit.arguments={...base.calls.submit.arguments,legacy_request:base.calls.submit.arguments.request} as any;
+  delete (base.calls.submit.arguments as any).request;
+  const client=new RpcClient(ExecutorDefinition.parse(base),'synthetic-secret','synthetic-job',async()=> 'src:'+'a'.repeat(64));
+  await client.connect();
+  await assert.rejects(client.call('submit',{request_id:'id:1',not_after:'2026-10-23T00:00:00Z',payload_base64:'YQ==',sha256:'a'.repeat(64),items:[],lease_id:'lease'}),/参数名/);
+  assert.equal(server.calls.filter(c=>c.method==='tools/call').length,0);
+});
+
+test('R21 representation cannot occupy any reserved MCP header namespace',()=>{
+  assert.equal(ExecutorDefinition.safeParse({...definition('http://127.0.0.1:1/'),actor:{header:'Mcp-Future-Protocol-Field',pattern:'^.*$',max_length:128}}).success,false);
 });

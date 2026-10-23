@@ -3,3 +3,4 @@ export const ENTRY_KIND = ['definition', 'behaviour', 'case', 'defect', 'observa
 export type EntryKind = (typeof ENTRY_KIND)[number];
 export const CHANGE_KIND = ['added', 'removed', 'modified'] as const;
 export type ChangeKind = (typeof CHANGE_KIND)[number];
+export const CHANGE_KIND_LABEL: Readonly<Record<ChangeKind, string>> = {"added":"新增","removed":"删除","modified":"修改"};

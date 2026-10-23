@@ -8,15 +8,15 @@
 // terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
-import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
-import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type CommandRunner } from '../../platform/api.ts';
-import { openRecords, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
+import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
+import { keychainKeyProvider, keychainStore, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
+import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
 import type { AssemblyModule, CliContext } from '../api.ts';
@@ -29,6 +29,9 @@ import { openCliHarness, type CliHarness, type Deployment, type RunResult } from
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
+
+// Await availability before registering suites, including when only the recovery tests are selected.
+const temporaryKeychainAvailable = process.platform === 'darwin' && await access('/usr/bin/security').then(() => true, () => false);
 
 const DOCUMENT = 'd7f3k9';
 const PASSWORD = 'Synthetic#Pass42';
@@ -79,6 +82,7 @@ interface Admin {
 }
 
 interface SetupOptions {
+  keyProvider?: () => KeyProvider;
   tokens?: OperatorTokenStore & { value: string | null };
   /** Replaces the token store altogether (a keychain store over a fake security tool); `tokens` is then null. */
   store?: (config: HubConfig, service: string) => OperatorTokenStore;
@@ -113,8 +117,8 @@ async function setup(options: SetupOptions = {}): Promise<Admin> {
     init: null,
     stdin,
     // The server CLI's built-in state-changing commands read the same operator token store as the assembly's commands.
-    run: (argv, env = {}) => deployment.run(argv, { assembly: async () => module, operatorTokens: commandOptions.tokens }, env),
-    kit: () => openRecords(loadServerConfig(deployment.env), { migrate: false, keyProvider: deployment.key }),
+    run: (argv, env = {}) => deployment.run(argv, { assembly: async () => module, operatorTokens: commandOptions.tokens, ...(options.keyProvider ? { keyProvider: options.keyProvider } : {}) }, env),
+    kit: () => openRecords(loadServerConfig(deployment.env), { migrate: false, keyProvider: options.keyProvider?.() ?? deployment.key }),
   };
   if (options.initAdmin !== false) {
     const init = await admin.run(['init-admin', '根管理员']);
@@ -1299,4 +1303,310 @@ describe('help', () => {
     assert.doesNotMatch(help.text, /这个装配模块没有注册它/, 'every reserved command is registered');
     assert.match(help.text, /operator-token\s+set   从标准输入读一个启用中的管理员的令牌/);
   });
+});
+
+test('R32 a fresh administrator command exposes noncanonical action diagnostics without body text',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const {newId,recordDigest}=await import('../../records/api.ts');
+  const owner=new Database(createPool({...loadServerConfig(admin.deployment.env).database,user:harness.postgres.config.user},2));t.after(()=>owner.end());
+  const input={kind:'action' as const,schema:'action@1',provenance:'observed' as const,created_at:'2026-10-23T00:00:00.000Z',body:{private_message:'SYNTHETIC_PRIVATE_DIAGNOSTIC',value:1}};
+  const digest=recordDigest(input),text='{ "value": 1, "private_message": "SYNTHETIC_PRIVATE_DIAGNOSTIC" }';
+  await owner.query('INSERT INTO records(id,digest,kind,schema,provenance,created_at,body,size) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[newId('rcd'),digest,input.kind,input.schema,input.provenance,input.created_at,text,Buffer.byteLength(text)]);
+  const result=await admin.run(['records','verify','--kind','action']);assert.equal(result.code,0,result.text);
+  assert.match(result.text,/正文不是规范写法/);assert.match(result.text,new RegExp(digest));assert.doesNotMatch(result.text,/SYNTHETIC_PRIVATE_DIAGNOSTIC/);
+});
+
+test('R33 lease release honors the configured record byte limit atomically',async t=>{
+  const admin=await setup({deployment:{extra:{CIRCLE_HUB_MAX_RECORD_BYTES:'65536'}}});
+  const kit=await admin.kit();t.after(()=>kit.close());const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const {newId}=await import('../../records/api.ts');const user=await kit.principals.findByName('根管理员');assert.ok(user);
+  const leases=new LeaseService(db,{records:kit.store});const key='synthetic/r33';
+  const acquired=await leases.acquire({keys:[key],prefix:'synthetic/',ttlSeconds:60,maxTtlSeconds:3600,holder:{user:user.id,run:newId('run')}});assert.equal(acquired.ok,true);
+  const result=await admin.run(['lease','release',key,'--reason','合成限额原因'.repeat(10000)]);
+  assert.notEqual(result.code,0);assert.equal((await leases.holderSnapshot([key]))[0].released,false);
+});
+
+async function importResource(admin: Admin): Promise<string> {
+  await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+  await expectOk(admin, ['pack', 'publish', packs.agile]);
+  return addImportResource(admin);
+}
+async function addImportResource(admin: Admin): Promise<string> {
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api']);
+  return /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+}
+async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<string> {
+  const path = join(admin.deployment.dataDir, 'synthetic.env');
+  await writeFile(path, bytes, { mode: 0o600 }); return path;
+}
+const importArgs = (file: string, id: string) => ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${id}/username`, '--key', `PORTAL_PASSWORD=${id}/password`];
+
+describe('secret import', () => {
+  test('imports grouped credentials, hashes the password, shares a key across resources and supports dry run', async () => {
+    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
+    const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
+    const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
+    const args = [...importArgs(file, id), '--key', `PORTAL_USER=${second}/username`];
+    const dry = await expectOk(admin, [...args, '--dry-run']); assert.match(dry.text, /PORTAL_USER：找到，长度 6/);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    const result = await expectOk(admin, args); assert.match(result.text, /Base64\(SHA-512\)/);
+    await withKit(admin, async (kit) => {
+      assert.equal(await kit.vault.getText(`connector.${id}.password`), passwordDigest(PASSWORD));
+      assert.equal(await kit.vault.getText(`connector.${second}.username`), 'reader');
+      for (const name of await kit.vault.list()) assert.ok(!(await kit.vault.getText(name))?.includes(unrelated));
+      const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
+      const by = (await kit.principals.findByName('根管理员'))!;
+      assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成导入核对' })).ok, true);
+    });
+
+  });
+
+  test('review 5: an invalid later resource value is refused before any credential is written', async () => {
+    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+    const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
+    const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
+    const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`]);
+    assert.equal(result.code, 1); assert.ok(!result.text.includes(`已设置资源 ${first}`));
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${first}.username`)), null);
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.password`)), null);
+  });
+
+  test('missing and commented keys write nothing, malformed files disclose no values or paths', async () => {
+    const admin = await setup(); const id = await importResource(admin);
+    const value = 'SyntheticMalformedValue58'; secrets.add(value); secrets.add(value.slice(0, 12));
+    for (const bytes of [`PORTAL_USER=${value}\n# PORTAL_PASSWORD=${value}\n`, `PORTAL_USER=${value}\nPORTAL_USER=${value}\n`, `PORTAL_USER=${value}\0\n`, Buffer.from([0xff, 0xfe]), `PORTAL_USER=${value}\n${'x'.repeat(65536)}`]) {
+      const file = await importFile(admin, bytes); const result = await admin.run(importArgs(file, id));
+      assert.equal(result.code, 1); assert.ok(!result.text.includes(file)); assert.ok(!result.text.includes(value.slice(0, 12)));
+      assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    }
+    const emptyFile = await importFile(admin, `PORTAL_USER=\nPORTAL_PASSWORD=${value}`);
+    const empty = await admin.run(importArgs(emptyFile, id));
+    assert.equal(empty.code, 1); assert.match(empty.text, /PORTAL_USER：是空的/);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+    const linked = join(admin.deployment.dataDir, 'linked.env');
+    await symlink(join(admin.deployment.dataDir, 'synthetic.env'), linked);
+    for (const path of [admin.deployment.dataDir, linked]) {
+      const refused = await admin.run(importArgs(path, id));
+      assert.equal(refused.code, 1); assert.ok(!refused.text.includes(path));
+    }
+    const file = await importFile(admin, `PORTAL_USER=has:colon\nPORTAL_PASSWORD=${value}`); secrets.add('has:colon');
+    assert.equal((await admin.run(['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${id}/username`])).code, 1);
+    assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
+  });
+
+  test('authorization, vault and every target are checked before opening the environment file', async () => {
+    const admin = await setup(); const id = await importResource(admin); const missingFile = join(admin.deployment.dataDir, 'must-not-open');
+    for (const mapping of [`PORTAL_USER=res_00000000000000000000000000/username`, `PORTAL_USER=${id}/absent`]) {
+      const refused = await admin.run(['secret', 'import', '--env-file', missingFile, '--key', mapping]);
+      assert.equal(refused.code, 1); assert.doesNotMatch(refused.text, /环境文件/);
+    }
+    const duplicate = await admin.run([...importArgs(missingFile, id), '--key', `OTHER=${id}/username`]);
+    assert.notEqual(duplicate.code, 0); assert.doesNotMatch(duplicate.text, /环境文件/);
+    const user = await userWithToken(admin, '导入普通用户');
+    assert.match((await admin.run(importArgs(missingFile, id), { [OPERATOR_TOKEN_VARIABLE]: user })).text, /管理员/);
+    admin.tokens!.value = null;
+    assert.match((await admin.run(importArgs(missingFile, id))).text, /没有找到/);
+    const noKey = await setup({ deployment: { key: false } }); const noKeyId = await importResource(noKey);
+    assert.match((await noKey.run(importArgs(missingFile, noKeyId))).text, /主密钥不可用/);
+    const dry = await noKey.run([...importArgs(missingFile, noKeyId), '--dry-run']);
+    assert.match(dry.text, /环境文件/); assert.doesNotMatch(dry.text, /主密钥不可用/);
+  });
+});
+
+
+describe('reimport after key loss', () => {
+  for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && !temporaryKeychainAvailable ? 'skipped: /usr/bin/security is unavailable (requires macOS)' : false }, async () => {
+    const directory = await mkdtemp(join(harness.scratch, 'key-loss-'));
+    const file = join(directory, 'synthetic.keychain-db');
+    const service = `circle-hub-synthetic-${randomBytes(12).toString('hex')}`;
+    const runner: CommandRunner = async (command, args, options) => {
+      assert.equal(command, '/usr/bin/security');
+      assert.ok(args.at(-1) === file || (args[0] === '-i' && (options?.input ?? '').trimEnd().endsWith(`"${file}"`)), 'no default keychain');
+      return runCommand(command, args, options);
+    };
+    const master = keychainStore({ service, keychain: file, runner, item: VAULT_KEY_ITEM, account: 'vault-master-key' });
+    const operator = keychainStore({ service, keychain: file, runner, item: OPERATOR_TOKEN_ITEM, account: 'operator-token' });
+    try {
+      if (keychain) {
+        const password = randomBytes(20).toString('hex'); secrets.add(password);
+        for (const args of [['create-keychain', '-p', password, file], ['unlock-keychain', '-p', password, file], ['set-keychain-settings', file]]) assert.equal((await runner('/usr/bin/security', args)).code, 0);
+        await master.init();
+      }
+      const provider = () => keychainKeyProvider({ service, keychain: file, runner });
+      const admin = await setup(keychain ? { deployment: { key: false }, keyProvider: provider, store: () => keychainOperatorTokens({ service, keychain: file, runner }) } : {});
+      const id = await importResource(admin);
+      const env = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}\nUNUSED=SyntheticUnusedValue79`);
+      secrets.add('reader'); secrets.add('SyntheticUnusedValue79');
+      await expectOk(admin, importArgs(env, id));
+      const loginsBefore = agile.logins;
+      const read = async () => withKit(admin, async (kit) => {
+        const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
+        const by = (await kit.principals.findByName('根管理员'))!;
+        assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成钥匙恢复核对' })).ok, true);
+      });
+      await read(); assert.equal(agile.logins, loginsBefore + 1);
+      if (keychain) {
+        const bytes = await master.read(); secrets.add(Buffer.from(bytes).toString('hex')); bytes.fill(0);
+        const operatorBytes = await operator.read();
+        secrets.add(Buffer.from(operatorBytes).toString('hex')); secrets.add(Buffer.from(operatorBytes).toString('base64url')); operatorBytes.fill(0);
+        await master.delete(); await operator.delete();
+        const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+        assert.equal(refused.code, 1); assert.match(refused.text, /operator-token reissue/);
+        await expectOk(admin, ['operator-token', 'reissue']);
+        const store = keychainOperatorTokens({ service, keychain: file, runner }); secrets.add((await store.read())!);
+      } else await rm(admin.deployment.key.path);
+      const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+      assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
+      for(const step of ['operator-token reissue','secret import','最后起服务']) assert.ok(refused.text.includes(step),step);
+      assert.ok(refused.text.indexOf('operator-token reissue') < refused.text.indexOf('secret import'), refused.text);
+      assert.ok(refused.text.indexOf('secret import') < refused.text.indexOf('最后起服务'), refused.text);
+      assert.equal((await admin.run(['resource', 'list'])).code, 0);
+      const aside = join(admin.deployment.dataDir, 'set-aside'); await mkdir(aside, { mode: 0o700 });
+      await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
+      if (keychain) await master.init(); else await admin.deployment.key.initKey();
+      await expectOk(admin, importArgs(env, id));
+      assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${id}.password`)), passwordDigest(PASSWORD));
+      await read(); assert.equal(agile.logins, loginsBefore + 2);
+    } finally {
+      if (keychain) await runner('/usr/bin/security', ['delete-keychain', file]);
+      await rm(file, { force: true });
+    }
+  });
+});
+
+describe('resource read', () => {
+  test('a read prints only declared names, outcome codes and artifact sizes and digests', async () => {
+    const admin = await setup(); const id = await importResource(admin);
+    const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
+    await expectOk(admin, importArgs(file, id));
+    const result = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
+    assert.match(result.text, /demo-agile@1\.0\.0\/mindmap：读取完成/);
+    assert.match(result.text, /产物 original [0-9a-f]{64} [0-9]+ 字节/); assert.match(result.text, /读清单 [0-9a-f]{64}/);
+    assert.ok(!result.text.includes(DOCUMENT));
+    // All response strings of at least eight characters must stay out of command output.
+    const kit = await admin.kit();
+    try {
+      const originals = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', limit: 100 });
+      for (const original of originals.items) {
+        const bytes = await kit.artifacts.trustedBytes(original.body.sha256); if (!bytes) continue;
+        let value: unknown; try { value = JSON.parse(Buffer.from(bytes).toString()); } catch { continue; }
+        const walk = (v: unknown): void => { if (typeof v === 'string' && v.length >= 8 && !/^[0-9a-f]{64}$/.test(v)) assert.ok(!result.text.includes(v)); else if (v && typeof v === 'object') for (const child of Object.values(v)) walk(child); }; walk(value);
+      }
+    } finally { await kit.close(); }
+    const badRead = await admin.run(['resource', 'read', id, 'undeclared', DOCUMENT]); assert.equal(badRead.code, 1); assert.ok(!badRead.text.includes(DOCUMENT));
+    const absent = await admin.run(['resource', 'read', 'res_00000000000000000000000000', 'mindmap', DOCUMENT]); assert.equal(absent.code, 1);
+    const user = await userWithToken(admin, '冒烟普通用户'); assert.equal((await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT], { [OPERATOR_TOKEN_VARIABLE]: user })).code, 1);
+    const missing = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing-document']);
+    assert.equal(missing.code, 1); assert.match(missing.text, /失败（[A-Z_]+）/); assert.doesNotMatch(missing.text, /synthetic-missing-document|404|reason|meta/);
+    admin.stdin.push(WRONG_PASSWORD); await expectOk(admin, ['secret', 'set', id, 'password']);
+    const login = await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT]);
+    assert.equal(login.code, 1); assert.match(login.text, /失败（[A-Z_]+）/); assert.ok(!login.text.includes(DOCUMENT));
+  });
+});
+
+
+test('review 1: resource read exposes connector diagnostics only with the explicit events flag', async () => {
+  const admin = await setup(); const id = await importResource(admin);
+  const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
+  await expectOk(admin, importArgs(file, id));
+  const quiet = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
+  assert.ok(!quiet.err.some(line => line.includes('read_ok')));
+  const events = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT, '--events']);
+  assert.ok(events.err.some(line => line.includes('read_ok')));
+  const failure = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing', '--events']);
+  assert.equal(failure.code, 1); assert.ok(failure.err.some(line => line.includes('read_failed')));
+});
+
+
+test('review 5: dry-run and real import validate every value before the first write', async () => {
+  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+  for (const value of ['SensitiveCtlPrivate95\tValue', 'X'.repeat(4097)]) {
+    secrets.add(value); secrets.add(value.slice(0, 12));
+    const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${value}`);
+    const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`];
+    for (const suffix of [['--dry-run'], []]) {
+      const result = await admin.run([...args, ...suffix]); assert.equal(result.code, 1); assert.match(result.text, /BAD/);
+      assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    }
+    await withKit(admin, async kit => {
+      const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: line => admin.deployment.printed.push(line) });
+      const by = (await kit.principals.findByName('根管理员'))!;
+      await assert.rejects(hub.connectors.admin.setCredentials(by, second, { password: value }));
+    });
+  }
+  const valid = 'V'.repeat(4096); secrets.add(valid);
+  const file = await importFile(admin, `PORTAL_USER=${valid}`);
+  const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`];
+  await expectOk(admin, [...args, '--dry-run']); await expectOk(admin, args);
+  assert.equal((await withKit(admin, kit => kit.vault.getText(`connector.${first}.username`)))?.length, 4096);
+});
+
+
+test('review 6: missing and empty keys refuse explicitly with corrective hints and no writes', async () => {
+  const admin = await setup(); const id = await importResource(admin);
+  for (const body of [`PORTAL_USER=reader`, `PORTAL_USER=\nPORTAL_PASSWORD=${PASSWORD}`]) {
+    const file = await importFile(admin, body); const result = await admin.run(importArgs(file, id));
+    assert.equal(result.code, 1); assert.match(result.text, /未写入任何凭据/); assert.match(result.text, /--dry-run/);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    if (body.includes('PORTAL_USER=\n')) assert.match(result.text, /PORTAL_USER：是空的/);
+  }
+  const missing = join(admin.deployment.dataDir, 'not-opened.env');
+  const resource = await admin.run(['secret', 'import', '--env-file', missing, '--key', 'USER=res_00000000000000000000000000/username']);
+  assert.match(resource.text, /resource list/);
+  const credential = await admin.run(['secret', 'import', '--env-file', missing, '--key', `USER=${id}/absent`]);
+  assert.match(credential.text, /它的凭据项是/); assert.doesNotMatch(credential.text, /环境文件/);
+});
+
+
+test('review 8: Basic targets refuse before file access and a static authorization header reaches the stub', async () => {
+  const admin = await setup(); const agileId = await importResource(admin);
+  for (const entry of ['password', 'username']) {
+    const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${agileId}/${entry}`]);
+    assert.equal(refused.code, 1); assert.match(refused.text, /Basic.*原样.*Authorization/);
+    assert.doesNotMatch(refused.text, /resource show/);assert.match(refused.text,/circle-hub resource list/);
+    assert.ok(refused.text.includes(AGILE_PACK));assert.match(refused.text,/凭据项是/);assert.ok(refused.text.includes('username') && refused.text.includes('password'));
+    assert.doesNotMatch(refused.text, /环境文件/);
+  }
+  const username = 'SyntheticBasicUser'; const password = 'SyntheticBasicPassword92';
+  const header = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  for (const value of [username, password, header, header.slice(6)]) secrets.add(value);
+  const stub = await startStub((request) => {
+    assert.equal(request.headers.authorization, header);
+    return { headers: { 'content-type': 'text/plain' }, body: 'synthetic read response' };
+  });
+  try {
+    const profile = {
+      schema: 'system@1', title: '合成头值认证', roles: [{ name: 'repository' }],
+      auth: { kind: 'static_header', header: { name: 'Authorization', scheme: 'raw' }, roles: ['repository'], credential: 'authorization' },
+      routes: [{ id: 'document', role: 'repository', method: 'GET', path: '/{id}',
+        params: { id: { type: 'string', maxLength: 40, pattern: '^[a-z0-9-]+$' } }, response: 'text', max_bytes: 4096, read: true }],
+      reads: [{ name: 'document', external: 'synthetic-repo:document', request: { route: 'document', params: { id: '{id}' } } }],
+    };
+    const pack = await writePack(join(packRoot, 'synthetic-basic'), { id: 'demo-basic', version: '1.0.0', kind: 'system',
+      title: '合成头值认证', description: '合成只读认证核对', files: { 'system.json': profile } });
+    await expectOk(admin, ['pack', 'publish', pack.dir]);
+    const added = await expectOk(admin, ['resource', 'add', 'demo-basic', '--name', '合成认证', '--environment', 'test',
+      '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository']);
+    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    const args = (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${id}/authorization`];
+    const colonFile = await importFile(admin, `USER=has:colon\nPASS=${password}`); secrets.add('has:colon');
+    const colon = await admin.run(args(colonFile)); assert.equal(colon.code, 1); assert.match(colon.text, /用户名含冒号/);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    const file = await importFile(admin, `USER=${username}\nPASS=${password}`);
+    await expectOk(admin, [...args(file), '--dry-run']);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    await expectOk(admin, args(file));
+    assert.equal(await withKit(admin, kit => kit.vault.getText(`connector.${id}.authorization`)), header);
+    await expectOk(admin, ['resource', 'read', id, 'document', 'synthetic-file', '--events']);
+    assert.equal(stub.requests.length, 1);
+  } finally { await stub.close(); }
+});
+
+test('c3 Secrets documentation follows the supported irreversible key loss procedure',async()=>{
+ const text=await readFile(new URL('./README.md',import.meta.url),'utf8');
+ const procedure=text.slice(text.indexOf('- **Irrecoverable key loss**'),text.indexOf('- **Login state.**'));
+ const steps=['stop the service','circle-hub key init --set-aside-vault','circle-hub operator-token reissue','secret import','start the service'];
+ let previous=-1;for(const step of steps){const at=procedure.indexOf(step,previous+1);assert.ok(at>previous,step);previous=at;}
+ assert.match(procedure,/loaded service/);assert.match(procedure,/configured port/);assert.match(procedure,/present key/);assert.match(procedure,/Plain `key init` refuses a nonempty vault/);
+ assert.ok(!text.includes('the advice is always to restore'));
 });
