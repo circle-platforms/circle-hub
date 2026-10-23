@@ -77,16 +77,21 @@ for (const applies of ['item', 'run'] as const) for (const copyFault of [false, 
     assert.equal(builds, 2, 'identical subject construction runs once per evaluation, never once per check');
     const repeats = await Promise.all([0, 0, 1, 1].map(index => h.service.submitResult(h.alice, structuredClone(submissions[index]), h.call())));
     for (const [i, answer] of repeats.entries()) {
-      assert.deepEqual(answer, answers[i < 2 ? 0 : 1]);
-      assert.equal(JSON.stringify(answer), JSON.stringify(answers[i < 2 ? 0 : 1]), 'the repeated receipt bytes are unchanged');
-    }
-    assert.equal(builds, 2); assert.equal(checks, copyFault ? 3 : 4, 'idempotent resubmissions do not rerun checks');
-    for (const run of runs) {
-      for (const [key, kind] of [[INDEX.submissionRun, 'submission'], [INDEX.resultRun, 'validation_result']] as const) {
-        assert.equal((await h.kit.store.find({ key, value: run.run, kind })).items.length, 1);
+      const originalIndex=i<2?0:1;
+      if(answers[originalIndex].counts!.unknown===0)assert.deepEqual(answer,answers[originalIndex]);
+      else {
+        assert.equal(answer.counts!.unknown,0,'the original copy fault is gone and the same submission is rechecked');
+        assert.ok(!Object.values(answer.result!.partitions).flat().flatMap(item=>item.requirements).flatMap(r=>r.claims).some(c=>c.statement.data?.phase==='subject_copy'));
       }
-      const actions = (await h.kit.store.find({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items;
-      assert.equal(actions.filter(record => (record.body as ActionBody).action === 'validate').length, 1);
+      assert.equal(JSON.stringify(answer),JSON.stringify(repeats[originalIndex*2]),'settled repeats have identical bytes');
+    }
+    assert.equal(builds,copyFault?3:2);assert.equal(checks,copyFault?5:4,'only the transitional evaluation is repeated');
+    for (const [i,run] of runs.entries()) {
+      const rechecked=answers[i].counts!.unknown>0;
+      assert.equal((await h.kit.store.find({key:INDEX.submissionRun,value:run.run,kind:'submission'})).items.length,1);
+      assert.equal((await h.kit.store.find({key:INDEX.resultRun,value:run.run,kind:'validation_result'})).items.length,rechecked?2:1);
+      const actions=(await h.kit.store.find({key:INDEX.actionRun,value:run.run,kind:'action'})).items;
+      assert.equal(actions.filter(record=>(record.body as ActionBody).action==='validate'&&(record.body as ActionBody).component==='runs.engine@1').length,rechecked?2:1);
     }
   } finally {
     JSON.parse = originalParse; childProcess.spawn = originalSpawn; syncBuiltinESMExports();

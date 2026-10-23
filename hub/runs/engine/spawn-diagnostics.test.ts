@@ -45,6 +45,10 @@ for(const operation of ['check','subject'])test(`exhausted ${operation} startup 
       const json=JSON.stringify(value);assert.ok(!json.includes('EAGAIN'));assert.ok(!json.includes('SyntheticSpawnAdminOnly'));
     }
     assert.ok(!JSON.stringify(attempts).includes('spawn_failed'));
-    const before=launches;assert.deepEqual(await h.service.submitResult(h.alice,submission,h.call()),answer);assert.equal(launches,before);
+    const before=launches;
+    const repeated=await h.service.submitResult(h.alice,submission,h.call());
+    assert.equal(repeated.acceptance,'accepted');assert.equal(launches,before+3,'a transitional receipt rechecks the same body against current facts');
+    assert.equal(repeated.counts!.unknown,answer.counts!.unknown);
+    assert.ok(!JSON.stringify(repeated).includes('SyntheticSpawnAdminOnly'));
   }finally{childProcess.spawn=original;syncBuiltinESMExports();await h.close();await rm(dir,{recursive:true,force:true});}
 });
