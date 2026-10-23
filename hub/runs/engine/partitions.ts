@@ -30,6 +30,7 @@ export class PartitionInvariantError extends Error {
 
 /** The reason an item is incomplete: not covered first, else the first incomplete layer of a required requirement. */
 function incompleteReason(input: PartitionInput): Reason | null {
+  if (input.requirements.some(r => input.required.has(r.requirement) && r.layers.some(l => l.reason === 'repair_exhausted'))) return 'repair_exhausted';
   if (input.notCovered) return 'not_covered';
   for (const r of input.requirements) {
     if (!input.required.has(r.requirement)) continue;

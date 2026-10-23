@@ -299,6 +299,7 @@ ${section(`条目（${run.items.length}）`, items)}
 ${projectedFields}
 ${section('分区清单', results)}
 ${commentary}
+${section('未回答的请求', table(['请求','种类','受众','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
 ${section('提交与回执', submissions)}
 ${section('调用日志', callTable(calls.items, ctx.admin, await names(ctx, calls.items)))}`,
     ),

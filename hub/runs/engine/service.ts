@@ -1,3 +1,4 @@
+import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
 // of a start, Hub-side runs for standing obligations). Every call that carries a CallContext reports the real reasons behind
 // its answers to that call's admin note (CallContext.adminNote) as well as to the process-wide adminLog.
@@ -64,6 +65,7 @@ export interface RunsEngine extends RunsService {
 export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   const ctx = createEngineContext(deps);
   return {
+    listRequests(user,run) { return requestsOf(ctx,user,run); },
     async startRun(user, input, context) {
       return (await startRun(forCall(ctx, context), user, input, context, { host: 'local_circle' })).answer;
     },

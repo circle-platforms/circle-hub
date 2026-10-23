@@ -2,7 +2,7 @@
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
 import type { z } from 'zod';
-import type { EntryKind, PackKind } from '../contracts/generated/vocabulary.ts';
+import type { EntryKind, PackKind, RequestKind } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
 import type { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
@@ -150,10 +150,16 @@ export interface RunSubmissionView {
   result: string | null;
 }
 
+export interface RunRequestView {
+  record:string; run:string; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
+  source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
+}
+
 /** Everything the console shows about one run. */
 export interface RunDetail {
   run: RunRecord;
   submissions: RunSubmissionView[];
+  requests?: RunRequestView[];
   /** The latest validation result (an accepted submission, or the result of a production run), with its record digest. */
   latest: { record: string; result: ValidationResult } | null;
   /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
@@ -161,6 +167,7 @@ export interface RunDetail {
 }
 
 export interface RunsService {
+  listRequests?(user: Principal, run: string): Promise<RunRequestView[]>;
   /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */

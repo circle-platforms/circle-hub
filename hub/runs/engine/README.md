@@ -571,3 +571,10 @@ codes without treating reason strings as interpreter codes. Repair routing is re
 Skipped items retain their verbatim submitted `skip_reason`, including on delivered target-fact items. Every affected
 requirement is named in errors with that reason and remaining rounds; one distinct submission charges one round per
 requirement. At zero remaining rounds, missing artifact work becomes `repair_exhausted`, not another coverage prompt.
+
+B07 requests are append-only records keyed by the exact run, item, requirement, source and missing fact. Repeating the
+same problem never extends its original due date. Result errors name the request and the existing tool to answer it;
+full replacement submissions remain allowed after exhaustion. Answers reference actual stored records and never
+rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. Unknown-routing
+rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
+hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.

@@ -1,3 +1,4 @@
+import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
@@ -233,7 +234,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if (sessionMissing) {
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
+  await recordResultRequests(ctx,run,outcome.result);
   const saved = await keepResult(base, outcome);
+  await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
   await action({
     acceptance: saved.result.body.acceptance,
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],

@@ -1,3 +1,4 @@
+import { requestsOf } from './requests.ts';
 // Queries for the server and the console (R02): a user sees their own runs, an admin every run, a Hub-side run only an
 // admin; absent and forbidden give the same null or the same empty page. Phase and counts are derived, never stored.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
@@ -46,7 +47,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   }
   const latest = await latestAccepted(store, run);
   const production = results.find(result => result.body.submission === stored.digest);
-  return { run: stored.body, submissions, latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { run: stored.body, submissions, requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 

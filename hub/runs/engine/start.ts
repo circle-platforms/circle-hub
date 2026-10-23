@@ -1,3 +1,4 @@
+import { recordResultRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
 import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
@@ -616,6 +617,7 @@ async function startFresh(
       handover,
     },
   });
+  if(production!==null)await recordResultRequests(ctx,record,production.evaluation.result);
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
   return {
     answer: okAnswer(record, result),
