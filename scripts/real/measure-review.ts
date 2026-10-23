@@ -161,7 +161,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
 export function measureReview(options: MeasureOptions, drivers: Drivers, say: (line: string) => void = () => {}): number {
   // 1. The copy, the gold and the independent answer — always computed, never skipped.
   let tree = JSON.parse(readFileSync(options.source, 'utf8')) as MindTree;
-  if (options.keep !== undefined) tree = firstCases(tree, options.keep);
+  if (options.keep !== undefined) tree = firstCases(tree, options.keep, { caseRule: options.caseRule });
   let manual: ManualFragment | undefined;
   if (options.manual !== undefined) {
     const bytes = readFileSync(options.manual);
@@ -178,7 +178,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   writeFileSync(join(options.out, 'literal.json'), `${JSON.stringify(answer, null, 2)}\n`);
   const caseCount = answer.cases.length + answer.noUniqueId.length;
   if (caseCount > MAX_CASES) {
-    say(`拒绝：副本有 ${caseCount} 个用例，超过一次运行的 ${MAX_CASES} 个上限`);
+    say(`拒绝：按 ${options.caseRule ?? 'marked'} 规则副本有 ${caseCount} 个用例，超过一次运行的 ${MAX_CASES} 个上限：减小 --keep 后重跑`);
     return 2;
   }
 

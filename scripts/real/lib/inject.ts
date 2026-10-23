@@ -76,26 +76,22 @@ export function caseNodes(tree: MindTree): MindNode[] {
 const clone = <T>(value: T): T => structuredClone(value);
 
 /** The document up to and including the n-th case: everything after it is cut, groups that start before it stay. */
-export function firstCases(tree: MindTree, n: number): MindTree {
-  const copy = clone(tree);
-  let seen = 0;
-  let done = false;
-  const cut = (node: MindNode): void => {
-    if (isCase(node)) {
-      seen += 1;
-      if (seen >= n) done = true;
-      return;
-    }
-    const kept: MindNode[] = [];
-    for (const child of node.children ?? []) {
-      if (done) break;
-      kept.push(child);
-      cut(child);
-    }
-    if (node.children !== undefined) node.children = kept;
+export function firstCases(tree: MindTree, n: number, options: { caseRule?: 'marked' | 'tagged' } = {}): MindTree {
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error('--keep 必须为正整数');
+  const copy = clone(tree), parsed = parseMindMap(copy), cases = caseNodesOf(parsed, options);
+  if (cases.length <= n) return copy;
+  const selected = new Set(cases.slice(0, n).map(node => node.index)), caseIndices = new Set(cases.map(node => node.index));
+  const positions = new Map<MindNode, number>(), ends = new Map<number, number>(); let ordinal = 0;
+  const visit = (node: MindNode): void => { const at = ordinal++; positions.set(node, at); for (const child of (node.children ?? []).slice(0, 1000)) visit(child); ends.set(at, ordinal - 1); };
+  visit(copy.root);
+  const boundary = ends.get(cases[n - 1].index)!;
+  const prune = (node: MindNode): boolean => {
+    const index = positions.get(node);
+    if (index === undefined || index > boundary || caseIndices.has(index) && !selected.has(index)) return false;
+    if (node.children) node.children = node.children.filter(prune);
+    return true;
   };
-  cut(copy.root);
-  return copy;
+  prune(copy.root); return copy;
 }
 
 const idOf = (node: MindNode): string => String(node.data.id ?? '');

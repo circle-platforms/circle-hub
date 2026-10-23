@@ -21,12 +21,12 @@ function main(): number {
   }
   let tree = JSON.parse(readFileSync(source, 'utf8')) as MindTree;
   const keep = arg('keep');
-  if (keep !== undefined) tree = firstCases(tree, Number(keep));
   const caseRuleArg = arg('case-rule');
   if (caseRuleArg !== undefined && caseRuleArg !== 'marked' && caseRuleArg !== 'tagged') {
     console.error('--case-rule 只认 marked 或 tagged');
     return 2;
   }
+  if (keep !== undefined) tree = firstCases(tree, Number(keep), { caseRule: caseRuleArg === 'tagged' ? 'tagged' : 'marked' });
   let manual: ManualFragment | undefined;
   const manualPath = arg('manual');
   if (manualPath !== undefined) {
