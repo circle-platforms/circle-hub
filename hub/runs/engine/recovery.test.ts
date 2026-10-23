@@ -114,3 +114,15 @@ test('a matched check failure retains the concrete missing fact and the repair p
   assert.match(layer.missing!, /检查甲/);
   assert.match(layer.missing!, /发布.*重跑/);
 });
+test('a missing input caused by structured source withholding has an administrator exit', () => {
+  const outcome = unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '普通来源尚不可读', { data: { unread_sources: [{ reason: 'credential_unreadable' }] } });
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, [outcome], context);
+  assert.deepEqual(result.exit?.audience, { user: context.admin });
+  assert.match(result.missing!, /管理员接受/);
+});
+test('an empty unread list never changes a prerequisite repair into administrator acceptance', () => {
+  const outcome = unknown({ tier: 'advisory', grounds: [] }, 'awaiting_step', '前置检查修正后的事实', { data: { unread_sources: [] } });
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [outcome], context);
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.doesNotMatch(result.missing!, /管理员接受/);
+});

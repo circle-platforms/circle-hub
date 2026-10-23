@@ -49,9 +49,7 @@ function outcomeExit(outcome: CheckOutcome, context: RecoveryContext): UnknownEx
   const due = new Date(context.now.getTime() + 72 * 60 * 60 * 1000).toISOString();
   if (outcome.data?.sandbox === 'SANDBOX_UNAVAILABLE') return { action: 'reevaluate', audience: { hub: true }, due };
   if (outcome.reason === 'missing_input' && outcome.data?.why === 'unavailable') return { action: 'reread', audience: { hub: true }, due };
-  const withheld = Array.isArray(outcome.data?.unread_sources) && outcome.data.unread_sources.some(
-    row => row !== null && typeof row === 'object' && row.reason === 'credential_unreadable');
-  if (outcome.reason === 'awaiting_step' && withheld || outcome.reason === 'integrity_unproven' && outcome.data?.why === 'integrity_unproven') {
+  if ((outcome.reason === 'awaiting_step' || outcome.reason === 'missing_input') && heldSource(outcome) || outcome.reason === 'integrity_unproven' && outcome.data?.why === 'integrity_unproven') {
     return requestExit({ ...RULES[outcome.reason!], request: 'disposition', audience: 'admin' }, context);
   }
   return requestExit(RULES[outcome.reason!], context);
@@ -64,8 +62,13 @@ function procedureOf(outcome: CheckOutcome, context: RecoveryContext): string {
   if (exit.action === 'reevaluate') return '下一步：Hub 在沙箱恢复后自动重评';
   if (exit.action === 'reread') return '下一步：Hub 重读已绑定的来源片段后自动重评';
   if (outcome.reason === 'integrity_unproven' && outcome.data?.why === 'integrity_unproven') return '下一步：具名管理员从可信备份恢复与摘要一致的字节后重新核验，不重读损坏的原件';
-  if (outcome.reason === 'awaiting_step' && Array.isArray(outcome.data?.unread_sources)) return '下一步：具名管理员接受这份普通来源后 Hub 自动重评';
+  if ((outcome.reason === 'awaiting_step' || outcome.reason === 'missing_input') && heldSource(outcome)) return '下一步：具名管理员接受这份普通来源后 Hub 自动重评';
   const rule = RULES[outcome.reason!];
   if (context[rule.audience] === null) return '下一步：运行者澄清缺少的具名责任账号和发布信息后自动重评';
   return rule.missing;
+}
+
+function heldSource(outcome: CheckOutcome): boolean {
+  return Array.isArray(outcome.data?.unread_sources) && outcome.data.unread_sources.some(
+    row => row !== null && typeof row === 'object' && row.reason === 'credential_unreadable');
 }
