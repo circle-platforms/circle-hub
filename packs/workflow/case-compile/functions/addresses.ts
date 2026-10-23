@@ -43,6 +43,7 @@ export function isHostLiteral(token: LiteralAddress, text: string, bed: import('
 export function hasAmbiguousIpv4(text: string): boolean {
   for (const match of text.matchAll(/(?<![A-Za-z0-9_.:])(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}(?![A-Za-z0-9_.:])/gi)) {
     const parts = match[0].split('.');
+    if(parts.length===2&&parts[0]==='0'&&/^[0-9]+$/.test(parts[1]))continue;
     if (parts.length === 4 && parts.every((v) => /^(?:0|[1-9][0-9]{0,2})$/.test(v) && Number(v) <= 255)) continue;
     if (parts.length === 1 && /^[0-9]+$/.test(parts[0]) && Number(parts[0]) < 16777216) continue;
     try {

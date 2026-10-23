@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "f9f28fc8f6bb13fea6058aed926e681ca21ffd5b501f87a9877be8835091188d",
-      "size": 4441
+      "sha256": "714992b8b6d50142e8a3ab05d0da3907f55ae93cf78467bb63eac1e64320b2a0",
+      "size": 4518
     },
     {
       "path": "functions/bed.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "71b8b73ee07ab7a0175ba8a3468e0f7c3f41822a372141209b4245ee300ee24d",
-      "size": 14030
+      "sha256": "0f5f1f09aa413161af2ec791e476aef0ae234993fec828d26dc293f0401f9178",
+      "size": 14081
     },
     {
       "path": "functions/manifest.ts",
@@ -292,6 +292,11 @@
       "size": 14602
     },
     {
+      "path": "samples/negative/subsecond-host-option.json",
+      "sha256": "178d9349097225a773f8e2dc3d846c657a069e7d405b35d1ae6f52234089553b",
+      "size": 14617
+    },
+    {
       "path": "samples/negative/unassigned-parameter.json",
       "sha256": "77fb21bf63424b9b7039a45f52b60bc48ba047526153f5449a94f718a1d37f78",
       "size": 14856
@@ -485,6 +490,11 @@
       "path": "samples/positive/single-quote-backslash.json",
       "sha256": "9f3caba0ede7f12e700effd0a7720ae8b9669e37efa7845bfb93e5f5ace9ae0c",
       "size": 14559
+    },
+    {
+      "path": "samples/positive/subsecond-host-option.json",
+      "sha256": "91f4488df870a18c347b2ff29cd50b8bbd27e877d1509817f5ddc874a57499eb",
+      "size": 14568
     },
     {
       "path": "samples/positive/unassigned-parameter.json",

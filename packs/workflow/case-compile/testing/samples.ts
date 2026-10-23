@@ -55,6 +55,7 @@ export function writeSamples(): void {
     save('positive', rule.name, rule.check, subjectOf(goodData()).subject);
     const bad = goodData(); rule.change(bad); save('negative', rule.name, rule.check, subjectOf(bad).subject, `case-compile.${rule.code}`);
   }
+  const fraction=goodData();fraction.steps[1].args=['ping -i 0.2 -c 3 192.0.2.90'];save('positive','subsecond-host-option','bed_addresses',subjectOf(fraction).subject);fraction.steps[1].args=['curl -m 2.5 http://192.0.2.90/'];save('negative','subsecond-host-option','bed_addresses',subjectOf(fraction).subject,'case-compile.address_notation');
   const extra = structuredClone(CONTRACT_DOC); const method = extra.entries.find((v) => v.e === 'widget-host' && v.f === 'shell')!;
   method.signature.parameters.push({ name: 'then', kind: 'positional_or_keyword', required: false, default: null }); method.signature.optional.push('then');
   const signed = signRuntime(extra); const missing = profileDocument(signed); const assigned = structuredClone(missing); Object.assign(assigned.allowed[1].parameters, { then: 'host_shell' });

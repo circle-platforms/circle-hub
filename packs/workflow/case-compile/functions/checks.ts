@@ -70,7 +70,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
   }
   const examine = (value: string, pointer: string, device: string | null, role?: string): void => {
-    if (hasNoncanonicalDottedQuad(value) || role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '主机命令含非标准 IPv4 数字记法，无法唯一核对目标；如为地址请写标准点分四段，如非地址请拆出并明确用途', pointer));
+    if (hasNoncanonicalDottedQuad(value) || role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '命令含非标准或有歧义的 IPv4 数字记法；地址改为规范四段点分文字。非地址选项改用更小单位的整数，或改为明确的等待步骤；不要求模型编辑配置', pointer));
     for (const address of literalAddresses(value)) {
       if (!isHostLiteral(address, value, bed)) continue;
       count++;
