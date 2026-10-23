@@ -13,8 +13,8 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type UnreadSource } from '../../rules/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { describe, fixOf } from './errors.ts';
@@ -359,6 +359,79 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     return { boundSources, unreadSources };
   };
 
+  // The graded source view of one evaluation: the texts the boundary already resolved, then — for a reference that
+  // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
+  // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
+  // applies to a whole-source fallback, like readBoundSources.
+  const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
+  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
+    let pending = fragmentCache.get(reference);
+    if (pending === undefined) {
+      pending = (async () => {
+        let ref: ReturnType<typeof parseReference>;
+        try {
+          ref = parseReference(reference);
+        } catch {
+          return { why: 'unavailable' };
+        }
+        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: string }> => {
+          if (!r.resolved) {
+            // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
+            // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
+            // the read genuinely failed. For a reference that is not src or a locked tree, unresolved also lands here
+            // as unavailable: an honest unknown, never a refutation.
+            return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
+          }
+          if (r.readTier === 'retain_only') return { why: 'retain_only' };
+          if (r.text === null) return { why: 'unavailable' };
+          if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
+          return { text: r.text, why: 'bound' };
+        };
+        if (ref.scheme === 'src') {
+          // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
+          const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
+          if (!bound) return { why: 'not_bound' };
+        } else if (ref.scheme === 'tree') {
+          // A tree reference is bound exactly when its root is the root this run locked.
+          if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
+        }
+        // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
+        return finish(await resolveReference(ref, resolveCtx));
+      })();
+      fragmentCache.set(reference, pending);
+    }
+    return pending;
+  };
+  const quotedReferences = new Set<string>();
+  /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
+  const collectQuotedReferences = (value: unknown): void => {
+    if (typeof value === 'string' && value.length <= MAX_REFERENCE_LENGTH && /^(?:src|tree|entry|rec):/.test(value)) {
+      quotedReferences.add(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) collectQuotedReferences(item);
+    } else if (typeof value === 'object' && value !== null) {
+      for (const item of Object.values(value)) collectQuotedReferences(item);
+    }
+  };
+  const warmed = new Map<string, string>();
+  const warmedWhy = new Map<string, string>();
+  const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
+    text: (reference) => texts.get(reference) ?? warmed.get(reference),
+    // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
+    // unknown, never a refutation.
+    why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
+  });
+  /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
+  const warmQuoted = async (value: unknown, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
+    collectQuotedReferences(value);
+    await Promise.all([...quotedReferences].map(async (reference) => {
+      if (texts.has(reference) || warmed.has(reference) || warmedWhy.has(reference)) return;
+      const graded = await gradeFragment(reference, capBytes);
+      if (graded.text !== undefined) warmed.set(reference, graded.text);
+      else warmedWhy.set(reference, graded.why);
+    }));
+  };
+
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>): Promise<CheckOutcome[]> => {
     let table: unknown;
     if (check.table !== undefined) {
@@ -371,7 +444,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
-    const record = { ...Object.fromEntries(texts), ...boundSources };
+    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
+    const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
       {
         id: check.id,
@@ -387,10 +461,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         table,
         subject,
         ...(view !== undefined ? { catalog: view } : {}),
-        sources: sourcesFrom(record),
         context: { run: run.run, requirement: requirementsOf.get(check.id)?.[0]?.key, pack: workflow.pack.id, sets },
         packDir: workflow.pack.directory,
         sourceTexts: record,
+        sources: gradedSourceView(texts),
         unreadSources,
         ...(ctx.deps.sandbox !== undefined ? { sandbox: ctx.deps.sandbox } : {}),
         onError,

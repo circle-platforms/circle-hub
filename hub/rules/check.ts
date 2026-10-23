@@ -79,9 +79,9 @@ const Outcomes = z.array(CheckOutcomeShape).max(10_000);
 
 /**
  * Reasons a check gives for unknown: check error, timeout and missing input (V01 R[2]), an unproven closed world (C07 R[1]) and
- * a used-up budget. The others belong to models, submissions and runs.
+ * a used-up budget and a pack-owned output/read-back failure (P05 R[0]). The others belong to models, submissions and runs.
  */
-const CHECK_REASONS: readonly Reason[] = ['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted'];
+const CHECK_REASONS: readonly Reason[] = ['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted', 'output_failed'];
 
 /** Problems with outcomes a pack function returned: verdict shape, reasons, and the code namespace of the pack. */
 function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undefined {

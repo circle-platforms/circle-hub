@@ -19,6 +19,8 @@ import { FakeWorkflowStore } from './workflows.ts';
 
 export interface HarnessOptions {
   review?: ReviewOptions;
+  /** Passed through to reviewPack (dataQuotes adds the slot-data quote check). */
+  dataQuotes?: boolean;
   verifyAcceptsDeclared?: boolean;
   sandboxLimits?: Partial<SandboxLimits>;
   clientKeyWindowMs?: number;
@@ -76,7 +78,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const alice = principal(await kit.principals.createUser(admin, '甲'));
     const bob = principal(await kit.principals.createUser(admin, '乙'));
     const workflows = new FakeWorkflowStore();
-    const review = await workflows.add(await writePack(dir, reviewPack(options.review)));
+    const review = await workflows.add(await writePack(dir, reviewPack({ ...(options.review ?? {}), ...(options.dataQuotes !== undefined ? { dataQuotes: options.dataQuotes } : {}) })));
     const verify = await workflows.add(await writePack(dir, verifyPack({ acceptsDeclared: options.verifyAcceptsDeclared })));
     const locate = await workflows.add(await writePack(dir, locatePack()));
     for (const pack of ['toy-review', 'toy-verify', 'toy-locate']) workflows.assign(alice.id, pack);

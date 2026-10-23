@@ -73,8 +73,8 @@ const requirement = (r: Partial<RequirementTemplate> & Pick<RequirementTemplate,
 
 export interface ReviewOptions {
   version?: string;
-  /** Add a fact requirement whose only check is a pack function that throws or never returns. */
-  fragile?: 'boom' | 'spin';
+  /** Add a fact requirement whose check throws, times out or returns a synthetic unknown reason. */
+  fragile?: 'boom' | 'spin' | 'output_failed' | 'bogus_reason';
   /** Accept the independence the client declares on findings (default true). */
   acceptsDeclared?: boolean;
   /** Declare the dynamic layer on the catalog requirement too. */
@@ -85,6 +85,8 @@ export interface ReviewOptions {
   subjectRepair?: boolean;
   /** Ship one externally retained delivered sample for each named check (clears the author-only mark, T02 R[1]). */
   externalSamples?: string[];
+  /** Add the data_quotes check: a quote@1 table reaching a reference deep inside slot data. */
+  dataQuotes?: boolean;
   /** Replace the JSON Schema of the findings' `data`. */
   findingsData?: Record<string, unknown>;
   /** Replace the JSON Schema of the `strict` parameter. */
@@ -109,7 +111,7 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
       independent_of: 'predecessor',
       ...(options.acceptsDeclared === false ? {} : { accepts_declared_independence: true }),
       ...(options.dynamicFindings ? { layers: [...LAYER] } : {}),
-      checks: ['findings_quotes', 'findings_catalog', 'findings_rank', 'findings_grounds'],
+      checks: ['findings_quotes', 'findings_catalog', 'findings_rank', 'findings_grounds', ...(options.dataQuotes ? ['data_quotes'] : [])],
       error_handling: [
         { code: 'core.catalog.membership_contradicted', action: 'repair', max_rounds: 2 },
         { code: 'toy-review.rank_too_low', action: 'reject' },
@@ -124,6 +126,9 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
       { id: 'structure', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject', tier: 'blocking' },
       { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', judges: 'subject', tier: 'blocking' },
       { id: 'findings_quotes', interpreter: 'quote@1', table: 'tables/findings-quotes.json', applies: 'item', judges: 'artifact_under_verification', tier: 'blocking' },
+      ...(options.dataQuotes
+        ? [{ id: 'data_quotes', interpreter: 'quote@1' as const, table: 'tables/data-quotes.json', applies: 'item' as const, judges: 'artifact_under_verification' as const, tier: 'blocking' as const }]
+        : []),
       { id: 'findings_catalog', interpreter: 'catalog@1', table: 'tables/findings-catalog.json', applies: 'item', catalog: 'commands@1', judges: 'artifact_under_verification', tier: 'blocking' },
       {
         id: 'findings_rank',
@@ -165,7 +170,7 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
         min: 0,
         max: 10,
         evidence: true,
-        data: options.findingsData ?? { type: 'object', properties: { suggestion: { type: 'string' } }, additionalProperties: false },
+        data: options.findingsData ?? { type: 'object', properties: { suggestion: { type: 'string' }, ...(options.dataQuotes ? { expected_quote: { type: 'object', properties: { text: { type: 'string' }, reference: { type: 'string' } }, required: ['text', 'reference'], additionalProperties: false } } : {}) }, additionalProperties: false },
       },
     },
     run: { level: { codes: [{ code: 'draft_level', label: '初评等级' }], ranks: LEVELS, min: 1, max: 1 } },
@@ -208,6 +213,16 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
         commands: ['$.fields.commands'],
         scope: 'resolved',
         negative: { flag: '/fields/negative', expect: NEGATIVE_CODES, tier: 'advisory' },
+      },
+    },
+    'tables/data-quotes.json': {
+      json: {
+        schema: 'quote@1',
+        origin: '合成：槽位数据深处（data.expected_quote）的引文，边界不解析它',
+        tier: 'blocking',
+        basis: '要求项 findings：引文逐字出现在所引片段里（引用只出现在槽位数据里）',
+        item: '/item',
+        quotes: [{ select: '$.slots.findings[*].data.expected_quote', text: '/text', reference: '/reference' }],
       },
     },
     'tables/findings-quotes.json': {

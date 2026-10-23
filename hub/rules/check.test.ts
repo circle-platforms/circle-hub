@@ -212,6 +212,7 @@ describe('runCheck with a pack function', () => {
       'skip.ts': outcome("verdict: 'unknown', reason: 'declared_skip'"),
       'nocheck.ts': outcome("verdict: 'unknown', reason: 'no_check'"),
       'integrity.ts': outcome("verdict: 'unknown', reason: 'integrity_unproven'"),
+      'output.ts': outcome("verdict: 'unknown', reason: 'output_failed'"),
     });
     for (const module of ['abstain.ts', 'skip.ts', 'nocheck.ts']) {
       const [o] = await runCheck({ function: { module }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
@@ -220,6 +221,9 @@ describe('runCheck with a pack function', () => {
     }
     const [kept] = await runCheck({ function: { module: 'integrity.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
     assert.equal(kept.reason, 'integrity_unproven');
+    const [output] = await runCheck({ function: { module: 'output.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    assert.equal(output.verdict,'unknown');
+    assert.equal(output.reason,'output_failed');
   });
 
   it('a declared tier is the default for pack outcomes; negative-case outcomes keep their own tier', async () => {
