@@ -65,3 +65,11 @@ The final synthetic package run executed 195 tests: 195 passed, zero failures, z
 Merged runtime review: decision 35 opens every enabled pair and every bed interface while retaining rejection/value/credential screening. Every supplied parameter needs a role; wait roles need max_wait_seconds. Masks, prefixes and non-IP tokens are not off-bed hosts. Unsupported numeric host notations and dynamic host shell syntax have repairable diagnostics. Assertion values are validated before generation; unsafe ids and failed frozen inputs retain pointers and next actions. Replacement sources must occur in authored case text or quotes and cannot chain.
 
 Merge receipt: the runtime review's 19 red-before/green-after regressions are retained, and three semantic merge regressions cover integer keyword durations, assertion policy and decision-35 address use. The combined package ran 217 tests, all passed with zero skips; its temporary registry passed all 68 author samples. Type checking and manifest freshness passed. The core xlsx parser has the same Git blob identity before and after this merge; no new xlsx-parser changes were merged. Codec reading behavior remains broader than the accepted plan subset: assertion cell values must satisfy the runtime's single-line/no-placeholder policy before generation.
+
+## 部署探测配置
+
+`runtime-profile@1.probes` 是部署声明，不来自合约的只读标记（原合约没有这个字段）。旧配置省略时解析为没有声明探测，不能据此执行派发；发布前的转换检查要求每个座位具备两类探测。每项形状为 `{seat, object, method, command, purpose, extract: {pattern, group}}`：seat 用 seats.object，object 必须是该座位，组合须为合约启用组合，并在配置中有 device_cli 角色。purpose 的封闭取值及标签只定义在 `tables/probe-format.json`，解析和转换共读这一张表。
+
+命令须符合网关只读入口的字符范围、show/get 开头、一行、最多 200 字符、单双引号各自配对；这证明入口形状，不证明命令的真实语义，真实命令由集成者只读核对后填入部署配置。extract.pattern 必须可编译，恰有一个命名捕获组，与 extract.group 一致。地址用途可多次匹配，版本用途预期唯一值。取不到值确定记为“回显里没有”，不留未知。
+
+配置不包含探测回显或采集时刻。派发分支负责在同一网关租约中采集，先存带采集时刻的原始观察，再提取和比对；与锁定构建或座位设备的清单地址集合不符时记“未发出”，指出设备和不符项。本包只核对部署声明，不调用设备，不把声明当成观察。脚本生成探测草稿所用 --build 必须取自本次预订锁定构建；接执行器定义的最终格式要等派发分支合并后核对。

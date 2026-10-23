@@ -1,10 +1,12 @@
 // Deployment profile owned by this pack; it assigns meaning absent from the runner's signature contract.
+import { parseProbes, type Probe } from './probes.ts';
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
 import { runtimeMethod, type RuntimeContract, type Problem } from './runtime-contract.ts';
 import type { ManifestBed } from './manifest.ts';
 export interface AllowedCall { object: string; method: string; parameters: Record<string, string> }
 export interface RuntimeProfile {
+  probes?: Probe[];
   synthetic: boolean;
   max_wait_seconds: number | null;
   runtimeVersion: string;
@@ -106,5 +108,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   const denied = isRecord(value.denied) ? value.denied : {};
   for (const key of ['device', 'host']) if (!Array.isArray(denied[key]) || (denied[key] as unknown[]).some((v) => !oneLine(v))) issue(`/denied/${key}`, '拒绝表必须是单行非空文字列表（没有条目写 []）');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
+  const parsedProbes = parseProbes(value.probes, contract, seats, allowed);
+  problems.push(...parsedProbes.problems);
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { ...(value.probes === undefined ? {} : { probes: parsedProbes.probes }), synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
 }

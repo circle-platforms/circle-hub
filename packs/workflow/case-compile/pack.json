@@ -92,9 +92,14 @@
       "size": 15803
     },
     {
+      "path": "functions/probes.ts",
+      "sha256": "f832a14a96e93fca17ad69a0ab238f88bc49f90fcc58965c9b7f853851eab48e",
+      "size": 5559
+    },
+    {
       "path": "functions/profile.ts",
-      "sha256": "0a487dbe6d6ffd62054c368fe88381e1916792487ab598f366baa3e15ee93b55",
-      "size": 10679
+      "sha256": "dbc53eaeb6acb61d81b970f2809011ccfb6ce0289cad1df5136c9ed8c27bccb3",
+      "size": 10945
     },
     {
       "path": "functions/project.ts",
@@ -495,6 +500,11 @@
       "path": "tables/commands.json",
       "sha256": "b072a75eef2e71e647f79d96c7e5687b45dc4492edd59140361f5f768168d8e0",
       "size": 838
+    },
+    {
+      "path": "tables/probe-format.json",
+      "sha256": "898e8593ee9c4836a72cda568224cfb51a720c1c79bfe31524b221f46f81dd34",
+      "size": 221
     },
     {
       "path": "tables/quotes.json",
