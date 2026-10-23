@@ -984,6 +984,23 @@ describe('applicability from explicit conditions', () => {
   });
 
 
+
+  it('a shared multi-row entry carries a condition only when every row states it (closure finding 8)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    // A grid table (not split by row): one row conditioned, one not — the shared entry stays 未声明.
+    const grid = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n+-----+-----+\n| name | 成员名 |\n+-----+-----+\n| weight | 权重，仅 hg-k 平台支持 |\n+-----+-----+\n'), null, { catalog: tree });
+    const shared = grid.entries.find((entry) => String(entry.statement).includes('成员名'));
+    assert.equal(shared?.applicability ?? null, null, 'a partly conditioned table never declares a condition');
+    const conditioned = grid.entries.find((entry) => String(entry.statement).includes('权重'));
+    if (conditioned !== undefined && conditioned !== shared) {
+      assert.deepEqual(conditioned.applicability, { platforms: ['hg-k'] });
+    }
+    // A pipe table whose HEADER line states a condition, rows not: the shared entry stays 未声明.
+    const headerOnly = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 仅 hg-k 平台支持的参数 | 说明 |\n|---|---|\n| name | 成员名 |\n| weight | 权重 |\n'), null, { catalog: tree });
+    const sharedHeader = headerOnly.entries.find((entry) => entry.data.form === 'text');
+    assert.equal(sharedHeader?.applicability ?? null, null, 'a header condition alone never declares the rows\' condition');
+  });
+
   it('a table row states its own condition only: conditioned rows become their own entries, unconditioned rows stay undeclared (second review findings 2 and 5)', () => {
     const tree =
       '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';

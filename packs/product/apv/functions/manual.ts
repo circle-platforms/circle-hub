@@ -214,6 +214,24 @@ function commandPath(words: readonly string[]): string | null {
 }
 
 /** Trailing spaces off every line, outer blank lines off: the canonical text of a block. */
+/** The applicability of a multi-row table statement: only when every data row states the same condition. */
+function tableEveryRow(statement: string): ProducedEntry['applicability'] {
+  const lines = statement.split('\n').filter((line) => line.trim() !== '');
+  const data = lines.filter((line) => {
+    const cells = line.split('|').map((cell) => cell.trim()).filter((cell) => cell !== '');
+    return cells.length > 0 && !cells.every((cell) => /^:?-+:?$/.test(cell));
+  });
+  if (data.length === 0) return null;
+  let acc: ProducedEntry['applicability'] = null;
+  for (const line of data) {
+    const own = toApplicability(conditionsOf(line));
+    if (own === null) return null;
+    if (acc === null) acc = own;
+    else if (JSON.stringify(acc) !== JSON.stringify(own)) return null;
+  }
+  return acc;
+}
+
 function blockText(text: string): string {
   return stripNul(text)
     .split('\n')
@@ -645,7 +663,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     // chain is provenance and lives in the fragment selectors and the section-node paths, never in the digest.
     const data: { [key: string]: unknown } = { form: 'text' };
     if (init.words !== undefined) data.words = init.words;
-    const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability: toApplicability(conditionsOf(init.statement)) };
+    // A multi-line table statement (an unsplit table block, or the shared remainder rows) declares a condition only
+    // when EVERY data row of it states it (closure finding 8): a header condition or one row's condition never
+    // declares the others. Non-table statements read their own text as before.
+    const isTableText = init.block === 'table' && init.statement.includes('\n');
+    const applicability = isTableText
+      ? tableEveryRow(init.statement)
+      : toApplicability(conditionsOf(init.statement));
+    const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability };
     // A multi-command row's own anchors are recorded as signature literals by the caller: its prose must not add them
     // back as unresolved spans.
     if (init.noLiterals !== true) putLiterals(entry, init.block, init.statement);
