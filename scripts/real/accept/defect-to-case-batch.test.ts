@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { sha256 } from '../gold/quotes.ts';
-import { runBatch, main, type BatchDeps, type Pairings } from './defect-to-case-batch.ts';
+import { runBatch, main, createBatchDeps, type BatchDeps, type Pairings } from './defect-to-case-batch.ts';
 function fixture(){
   const root=mkdtempSync(join(tmpdir(),'gold-d2c-synthetic-')),out=join(root,'out');
   const xml='<commands><scope type="global"><menu name="widget"><item name="set"><arguments><arg name="n" type="U16"/></arguments></item><item name="other"/></menu></scope></commands>';
@@ -120,5 +120,55 @@ test('missing repair-round facts trigger a current-result replay instead of a su
     let actions=0;f.deps.replaySubmission=async()=>{actions++;detail.latest.result.rounds={used:0,max:2};};
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
     assert.equal(actions,1);assert.equal(report.code,0);
+  }finally{f.close();}
+});
+test('every bound src original is exported, including an unused expected manual',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const bytes=Buffer.from('BOUND_MANUAL_ORIGINAL'),digest=sha256(bytes),exports:string[]=[];
+    f.originals.set(digest,bytes);f.details.get('run_synthetic_0').run.sources.push({reference:`src:${digest}`,role:'expected',external:'manual:cli:12.1'});
+    const original=f.deps.exportOriginal;f.deps.exportOriginal=async(sha,path)=>{exports.push(sha);await original(sha,path);};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.ok(exports.includes(digest));assert.deepEqual(readFileSync(join(f.out,'pair-1',digest)),bytes);
+  }finally{f.close();}
+});
+test('a canonical received.object envelope is unwrapped from verified original bytes before accepting drafts',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const record='e'.repeat(64),body={...(f.submissions.get(record) as object),notes:'\ud800'},bytes=Buffer.from(JSON.stringify(body)),digest=sha256(bytes);
+    f.originals.set(digest,bytes);f.submissions.set(record,{received:{object:digest,size:bytes.length,non_canonical_path:'/notes',run:'run_synthetic_0'}});
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,0);assert.equal(report.totals.drafts,1);assert.deepEqual(readFileSync(join(f.out,'pair-1',digest)),bytes);
+  }finally{f.close();}
+});
+test('fake child stdout and stderr for every process stay in private pairing evidence, never on screen',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const marker='PRIVATE_SYNTHETIC_MODEL_HOST',calls:string[]=[];
+    f.details.get('run_synthetic_0').run.instructions=marker;
+    const deps=createBatchDeps({out:f.out,endpointArgs:[],token:'PRIVATE_SYNTHETIC_TOKEN'},(args)=>{
+      if(args[0]==='scripts/real/review-circle.ts'){
+        calls.push('review');const out=args[args.indexOf('--out')+1];
+        writeFileSync(join(out,'pair.calls.jsonl'),JSON.stringify({at:new Date().toISOString(),tool:'start_run',run:'run_synthetic_0'}));
+        return {status:0,stdout:marker,stderr:marker};
+      }
+      if(args[1]==='run'){calls.push('show');return {status:0,stdout:JSON.stringify(f.details.get('run_synthetic_0')),stderr:marker};}
+      calls.push('export');writeFileSync(args[args.indexOf('--out')+1],f.originals.get(args[3])!);return {status:0,stdout:marker,stderr:marker};
+    },async(_options,requests)=>requests.map(request=>{
+      const record=(request.args as {reference:string}).reference.slice(4);
+      return {isError:false,text:marker,structured:{content:{text:JSON.stringify(f.submissions.get(record))}}};
+    }));
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},deps);
+    assert.equal(report.code,0);assert.ok(!report.text.includes(marker));assert.ok(!report.text.includes('PRIVATE_SYNTHETIC_TOKEN'));
+    assert.equal(report.text.split('\n').filter(line=>line.startsWith('配对 ')).length,1);
+    assert.deepEqual(calls,['review','show','export','export']);
+    const files=(dir:string):string[]=>readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?files(join(dir,entry.name)):[join(dir,entry.name)]);
+    const captures=files(f.out).filter(path=>/process-.*\.(stdout|stderr)\.txt$/.test(path));
+    assert.equal(captures.length,8);assert.ok(captures.some(path=>readFileSync(path,'utf8').includes(marker)));
+    for(const path of captures)assert.equal(statSync(path).mode&0o777,0o600);
+  }finally{f.close();}
+});
+test('the negative preparation-step difference is counted by item with positional details and still exits nonzero',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);const submission=f.submissions.get('e'.repeat(64)) as any,data=submission.items[0].slots.cases[0].data;
+    data.negative=true;data.expects_refutation=true;data.steps=[{command:'widget set 5'},{command:'widget set 70000'}];
+    f.details.get('run_synthetic_0').latest.result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='commands').status='unsatisfied';
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.equal(report.totals.known_step_rule_items,1);assert.equal(report.totals.known_simplified_match_items,0);
+    const details=JSON.parse(readFileSync(join(f.out,'pair-1','details.json'),'utf8'));
+    assert.ok(details.positions.some((p:any)=>p.draft===1&&p.step===1&&p.category==='negative_step_rule'));
   }finally{f.close();}
 });
