@@ -62,6 +62,9 @@ export type LocationGold = DocumentLocationGold | LocationListGold;
 interface ParsedCandidate {
   name: string;
   base: string;
+  family: string;
+  released: string | null;
+  baseMention: boolean;
   built: string | null;
   raw: string;
 }
@@ -85,27 +88,48 @@ export function orderGoldCandidates(candidates: BuildCandidateGold[]): BuildCand
   });
 }
 
-/** Parses candidate builds and alias indications from the candidate section of the text. */
+/** Reassembles renderer-split lines before finding document-owned claims. */
+export function reassembleResultLines(turns: readonly LoggedTurn[]): string[] {
+  const lines: string[] = [];
+  for (const result of turns.flatMap(t => t.toolResults)) {
+    let continuation = false;
+    for (const line of result.text.split('\n')) {
+      if (/^（接上页：第 \d+ 行的前 \d+ 个字符在上一页）$/.test(line)) { continuation = true; continue; }
+      if (/^(?:内容 rec:|共 \d+ 行|下一页：get_nodes|完整结果|（接上页：条目)/.test(line)) continue;
+      if (!line.trim()) continue;
+      if (continuation && lines.length) lines[lines.length - 1] += line;
+      else lines.push(line);
+      continuation = false;
+    }
+  }
+  return lines;
+}
+const escaped = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Only a claim whose position names this exact item and requirement can supply its statement. */
+export function ownClaimTexts(lines: readonly string[], document: string, requirement: string): string[] {
+  const position = new RegExp(`位置：条目 ${escaped(document)}(?:，|,|；).*?要求项 ${escaped(requirement)}(?:，|；|$)`);
+  return [...new Set(lines.filter(line => position.test(line)).map(line => {
+    const statement = line.indexOf('陈述：');
+    if (statement < 0) return '';
+    return line.slice(statement + 3).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].trim();
+  }).filter(Boolean))];
+}
+
+/** Parses the displayed candidates of a single candidate statement, preserving their order. */
 export function parseReportedCandidates(text: string): ParsedCandidate[] {
   const match = /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.exec(text);
   if (!match) return [];
-  const after = text.slice(match.index);
-  const endMatch = /(?:另有\s*\d+\s*个|(?:\n\s*(?:写出的构建名|问题与未知|条目|要求项|规则|结果)|\n\n)|[。])/u.exec(after);
-  const section = endMatch ? after.slice(0, endMatch.index) : after;
-
-  const parts = section.split(/[、,\n]|[；;](?=(?:Rel|Beta)_|另有)/u);
-  const candidates: ParsedCandidate[] = [];
-  for (const part of parts) {
-    const nameMatch = /(?:Rel|Beta)_[A-Za-z0-9_.\-]+/.exec(part);
-    if (!nameMatch) continue;
-    const name = nameMatch[0];
-    const baseMatch = /(?:依据|基于|based\s+on)\s*((?:Rel|Beta)_[A-Za-z0-9_.\-]+)/i.exec(part);
-    const base = baseMatch ? baseMatch[1] : name;
-    const builtMatch = /制作于\s*([0-9]{4}-[0-9]{2}-[0-9]{2})(?:\s+([0-9]{2}:[0-9]{2}))?/.exec(part);
-    const built = builtMatch ? `${builtMatch[1]}T${builtMatch[2] ?? '00:00'}:00` : null;
-    candidates.push({ name, base, built, raw: part.trim() });
+  const statement = text.slice(match.index).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].replace(/，(?:支持|未知|反驳).*$/, '');
+  const colon = statement.indexOf('：');
+  if (colon < 0) return [];
+  const out: ParsedCandidate[] = [];
+  for (const raw of statement.slice(colon + 1).split('；')) {
+    const row = /^([A-Za-z0-9_.-]+)（(APV|NSAE)(?:，基于 ([A-Za-z0-9_.-]+))?）(制作时间未知|制作于 ([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}))，(未发布|已发布 ([0-9]{4}-[0-9]{2}(?:-[0-9]{2})?))$/.exec(raw.trim());
+    if (!row) continue;
+    out.push({ name: row[1], family: row[2], base: row[3] ?? row[1], baseMention: row[3] !== undefined, built: row[5] ? `${row[5]}T${row[6]}:00` : null, released: row[8] ?? null, raw: raw.trim() });
   }
-  return candidates;
+  return out;
 }
 
 /** Builds manual spot-check report section from gold plmFound records. */
@@ -295,126 +319,40 @@ export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]):
   return { stories, bugs, unclassified, all, fromData: false };
 }
 
-function checkCandidateBuilds(
-  area: string,
-  text: string,
-  goldCandidatesInput: BuildCandidateGold[] | BuildCandidatesGold,
-  writtenBuildsInput?: WrittenBuildGold[],
-  docPrefix = '',
+export function checkCandidateBuilds(
+  area: string, text: string, input: BuildCandidateGold[] | BuildCandidatesGold | undefined,
+  writtenInput?: WrittenBuildGold[], prefix = '',
 ): Check[] {
   const checks: Check[] = [];
-  const goldCandidates: BuildCandidateGold[] = Array.isArray(goldCandidatesInput)
-    ? goldCandidatesInput
-    : goldCandidatesInput.candidates;
-  const goldWritten: WrittenBuildGold[] = Array.isArray(goldCandidatesInput)
-    ? (writtenBuildsInput ?? [])
-    : (goldCandidatesInput.written ?? writtenBuildsInput ?? []);
-
-  const reported = parseReportedCandidates(text);
-  const orderedGold = orderGoldCandidates(goldCandidates);
-  const expectedListed = orderedGold.slice(0, MAX_LISTED);
-  const expectedNames = new Set(expectedListed.map((c) => c.name));
-  const reportedNames = new Set(reported.map((c) => c.name));
-
-  const missing = [...expectedNames].filter((n) => !reportedNames.has(n));
-  const extra = [...reportedNames].filter((n) => !expectedNames.has(n));
-
-  checks.push({
-    area,
-    name: `${docPrefix}构建候选：Hub 报出的候选构建名集合与独立依据一致`,
-    expected: `共 ${expectedNames.size} 个（${[...expectedNames].sort().join('、')}）`,
-    actual: missing.length === 0 && extra.length === 0
-      ? `共 ${reportedNames.size} 个，集合一致`
-      : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
-    ok: missing.length === 0 && extra.length === 0,
+  const add = (name: string, ok: boolean, expected = '一致', actual = ok ? '一致' : '不一致'): void => { checks.push({ area, name: prefix + name, expected, actual, ok }); };
+  if (input === undefined) { add('构建候选：独立答案完整', false, '候选依据 1 份', '候选依据 0 份'); return checks; }
+  const gold = orderGoldCandidates(Array.isArray(input) ? input : input.candidates);
+  const claims = text.split('\n').filter(line => /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.test(line));
+  if (claims.length !== 1 || /，未知(?:，|；|$)/.test(claims[0])) { add('构建候选：文档自己的主张可用', false, '可用主张 1 条', '可用主张 0 条'); return checks; }
+  const statement = claims[0], reported = parseReportedCandidates(statement);
+  const total = Number(/的构建候选\s+(\d+)\s+个/.exec(statement)?.[1] ?? -1);
+  const aliases = Number(/其中别名\s+(\d+)\s+个/.exec(statement)?.[1] ?? 0);
+  add('构建候选：候选总数', total === gold.length, `${gold.length} 个`, `${total < 0 ? 0 : total} 个`);
+  add('构建候选：别名数', aliases === gold.filter(c => c.name !== c.base).length);
+  const expected = gold.slice(0, MAX_LISTED);
+  const missing = expected.filter(c => !reported.some(r => r.name === c.name)).length;
+  const extra = reported.filter(c => !expected.some(r => r.name === c.name)).length;
+  add('构建候选：候选构建名集合', !missing && !extra && reported.length === expected.length, `${expected.length} 个`, `缺 ${missing} 个，多 ${extra} 个`);
+  add('构建候选：超出上限的候选构建计数（另有）', Number(/；另有\s*(\d+)\s*个/.exec(statement)?.[1] ?? 0) === Math.max(0, gold.length - MAX_LISTED));
+  expected.forEach((candidate, j) => {
+    const got = reported[j], label = `第 ${j + 1} 个候选：`;
+    add(label + '名称和顺序', got?.name === candidate.name);
+    add(label + '名称族', got?.family === candidate.family);
+    add(label + '基础构建', !!got && got.base === candidate.base && got.baseMention === (candidate.base !== candidate.name));
+    add(label + '制作时间', !!got && (got.built?.slice(0, 16) ?? null) === (candidate.built?.slice(0, 16) ?? null));
+    add(label + '发布状态和日期', !!got && got.released === (candidate.released?.slice(0, 10) ?? null));
   });
-
-  const expectedMore = Math.max(0, goldCandidates.length - MAX_LISTED);
-  const moreMatch = /另有\s*(\d+)\s*个/.exec(text);
-  const reportedMore = moreMatch ? Number(moreMatch[1]) : null;
-  const moreOk = expectedMore > 0 ? reportedMore === expectedMore : reportedMore === null;
-
-  checks.push({
-    area,
-    name: `${docPrefix}构建候选：超出上限的候选构建计数与独立依据一致`,
-    expected: expectedMore > 0 ? `另有 ${expectedMore} 个` : '没有“另有”计数',
-    actual: reportedMore !== null
-      ? `另有 ${reportedMore} 个`
-      : (expectedMore > 0 ? '未报告“另有”计数' : '没有“另有”计数'),
-    ok: moreOk,
+  const written = Array.isArray(input) ? writtenInput ?? [] : input.written ?? writtenInput ?? [];
+  written.forEach((item, j) => {
+    const owned = text.split('\n').filter(line => line.includes(item.name)).join('\n');
+    const ok = item.classification === 'known' ? /是定位到的版本线的构建|是候选/.test(owned) : item.classification === 'other_line' ? owned.includes('属于版本线') && (!item.line || owned.includes(item.line)) : /不认识写出的构建名/.test(owned);
+    add(`第 ${j + 1} 个写出的构建名分类`, ok);
   });
-
-  for (const alias of expectedListed.filter((c) => c.name !== c.base)) {
-    const item = reported.find((r) => r.name === alias.name);
-    const aliasOk = item !== undefined && (item.base === alias.base || item.raw.includes(alias.base));
-    checks.push({
-      area,
-      name: `${docPrefix}候选别名 ${alias.name} 带出依据的构建 ${alias.base}`,
-      expected: `注明依据构建 ${alias.base}`,
-      actual: aliasOk ? `已带出依据构建 ${alias.base}` : (item ? `未注明依据构建（实际：${item.raw}）` : '未列出该候选'),
-      ok: aliasOk,
-    });
-  }
-
-  for (const gold of expectedListed) {
-    if (gold.built === undefined && gold.base === undefined) continue;
-    const item = reported.find((r) => r.name === gold.name);
-    const expected: string[] = [];
-    const actual: string[] = [];
-    let ok = item !== undefined;
-    if (gold.built !== undefined) {
-      expected.push(`制作于 ${gold.built ?? '未知'}`);
-      const got = item === undefined ? '' : item.built === null ? '制作时间未知' : item.built.replace('T', ' ').slice(0, 16);
-      actual.push(got);
-      const timeMatch = item !== undefined && (
-        gold.built === null
-          ? item.built === null
-          : (item.built !== null && item.built.slice(0, 16) === gold.built.slice(0, 16))
-      );
-      ok = ok && timeMatch;
-    }
-    if (gold.base !== undefined && gold.base !== gold.name) {
-      expected.push(`基于 ${gold.base}`);
-      const got = item === undefined ? '' : item.base;
-      actual.push(got === gold.base ? `基于 ${gold.base}` : `基于 ${got || '（未注明）'}`);
-      ok = ok && item !== undefined && item.base === gold.base;
-    }
-    checks.push({
-      area,
-      name: `${docPrefix}候选 ${gold.name} 的制作时间与基础构建与独立依据一致`,
-      expected: expected.join('；'),
-      actual: ok ? actual.join('；') : item === undefined ? '未列出该候选' : `不一致（${actual.join('；')}）`,
-      ok,
-    });
-  }
-
-  for (const w of goldWritten) {
-    let match = false;
-    let actualDesc = '';
-    if (w.classification === 'known') {
-      match = text.includes(`写出的构建名 ${w.name} 是定位到的版本线的构建`) ||
-              text.includes(`写出的构建名 ${w.name} 是候选`) ||
-              new RegExp(`${w.name}[^\\n]*?(?:已知|定位到的版本线|候选)`).test(text);
-      actualDesc = match ? '已知构建' : '未按已知报告';
-    } else if (w.classification === 'other_line') {
-      const lineMatch = w.line ? text.includes(w.line) : true;
-      match = (text.includes(`写出的构建名 ${w.name} 属于版本线`) || text.includes('build_other_line') || new RegExp(`${w.name}[^\\n]*?(?:属于版本线|另一条线)`).test(text)) && lineMatch;
-      actualDesc = match ? `属于另一条版本线${w.line ? ` ${w.line}` : ''}` : '未报告为别的版本线';
-    } else {
-      match = text.includes(`知识库不认识写出的构建名 ${w.name}`) ||
-              text.includes(`不认识写出的构建名 ${w.name}`) ||
-              new RegExp(`${w.name}[^\\n]*?(?:未知|不认识)`).test(text);
-      actualDesc = match ? '知识库不认识（未知）' : '未报告为未知';
-    }
-    checks.push({
-      area,
-      name: `${docPrefix}写出的构建名 ${w.name} 分类与独立依据一致（${w.classification}）`,
-      expected: `分类为 ${w.classification}${w.line ? ` (${w.line})` : ''}`,
-      actual: actualDesc,
-      ok: match,
-    });
-  }
-
   return checks;
 }
 
@@ -462,7 +400,8 @@ export default function scenario(gold: LocationGold): Scenario {
         '定位完成。',
       ),
     check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
+      const resultLines = reassembleResultLines(turns);
+      const text = resultLines.join('\n');
       const has = (needle: string): boolean => text.includes(needle);
 
       const checks: Check[] = [
@@ -606,9 +545,7 @@ export default function scenario(gold: LocationGold): Scenario {
           }
 
           // Candidates for this doc if provided
-          if (doc.buildCandidates !== undefined) {
-            checks.push(...checkCandidateBuilds(area, text, doc.buildCandidates, doc.writtenBuilds, docPrefix));
-          }
+          checks.push(...checkCandidateBuilds(area, ownClaimTexts(resultLines, doc.document, 'build_candidates').join('\n'), doc.buildCandidates, doc.writtenBuilds, docPrefix));
         }
       } else {
         // Single document backward-compatible checks
@@ -662,10 +599,11 @@ export default function scenario(gold: LocationGold): Scenario {
           }
         }
 
-        if (singleDoc.buildCandidates !== undefined) {
-          checks.push(...checkCandidateBuilds(area, text, singleDoc.buildCandidates, singleDoc.writtenBuilds));
-        }
+        checks.push(...checkCandidateBuilds(area, ownClaimTexts(resultLines, singleDoc.document, 'build_candidates').join('\n'), singleDoc.buildCandidates, singleDoc.writtenBuilds));
       }
+
+      const compared = docs.flatMap(doc => ownClaimTexts(resultLines, doc.document, 'build_candidates').filter(line => !/，未知(?:，|；|$)/.test(line)).flatMap(parseReportedCandidates));
+      for (const [name, ok] of [['APV 名称族', compared.some(c => c.family === 'APV')], ['NSAE 名称族', compared.some(c => c.family === 'NSAE')], ['别名', compared.some(c => c.baseMention)]] as const) checks.push({ area, name: '候选覆盖：' + name, expected: '至少 1 个', actual: ok ? '至少 1 个' : '0 个', ok });
 
       checks.push({
         area,
