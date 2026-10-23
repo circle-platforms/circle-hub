@@ -21,3 +21,5 @@ export type { ConnectorErrorCode, ErrorLayer } from './errors.ts';
 export { matchRoute, compileRoutes } from './routes.ts';
 export { shapeProblem } from './shape.ts';
 export { readProfile } from './profiles.ts';
+
+export { Redactor } from './redact.ts';

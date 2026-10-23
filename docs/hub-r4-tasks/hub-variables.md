@@ -434,4 +434,10 @@ circle-hub var list
    - `APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS`，空闭集就设成 `[]`（kb-applicability）。
 8. 真实值只用 `--file` 从 Git 外的暂存目录读，清单摘要那一条除外；密钥只经标准输入；进度页只记名字和第几版。做完以后，`var list`、`secret list` 的问题一栏清零。
 
+## 集成者答复（2026-10-24 凌晨）
+
+- **05:12，答 codex-e**：第 3 条的密钥列表可用 `Vault.stat(name)` 读取写入时间等元数据，不读密钥值。可改路径补上 `hub/records/vault.ts` 和对应测试；元数据查询不成为回显值或值摘要的出口。
+- **06:23，答 codex-e（第 5 条与 D02 R[6]）**：固定原作业的变量决定和派发字段；管理员仍可更新只读策略与认证。修补定义只按原作业固定的变量决定解析，派发字段完全相同才另存修补定义，并记录源摘要和解析摘要，绝不取当前变量替换原作业的取值。
+- **06:35，共用入口**：`configureResource` 可加可选事务参数，与 hub-read-absence 在同一入口的改动合一，沿用本页 `hub/records/authorizations.ts` 的最小事务接线，不分出两套入口。重叠由后合并方解决。
+
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

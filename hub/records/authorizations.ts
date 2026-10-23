@@ -144,6 +144,11 @@ export class RecordAuthorizations implements Authorizations {
     return this.grant(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason });
   }
 
+  async configureResourceInTransaction(by: Principal, object: string, bound: string | null, reason: string, tx: Transaction, revoked = false): Promise<AuthorizationRecord> {
+    if (!revoked && !isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, revoked, tx);
+  }
+
   async resourceConfig(resourceId: string): Promise<AuthorizationRecord | null> {
     const record = await this.latest(RESOURCE_CONFIG, WHOLE_HUB, resourceId);
     return record !== null && this.#active(record) ? record : null;

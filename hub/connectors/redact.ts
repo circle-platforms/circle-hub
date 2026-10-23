@@ -6,6 +6,8 @@
 // request that would carry one is refused. Login credentials that are only sent in the login body (a user name, a password
 // digest) are masked in texts but are not looked for in answers: a user name may appear in ordinary data.
 
+import {createHash} from 'node:crypto';
+
 const MASK = '***';
 /** Values shorter than this are not masked (they would mask ordinary words); credentials are longer. */
 const MIN_SECRET = 4;
@@ -14,7 +16,7 @@ const MIN_SENT = 8;
 const MAX_TEXT = 2000;
 
 function forms(secret: string): string[] {
-  return [secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1), Buffer.from(secret).toString('base64')];
+  return [secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1), Buffer.from(secret).toString('base64'),createHash('sha256').update(secret).digest('hex'),createHash('sha512').update(secret).digest('hex')];
 }
 
 function charsetOf(mediaType: string): string {
@@ -57,10 +59,11 @@ export class Redactor {
       const colon = decoded.indexOf(':');
       if (colon >= 0 && /^[\x20-\x7e]+$/.test(decoded)) {
         this.add(decoded);
-        values.push(decoded.slice(colon + 1));
+        values.push(decoded.slice(0,colon),decoded.slice(colon + 1));
       }
     }
     for (const value of values) {
+      this.add(value);
       if (value.length < MIN_SENT) continue;
       for (const form of forms(value)) {
         if (form.length < MIN_SENT || this.#sent.has(form)) continue;
@@ -105,6 +108,8 @@ export class Redactor {
     return out;
   }
 
+  /** Masks known material without truncating or changing structural whitespace in captured responses. */
+  maskText(value:string):string {let text=value;for(const secret of [...this.#secrets].sort((a,b)=>b.length-a.length))if(text.includes(secret))text=text.split(secret).join(MASK);return text;}
   /** The text with every known secret masked, control characters removed and at most 2000 characters. */
   text(value: unknown): string {
     let text = typeof value === 'string' ? value : String(value);

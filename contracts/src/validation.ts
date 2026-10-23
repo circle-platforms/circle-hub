@@ -22,11 +22,13 @@ import { ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One concrete fact the process must obtain; whitespace never describes a missing fact. */
 export const MissingFact = z.string().regex(/\S/, 'name the missing fact');
+/** A nonblank external account identity supplied by the referenced mapping. */
+export const MappedIdentity=z.string().regex(/\S/,'name the mapped external identity').describe('External account identity bound by the referenced mapping');
 /** Named request recipients are accounts or mapped external identities, never a role placeholder. */
 export const ExitAudience = z.union([
   z.strictObject({hub:z.literal(true)}),
   z.strictObject({user:UserId}),
-  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MissingFact})}),
+  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MappedIdentity})}),
 ]);
 export const UnknownExit = z.strictObject({
   action:ExitActionSchema,
@@ -273,22 +275,28 @@ export const StoredLayerResult=z.discriminatedUnion('layer',[
 ]);
 const StoredRequirementResult=RequirementResult.safeExtend({layers:z.array(StoredLayerResult)});
 const storedRequirementFields={requirements:z.array(StoredRequirementResult)};
-const storedItems={
+export const StoredPartitionItem={
   delivered:PartitionItem.delivered.safeExtend(storedRequirementFields),
   rejected:PartitionItem.rejected.safeExtend(storedRequirementFields),
   quarantined:PartitionItem.quarantined.safeExtend(storedRequirementFields),
   incomplete:PartitionItem.incomplete.safeExtend(storedRequirementFields),
 } satisfies Record<Partition,z.ZodType>;
-const storedArrays=Object.fromEntries(PARTITION.map(p=>[p,z.array(storedItems[p])])) as PartitionArrays;
+const storedArrays=Object.fromEntries(PARTITION.map(p=>[p,z.array(StoredPartitionItem[p])])) as PartitionArrays;
 export const StoredValidationResult=ValidationResult.safeExtend({partitions:Partitions.safeExtend(storedArrays)});
-export function readStoredValidationResult(value:unknown){
-  const result=StoredValidationResult.parse(value),notices:Array<{path:string;message:string}>=[];
-  for(const p of PARTITION)result.partitions[p].forEach((item,i)=>item.requirements.forEach((requirement,j)=>requirement.layers.forEach((layer,k)=>{
+/** Missing recovery facts on one immutable historical item; paths are relative to the supplied prefix. */
+export function storedItemNotices(item:Pick<z.infer<typeof StoredPartitionItem.delivered>,'requirements'>,prefix=''){
+  const notices:Array<{path:string;message:string}>=[];
+  item.requirements.forEach((requirement,j)=>requirement.layers.forEach((layer,k)=>{
     const rules=layer.layer==='static'?STATIC_TERMINAL_RULES:DYNAMIC_TERMINAL_RULES;
     if(ruleOf(rules,layer.terminal)?.reason!=='required')return;
-    const path='/partitions/'+p+'/'+i+'/requirements/'+j+'/layers/'+k;
+    const path=prefix+'/requirements/'+j+'/layers/'+k;
     if(layer.exit===undefined)notices.push({path:path+'/exit',message:'出口未写'});
     if(layer.missing===undefined)notices.push({path:path+'/missing',message:'缺失事实未写'});
-  })));
+  }));
+  return notices;
+}
+export function readStoredValidationResult(value:unknown){
+  const result=StoredValidationResult.parse(value),notices:Array<{path:string;message:string}>=[];
+  for(const p of PARTITION)result.partitions[p].forEach((item,i)=>notices.push(...storedItemNotices(item,'/partitions/'+p+'/'+i)));
   return {result,notices};
 }

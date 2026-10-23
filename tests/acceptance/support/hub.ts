@@ -82,26 +82,26 @@ export async function openBed(options: BedOptions): Promise<Bed> {
     const plm = plmStub;
     const agile = await hub.addResource({
       system_pack: SYSTEM.agile,
+      credentials:{username:'DEMO_PORTAL_USER',password:'DEMO_PORTAL_PASSWORD'},
       name: '合成敏捷平台',
       environment: 'test',
       origins: { 'agile-oauth': stubs.agile.origin, 'agile-api': stubs.agile.origin },
       allow_plaintext: [stubs.agile.origin],
       settings: { roots: [ROOTS.first, ROOTS.second] },
     });
-    await hub.setCredential(agile.id, 'username', AGILE_ACCOUNT.username);
-    await hub.setCredential(agile.id, 'password', AGILE_ACCOUNT.password);
     let plmResource: ResourceRecord | null = null;
     if (options.plm !== false) {
       plmResource = await hub.addResource({
         system_pack: SYSTEM.plm,
+        credentials:{username:'DEMO_PORTAL_USER',password:'DEMO_PORTAL_PASSWORD'},
         name: '合成 PLM',
         environment: 'test',
         origins: { 'plm-oauth': stubs.agile.origin, 'plm-api': plm.origin },
         allow_plaintext: [stubs.agile.origin, plm.origin],
       });
-      await hub.setCredential(plmResource.id, 'username', AGILE_ACCOUNT.username);
-      await hub.setCredential(plmResource.id, 'password', AGILE_ACCOUNT.password);
     }
+    await hub.setCredential(agile.id,'username',AGILE_ACCOUNT.username);
+    await hub.setCredential(agile.id,'password',AGILE_ACCOUNT.password);
     const siteResource = await hub.addResource({
       system_pack: SYSTEM.site,
       name: '合成构建站',

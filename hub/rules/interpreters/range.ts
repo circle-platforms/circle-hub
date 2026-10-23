@@ -1,7 +1,7 @@
 // range@1: numeric ranges per value, prefixes per value (optionally by whole segments) and thresholds on an aggregate of all
 // selected values. Numbers are JSON numbers (by their shortest decimal text) or decimal strings, compared exactly.
 import { CORE_VIOLATION_CODES, type CoreViolationCode } from '../../../contracts/generated/protocol.ts';
-import { MEASURE_LABEL } from '../../../contracts/generated/vocabulary.ts';
+import { MEASURE_LABEL, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RangeTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { baseFor, quoted, refute, support, unknown } from '../outcome.ts';
 import { normalizeText, trimWhitespace } from '../text.ts';
@@ -121,7 +121,9 @@ export const rangeInterpreter = defineInterpreter({
           }
           const ns = numbers.map((n) => (n as { value: Decimal }).value);
           if (ns.length === 0 && t.measure !== 'sum') {
-            outcomes.push(unknown(base, 'missing_input', `${check.values} 没有选中取值，无法计算${MEASURE_TEXT[t.measure]}`));
+            const data={measure:t.measure,empty:true,check:c};
+            const message=check.values+' 是空集，按'+(t.empty===undefined?'默认规则':'声明')+labelOf('verdict',t.empty??'refute')+'其'+MEASURE_TEXT[t.measure]+'阈值检查';
+            outcomes.push(t.empty==='support'?support(base,message,{data}):refute(base,'core.range.out_of_bounds',message,{data}));
             return;
           }
           if (t.measure === 'sum') measured = ns.reduce(addDecimal, ZERO);

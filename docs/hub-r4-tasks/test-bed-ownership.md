@@ -38,7 +38,7 @@
   - `hub/server/cli-admin.ts` 的 lease 命令和 `hub/server/assemble/cli-admin.test.ts`；
   - `packs/workflow/test-bed/**`；
   - `tests/acceptance/24-lease-start-run.test.ts`、`25-test-bed.test.ts`；
-  - `hub/dispatch/` 下只加一个测试文件，不改派发的代码。
+  - `hub/dispatch/` 原范围只加一个测试文件；凌晨补充授权的只读公共查询及导出见本页“集成者答复”，不改派发行为。
 
   别的路径不动。还有几处重叠：
   - hub-pack-findings 第 9 条也改台架包，集成者让两件先后做。
@@ -92,7 +92,7 @@
      - 持有人（用户编号和名字）：只在这次运行的用户是这一行所在前缀的主人、或是管理员时才有。持有人自己照旧看 `mine`。
    - 另加一张登记表：声明前缀下每个已登记的前缀，加“是不是我的”。别人的登记不带名字，管理员的运行带。
    - 两张都冻结进运行记录；用记录里的上下文重跑投影，得到同样的请求。
-   - 每行还要有一项：这些键上有没有还没终态的派发作业，有的话是哪个。这项经 `deps.ts` 里一个只读端口，向 hub-job-dispatch 已有的作业记录查（作业按围栏令牌记着租约键），在 `hub/server/assemble/hub.ts` 里接上。没有现成的查询，先回报，不要自己去改派发的代码。
+   - 每行还要有一项：这些键上有没有还没终态的派发作业，有的话是哪个。这项经 `deps.ts` 里一个只读端口，向 hub-job-dispatch 已有的作业记录查（作业按围栏令牌记着租约键），在 `hub/server/assemble/hub.ts` 里接上。没有现成的查询时，按本页“集成者答复”的授权补只读公共查询，不改派发行为。
    - `RunContext.leases` 的说明去掉“可见性未定”，写成现在的规则。
    - 测试：主人、持有人、第三个人、管理员四个视角各开一个运行，断言冻结的行。第三个人的行里有运行号，没有持有人的编号和名字。
 4. **主人强制释放**（`start.ts` 的 `grantLeases`、`contracts/src/pack.ts`）：
@@ -148,5 +148,13 @@
    - C 登记 A 的台架被拒；管理员把它改登记给 C 以后，C 成了主人，A 不再是；
    - 管理员 `lease list` 看到主人、持有人和运行。
    - case-compile 也读租约视图，它的测试照样要过。
+
+## 集成者答复（2026-10-24 凌晨）
+
+- **05:22，答 codex-d，可改路径补充**：可在 `hub/dispatch/**` 加按租约键查询未终态作业的只读公共方法、API 导出及测试；只读既有记录，不改派发行为。`expires_at` 为 null 判为不到期，不得因没有时间值判成已过期。
+- **05:24**：用 `start.ts` 的 `LeaseRequest` 替换 `projection.ts` 的手写类型，可改这一处及对应测试。
+- **05:37**：旧 `hours`、`extend` 只保留拒绝入口，给出确定的修正说明；不保留旧的有时长预订或续期功能。
+- **05:56，可改路径补充**：`packs/workflow/case-compile/functions/bed.ts`、`project.ts` 及测试适配 `until: null`，包升补丁号并重签；对应 README 和版本断言同步。这里不改其他编译规则。
+- `contracts/src/pack.ts` 与 hub-pack-findings 的动态读取声明有重叠，后合并方解冲突，保留双方的可选契约与测试。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

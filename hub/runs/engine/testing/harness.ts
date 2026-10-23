@@ -29,6 +29,7 @@ export interface HarnessOptions {
   limits?: Partial<Limits>;
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
+  leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
 }
 
 export interface Harness {
@@ -105,7 +106,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       knowledge,
       external,
       now,
-      ...(leases !== null ? { leases } : {}),
+      ...(leases !== null ? { leases, leaseJobs: options.leaseJobs ?? (async () => []) } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),
       adminLog: (entry) => logs.push(entry),

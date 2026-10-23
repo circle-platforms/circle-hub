@@ -455,3 +455,19 @@ test('reason selectors remain typed causes rather than installed-interpreter cod
 test('static fact layers without checks cannot be newly published',async()=>{
   await refused(editJson(workflowPack(),'requirements.json',(json:Json)=>{const requirement=json.requirements.find((r:Json)=>r.accepted_producer==='fact');requirement.checks=[];}),'requirements.no_check');
 });
+
+test('publication rejects static facts without checks and dynamic facts without an observation',async()=>{
+  for(const target of ['item','run']){
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['static'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/checks'});
+    await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/observation'});
+  }
+});
+
+test('publication accepts explicitly observed dynamic facts without requiring a static check',async()=>{
+  for(const target of ['item','run'])await accepted(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['dynamic'],checks:[],observation:'synthetic.observe@1',error_handling:[]});}));
+});
+
+test('publication refuses reject by reason even when an artifact blocking check is installed',async()=>{
+  const pack=checks(file=>{file.checks[0].judges='artifact_under_verification';});
+  await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
+});

@@ -10,7 +10,7 @@ import {
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
-  RequirementsFile,
+  PublishableRequirementsFile,
   SlotsFile,
   WorkflowFile,
   type CheckEntry,
@@ -241,7 +241,7 @@ function judgmentRequirement(r: { accepted_producer: string }): boolean {
 async function validateWorkflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<{ declarations: WorkflowDeclarations; samples: LoadedSample[] } | null> {
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
-  const requirements = c.parse('requirements.shape', 'requirements.json', RequirementsFile, 'requirements@1');
+  const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);
@@ -366,6 +366,10 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       r.error_handling.forEach((row, k) => {
         const field = `/requirements/${i}/error_handling/${k}/${row.reason!==undefined?'reason':'code'}`;
         const selector=row.reason!==undefined?'原因 '+labelOf('reason',row.reason):row.code;
+        if(row.reason!==undefined && row.action==='reject'){
+          c.add(problem('requirements.reject_scope','requirements.json','原因行不能处理为进已拒收；进已拒收只用于待判定产物上的阻断检查码','按原因声明修复或其他允许动作，按检查码声明已拒收',{field:'/requirements/'+i+'/error_handling/'+k+'/action'}));
+          return;
+        }
         if (row.action === 'reject' && !r.checks.some((id) => blockingOnArtifact.has(id))) {
           const artifact = labelOf('source_role', 'artifact_under_verification');
           const others = ERROR_HANDLING.filter((a) => a !== 'reject').map((a) => labelOf('error_handling', a));

@@ -3,6 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/sdk/types.js';
 import { sha256Hex } from '../records/api.ts';
+import type {Redactor} from '../connectors/api.ts';
 import type { ExecutorDefinition, CallRole } from './definition.ts';
 import { rpcResponse, toolContent, containsRpcReply } from './observations.ts';
 import { bind } from './definition.ts';
@@ -25,6 +26,7 @@ export class RpcReplyError extends Error {constructor(){super('目标的完整�
 export class CapabilityPolicyError extends Error { constructor(){super('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');} }
 export class RpcClient {
   readonly definition: ExecutorDefinition;
+  readonly #redactor:Redactor|undefined;
   readonly #secret: string;
   readonly #job: string;
   readonly #save: SaveResponse;
@@ -34,7 +36,8 @@ export class RpcClient {
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
-  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date()) {
+  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date(),redactor?:Redactor) {
+    this.#redactor=redactor;
     this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save; this.#now = now;
     if (definition.actor && (job.length > definition.actor.max_length || /[\r\n]/.test(job) || !new RegExp(definition.actor.pattern).test(job))) throw new Error('代表身份不符合执行器声明；修正代表身份约束后再连接，尚未发请求');
     if (!secret || /[\r\n]/.test(secret)) throw new Error('执行器密钥缺失或无效');
@@ -54,7 +57,7 @@ export class RpcClient {
         } catch { return token; }
       });
     };
-    return scrub(text, 0);
+    const own=scrub(text,0);return this.#redactor?.maskText(own)??own;
   }
   async connect(): Promise<void> {
     const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } });

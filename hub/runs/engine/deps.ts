@@ -21,6 +21,7 @@ export interface RunsEngineDeps {
   dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string):Promise<import('../../dispatch/api.ts').RunJob[]>; reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus> };
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
+    variables: Pick<RecordsKit['variables'], 'snapshot'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
     principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
   };
@@ -41,6 +42,8 @@ export interface RunsEngineDeps {
   adminLog?: (entry: AdminLogEntry) => void;
   /** The lease service (D04 R[0]); without it a workflow that declares leases cannot start. */
   leases?: LeaseService;
+  /** Trusted, read-only unfinished jobs by resource key; no fencing data leaves this port. */
+  leaseJobs?: (keys: readonly string[]) => Promise<Array<{ key: string; job: string }>>;
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

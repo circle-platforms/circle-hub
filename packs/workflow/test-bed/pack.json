@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "设备台架",
-  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，单次最多 8 小时）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "44bc7c87c285c576f3ce4f2633262f2bbbd8c0702f3c6d27afee0a2f391214f1",
-      "size": 3884
+      "sha256": "98273c7e9d635b2174f84d42cecefc7e6a84454bd01b8deda9cdccc26d947b24",
+      "size": 2347
     },
     {
       "path": "checks.json",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "f867d1e6eaf994dc5ade8318edd9fed7704cac3d42232adc2fcea810e2f0d4dc",
-      "size": 11656
+      "sha256": "a07a48e50e6f49f76b3daaf50ff5796f149735bf6a2c5c54ba9c73c5932cd854",
+      "size": 12693
     },
     {
       "path": "functions/common.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "f58918dcaed0cfa429e17b36e1ffce8f32026d2ffc9bf6258642c14b3efd57a9",
-      "size": 17779
+      "sha256": "567bb2311a3e6e82554ebab96ce11e649203a58355cd24e007361e310a52af96",
+      "size": 18435
     },
     {
       "path": "functions/facts.ts",
@@ -78,13 +78,18 @@
     },
     {
       "path": "functions/match.ts",
-      "sha256": "79c27c1e4696e00d3217ed6e9833f59a4042f9a2176c4d3ecc6bfd005bcee20d",
-      "size": 7531
+      "sha256": "1e5abade880c8f9140b81b9e7a6789787b315c917a984cf887ab9f9fc0614c5d",
+      "size": 7894
+    },
+    {
+      "path": "functions/ownership.ts",
+      "sha256": "a98463628da8c33436c16075ad90ed67ae2055f53d14d54d58612f9358ad86aa",
+      "size": 4186
     },
     {
       "path": "functions/project.ts",
-      "sha256": "0228aaaa01c293106a3500c8a0935963c9d68e45036d0840ed962bef83bbdc58",
-      "size": 8040
+      "sha256": "fec1414652817ec59f3bfa2bc1a26eeabd43d286a469673b5aea5487be4ee4a6",
+      "size": 8337
     },
     {
       "path": "functions/subject.ts",
@@ -98,63 +103,83 @@
     },
     {
       "path": "samples/negative/acquire-mismatch.json",
-      "sha256": "f1931c5626c2e057099cc76da7650156d4a8b10d6b7bd8616120581619f8773e",
-      "size": 1793
-    },
-    {
-      "path": "samples/negative/extend-mismatch.json",
-      "sha256": "48683b10bc163b434c403e63b11ab9be1e536faf9b17e7207dce92506449cc85",
-      "size": 2256
+      "sha256": "7c03d2760c3ac3e4093c41e9615a68802367b7a58284c55b5801ea542ae20168",
+      "size": 2387
     },
     {
       "path": "samples/negative/facts-mismatch.json",
-      "sha256": "aecd48634a4861b95ab51b0ba0fd4365a0f709accfcc474cb2a4cb41570f7bad",
-      "size": 2120
+      "sha256": "8fc64da502a225ffc3be38365c566fb0d340ace2b3de8af91c7ff5d62371d6c5",
+      "size": 3478
+    },
+    {
+      "path": "samples/negative/force_release-negative.json",
+      "sha256": "996859205f06fcd873ab5df9a90f5d1e15017e7ff0de37283de6a129c784d59e",
+      "size": 2321
+    },
+    {
+      "path": "samples/negative/register-negative.json",
+      "sha256": "ff474824fdac2098419ab153fe719efe6e9522416d62bdbccd08d404304c84fc",
+      "size": 2049
     },
     {
       "path": "samples/negative/release-mismatch.json",
-      "sha256": "0bbe86ab6ddbd1ddee737f8375c6833c75cb172bc66ba0f7851d920396c7ee14",
-      "size": 2200
+      "sha256": "438efd34f722b2ab85836f3459026e54bacdd795627c7c22bed5f8f59e6ab2e5",
+      "size": 3175
     },
     {
       "path": "samples/negative/search-build-mismatch.json",
-      "sha256": "56d61e2d3f530a9d621c37b15c3a77ca8fdba8db83f7d4e6f3b688e5b21cf0ff",
-      "size": 1829
+      "sha256": "cdf81d71a2b90358eddaa5e39dc20000b05373281cd399edf7ee2f616586ccaf",
+      "size": 2079
     },
     {
       "path": "samples/negative/search-mismatch.json",
-      "sha256": "aee5839a6803e13c7e3aff8e20193031d32b0b4c68f621106f2fa2758a684897",
-      "size": 1626
+      "sha256": "9a5a4cf99a2324637d8ed6b96356f54efd8afc5293965a483a0ab64bbc330ac3",
+      "size": 2148
+    },
+    {
+      "path": "samples/negative/unregister-negative.json",
+      "sha256": "3af3440e68ba0d88d8664ea8df7b3dd8e68e143cd74135184c895c2a7fd65695",
+      "size": 2222
     },
     {
       "path": "samples/positive/acquire-support.json",
-      "sha256": "9b0af5688ea5c9b956a53e554f380aac92db096e195730751f8c36bbbb2da75b",
-      "size": 1992
-    },
-    {
-      "path": "samples/positive/extend-support.json",
-      "sha256": "26b6218aa844b23a13bd0f13a6563f87189ecae7d1980d73404b9a9c55565e42",
-      "size": 2299
+      "sha256": "1fc0a8f14997ac7695430559f6b53ff5daf14a29c751b9f493bddd28bb1442e0",
+      "size": 2686
     },
     {
       "path": "samples/positive/facts-support.json",
-      "sha256": "11ed3bad787ccef8abd0cfc6bc8488117ea5296c1c062e1f00710662e5430ec8",
-      "size": 2411
+      "sha256": "65d2eb28a0443c68588319e1f7ca34cc75ee075837cb7852d7bdcd3596ee1422",
+      "size": 3750
+    },
+    {
+      "path": "samples/positive/force_release-positive.json",
+      "sha256": "35ee325ce347b94aea69d84c788336b47e5f834ce9429d4fb0586e58afe00a7f",
+      "size": 2330
+    },
+    {
+      "path": "samples/positive/register-positive.json",
+      "sha256": "5ffc079efb8615540c15754a8a71ae9fff873b389b9fb342ed7badf64c2bc1d7",
+      "size": 2017
     },
     {
       "path": "samples/positive/release-support.json",
-      "sha256": "a03963aad57e01dc4437444aa0e264acacf417a17c49fe11285e230ddcb27bb0",
-      "size": 2151
+      "sha256": "fe2de34a0dba3f4f0322788bb2dafb7255da9cf7fd92ca0ff74aa1a637d8fbf3",
+      "size": 3244
     },
     {
       "path": "samples/positive/search-build-support.json",
-      "sha256": "3c3f45ca6a4850b682294d6819d6eaadc85d6d14647c5f076336ca25c89d66eb",
-      "size": 1861
+      "sha256": "22da067ecce60102a88b3d33fd72e8730f0aaa064270ddc25a68486220374890",
+      "size": 2185
     },
     {
       "path": "samples/positive/search-support.json",
-      "sha256": "7d2b557653829490a4ea103ed8de9f14ab9dbfc8276436f432d440ffbbaa849d",
-      "size": 1536
+      "sha256": "83b6c284af4de8214daef0466d2af550b90925d4b57ef505fae63da1910ce691",
+      "size": 1918
+    },
+    {
+      "path": "samples/positive/unregister-positive.json",
+      "sha256": "ca14abce89cd9ac5553395e67d899f42b919362136203be80afc9657a607cac6",
+      "size": 2220
     },
     {
       "path": "slots.schema.json",
@@ -162,9 +187,14 @@
       "size": 53
     },
     {
+      "path": "tables/codes.json",
+      "sha256": "ac97cb3f5493b7d7ad8df119a08e5a72ebdba3d48a5564ce3ba6a992a6bfe4fb",
+      "size": 1536
+    },
+    {
       "path": "workflow.json",
-      "sha256": "0de7c9d8229145b7cbf63d805fd43e5b5a6e13e5c7c88b3132e38ce866da11e6",
-      "size": 3546
+      "sha256": "1edc4b962dc92d8a1bcac47fdde53531fa956ac0ace5aa060ffe8e58efd5fe05",
+      "size": 3247
     }
   ]
 }

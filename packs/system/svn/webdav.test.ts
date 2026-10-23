@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -154,7 +155,7 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
       if (r.method === 'GET' && decodeURIComponent(r.path) === `${base}${file}`) return text(echo ? authorization : payload, 'text/plain');
       return text('Absent', 'text/plain', 404);
     });
-    resource = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings })).id;
+    resource = (await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings })).id;
   });
   after(async () => { await server?.close(); await kit?.close(); await postgres?.stop(); if (root) await rm(root, { recursive: true, force: true }); });
   const read = (id: string) => kit.connectors.reader.read(id, { principal: kit.admin, run: null, purpose: 'sync' });
@@ -165,7 +166,7 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     assert.equal(server.requests.length, 0);
   });
   test('directory pins revision and file reads preserve identical original bytes and request receipts', async () => {
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'authorization', authorization);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'authorization', authorization);
     const directory = await read(`svn:directory:${dir}`);
     assert.ok(directory.ok, JSON.stringify(directory));
     assert.equal(directory.revision, '17');
@@ -188,7 +189,7 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     assert.ok(server.requests.every((r) => r.headers.authorization === authorization));
   });
   test('missing repository_path refuses all reads without network requests', async () => {
-    await kit.connectors.admin.updateResource(kit.admin, resource, { settings: {} });
+    await kit.connectors.admin.updateResource(kit.admin, resource, { unset_settings: ['repository_path'] });
     const count = server.requests.length;
     try {
       for (const [name, key] of [['directory', dir], ['file', `17/${encodeURIComponent(`${dir}/${file}`)}`]]) {
@@ -235,7 +236,7 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
   });
   test('401 stops the static credential without a login flow or retry', async () => {
     const refusedValue = `Basic ${randomBytes(24).toString('base64')}`;
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'authorization', refusedValue);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'authorization', refusedValue);
     const count = server.requests.length;
     const first = await read(fileId);
     const second = await read(fileId);

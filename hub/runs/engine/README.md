@@ -13,7 +13,7 @@ await runs.startRun(user, input, { traceId, sessionId });   // RunsService of hu
 resolveReference, getRun, listRuns; answers are the tool outputs without `trace`) plus `startRunDetailed` (the answer, the
 whole production result of a fact-only pack, the run record digest and the evidence gaps), `startHubRun` (a run the Hub
 executes for a standing obligation), `getResult` (a result by its submission digest, accepted or not) and `runsFor`.
-Deps: `records` (store, objects, artifacts of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
+Deps: `records` (store, objects, artifacts and the read-only `variables.snapshot` port of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
 start_run size a run before storing anything; pass the whole kit), the ports `WorkflowStore`, `PacksPort`, `KnowledgePort`,
 `ExternalReaderPort` (the assembly gives it the knowledge views beside the connectors); optional `parsers` (default the core
 parsers), `sandbox` and `sandboxLimits` for every pack function call, `now`, `clientKeyWindowMs` (default 24 h) and
@@ -36,6 +36,12 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
+
+## Ordinary-variable snapshots and parameter admission
+
+Each accepted `start_run` call reads all current ordinary-variable decisions in one verified snapshot. Input binding and expected-source reads receive the same process-local map through `ExternalReadContext`; nested connector reads inherit it. The map is never serialized into the run. The returned input bytes and their source references remain frozen, so a later variable change affects a new run only. A newly referenced name absent from this snapshot requires setting the name and reopening the operation; it is never silently resolved against current state.
+
+Before schema diagnostics or any external read, the entry point scans the complete JSON tool arguments for recognizable credentials. A hit refuses the whole call with `SUBMISSION_SCHEMA_VIOLATION` and the fixed instruction “参数里不能有凭据”; no run is stored and neither values nor sensitive syntax are quoted. Reference-looking parameter strings are ordinary text: the Hub never substitutes them, and accepted parameters remain byte-equivalent JSON values in the run.
 
 ## Decisions
 
@@ -653,3 +659,28 @@ correctly refuses that pack, so its random differential run does not execute; it
 The driver also documents legacy zero-round behavior. Integrator Claude must align that separate scenario driver and
 its independent expectations with the new admission, round and unknown-error rules, retaining explicit legacy replay
 coverage. This task does not bypass admission or weaken those old comparisons to produce a green result.
+
+A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
+extend is refused for the whole request before effects, and release still requires the same user and predecessor
+lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
+unbounded; fences, holder identity and lineage remain mandatory.
+
+Lease views freeze `since`, `run`, `until`, `mine`, unfinished `jobs` and authorized `holder` identities, plus registration
+rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_registrations` are retained on the run;
+evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
+read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
+`DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.
+
+Owner `force_release` checks every key, owner/admin authority, active row, nonempty reason and unfinished dispatch job
+before any operation executes. Unfinished jobs refuse with job status/disposition instructions; local release cannot
+stop remote work. The service rechecks owner authorization under the registration lock, increments fences, and records
+the acting user, reason and original holders. Run records preserve released keys and their prior runs; originals remain
+append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
+read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
+later acquire or run-record write fails; their action records remain the source of truth.
+
+The final force-release guard runs under the same database lock used by dispatch reservation insertion. It re-reads
+unfinished jobs while the lock is held; a competing reservation rechecks fences in that transaction before it commits.
+The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
+Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
+older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.
