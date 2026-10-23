@@ -193,6 +193,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     records,
     runs,
     runsDetail: runs,
+    ...(options.command?{}:{maintenance:engine}),
     knowledge,
     workflows,
     packs: catalog,

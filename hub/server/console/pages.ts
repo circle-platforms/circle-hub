@@ -224,6 +224,8 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['前驱运行', run.predecessor === undefined ? '—' : link(`/console/runs/${run.predecessor}`, run.predecessor)],
     ['会话', run.session ?? '—'],
     ['开始时间', run.started_at],
+    ['提交期限', run.submission_due ?? '旧运行没有记录期限，请以它为前驱开新修订'],
+    ['交付', detail.latest === null ? '尚未交付' : '已有交付结果'],
     ['边界政策', run.policy ?? '—'],
     ['规程摘要', code(run.instructions_digest)],
   ]);

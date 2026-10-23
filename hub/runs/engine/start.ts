@@ -468,6 +468,7 @@ async function startFresh(
       if (author?.missingSessions.length) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `被判工作的来源缺少会话 id：${author.missingSessions.join('；')}`, {path:'/predecessor',fix:'带上 Circle-Session-Id，以被判工作为前驱开新修订并重新提交，再对新修订开复核运行'})]);
     }
   }
+  if(input.submission_due!==undefined&&Date.parse(input.submission_due)<=at.getTime())throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','提交期限必须晚于开始时刻',{path:'/submission_due',fix:'给出未来的 submission_due 后重新开始'})]);
   const parameters = checkParameters(workflow, input.parameters ?? {});
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
@@ -569,6 +570,7 @@ async function startFresh(
     ...(predecessor !== null ? { predecessor: predecessor.body.run } : {}),
     ...(session !== null ? { session } : {}),
     started_at: startedAt,
+    submission_due: input.submission_due ?? new Date(at.getTime()+86400000).toISOString(),
     ...(hub ? { host: 'hub' as const, trigger: 'standing_obligation' as const, configurer: user.id } : { runner: user.id, host: 'local_circle' as const, trigger: 'session' as const }),
     parameters,
     ...(projection.groups.length > 0 ? { groups: projection.groups } : {}),

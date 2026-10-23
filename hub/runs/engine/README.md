@@ -585,3 +585,10 @@ Every distinct unknown is retained in layer gaps even beside a settled violation
 additional item count, never a partition; the primary-terminal partitions remain disjoint and covering. Replies state
 “其中 N 个还有未决未知”. Explicit `Claim.validity.premises` submission paths can wait on another requirement's repair;
 these layers inherit its named exit and identify the requirement and repair path. No dependency is inferred from prose.
+
+New runs freeze a finite submission deadline (explicit future `submission_due`, otherwise 24 hours after start).
+The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and drains it before
+closing records; command-only assemblies do not start maintenance. An expired run with no accepted submission gets
+one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
+A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
+named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
