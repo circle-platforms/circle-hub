@@ -510,3 +510,7 @@ missing administrator acceptance and the administrator acceptance/re-evaluation 
 from the generated Reason axis; credential_unreadable belongs to ValidityStatus and is not a legal CheckOutcome.reason.
 No contract axis is widened. Legacy retain_only views receive the same evidence, and source reads remain single-attempt
 for this deterministic state. Request dispatch and automatic re-evaluation still await the model-owned exit contract.
+
+Startup-failure diagnostics retain the actual host errno/message for check and subject onError logging after retry
+exhaustion. Neither the submitted-result receipt nor persisted retry evidence carries those private causes; fixed
+check_error evidence and receipt idempotence are unchanged.

@@ -282,6 +282,16 @@ async function executePack(
   }, lim.timeoutMs, options.onAttempt, options);
 }
 
+/** Preserve host startup diagnostics only on the private error; the public sandbox message stays fixed. */
+function spawnFailure(error: unknown): SandboxError {
+  if (error instanceof SandboxError) return error;
+  const errno = typeof error === 'object' && error !== null ? (error as {code?:unknown}).code : undefined;
+  return new SandboxError('SANDBOX_UNAVAILABLE', {reason:'spawn_failed',
+    ...(typeof errno === 'string' || typeof errno === 'number' ? {errno} : {}),
+    message:error instanceof Error ? error.message : String(error),
+  });
+}
+
 function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {
   const deps = declaredDependencies();
   const nonce = randomBytes(16).toString('hex');
@@ -317,7 +327,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
         detached: process.platform !== 'win32',
       });
     } catch (error) {
-      reject(error instanceof SandboxError ? error : new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'spawn_failed' }));
+      reject(spawnFailure(error));
       return;
     }
     const frameCap = lim.outputBytes + 16 * lim.logBytes + 65_536;
@@ -423,7 +433,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       settled = true;
       kill();
       forget();
-      reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'spawn_failed', message: error.message }));
+      reject(spawnFailure(error));
     });
     // close follows exit once the pipes are drained; a descendant holding them open must not keep the call waiting.
     child.on('exit', (exitCode, signal) => {

@@ -327,3 +327,7 @@ split/timeout policies apply. Startup failures keep the bounded backoff. Declare
 SourceView.unread optionally preserves a typed fragment read failure alongside the legacy why grade. Retain-only quotes
 wait for administrator acceptance (awaiting_step), storing generated credential_unreadable as the source-specific reason
 inside unread_sources, with missing_fact/next_action. The public CheckOutcome.reason stays within its generated axis.
+
+Synchronous spawn throws and asynchronous startup error events preserve errno and the original message in private
+SandboxError.detail. The public SandboxError.message remains fixed, onAttempt keeps only bounded control metadata,
+and check outcomes retain only the existing public-detail allowlist; free-text startup causes reach administrator logs only.
