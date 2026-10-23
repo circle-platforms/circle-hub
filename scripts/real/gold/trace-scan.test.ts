@@ -60,3 +60,13 @@ test('scan recommends the sole closed traced build and prints only hashes and co
 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a defect named only as "bug to case N" in the tree document title is traced (the map-side marker family)', () => {
+  const treeWithTitle = [{ id: 'folder', label: '合成目录', cases: [], children: [{ id: 'doc-b', label: 'bug to case 910010 合成标题', children: [] }] }];
+  const result = traceGold({ html: html('910010'), maps: [{ document: 'doc-b', map }], tree: treeWithTitle });
+  assert.equal(result.defects[0]?.cases.length, 1, JSON.stringify(result.defects[0]));
+  // And in a folder label too.
+  const treeWithFolder = [{ id: 'folder', label: '缺陷目录 bug to case 910011', cases: [], children: [{ id: 'doc-c', label: '合成标题', children: [] }] }];
+  const viaFolder = traceGold({ html: html('910011'), maps: [{ document: 'doc-c', map }], tree: treeWithFolder });
+  assert.equal(viaFolder.defects[0]?.cases.length, 1);
+});

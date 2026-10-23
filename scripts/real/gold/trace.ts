@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { DefectGold, JoinCaseGold, TraceGold } from '../accept/traceability.ts';
 import { locationsGold } from './locations.ts';
-import { caseGold } from './cases.ts';
+import { bugIdsOf, caseGold } from './cases.ts';
 import { joinGold, parseClosedStatuses, type CaseInput, type DefectInput } from './join.ts';
 
 export type BugSystem = 'plm' | 'bugzilla' | 'unknown';
@@ -323,7 +323,14 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
             document: doc.document,
             id: c.id,
             title: c.title,
-            defects: [...new Set([...c.defects, ...(locations.find((l) => cleanDocId(l.document) === cleanDocId(doc.document))?.bugs ?? [])])],
+            // The tree side names defects with the same marker family the map side uses (APV README 238-239: the
+            // ids.ts bugs of the document's title and folders — 'bug to case N' included, which the case-location
+            // extractor files as unmarked).
+            defects: (() => {
+              const treeDoc = locations.find((l) => cleanDocId(l.document) === cleanDocId(doc.document));
+              if (treeDoc === undefined) return c.defects;
+              return [...new Set([...c.defects, ...bugIdsOf([treeDoc.title, ...treeDoc.ancestors].join(' '))])];
+            })(),
           });
         }
       }

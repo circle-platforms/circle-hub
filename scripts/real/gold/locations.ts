@@ -16,6 +16,8 @@ import { resolve } from 'node:path';
 export interface DocumentLocationGold {
   document: string;
   title: string;
+  /** The folder labels above the document, outermost first (the texts bug and story ids are extracted from). */
+  ancestors: string[];
   line: string | null;
   train: string | null;
   module: string | null;
@@ -398,6 +400,7 @@ export function evaluateLocation(doc: ScannedDocumentItem): EvaluatedLocation {
   const location: DocumentLocationGold = {
     document: doc.document,
     title: doc.title,
+    ancestors: doc.ancestors,
     line: lineVal,
     train: trainVal,
     module: moduleVal,
