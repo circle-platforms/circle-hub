@@ -283,3 +283,15 @@ test('equal root content does not expose an unplaced row from an unreadable prod
   assert.equal(await f.w.knowledge.treeReader().read(f.first.root!,'/',entry,{user:f.w.user.id,role:'user'}),null);
   assert.equal((await f.w.knowledge.treeReader().read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'}))?.text,'Private synthetic note');
 });
+
+
+test('backlinks omit target-local sources and offer a callable composition-pinned view',async t=>{
+  const f=await fixture(t,[rule],undefined,[...entries,content('/terms/alpha','behaviour','Self mention',['alpha'])]);
+  const result=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
+  assert.ok(result);const backlinks=result.nodes[0].backlinks!;
+  assert.equal(backlinks.total,1);assert.ok(backlinks.entries.every(e=>e.path!=='/terms/alpha'));
+  const view=(backlinks as unknown as {view_id:string}).view_id;
+  assert.ok(view.includes('target=%2Fterms%2Falpha'));assert.ok(view.includes('composition='+f.first.composition));
+  const reader=createKnowledgeReader(f.w.knowledge);
+  const read=await reader.read(view,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(read.ok);
+});

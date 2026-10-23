@@ -967,17 +967,6 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   const lines = [head];
   const omitted: Omission[] = [...own.omitted];
   let used = head.length + 1;
-  if(node.backlinks){
-    const related=node.backlinks.entries;let shown=0;
-    for(const link of related){
-      const clip=new Clip(null,page);
-      const line=`  关联引用 ${link.reference}；摘要 ${clip.field(link.summary.replace(/\s+/g,' '),CLIP.line,'关联摘要的超出部分')}`;
-      if(used+line.length+1>room)break;lines.push(line);used+=line.length+1;shown++;omitted.push(...clip.omitted);
-    }
-    for(const note of node.backlinks.notes){const line='  关联说明：'+plain(note);if(used+line.length+1<=room){lines.push(line);used+=line.length+1;}}
-    const total=node.backlinks.total;
-    if(total!==null&&shown<total)omitted.push({what:`反向关联条目 ${total-shown} 个`,more:`反向视图还有记录：按组成 ${node.backlinks.composition} 和目标 ${node.path} 读取并沿视图游标翻页`});
-  }
   let keptEntries = 0;
   while (keptEntries < entries.length && used + entries[keptEntries].text.length + 1 <= room) used += entries[keptEntries++].text.length + 1;
   let keptChildren = 0;
@@ -989,6 +978,17 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   for (const c of children.slice(0, keptChildren)) {
     lines.push(c.text);
     omitted.push(...c.omitted);
+  }
+  if(node.backlinks){
+    const related=node.backlinks.entries;let shown=0;
+    for(const link of related){
+      const clip=new Clip(null,page);
+      const line=`  关联引用 ${link.reference}；摘要 ${clip.field(link.summary.replace(/\s+/g,' '),CLIP.line,'关联摘要的超出部分')}`;
+      if(used+line.length+1>room)break;lines.push(line);used+=line.length+1;shown++;omitted.push(...clip.omitted);
+    }
+    for(const note of node.backlinks.notes){const line='  关联说明：'+plain(note);if(used+line.length+1<=room){lines.push(line);used+=line.length+1;}}
+    const total=node.backlinks.total;
+    if(total!==null&&shown<total)omitted.push({what:`反向关联条目 ${total-shown} 个`,more:`反向视图还有记录：${node.backlinks.view_id ?? "请用同一运行重新读取节点以取得视图标识"}，读取后沿视图游标翻页`});
   }
   if (keptEntries < entries.length) {
     const left = node.entries.slice(keptEntries).map((e) => e.reference);

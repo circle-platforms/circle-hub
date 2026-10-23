@@ -1672,6 +1672,10 @@
               "backlinks": {
                 "type": "object",
                 "properties": {
+                  "view_id": {
+                    "description": "Exact external view id for composition-pinned continuation",
+                    "type": "string"
+                  },
                   "composition": {
                     "anyOf": [
                       {

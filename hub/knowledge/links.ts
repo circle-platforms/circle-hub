@@ -210,7 +210,7 @@ export class LinkReading {
     const compact=()=>pending??=(async()=>{
       const cached=this.#compact.get(view.record);if(cached)return cached;
       const facts=await this.facts(view),grouped=new Map<string,Map<string,Backlinks['entries'][number]>>();
-      for(const edge of facts.links){const sources=grouped.get(edge.target)??new Map();sources.set(edge.reference,{reference:edge.reference,path:edge.path,summary:edge.summary});grouped.set(edge.target,sources);}
+      for(const edge of facts.links){if(edge.path===edge.target)continue;const sources=grouped.get(edge.target)??new Map();sources.set(edge.reference,{reference:edge.reference,path:edge.path,summary:edge.summary});grouped.set(edge.target,sources);}
       const targets=new Map([...grouped].map(([target,sources])=>{
         const rows=[...sources.values()].sort((a,b)=>compareText(a.reference,b.reference));return [target,{total:rows.length,entries:rows.slice(0,20)}] as const;
       }));
@@ -221,7 +221,8 @@ export class LinkReading {
       if(!view.body.links!.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
       try{
         const index=await compact(),value=index.targets.get(path)??{total:0,entries:[]};
-        return {composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:[...index.notes,...(value.total>20?['还有未列出的反向引用；按此组成读取反向视图继续翻页']:[])]};
+        const viewId="knowledge:links:"+encodeURIComponent(view.body.product)+":"+encodeURIComponent(view.body.version.build)+"?target="+encodeURIComponent(path)+"&composition="+view.record;
+        return {view_id:viewId,composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:[...index.notes,...(value.total>20?['还有未列出的反向引用；读取 '+viewId+' 并沿游标翻页']:[])]};
       }catch(error){
         const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请集成者 Claude 修复关联索引后重新执行本次读取',error);
         return absent(view.record,failure.message+'；下一步：'+failure.nextAction);
