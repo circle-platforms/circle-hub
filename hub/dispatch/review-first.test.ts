@@ -102,3 +102,19 @@ test('R10 the booking must cover submission plus the entire observation window',
   await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/租约到期/);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
 });
+
+test('R11 positive reconciliation uses only an explicitly declared clock tolerance',async t=>{
+  const c=await setup({mode:'reject',alter:(name,v)=>name==='read_blob'?{...v,submitted:'2026-10-22T23:59:59.000Z'}:v});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  await assert.rejects(c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'}));
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,clock_skew_ms:2000});
+  assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).outcome,'effective');
+});
+
+test('R11 submission timeout consumes only the remaining committed window',async t=>{
+  const c=await setup({timeout:150,onSubmit:async()=>{await new Promise(resolve=>setTimeout(resolve,100));}});t.after(()=>c.close());
+  const transaction=c.kit.store.withTransaction.bind(c.kit.store);let changed=false;
+  c.kit.store.withTransaction=async(fn,parent)=>{const value=await transaction(fn,parent);if(!changed && await c.kit.store.getByKey('action',`dispatch.bytes:${c.payload.body.sha256}:1`)){changed=true;c.clock.ms+=100;}return value;};
+  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(result.outcome,'unknown');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+});

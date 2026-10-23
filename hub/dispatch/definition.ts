@@ -37,6 +37,7 @@ export const ExecutorDefinition = z.strictObject({
   precheck_context: z.record(z.string(), z.unknown()).default({}),
   resources: z.array(z.string().regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/)).max(100).default([]),
   max_run_ms: z.number().int().min(1).max(86400000), max_bytes: z.number().int().min(256).max(8388608).default(4194304),
+  clock_skew_ms:z.number().int().min(0).max(600000).default(0),
   poll_ms: z.number().int().min(1).max(60000).default(2000), submit_timeout_ms: z.number().int().min(1).max(600000).default(300000),
   refused_tools: z.array(z.string().min(1).max(128)).max(100).default([]),
   allowed_tools: z.array(z.string().min(1).max(128)).min(1).max(100),

@@ -182,11 +182,11 @@ export class DispatchService {
       intended = true;
       if (this.now().getTime() >= Date.parse(notAfter)) { await this.notSent(binding,session,remote,stop,'意图后派发窗口已过，尚未调用提交');return this.status(by,binding.job); }
       if (!this.sameFences(fresh, await this.options.leases.holderSnapshot(d.resources))) { await this.notSent(binding,session,remote,stop,'意图后围栏改变，尚未调用提交');return this.status(by,binding.job); }
-      if(!pulse.held()) { await stop();await this.release(binding,session,remote);await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'目标租约确认失效，尚未调用提交',next_action:'恢复目标租约后重新预检与派发'});return this.status(by,binding.job); }
+      if(!pulse.held() || this.now().getTime()>=Date.parse(notAfter)) { await stop();await this.release(binding,session,remote);await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'目标租约确认失效，尚未调用提交',next_action:'恢复目标租约后重新预检与派发'});return this.status(by,binding.job); }
       // Signals must not cancel an in-flight effect; SIGKILL is recovered from the already committed intent.
       const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore);
       let answer: Exchange;
-      try { submitInvoked=true;answer = await session.call('submit', context); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
+      try { submitInvoked=true;answer = await session.call('submit', context,Math.max(1,Date.parse(notAfter)-this.now().getTime())); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
       const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
       if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
@@ -275,7 +275,7 @@ export class DispatchService {
       const rawTime = at(result.value, d.result.submitted_at);
       const time = readDeclaredTime(rawTime,d.result.submitted_at_scale_ms);
       const window = intent.body.detail.window as { from: string; to: string };
-      if (!mapped(d.status.map, at(state.value, d.status.pointer)) || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from) || time > Date.parse(window.to)) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
+      if (!mapped(d.status.map, at(state.value, d.status.pointer)) || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from)-d.clock_skew_ms || time > Date.parse(window.to)+d.clock_skew_ms) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
     }catch {
       await this.journal.append(binding,'reconcile_pending','read_back','error',{unfreeze:false,missing_fact:readable?'已读到原件，但身份、摘要或投递时间不符':'未取得完整可用的对账回答，不等于目标没有记录',next_action:`修复只读连接或映射后重跑 circle-hub job dispose ${job} --reconcile <原远端编号>`});
       throw new Error(readable?'对账身份、摘要或时间不符，仍冻结':'对账读取尚未成功；修复读取后重试本次对账，仍冻结');
