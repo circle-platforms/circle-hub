@@ -1,3 +1,5 @@
+import { productVariableProblems } from '../knowledge/api.ts';
+import { packSchema, type PackRegistry } from '../runs/api.ts';
 // Administrator-only named deployment commands. Arguments never carry values and diagnostics never quote them.
 import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
@@ -23,6 +25,7 @@ export interface VariableCommandSession {
     };
     hub(requireVaultKey?: boolean): Promise<{
         packs: PacksPort;
+        registry: Pick<PackRegistry,'variableDeclarations'>;
     }>;
     options: {
         readSecret?: (label: string) => Promise<string>;
@@ -342,18 +345,29 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                     text = text.slice(0, -1);
             }
             const value = v.text ? text : parseVariableJson(text);
+            const registry=(await s.hub(false)).registry;
+            const declarations=await registry.variableDeclarations();
+            const productUsers=declarations.filter(p=>p.product.variables?.some(v=>v.name===name));
             const definitions = await deploymentDefinitions(kit), snapshot = await kit.variables.snapshot();
             const affected = definitions.filter(d => d.body.enabled !== false && d.references.some(r => r.kind === 'var' && r.name === name));
-            const names = [...new Set(affected.flatMap(d => d.references.filter(r => r.kind === 'var').map(r => r.name)))];
+            const names = [...new Set([...affected.flatMap(d => d.references.filter(r => r.kind === 'var').map(r => r.name)),...productUsers.flatMap(p=>(p.product.variables??[]).map(v=>v.name))])];
             const values = new Map<string, unknown>();
             for (const refName of names)
                 if (refName !== name) {
                     const decision = snapshot.get(refName);
-                    if (!decision)
-                        throw new CliError(`变量 ${refName} 未设置：先 circle-hub var set ${refName}`);
+                    if (!decision){
+                        if(affected.some(d=>d.references.some(r=>r.name===refName)))throw new CliError(`变量 ${refName} 未设置：先 circle-hub var set ${refName}`);
+                        continue;
+                    }
                     values.set(refName, await kit.variables.valueAt(refName, decision));
                 }
             values.set(name!, value);
+            for(const user of productUsers){
+              // Other unset declarations use their synthetic defaults only for this size check, never for a real sync.
+              const candidate=new Map((user.product.variables??[]).map(v=>[v.name,values.has(v.name)?values.get(v.name):v.default]));
+              const problems=productVariableProblems(user.product,candidate,undefined,name!);
+              if(problems.length)throw new CliError(`包 ${user.pack}@${user.version}：${problems.join('；')}`);
+            }
             for (const definition of affected) {
                 if(definition.kind==='executor'&&!ExecutorSource.safeParse(definition.body).success)throw new CliError(`部署定义 ${definition.id} 的引用位置或调用绑定不合规则；期望值只能是字面值或整值变量，请先 executor update 修正后重做 var set`);
                 const resolved = substitute(definition.body, (kind, n) => kind === 'secret' ? '${secret:' + n + '}' : values.get(n));
@@ -363,9 +377,11 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
             }
             const result = await kit.variables.setVariable(by, name!, value, reason, { notSecret: v['not-secret'] === true, names, validate: async (tx) => {
                     await unchangedDefinitions(kit, definitions, tx);
+                    const current=await registry.variableDeclarations(tx);
+                    if(canonicalize(current.filter(p=>p.product.variables?.some(v=>v.name===name)))!==canonicalize(productUsers))throw new CliError('产品声明在核对期间改变；请重跑 var set，没有写入决定');
                     for (const n of names.filter(n => n !== name)) {
                         const page = await kit.store.find({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${n}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
-                        if (page.items[0]?.digest !== snapshot.get(n))
+                        if ((page.items[0]?.body as any)?.revoked ? snapshot.has(n) : page.items[0]?.digest !== snapshot.get(n))
                             throw new CliError('另一引用变量在核对期间改变；请重跑，没有写入决定');
                     }
                 } });
@@ -429,9 +445,25 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
             return 0;
         }
         const definitions = await deploymentDefinitions(kit);
-        for (const item of await kit.variables.list(by)) {
-            const used = definitions.flatMap(d => d.references.filter(r => r.name === item.name).map(r => d.id + '#' + r.at));
-            s.out(versionsLine(item) + '；' + (used.length ? '使用者 ' + used.join('、') : '设置了，没有使用者'));
+        const declarations=await (await s.hub(false)).registry.variableDeclarations();
+        const items=(await kit.variables.list(by)).filter(v=>v.kind==='var');
+        const byName=new Map(items.map(v=>[v.name,v]));
+        const declaredNames=declarations.flatMap(p=>(p.product.variables??[]).map(v=>v.name));
+        for(const name of [...new Set([...byName.keys(),...declaredNames])].sort()){
+          const item=byName.get(name);
+          const owners=declarations.filter(p=>p.product.variables?.some(v=>v.name===name));
+          const used=definitions.flatMap(d=>d.references.filter(r=>r.name===name).map(r=>d.id+'#'+r.at));
+          const notes=owners.map(p=>`包 ${p.pack}@${p.version}`);
+          if(owners.length && (!item || item.decision.body.revoked || item.definition?.schema!=='variable@1')){
+            s.out(`${name}；没设置：${notes.join('、')} 的真实同步会拒绝；下一步 circle-hub var set ${name} --file <JSON文件> --reason <理由>`);continue;
+          }
+          if(!item)continue;
+          if(item.definition?.schema==='variable@1')for(const owner of owners){
+            const declaration=owner.product.variables!.find(v=>v.name===name)!;
+            const compiled=packSchema(declaration.schema);
+            if(!compiled.ok || !compiled.schema.safeParse(item.definition.value).success)notes.push(`值不合包 ${owner.pack} /variables/${owner.product.variables!.indexOf(declaration)}/schema；真实同步会拒绝；下一步 circle-hub var set ${name} --file <JSON文件> --reason <理由>`);
+          }
+          s.out(versionsLine(item)+'；'+(used.length||owners.length?'使用者 '+[...used,...notes].join('、'):'设置了，没有使用者'));
         }
         return 0;
     }
