@@ -8,7 +8,7 @@ import { normalizeId as defectId } from '../../traceability/functions/ids.ts';
 import { boundView, caseEntry, indexViewOf } from '../../traceability/functions/test-support.ts';
 
 export function input(ids = ['00021', '22', '23']) {
-  return { inputs: [boundView('stories', { stories: [{ id: '21', status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求' }, { id: '22', status: null, stage: null, title: null }], unread: ['23'] }, `plm:stories:${ids.map(normalizeId).join('+')}`),
+  return { inputs: [boundView('stories', { stories: [{ id: '21', status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求' }, { id: '22', title: null, fields_absent: ['status', 'stage'] }], unread: ['23'] }, `plm:stories:${ids.map(normalizeId).join('+')}`),
     boundView('cases', indexViewOf('case', 'stories', [
       caseEntry({ defects: ['22'], stories: ['00021'], case: 'c1' }),
       caseEntry({ defects: [], stories: ['21', '22'], case: 'c2' }),
@@ -32,7 +32,7 @@ test('one item per requested id including unread; exact story join excludes same
   assert.match(outcomes[2].statement, /10_6/);
   const [total] = counts({ subject: s }) as any[];
   assert.deepEqual([total.data.stories, total.data.traced, total.data.untraced, total.data.plm_unread], [3, 2, 1, 1]);
-  assert.deepEqual(total.data.statuses, [{ status: null, count: 1 }, { status: 'synthetic-status', count: 1 }]);
+  assert.deepEqual(total.data.statuses, [{ status: 'synthetic-status', count: 1 }]);
 });
 
 test('normalisation matches defect pack and order cannot change the result', () => {
@@ -100,18 +100,32 @@ test('corrupt and conflicting inputs remain refused', () => {
   assert.ok((project({ inputs: [...i.inputs, other] }) as any).error);
 });
 
-test('build-derived detail reads are split into fifty ids and preserve missing-status actions', async () => {
+test('build-derived detail reads are split into fifty ids and record absent fields without actions', async () => {
   const { default: expected } = await import('./expected.ts');
   const items = Array.from({ length: 123 }, (_, i) => ({ id: String(i + 1), fields: { scope: '需求范围取自构建记录' } }));
   const e = expected({ items }) as any;
   assert.deepEqual(e.sources.map((s: any) => s.external.split(':')[2].split('+').length), [50, 50, 23]);
   const s = projected();
   const outcomes = check({ subject: s }) as any[];
-  assert.deepEqual(outcomes[1].data.missing_fields, ['status', 'stage']);
-  assert.ok(outcomes[1].data.next_actions.some((a: string) => a.includes('status')));
+  assert.deepEqual(outcomes[1].data.fields_absent, ['status', 'stage']);
+  assert.deepEqual(outcomes[1].data.next_actions, []);
 });
 
 test('projection output meets the shared schema including unread locations', async () => {
   const { ProjectionOutput } = await import('../../../../contracts/src/pack.ts');
   assert.equal(ProjectionOutput.safeParse(project(input())).success, true);
+});
+
+test('absent PLM fields are observed absence, scalar values are raw, and unread ids ask the user to confirm', () => {
+  const i = input(); (i.inputs[0].model as any).stories = [{ id: '21', stage: 0, fields_absent: ['status'] }, { id: '22', status: 4, stage: false, fields_absent: [] }];
+  const s = projected(i); const outcomes = check({ subject: s }) as any[];
+  assert.deepEqual(outcomes[0].data.fields_absent, ['status']); assert.equal(outcomes[0].data.stage, 0);
+  assert.deepEqual(outcomes[0].data.gaps, []); assert.deepEqual(outcomes[0].data.next_actions, []);
+  assert.doesNotMatch(outcomes[0].statement, /未知|补齐|重跑/);
+  assert.equal(outcomes[1].data.status, 4); assert.equal(outcomes[1].data.stage, false);
+  assert.match(outcomes[2].statement, /应答里没有编号/);
+  assert.ok(outcomes[2].data.next_actions.some((action: string) => action.includes('用户确认')));
+  const [total] = counts({ subject: s }) as any[];
+  assert.deepEqual(total.data.statuses, [{ status: 4, count: 1 }]); assert.equal(total.data.status_absent, 1);
+  assert.doesNotMatch(total.statement, /未知/);
 });

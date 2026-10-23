@@ -40,12 +40,12 @@ export default function scenario(gold: StoryGold): Scenario {
           const correct = Number(count?.[1]) === row.cases.length && listed.length === Math.min(5, row.cases.length) && new Set(listed).size === listed.length && listed.every(id => row.cases.some(c => c.id === id));
           add(`${label} 用例连接`, correct, `${row.cases.length} 个，展示 ${Math.min(5, row.cases.length)} 个`, correct ? '一致' : `展示 ${listed.length} 个，连接或计数不符`);
         }
-        add(`${label} 原样状态与阶段`, claim.includes(`状态：${row.status ?? '未知'}；阶段：${row.stage ?? '未知'}`));
-        if (!row.plm_returned) add(`${label} PLM 未返回`, claim.includes('PLM 未返回'));
+        add(`${label} 原样状态与阶段`, claim.includes(`状态：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('status') ? '字段未提供' : String(row.status)}；阶段：${!row.plm_returned ? '应答未包含该编号' : row.fields_absent?.includes('stage') ? '字段未提供' : String(row.stage)}`));
+        if (!row.plm_returned) add(`${label} PLM 未返回`, claim.includes(`PLM 应答里没有编号 ${row.story}`));
       }
       const counts = `需求 ${gold.stories.length} 个：已追溯 ${gold.traced} 个，未追溯 ${gold.untraced} 个；PLM 没返回 ${gold.plm_unread} 个`;
       add('运行计数', text.includes(counts), counts, text.includes(counts) ? counts : '不一致或未出现');
-      const states = `原样状态计数：${gold.statuses.map(s => `${s.status ?? '未知'} ${s.count} 个`).join('、')}`;
+      const states = `原样状态计数：${gold.statuses.map(s => `${String(s.status)} ${s.count} 个`).join('、')}`;
       add('按原样状态分组', text.includes(states), `${gold.statuses.length} 组，SHA-256 ${hash(states)}`);
       checks.push(lengthBounded(area, turns));
       return checks;

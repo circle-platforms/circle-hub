@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "bece92374c6cf4953e26685a75bed38377cc97686c5ae26d055911c6dcfbfa97",
-      "size": 2043
+      "sha256": "8b714ac654b21583c69e4f426b0a6fe77b712e9466f3b95e0b7b3d2a2f061b98",
+      "size": 2217
     },
     {
       "path": "checks.json",
@@ -18,13 +18,13 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "cd2b57f00d4c5ca33bec05d6275d350cafb725cf4261bf502269104cc489129b",
-      "size": 5118
+      "sha256": "04542f9c7db5056140a9a81709c7f1cffd9e48d7c15bca800ab96a3776f37072",
+      "size": 4660
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "bfa6e86fed25cbebdba5d303f0469fbe409f56eccda2a37ce4df41f09665f5ef",
-      "size": 2097
+      "sha256": "9b130f61ad21fa402be3765ec6120d5dc235c0125dc744603d07d9043745aba0",
+      "size": 2368
     },
     {
       "path": "functions/expected.ts",
@@ -37,9 +37,14 @@
       "size": 230
     },
     {
+      "path": "functions/plm-fields.ts",
+      "sha256": "90dbd13465e523505130b524be7c76708804d04b5869aa671ddde3ce0e8ed0db",
+      "size": 941
+    },
+    {
       "path": "functions/project.ts",
-      "sha256": "eee1aaa2867861568b876940b518c2a83dd8adb3b63898c1d9d99702430040dc",
-      "size": 8665
+      "sha256": "5933ceebde643bb4d12ff83aa3eb695bf8838a7310b775a9badd6840a76ea2d1",
+      "size": 8727
     },
     {
       "path": "functions/subject.ts",
@@ -68,23 +73,23 @@
     },
     {
       "path": "samples/negative/counts.json",
-      "sha256": "0b5264437b72c0ab3e69cd8ea3f1972afd2f78999d62aaa6737dddbe39ba7888",
-      "size": 2117
+      "sha256": "14b9b9070211161ca390e75a5a022177a5fd6dccacdf15df45c486959c8a228f",
+      "size": 2148
     },
     {
       "path": "samples/negative/traced.json",
-      "sha256": "0aeac2acf89c85c419d9b26b89886ee3d6e939c4b12ddc9e9b67d3bd0f3931b3",
-      "size": 2116
+      "sha256": "1445d343f5c54327203c31b7549812a595d4c2b64428700e8fd7ad6cc232a1c2",
+      "size": 2147
     },
     {
       "path": "samples/positive/counts.json",
-      "sha256": "91308ab6065c58f44aeaa49464b5ec87335ae79d775df6f13aab742831533aef",
-      "size": 2068
+      "sha256": "d23443c731a2019167e084f508ef861489d8a3f6abcacc9e86c457eeb9fd82cf",
+      "size": 2099
     },
     {
       "path": "samples/positive/traced.json",
-      "sha256": "6199e71603f11f5ca72143b116c912efe93edf6b052e3f9ad8115ac6ee75ecc1",
-      "size": 2068
+      "sha256": "f03f61d4edd7689c783022069e63803cf249260d32eff142932505f9fab45511",
+      "size": 2099
     },
     {
       "path": "slots.schema.json",

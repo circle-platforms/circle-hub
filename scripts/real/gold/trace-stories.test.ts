@@ -37,3 +37,10 @@ test('zero-prefix compatibility preserves raw digit width and document identifie
   const gold = storyGold({ ids: ['1', '2', '3'], plm: [], maps: [{ document: '00091', map: m }], tree: t, product: 'synthetic', build: 'Synthetic_10_6' });
   assert.deepEqual(gold.stories.map(s => s.cases.length), [1, 1, 1]);
 });
+
+test('independent status accounting preserves scalars and distinguishes absent fields from explicit null', () => {
+  const gold = storyGold({ ids: ['21', '22', '23'], plm: [{ id: 21, stage: 0 }, { id: 22, status: 4, stage: false }, { id: 23, status: null }], maps: [], tree: [], product: 'synthetic', build: 'Synthetic_10_6' });
+  assert.equal(gold.stories[0].stage, 0); assert.equal(gold.stories[1].stage, false);
+  assert.deepEqual(gold.stories[0].fields_absent, ['status']); assert.equal(gold.status_absent, 1);
+  assert.deepEqual(gold.statuses, [{ status: 4, count: 1 }, { status: null, count: 1 }]);
+});

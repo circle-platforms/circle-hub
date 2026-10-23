@@ -1,10 +1,11 @@
 // Pure projection: caller-supplied ids, or ids explicitly declared by a configured build record.
 import type { BoundInput, ProjectedItem } from '../../../../contracts/src/pack.ts';
+import { absent, scalar, type Scalar } from './plm-fields.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, strings, shown, utf8Length } from './text.ts';
 import { readIndexView } from './views.ts';
 
-export type Story = { id: string; status: string | null; stage: string | null; title: string | null };
+export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
 export type Row = Story & { plm_returned: boolean; cases: Case[]; references: string[]; build: string; scope: string };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
@@ -30,7 +31,7 @@ export function projectItems(input: unknown): unknown {
     const id = normalizeId(raw);
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
-      status: r && typeof r.status === 'string' ? r.status : null, stage: r && typeof r.stage === 'string' ? r.stage : null,
+      status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
       plm_returned: r !== null, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
     if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title]) !== JSON.stringify([next.status, next.stage, next.title])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');

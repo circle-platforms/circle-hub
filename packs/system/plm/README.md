@@ -31,3 +31,7 @@ Needs: none.
 合成验证：`node --test --test-concurrency=1 packs/system/plm/*.test.ts`。真实需求状态与阶段取值由集成者核实，当前不需要新词表轴。
 
 可选构建需求范围：`plm:builds:<产品编号>` 的原件仍保留原样数组，新增 content `{builds: [{id,stories,scope_note}]}`。管理员在资源设置里配置 `settings.build_story_field`，字段名需先核实真实原件；只接受该顶层字段的正整数编号数组（数字或字符串），不猜字段、不解析自由文本。没配置、字段缺失或形状错误时 stories 为 null，scope_note 指出具体缺口并请求用户给出编号。合成测试中的字段名只是结构示例，不能作为真实字段默认值。
+
+Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
+`fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
+The unreleased package stays at 1.1.0; story projection fixes only require re-signing this manifest.

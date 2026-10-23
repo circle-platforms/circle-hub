@@ -20,6 +20,7 @@
           "title": "合成需求",
           "status": "synthetic",
           "stage": null,
+          "fields_absent": [],
           "plm_returned": true,
           "cases": [
             {

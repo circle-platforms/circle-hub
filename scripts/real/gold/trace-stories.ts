@@ -6,9 +6,11 @@ import { caseGold, parseMindMap } from './cases.ts';
 import { extractAssociatedIds, locationsGold } from './locations.ts';
 import { parseDocumentList } from './trace.ts';
 
+export type Scalar = string | number | boolean | null;
+const scalar = (value: unknown): Scalar => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null;
 export type StoryRecord = { id: string | number; status?: unknown; stage?: unknown; title?: unknown };
-export type StoryGoldRow = { story: string; status: string | null; stage: string | null; plm_returned: boolean; cases: Array<{ id: string; title: string }> };
-export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; statuses: Array<{ status: string | null; count: number }>; documents: number; missing_documents: string[]; scope: string };
+export type StoryGoldRow = { story: string; status: Scalar; stage: Scalar; fields_absent?: string[]; plm_returned: boolean; cases: Array<{ id: string; title: string }> };
+export type StoryGold = { product: string; build: string; stories: StoryGoldRow[]; traced: number; untraced: number; plm_unread: number; status_absent?: number; statuses: Array<{ status: Scalar; count: number }>; documents: number; missing_documents: string[]; scope: string };
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const norm = (id: string): string => id.replace(/^0+/, '') || '0';
 const isId = (id: string): boolean => /^[0-9]{1,15}$/.test(id) && norm(id) !== '0';
@@ -71,14 +73,14 @@ export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Ar
     const returned = options.plm.filter(r => norm(String(r.id)) === id);
     const first = returned[0];
     if (returned.some(r => JSON.stringify([r.status ?? null, r.stage ?? null]) !== JSON.stringify([first.status ?? null, first.stage ?? null]))) throw new Error('需求原件冲突');
-    return { story: id, status: typeof first?.status === 'string' ? first.status : null, stage: typeof first?.stage === 'string' ? first.stage : null, plm_returned: returned.length > 0,
+    return { story: id, status: scalar(first?.status), stage: scalar(first?.stage), fields_absent: first ? ['status', 'stage'].filter(key => !Object.hasOwn(first, key)) : [], plm_returned: returned.length > 0,
       cases: cases.filter(c => c.stories.some(s => s === id)).map(c => ({ id: c.id, title: c.title })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
   });
   const traced = stories.filter(s => s.cases.length > 0).length;
-  const states = new Map<string | null, number>();
-  for (const s of stories) if (s.plm_returned) states.set(s.status, (states.get(s.status) ?? 0) + 1);
+  const states = new Map<Scalar, number>();
+  for (const s of stories) if (s.plm_returned && !s.fields_absent?.includes('status')) states.set(s.status, (states.get(s.status) ?? 0) + 1);
   return { product: options.product, build: options.build, stories, traced, untraced: stories.length - traced, plm_unread: stories.filter(s => !s.plm_returned).length,
-    statuses: [...states].sort(([a], [b]) => a === b ? 0 : a === null ? -1 : b === null ? 1 : a < b ? -1 : 1).map(([status, count]) => ({ status, count })), documents: options.maps.length,
+    status_absent: stories.filter(s => s.plm_returned && s.fields_absent?.includes('status')).length, statuses: [...states].sort(([a], [b]) => JSON.stringify([typeof a, a]) < JSON.stringify([typeof b, b]) ? -1 : JSON.stringify([typeof a, a]) > JSON.stringify([typeof b, b]) ? 1 : 0).map(([status, count]) => ({ status, count })), documents: options.maps.length,
     missing_documents: options.missingDocuments ?? [], scope: '需求范围由用户提供' };
 }
 export function main(argv: string[]): number {
