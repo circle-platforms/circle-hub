@@ -38,7 +38,8 @@ properties file is a template, not an environment-variable expansion mechanism. 
 ## Files and processing
 
 - `stage_release.py` stages an export for the host's converters: local LibreOffice converts legacy `.doc` files to `.docx`;
-  PDFs with a Word twin are left out. Only PDFs without a Word twin go to the host's PDF converter.
+  PDFs with a Word twin are left out. Only PDFs without a Word twin go to the host's PDF converter, which uploads them
+  to an external cloud conversion service; Word files are converted locally.
 - `release_pipeline.sh <set> <upload-directory> <web-target>` runs export, stage, document conversion and mirror deployment for one set.
 - `run_release_all.sh` runs the four configured sets, preserving failure isolation.
 - `run_manuals_extra.sh` updates and converts the configured manual branches when sources change.
