@@ -75,6 +75,19 @@ describe('the projection of case-review-report', () => {
     assert.match(c1?.summary ?? '', /^证实 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
   });
 
+  it('joins by the submission pointer but cites the model final at its stored index after Hub facts', () => {
+    const result = block({verdict:'PARTIAL',level:'P5',entries:[{item:'c1'}]});
+    result.cross_item = [
+      {requirement:'final',pointer:'/cross_item/4',statement:{verdict:'support'}},
+      {requirement:'final',pointer:'/cross_item/3',statement:{code:'PASS',rank:'P3'}},
+      {requirement:'final',pointer:'/cross_item/4',statement:{code:'PARTIAL',rank:'P5'}},
+    ];
+    const out = run([{result}]);
+    assert.deepEqual(reportItemOf(out).fields.overall,{verdict:'PARTIAL',level:'P5',reference:`rec:${'1'.repeat(64)}#/cross_item/2`});
+    result.cross_item = (result.cross_item as Record<string,unknown>[]).slice(0,2);
+    assert.equal(reportItemOf(run([{result}])).fields.overall,null,'an unmatched submission pointer cannot supply a final');
+  });
+
   it('an item unfinished in one block and delivered in another counts as delivered (that block wins)', () => {
     // The real-data shape: block B carried all 62 entries, its first half unfinished; A delivered them.
     const out = run([

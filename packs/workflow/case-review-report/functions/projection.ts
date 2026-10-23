@@ -32,7 +32,8 @@ function resultOf(model: unknown, meta: Record<string, unknown>): { result: Reco
 
 /** The final claim of one block's verification result: only the one the Hub itself supported, with its real reference. */
 export function finalOf(result: Record<string, unknown>, record: string): { verdict: Verdict; level: string | null; reference: string } | null {
-  const cross = Array.isArray(result.cross_item) ? result.cross_item.filter(isRecord) : [];
+  const stored = Array.isArray(result.cross_item) ? result.cross_item : [];
+  const cross = stored.filter(isRecord);
   // The Hub's own verdict on the block's final: the fact claims of the `final` requirement. A refuted or unknown one
   // makes the block's conclusion unknown; only the claim the Hub gave a support fact to counts, at its pointer.
   const hub = cross.filter((c) => c.requirement === 'final' && isRecord(c.statement) && typeof c.statement.verdict === 'string');
@@ -48,7 +49,8 @@ export function finalOf(result: Record<string, unknown>, record: string): { verd
   return {
     verdict: statement.code,
     level: typeof statement.rank === 'string' ? statement.rank : null,
-    reference: `rec:${record}#${pointer}`,
+    // pointer joins the submitted claim to its Hub fact; a rec: pointer addresses the stored result instead.
+    reference: `rec:${record}#/cross_item/${stored.indexOf(claim)}`,
   };
 }
 
