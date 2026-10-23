@@ -86,7 +86,7 @@
     {
       "code": "case-compile.param_unassigned",
       "when": "提供的参数没有配置角色",
-      "fix": "先在运行环境配置里给该参数定角色，再按角色核对，不推断其用途"
+      "fix": "去掉无角色参数或换用配置已开放的组合；集成者补角色后重新发布并开新运行"
     },
     {
       "code": "case-compile.wait_value",
@@ -107,6 +107,11 @@
       "code": "case-compile.address_notation",
       "when": "主机命令包含非标准 IPv4 数字记法，目标不能唯一核对",
       "fix": "地址写标准点分四段；十六进制、八进制、短点分或长整数形式不用于主机网络目标；非地址数据需拆出明确用途"
+    },
+    {
+      "code": "case-compile.method_not_allowed",
+      "when": "合约启用但运行环境配置没有开放的组合",
+      "fix": "换用配置已开放的组合；需要扩展时由集成者补角色和检查，重新发布配置并开始新运行"
     }
   ],
   "refusals": [

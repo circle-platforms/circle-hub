@@ -107,5 +107,5 @@ test('review 19 decision 35 opens every enabled pair and all bed interfaces with
   rawProfile.allowed.push({ object: 'widget-host', method: 'fixture_action', parameters: { command: 'host_shell' } } as any); rawProfile.hosts.push({ object: 'widget-host', method: 'fixture_action', device: 'client0' });
   assert.equal(parseProfile(rawProfile, contractOf(signed), bedsOf()).ok, false);
   const missingRoleProfile = profileDocument(signed); const target = goodData(); target.steps[1].method = 'fixture_action';
-  const result = checkContractShape(subjectOf(target, { contractDoc: signed, profileDoc: missingRoleProfile })); assert.ok(!codes(result).includes('case-compile.method_not_allowed')); assert.ok(codes(result).includes('case-compile.param_unassigned'));
+  const result = checkContractShape(subjectOf(target, { contractDoc: signed, profileDoc: missingRoleProfile })); assert.ok(codes(result).includes('case-compile.method_not_allowed')); assert.ok(!codes(result).includes('case-compile.param_unassigned'));
 });

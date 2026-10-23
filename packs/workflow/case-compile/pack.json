@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "392876d1a5b5e608f99a3e2f90f91c82970b8da9dba05e876c72c1891b13a99b",
-      "size": 3930
+      "sha256": "89e8b454233903585d153f82706e7f91c1e36170d563c8afa71458dea6a69c3b",
+      "size": 4073
     },
     {
       "path": "checks.json",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "9a00d1760b54293da79f06e6287ffa661c8c9d0c78216be19b12eca2b46b3caf",
-      "size": 13431
+      "sha256": "71b8b73ee07ab7a0175ba8a3468e0f7c3f41822a372141209b4245ee300ee24d",
+      "size": 14030
     },
     {
       "path": "functions/manifest.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "a4a05a5bc035b2773d624e223120c5af12f9635b24b961fa1e89855e48603dd5",
-      "size": 7169
+      "sha256": "02d9ea37b4b7ca49d1241328d814ded3b04b16982cc162ccb08cdca10cdb25b1",
+      "size": 7448
     },
     {
       "path": "samples/negative/address-off-bed.json",
@@ -508,8 +508,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "50f1138a5d10ae047c1a19f02f508276c52dbd93715ede886cb56fa2aae3a1f4",
-      "size": 8056
+      "sha256": "f11639fd39a7552f53ec51ca76590ebc6b476d96d15312c773ca2a70d6db8526",
+      "size": 8338
     },
     {
       "path": "tables/commands.json",

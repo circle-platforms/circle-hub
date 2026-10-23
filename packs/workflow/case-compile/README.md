@@ -86,3 +86,5 @@ Review completion: supplied role-less parameters fail closed in both signature a
 Runtime review receipt: 19 numbered synthetic regressions each failed before the corresponding fix and passed afterward. The full runtime package ran 138 tests, all passed with zero skips; the real temporary registry passed all 66 author samples. Type checking and manifest freshness passed. No real contract, device or owner environment was used. The subsequent workbook merge must retain its own file/codec checks and the runtime role/value/address fixes together.
 
 设计以 bac0083e 为准：不因派发标签直接全开或全关；tables/dispatch-roles.json 声明每种派发方式当前能由哪些角色完整核验。动作注册表与三参数检查点当前角色列表为空，配置不能把它们冒充 host_shell/device_cli（也不能用空参数映射绕过）；错误指到允许项及参数。草稿消费同一表，把这些组合列为“未开”，缺的事实和下一步取 missing/next：参数不是命令文字，G 规则与拒绝表核不了，case-compile 另写一页增加角色及检查。本分支不修改外部转换脚本。
+
+allowed 是合约启用集合中、经角色和检查覆盖的已开放子集；其余组合未开。method_not_allowed 的模型修复是换用已开放组合，并保留 unassigned_parameters；param_unassigned 专指开放组合中无角色的参数，修复为去掉该参数或换组合。管理员扩展角色须另开页、重新发布并开始新运行，不能要求模型修改冻结配置。
