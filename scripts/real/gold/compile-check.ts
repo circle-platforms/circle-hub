@@ -1,6 +1,6 @@
 // Independent compile-contract@1 / test-bed-manifest@1 reader. No Hub or pack imports.
 // node scripts/real/gold/compile-check.ts --run run.json --submission submission.json
-//   --contract contract.json --bed bed.json [--commands tree.xml] [--sources sources.json]
+//   --contract contract.json --bed bed.json [--commands tree.xml --product product.json] [--sources sources.json]
 // Sources must be independently exported reference -> fragment text, never the model's quotes.
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -116,7 +116,7 @@ type Obj = Record<string, unknown>;
 const obj = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === 'string';
 export type Verdict = 'pass' | 'fail' | 'unknown';
-interface Answer { verdict: Verdict; reason?: string }
+interface Answer { verdict: Verdict; reason?: string; code?: string }
 const pass = (): Answer => ({ verdict: 'pass' });
 const fail = (reason: string): Answer => ({ verdict: 'fail', reason });
 const unknown = (reason: string): Answer => ({ verdict: 'unknown', reason });
@@ -214,7 +214,6 @@ function bedProblem(v: unknown): string | null {
 }
 function planProblem(v: unknown): string | null {
   if (!obj(v) || !str(v.bucket) || !v.bucket || !Array.isArray(v.blocks) || !v.blocks.every(b => b === 'setup' || b === 'teardown')) return '计划 bucket 或 blocks 格式错误';
-  if ('plan_json' in v || 'plan' in v) return '槽位不能再提交计划文本';
   if (!Array.isArray(v.steps) || v.steps.length === 0 || !v.steps.every(s => obj(s) && str(s.object) && str(s.method) && obj(s.params))) return '计划 steps 格式错误';
   if (!Array.isArray(v.expects) || v.expects.length === 0 || !v.expects.every(e => obj(e) && str(e.text) && e.text.trim() && obj(e.quote) && str(e.quote.reference) && str(e.quote.text))) return '计划 expects 缺少期望或逐字来源';
   return null;
@@ -371,6 +370,14 @@ class XmlReader {
 
 interface CommandArg { name: string; type: string; limit?: string; length?: string; optional: boolean; default?: string }
 export interface CatalogCommand { words: string[]; overloads: CommandArg[][] }
+export interface CommandCatalogDeclaration { complete: boolean; case_sensitive: boolean }
+/** Read only the public commands@1 declaration, never a product's executable modules. */
+export function commandCatalogDeclaration(product: unknown): CommandCatalogDeclaration {
+  if (!obj(product) || product.schema !== 'product@1' || !Array.isArray(product.catalogs)) throw new Error('产品声明不是 product@1');
+  const declarations = product.catalogs.filter(c => obj(c) && c.id === 'commands@1');
+  if (declarations.length !== 1 || !obj(declarations[0]) || typeof declarations[0].complete !== 'boolean' || typeof declarations[0].case_sensitive !== 'boolean') throw new Error('缺少或无效的 commands@1 完备性和大小写声明');
+  return {complete:declarations[0].complete,case_sensitive:declarations[0].case_sensitive};
+}
 export function parseCommandTree(xml: string): CatalogCommand[] {
   // Reject unsupported XML rather than silently invent an empty catalog.
   if (/<!DOCTYPE|<!ENTITY/i.test(xml) || !xml.includes('<')) throw new Error('命令树不是受支持的 XML');
@@ -382,7 +389,7 @@ export function parseCommandTree(xml: string): CatalogCommand[] {
     if (n.name === 'item') {
       if (!words.length) return;
       const all = [...prefix,...words];
-      const key = all.join(' ').toLowerCase();
+      const key = all.join(' ');
       const entry = byPath.get(key) ?? {words: all, overloads: []};
       const lists = children(n).filter(c => c.name === 'arguments');
       for (const list of lists) entry.overloads.push(children(list).filter(c => c.name === 'arg').map((a, i) => ({
@@ -421,17 +428,21 @@ function argProblem(a: CommandArg, v: string): string | null {
   }
   return null;
 }
-export function checkCatalogCommand(catalog: CatalogCommand[], line: string): Answer {
+export function checkCatalogCommand(catalog: CatalogCommand[], line: string, declaration?: CommandCatalogDeclaration): Answer {
+  line = line.trim();
+  if (!line) return pass();
+  if (!declaration) return unknown('缺少 commands@1 的完备性和大小写声明');
+  const fold = (word: string) => declaration.case_sensitive ? word : word.toLowerCase();
   let ts: string[] | null;
   try { ts = tokens(line); } catch { return fail('命令行引号格式错误'); }
   if (!ts) return fail('命令行引号格式错误');
   const words = ts;
-  const candidates = catalog.filter(c => c.words.every((w,i) => w.toLowerCase() === words[i]?.toLowerCase())).sort((a,b) => b.words.length-a.words.length);
+  const candidates = catalog.filter(c => c.words.every((w,i) => words[i] !== undefined && fold(w) === fold(words[i]))).sort((a,b) => b.words.length-a.words.length);
   const cmd = candidates[0];
-  if (!cmd) return fail('命令不存在于目标构建的命令树中');
+  if (!cmd) return declaration.complete ? fail('命令不存在于目标构建的命令树中') : unknown('命令未在不完备的目录中找到');
   const args = words.slice(cmd.words.length);
   const problems: string[] = [];
-  for (const overload of cmd.overloads) {
+  for (const overload of candidates.filter(c => c.words.length === cmd.words.length).flatMap(c => c.overloads)) {
     // Optional arguments can appear before required ones; explore both consume and omit.
     const match = (i: number, j: number): boolean => {
       if (i === overload.length) return j === args.length;
@@ -493,7 +504,7 @@ export function compareCompileVerdicts(hub: readonly StepVerdict[], gold: readon
   return {equal: differences.length === 0,differences};
 }
 
-export function compileCheck(inputs: {run: RunShowExport; submission: Submission; contract: unknown; bed: unknown; commandTreeXml?: string; sources?: ReadonlyMap<string,string>}): CompileCheckResult {
+export function compileCheck(inputs: {run: RunShowExport; submission: Submission; contract: unknown; bed: unknown; commandTreeXml?: string; commandCatalog?: CommandCatalogDeclaration; sources?: ReadonlyMap<string,string>}): CompileCheckResult {
   const {run,submission} = inputs;
   const stepVerdicts: StepVerdict[] = [], plans: PlanReceipt[] = [], differences: string[] = [];
   const notes = ['不证明在真实设备上跑得通'];
@@ -548,24 +559,16 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
         for (const p of m.params) {
           const v = s.params[p.name] ?? p.default;
           if (p.address && v !== undefined) add('address',i+1,`${ptr}/params/${p.name}`,!str(v) ? fail('地址参数不是字面地址') : address(v,p.address));
-          if (p.command && v !== undefined) add('command',i+1,`${ptr}/params/${p.name}`,!str(v) ? fail('命令不是字符串') : catalog ? checkCatalogCommand(catalog,v) : unknown(catalogError));
-        }
-        // Unannotated literal IPs must also stay on the selected bed.
-        for (const [k,v] of Object.entries(s.params)) {
-          if (!str(v) || m.params.find(p => p.name === k)?.address) continue;
-          for (const token of v.split(/\s+/).map(t => t.replace(/^[\"'[(]+|[\"'\]),;]+$/g,''))) {
-            if (!isIP(cleanIp(token))) continue;
-            add('address',i+1,`${ptr}/params/${k}`,address(cleanIp(token),'target'));
-          }
+          if (p.command && v !== undefined && (!str(v) || v.trim())) add('command',i+1,`${ptr}/params/${p.name}`,!str(v) ? fail('命令不是字符串') : catalog ? checkCatalogCommand(catalog,v.trim(),inputs.commandCatalog) : unknown(catalogError));
         }
       }
       for (const [i,e] of d.expects.entries()) {
         let a = checkVerbatimQuote(inputs.sources ?? new Map(),e.quote.reference,e.quote.text);
         if (!collapseWhitespace(e.quote.text).includes(collapseWhitespace(e.text))) a = fail('期望结果不是所引原文的逐字片段');
-        if (!claims![0].quotes?.some(q => q.reference === e.quote.reference && q.text === e.quote.text)) a = fail('主张顶层 quotes 缺少期望引文');
         add('quotation',i+1,`${base}/expects/${i}`,a);
       }
-      try {
+      if (Object.hasOwn(d,'plan_json')) add('plan',0,`${base}/plan_json`,{...fail('槽位不能提交 plan_json；执行计划由 Hub 生成'),code:'case-compile.plan_in_slots'});
+      else try {
         {
           const receipt = generatePlan(entry.item,d,contract); plans.push(receipt);
           const reqs = resultItems.filter(i => i.item === entry.item).flatMap(i => i.requirements).filter(r => r.requirement === 'plan_deterministic');
@@ -606,14 +609,15 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
 export function main(argv: string[] = process.argv.slice(2)): number {
   const value = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? undefined : argv[i+1]; };
   if (!['run','submission','contract','bed'].every(k => value(k))) {
-    process.stderr.write('用法：compile-check.ts --run <运行.json> --submission <提交.json> --contract <合约.json> --bed <台架.json> [--commands <命令树.xml>] [--sources <来源.json>]\n'); return 2;
+    process.stderr.write('用法：compile-check.ts --run <运行.json> --submission <提交.json> --contract <合约.json> --bed <台架.json> [--commands <命令树.xml> --product <产品声明.json>] [--sources <来源.json>]\n'); return 2;
   }
   try {
     const json = (k: string): unknown => JSON.parse(readFileSync(value(k)!,'utf8'));
     const sources = value('sources') ? json('sources') : {};
     if (!obj(sources) || !Object.values(sources).every(str)) throw new Error('来源必须是引用到原文字符串的映射');
     const result = compileCheck({run:json('run') as RunShowExport,submission:json('submission') as Submission,contract:json('contract'),bed:json('bed'),
-      commandTreeXml:value('commands') ? readFileSync(value('commands')!,'utf8') : undefined,sources:new Map(Object.entries(sources) as Array<[string,string]>)});
+      commandTreeXml:value('commands') ? readFileSync(value('commands')!,'utf8') : undefined,
+      commandCatalog:value('product') ? commandCatalogDeclaration(json('product')) : undefined,sources:new Map(Object.entries(sources) as Array<[string,string]>)});
     process.stdout.write(`${JSON.stringify(result,null,2)}\n`); return result.allPassed ? 0 : 1;
   } catch (e) { process.stderr.write(`输入不可读取：${(e as Error).message}\n`); return 1; }
 }

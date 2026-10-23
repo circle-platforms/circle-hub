@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import {
   checkContractMethod, checkBedAddress, checkCatalogCommand, checkVerbatimQuote, parseCommandTree,
-  generatePlan, canonicalJson, compileCheck, compareCompileVerdicts,
+  generatePlan, canonicalJson, compileCheck, compareCompileVerdicts, commandCatalogDeclaration,
   type CompileContract, type RawBedManifest, type Submission, type RunShowExport, type StepVerdict,
 } from './compile-check.ts';
 
@@ -17,6 +17,8 @@ const contract = example('compile-contract') as CompileContract;
 const bed = example('bed-topology') as RawBedManifest;
 const commandTreeXml = `<commands><scope><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="seconds" type="U16" limit="[1 - 120]"/></arguments></item></menu><menu name="session"><item name="persistence"><arguments><arg name="mode" type="STRING" limit="{cookie|source}"/></arguments></item></menu></menu></scope></commands>`;
 const expectedPlans = ["{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8080}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}", "{\"bed\":\"bed-a\",\"blocks\":[],\"case\":\"doc-1:c-2\",\"expects\":[{\"source\":\"src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0\",\"text\":\"会话保持生效\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"cli\",\"n\":1,\"object\":\"dut\",\"params\":{\"line\":\"widget session persistence cookie\"}}]}"];
+const commandCatalog = {complete:true,case_sensitive:false};
+const checkCompleteCommand = (catalog: Parameters<typeof checkCatalogCommand>[0], line: string) => checkCatalogCommand(catalog,line,commandCatalog);
 const digest = (v: unknown) => createHash('sha256').update(canonicalJson(v)).digest('hex');
 function fixture() {
   const raw = example('submit-result') as Submission & {synthetic?: boolean; note?: string};
@@ -29,7 +31,7 @@ function fixture() {
     plan:expectedPlans[n],
     sha256:createHash('sha256').update(String(expectedPlans[n])).digest('hex'),
   }}}] : []}))}))}}}};
-  return {submission:raw,run,contract:structuredClone(contract),bed:structuredClone(bed),commandTreeXml,sources};
+  return {submission:raw,run,contract:structuredClone(contract),bed:structuredClone(bed),commandTreeXml,commandCatalog,sources};
 }
 const data = (f: ReturnType<typeof fixture>) => f.submission.items[0].slots!.plan![0].data;
 const rebind = (f: ReturnType<typeof fixture>) => { f.run.latest!.result!.submission = digest(f.submission); };
@@ -65,18 +67,18 @@ test('allocated IP can be a target but never a listener or server interface', ()
 test('a reserved address is not an allocation', () => { const b = structuredClone(bed.beds[0]); b.reserved = ['192.0.2.200']; assert.equal(checkBedAddress(b,'192.0.2.200','target').verdict,'fail'); });
 test('a service declaration cannot turn a client into a backend', () => { const b = structuredClone(bed.beds[0]); b.services.push({host:'client0',ip:'192.0.2.80',proto:'tcp',port:80}); assert.equal(checkBedAddress(b,'192.0.2.80','backend').verdict,'fail'); });
 test('without trigger interfaces listener addresses become blind', () => { const b = structuredClone(bed.beds[0]); b.devices = b.devices.filter(d => !['client','router'].includes(d.type)); assert.equal(checkBedAddress(b,'192.0.2.10','listen').verdict,'fail'); });
-for (const [line,verdict] of [['widget health interval 60','pass'],['widget health interval 121','fail'],['widget health interval nope','fail'],['widget health interval','fail'],['widget health interval 60 extra','fail'],['widget unknown 60','fail'],['widget session persistence cookie','pass'],['widget session persistence bogus','fail']] as const) test(`catalog ${line}`, () => assert.equal(checkCatalogCommand(parseCommandTree(commandTreeXml),line).verdict,verdict));
+for (const [line,verdict] of [['widget health interval 60','pass'],['widget health interval 121','fail'],['widget health interval nope','fail'],['widget health interval','fail'],['widget health interval 60 extra','fail'],['widget unknown 60','fail'],['widget session persistence cookie','pass'],['widget session persistence bogus','fail']] as const) test(`catalog ${line}`, () => assert.equal(checkCompleteCommand(parseCommandTree(commandTreeXml),line).verdict,verdict));
 test('all overloads and duplicate command definitions remain independent', () => {
   const catalog = parseCommandTree(`<commands><item name="select"><arguments><arg type="U16" limit="[1 - 3]"/></arguments><arguments><arg type="STRING" limit="{a|b}"/></arguments></item><item name="select"><arguments><arg type="U16" limit="[20 - 30]"/></arguments></item></commands>`);
-  for (const v of ['2','a','25']) assert.equal(checkCatalogCommand(catalog,`select ${v}`).verdict,'pass');
-  assert.equal(checkCatalogCommand(catalog,'select 10').verdict,'fail');
+  for (const v of ['2','a','25']) assert.equal(checkCompleteCommand(catalog,`select ${v}`).verdict,'pass');
+  assert.equal(checkCompleteCommand(catalog,'select 10').verdict,'fail');
 });
 test('XML comments, entities, quoted strings, length and optional arguments', () => {
   const c = parseCommandTree(`<commands><!-- comment --><item name="set"><arguments><arg name="name" type="STRING" length="8"/><arg name="mode" type="STRING" limit="{a&amp;b|other}" optional="yes"/></arguments></item></commands>`);
-  assert.equal(checkCatalogCommand(c,'set "two word" a&b').verdict,'pass');
-  assert.equal(checkCatalogCommand(c,'set short').verdict,'pass');
-  assert.equal(checkCatalogCommand(c,'set toolongtext').verdict,'fail');
-  assert.equal(checkCatalogCommand(c,'set "unclosed').verdict,'fail');
+  assert.equal(checkCompleteCommand(c,'set "two word" a&b').verdict,'pass');
+  assert.equal(checkCompleteCommand(c,'set short').verdict,'pass');
+  assert.equal(checkCompleteCommand(c,'set toolongtext').verdict,'fail');
+  assert.equal(checkCompleteCommand(c,'set "unclosed').verdict,'fail');
 });
 test('malformed or unsupported XML becomes unknown, not a green empty catalog', () => {
   for (const xml of ['<commands><item name="x"></commands>','<commands>','<!DOCTYPE commands><commands/>','<commands><item name=x/></commands>']) assert.throws(() => parseCommandTree(xml));
@@ -90,7 +92,17 @@ test('quote allows whitespace folding but rejects paraphrases, missing and unrea
   assert.equal(checkVerbatimQuote(sources,'','返回 200 OK').verdict,'fail');
 });
 test('expected text cannot be invented beside a true quote', () => { const f = fixture(); data(f).expects[0].text = '模型自造成功'; assert.ok(has(f,'quotation','fail')); });
-test('top-level quotes must include the expectations', () => { const f = fixture(); f.submission.items[0].slots!.plan![0].quotes = []; assert.ok(has(f,'quotation','fail')); });
+test('top-level quotes are not a prerequisite for independently grounded expectations', () => {
+  for (const quotes of [undefined,[]]) {
+    const f = fixture();
+    if (quotes === undefined) delete f.submission.items[0].slots!.plan![0].quotes;
+    else f.submission.items[0].slots!.plan![0].quotes = quotes;
+    rebind(f);
+    assert.equal(compileCheck(f).allPassed,true);
+  }
+  const f = fixture(); f.submission.items[0].slots!.plan![0].quotes = []; f.sources.clear();
+  assert.ok(has(f,'quotation','unknown'));
+});
 test('empty expectations cannot vacuously pass', () => { const f = fixture(); data(f).expects = []; assert.equal(compileCheck(f).allPassed,false); });
 test('missing original command tree or source stays unknown', () => {
   const f = fixture(); assert.ok(compileCheck({...f,commandTreeXml:undefined}).stepVerdicts.some(v => v.checkType === 'command' && v.verdict === 'unknown'));
@@ -101,7 +113,13 @@ test('malformed contract/bed and unreadable slot shape never pass', () => {
   for (const change of [{contract:{schema:'wrong'}},{bed:{schema:'wrong'}},{submission:{...f.submission,items:[]}}]) assert.equal(compileCheck({...f,...change}).allPassed,false);
   (data(f) as unknown as Record<string,unknown>).steps = null; assert.equal(compileCheck(f).allPassed,false);
 });
-test('the retired plan_json input is refused', () => { const f = fixture(); (data(f) as unknown as Record<string,unknown>).plan_json = '{}'; assert.ok(has(f,'contract','fail')); });
+test('plan_json refutes only plan_deterministic with plan_in_slots', () => {
+  const f = fixture(); (data(f) as unknown as Record<string,unknown>).plan_json = '{}'; rebind(f);
+  const r = compileCheck(f);
+  const plans = r.stepVerdicts.filter(v => v.checkType === 'plan' && v.item === f.submission.items[0].item);
+  assert.equal(plans.length,1); assert.equal(plans[0].verdict,'fail'); assert.equal(plans[0].code,'case-compile.plan_in_slots');
+  assert.ok(r.stepVerdicts.filter(v => v.checkType !== 'plan').every(v => v.verdict === 'pass'));
+});
 test('canonical plan uses default strings, sorted keys/blocks and stable bytes', () => {
   const f = fixture(); const d = data(f); d.blocks = ['teardown','setup']; delete d.steps[2].params.count;
   const a = generatePlan('case:synthetic',d,f.contract), b = generatePlan('case:synthetic',d,f.contract);
@@ -144,14 +162,20 @@ test('live lineage allocations are distinguished from expired or foreign leases'
     const r = compileCheck(f); assert.equal(r.stepVerdicts.find(v => v.pointer.endsWith('/steps/2/params/target'))?.verdict,verdict);
   }
 });
-test('IP literals in command arguments cannot escape bed checks', () => {
-  const f = fixture(); data(f).steps[1].params.line = 'widget address 192.0.2.250'; f.commandTreeXml += ''; assert.ok(has(f,'address','fail'));
+test('unannotated command words and IP parameters are not bed addresses', () => {
+  const f = fixture(); data(f).steps[1].params.line = 'widget route 192.0.2.192 255.255.255.0';
+  f.contract.objects[0].methods.push({name:'route',params:[{name:'destination',type:'ipv4'}]});
+  data(f).steps.push({object:'dut',method:'route',params:{destination:'192.0.2.250'}});
+  const addresses = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'address');
+  assert.ok(addresses.every(v => v.verdict === 'pass'));
+  assert.equal(addresses.some(v => v.pointer.endsWith('/params/line') || v.pointer.endsWith('/params/destination')),false);
+  data(f).steps[0].params.address = '192.0.2.250'; assert.ok(has(f,'address','fail'));
 });
 test('CLI reads run/submission documents and returns a nonzero status for missing receipts', () => {
   const dir = mkdtempSync(join(tmpdir(),'compile-gold-'));
   try {
     const f = fixture(); const args: string[] = [];
-    for (const [k,v] of Object.entries({run:f.run,submission:f.submission,contract:f.contract,bed:f.bed,sources:Object.fromEntries(f.sources)})) { const p = join(dir,`${k}.json`); writeFileSync(p,JSON.stringify(v)); args.push(`--${k}`,p); }
+    for (const [k,v] of Object.entries({run:f.run,submission:f.submission,contract:f.contract,bed:f.bed,product:{schema:'product@1',catalogs:[{id:'commands@1',...commandCatalog}]},sources:Object.fromEntries(f.sources)})) { const p = join(dir,`${k}.json`); writeFileSync(p,JSON.stringify(v)); args.push(`--${k}`,p); }
     const tree = join(dir,'tree.xml'); writeFileSync(tree,commandTreeXml);
     const ok = spawnSync(process.execPath,['scripts/real/gold/compile-check.ts',...args,'--commands',tree],{encoding:'utf8'});
     assert.equal(ok.status,0,ok.stdout+ok.stderr); assert.equal(JSON.parse(ok.stdout).allPassed,true);
@@ -199,4 +223,39 @@ test('canonical keys use default JavaScript UTF-16 sorting and retain Chinese st
 test('an unknown Hub conclusion carrying a fake plan cannot masquerade as support', () => {
   const f = fixture(); f.run.latest!.result!.partitions.delivered[0].requirements[4].claims[0].statement.verdict = 'unknown';
   assert.ok(has(f,'plan','unknown'));
+});
+test('command parameter text is trimmed and empty text is skipped', () => {
+  const f = fixture(); data(f).steps[1].params.line = ' \t widget health interval 60 \n ';
+  assert.ok(compileCheck(f).stepVerdicts.filter(v => v.checkType === 'command').every(v => v.verdict === 'pass'));
+  for (const line of ['', ' \t\n ']) {
+    data(f).steps[1].params.line = line;
+    const r = compileCheck({...f,commandTreeXml:undefined});
+    assert.equal(r.stepVerdicts.some(v => v.checkType === 'command' && v.pointer.includes('/steps/1/')),false);
+  }
+  data(f).steps[1].params.line = 60;
+  assert.ok(has(f,'command','fail'));
+});
+test('missing commands fail only for a declared complete catalog', () => {
+  const c = parseCommandTree(commandTreeXml);
+  assert.equal(checkCatalogCommand(c,'widget missing',{complete:true,case_sensitive:false}).verdict,'fail');
+  assert.equal(checkCatalogCommand(c,'widget missing',{complete:false,case_sensitive:false}).verdict,'unknown');
+  assert.equal(checkCatalogCommand(c,'widget health interval 60',{complete:false,case_sensitive:false}).verdict,'pass');
+  assert.equal(checkCatalogCommand(c,'widget health interval 121',{complete:false,case_sensitive:false}).verdict,'fail');
+  assert.equal(checkCatalogCommand(c,'widget missing').verdict,'unknown');
+  const f = fixture(); data(f).steps[1].params.line = 'widget missing';
+  assert.ok(compileCheck({...f,commandCatalog:{complete:false,case_sensitive:false}}).stepVerdicts.some(v => v.checkType === 'command' && v.verdict === 'unknown'));
+});
+test('command matching follows the declared case sensitivity without merging distinct definitions', () => {
+  const c = parseCommandTree('<commands><item name="Select"><arguments><arg type="U16" limit="[1 - 3]"/></arguments></item><item name="select"><arguments><arg type="U16" limit="[20 - 30]"/></arguments></item></commands>');
+  const sensitive = {complete:true,case_sensitive:true}, insensitive = {...sensitive,case_sensitive:false};
+  assert.equal(checkCatalogCommand(c,'Select 2',sensitive).verdict,'pass');
+  assert.equal(checkCatalogCommand(c,'select 2',sensitive).verdict,'fail');
+  assert.equal(checkCatalogCommand(c,'SELECT 2',sensitive).verdict,'fail');
+  assert.equal(checkCatalogCommand(c,'SELECT 2',insensitive).verdict,'pass');
+  assert.equal(checkCatalogCommand(c,'SELECT 25',insensitive).verdict,'pass');
+});
+test('public product declarations supply commands@1 metadata without importing functions', () => {
+  const product: unknown = JSON.parse(readFileSync(new URL('../../../packs/product/apv/product.json',import.meta.url),'utf8'));
+  assert.deepEqual(commandCatalogDeclaration(product),{complete:true,case_sensitive:false});
+  for (const v of [{}, {schema:'product@1',catalogs:[]}, {schema:'product@1',catalogs:[{id:'commands@1',complete:true}]}]) assert.throws(() => commandCatalogDeclaration(v));
 });

@@ -3,7 +3,7 @@
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import { parseRecReference, parseNextCall, MAX_PAGES } from '../lib/pager.ts';
 import { lengthBounded, runStarted } from './checks.ts';
-import { compileCheck, type CompileContract, type RawBedManifest, type RunShowExport, type Submission } from '../gold/compile-check.ts';
+import { compileCheck, type CompileContract, type CommandCatalogDeclaration, type RawBedManifest, type RunShowExport, type Submission } from '../gold/compile-check.ts';
 
 export interface CaseCompileGold {
   caseDoc: string;
@@ -15,6 +15,7 @@ export interface CaseCompileGold {
   contract: CompileContract;
   bed: RawBedManifest;
   commandTreeXml?: string;
+  commandCatalog?: CommandCatalogDeclaration;
   sources?: ReadonlyMap<string,string>;
   /** The integrator may assign this after the client completes, before check(). */
   runExport?: RunShowExport;
