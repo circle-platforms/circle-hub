@@ -251,7 +251,7 @@ export class DispatchService {
     if (!intent) throw new Error('没有派发意图；请用 resume 核对未发出的作业');
     if(!isFrozen(events))throw new Error(`没有待回答的效果未知处置请求；已受理作业须先运行 circle-hub job resume ${job}`);
     if (options.choice === 'keep_unknown') {
-      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: options.choice, decided_by: by.id, decided_at: this.now().toISOString(), uncertain: true, unfreeze: false, next_action: '继续取得原作业审计与结果；不能重交' });
+      await this.journal.append(binding, 'dispose', 'validate', 'completed', { disposition: options.choice, decided_by: by.id, decided_at: this.now().toISOString(), uncertain: true, unfreeze: false, next_action: '继续取得原作业审计与结果；不能重交' });
       return this.status(by, job);
     }
     if (options.choice === 'mark_failed') {
@@ -259,7 +259,7 @@ export class DispatchService {
       const confirmed = options.acceptPossibleDuplicateEffects === true;
       const secret = await this.options.records.vault.getText(`executor.${binding.executor}.bearer`);
       const reason = secret ? options.reason.split(secret).join('[已隐藏]') : options.reason;
-      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: options.choice, reason, decided_by: by.id, decided_at: this.now().toISOString(),
+      await this.journal.append(binding, 'dispose', 'validate', 'completed', { disposition: options.choice, reason, decided_by: by.id, decided_at: this.now().toISOString(),
         risk_confirmed: confirmed, confirmed_by: confirmed ? by.id : null, confirmed_at: confirmed ? this.now().toISOString() : null,
         confirmation: confirmed ? '接受可能重复执行的副作用' : null, unfreeze: confirmed, done: confirmed,
         original_outcome: eventOf(events, 'receipt') && !isFrozen(events) ? 'issued' : 'unknown', effect_mark: 'disposed', ...(confirmed ? {} : { next_action: '仍冻结；需要管理员对账或显式确认接受可能重复执行的副作用' }) });
@@ -281,7 +281,7 @@ export class DispatchService {
       await this.journal.append(binding,'reconcile_pending','read_back','error',{unfreeze:false,missing_fact:readable?'已读到原件，但身份、摘要或投递时间不符':'未取得完整可用的对账回答，不等于目标没有记录',next_action:`修复只读连接或映射后重跑 circle-hub job dispose ${job} --reconcile <原远端编号>`});
       throw new Error(readable?'对账身份、摘要或时间不符，仍冻结':'对账读取尚未成功；修复读取后重试本次对账，仍冻结');
     }
-    await this.journal.append(binding,'dispose','read_back','completed',{disposition:'reconcile',decided_by:by.id,decided_at:this.now().toISOString(),unfreeze:true,remote_id:options.remote_id,effect_mark:'disposed',identity_matched:true,digest_matched:true,window_matched:true},[state.source,result.source]);
+    await this.journal.append(binding,'dispose','validate','completed',{disposition:'reconcile',decided_by:by.id,decided_at:this.now().toISOString(),unfreeze:true,remote_id:options.remote_id,effect_mark:'disposed',identity_matched:true,digest_matched:true,window_matched:true},[state.source,result.source]);
     await this.journal.append(binding,'receipt','read_back','completed',{remote_id:options.remote_id,reconciled:true,acceptance:'accepted'},[result.source]);
     const stop=this.heartbeat(binding,d,client,originalLease).stop;
     try{return await this.observe(by,binding,d,client,options.remote_id,intent.body.detail.fences as unknown as HolderSnapshot[],stop);}

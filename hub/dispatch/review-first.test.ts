@@ -145,3 +145,10 @@ test('R14 legacy definitions remain readable and repairable but cannot dispatch 
   await c.registry.update(c.admin,c.executor.id,{...old,proof:{...old.proof,warrant_id:'synthetic.verify@1'}});
   assert.deepEqual(await c.kit.objects.get(stored.sha256),bytes);
 });
+
+test('R19 an administrator choice is a validation rather than a fictitious readback',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  await c.service.dispose(c.admin,first.job,{choice:'keep_unknown'});
+  const choice=(await c.service.journal.events(first.job)).find(e=>e.body.detail.disposition==='keep_unknown')!;
+  assert.equal(choice.body.action,'validate');
+});
