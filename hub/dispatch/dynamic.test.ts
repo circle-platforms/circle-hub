@@ -15,3 +15,9 @@ test('each required integrity fact gates verdicts and successful verdicts retain
     assert.ok(result.qualifier.marks.includes('local_ops_not_excluded'));assert.equal(result.accepted_as_fact,false);
   }
 });
+
+test('R20 target observations always retain every generated qualification mark',()=>{
+  const row=dynamicDisposition(null,{});
+  assert.ok(row.qualifier.marks.includes('target_reported'));assert.ok(row.qualifier.marks.includes('report_for_dispatch'));assert.ok(row.qualifier.marks.includes('local_ops_not_excluded'));
+  assert.equal(row.reason,'integrity_unproven');
+});
