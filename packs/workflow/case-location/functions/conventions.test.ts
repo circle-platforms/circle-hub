@@ -46,3 +46,11 @@ test('foreign builds and builds below the version level remain references', () =
   assert.equal(below.judgment.verdict, 'support'); assert.equal(below.answer.version, '10.8.1');
   assert.deepEqual(below.answer.build_names, ['Rel_NSAE_10_9_1_37']);
 });
+
+for (const label of ['802.1Q VLAN', 'NSAE_10.9.1.37_专项']) test(`a version mention names the missing fact and corrective action: ${label}`, () => {
+  const { answer, judgment } = locateItem({ ...context, ancestors: [label] });
+  assert.equal(judgment.verdict, 'unknown');
+  assert.deepEqual((answer as unknown as { missing: unknown }).missing, ['目录里的版本层']);
+  assert.match(judgment.statement, /缺少.*目录里的版本层/);
+  assert.match(judgment.statement, /下一步.*整理.*目录.*参数 line/);
+});

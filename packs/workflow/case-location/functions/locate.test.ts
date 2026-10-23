@@ -658,6 +658,7 @@ describe('the associated ids in the conclusion', () => {
     product_name: 'NSAE',
     version: '10.6.1',
     version_values: [],
+    missing: [],
     build: null,
     patch: null,
     line: '10.6.1',

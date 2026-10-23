@@ -375,6 +375,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     product_name: productName,
     version,
     version_values: level.values.map(v => ({ version: v.value, level: v.at + 1, label: ancestors[v.at] })),
+    missing: level.value === null ? ['目录里的版本层'] : [],
     build: build.value,
     patch: patch.value,
     line,
@@ -423,7 +424,7 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
   return {
     verdict: 'unknown',
     reason: 'missing_input',
-    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。已知${basis}：${described(answer)}`,
+    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${answer.missing.includes('目录里的版本层') ? '缺少目录里的版本层；下一步由整理敏捷平台目录的人补齐版本层，或开始运行时用参数 line 声明（结论标为声明）。' : ''}已知${basis}：${described(answer)}`,
     brief: doubts.map((d) => d.brief).join('，'),
   };
 }
@@ -511,6 +512,7 @@ export function emptyAnswer(id: string, message: string): LocateAnswer {
     product_name: null,
     version: null,
     version_values: [],
+    missing: ['目录树和版本层'],
     build: null,
     patch: null,
     line: null,

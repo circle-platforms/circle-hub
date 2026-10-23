@@ -67,6 +67,8 @@ export type LocateAnswer = {
   version: string | null;
   /** Every version-level value with its original label and one-based depth below the root. */
   version_values: Array<{ version: string; level: number; label: string }>;
+  /** Missing source facts to obtain before the location can be confirmed. */
+  missing: string[];
   /** Build date, eight digits as written (build20260315). */
   build: string | null;
   patch: string | null;
