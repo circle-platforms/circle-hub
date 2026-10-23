@@ -205,3 +205,13 @@ test('batch consumes an exported product declaration for enum case matching and 
     assert.equal(report.code,0);assert.equal(report.totals.domain_unknown,0);assert.ok(report.text.includes(sha256(declaration)));
   }finally{f.close();}
 });
+
+test('follow-ups record vocabulary reasons and a written file without claiming a sent request',async()=>{
+  const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
+    const path=f.config.pairings[0].commands;writeFileSync(path,readFileSync(path,'utf8').replace('type="U16"','type="DEPLOYMENT"'));
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);const questions=JSON.parse(readFileSync(join(f.out,'pair-1','followup.json'),'utf8'));
+    assert.ok(questions.some((q:any)=>q.reason==='no_check'));assert.ok(questions.every((q:any)=>!('action_status' in q)));
+    assert.match(report.text,/清单已写入/);assert.doesNotMatch(report.text,/已请求|已发送/);
+  }finally{f.close();}
+});

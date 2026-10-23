@@ -19,8 +19,9 @@ import {
   type SplitCommand,
 } from '../gold/regression-doc.ts';
 
-import { VERDICT } from '../../../contracts/generated/vocabulary.ts';
+import { VERDICT,REASON,labelOf,type Reason } from '../../../contracts/generated/vocabulary.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
+const MISSING=REASON.find(reason=>reason==='missing_input')!,NO_CHECK=REASON.find(reason=>reason==='no_check')!;
 import { quotesReport, sha256, type QuoteInputs } from '../gold/quotes.ts';
 import {commandCatalogDeclaration,type CommandCatalogDeclaration} from '../gold/compile-check.ts';
 import { domainReport, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
@@ -269,7 +270,7 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`   gold 集合 ${d.goldIdentical.length}；Hub 集合 ${d.hubFlagged.length}；仅 gold ${d.onlyGold.length}；仅 Hub ${d.onlyHub.length}`);
   lines.push(`   回归文档命令组合对照${d.equal ? '相同' : '不同'}（仅报告，不是全量查重结论）`);
   const p = comparison.parameters;
-  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : '参数：设计缺口；缺构建命令树原件，需集成者 Claude 导出');
+  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : `参数：${labelOf('reason',MISSING)}；缺构建命令树原件，需集成者 Claude 导出`);
   if (p) {
     const items = p.domains.items;
     lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；其中目录外 ${p.domains.notMember}；暂态待补证 ${p.domains.counts.unknown}`);
@@ -287,7 +288,7 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`引文来源：${independent.details.length > 0 && independent.details.every(d => d.category === 'fix' || d.category === 'manual') ? '通过' : '不通过'}`);
   const questions = evidenceQuestions(comparison);
   if(questions.length)lines.push(`待补证 ${questions.length} 项；可补输入 --commands、--sources、--run、--manual、--fix-field、--product`);
-  for(const question of questions)lines.push(`缺事实 ${question.missing_fact}；下一步 ${question.next_action}；责任人 ${question.owner}`);
+  for(const question of questions)lines.push(`${labelOf('reason',question.reason)}；缺事实 ${question.missing_fact}；下一步 ${question.next_action}；责任人 ${question.owner}`);
   return lines.join('\n');
 }
 
@@ -309,16 +310,17 @@ export function writePrivateJson(path: string, value: unknown): void {
   writeFileSync(full, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 }
 
-export interface EvidenceQuestion { draft?: number; command?: number; expected?: number; item_position?: number; category: string; missing_fact: string; next_action: string; owner: string }
+export interface EvidenceQuestion { draft?: number; command?: number; expected?: number; item_position?: number; category: string; reason:Reason; missing_fact: string; next_action: string; owner: string }
 /** An unresolved observation is a transition: each one names a fact and an executable follow-up, never a terminal verdict. */
 export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
-  const questions: EvidenceQuestion[] = [];
-  if (!comparison.parameters) questions.push({ category: 'design_gap', missing_fact: 'build_command_tree_original', next_action: 'request_command_tree_export', owner: 'Claude' });
-  for (const d of comparison.parameters?.domains.details ?? []) for (const [command, outcome] of d.outcomes.entries()) if (outcome.verdict === UNKNOWN) questions.push({ draft: d.draft, command: command + 1, category: 'design_gap', missing_fact: outcome.gap?.fact ?? 'command_domain_rule', next_action: outcome.gap?.action ?? 'request_rule_from_named_integrator', owner: 'Claude' });
-  for (const d of comparison.parameters?.domains.details ?? []) if (d.verdict === UNKNOWN && d.outcomes.every(o => o.verdict !== UNKNOWN)) questions.push({ draft: d.draft, category: 'design_gap', missing_fact: d.outcomes.length === 0 ? 'draft_commands' : 'negative_and_refutation_intent', next_action: 'clarify_intent_or_complete_draft_in_repair_round', owner: 'Claude' });
-  for (const d of comparison.quoteOracle.details) if (d.verdict === UNKNOWN || d.category === 'unknown_defect_field') questions.push({ draft: d.draft, expected: d.expected, category: 'design_gap', missing_fact: d.category === 'unknown_defect_field' ? 'fix_field_binding' : d.gap?.fact ?? 'reference_fragment', next_action: d.category === 'unknown_defect_field' ? 'request_fix_field_name' : d.gap?.action ?? 'request_source_export', owner: 'Claude' });
-  for (const [item_position, item] of (comparison.parameters?.domains.items ?? []).entries()) if (item.comparison === 'unknown' && !item.hasUnknown) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_commands_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
-  for (const [item_position, item] of comparison.quoteOracle.items.entries()) if (item.comparison === 'unknown' && comparison.quoteOracle.counts.unknown === 0) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_grounded_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
+  const questions:EvidenceQuestion[]=[];
+  if(!comparison.parameters)questions.push({category:'design_gap',reason:MISSING,missing_fact:'build_command_tree_original',next_action:'request_command_tree_export',owner:'Claude'});
+  for(const draft of comparison.parameters?.domains.details??[]){
+    for(const [command,outcome] of draft.outcomes.entries())if(outcome.verdict===UNKNOWN)questions.push({draft:draft.draft,command:command+1,category:'design_gap',reason:outcome.reason??NO_CHECK,missing_fact:outcome.gap?.fact??'command_domain_rule',next_action:outcome.gap?.action??'request_rule_from_named_integrator',owner:'Claude'});
+    if(draft.verdict===UNKNOWN&&draft.outcomes.every(outcome=>outcome.verdict!==UNKNOWN))questions.push({draft:draft.draft,category:'design_gap',reason:draft.outcomes.length?NO_CHECK:MISSING,missing_fact:draft.outcomes.length?'negative_and_refutation_intent':'draft_commands',next_action:'clarify_intent_or_complete_draft_in_repair_round',owner:'Claude'});
+  }
+  for(const quote of comparison.quoteOracle.details)if(quote.verdict===UNKNOWN||quote.category==='unknown_defect_field')questions.push({draft:quote.draft,expected:quote.expected,category:'design_gap',reason:quote.category==='unknown_defect_field'?MISSING:quote.reason??NO_CHECK,missing_fact:quote.category==='unknown_defect_field'?'fix_field_binding':quote.gap?.fact??'reference_fragment',next_action:quote.category==='unknown_defect_field'?'request_fix_field_name':quote.gap?.action??'request_source_export',owner:'Claude'});
+
   return questions;
 }
 
@@ -377,8 +379,9 @@ export function main(argv: string[]): number {
     activeInput='比较输入';
     const comparison = computeComparison(gold, submission, result, { commandTreeXml, commandCatalog,sources, run, manual, fixField: value('fix-field') });
     activeInput='--details';
-    if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison).map(q => ({ ...q, action_status: 'requested' })) });
+    if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison) });
     process.stdout.write(`${renderComparison(comparison)}\n`);
+    if(value('details')&&evidenceQuestions(comparison).length)process.stdout.write('补证清单已写入 --details，待集成者 Claude 执行\n');
     const parameters=comparison.parameters,quotes=comparison.quoteOracle;
     const passed=!!parameters&&parameters.domains.items.length>0&&parameters.domains.items.every(item=>item.comparison==='equal'&&!item.hasUnknown)
       &&quotes.shapes.length===0&&quotes.details.length>0&&quotes.counts.refute===0&&quotes.counts.unknown===0&&quotes.items.every(item=>item.comparison==='equal')

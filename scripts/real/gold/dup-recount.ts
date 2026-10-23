@@ -1,6 +1,6 @@
 // Recount the exported index, not the pack's compact buckets. Expected-result equality cannot be reconstructed from these entries.
 import { readFileSync } from 'node:fs';
-import { VERDICT, REASON } from '../../../contracts/generated/vocabulary.ts';
+import { VERDICT, REASON,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { locatedDrafts, object, parsedDraftCommands, decodeCommandXml } from './command-domains.ts';
 import { normalizeHead } from './regression-doc.ts';
 const [SUPPORT,REFUTE,UNKNOWN] = VERDICT;
@@ -61,8 +61,8 @@ export function recountDuplicates(views: unknown[], submission: unknown, xml: st
     passed:details.length>0&&details.every(d=>d.equal===true) };
 }
 export function renderRecount(report: ReturnType<typeof recountDuplicates>): string {
-  return [...report.details.map(d=>`草稿 ${d.draft}：同命令集合 ${d.sameCommands??'待补证'}；同反向标记 ${d.sameNegative??'待补证'}；同标题 ${d.sameTitle??'待补证'}；比对 ${d.equal===null?'设计缺口':d.equal?'通过':'不通过'}`),
-    ...report.details.filter(d=>d.gap).map(d=>`草稿 ${d.draft}：设计缺口；缺事实 ${d.gap!.fact}；下一步 ${d.gap!.action}；责任人 ${d.gap!.owner}`),
+  return [...report.details.map(d=>`草稿 ${d.draft}：同命令集合 ${d.sameCommands??'待补证'}；同反向标记 ${d.sameNegative??'待补证'}；同标题 ${d.sameTitle??'待补证'}；比对 ${d.equal===null?labelOf('reason',d.reason??INTEGRITY):d.equal?'通过':'不通过'}`),
+    ...report.details.filter(d=>d.gap).map(d=>`草稿 ${d.draft}：${labelOf('reason',d.reason??INTEGRITY)}；缺事实 ${d.gap!.fact}；下一步 ${d.gap!.action}；责任人 ${d.gap!.owner}`),
     '输入边界：用例的命令归属取自 Hub 导出的 index-view@1；这里独立重算查重，原件到命令归属的核验由回归范围用例验收另行负责',
     `跳过文档 ${report.skipped}；不重复结论只覆盖读到的文档`, `期望结果相同分支：没法重算；影响草稿 ${report.expectedBranchAffected}；索引没有期望文字，包只比标题；包待修项 requirements.json:70`, `查重：${report.passed?'通过':'不通过'}`].join('\n');
 }

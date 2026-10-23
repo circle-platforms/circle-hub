@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, mkdirSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { computeComparison, draftsOf, main, renderComparison, outsideGit, writePrivateJson, comparisonDetails } from './defect-to-case-compare.ts';
+import { computeComparison, draftsOf, main, renderComparison, outsideGit, writePrivateJson, comparisonDetails, evidenceQuestions } from './defect-to-case-compare.ts';
 
 const docGold = {
   document: '24110',
@@ -303,4 +303,12 @@ test('CLI diagnostics identify input flags and digest failures without exposing 
   writeFileSync(args[1],JSON.stringify(docGold));writeFileSync(args[3],JSON.stringify(submissionOf(draft('PRIVATE_TITLE','widget set 5'))));writeFileSync(args[5],JSON.stringify(resultWith([])));
   const sourceDir=join(dir,'sources');mkdirSync(sourceDir);writeFileSync(join(sourceDir,'a'.repeat(64)),'PRIVATE_TAMPERED_BYTES');errors='';
   assert.equal(main([...args,'--sources',sourceDir]),2);assert.match(errors,/source integrity mismatch.*--sources.*1/);assert.doesNotMatch(errors,/PRIVATE/);
+});
+
+test('follow-up reasons distinguish absent inputs from unsupported rules',()=>{
+  const missing=evidenceQuestions(computeComparison(docGold,submissionOf(draft('private','widget set 5')),resultWith([])));
+  assert.equal(missing.find(q=>q.missing_fact==='build_command_tree_original')?.reason,'missing_input');
+  const unsupported=evidenceQuestions(computeComparison(docGold,submissionOf(draft('private','widget set 5')),resultWith([]),{commandTreeXml:'<commands><menu name="widget"><item name="set"><arguments><arg name="" type="DEPLOYMENT"/></arguments></item></menu></commands>'}));
+  assert.equal(unsupported.find(q=>q.missing_fact==='declared_argument_type_rule')?.reason,'no_check');
+  assert.ok(!unsupported.some(q=>q.next_action.includes('replay_submission')));
 });

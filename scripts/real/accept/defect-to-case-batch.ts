@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, readdirSync, chmodSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { REQUIREMENT_STATUS, VERDICT } from '../../../contracts/generated/vocabulary.ts';
+import { REQUIREMENT_STATUS, VERDICT,REASON,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import {commandCatalogDeclaration} from '../gold/compile-check.ts';
 import { regressionDocGold } from '../gold/regression-doc.ts';
 import { object, locatedDrafts, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
@@ -15,6 +15,7 @@ import { parseCallLog } from '../review-circle.ts';
 import { callTools } from '../hub-call.ts';
 import { computeComparison, comparisonDetails, renderComparison, outsideGit, writePrivateJson, evidenceQuestions, type EvidenceQuestion, type Comparison } from './defect-to-case-compare.ts';
 const ROOT=fileURLToPath(new URL('../../../',import.meta.url));
+const MISSING=REASON.find(reason=>reason==='missing_input')!,INTEGRITY=REASON.find(reason=>reason==='integrity_unproven')!;
 const HEX=/^[a-f0-9]{64}$/;
 const validRounds=(result:any)=>object(result.rounds)&&Number.isInteger(result.rounds.used)&&Number.isInteger(result.rounds.max)&&result.rounds.used>=0&&result.rounds.used<=result.rounds.max;
 export interface Pairing {defect:string;build:string;commands:string;manual:string;regression_map:string;document:string;indexes?:string[]}
@@ -126,7 +127,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
           }catch{}
         }
         category=integrityMismatch?'export_integrity_mismatch':'export_refused';
-        requests.push({category:'design_gap',missing_fact:`verified_source_original_${source}`,next_action:'repair_original_export_then_rerun',owner:'Claude'});
+        requests.push({category:'design_gap',reason:integrityMismatch?INTEGRITY:MISSING,missing_fact:`verified_source_original_${source}`,next_action:'repair_original_export_then_rerun',owner:'Claude'});
         throw new Error(category);
       };
       let submission:unknown;
@@ -154,7 +155,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       for(const draft of locatedDrafts(submission))for(const expected of draft.data.expected??[]) {
         const digest=typeof expected.quote?.reference==='string'?/^src:([a-f0-9]{64})(?:\/|$)/.exec(expected.quote.reference)?.[1]:undefined;
         if(digest&&!sources.has(digest)&&sha256(manual)!==digest) {
-          try{await obtain(digest,true);}catch{requests.push({draft:draft.draft,category:'design_gap',missing_fact:'quoted_source_original',next_action:'repair_original_export_then_rerun',owner:'Claude'});}
+          try{await obtain(digest,true);}catch{requests.push({draft:draft.draft,category:'design_gap',reason:MISSING,missing_fact:'quoted_source_original',next_action:'repair_original_export_then_rerun',owner:'Claude'});}
         }
       }
       for(const path of pair.indexes??[])indexes.push(JSON.parse(readFileSync(outsideGit(path),'utf8')));
@@ -166,8 +167,8 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       let duplicates=recountDuplicates(indexes,submission,xml,result);
       requests.push(...evidenceQuestions(comparison));
       const hubOutputMissing=!validRounds(result);
-      for(const d of duplicates.details)if(d.gap)requests.push({draft:d.draft,category:'design_gap',missing_fact:d.gap.fact,next_action:d.gap.action,owner:d.gap.owner});
-      if(duplicates.skipped>0)requests.push({category:'design_gap',missing_fact:'unread_indexed_documents',next_action:'retry_source_sync_and_export_complete_index',owner:'Claude'});
+      for(const d of duplicates.details)if(d.gap)requests.push({draft:d.draft,category:'design_gap',reason:d.reason??MISSING,missing_fact:d.gap.fact,next_action:d.gap.action,owner:d.gap.owner});
+      if(duplicates.skipped>0)requests.push({category:'design_gap',reason:INTEGRITY,missing_fact:'unread_indexed_documents',next_action:'retry_source_sync_and_export_complete_index',owner:'Claude'});
       const passed=gates(comparison),ok=Object.values(passed).every(Boolean)&&duplicates.passed&&requests.length===0&&!hubOutputMissing;
       totals.completed++;if(!ok)totals.failed++;if(!ok&&requests.length===0)totals.defects++;
       if(passed.commands)totals.command_gate_pass++;if(passed.quotes)totals.quote_gate_pass++;if(passed.origins)totals.origin_gate_pass++;if(duplicates.passed)totals.duplicate_gate_pass++;
@@ -193,17 +194,17 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
     }catch{
       const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','export_integrity_mismatch','index_view_schema_or_identity_defect','invalid_run'].includes(category);
       if(definite)totals.defects++;
-      if(!requests.length)requests.push({category:definite?'confirmed_defect':'design_gap',missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'complete_client_task_after_automatic_retry':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
+      if(!definite&&!requests.length)requests.push({category:'design_gap',reason:MISSING,missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'complete_client_task_after_automatic_retry':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
       totals.design_gaps+=requests.length;totals.failed++;
-      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；不通过；${definite?'确定缺陷':'设计缺口'} ${category}`);
+      lines.push(`配对 ${ordinal}/${config.pairings.length}：运行 ${seenRuns}；不通过；${definite?'确定缺陷':labelOf('reason',MISSING)} ${category}`);
       writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:definite?'confirmed_defect':'design_gap',finding:category});
     }finally{
-      if(requests.length){writePrivateJson(join(dir,'followup.json'),requests.map(q=>({...q,action_status:'requested'})));lines[pairLine]+=`；已生成给具名集成者 Claude 的补证请求 ${requests.length} 项；流程未完成`;}
+      if(requests.length){writePrivateJson(join(dir,'followup.json'),requests);lines[pairLine]+=`；补证清单已写入配对目录 ${requests.length} 项，待集成者 Claude 执行；流程未完成`;}
       writePrivateJson(join(dir,'actions.json'),actions);lockEvidence(dir);
     }
   }
   const ratio=(a:number,b:number)=>b?`${(100*a/b).toFixed(1)}%`:'集合为空';
-  lines.push(`汇总：配对 ${totals.pairs}；已处理 ${totals.completed}；设计缺口 ${totals.design_gaps}；确定缺陷 ${totals.defects}；不通过 ${totals.failed}；草稿 ${totals.drafts}；命令 ${totals.commands}；自动补证动作 ${totals.recovery_actions}`);
+  lines.push(`汇总：配对 ${totals.pairs}；已处理 ${totals.completed}；待补证 ${totals.design_gaps}；确定缺陷 ${totals.defects}；不通过 ${totals.failed}；草稿 ${totals.drafts}；命令 ${totals.commands}；自动补证动作 ${totals.recovery_actions}`);
   lines.push(`命令头双向重叠 ${ratio(totals.head_shared,totals.head_draft)}/${ratio(totals.head_shared,totals.head_doc)}；命令参数组合双向重叠 ${ratio(totals.pair_shared,totals.pair_draft)}/${ratio(totals.pair_shared,totals.pair_doc)}（只报告）`);
   lines.push(`取值域：支持 ${totals.domain_support}；反驳 ${totals.domain_refute}；暂态待补证 ${totals.domain_unknown}；引文：支持 ${totals.quote_support}；反驳 ${totals.quote_refute}；暂态待补证 ${totals.quote_unknown}；改写 ${totals.paraphrased}`);
   lines.push(`参数组合累计：相同 ${totals.parameter_same}；同头异参 ${totals.parameter_different}；文档无命令头 ${totals.parameter_absent}；期望文字逐字 ${totals.expected_verbatim}；仅必要条件 ${totals.necessary_only}`);
@@ -215,7 +216,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
   lines.push('输入边界：用例的命令归属取自 Hub 导出的 index-view@1；本批独立重算查重，原件到命令归属由回归范围用例验收另行核验');
   lines.push(`期望结果相同分支：没法重算；影响草稿 ${totals.expected_branch_affected}；索引没有期望文字，包只比标题；包待修项 requirements.json:70`);
   const code=totals.completed===totals.pairs&&totals.failed===0&&totals.design_gaps===0&&totals.defects===0?0:1;
-  lines.push(`批跑：${code===0?'通过':'不通过（缺陷或设计缺口，未完成）'}`);writePrivateJson(join(out,'summary.json'),totals);
+  lines.push(`批跑：${code===0?'通过':'不通过（存在差异或补证未完成）'}`);writePrivateJson(join(out,'summary.json'),totals);
   return {code,text:lines.join('\n'),totals};
 }
 export type ProcessRunner=(args:readonly string[],env:NodeJS.ProcessEnv)=>{status:number|null;stdout:string;stderr:string};
@@ -257,6 +258,6 @@ export async function main(argv=process.argv.slice(2),injected?:BatchDeps):Promi
     if(mode!==undefined?(mode!=='circle'||['env-file','provider','section'].some(k=>value(k)!==undefined)):(!value('env-file')||!['qwen','glm'].includes(value('provider')??'')||!value('model'))){process.stderr.write('端点参数：不通过\n');return 2;}
   }
   const options={out:value('out')!,endpointArgs,token:injected?'synthetic':process.env.HUB_REAL_TOKEN!,url:value('hub-url')};
-  try{const report=await runBatch(config,options,injected??createBatchDeps(options));process.stdout.write(report.text+'\n');return report.code;}catch{process.stderr.write('批跑执行：不通过（缺陷或设计缺口）\n');return 1;}
+  try{const report=await runBatch(config,options,injected??createBatchDeps(options));process.stdout.write(report.text+'\n');return report.code;}catch{process.stderr.write('批跑执行：不通过（执行未完成）\n');return 1;}
 }
 if(import.meta.main)process.exitCode=await main();
