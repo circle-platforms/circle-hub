@@ -526,11 +526,12 @@ accepted.
   never an empty `{entries: [], warnings: […]}`: `ProducerOutput` has no failure channel, so an empty output would be
   stored as a production that read this line's manual and found nothing in it. A line without an adoc source reads the
   catalog as before — K1's own code, unchanged by this package.
-  The `adocSource` option this branch added to `manual.ts` and to `ManualOptions` is superseded by that guard and is to be
-  dropped when kb-sections merges: no caller sets it, the catalog path cannot be reached from a production anyway (the
-  manual producer reads markdown@1 slots only), and when it is set it returns an empty success — exactly what the guard
-  must not do. `manual.ts` and `functions/types.ts` are K1's files, so this package left them alone and reported the two
-  hunks to the integrator instead.
+  An earlier revision of this branch had put that stop inside K1's `produceManualEntries` as an `adocSource` option. It is
+  reverted, and `manual.ts` and `functions/types.ts` are byte for byte K1's again: no caller ever set the option, the
+  catalog path cannot be reached from a production anyway (the manual producer reads markdown@1 slots only), and when it
+  was set it returned an empty success — which the producer protocol stores as a production that read this line's manual
+  and found nothing in it, the opposite of a refusal, with a next action that told a line which already has an adoc source
+  to get one.
 - `families.ts` (decision 35): every name family runs the expansion with its own attribute set and gets its own document
   model. The manual name carries the family, spelled `<manual>-<family lower-cased>` (`cli-apv`, `cli-nsae`), and both
   copies hang under the manual namespace of the same version line. An attribute-set key must be one of the `names` in
@@ -707,11 +708,18 @@ pack and reviews a mind map against the root it produced.
 
 - **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
   decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so
-  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and three checks stop at this package: that a family's failure leaves the old knowledge root where it is, asserted here only as "no partial
-  result is returned", needs a knowledge sync to be seen on a root; and "this family's attribute set is not configured"
-  can only be written from `param_sources`, which this producer must not guess; and the superseded `adocSource` option of
-  `manual.ts` (an empty success no caller sets) is dropped by reverting this branch's two hunks in `manual.ts` and
-  `functions/types.ts`. All three are follow-ups for the wiring step.
+  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and two checks stop at this package: that a family's
+  failure leaves the old knowledge root where it is, asserted here only as "no partial result is returned", needs a
+  knowledge sync to be seen on a root; and "this family's attribute set is not configured" can only be written from
+  `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+- **knowledge (adoc)**: the mapping's report must not stay an object only a test can see. When the producer is wired,
+  `uncited` (a block or a table row that cites no source line), `unparsed` (a line declared a signature that reads as
+  none), the misaligned-table lines and the unverified-heading lines have to reach the knowledge sync's result for the
+  root they belong to: readable per root, with file, line, reason and next action, and counted with the unplaced entries
+  (the counts a facet or index view already gives), so an operator sees how much of a manual did not become knowledge and
+  why. Today `toK1Model` returns them and the producer copies them into `ProducerOutput.warnings`, which is capped and is
+  a text line, not a count; carrying them as records needs a field in the production result (`contracts` and
+  `hub/knowledge`), which this package cannot add.
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
