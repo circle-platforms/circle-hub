@@ -26,6 +26,9 @@ test('CLI requires document scope, excludes outside documents and prints counts 
     const r = run('docs.json'); assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /需求 4/); assert.doesNotMatch(r.stdout + r.stderr, /Synthetic_10_6|合成|00021|synthetic/);
     assert.equal(JSON.parse(readFileSync(join(root, 'out.json'), 'utf8')).stories[2].cases.length, 0);
+    writeFileSync(join(root, 'maps/91.json'), JSON.stringify({ root: node('合成占用 ' + Array.from({ length: 90 }, (_, i) => String(i + 10)).join(' '), 'root', [node('需求 01', 'case', [node('期望', 'e')], ['Functional'])]) }));
+    const exhausted = run('docs.json'); assert.equal(exhausted.status, 1); assert.match(exhausted.stderr, /位宽 2，尚缺 1 个占位值/);
+    assert.doesNotMatch(exhausted.stdout + exhausted.stderr, /合成占用|Synthetic_10_6|需求 01/);
     writeFileSync(join(root, 'empty.json'), '[]');
     assert.notEqual(run('empty.json').status, 0);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -43,4 +46,13 @@ test('independent status accounting preserves scalars and distinguishes absent f
   assert.equal(gold.stories[0].stage, 0); assert.equal(gold.stories[1].stage, false);
   assert.deepEqual(gold.stories[0].fields_absent, ['status']); assert.equal(gold.status_absent, 1);
   assert.deepEqual(gold.statuses, [{ status: 4, count: 1 }, { status: null, count: 1 }]);
+});
+
+test('zero-prefix compatibility ignores structural ids and has room for ordinary date and time labels', () => {
+  for (const title of ['合成用例 09:30 检查', '合成用例 2026-01-02 03:04:05 06/07 08 09 00']) {
+    const notes = Array.from({ length: 10 }, (_, i) => node('合成说明', `node-${90 + i}`));
+    const m = { root: node('合成根', 'root', [...notes, node(title, 'case', [node('期望', 'expected')], ['Functional'])]) };
+    const gold = storyGold({ ids: ['21'], plm: [], maps: [{ document: '91', map: m }], tree, product: 'synthetic', build: 'Synthetic_10_6' });
+    assert.equal(gold.stories[0].cases.length, 0);
+  }
 });
