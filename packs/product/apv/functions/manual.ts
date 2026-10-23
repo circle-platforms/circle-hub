@@ -426,6 +426,8 @@ const TRIGGERS = [/适用于/gu];
 
 /** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
 const CLAUSE_END = /[。；：\n]/;
+/** The end of a sub-clause: a comma starts a new remark, so a series' own checks stop here (c3 item 4). */
+const SUB_CLAUSE_END = /[，,]/;
 
 /**
  * The conditions one text declares, per field — read linearly, never by a backtracking series regex. For every
@@ -475,7 +477,13 @@ function conditionsOf(text: string): Conditions {
     }
     positions.push(...loose, ...tight);
     for (const itemsAt of positions) {
-      const before = slice.slice(Math.max(0, itemsAt - 64), itemsAt);
+      // Negations and widening words count only within the trigger's OWN sub-clause (back to the previous comma
+      // or the clause start): a remark like 无需重启， or 不同…， before it does not suppress the condition (c3 item 4).
+      let windowStart = Math.max(0, itemsAt - 64);
+      for (let k = itemsAt - 1; k >= windowStart; k -= 1) {
+        if (SUB_CLAUSE_END.test(slice[k] ?? '')) { windowStart = k + 1; break; }
+      }
+      const before = slice.slice(windowStart, itemsAt);
       if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
       // Every 仅/只 candidate is a restriction ONLY in the documented form — the series noun itself followed by
       // 支持 ('仅 hg-k 平台支持', c3 item 2): a mid-clause 仅 about one platform's difference is not one.
@@ -501,8 +509,10 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
   const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
   let rest = candidate;
   const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
+  const tokensOk = (): boolean => tokensByField.platforms.length + tokensByField.models.length > 0;
   let field: 'platforms' | 'models' | null = null;
   let nounAteSupport = false;
+  let afterConnective = false;
   const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
   let guard = 0;
   for (;;) {
@@ -523,8 +533,15 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
         rest = afterConnective;
         continue;
       }
+      // The quiet tail: a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only when the noun
+      // ate its own 支持), or plain Han prose with no field noun, connective, ETC word or negation in its own
+      // sub-clause (平台环境, 系列设备 — c3 item 4). An unfinished item after a connective is none of these.
       const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
-      if (left.trim() !== '' && !startTailHere && !/^的/u.test(left.trim())) return null;
+      const tailSub = (() => { const at = SUB_CLAUSE_END.exec(left); return at === null ? left : left.slice(0, at.index); })();
+      // Plain Han prose ends the series ONLY when no connective asked for another item (物理设备 after 和 is an
+      // unfinished item: the series stays unread — closure 14).
+      const quietHan = !afterConnective && tailSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(tailSub) && !CONNECTIVES.some((word) => tailSub.includes(word)) && !ETC.test(tailSub) && !CLAUSE_NEGATION.test(tailSub);
+      if (left.trim() !== '' && !startTailHere && !(quietHan && tokensOk()) && !(/^的/u.test(left.trim()) && nounAteSupport)) return null;
       break;
     }
     if (head.index > CLAUSE_WINDOW) return null;
@@ -539,17 +556,31 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
     if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) return null;
     tokensByField[field].push(...pieceTokens);
     nounAteSupport = head[2] !== undefined;
+    afterConnective = false;
     rest = rest.slice(head.index + head[0].length);
     if (rest.trim() === '') break;
-    if (ETC.test(rest) || CLAUSE_NEGATION.test(rest) || /^\\s*外/.test(rest)) return null;
-    const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(rest);
+    // Forward checks stop at the sub-clause end: a remark after a comma is not part of the series (c3 item 4).
+    const subEnd = (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })();
+    const own = rest.slice(0, subEnd);
+    if (ETC.test(own) || CLAUSE_NEGATION.test(own) || /^\s*(?:外|除外)/u.test(own)) return null;
+    const connective = new RegExp(`^\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\s*`, 'u').exec(rest);
     if (connective !== null) {
-      rest = rest.slice(connective[0].length);
+      const next = rest.slice(connective[0].length);
+      const afterSub = (() => { const at = SUB_CLAUSE_END.exec(next); return at === null ? next : next.slice(0, at.index); })();
+      // A comma connective before a remark (，用于配置成员) ends the series quietly: the remark is not a list item.
+      if (SUB_CLAUSE_END.test(connective[0]) && !/(?:平台|系列|机型|型号)/u.test(afterSub)) break;
+      afterConnective = true;
+      rest = next;
       continue;
     }
     if (NOUN_RE.test(rest.trim())) continue;
+    // A leftover is quiet when it is a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only
+    // when the noun ate its own 支持 — c3 item 2), or plain Han prose with no field noun, connective, ETC word or
+    // negation in its own sub-clause (平台环境, 系列设备 — c3 item 4). Anything else keeps the series unread.
     const startTail = /^自\s*\S+\s*起/.test(rest.trim());
-    if (rest.trim() !== '' && !startTail && !/^的/u.test(rest.trim()) && !nounAteSupport) return null;
+    const restSub = rest.slice(0, (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })());
+    const quietHan = restSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(restSub) && !CONNECTIVES.some((word) => restSub.includes(word)) && !ETC.test(restSub) && !CLAUSE_NEGATION.test(restSub);
+    if (rest.trim() !== '' && !startTail && !quietHan && !(/^的/u.test(rest.trim()) && nounAteSupport)) return null;
     break;
   }
   if (field === null) return null;

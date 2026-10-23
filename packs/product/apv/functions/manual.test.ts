@@ -936,6 +936,34 @@ describe('applicability from explicit conditions', () => {
 
 
 
+
+  it('reads a condition followed by a comma remark or a quiet tail, and bounds negation checks at the sub-clause (closure c3 item 4)', () => {
+    const positives = [
+      '适用于 hg-k 平台，用于配置成员。',
+      '该命令仅 hg-k 平台支持，配置后立即生效。',
+      '适用于 X9000 系列，默认关闭。',
+      '适用于 hg-k 平台，配置后不需要重启。',
+      '适用于 hg-k 平台,用于配置成员。',
+      '适用于 hg-k 平台环境。',
+      '适用于 X9000 系列设备。',
+      '该命令可配置不同的超时时间，适用于 hg-k 平台。',
+      '若未配置则使用默认值，适用于 hg-k 平台。',
+      '该命令用于还原配置，适用于 hg-k 平台。',
+      '无需重启，适用于 hg-k 平台。',
+      '不同版本行为不同，仅 hg-k 平台支持。',
+    ];
+    for (const sentence of positives) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      const expected = /系列/.test(sentence) ? { models: ['X9000'] } : { platforms: ['hg-k'] };
+      assert.deepEqual(behaviour?.applicability ?? null, expected, `${sentence} 该读出条件`);
+    }
+    // A table row's own condition still splits the row out with its condition.
+    const row = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| weight | 权重，仅 hg-k 平台支持，默认 1 |\n'));
+    const conditioned = row.entries.find((entry) => String(entry.statement).includes('权重'));
+    assert.deepEqual(conditioned?.applicability ?? null, { platforms: ['hg-k'] }, JSON.stringify(row.entries.map((e) => [String(e.statement).slice(0, 20), e.applicability])));
+  });
+
   it('reads no 仅/只 that lacks the 支持 right after the series noun, wherever it stands (closure c3 item 2)', () => {
     const sentences = [
       '该命令在所有平台都可用，仅 hg-k 平台的输出格式有差异。',
