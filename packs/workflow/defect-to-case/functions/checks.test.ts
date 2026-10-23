@@ -299,6 +299,53 @@ describe('pack checks', () => {
       assert.deepEqual(outcomes[0].grounds, [expectedRef]);
     });
 
+    it('parses a command line to its head first: a line with parameters lands in the head’s bucket and duplicates', () => {
+      // 草稿的命令行 widget health interval 60 带参数，命令头是 widget health interval；索引条目的命令集合按命令头比。
+      const entry = {
+        entry: '4'.repeat(64),
+        kind: 'case' as const,
+        statement: 'doc_102:node_7 | SLB健康检查间隔配置正向测试',
+        reference: `tree:${'1'.repeat(64)}/commands/widget/health/interval@${'4'.repeat(64)}`,
+        data: { document: 'doc_102', node: 'node_7', title: 'SLB健康检查间隔配置正向测试', negative: false, commands: ['widget health interval'] },
+      };
+      const index = {
+        schema: 'index-view@1' as const,
+        product: 'apv',
+        build: { build: 'Rel_APV_10_6_1_57', root: '1'.repeat(64) },
+        kind: 'case' as const,
+        key: 'commands' as const,
+        keys: { 'widget health interval': ['4'.repeat(64)] },
+        entries: { ['4'.repeat(64)]: entry },
+        total_keys: 1,
+        total_entries: 1,
+        truncated: false,
+        skipped: 0,
+        notes: [],
+      };
+      const outcomes = checkDuplicate(makeCheckInput({ item: '74001', drafts: [makeGoodDraft()], indexed_cases: index }));
+      assert.equal(outcomes.length, 1);
+      assert.deepEqual([outcomes[0].verdict, outcomes[0].code], ['refute', CODES.DUPLICATE_CASE]);
+      assert.ok(outcomes[0].statement.includes('doc_102'));
+      assert.deepEqual(outcomes[0].grounds, [entry.reference]);
+    });
+
+    it('marks a draft unknown when its command line has no head in the locked catalog, and says why', () => {
+      const bad = { ...makeGoodDraft(), steps: [{ command: 'warp the core gently' }] };
+      const outcomes = checkDuplicate(makeCheckInput({ item: '74001', drafts: [bad], indexed_cases: SYNTHETIC_INDEX_VIEW }));
+      assert.equal(outcomes.length, 1);
+      assert.equal(outcomes[0].verdict, 'unknown');
+      assert.equal(outcomes[0].reason, 'missing_input');
+      assert.ok(outcomes[0].statement.includes('warp the core gently'));
+      assert.ok(outcomes[0].statement.includes('命令检查已另行驳回'));
+    });
+
+    it('concludes not-duplicate when none of the draft’s heads has any index entry (not narrowed)', () => {
+      const lonely = { ...makeGoodDraft(), title: '完全不同的用例', steps: [{ command: 'service http port 8080' }] };
+      const outcomes = checkDuplicate(makeCheckInput({ item: '74001', drafts: [lonely], indexed_cases: SYNTHETIC_INDEX_VIEW_COMPLETE }));
+      assert.equal(outcomes.length, 1);
+      assert.equal(outcomes[0].verdict, 'support');
+    });
+
     it('gives an unknown outcome when no duplicate found but index has skipped sources', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({

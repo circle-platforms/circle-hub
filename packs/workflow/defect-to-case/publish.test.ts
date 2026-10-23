@@ -55,6 +55,6 @@ describe('publishing the defect-to-case pack', { skip }, () => {
 
     const skill = await readFile(join(temp.path, `staged-${n}`, 'SKILL.md'), 'utf8');
     assert.ok(skill.length <= 8000, `SKILL.md length ${skill.length} exceeds 8000`);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['defect-to-case', '1.3.0', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['defect-to-case', '1.4.0', 'workflow']);
   });
 });
