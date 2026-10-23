@@ -208,3 +208,15 @@ The existing repair/max_rounds contract is unchanged. Static pack validation rec
 that a reason is an installed interpreter code. Runtime cause routing, repair exhaustion and B07 records remain
 hub-unknown-exits's work. Skipped submissions may name remaining work/intent; their required reason is preserved in the
 new result `skip_reason` field when the consumer projects it, rather than being lost behind the declared_skip code.
+
+### Publication and check-work declarations (task item 5 and the limits part of item 10)
+
+`PublishableRequirementsFile` is the strict new-publication guard: a static fact layer has a check, and a dynamic fact
+layer names its P07 `observation` contract. Judgment-capable requirements are not forced to install a fact check. The base
+`RequirementsFile` remains the frozen legacy-file reader; publication consumers must use the strict guard, as
+hub-unknown-exits is tasked to wire it. These guards do not claim that a referenced observation has actually happened.
+
+`CheckEntry.limits` has the sandbox's camel-case work controls (timeoutMs, memoryMb, outputBytes, logBytes, inputBytes).
+Bounds are refused, not silently clamped; omission inherits service defaults. A source-only cross-check test anchors the
+contract's capacities to the runtime sandbox constants without importing/executing the sandbox. These are check-work limits,
+not P11 effect counts/durations. hub-retry-split must pass them into execution, split/retry work and attach actual recovery.

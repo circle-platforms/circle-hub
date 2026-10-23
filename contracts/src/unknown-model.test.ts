@@ -4,7 +4,8 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {AjvJsonSchemaValidator} from '@modelcontextprotocol/sdk/validation/ajv';
 import {accepted,copy} from './fixtures.ts';
-import {ErrorHandlingRow,RequirementTemplate} from './pack.ts';
+import * as pack from './pack.ts';
+import {CheckEntry,ErrorHandlingRow,RequirementTemplate} from './pack.ts';
 import {SkippedItem} from './submission.ts';
 import {RangeTable} from './tables.ts';
 import {CheckOutcome} from './tables.ts';
@@ -85,4 +86,28 @@ test('item 7 selects error handling by exactly one code or generated reason',()=
   const req={key:'test',name:'合成要求',description:'合成事实',target:'item',required:true,done_rule:'gating',layers:['static'],accepted_producer:'fact',checks:['check'],error_handling:[{reason:'timeout',action:'repair',max_rounds:1},{reason:'missing_input',action:'repair',max_rounds:2}]};
   assert.ok(RequirementTemplate.safeParse(req).success);assert.equal(RequirementTemplate.safeParse({...req,error_handling:[req.error_handling[0],req.error_handling[0]]}).success,false);
   assert.equal(SkippedItem.safeParse({item:'one',handling:'skipped',reason:'not completed',missing:'Synthetic remaining work'}).success,true);
+});
+
+
+test('item 5 gives fact publication a strict coverage boundary without hiding legacy omissions',()=>{
+  const fact={key:'work',name:'合成要求',description:'合成事实',target:'item',required:true,done_rule:'gating',layers:['static'],accepted_producer:'fact',checks:[],error_handling:[]};
+  const body={schema:'requirements@1',requirements:[fact]};assert.ok(pack.RequirementsFile.safeParse(body).success);
+  assert.equal(pack.PublishableRequirementsFile.safeParse(body).success,false);
+  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,checks:['shape']}]}).success);
+  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,accepted_producer:'judgment'}]}).success);
+  assert.equal(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic']}]}).success,false);
+  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic'],observation:'synthetic.observe@1'}]}).success);
+});
+test('item 5 per-check work limits stay within the sandbox maxima and exclude effect budgets',()=>{
+  const check={id:'test',function:{module:'functions/check.ts'},applies:'item',judges:'subject',limits:{outputBytes:64*1024*1024,timeoutMs:120000}};
+  assert.ok(CheckEntry.safeParse(check).success);
+  assert.equal(CheckEntry.safeParse({...check,limits:{outputBytes:64*1024*1024+1}}).success,false);
+  assert.equal(CheckEntry.safeParse({...check,limits:{effects:3}}).success,false);
+});
+
+test('item 5 contract capacities match the independent sandbox protocol capacities',()=>{
+  const text=readFileSync(new URL('../../hub/rules/sandbox/sandbox.ts',import.meta.url),'utf8');
+  const body=/const MAX_LIMITS: SandboxLimits = \{([\s\S]*?)\};/.exec(text)?.[1];assert.ok(body);
+  const values=Object.fromEntries([...body.matchAll(/([A-Za-z]+):\s*([0-9_* ]+)/g)].map(match=>[match[1],match[2].split('*').reduce((value,part)=>value*Number(part.replaceAll('_','').trim()),1)]));
+  assert.deepEqual(pack.CHECK_LIMITS_MAX,values);
 });

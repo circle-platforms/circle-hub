@@ -158,6 +158,7 @@ export const RequirementTemplate = z
     accepts_declared_independence: z.boolean().optional().describe('accept the independence the client declares (A04 R[4]); not accepted when absent'),
     checks: z.array(Key).describe('ids from checks.json that judge this requirement; none means no check is installed (reason no_check)'),
     expected: ExpectedOutcome.optional(),
+    observation:Versioned.optional().describe('P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine'),
     error_handling: z.array(ErrorHandlingRow),
     requires_discrimination: z.boolean().optional(),
   })
@@ -165,7 +166,7 @@ export const RequirementTemplate = z
     if ((r.accepted_producer === 'independent_judgment') !== (r.independent_of !== undefined)) {
       ctx.addIssue({ code: 'custom', path: ['independent_of'], message: 'an independent judgment names what it is independent of, and only one does' });
     }
-    if (r.accepted_producer === 'fact' && r.target === 'run' && r.checks.length === 0) {
+    if (r.accepted_producer === 'fact' && r.target === 'run' && r.layers.includes('static') && r.checks.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['checks'], message: 'a fact over the whole target needs a check' });
     }
     const codes = r.error_handling.map(e=>e.code!==undefined?'code:'+e.code:'reason:'+e.reason);
@@ -186,6 +187,26 @@ export const RequirementsFile = z
     });
   });
 export type RequirementsFile = z.infer<typeof RequirementsFile>;
+
+/** New publication boundary; the base file shape remains available for older frozen publications. */
+export const PublishableRequirementsFile=RequirementsFile.superRefine((file,ctx)=>{
+  file.requirements.forEach((requirement,index)=>{
+    if(requirement.accepted_producer!=='fact')return;
+    if(requirement.layers.includes('static')&&requirement.checks.length===0)ctx.addIssue({code:'custom',path:['requirements',index,'checks'],message:'a declared static fact layer has an installed check at publication'});
+    if(requirement.layers.includes('dynamic')&&requirement.observation===undefined)ctx.addIssue({code:'custom',path:['requirements',index,'observation'],message:'a dynamic fact layer names the P07 observation contract'});
+  });
+});
+
+/** These are the sandbox protocol capacities, not effect counts or effect durations. */
+export const CHECK_LIMITS_MAX={timeoutMs:120_000,memoryMb:4096,outputBytes:64*1024*1024,logBytes:1024*1024,inputBytes:128*1024*1024} as const;
+export const CheckWorkLimits=z.strictObject({
+  timeoutMs:z.number().int().min(100).max(CHECK_LIMITS_MAX.timeoutMs).optional(),
+  memoryMb:z.number().int().min(32).max(CHECK_LIMITS_MAX.memoryMb).optional(),
+  outputBytes:z.number().int().min(1024).max(CHECK_LIMITS_MAX.outputBytes).optional(),
+  logBytes:z.number().int().min(0).max(CHECK_LIMITS_MAX.logBytes).optional(),
+  inputBytes:z.number().int().min(1024).max(CHECK_LIMITS_MAX.inputBytes).optional(),
+});
+export type CheckWorkLimits=z.infer<typeof CheckWorkLimits>;
 
 // ---------------------------------------------------------------- checks.json (C05)
 
@@ -294,6 +315,7 @@ export const CheckEntry = z
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
     tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
+    limits:CheckWorkLimits.optional().describe('Per-check work limits within sandbox capacity; omission inherits service defaults, never an effect budget'),
     reads: CheckReads.optional().describe('bound sources of these roles are read into sources for this check'),
   })
   .superRefine((c, ctx) => {

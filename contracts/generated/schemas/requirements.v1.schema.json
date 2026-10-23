@@ -141,6 +141,11 @@
             ],
             "additionalProperties": false
           },
+          "observation": {
+            "description": "P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
           "error_handling": {
             "type": "array",
             "items": {
