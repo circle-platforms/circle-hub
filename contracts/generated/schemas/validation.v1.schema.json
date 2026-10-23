@@ -166,6 +166,11 @@
               "label": {
                 "type": "string"
               },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
+              },
               "location": {
                 "type": "string",
                 "maxLength": 8192,
@@ -208,6 +213,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -254,7 +601,36 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "unchecked",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           },
                           {
                             "type": "object",
@@ -273,6 +649,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -319,7 +1037,37 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           }
                         ]
                       },
@@ -720,6 +1468,11 @@
               "label": {
                 "type": "string"
               },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
+              },
               "location": {
                 "type": "string",
                 "maxLength": 8192,
@@ -767,6 +1520,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -813,7 +1908,36 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "unchecked",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           },
                           {
                             "type": "object",
@@ -832,6 +1956,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -878,7 +2344,37 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           }
                         ]
                       },
@@ -1280,6 +2776,11 @@
               "label": {
                 "type": "string"
               },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
+              },
               "location": {
                 "type": "string",
                 "maxLength": 8192,
@@ -1339,6 +2840,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -1385,7 +3228,36 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "unchecked",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           },
                           {
                             "type": "object",
@@ -1404,6 +3276,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -1450,7 +3664,37 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           }
                         ]
                       },
@@ -1852,6 +4096,11 @@
               "label": {
                 "type": "string"
               },
+              "skip_reason": {
+                "description": "The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code",
+                "type": "string",
+                "pattern": "\\S"
+              },
               "location": {
                 "type": "string",
                 "maxLength": 8192,
@@ -1911,6 +4160,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -1957,7 +4548,36 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "unchecked",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           },
                           {
                             "type": "object",
@@ -1976,6 +4596,348 @@
                                   "incomplete"
                                 ]
                               },
+                              "missing": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              },
+                              "exit": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reread",
+                                      "reconcile",
+                                      "observe",
+                                      "request",
+                                      "rerun",
+                                      "reevaluate"
+                                    ]
+                                  },
+                                  "request_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clarification",
+                                      "repair",
+                                      "disposition",
+                                      "judgment"
+                                    ]
+                                  },
+                                  "audience": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "hub": {
+                                            "type": "boolean",
+                                            "const": true
+                                          }
+                                        },
+                                        "required": [
+                                          "hub"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "user": {
+                                            "type": "string",
+                                            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                          }
+                                        },
+                                        "required": [
+                                          "user"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "external": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mapping": {
+                                                "type": "string",
+                                                "maxLength": 8192,
+                                                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                              },
+                                              "identity": {
+                                                "type": "string",
+                                                "pattern": "\\S"
+                                              }
+                                            },
+                                            "required": [
+                                              "mapping",
+                                              "identity"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "external"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "due": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                    "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "audience",
+                                  "due"
+                                ],
+                                "additionalProperties": false,
+                                "allOf": [
+                                  {
+                                    "if": {
+                                      "properties": {
+                                        "action": {
+                                          "const": "request"
+                                        }
+                                      },
+                                      "required": [
+                                        "action"
+                                      ]
+                                    },
+                                    "then": {
+                                      "properties": {
+                                        "request_kind": {},
+                                        "audience": {
+                                          "type": "object",
+                                          "not": {
+                                            "required": [
+                                              "hub"
+                                            ],
+                                            "properties": {
+                                              "hub": {}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "request_kind"
+                                      ]
+                                    },
+                                    "else": {
+                                      "properties": {
+                                        "audience": {
+                                          "type": "object",
+                                          "properties": {
+                                            "hub": {
+                                              "const": true
+                                            }
+                                          },
+                                          "required": [
+                                            "hub"
+                                          ]
+                                        }
+                                      },
+                                      "not": {
+                                        "required": [
+                                          "request_kind"
+                                        ],
+                                        "properties": {
+                                          "request_kind": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "gaps": {
+                                "description": "Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason",
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reason": {
+                                      "type": "string",
+                                      "enum": [
+                                        "no_check",
+                                        "check_error",
+                                        "timeout",
+                                        "missing_input",
+                                        "declared_skip",
+                                        "not_covered",
+                                        "awaiting_step",
+                                        "output_failed",
+                                        "repair_exhausted",
+                                        "budget_exhausted",
+                                        "integrity_unproven"
+                                      ]
+                                    },
+                                    "missing": {
+                                      "type": "string",
+                                      "pattern": "\\S"
+                                    },
+                                    "exit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "action": {
+                                          "type": "string",
+                                          "enum": [
+                                            "reread",
+                                            "reconcile",
+                                            "observe",
+                                            "request",
+                                            "rerun",
+                                            "reevaluate"
+                                          ]
+                                        },
+                                        "request_kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "clarification",
+                                            "repair",
+                                            "disposition",
+                                            "judgment"
+                                          ]
+                                        },
+                                        "audience": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "hub": {
+                                                  "type": "boolean",
+                                                  "const": true
+                                                }
+                                              },
+                                              "required": [
+                                                "hub"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "user": {
+                                                  "type": "string",
+                                                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                                                }
+                                              },
+                                              "required": [
+                                                "user"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "external": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "mapping": {
+                                                      "type": "string",
+                                                      "maxLength": 8192,
+                                                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                                                    },
+                                                    "identity": {
+                                                      "type": "string",
+                                                      "pattern": "\\S"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "mapping",
+                                                    "identity"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "external"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "due": {
+                                          "type": "string",
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+                                        }
+                                      },
+                                      "required": [
+                                        "action",
+                                        "audience",
+                                        "due"
+                                      ],
+                                      "additionalProperties": false,
+                                      "allOf": [
+                                        {
+                                          "if": {
+                                            "properties": {
+                                              "action": {
+                                                "const": "request"
+                                              }
+                                            },
+                                            "required": [
+                                              "action"
+                                            ]
+                                          },
+                                          "then": {
+                                            "properties": {
+                                              "request_kind": {},
+                                              "audience": {
+                                                "type": "object",
+                                                "not": {
+                                                  "required": [
+                                                    "hub"
+                                                  ],
+                                                  "properties": {
+                                                    "hub": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "request_kind"
+                                            ]
+                                          },
+                                          "else": {
+                                            "properties": {
+                                              "audience": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "hub": {
+                                                    "const": true
+                                                  }
+                                                },
+                                                "required": [
+                                                  "hub"
+                                                ]
+                                              }
+                                            },
+                                            "not": {
+                                              "required": [
+                                                "request_kind"
+                                              ],
+                                              "properties": {
+                                                "request_kind": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "reason",
+                                    "missing",
+                                    "exit"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
                               "code": {
                                 "description": "violation code; required when the terminal is violation or fail",
                                 "type": "string",
@@ -2022,7 +4984,37 @@
                               "layer",
                               "terminal"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "terminal": {
+                                      "enum": [
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "terminal"
+                                  ]
+                                },
+                                "then": {
+                                  "properties": {
+                                    "missing": {},
+                                    "exit": {},
+                                    "reason": {}
+                                  },
+                                  "required": [
+                                    "missing",
+                                    "exit",
+                                    "reason"
+                                  ]
+                                }
+                              }
+                            ]
                           }
                         ]
                       },

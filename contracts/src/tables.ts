@@ -10,7 +10,8 @@
 // mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
 // "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, DynamicTerminalSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
 import { ReferenceUri } from './reference.ts';
 
 /** Limits of the pattern@1 samples, so validating a table stays cheap (the matcher also caps its work on them). */
@@ -162,7 +163,7 @@ export const CatalogTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a commands location that is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
     claims: z
       .strictObject({
         select: JsonPath.describe('Statements that a command exists or does not exist; a missing location means no statements'),
@@ -191,14 +192,15 @@ export type CatalogTable = z.infer<typeof CatalogTable>;
 
 /** Parameter types of a catalog signature. */
 export const CatalogParamType = z
-  .enum(['string', 'int', 'enum', 'ipv4', 'ipv6', 'mask', 'port', 'keyword'])
-  .describe('string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword');
+  .enum(['string', 'int', 'enum', 'ipv4', 'ipv6', 'mask', 'port', 'keyword', 'hostname', 'ip_or_hostname'])
+  .describe('string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract');
 export type CatalogParamType = z.infer<typeof CatalogParamType>;
 
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
     type: CatalogParamType,
+    address_role:z.string().regex(/\S/).optional().describe('Role identifier from the bound published runtime/bed contract, not an inferred core role'),
     optional: z.boolean().optional().describe('The argument may be omitted'),
     default: z.string().optional().describe('Value used when the argument is omitted, as documented by the source'),
     minimum: z.number().optional().describe('int and port: inclusive lower bound'),
@@ -209,7 +211,7 @@ export const CatalogParam = z
     keyword: z.string().min(1).optional().describe('keyword: the literal word; defaults to the parameter name'),
     description: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
   })
-  .describe('One typed parameter of a signature');
+  .describe('One typed parameter of a signature. A producer interprets a scalar source limit by that source format and emits generic constraints: an exact numeric value uses equal minimum/maximum, a ceiling uses maximum, a member uses values, a length uses maxLength; raw limit is not guessed by the core');
 export type CatalogParam = z.infer<typeof CatalogParam>;
 
 export const CatalogSignature = z
@@ -256,7 +258,7 @@ export const MembershipTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a missing location is unknown (missing input); otherwise it is nothing to check and listed in data.missing. An empty list is nothing to check either way'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({ title: 'membership@1', description: 'Membership table: values must belong to a closed set. Code: core.membership.not_in_set' });
 export type MembershipTable = z.infer<typeof MembershipTable>;
@@ -301,7 +303,7 @@ export const PatternTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a rule whose location is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({ title: 'pattern@1', description: 'Pattern table: values must (or must not) match declared patterns. Code: core.pattern.no_match' });
 export type PatternTable = z.infer<typeof PatternTable>;
@@ -333,7 +335,8 @@ export const RangeCheck = z
     z.strictObject({
       values: JsonPath,
       threshold: z
-        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds })
+        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds, empty:DynamicTerminalSchema.extract(['fail','pass']).optional().meta({default:'fail'}).describe('Only min/max on an empty set: pass or fail, omission means fail; count and sum keep their defined numeric zero') })
+        .superRefine((value,ctx)=>{if(value.empty!==undefined&&value.measure!=='min'&&value.measure!=='max')ctx.addIssue({code:'custom',path:['empty'],message:'empty is declared only for min and max'});})
         .describe('The aggregate of all selected values must lie in the bounds'),
     }),
   ])
@@ -348,7 +351,7 @@ export const RangeTable = z
     required: z
       .boolean()
       .optional()
-      .describe('When true, a check whose location is missing is unknown (missing input); otherwise it is nothing to check and listed in data.missing'),
+      .describe('A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown'),
   })
   .meta({
     title: 'range@1',
@@ -364,9 +367,9 @@ export const CoverageTable = z
     schema: z.literal('coverage@1'),
     ...common,
     required: z
-      .union([ClosedSet, z.strictObject({ select: JsonPath.describe('Members taken from the subject itself; a missing location is unknown (missing input)') })])
+      .union([ClosedSet, z.strictObject({ select: JsonPath.describe('Members taken from the subject itself; a missing required location refutes core.structure.required_empty and names it in data.missing') })])
       .describe('The members that must be covered'),
-    covered: z.array(JsonPath).min(1).describe('Subject locations listing the covered members; when every one is missing the check is unknown (missing input)'),
+    covered: z.array(JsonPath).min(1).describe('Subject locations listing the covered members; missing required locations refute core.structure.required_empty with data.missing'),
     skipped: z
       .strictObject({
         select: JsonPath.describe('Declared skips'),
@@ -409,6 +412,8 @@ export type QuoteTable = z.infer<typeof QuoteTable>;
 
 export const CheckOutcome = z
   .strictObject({
+    missing:MissingFact.optional().describe('Required for unknown; the Hub must not guess it from statement or data.missing'),
+    exit:UnknownExit.optional().describe('An optional fully bound exit intent; the Hub resolves a missing exit from the cause before writing a layer result'),
     // Checks support, refute or stay unknown; only judges may abstain (V01).
     verdict: VerdictSchema.exclude(['abstain']),
     code: z.string().min(1).optional().describe('Violation code when refuted: core.*, a protocol code, or a pack code under the pack name'),
@@ -420,7 +425,8 @@ export const CheckOutcome = z
     pointer: JsonPointer.optional().describe('Location inside the subject'),
     data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable parts of the statement'),
   })
-  .meta({ title: 'check-outcome@1', description: 'One outcome of a core interpreter or a pack check function (V01)' });
+  .superRefine((outcome,ctx)=>{if(outcome.verdict==='unknown'){if(outcome.missing===undefined)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown check outcome names its missing fact'});if(outcome.reason===undefined)ctx.addIssue({code:'custom',path:['reason'],message:'an unknown check outcome names its reason'});}})
+  .meta({ ...recoveryCondition('verdict',['unknown'],['missing','reason']), title: 'check-outcome@1', description: 'One outcome of a core interpreter or a pack check function (V01)' });
 export type CheckOutcome = z.infer<typeof CheckOutcome>;
 
 /** Every table kind by its interpreter id. */

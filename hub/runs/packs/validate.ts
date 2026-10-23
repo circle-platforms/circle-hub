@@ -362,7 +362,8 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       });
       const interpreters = new Set(r.checks.map((id) => interpreterOf.get(id)).filter((x): x is string => x !== undefined));
       r.error_handling.forEach((row, k) => {
-        const field = `/requirements/${i}/error_handling/${k}/code`;
+        const field = `/requirements/${i}/error_handling/${k}/${row.reason!==undefined?'reason':'code'}`;
+        const selector=row.reason!==undefined?'原因 '+labelOf('reason',row.reason):row.code;
         if (row.action === 'reject' && !r.checks.some((id) => blockingOnArtifact.has(id))) {
           const artifact = labelOf('source_role', 'artifact_under_verification');
           const others = ERROR_HANDLING.filter((a) => a !== 'reject').map((a) => labelOf('error_handling', a));
@@ -370,12 +371,14 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
             problem(
               'requirements.reject_scope',
               'requirements.json',
-              `要求项 ${r.key} 把 ${row.code} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
+              `要求项 ${r.key} 把 ${selector} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
               `改成${others.join('、')}之一，或者让这个要求项带一个判定${artifact}的${tierText('blocking')}检查`,
               { field: `/requirements/${i}/error_handling/${k}/action` },
             ),
           );
         }
+        // Cause selectors were checked by the generated ReasonSchema, not an installed interpreter.
+        if(row.code===undefined)return;
         if (!isKnownCode(row.code, manifest.id)) {
           c.add(problem('requirements.unknown_code', 'requirements.json', `要求项 ${r.key} 的错误处理行用了未知的码 ${row.code}`, `用 *、核心违规码、协议码，或者包自己的码（${manifest.id}.<码>）`, { field }));
         } else if (Object.hasOwn(CORE_VIOLATION_CODES, row.code)) {

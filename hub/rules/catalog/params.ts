@@ -17,6 +17,8 @@ export const PARAM_TYPE_TEXT: Record<CatalogParamType, string> = {
   mask: 'IPv4 掩码',
   port: '端口号',
   keyword: '关键字',
+  hostname: '主机名',
+  ip_or_hostname: 'IPv4、IPv6 地址或主机名',
 };
 
 export function parseIpv4(value: string): number[] | undefined {
@@ -59,6 +61,15 @@ export function isIpv6(value: string): boolean {
   }
   if (halves.length === 2) return count <= 7;
   return count === 8;
+}
+
+/** Bounded ASCII DNS labels (including single-label and trailing-dot names); never resolve or coerce a URL/IP. */
+export function isHostname(value:string):boolean {
+  if(!value.length||value.length>254)return false;
+  const name=value.endsWith('.')?value.slice(0,-1):value;
+  if(!name.length||name.length>253||!/^[A-Za-z0-9.-]+$/.test(name))return false;
+  if(name.includes('.')&&/^[0-9.]+$/.test(name))return false;
+  return name.split('.').every(label=>label.length>=1&&label.length<=63&&/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label));
 }
 
 /** Dotted IPv4 netmask: contiguous one bits followed by zero bits. */
@@ -121,6 +132,13 @@ export function checkParam(param: CatalogParam, value: string, fold: boolean): P
       return parseIpv4(value) ? { ok: true } : { ok: false, code: 'core.catalog.param_type_mismatch', expected: PARAM_TYPE_TEXT.ipv4 };
     case 'ipv6':
       return isIpv6(value) ? { ok: true } : { ok: false, code: 'core.catalog.param_type_mismatch', expected: PARAM_TYPE_TEXT.ipv6 };
+    case 'hostname':
+    case 'ip_or_hostname': {
+      const valid=param.type==='hostname'?isHostname(value):parseIpv4(value)!==undefined||isIpv6(value)||isHostname(value);
+      if(!valid)return {ok:false,code:'core.catalog.param_type_mismatch',expected:PARAM_TYPE_TEXT[param.type]};
+      if(!inBounds(codePoints(value),param.minLength,param.maxLength))return {ok:false,code:'core.catalog.param_out_of_range',expected:PARAM_TYPE_TEXT[param.type]+'；长度'+boundsText(param.minLength,param.maxLength)};
+      return {ok:true};
+    }
     case 'mask':
       return isMask(value) ? { ok: true } : { ok: false, code: 'core.catalog.param_type_mismatch', expected: `${PARAM_TYPE_TEXT.mask}（连续的 1 位）` };
   }

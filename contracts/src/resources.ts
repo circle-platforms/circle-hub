@@ -11,6 +11,7 @@
 // units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import type {ProtocolCode} from '../generated/protocol.ts';
 import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
@@ -372,6 +373,8 @@ export const RouteDeclaration = z
     headers: z.record(HeaderName, HeaderValue).optional().describe('fixed request headers, for example Depth: 1'),
     response: z.enum(RESPONSE_KINDS),
     max_bytes: z.number().int().min(1).max(MAX_ROUTE_BYTES).describe('a longer response is an error; it is never truncated'),
+    pagination:z.strictObject({max_pages:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('The planner may request further pages within this finite bound; no hidden fetch or truncated completion'),
+    redirects:z.strictObject({same_origin:z.literal(true),max_hops:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('Each same-origin hop is another planned, recorded read request; never a transport auto-follow'),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),
     envelope: EnvelopeMode.optional().describe('check the system envelope of a JSON answer: true, when_present or false'),
     parse: Versioned.optional().describe('a core parser whose model the read functions get besides the text'),
@@ -682,6 +685,16 @@ export const ResourceRecord = z
     }
     if (size > 64 * 1024) ctx.addIssue({ code: 'custom', path: ['settings'], message: 'settings are at most 64 KiB of JSON' });
   });
+/** Activation/routing snapshot supplied by the registry, including the types declared by each bound system pack. */
+export const ReadResourceRoutingSet=z.array(z.strictObject({resource:ResourceId,environment:EnvironmentSchema,enabled:z.boolean(),types:z.array(ExternalType).min(1)})).superRefine((resources,ctx)=>{
+  const owners=new Map<string,string>();
+  resources.forEach((resource,index)=>{if(!resource.enabled)return;resource.types.forEach((type,at)=>{
+    const key=resource.environment+':'+type,old=owners.get(key);
+    if(old!==undefined&&old!==resource.resource)ctx.addIssue({code:'custom',path:[index,'types',at],message:'an environment and external type have at most one enabled resource'});
+    owners.set(key,resource.resource);
+  });});
+});
+
 export type ResourceRecord = z.infer<typeof ResourceRecord>;
 
 // ---------------------------------------------------------------- read functions: planner and projection
@@ -790,14 +803,25 @@ export const DerivedArtifact = z
   });
 export type DerivedArtifact = z.infer<typeof DerivedArtifact>;
 
+/** A system-level observation of absence, not a permission-neutral failure. */
+export const SourceAbsent=z.strictObject({
+  code:z.literal('SOURCE_ABSENT' satisfies ProtocolCode),
+  system:PackId,
+  object:ExternalObjectId,
+  observed_at:IsoTime,
+  responses:z.array(RequestKey).min(1).optional().describe('Stored response keys that support the observation; the service verifies them against the current read'),
+});
+export type SourceAbsent=z.infer<typeof SourceAbsent>;
+
 export const ReadProjectionOutput = z.union([
   z.strictObject({
     revision: z.string().min(1).max(200).nullable().optional().describe('the revision of the object, when the system has one'),
     artifacts: z.array(DerivedArtifact).max(MAX_DERIVED_ARTIFACTS),
+    absent:SourceAbsent.optional().describe('A determinate authorized absence; the service binds its originals and never turns permission denial into this observation'),
     complete: z.boolean().optional().describe('false when the projection saw that the read did not cover the object; it never makes coverage complete'),
     note: z.string().max(500).optional(),
     warnings: z.array(z.string().max(500)).max(50).optional(),
-  }),
+  }).superRefine((output,ctx)=>{if(output.absent!==undefined){if(output.artifacts.length)ctx.addIssue({code:'custom',path:['artifacts'],message:'an absent object has no found-content artifacts'});if(output.complete===false)ctx.addIssue({code:'custom',path:['complete'],message:'an incomplete lookup cannot assert whole-object absence'});}}).meta({allOf:[{if:{required:['absent'],properties:{absent:{}}},then:{properties:{artifacts:{type:'array',maxItems:0},complete:{const:true}}}}]}),
   z.strictObject({
     error: z.strictObject({ code: z.string().min(1).max(100), message: z.string().max(2000) }),
     warnings: z.array(z.string().max(500)).max(50).optional(),

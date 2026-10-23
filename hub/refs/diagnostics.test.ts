@@ -1,5 +1,6 @@
 // Synthetic refusals across registry, upload MCP response and the production input binder.
 import assert from 'node:assert/strict';
+import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { test } from 'node:test';
 import { ParseError, createDefaultRegistry, recognize } from './api.ts';
 import { createTestServer } from '../server/testing.ts';
@@ -8,7 +9,7 @@ import { Refusal } from '../runs/engine/errors.ts';
 import type { EngineContext } from '../runs/engine/deps.ts';
 import type { LoadedWorkflow } from '../ports.ts';
 
-const FIX = '上传能按声明格式解析的文件，或换用对应的解析器';
+const FIX = PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix;
 const vectors = [
   ['application/json', '{broken', 'json@1', /不是有效的 JSON/],
   ['application/xml', '<private-synthetic><other></private-synthetic>', 'xml@1', /XML 格式不对/],

@@ -141,15 +141,37 @@
             ],
             "additionalProperties": false
           },
+          "observation": {
+            "description": "P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
           "error_handling": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
                 "code": {
+                  "description": "A violation code or *, mutually exclusive with reason",
                   "type": "string",
-                  "minLength": 1,
-                  "description": "a core violation code, a pack code, or * for any other"
+                  "minLength": 1
+                },
+                "reason": {
+                  "description": "A generated cause selector, mutually exclusive with code",
+                  "type": "string",
+                  "enum": [
+                    "no_check",
+                    "check_error",
+                    "timeout",
+                    "missing_input",
+                    "declared_skip",
+                    "not_covered",
+                    "awaiting_step",
+                    "output_failed",
+                    "repair_exhausted",
+                    "budget_exhausted",
+                    "integrity_unproven"
+                  ]
                 },
                 "action": {
                   "type": "string",
@@ -168,7 +190,6 @@
                 }
               },
               "required": [
-                "code",
                 "action"
               ],
               "additionalProperties": false
