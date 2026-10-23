@@ -1,0 +1,43 @@
+{
+  "schema": "structure@1",
+  "tier": "blocking",
+  "basis": "K03 R[4]-R[6]",
+  "nodes": "$.slots.contribution[*]",
+  "rules": [
+    {
+      "fields": [
+        {
+          "path": "/code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "path": "/text",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "path": "/data/root",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "path": "/data/path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "path": "/data/source/reference",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "path": "/data/source/quote",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "origin": "所有者 2026-10-23 知识库方向和 K03 R[4]-R[6]"
+}

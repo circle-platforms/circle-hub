@@ -5,12 +5,12 @@
 //
 // Record layout (hub/knowledge/README.md): nodes and entries are `tree_node` records (tree content, never a ground on their
 // own, B01 R[5]), compositions are `tree_root` records (a large one with `tree_root` part records beside it), current-root
-// moves are `root_pointer` records, builds, calibration sets, observations and candidates are `claim` records with the
+// moves are `root_pointer` records, builds, calibration sets, observations and contributions are `claim` records with the
 // schemas below. Digests of nodes and entries cover the normalised content only (K01 R[7], K02 R[4]); see nodeDigest and
 // entryDigest in hub/knowledge.
-import { CandidateQuote, DocumentOutput } from './candidates.ts';
+import { KnowledgeContributionBody } from './contributions.ts';
 import { z } from 'zod';
-import { RelationKindSchema, BasisRankSchema, EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
+import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
 import { Applicability, BuildInfo, CatalogDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
@@ -370,33 +370,6 @@ export const KnowledgeObservationBody = z.strictObject({
 });
 export type KnowledgeObservationBody = z.infer<typeof KnowledgeObservationBody>;
 
-/**
- * A person's candidate (K03): experience a model summarised in Circle, visible to its owner only. It binds the node path,
- * the digest of the cited fragment and the root it rests on (K03 R[5]); its ground is an uploaded session excerpt whose
- * quotation the Hub verified before the candidate entered the layer (K03 R[4]). Never in a root digest.
- */
-export const KnowledgeCandidateBody = z.strictObject({
-  owner: UserId,
-  product: ProductId.optional(),
-  root: Sha256.optional(),
-  path: TreePath.optional(),
-  cited_fragment: Sha256.describe('SHA-256 of the text at the path in that root when the candidate was written'),
-  statement: z.string().min(1),
-  ground: CandidateQuote,
-  applicability: Applicability.nullable(),
-  kind: DocumentOutput.shape.kind.optional().describe('the document-output format declared by the locked workflow'),
-  output: z.string().optional(),
-  model: z.string().optional().describe('client-declared exact model/configuration; not an evidence grade'),
-  basis_rank: BasisRankSchema.optional().describe('computed by the Hub; model document proposals are judgments'),
-  source: CandidateQuote.extend({fragment:Sha256,provenance:ProvenanceTypeSchema,record:Sha256.optional()}).optional().describe('immutable original fragment, source record and its actual provenance'),
-  relation: z.strictObject({name:RelationKindSchema,other:CandidateQuote.extend({fragment:Sha256,provenance:ProvenanceTypeSchema,record:Sha256.optional()})}).optional().describe('records only a proposed relation; neither endpoint is modified'),
-  source_revision: Sha256.optional().describe('the cited source revision for an unrooted candidate'),
-}).superRefine((value,ctx)=>{
-  if((value.root===undefined)!==(value.path===undefined))ctx.addIssue({code:'custom',path:['path'],message:'root and path are supplied together'});
-  if(value.root===undefined && value.source_revision===undefined)ctx.addIssue({code:'custom',path:['source_revision'],message:'an unrooted candidate binds its source revision'});
-});
-export type KnowledgeCandidateBody = z.infer<typeof KnowledgeCandidateBody>;
-
 export const schemas: Record<string, z.ZodType> = {
   'tree_node@1': TreeNodeBody,
   'knowledge-entry@1': KnowledgeEntryBody,
@@ -408,5 +381,5 @@ export const schemas: Record<string, z.ZodType> = {
   'knowledge-build@1': KnowledgeBuildBody,
   'knowledge-calibration@1': KnowledgeCalibrationBody,
   'knowledge-observation@1': KnowledgeObservationBody,
-  'knowledge-candidate@1': KnowledgeCandidateBody,
+  'knowledge-contribution@1': KnowledgeContributionBody,
 };

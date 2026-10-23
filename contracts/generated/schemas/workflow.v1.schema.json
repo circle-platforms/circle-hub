@@ -166,52 +166,25 @@
       ],
       "additionalProperties": false
     },
-    "outputs": {
-      "description": "declared document outputs enter the owner-only candidate layer; task outputs remain in run records",
+    "contribution": {
+      "description": "a dedicated knowledge-contribution run; the named slot contains the document artifact",
       "type": "object",
       "properties": {
-        "documents": {
-          "default": [],
-          "maxItems": 32,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]{0,63}$"
-              },
-              "input": {
-                "description": "the workflow input slot whose document fragments this output may reference",
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]{0,63}$"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "classification",
-                  "placement_proposal",
-                  "assertion",
-                  "relation"
-                ]
-              },
-              "max_items": {
-                "default": 100,
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 100
-              }
-            },
-            "required": [
-              "id",
-              "kind",
-              "max_items"
-            ],
-            "additionalProperties": false
-          }
-        },
+        "slot": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "required": [
+        "slot"
+      ],
+      "additionalProperties": false
+    },
+    "outputs": {
+      "description": "task-specific outputs stay in ordinary run submissions",
+      "type": "object",
+      "properties": {
         "tasks": {
-          "default": [],
           "maxItems": 32,
           "type": "array",
           "items": {
@@ -239,7 +212,6 @@
         }
       },
       "required": [
-        "documents",
         "tasks"
       ],
       "additionalProperties": false

@@ -377,11 +377,7 @@ function uploadText(v: UploadOut): string {
   const blocks: Block[] = [{ priority: 0, head }];
   if (v.errors.length > 0) blocks.push({ priority: 1, head: ['错误与修正：'], entries: errorList(v.errors, CLIP, false).entries, unit: '错误', measure: '个', more: fixFirst });
   if (v.acceptance === 'accepted') {
-    if(v.knowledge_layer==='candidate'){
-      const privateView=v.visibility?.readers.length===1&&v.visibility.admins===false&&v.visibility.shareable===false;
-      blocks.push({priority:0,head:[`候选根据：${privateView?'只本人可见，管理员不可读，不可分享':labelOf('knowledge_layer',v.knowledge_layer)}`,...(v.evidence_gaps??[]).map(oneLine)]});
-    }
-    else if (v.structure === undefined) blocks.push({ priority: 1, head: ['没有核心解析器认出这份文件'] });
+    if (v.structure === undefined) blocks.push({ priority: 1, head: ['没有核心解析器认出这份文件'] });
     else {
       const read = v.reference === undefined ? null : `读原文：${readCall(v.reference)}`;
       const structure = structureLines(v.structure, read);
@@ -963,6 +959,11 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const data = entry.data === undefined ? '' : `；数据 ${clip.field(JSON.stringify(entry.data), CLIP.data, '条目数据的超出部分')}`;
     return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}`, omitted: clip.omitted };
   });
+  for (const view of node.contributions ?? []) {
+    const c = view.contribution;
+    const clip = new Clip(`rec:${view.record}`);
+    entries.push({ text: `  · [${labelOf('knowledge_layer', c.layer)} / ${labelOf('document_output_kind', c.kind)}] ${clip.field(c.statement, CLIP.field, '回注陈述的超出部分')}；来源 ${c.source.reference}（${labelOf('provenance_type',c.source.provenance)}）；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}${view.note === null ? '' : '；'+view.note}${c.relation === undefined ? '' : '；关系 '+labelOf('relation_kind',c.relation.kind)+' → '+c.relation.other.reference}`, omitted: clip.omitted });
+  }
   const children = node.children.map((child) => {
     const clip = new Clip(null, page);
     return { text: `  子节点 ${child.path} ${clip.field(child.name, CLIP.name, '子节点名称的超出部分')}`, omitted: clip.omitted };
@@ -983,7 +984,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     omitted.push(...c.omitted);
   }
   if (keptEntries < entries.length) {
-    const left = node.entries.slice(keptEntries).map((e) => e.reference);
+    const left = [...node.entries.map(e => e.reference), ...(node.contributions ?? []).map(e => `rec:${e.record}`)].slice(keptEntries);
     let listed = 0;
     let size = 0;
     while (listed < left.length && (listed === 0 || size + left[listed].length + 1 <= 3000)) size += left[listed++].length + 1;
@@ -1343,14 +1344,13 @@ function submitText(v: SubmitOut, context: TextContext): string {
     if (result.trace !== v.trace) head.push(`结果出自追踪 ${result.trace} 的那次调用（同一提交的重复调用返回存下的结果）`);
     if (record !== null) head.push(`存下的结果 ${record}（用 get_nodes 按引用读；也可${toConsole}）`);
   }
-  const blocks: Block[] = [{ priority: 0, head }];
-  if(v.candidate_receipt!==undefined){
-    const c=v.candidate_receipt;
-    blocks.push({priority:0,head:[`候选 ${c.count} 条：入层 ${c.accepted+c.deduplicated} 条（新入 ${c.accepted} 条，已有 ${c.deduplicated} 条），没入层 ${c.rejected} 条`],entries:c.errors.map(e=>{
-      const index=/^\/candidates\/(\d+)$/.exec(e.path??'');
-      return {lines:[`${index?`第 ${Number(index[1])+1} 条`:'候选字段'}：${oneLine(e.message)}${e.fix?`；修正：${oneLine(e.fix)}`:''}`],omitted:[]};
-    }),unit:'候选修正',measure:'条',more:()=>null});
+  if (result?.contributions !== undefined) {
+    const c = result.contributions;
+    head.push(`回注：提交 ${c.submitted} 条，入层 ${c.stored.length} 条，未入层 ${c.not_stored.length} 条`);
+    for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}`);
+    for (const entry of c.not_stored) head.push(`未入层条目 ${oneLine(entry.item)}：${oneLine(entry.reason)}`);
   }
+  const blocks: Block[] = [{ priority: 0, head }];
   if (accepted) blocks.push({ priority: 0, head: ['要求项（满足状态与各层终态的条目数）：', ...requirementCounts(result)] });
   if (v.errors.length > 0) {
     const whole = (i: number): string | null => (record !== null ? `${record}#/errors/${i}` : null);

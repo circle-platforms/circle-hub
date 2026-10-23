@@ -55,8 +55,9 @@ export { CALIBRATION, PLACEMENT_CHAIN, maskLiterals, thresholdOf, wilsonLowerBou
 export type { PlaceOptions, PlacementChild, PlacementOutcome, PlacementSpan, PlacementTree } from './placement.ts';
 export { MAX_REAL_OPTIONS, belowThreshold, narrowCandidates, optionNames, placementNote, placementQuestion, questionId, sampleInput } from './placement.ts';
 
-export type { CandidateInput, CandidateView, DocumentCandidateRequest, PreparedCandidates, CandidateGroundPolicy, CandidateWriteReceipt } from './layers.ts';
-export { CandidateLayer, ObservationLayer } from './layers.ts';
+export { ObservationLayer } from './layers.ts';
+export { ContributionLayer } from './contributions.ts';
+export type { ContributionScope, ContributionOrigin, PreparedContribution } from './contributions.ts';
 
 export type { EntryContent, NodeContent } from './digest.ts';
 export { cutText, entryContentOf, entryDigest, nodeDigest, normaliseApplicability, normaliseStatement } from './digest.ts';
@@ -66,5 +67,3 @@ export { KnowledgeError } from './errors.ts';
 
 export type { KnowledgeCliCommand, KnowledgeCliContext, KnowledgeSyncArgs } from './cli.ts';
 export { KNOWLEDGE_SYNC_USAGE, formatSyncReport, knowledgeCliCommand, knowledgeSync, parseKnowledgeSyncArgs } from './cli.ts';
-
-export type { CandidateSourceScope, CandidateResolution } from './candidate-source.ts';

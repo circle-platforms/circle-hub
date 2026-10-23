@@ -45,7 +45,7 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | `read.ts` | permission, `getNodes`, the `TreeReader`, `catalog`, `diffRoots`, `diffEntries`, `provenanceOf` |
 | `placement.ts` | hierarchical placement with the typed-judgment client, judgment records and reuse, calibration samples |
 | `calibration.ts` | Wilson lower bound, threshold rule, calibration sets, literal masking |
-| `layers.ts` | observation and candidate layers |
+| `layers.ts`, `contributions.ts` | observation and verified contribution layers |
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
 | `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` |
 | `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
@@ -65,7 +65,7 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | current-root move | `root_pointer` | `root_pointer@1` | `knowledge.pointer` = product/line, `knowledge.pointer.move` |
 | build (what the sync listed) | `claim` | `knowledge-build@1` | `knowledge.build` = product/folded name, `knowledge.build.product`, `knowledge.build.base` |
 | calibration set | `claim` | `knowledge-calibration@1` | `knowledge.calibration` = chain/model |
-| observation, candidate | `claim` | `knowledge-observation@1`, `knowledge-candidate@1` | `knowledge.observation.product`, `knowledge.candidate.owner` |
+| observation, contribution | `claim` | `knowledge-observation@1`, `knowledge-contribution@1` | `knowledge.observation.product`, `knowledge.contribution.product` |
 | production or its failure | `action` (`generate`) | `action@1` | `knowledge.produce` = product/base, `knowledge.produce.product`, `knowledge.produce.root`, `knowledge.sync` |
 | plan round | `action` (`parse`) | `action@1` | `knowledge.sync` |
 | one typed judgment | `action` (`classify`) | `action@1` | `knowledge.jev.reuse` = reuse key, `knowledge.jev.input` |
@@ -214,9 +214,12 @@ catalogs, grounds and provenance.
     members. Catalog views are cached per composition; the members of a composition in parts are read from the parts of
     the catalog's kind only (decision 20).
 15. **Layers** (K03): observations are appended by the Hub's own verification runs (the echo must be a stored source;
-    no run id) and read with the product, by cursor; candidates belong to their owner only (admins included), rest on
-    the owner's own private upload whose quotation is verified with hub/refs, bind the path, the digest of the text at
-    the path and the root, and show 被引片段已变（根 X → Y） against another root. Neither enters a root digest.
+    no run id) and read with the product, by cursor. Contributions come only through dedicated contribution runs,
+    with every item requirement satisfied. The boundary verifies verbatim quotation, the run scope, locked-root source
+    membership, target path and actual Hub lineage; it accepts no submitted provenance, grade or applicability. Product
+    readers see them beside nodes, with source, submitter, session, time and conservative judgment attribution. Every
+    reader, including administrators, passes the product-reader port. A changed path fragment shows 被引片段已变（根 X → Y）.
+    Candidates remain in Circle; neither layer enters the root digest.
 16. **List slots** (product@1 `ProducerSource` `many`, `ProducerInput.lists`/`batch`, `FragmentRef.source`). An input
     `{source, many: true, batch}` reads every external object the build lists in that role (one id is a list of one;
     repeats are read once, with a warning); a list role read by an input without `many` fails the production, and a
@@ -663,8 +666,8 @@ budget). The suite runs a reduced version (`scale.test.ts`: 300 documents of 20 
   `KnowledgePort` method takes the product line id, not a product name. If production runs of workflow packs should
   move current roots later, a way to check that a run id is a completed production run of the product.
 - **server**: register `knowledgeCliCommand` in the assembly; pass the knowledge service as `KnowledgePort`; supply the
-  admin principal; keep
-  `knowledge-candidate@1` claims private to their owner in the record reader (admins included, K03 R[4]) and treat
+  admin principal; route knowledge-contribution@1 record reads through layers.contributions.read before any admin
+  bypass, and treat
   `tree_node` records as non-groundable (they already are not in refs' groundable kinds); `provenanceOf` now needs the
   caller's principal.
 - **connectors**: store sync reads with the visibility of a shared credential (`admins: true`); a personal-credential

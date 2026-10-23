@@ -1,6 +1,6 @@
 // Submission (W07): what the client hands back. Stored exactly as received; the Hub computes every terminal state itself.
 import { z } from 'zod';
-import { CandidateProposal, CandidateSummary, TaskOutputValue } from './candidates.ts';
+import { TaskOutputValue } from './contributions.ts';
 import type { ItemHandling, Nature } from '../generated/vocabulary.ts';
 import { ItemId, RunId } from './common.ts';
 import { Ground, referenceUriOf } from './reference.ts';
@@ -61,15 +61,16 @@ export const CrossItemJudgment = z.strictObject({
 export const CrossItemSubmission = z.discriminatedUnion('nature', [CrossItemFact, CrossItemJudgment]);
 export type CrossItemSubmission = z.infer<typeof CrossItemSubmission>;
 
-const SubmissionFields = {
+export const Submission = z
+  .strictObject({
     run: RunId,
     model: z.string().min(1).describe('model name and exact configuration as the client declares it'),
     items: z.array(ItemSubmission),
     cross_item: z.array(CrossItemSubmission).optional().describe('claims over several items; optional'),
     notes: z.string().optional(),
-    task_outputs: z.array(TaskOutputValue).max(1000).optional().describe('task-specific ranking, selection and scoring; kept in the run submission only'),
-};
-const submissionRules = (s: {items: z.infer<typeof ItemSubmission>[];cross_item?: z.infer<typeof CrossItemSubmission>[]}, ctx: z.RefinementCtx) => {
+    task_outputs: z.array(TaskOutputValue).max(1000).optional(),
+  })
+  .superRefine((s, ctx) => {
     const first = new Map<string, number>();
     s.items.forEach((entry, i) => {
       const seen = first.get(entry.item);
@@ -84,17 +85,8 @@ const submissionRules = (s: {items: z.infer<typeof ItemSubmission>[];cross_item?
         }
       });
     });
-  };
-export const Submission = z.strictObject({
-  ...SubmissionFields,
-  candidates: z.array(CandidateProposal).max(100).optional().describe('wire-only private document outputs; stripped before submission/run persistence and replaced by count and digest'),
-}).superRefine(submissionRules);
+  });
 export type Submission = z.infer<typeof Submission>;
-export const RecordedSubmission = z.strictObject({
-  ...SubmissionFields,
-  candidate_summary: CandidateSummary.optional().describe('Hub-owned count and digest; the candidate content is never stored in this record'),
-}).superRefine(submissionRules);
-export type RecordedSubmission = z.infer<typeof RecordedSubmission>;
 
 /**
  * Body of a submission record whose arguments did not parse as submission@1: the arguments object exactly as received

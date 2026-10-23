@@ -1,9 +1,9 @@
+import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
 import type { Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
-import type { CandidateLayer } from '../../knowledge/api.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
 import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
@@ -25,7 +25,7 @@ export interface RunsEngineDeps {
   };
   workflows: WorkflowStore;
   packs: PacksPort;
-  knowledge: KnowledgePort & {layers?:{candidates:Pick<CandidateLayer,'prepareDocuments'|'appendPrepared'|'sourceMetadata'>}};
+  knowledge: KnowledgePort & { layers?: { contributions: ContributionLayer } };
   external: ExternalReaderPort;
   /** Core parsers; default the six of hub/refs. */
   parsers?: ParserRegistry;

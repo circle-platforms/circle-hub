@@ -1,5 +1,5 @@
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
-import { WorkflowOutputs } from './candidates.ts';
+import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {
   AcceptedProducerSchema,
@@ -106,7 +106,7 @@ export const RunSummary = z.strictObject({
   requirements: z.array(RequirementSummary),
   items: z.array(ItemProjection),
   slots: SlotSchema.optional().describe('the slot schema to fill for each item; absent when the pack declares no slots'),
-  outputs: WorkflowOutputs.optional().describe('the locked pack declares document candidate and task output destinations; never candidate content'),
+  outputs: WorkflowOutputs.optional(),
   instructions: z.string().describe('the pack procedure, plain text'),
   instructions_digest: Sha256,
   predecessor: RunId.optional(),

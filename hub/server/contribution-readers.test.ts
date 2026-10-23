@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
+import { makeWorld } from '../knowledge/test-support.ts';
+import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
+import { recordReaderFor } from './readers.ts';
+import { FakeRuns, FakeWorkflows } from './fakes.ts';
+
+let postgres:TemporaryPostgres;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('contribution rec reads use the product reader rule before the administrator and run branches',async t=>{
+  const w=await makeWorld(postgres);t.after(()=>w.close());
+  const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('original'),mediaType:'text/plain',origin:{read:{object:'site:document:original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+  const body=KnowledgeContributionBody.parse({layer:'contribution',product:'acme',root:'1'.repeat(64),path:'/node',cited_fragment:'2'.repeat(64),kind:'assertion',statement:'合成回注',source:{reference:`src:${original.body.sha256}`,quote:'original',fragment:'4'.repeat(64),provenance:'observed',records:[original.digest],sources:[original.body.sha256]},submitted_by:w.user.id,session:'observed-session',submitted_at:'2026-10-23T08:00:00.000Z',run:'run_01arz3ndektsv4rrffq69g5fav',submission:'6'.repeat(64),model:'synthetic-integration@1',basis_rank:'judgment',applicability:null});
+  const record=await w.kit.store.put({kind:'claim',schema:'knowledge-contribution@1',provenance:'declared',body});
+  const runs=new FakeRuns(w.kit,new FakeWorkflows(w.kit,[]),()=>new Date());
+  const read=(reader:typeof w.user,layer=w.knowledge.layers.contributions)=>recordReaderFor(w.kit,runs,reader,()=>{},layer).read(record.digest,{user:reader.id,role:reader.role});
+  const found=await read(w.user);assert.deepEqual(found?.body,body);
+  assert.equal(await read(w.outsider),null);
+  const previous=w.packs.readableProducts.bind(w.packs);
+  w.packs.readableProducts=async reader=>reader.id===w.admin.id?new Set():previous(reader);
+  assert.equal(await read(w.admin),null,'admin cannot bypass a denied product');
+  assert.equal(await recordReaderFor(w.kit,runs,w.admin).read(record.digest,{user:w.admin.id,role:w.admin.role}),null,'missing layer wiring is closed even for admin');
+  assert.deepEqual({source:(found!.body as typeof body).source,submitter:(found!.body as typeof body).submitted_by,time:(found!.body as typeof body).submitted_at,basis:(found!.body as typeof body).basis_rank},{source:body.source,submitter:w.user.id,time:body.submitted_at,basis:'judgment'});
+  await w.kit.principals.setDisabled(w.admin,w.user.id,true);
+  assert.equal(await read(w.user),null);
+});

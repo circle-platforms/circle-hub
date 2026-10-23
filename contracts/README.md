@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 53 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 61 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -103,7 +103,7 @@ Rules for a stub:
 
 ## Limits
 
-- Shapes for effects, requests, dispositions, leases, hypothesis sets, in-run checks, criterion change declarations, candidate-layer writes, control-interval details and executor registries are not written yet; their vocabulary is generated.
+- Shapes for effects, requests, dispositions, leases, hypothesis sets, in-run checks, criterion change declarations, control-interval details and executor registries are not written yet; their vocabulary is generated.
 - Bodies of `source_artifact`, `authorization`, `action` and `call_log` records are defined by the records package (`hub/records`) and have no generated JSON Schema.
 - Rules only zod checks (refinements; a validator that reads only the published JSON Schema, such as an MCP client's, accepts these): the order of a byte range; astral format characters and unpaired surrogates in references and external ids; an item, a requirement or a layer listed twice; premises that do not point to an earlier entry; slots beside reuse; the presence rules of decisions 2, 10 and 11 (codes, reasons, attribution, unsatisfied reasons, result, counts, run, resolution, references, receipt and call result agreeing, node and entry references equal to root and path); rounds and coverage consistency; the base64 length rule. `tool-shapes.test.ts` names each of them case by case. The SDK's default validator is draft-07 Ajv: it ignores `prefixItems` (the tuple of `SrcReference.range`).
 - A local path made only of base64 characters, with a length divisible by four, passes as base64; the server can only notice that the bytes do not parse.

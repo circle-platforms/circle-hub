@@ -2,9 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "owner": {
+    "layer": {
       "type": "string",
-      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+      "enum": [
+        "contribution"
+      ]
     },
     "product": {
       "type": "string",
@@ -22,66 +24,9 @@
     },
     "cited_fragment": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "description": "SHA-256 of the text at the path in that root when the candidate was written"
-    },
-    "statement": {
-      "type": "string",
-      "minLength": 1
-    },
-    "ground": {
-      "type": "object",
-      "properties": {
-        "reference": {
-          "type": "string",
-          "maxLength": 8192,
-          "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
-        },
-        "quote": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 65536
-        }
-      },
-      "required": [
-        "reference",
-        "quote"
-      ],
-      "additionalProperties": false
-    },
-    "applicability": {
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "builds": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "platforms": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "models": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "kind": {
-      "description": "the document-output format declared by the locked workflow",
       "type": "string",
       "enum": [
         "classification",
@@ -90,25 +35,11 @@
         "relation"
       ]
     },
-    "output": {
-      "type": "string"
-    },
-    "model": {
-      "description": "client-declared exact model/configuration; not an evidence grade",
-      "type": "string"
-    },
-    "basis_rank": {
-      "description": "computed by the Hub; model document proposals are judgments",
+    "statement": {
       "type": "string",
-      "enum": [
-        "rule_over_observation",
-        "rule_over_claims",
-        "judgment",
-        "relay"
-      ]
+      "minLength": 1
     },
     "source": {
-      "description": "immutable original fragment, source record and its actual provenance",
       "type": "object",
       "properties": {
         "reference": {
@@ -134,24 +65,37 @@
             "candidate"
           ]
         },
-        "record": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+        "records": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "sources": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
         }
       },
       "required": [
         "reference",
         "quote",
         "fragment",
-        "provenance"
+        "provenance",
+        "records",
+        "sources"
       ],
       "additionalProperties": false
     },
     "relation": {
-      "description": "records only a proposed relation; neither endpoint is modified",
       "type": "object",
       "properties": {
-        "name": {
+        "kind": {
           "type": "string",
           "enum": [
             "same_subject",
@@ -184,37 +128,124 @@
                 "candidate"
               ]
             },
-            "record": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+            "records": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "sources": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
             }
           },
           "required": [
             "reference",
             "quote",
             "fragment",
-            "provenance"
+            "provenance",
+            "records",
+            "sources"
           ],
           "additionalProperties": false
         }
       },
       "required": [
-        "name",
+        "kind",
         "other"
       ],
       "additionalProperties": false
     },
-    "source_revision": {
-      "description": "the cited source revision for an unrooted candidate",
+    "submitted_by": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "session": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "submission": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "model": {
+      "type": "string",
+      "description": "client-declared integration model/configuration, not an evidence grade"
+    },
+    "basis_rank": {
+      "type": "string",
+      "enum": [
+        "rule_over_observation",
+        "rule_over_claims",
+        "judgment",
+        "relay"
+      ]
+    },
+    "applicability": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "builds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "platforms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
-    "owner",
+    "layer",
+    "product",
+    "root",
+    "path",
     "cited_fragment",
+    "kind",
     "statement",
-    "ground",
+    "source",
+    "submitted_by",
+    "session",
+    "submitted_at",
+    "run",
+    "submission",
+    "model",
+    "basis_rank",
     "applicability"
   ],
   "additionalProperties": false

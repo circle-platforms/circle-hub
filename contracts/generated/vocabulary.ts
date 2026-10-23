@@ -39,7 +39,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '保持未知' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
-  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'candidate', label: '候选层' }] },
+  knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干' }, { code: 'branch', label: '枝' }, { code: 'leaf', label: '叶' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
@@ -393,9 +393,9 @@ export function isPermissionKind(value: unknown): value is PermissionKind {
 }
 
 /** 知识层 (K03) */
-export const KNOWLEDGE_LAYER = ['tree', 'observation', 'candidate'] as const;
+export const KNOWLEDGE_LAYER = ['tree', 'observation', 'contribution'] as const;
 export type KnowledgeLayer = (typeof KNOWLEDGE_LAYER)[number];
-export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'candidate': '候选层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
+export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'contribution': '回注层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
 export const KnowledgeLayerSchema = z.enum(KNOWLEDGE_LAYER);
 export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
   return (KNOWLEDGE_LAYER as readonly unknown[]).includes(value);

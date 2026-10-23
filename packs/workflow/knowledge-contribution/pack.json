@@ -1,0 +1,85 @@
+{
+  "schema": "pack@1",
+  "id": "knowledge-contribution",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "知识回注",
+  "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "5fd27205dacc84d0a37d570858df1b24c29b22611538c5a29693f1e14c061952",
+      "size": 1663
+    },
+    {
+      "path": "checks.json",
+      "sha256": "5ded60050d7d5693370c72589834436a47ddf471df23d2cfe78646fcd20cc2c8",
+      "size": 647
+    },
+    {
+      "path": "examples/manifest.json",
+      "sha256": "c3a256c6c5da230d00129da66e0f2d030c3bc30ffe7d64360f5e3b1e7f00621a",
+      "size": 100
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "2e4aecd5b837c4bb8be6ca68fa842659cd53e600bdb6b475a2f64167573559f6",
+      "size": 335
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "35afa93918f38959937b10c1b5479351237c231738642f5155cdc4441f35535f",
+      "size": 707
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "102e8c42cd7d54560f7ce1ea00a4ae8e8f7763fbe7a555e33e65d13e12eb0ec0",
+      "size": 981
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "b589f4744660bbac88a12a01a5ba3088f334ad4fd1c58ef9f2f77dfb95e46564",
+      "size": 1041
+    },
+    {
+      "path": "samples/negative/quotes_bad.json",
+      "sha256": "53855e72ed60df35e9e639a49eba4fa59337fd13714c7f6ecb4610a30dd0ef7b",
+      "size": 818
+    },
+    {
+      "path": "samples/negative/shape_bad.json",
+      "sha256": "8be71faced0b1ee23ed33b40c0429441b79381ec32a6ecf05772cbd012f3a4c1",
+      "size": 684
+    },
+    {
+      "path": "samples/positive/quotes_good.json",
+      "sha256": "711913a2e1400b6088a5722cab533c130cb93465ce89153414802bb2e49c4474",
+      "size": 790
+    },
+    {
+      "path": "samples/positive/shape_good.json",
+      "sha256": "635e701033ae0eeb44bb6a845cae7a4b44dd46c4cddfa55bb38bf374ba22aeec",
+      "size": 670
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "a1e725d3741639afb1ef489b65658e20d78fa5ef24886801ccdf233921871138",
+      "size": 2050
+    },
+    {
+      "path": "tables/quotes.json",
+      "sha256": "e93b3bed11c503a6ac42de1fa4c9f2d38b8bdc11b2787a143c3f8e71c327c524",
+      "size": 414
+    },
+    {
+      "path": "tables/shape.json",
+      "sha256": "d4347bb495377df531840f53330056b6a64803424657246fdc7ff681c5e7a139",
+      "size": 900
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "513c860ed6418e3b075ed3662695b7a9f7e9c75fd781a88bfe79f85c3912ade9",
+      "size": 887
+    }
+  ]
+}

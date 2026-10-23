@@ -11,7 +11,8 @@ import { Builds, type LineReconciliation, type MoveRootOptions, type MoveRootRes
 import { CalibrationStore, PLACEMENT_CHAIN, maskLiterals, type CalibrationState, type LabelledSamplesInput } from './calibration.ts';
 import { DEFAULT_KNOWLEDGE_LIMITS, DEFAULT_SANDBOX, WriteQueue, requireAdmin, type KnowledgeContext, type KnowledgeLimits, type KnowledgeRecords } from './context.ts';
 import { compareText, cutText } from './digest.ts';
-import { CandidateLayer, ObservationLayer } from './layers.ts';
+import { ObservationLayer } from './layers.ts';
+import { ContributionLayer } from './contributions.ts';
 import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type PlacementOutcome, type PlacementSpan, type PlacementTree } from './placement.ts';
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
@@ -79,7 +80,7 @@ export interface Knowledge extends KnowledgePort {
   provenanceOf(reference: string, reader: Principal): Promise<ProvenanceRow[] | null>;
   calibration: KnowledgeCalibration;
   placement: KnowledgePlacement;
-  layers: { observations: ObservationLayer; candidates: CandidateLayer };
+  layers: { observations: ObservationLayer; contributions: ContributionLayer };
   /** The knowledge views (impact, facets, index); createKnowledgeReader serves them as external objects. */
   views: KnowledgeViews;
   /** Record access of this package (console and tests). */
@@ -112,7 +113,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const builds = new Builds(context);
   const reading = new TreeReading(context);
   const observations = new ObservationLayer(context, reading);
-  const candidates = new CandidateLayer(context, reading);
+  const contributions = new ContributionLayer(context, reading);
   const views = new KnowledgeViews(context, builds, reading);
 
   const buildCalibrationSet = async (input: BuildCalibrationInput): Promise<{ record: string | null; samples: number; state: CalibrationState | null }> => {
@@ -194,7 +195,15 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     rootInfo: (root) => builds.rootInfo(root),
     catalog: (root, catalogId): Promise<CatalogView | null> => reading.catalog(root, catalogId),
     treeReader: (lock?: TreeLock | null): TreeReader => reading.treeReader(lock ?? null),
-    getNodes: (query: NodesQuery, reader: Principal): Promise<NodesPage | null> => reading.getNodes(query, reader),
+    async getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null> {
+      const page = await reading.getNodes(query, reader);
+      if (page === null) return null;
+      const items = await contributions.list(query.root, page.nodes.map(n => n.path), reader);
+      return { ...page, nodes: page.nodes.map(node => {
+        const attached = items.filter(v => v.contribution.path === node.path);
+        return attached.length === 0 ? node : { ...node, contributions: attached };
+      }) };
+    },
     diffRoots: (from, to): Promise<RootDiff | null> => reading.diff(from, to),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => reading.diffEntries(from, to, diffOptions),
 
@@ -224,7 +233,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       },
       place: (spans, tree, placeOptions) => placer.place(spans, tree, placeOptions),
     },
-    layers: { observations, candidates },
+    layers: { observations, contributions },
     views,
     store,
   };

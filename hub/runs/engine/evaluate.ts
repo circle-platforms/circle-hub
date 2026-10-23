@@ -249,7 +249,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: recordReader(ctx.deps.records.store),
+      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
     };

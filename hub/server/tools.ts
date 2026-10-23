@@ -1,3 +1,4 @@
+import type { ContributionLayer } from '../knowledge/api.ts';
 // The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
 // and delegation to RunsService for the rest. Every answer is validated against the tool's output schema before it is sent;
 // one that does not conform is an internal error and never reaches the caller (D05). isError is true only when the answer is
@@ -276,9 +277,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       author: { user: call.principal.id, declared: null },
       provenanceType: 'declared',
       // B02 R[3]: what is uploaded for a run is visible to its uploader and to admins; widening goes through a share.
-      visibility: parsed.data.knowledge_layer === 'candidate'
-        ? { readers: [call.principal.id], admins: false, packs: [], shareable: false }
-        : { readers: [call.principal.id], admins: true, packs: [], shareable: true },
+      visibility: { readers: [call.principal.id], admins: true, packs: [], shareable: true },
       readTier: 'model_readable',
       name: name ?? null,
     });
@@ -294,8 +293,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   }
   let structure: Record<string, unknown> | null = null;
   try {
-    // Do not expose private excerpt previews or parser diagnostics in an admin note.
-    if (parsed.data.knowledge_layer !== 'candidate') structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
+    structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
   } catch (error) {
     call.context.adminNote(`structure summary failed: ${describeError(error)}`);
   }
@@ -309,11 +307,6 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     size: artifact.body.size,
     media_type: artifact.body.media_type,
     ...(structure === null ? {} : { structure }),
-    ...(parsed.data.knowledge_layer === 'candidate' ? {
-      knowledge_layer: parsed.data.knowledge_layer,
-      visibility: {readers:[call.principal.id],admins:false,shareable:false},
-      evidence_gaps: ['来源缺少消息 id：当前客户端未提供，已记为 null；会话 id 取自 circle-session-id 请求头'],
-    } : {}),
   };
 }
 
@@ -447,7 +440,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     parsers: deps.parsers,
     sources,
     trees: deps.knowledge.treeReader(),
-    records: recordReaderFor(deps.records, deps.runs, call.principal, note),
+    records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
   });
@@ -513,7 +506,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.context.adminNote(`the answer of ${name} does not conform to its output schema and was not sent: ${issues.join('; ')}`);
     throw internalError(call.context.traceId);
   }
-  const value = checked.data as Answer & { call_result: 'ok' | 'error'; errors: ProtocolError[]; acceptance?: Acceptance };
+  const value = checked.data as Answer & { call_result: CallResult; errors: ProtocolError[]; acceptance?: Acceptance };
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;

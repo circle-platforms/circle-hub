@@ -4,6 +4,7 @@
 // source, as a quotation of it (T04 R[5]). A value that does not resolve keeps the whole submission from being accepted
 // (T03 R[3]); a statement the catalog contradicts is not an unresolved value but a fact the checks judge.
 import type { Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
@@ -138,7 +139,7 @@ export interface ResolvedValue {
   source: string | null;
 }
 
-export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string };
+export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string; code?: ProtocolCode };
 
 export interface Resolver {
   /** Resolves inside the run scope; `scoped: false` only for the predecessor's statements a carry-over brings along. */
@@ -167,7 +168,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
     parsers: ctx.parsers,
     sources: sourceReader(artifacts, consumer),
     trees: ctx.deps.knowledge.treeReader(),
-    records: recordReader(store),
+    records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
     consumer,
     documents: ctx.documents,
   } as const;
@@ -178,7 +179,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
       ref = parseReference(reference);
       canonical = formatReference(ref);
     } catch (error) {
-      if (error instanceof ReferenceSyntaxError) return { ok: false, message: `引用格式不对：${error.message}` };
+      if (error instanceof ReferenceSyntaxError) return { ok: false, code:'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}` };
       throw error;
     }
     if (resolving.has(canonical)) {
@@ -188,10 +189,10 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
     try {
       if (scoped) {
         const problem = scopeProblem(ref, scope);
-        if (problem !== null) return { ok: false, message: problem };
+        if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       const result = await resolveReference(ref, context);
-      if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
+      if (!result.resolved) return { ok: false, code:result.code, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
         try {

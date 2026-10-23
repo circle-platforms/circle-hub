@@ -10,7 +10,7 @@ import { Claim } from './claim.ts';
 import { SchemaId } from './common.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
-import { ReceivedSubmission, RecordedSubmission } from './submission.ts';
+import { ReceivedSubmission, Submission } from './submission.ts';
 import { ValidationResult } from './validation.ts';
 
 export * from '../generated/vocabulary.ts';
@@ -21,6 +21,7 @@ export * from './claim.ts';
 export * from './validation.ts';
 export * from './run.ts';
 export * from './submission.ts';
+export * from './contributions.ts';
 export * from './records.ts';
 export * from './annotations.ts';
 export * from './tools.ts';
@@ -47,7 +48,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
     'run@1': RunRecord,
     'run-summary@1': RunSummary,
     'pack-summary@1': PackSummary,
-    'submission@1': RecordedSubmission,
+    'submission@1': Submission,
     'submission-received@1': ReceivedSubmission,
     'validation@1': ValidationResult,
   },
