@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { syncBuiltinESMExports } from 'node:module';
 import { after, before, test } from 'node:test';
+import fsp from 'node:fs/promises';
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,7 +10,7 @@ import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { workflowPack, withFiles, writePack } from '../runs/packs/testing/builder.ts';
 import { createApp } from './app.ts';
 import type { CliIo, ServerDeps } from './api.ts';
-import { localToolsCommand, verifyLocalTools, localHubAddress } from './cli-local-tools.ts';
+import { installLocalTools, localToolsCommand, verifyLocalTools, localHubAddress } from './cli-local-tools.ts';
 import { main } from './cli.ts';
 let root: string; let source: Awaited<ReturnType<typeof writePack>>; let app: ReturnType<typeof createApp>; let url: string; const token = 'synthetic-client-token';
 const ref = 'synthetic-workflow@10.6.0';
@@ -274,5 +276,52 @@ test('an install interrupted mid-download leaves nothing that blocks the next on
       await new Promise((resolve) => child.once('exit', resolve));
     }
     await new Promise<void>((done) => server.close(() => done()));
+  }
+});
+
+test('a concurrent install keeps a live staging directory that has no owner file yet or anymore', async () => {
+  const realMkdtemp = fsp.mkdtemp;
+  const realRm = fsp.rm;
+  const hub = new URL(url);
+  const settle = <T>(promise: Promise<T>) => promise.then((value) => ({ ok: true as const, value }), (error: unknown) => ({ ok: false as const, error }));
+  try {
+    for (const phase of ['before-owner-write', 'before-verify'] as const) {
+      let ready!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => { ready = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let held = false;
+      const into = join(root, `race-${phase}`);
+      if (phase === 'before-owner-write') {
+        fsp.mkdtemp = (async (...args: Parameters<typeof realMkdtemp>) => {
+          const path = await Reflect.apply(realMkdtemp, fsp, args) as string;
+          if (!held && String(args[0]).startsWith(into)) { held = true; ready(); await gate; }
+          return path;
+        }) as typeof fsp.mkdtemp;
+      } else {
+        fsp.rm = (async (...args: Parameters<typeof realRm>) => {
+          const value = await Reflect.apply(realRm, fsp, args);
+          if (!held && String(args[0]).endsWith('.install-owner') && String(args[0]).startsWith(into)) { held = true; ready(); await gate; }
+          return value;
+        }) as typeof fsp.rm;
+      }
+      syncBuiltinESMExports();
+      const first = settle(installLocalTools(ref, source.digest, into, hub, token));
+      await entered;
+      const second = await settle(installLocalTools(ref, source.digest, into, hub, token));
+      release();
+      const answer = await first;
+      fsp.mkdtemp = realMkdtemp;
+      fsp.rm = realRm;
+      syncBuiltinESMExports();
+      const detail = (error: unknown) => error instanceof Error ? error.message : String(error);
+      assert.equal(answer.ok, true, answer.ok ? '' : detail(answer.error));
+      assert.equal(second.ok, true, second.ok ? '' : detail(second.error));
+      assert.equal((await verifyLocalTools(join(into, ref))).ok, true);
+    }
+  } finally {
+    fsp.mkdtemp = realMkdtemp;
+    fsp.rm = realRm;
+    syncBuiltinESMExports();
   }
 });

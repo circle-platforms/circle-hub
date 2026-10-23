@@ -95,7 +95,24 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-/** Drops a previous install's lock and any staging directory whose owner is gone. A live owner's directory stays. */
+/** Positive process id, or null when the text is not one. */
+function ownerPid(text: string): number | null {
+  const value = text.trim();
+  if (!/^[1-9][0-9]*$/.test(value)) return null;
+  const pid = Number(value);
+  return Number.isSafeInteger(pid) ? pid : null;
+}
+
+/** Staging directories are `.${ref}-<pid>-<random>`, so the pid is part of the name from the moment the directory exists. */
+function pidInName(name: string, ref: string): number | null {
+  const prefix = `.${ref}-`;
+  if (!name.startsWith(prefix)) return null;
+  const rest = name.slice(prefix.length);
+  const dash = rest.indexOf('-');
+  return dash > 0 ? ownerPid(rest.slice(0, dash)) : null;
+}
+
+/** Drops a previous install's lock and any staging directory whose owner is gone. A live owner's directory stays, including one whose owner file is not written yet or was removed before verification. */
 async function reclaim(into: string, ref: string): Promise<void> {
   let names: string[];
   try {
@@ -113,9 +130,10 @@ async function reclaim(into: string, ref: string): Promise<void> {
       await rm(path, { recursive: true, force: true });
       continue;
     }
-    const owner = await readFile(join(path, '.install-owner'), 'utf8').catch(() => '');
-    const pid = Number(owner.trim());
-    const live = Number.isInteger(pid) && pid > 0 && (pid === process.pid || pidAlive(pid));
+    // The name is the claim that exists for the whole life of the directory. The owner file covers directories created before that naming.
+    const named = pidInName(name, ref);
+    const recorded = named === null ? ownerPid(await readFile(join(path, '.install-owner'), 'utf8').catch(() => '')) : named;
+    const live = recorded !== null && (recorded === process.pid || pidAlive(recorded));
     if (!live) await rm(path, { recursive: true, force: true });
   }
 }
@@ -313,7 +331,7 @@ export async function installLocalTools(ref: string, digest: string, into: strin
     await reclaim(into, ref);
     if (await exists(target)) return await sameTarget();
     try {
-      temporary = await mkdtemp(join(into, `.${ref}-`));
+      temporary = await mkdtemp(join(into, `.${ref}-${process.pid}-`));
       await writeFile(join(temporary, '.install-owner'), `${process.pid}\n`, { mode: 0o600 });
     } catch (error) {
       throw filesystem(into, error);
