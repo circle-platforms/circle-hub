@@ -6,6 +6,8 @@ import { goodData, subjectOf, QUOTE, CATALOG_SPEC } from '../functions/test-supp
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
+  { name: 'assertion-in-steps', check: 'contract_shape', code: 'assertion_in_steps', change: (v) => { v.steps.push({ object: 'widget-check', method: 'literal', args: ['未经溯源的断言'], keywords: {} }); } },
+  { name: 'blocks-nonempty', check: 'contract_shape', code: 'slots_invalid', change: (v) => { (v as unknown as { blocks: string[] }).blocks = ['setup']; } },
   { name: 'method-forbidden', check: 'contract_shape', code: 'method_forbidden', change: (v) => { v.steps[0].object = 'widget-disabled'; v.steps[0].method = 'cycle'; } },
   { name: 'method-not-allowed', check: 'contract_shape', code: 'method_not_allowed', change: (v) => { v.steps[0].method = 'credential'; v.steps[0].args = []; } },
   { name: 'extra-keyword', check: 'contract_shape', code: 'param_arity', change: (v) => { v.steps[0].keywords.extra = 'x'; } },

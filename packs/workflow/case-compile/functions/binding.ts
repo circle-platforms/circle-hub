@@ -22,7 +22,7 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
     else values.push({ name, value, pointer });
   }
   for (const param of method.parameters) {
-    if (param.required && !values.some((v) => v.name === param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
+    if (param.required && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) if (typeof v.value !== 'string' || v.value.trim() !== v.value || /[\r\n\v\f\u0085\u2028\u2029]/.test(v.value) || /\{(?:0)?\}/.test(v.value) || v.value.startsWith('=')) issue('param_value', v.pointer, '参数值必须是单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');

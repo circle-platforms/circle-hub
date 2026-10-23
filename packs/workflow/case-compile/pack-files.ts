@@ -14,10 +14,10 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '1.3.1',
+  version: '2.0.0',
   kind: 'workflow',
   title: '用例编译',
-  description: '模型按受限结构把评审过的用例编成执行计划，Hub 在边界上核对：步骤的（对象，方法）对合约、字面地址对台架、命令和参数对构建的命令目录、期望结果有逐字来源、执行计划确定性重读一致。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”',
+  description: '按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */

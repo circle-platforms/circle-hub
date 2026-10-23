@@ -40,3 +40,7 @@ test('all fixed authorities and signed receipt sources are format values', () =>
     const raw = runtimeDocument(); raw.entries[0].status_authority = authority; assert.equal(parseRuntimeContract(signRuntime(raw)).ok, true);
   }
 });
+test('unpaired surrogate values refuse identity while ordinary astral text remains valid UTF-8', () => {
+  assert.throws(() => runtimeDigest({ value: '\ud800' }));
+  const raw = runtimeDocument(); (raw.atlas_snapshot as Record<string, unknown>).caption = '合成 😀'; assert.equal(parseRuntimeContract(signRuntime(raw)).ok, true);
+});

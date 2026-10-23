@@ -32,3 +32,7 @@ test('repeated verification is deterministic and emits no plan artifact', () => 
 test('host rejection table catches simple shell quoting and escaping', () => {
   assert.ok(deniedCommand('sudo re"bo"ot', ['reboot'])); assert.ok(deniedCommand('re\\boot', ['reboot'])); assert.ok(!deniedCommand('echo ready', ['reboot']));
 });
+test('an expectation can explicitly judge a host shell command', () => {
+  const data = goodData(); data.expects[0].after = 2;
+  assert.equal(checkExpectedSources(subjectOf(data))[0].verdict, 'support');
+});

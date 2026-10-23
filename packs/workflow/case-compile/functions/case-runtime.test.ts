@@ -32,3 +32,10 @@ test('missing, malformed and duplicate autoid refuse startup with a next action'
   assert.equal(code(runtimeInput(model(), 'imprecise-id')), 'case-compile.autoid_invalid');
   assert.equal(code(runtimeInput(duplicate)), 'case-compile.autoid_ambiguous');
 });
+test('profile refusal returns every problem pointer instead of clipping the list', () => {
+  const input = runtimeInput(); const profile = profileDocument();
+  profile.allowed = Array.from({ length: 110 }, (_, i) => ({ object: 'widget-seat', method: `missing-${i}`, parameters: { line: 'device_cli' } })) as typeof profile.allowed;
+  input.inputs.find((v) => v.slot === 'profile')!.model = profile;
+  const out = projectItems(input) as { error: { code: string }; warnings: unknown[] };
+  assert.equal(out.error.code, 'case-compile.profile_invalid'); assert.ok(out.warnings.length >= 110);
+});

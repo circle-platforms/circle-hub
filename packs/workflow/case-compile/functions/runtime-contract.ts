@@ -13,6 +13,7 @@ const nonempty = (value: unknown): value is string => typeof value === 'string' 
 
 /** Python-compatible sorted compact JSON, with UTF-8 text preserved. Unsafe numbers cannot prove original identity. */
 export function contractCanonical(value: unknown): string {
+  if (typeof value === 'string' && /[\uD800-\uDFFF]/u.test(value)) throw new Error('合约文字含未配对的代理字符，无法按 UTF-8 重算');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value)) throw new Error('合约数字必须是可精确表示的整数');
@@ -38,6 +39,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   const issue = (at: string, message: string) => problems.push({ pointer: at, message, fix: '按运行器原始函数合约格式改正并重算身份；管理员重新发布合约和匹配的运行环境配置' });
   if (!isRecord(value)) return { ok: false, problems: [{ pointer: '', message: '运行器合约不是对象', fix: '绑定发布的原格式运行器合约' }] };
   const inspect = (v: unknown, at: string): void => {
+    if (typeof v === 'string' && /[\uD800-\uDFFF]/u.test(v)) issue(at, '文字含有未配对的代理字符，无法按 UTF-8 重算');
     if (typeof v === 'number' && !Number.isSafeInteger(v)) issue(at, '数字不是可精确表示的整数');
     if (Array.isArray(v)) v.forEach((child, i) => inspect(child, `${at}/${i}`));
     else if (isRecord(v)) for (const [key, child] of Object.entries(v)) {

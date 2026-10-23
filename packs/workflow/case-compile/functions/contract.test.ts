@@ -23,3 +23,8 @@ test('credential-marked optional parameters cannot be supplied to an otherwise a
   const data = goodData(); data.steps[0].keywords.auth_token = 'synthetic-placeholder';
   assert.ok(checkContractShape(subjectOf(data)).some((v) => v.code === 'case-compile.param_sensitive'));
 });
+test('assertion calls cannot bypass the single grounded expects source', () => {
+  const data = goodData(); data.steps.push({ object: 'widget-check', method: 'literal', args: ['未经溯源的断言'], keywords: {} });
+  const outcome = checkContractShape(subjectOf(data)).find((v) => v.code === 'case-compile.assertion_in_steps');
+  assert.ok(outcome); assert.match(outcome.statement, /断言写进 expects，带引文和 after/);
+});

@@ -87,6 +87,11 @@
       "code": "case-compile.expect_after",
       "when": "期望没有判断设备命令行或主机 shell 步骤",
       "fix": "after 写对应命令步骤从 1 开始的编号，不指向等待或断言"
+    },
+    {
+      "code": "case-compile.assertion_in_steps",
+      "when": "steps 里直接填写了 literal_assertion 调用，绕过唯一的溯源期望入口",
+      "fix": "断言写进 expects，带引文和 after"
     }
   ],
   "refusals": [

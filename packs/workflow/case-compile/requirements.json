@@ -18,7 +18,7 @@
     {
       "key": "contract_methods",
       "name": "步骤调用符合合约",
-      "description": "启用合约与本轮允许集合的交集；按原始签名核对位置、关键字、必填和脱敏参数，不复制默认值；核对单行值及设备和主机拒绝表",
+      "description": "启用合约与本轮允许集合的交集；按原始签名核对位置、关键字、必填和脱敏参数，不复制默认值；核对单行值及设备和主机拒绝表；steps 禁止 literal_assertion，工作簿断言只能由生成器从 expects 产生",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -77,6 +77,11 @@
         },
         {
           "code": "case-compile.expect_without_source",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.assertion_in_steps",
           "action": "repair",
           "max_rounds": 2
         }

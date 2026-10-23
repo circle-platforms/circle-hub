@@ -32,6 +32,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     if (!method) { out.push(refute(s, 'method_forbidden', `第 ${i + 1} 步不是合约启用的组合`, at)); continue; }
     const allowed = allowedCall(s.profile!, step.object, step.method);
     if (!allowed) { out.push(refute(s, 'method_not_allowed', `第 ${i + 1} 步虽在合约启用集合里，本轮配置没有允许`, at)); continue; }
+    if (Object.values(allowed.parameters).some((role) => role === 'literal_assertion')) { out.push(refute(s, 'assertion_in_steps', '断言写进 expects，带引文和 after', at)); continue; }
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
