@@ -36,6 +36,7 @@ import {
   putAction,
   putResult,
   putSubmission,
+  resultFor,
   runById,
   submissionByDigest,
   successorsOf,
@@ -165,9 +166,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const sessionNow = sessionOf(call);
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
   const repeat = await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  // Contribution admission depends on current product/source permissions: repeat the deterministic boundary,
-  // while append remains idempotent. Ordinary runs keep their existing receipt-reuse rule.
-  if (repeat !== null && (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution === undefined) return answerOf(repeat);
+  if (repeat !== null) return answerOf(repeat);
+  const previous=await resultFor(store,run.run,received.digest);
+  if (previous !== null && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
 
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.

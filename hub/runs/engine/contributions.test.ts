@@ -34,6 +34,28 @@ test('raw original and relation quotations never escape the actual reader source
   assert.ok(!toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}).includes(hidden));
 });
 
+test('contribution retries return the stored receipt without actions or effects, including a second session',async t=>{
+  const w=await setup(t);const args=w.args();
+  const first=await w.service.submitResult(w.admin,args,call);
+  const count=async()=>({results:(await w.kit.store.find({key:'runs.result.run',value:w.run.run,kind:'validation_result',limit:100})).items.length,actions:(await w.kit.store.find({key:'runs.action.run',value:w.run.run,kind:'action',limit:100})).items.length});
+  const before=await count();
+  assert.deepEqual(await w.service.submitResult(w.admin,args,{...call,traceId:'f'.repeat(32)}),first);
+  assert.deepEqual(await count(),before);
+  assert.deepEqual(await w.service.submitResult(w.admin,args,{...call,sessionId:'another-integration-session',traceId:'e'.repeat(32)}),first);
+  assert.deepEqual(await count(),before);
+  assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin)).length,4);
+});
+
+test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{
+  const w=await setup(t,{acceptedRoot:true});const args=w.args();
+  await w.kit.artifacts.revokeFindings(w.admin,w.original,'合成撤回');
+  const first=await w.service.submitResult(w.admin,args,call);assert.equal(first.acceptance,'not_accepted');
+  await w.kit.artifacts.acceptFindings(w.admin,w.original,'合成恢复');
+  assert.deepEqual(await w.service.submitResult(w.admin,args,{...call,sessionId:'new-session'}),first);
+  const changed=await w.service.submitResult(w.admin,{...args,notes:'读取条件已恢复，申请重新核验'},call);
+  assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
+});
+
 async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean} = {}) {
   const w = await makeWorld(postgres); t.after(()=>w.close());
   const b = build('Rel_ACME_1_2_15');
@@ -180,14 +202,14 @@ test('tree original and relation endpoints resolve at the locked root, both quot
   assert.equal(rejected.acceptance,'not_accepted');assert.ok(rejected.errors.some(e=>e.item==='relation'&&e.code==='QUOTE_MISMATCH'));
 });
 
-test('administrators pass the product rule too; re-submission observes permission revocation',async t=>{
+test('administrators pass the product rule too; revocation changes reads rather than the stored receipt',async t=>{
   const w=await setup(t);const answer=await w.service.submitResult(w.admin,w.args(),call);
   const digest=answer.result!.contributions!.stored[0].record;
   const previous=w.packs.readableProducts.bind(w.packs);
   w.packs.readableProducts=async user=>user.id===w.admin.id ? new Set() : previous(user);
   assert.equal(await w.knowledge.layers.contributions.read(digest,w.admin),null);
   assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin),[]);
-  assert.equal((await w.service.submitResult(w.admin,w.args(),call)).acceptance,'not_accepted','does not replay a stale successful admission');
+  assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),answer,'a repeat returns the historical receipt without another effect');
 });
 
 test('a handled artifact with a refuted requirement is not admitted',async t=>{
@@ -210,7 +232,7 @@ test('a layer write failure rolls back every contribution before the not-accepte
 });
 
 
-test('a revoked source acceptance withholds contribution copies and re-submission rechecks it',async t=>{
+test('a revoked source acceptance withholds contribution copies without changing historical receipts',async t=>{
   const w=await setup(t,{acceptedRoot:true});const result=await w.service.submitResult(w.admin,w.args(),call);
   assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
   const digest=result.result!.contributions!.stored[0].record;
@@ -218,5 +240,5 @@ test('a revoked source acceptance withholds contribution copies and re-submissio
   await w.kit.artifacts.revokeFindings(w.admin,w.original,'结束合成演练');
   assert.equal(await w.knowledge.layers.contributions.read(digest,w.user),null);
   assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user),[]);
-  assert.equal((await w.service.submitResult(w.admin,w.args(),call)).acceptance,'not_accepted');
+  assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),result);
 });
