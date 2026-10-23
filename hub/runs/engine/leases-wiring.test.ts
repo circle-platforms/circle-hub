@@ -123,7 +123,7 @@ function leasesPack(
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
-  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.includes('meadow/visibility/k') ? [{key:'meadow/visibility/k',job:'synthetic-running'}] : [] });
+  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.filter(key=>key==='meadow/visibility/k'||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})) });
   leases = h.leases!;
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-engine-'));
@@ -327,7 +327,8 @@ it('an uncapped booking rejects any extension before mutation and releases only 
   const booking = await start('toy-endless');
   assert.equal(booking.answer.call_result, 'ok', JSON.stringify(booking.answer.errors));
   const booked = booking.answer.run!.run;
-  assert.equal((await storedRun(booked)).leases![0]!.until, null);
+  const bookedLease=(await storedRun(booked)).leases![0]!;
+  assert.equal('until' in bookedLease?bookedLease.until:'missing', null);
   const extended = await start('toy-endless-extend', booked);
   assert.equal(extended.answer.errors[0]?.code, 'LEASE_TTL');
   assert.match(extended.answer.errors[0]!.message, /不到期/);
@@ -365,4 +366,35 @@ it('freezes the owner, holder, third user and admin views without leaking names 
     assert.equal(registration.mine, user.id === h.alice.id);
     assert.equal(Boolean(registration.owner), user.role === 'admin');
   }
+});
+
+it('only owners and administrators force release, and pending jobs or mixed ownership reject before mutation', async () => {
+  const key='meadow/force/owned/k'; const adminKey='meadow/force/owned/admin'; const pending='meadow/force/pending/k';
+  for(const prefix of ['meadow/force/owned/','meadow/force/pending/']) assert.ok((await leases.register({prefix,declaredPrefix:'meadow/',owner:h.alice.id,by:h.alice.id,reason:'合成登记'})).ok);
+  for(const k of [key,adminKey,pending,'meadow/force/other/k']) assert.ok((await leases.acquire({keys:[k],prefix:'meadow/',holder:{user:h.bob.id,run:'run_0123456789abcdefghjkmnpqrs'}})).ok);
+  const add=async(id:string,keys:string[],reason='合成强制释放')=>{
+    await h.workflows.add(await writePack(packRoot,leasesPack(id,{declare:{prefix:'meadow/'},askContext:true,projection:opProjection(JSON.stringify([{op:'force_release',keys,reason}]))})));
+    for(const u of [h.alice,h.bob,h.admin])h.workflows.assign(u.id,id);
+  };
+  const start=async(user:typeof h.alice,pack:string)=>{
+    const ownMap=await h.upload(user,toyMap(standardDocument()));
+    return h.service.startRunDetailed(user,{pack,inputs:{map:{reference:ownMap}}},h.call(`force-${pack}-${user.id}`));
+  };
+  await add('toy-force-owned',[key]);await add('toy-force-admin',[adminKey]);await add('toy-force-pending',[pending]);await add('toy-force-mixed',[key,'meadow/force/other/k']);
+  assert.equal((await start(h.bob,'toy-force-owned')).answer.errors[0]?.code,'LEASE_UNAVAILABLE');
+  assert.equal((await start(h.alice,'toy-force-mixed')).answer.errors[0]?.code,'LEASE_UNAVAILABLE');
+  assert.equal((await leases.holders([key]))[0]!.released,false);
+  for(const u of [h.alice,h.admin]){
+    const rejected=await start(u,'toy-force-pending');
+    assert.equal(rejected.answer.errors[0]?.code,'LEASE_UNAVAILABLE');
+    assert.match(rejected.answer.errors[0]!.fix!,/job dispose/);
+    assert.match(rejected.answer.errors[0]!.message,/还没有终态/);
+  }
+  const owned=await start(h.alice,'toy-force-owned');
+  assert.equal(owned.answer.call_result,'ok',JSON.stringify(owned.answer.errors));
+  const recorded=(await storedRun(owned.answer.run!.run)).leases![0]!;
+  assert.equal(recorded.op,'force_release');
+  assert.deepEqual('previous_holders' in recorded?recorded.previous_holders:null,[{key,run:'run_0123456789abcdefghjkmnpqrs'}]);
+  assert.equal((await start(h.admin,'toy-force-admin')).answer.call_result,'ok');
+  assert.ok((await leases.actionLog('meadow/force/')).some(row=>row.op==='force_release'&&row.reason==='合成强制释放'&&row.by===h.alice.id));
 });

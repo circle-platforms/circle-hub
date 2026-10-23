@@ -201,6 +201,80 @@
                   "op": {
                     "type": "string",
                     "enum": [
+                      "register"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "unregister"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "force_release"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
                       "release"
                     ]
                   },

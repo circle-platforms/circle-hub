@@ -191,6 +191,10 @@ export class LeaseService {
     return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations WHERE starts_with(prefix,$1) ORDER BY prefix',[prefix])).rows;
   }
 
+  private async registrationsForTransaction(tx: PgTransaction): Promise<Array<{prefix:string;owner:string}>> {
+    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations',[],tx)).rows;
+  }
+
   async #ownershipLock(tx: PgTransaction): Promise<void> {
     await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx);
   }
@@ -215,15 +219,21 @@ export class LeaseService {
   }
 
   /** An admin frees keys regardless of the holder, with a reason that lands in the action record. */
-  async forceRelease(input: { keys: string[]; by: string; reason: string }): Promise<ChangeOutcome> {
+  async forceRelease(input: { keys: string[]; by: string; reason: string; owner?: string }): Promise<ChangeOutcome> {
+    if (!input.reason.trim()) return {ok:false,code:'LEASE_UNAVAILABLE',message:'强制释放须写理由'};
     return this.#db.transaction(async (tx) => {
+      await this.#ownershipLock(tx);
+      if (input.owner) {
+        const registered = await this.registrationsForTransaction(tx);
+        if (!input.keys.every(key=>registered.some(row=>row.owner===input.owner && key.startsWith(row.prefix)))) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些键不在你登记的前缀下'};
+      }
       // Rows are read FOR UPDATE so a concurrent extend of the same key waits, and every row is present.
       const rows = await this.#rowsLocked(input.keys, tx);
       // Only a row that still holds (unreleased, unexpired) may be force-released; a released or expired one answers
       // LEASE_NO_ROW, so a repeated release cannot succeed and cannot mint an action record.
       const now = await this.#nowIn(tx);
       const holding = rows.filter((row) => row.released_at === null && (row.expires_at === null || row.expires_at.getTime() > now.getTime()));
-      if (holding.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: '这些键上没有租约行' };
+      if (holding.length !== new Set(input.keys).size || holding.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: '这些键上没有租约行' };
       const lease = holding[0]!.lease_id;
       const holder: Holder = { user: holding[0]!.user_id, run: holding[0]!.run_id };
       const token = holding.reduce((max, row) => Math.max(max, Number(row.token)), 0) + 1;
@@ -231,7 +241,7 @@ export class LeaseService {
       for (const key of input.keys) {
         await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1 AND released_at IS NULL`, [key, now], tx);
       }
-      await this.#appendAction(tx, 'force_release', lease, input.keys, holder, until, token, { by: input.by, reason: input.reason });
+      await this.#appendAction(tx, 'force_release', lease, input.keys, holder, until, token, { by: input.by, reason: input.reason, previous_holders: holding.map(row=>({key:row.key,user:row.user_id,run:row.run_id})) });
       return { ok: true, lease, until, token };
     });
   }

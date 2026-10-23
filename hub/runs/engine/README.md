@@ -556,3 +556,11 @@ rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_r
 evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
 read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
 `DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.
+
+Owner `force_release` checks every key, owner/admin authority, active row, nonempty reason and unfinished dispatch job
+before any operation executes. Unfinished jobs refuse with job status/disposition instructions; local release cannot
+stop remote work. The service rechecks owner authorization under the registration lock, increments fences, and records
+the acting user, reason and original holders. Run records preserve released keys and their prior runs; originals remain
+append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
+read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
+later acquire or run-record write fails; their action records remain the source of truth.

@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
+import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
@@ -119,8 +119,9 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
 
 /** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
  * with the earliest free moment. Returns the granted leases for the run record. */
-export type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds?: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
-export type LeaseDone = { op?: 'acquire'; lease: string; keys: string[]; until: string | null } | { op: 'extend'; lease: string; keys: string[]; until: string | null } | { op: 'release'; keys: string[]; until: string | null | null };
+export type LeaseRequest = NonNullable<Extract<z.infer<typeof ProjectionOutput>,{items:unknown}>['lease_requests']>[number];
+export type LeaseDone = NonNullable<RunRecord['leases']>[number];
+const requestKeys = (request: LeaseRequest): string[] => 'keys' in request ? request.keys : [request.prefix];
 
 /** The run ids of this run's lineage: itself and up to 20 predecessors (D04 R[0]: a booking lease is held by the lineage). */
 async function lineageOf(ctx: EngineContext, runId: string, predecessor: string | undefined): Promise<Set<string>> {
@@ -150,102 +151,77 @@ export async function grantLeases(
       protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个工作流没有声明 leases`, { path: `/inputs/${workflow.workflow.subject}`, fix: '联系任务包作者：要租约的工作流在 workflow.json 里声明 leases' }),
     ]);
   }
-  const prefix = declared.prefix;
-  const cap = declared.max_ttl_seconds;
-  const now = ctx.now();
-  const lineage = await lineageOf(ctx, runId, predecessor);
-  // Phase 1 — every check, nothing touched: prefixes, TTL shapes, and for extend/release that this run's user is the
-  // row's user and that the row's run sits in this run's lineage (D04 R[0]).
-  const holderRows = await ctx.deps.leases.holders([...new Set(requests.flatMap((request) => request.keys))]);
-  for (const request of requests) {
-    const op = request.op ?? 'acquire';
-    if (!request.keys.every((key) => key.startsWith(prefix))) {
-      throw new Refusal([{ code: 'LEASE_PREFIX', message: `租约键（${request.keys.join('、')}）不在声明的前缀 ${prefix} 下`, fix: `键要以前缀 ${prefix} 开头` }]);
-    }
-    if (op === 'release') continue;
-    if (cap === undefined) {
-      if (op === 'extend') throw new Refusal([{ code: 'LEASE_TTL', message: '这个前缀的租约不到期，不用续', fix: '不用续期，用完由血缘释放' }]);
+  const prefix = declared.prefix; const cap = declared.max_ttl_seconds;
+  const now = ctx.now(); const service=ctx.deps.leases;
+  const lineage=await lineageOf(ctx,runId,predecessor);
+  const rows=await service.holders([...new Set(requests.flatMap(requestKeys))]);
+  const registered=await service.registrations(prefix);
+  function refuse(code:ProtocolError['code'],message:string,fix:string):never { throw new Refusal([{code,message,fix}]); }
+  // Validate the entire operation list before any irreversible mutation.
+  for(const request of requests){
+    const keys=requestKeys(request); const op=request.op ?? 'acquire';
+    if(!keys.length || new Set(keys).size!==keys.length || keys.some(key=>!key.startsWith(prefix)))refuse('LEASE_PREFIX','租约键不在声明的前缀下或有重复', '每个键仅写一次，且以前缀 '+prefix+' 开头');
+    if(request.op==='register'){
+      if(!request.prefix.endsWith('/') || request.prefix===prefix || !/^[a-z0-9][a-z0-9:._/-]{0,199}$/.test(request.prefix))refuse('LEASE_UNAVAILABLE','登记前缀须以 / 结尾并严格在声明前缀下','改用声明前缀下的键前缀');
+      if(registered.some(row=>row.prefix.startsWith(request.prefix)||request.prefix.startsWith(row.prefix)))refuse('LEASE_UNAVAILABLE','这个前缀已经有主人或与已有登记互相包含','请管理员核对登记；不要重复登记');
+      if(requests.some(other=>other!==request && other.op==='register' && (other.prefix.startsWith(request.prefix)||request.prefix.startsWith(other.prefix))))refuse('LEASE_UNAVAILABLE','同一请求里的登记前缀不能互相包含','每个互不包含的前缀只登记一次');
       continue;
     }
-    if (!Number.isInteger((request as { ttl_seconds: number }).ttl_seconds) || (request as { ttl_seconds: number }).ttl_seconds <= 0 || (request as { ttl_seconds: number }).ttl_seconds > cap) {
-      throw new Refusal([{ code: 'LEASE_TTL', message: `租约期限要在 1 到 ${cap} 秒之间`, fix: '缩短租约期限，或请任务包作者调高上限' }]);
+    if(request.op==='unregister'){
+      const owner=registered.find(row=>row.prefix===request.prefix);
+      if(!owner || user.role!=='admin'&&owner.owner!==user.id)refuse('LEASE_UNAVAILABLE','这个前缀不能由你注销','由主人或管理员带理由注销');
+      if((await service.view(request.prefix)).entries.length)refuse('LEASE_UNAVAILABLE','这个前缀还有未释放的租约','先强制释放，或等它释放');
+      continue;
+    }
+    if(request.op==='force_release'){
+      if(!request.reason.trim())refuse('LEASE_UNAVAILABLE','强制释放须写理由','reason 写用户原话');
+      for(const key of keys){
+        if(user.role!=='admin'&&!registered.some(row=>row.owner===user.id&&key.startsWith(row.prefix)))refuse('LEASE_UNAVAILABLE','这些键不在你登记的前缀下','由主人或管理员带理由强制释放');
+        const row=rows.find(r=>r.key===key);
+        if(!row||row.released||(row.expires_at!==null&&Date.parse(row.expires_at)<=now.getTime()))refuse('LEASE_UNAVAILABLE','要强制释放的键没有未释放的租约','重新读取当前占用再决定是否释放');
+      }
+      if(!ctx.deps.leaseJobs)refuse('LEASE_UNAVAILABLE','缺少未终态作业事实','请管理员配置按键只读作业端口后重开运行');
+      const jobs=await ctx.deps.leaseJobs!(keys);
+      if(jobs.length)refuse('LEASE_UNAVAILABLE','作业 '+jobs.map(j=>j.job).join('、')+' 还没有终态，本地释放停不了网关上的作业','等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
+      continue;
+    }
+    if(op!=='release'){
+      if(cap===undefined){if(op==='extend')refuse('LEASE_TTL','这个前缀的租约不到期，不用续','不用续期，用完由血缘释放');}
+      else {const ttl='ttl_seconds' in request?request.ttl_seconds:undefined;if(!Number.isInteger(ttl)||ttl!<=0||ttl!>cap)refuse('LEASE_TTL','租约期限要在 1 到 '+cap+' 秒之间','缩短租约期限，或请任务包作者调高上限');}
+    }
+    if(op==='acquire')continue;
+    for(const key of keys){const row=rows.find(r=>r.key===key);
+      if(!row||row.user!==user.id||!lineage.has(row.run))refuse('LEASE_UNAVAILABLE','租约不在这次运行的血缘持有之下','由预订运行或同一用户的后继运行来续期或释放');
+      if(row!.released||row!.expires_at!==null&&Date.parse(row!.expires_at)<=now.getTime())refuse('LEASE_EXPIRED','租约已释放或过期','重新取得租约并重新证明基线');
     }
   }
-  for (const request of requests) {
-    const op = request.op ?? 'acquire';
-    if (op === 'acquire') continue;
-    for (const key of request.keys) {
-      const row = holderRows.find((candidate) => candidate.key === key);
-      if (row === undefined) {
-        throw new Refusal([{ code: 'LEASE_UNAVAILABLE', message: `要${op === 'extend' ? '续期' : '释放'}的键 ${key} 上没有租约行`, fix: '先在预订运行里取得这个键' }]);
+  const done:LeaseDone[]=[]; const acquired:string[]=[];
+  const compensate=async()=>{if(acquired.length)await service.release({keys:acquired,holder:{user:user.id,run:runId}}).catch(()=>undefined);};
+  try{
+    for(const request of requests){
+      if(request.op==='register'||request.op==='unregister'){
+        const outcome=request.op==='register'?await service.register({prefix:request.prefix,declaredPrefix:prefix,owner:user.id,by:user.id,reason:'用户登记'}):await service.unregister({prefix:request.prefix,by:user.id,admin:user.role==='admin',reason:request.reason});
+        if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取登记状态，注销前先强制释放，或等它释放');
+        done.push({op:request.op,prefix:request.prefix,owner:outcome.owner});
       }
-      if (row.user !== user.id || !lineage.has(row.run)) {
-        throw new Refusal([{ code: 'LEASE_UNAVAILABLE', message: `键 ${key} 的租约不在这次运行的血缘持有之下`, fix: '由预订那次运行（或它血缘里的运行，同一用户发起）来续期或释放' }]);
+      if(request.op==='force_release'){
+        const outcome=await service.forceRelease({keys:request.keys,by:user.id,reason:request.reason,...(user.role==='admin'?{}:{owner:user.id})});
+        if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取占用和登记后再决定是否释放');
+        done.push({op:'force_release',keys:request.keys,reason:request.reason,until:outcome.until,previous_holders:rows.filter(r=>request.keys.includes(r.key)).map(r=>({key:r.key,run:r.run}))});
       }
-      if (row.released || (row.expires_at !== null && Date.parse(row.expires_at) <= now.getTime())) {
-        throw new Refusal([{ code: 'LEASE_EXPIRED', message: `键 ${key} 的租约已${row.released ? '释放' : '过期'}`, fix: '重新取得租约并重新证明基线' }]);
-      }
-    }
-  }
-  // Phase 2 — execute: the extends and releases first (checked above; irreversible), then the acquires. A failing
-  // acquire compensates the acquires already granted; a release or extend already done is never undone (README).
-  const done: Array<LeaseDone> = [];
-  const acquired: Array<{ keys: string[] }> = [];
-  const releaseGranted = async (): Promise<void> => {
-    const keys = acquired.flatMap((entry) => entry.keys);
-    if (keys.length === 0) return;
-    await ctx.deps!.leases!.release({ keys, holder: { user: user.id, run: runId } }).catch(() => undefined);
-  };
-  try {
-    for (const request of requests) {
-      if (request.op === 'extend') {
-        const rows = holderRows.filter((row) => request.keys.includes(row.key));
-        const holder = { user: rows[0]!.user, run: rows[0]!.run };
-        const outcome = await ctx.deps.leases.extend({ keys: request.keys, holder, ttlSeconds: request.ttl_seconds, maxTtlSeconds: cap });
-        if (!outcome.ok) {
-          const message = outcome.code === 'LEASE_TTL' ? `续期（${request.keys.join('、')}）超过累计上限` : `续期（${request.keys.join('、')}）没有成功`;
-          throw new Refusal([{ code: outcome.code, message, fix: outcome.code === 'LEASE_TTL' ? '缩短续期时长，或重新取得租约' : '稍后再试' }]);
-        }
-        done.push({ op: 'extend', lease: outcome.lease, keys: request.keys, until: outcome.until });
+      if(request.op==='extend'||request.op==='release'){
+        const selected=rows.filter(row=>request.keys.includes(row.key));const holder={user:selected[0]!.user,run:selected[0]!.run};
+        const outcome=request.op==='extend'?await service.extend({keys:request.keys,holder,ttlSeconds:request.ttl_seconds,maxTtlSeconds:cap}):await service.release({keys:request.keys,holder});
+        if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取租约状态并核对血缘');
+        done.push(request.op==='extend'?{op:'extend',lease:outcome.lease,keys:request.keys,until:outcome.until}:{op:'release',keys:request.keys,until:outcome.until});
       }
     }
-    for (const request of requests) {
-      if (request.op === 'release') {
-        const rows = holderRows.filter((row) => request.keys.includes(row.key));
-        const holder = { user: rows[0]!.user, run: rows[0]!.run };
-        const until = rows.reduce((max, row) => (row.expires_at === null || max === null ? null : row.expires_at > max ? row.expires_at : max), rows[0]!.expires_at);
-        const outcome = await ctx.deps.leases.release({ keys: request.keys, holder });
-        if (!outcome.ok) {
-          throw new Refusal([{ code: outcome.code, message: `释放（${request.keys.join('、')}）没有成功`, fix: '键可能已被释放或过期，稍后再试' }]);
-        }
-        done.push({ op: 'release', keys: request.keys, until });
-      }
+    for(const request of requests)if(request.op===undefined||request.op==='acquire'){
+      const outcome=await service.acquire({keys:request.keys,ttlSeconds:request.ttl_seconds,holder:{user:user.id,run:runId},prefix,maxTtlSeconds:cap});
+      if(!outcome.ok){const when=outcome.earliestFree?'，最早空闲时刻 '+outcome.earliestFree:'';refuse(outcome.code,outcome.message+when,outcome.code==='LEASE_UNAVAILABLE'?'等持有谱系释放、请主人带理由处置，或改用别的键'+when:'核对租约前缀和期限后重开运行');}
+      acquired.push(...outcome.keys);done.push({lease:outcome.lease,keys:outcome.keys,until:outcome.until});
     }
-    for (const request of requests) {
-      if (request.op !== 'release' && request.op !== 'extend') {
-        let outcome: Awaited<ReturnType<typeof ctx.deps.leases.acquire>>;
-        try {
-          outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
-        } catch (error) {
-          await releaseGranted();
-          throw error;
-        }
-        if (!outcome.ok) {
-          await releaseGranted();
-          const when = 'earliestFree' in outcome && outcome.earliestFree !== undefined ? `，最早空闲时刻 ${outcome.earliestFree}` : '';
-          const fix = outcome.code === 'LEASE_UNAVAILABLE' ? `等最早空闲时刻后再开始，或改用别的键${when}` : '缩短租约期限，或请任务包作者调高上限';
-          throw new Refusal([{ code: outcome.code, message: `要取得的租约（${request.keys.join('、')}）没有拿到${outcome.code === 'LEASE_UNAVAILABLE' ? when : ''}`, fix }]);
-        }
-        acquired.push({ keys: outcome.keys });
-        done.push({ lease: outcome.lease, keys: outcome.keys, until: outcome.until });
-      }
-    }
-  } catch (error) {
-    // Only the acquires are compensated: extends and releases are irreversible (the check phase ran them first).
-    if (!(error instanceof Refusal)) await releaseGranted();
-    else await releaseGranted();
-    throw error;
-  }
+  }catch(error){await compensate();throw error;}
   return done;
 }
 
@@ -635,7 +611,7 @@ async function startFresh(
   } catch (error) {
     // The granted leases of a start that did not store its run are released at once (compensation): an acquire that
     // refused throws before anything was granted, so only a real failure reaches here with rows held.
-    const acquiredKeys = grantedLeases.filter((entry) => entry.op !== 'extend' && entry.op !== 'release').flatMap((entry) => entry.keys);
+    const acquiredKeys = grantedLeases.filter((entry) => entry.op === undefined || entry.op === 'acquire').flatMap((entry) => 'keys' in entry ? entry.keys : []);
     if (acquiredKeys.length > 0 && ctx.deps.leases !== undefined) {
       await ctx.deps.leases.release({ keys: acquiredKeys, holder: { user: user.id, run: runId } }).catch(() => undefined);
     }

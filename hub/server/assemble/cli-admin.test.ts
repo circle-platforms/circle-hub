@@ -1610,3 +1610,20 @@ test('c3 Secrets documentation follows the supported irreversible key loss proce
  assert.match(procedure,/loaded service/);assert.match(procedure,/configured port/);assert.match(procedure,/present key/);assert.match(procedure,/Plain `key init` refuses a nonempty vault/);
  assert.ok(!text.includes('the advice is always to restore'));
 });
+
+test('lease release refuses an unfinished dispatch job before changing the row',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const user=(await kit.principals.findByName('根管理员'))!;
+  const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const leases=new LeaseService(db,{records:kit.store});const key='synthetic/pending-release/k';
+  const {newId,sha256Hex}=await import('../../records/api.ts');
+  assert.ok((await leases.acquire({keys:[key],prefix:'synthetic/',holder:{user:user.id,run:newId('run')}})).ok);
+  const time=new Date().toISOString();const job='synthetic-pending-release';
+  await kit.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:time,
+    body:{action:'validate',run:null,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:time,ended_at:time,result:'completed',error_code:null,acceptance:null,codes:[],detail:{job,phase:'reservation',binding:{job,initiated_by:user.id,user:user.id,executor:'synthetic',executor_digest:'a'.repeat(64),target_key:'synthetic',input:null,resources:[key]}}},
+    index:[{key:'dispatch.resource',value:sha256Hex(key)},{key:'dispatch.job',value:job}]});
+  const refused=await admin.run(['lease','release',key,'--reason','合成处置']);
+  assert.equal(refused.code,1,refused.text);
+  assert.match(refused.text,/还没有终态/);assert.match(refused.text,/job dispose/);
+  assert.equal((await leases.holders([key]))[0]!.released,false);
+});

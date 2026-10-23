@@ -6,6 +6,7 @@ import {
   DoneRuleSchema,
   ExecutionHostSchema,
   LayerSchema,
+  LeaseOpSchema,
   PackKindSchema,
   SourceRoleSchema,
   TriggerSchema,
@@ -142,6 +143,8 @@ export const RunRecord = RunSummary.extend({
     .array(z.union([
       z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
       z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: LeaseOpSchema.extract(['register','unregister']), prefix:z.string().min(1), owner:z.string().min(1) }),
+      z.strictObject({ op: LeaseOpSchema.extract(['force_release']), keys:z.array(z.string().min(1)).min(1), reason:z.string().min(1), until:IsoTime.nullable(), previous_holders:z.array(z.strictObject({key:z.string().min(1),run:RunId})) }),
       z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
     ]))
     .optional()

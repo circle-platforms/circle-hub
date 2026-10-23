@@ -25,7 +25,7 @@ export const LeaseRegistrationDetail = z.strictObject({
   owner: z.string().min(1),
   previous_owner: z.string().min(1).nullable(),
   by: z.string().min(1),
-  reason: z.string().trim().min(1),
+  reason: z.string().min(1).refine(value => value.trim().length > 0, "reason must contain non-whitespace text"),
 });
 export const LeaseDetail = z.union([HeldLeaseDetail, LeaseRegistrationDetail]);
 

@@ -202,3 +202,19 @@ test('uncapped workflows accept a lease acquisition without a deadline', () => {
   assert.ok(WorkflowFile.safeParse(workflow({ leases: { prefix: 'zone/' }, context: ['leases'] })).success);
   assert.ok(ProjectionOutput.safeParse({ items: [], warnings: [], lease_requests: [{ keys: ['zone/a/k'] }] }).success);
 });
+
+test('projection operations include owner registration and reasoned force release without tokens', () => {
+  for (const request of [
+    {op:'register',prefix:'zone/a/'},
+    {op:'unregister',prefix:'zone/a/',reason:'合成注销'},
+    {op:'force_release',keys:['zone/a/k'],reason:'合成处置'},
+  ]) assert.ok(ProjectionOutput.safeParse({items:[],warnings:[],lease_requests:[request]}).success);
+  assert.ok(!ProjectionOutput.safeParse({items:[],warnings:[],lease_requests:[{op:'force_release',keys:['zone/a/k'],reason:' '}]}).success);
+});
+
+test('a force release preserves the user reason verbatim while rejecting whitespace alone',()=>{
+  const value=ProjectionOutput.parse({items:[],warnings:[],lease_requests:[{op:'force_release',keys:['zone/a/k'],reason:'  合成原话  '}]});
+  assert.ok('items' in value);
+  const request=value.lease_requests![0]!;
+  assert.equal('reason' in request?request.reason:undefined,'  合成原话  ');
+});

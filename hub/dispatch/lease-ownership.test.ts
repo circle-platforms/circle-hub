@@ -25,3 +25,16 @@ test('an unbounded current holder passes the full synthetic dispatch lifecycle',
   assert.ok((await c.leases.acquire({keys,holder,prefix:'synthetic/'})).ok);
   assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'effective');
 });
+
+test('owner release increments the fence and rejects the former lineage before a synthetic executor submission', async t => {
+  const c=await setup();t.after(()=>c.close());
+  const owner=await c.kit.principals.createUser(c.admin,'合成登记主人');
+  assert.ok((await c.leases.register({prefix:'synthetic/device/',declaredPrefix:'synthetic/',owner:owner.id,by:owner.id,reason:'合成登记'})).ok);
+  const keys=c.executor.definition.resources;
+  const before=await c.leases.holderSnapshot(keys);
+  assert.ok((await c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成主人收回'})).ok);
+  const after=await c.leases.holderSnapshot(keys);
+  assert.ok(after.every((row,i)=>row.fencing>before[i]!.fencing&&row.released));
+  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/血缘/);
+  assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
+});

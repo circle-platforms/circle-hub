@@ -1149,6 +1149,10 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
       throw new CliError('没有租约行');
     }
     const leases = await session.leases();
+    const dispatch = (await session.hub()).dispatch;
+    if (!dispatch) throw new CliError('缺少未终态作业事实', '请管理员配置只读作业端口后重试');
+    const jobs = await dispatch.activeLeaseJobs([key]);
+    if (jobs.length) throw new CliError(`作业 ${jobs.map(job=>job.job).join('、')} 还没有终态，本地释放停不了网关上的作业`, '等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
     const outcome = await leases.forceRelease({ keys: [key], by: viewer.id, reason: values.reason.trim() });
     if (!outcome.ok) throw new CliError(outcome.code === 'LEASE_NO_ROW' ? '没有租约行' : `没有释放：${outcome.message}`, outcome.code === 'LEASE_NO_ROW' ? '键上没有未到期的租约' : '稍后再试');
     session.out(`已释放 ${key}（理由：${values.reason.trim()}）`);
