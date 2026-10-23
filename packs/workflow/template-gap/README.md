@@ -200,8 +200,7 @@ Unresolved core requests remain handoffs; this package does not claim to have im
 10. **Two documents with one root id are refused** (`root_ambiguous`) rather than located at another node: a location names
     no source (engine Needs 6), and a root is what a document item is.
 11. **Samples are all `author`**: there are no returned counterexamples or retained deliveries for a new pack, so the check is
-    honestly marked `author_samples_only` (warning `publish.author_samples_only`). The engine does not put the mark on the
-    claims yet (Needs, runs-engine; a `todo` test).
+    honestly marked `author_samples_only` (warning `publish.author_samples_only`). The engine applies the mark to claims (done in 437cbad5; the regular passing engine.test.ts assertion checks author_samples_only).
 12. **A skip that cannot be applied refuses the run** (W01 R[3] reserves the refusal for sources that cannot be projected;
     this is the caller's own parameter, like a document given twice, which the schema cannot check). A warning would reach
     only the admin log and the parse action (the engine shows warnings to nobody else), so the user's declaration would be
@@ -218,22 +217,22 @@ Unresolved core requests remain handoffs; this package does not claim to have im
 - A run takes about 30 documents: the bound inputs of a run are one sandbox input (32 MiB; a 3,000-node document is about
   0.8 MB of parsed model), above which the function never runs and the engine answers with its generic refusal; and every
   document adds a source line and an item line to the start_run text (30,000 characters, then paged).
-- The evidence lists are in the run record (`items[n].fields`). SKILL.md reads them with the run record reference when the
-  start_run answer shows one; today's answer does not (Needs, contracts and server), so they are in the console only.
+- The evidence lists are in the run record (`items[n].fields`). The start_run text supplies rec:<digest>#/items/<n>
+  links through its text context (done in 3086bf44); SKILL.md step 3 reads those fields. A typed run-record field in
+  StartRunOutput remains needed so clients need not recover that reference from prose.
 
 ## Needs from other packages
 
-- **server / assembly**: publish this pack from a staged copy (`api.ts stage <dir>`, then `registry.publish`), since the
-  package directory also holds README, api and tests. Show the run record reference (`rec:<digest>`, `StartRunDetail.runRecord`)
-  in the start_run text, and pass the text context: `hub/server/tools.ts` calls `toolText(name, value)` without one, so
-  `context.record` is null and even the paging hints fall back to the console.
+- **server / assembly** (implemented): text context includes StartRunDetail.runRecord and toolText receives that context
+  (3086bf44); item links are available in start_run text. Publishing still uses a staged pack copy because README/api/tests
+  are development files; this is packaging guidance, not an unresolved server failure.
 - **contracts**: (1) a run record reference in `StartRunOutput` (today only `result.reference`, the validation result, which
   has no `/items`), so that reading item fields does not depend on how the server writes text; (2) an optional `path` in
   `PackError`: a projection refusal is always reported at `/inputs/<subject>`, also `skip_invalid`, whose cause is in
   `/parameters/skipped`; (3) a way for a workflow to say that it binds no product line (generic capability is done; this pack now requires commands@1 and therefore binds a product/build).
 - **runs-packs** (historical generic capability, no longer this pack’s binding): a workflow that names no product and requires no catalog is bound to no product line. `boundProducts` returns none for it, so `list_task_packs` shows no products, `readableProducts` grants nothing and `start_run` refuses a `product` argument at `/product`; This pack now requires commands@1 and binds a product/build; engine.test.ts guards that current binding.
-- **runs-engine**: (1) T02 R[1]: apply `publishCheckMarks(workflow)` to the claims of each check (`author_samples_only` here);
-  `engine.test.ts` asserts it as a `todo`. (2) Mark a support that rests on declared skips (`data.skipped` not empty) with
+- **runs-engine**: (1) T02 R[1] claim marks are implemented (437cbad5): publishCheckMarks(workflow) reaches claims,
+  and engine.test.ts checks author_samples_only as an ordinary passing test. (2) Mark a support that rests on declared skips (`data.skipped` not empty) with
   `conditional_on_judgment` (以判断为前提), so that a gap the user declared away does not read as a plain fact. (3) Refuse an
   oversized projection input with the split fix: `serializeInput` (hub/rules) throws a RangeError above 32 MiB and the
   projection call answers `任务包的投影函数没有给出条目…请联系任务包作者`. (4) Observation: on 2026-10-22, action `unknown` was aligned with the reference to keep terminal `violation`, record code and tier, leave attribution empty (`unattributed`), and leave requirement status `unsatisfied` (记未知保留反驳，归责待定); a location that resolves in several sources of a `many`
