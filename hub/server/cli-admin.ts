@@ -8,6 +8,8 @@
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
+import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
+import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
@@ -154,7 +156,7 @@ class Session {
 
   /** The lease service over this deployment's database (one pool per invocation, closed with it). */
   leases(): Promise<LeaseService> {
-    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2))))();
+    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2)),{records:(await this.records()).store}))();
     return this.#leases;
   }
 
@@ -1209,11 +1211,28 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
   throw new UsageError(`doc 的子命令：${DOC_USAGE}`);
 }
 
+async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
+  const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>]');
+  const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'}},0);
+  const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
+  const kind=values.kind ?? 'action';if(!(RECORD_KINDS as readonly string[]).includes(kind))throw new UsageError('记录类型不在生成的协议词表里');
+  const records=await session.records();let cursor:string|null=null,total=0,notes=0;
+  do {
+    const page:Page<StoredRecord>=await records.store.list({kind:kind as RecordKind,limit:500,...(cursor?{cursor}:{})});
+    for(const record of page.items){total++;if(record.integrity_note){notes++;if(record.kind==='action')session.out(`记录 ${record.id}；摘要 ${record.digest}；${record.integrity_note}`);}}
+    cursor=page.next;
+  }while(cursor);
+  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);return 0;
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
+  {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
+  { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
+  { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },

@@ -2,6 +2,9 @@ import { RecordsError } from './errors.ts';
 // Append-only record store over PostgreSQL. Bodies are stored as their RFC 8785 canonical text, so every value canonicalize
 // accepts (JSON data with well-formed strings, U+0000 included, which PostgreSQL text and jsonb reject raw) is kept exactly;
 // digests are re-verified on read. Input canonicalize refuses (a lone surrogate) is kept as an object instead (README).
+import { noteNoncanonical, NONCANONICAL_EXPLANATION } from './integrity-notes.ts';
+import { parseStrictJson } from './strict-json.ts';
+export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 import { SchemaId } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
@@ -15,6 +18,8 @@ import { newId } from './ids.ts';
 
 /** Dedicated two-key namespace for typed business identities, separate from all other records locks. */
 const BUSINESS_LOCK_SPACE = 730_160;
+/** Separate namespace for atomically binding a record to its unique business key. */
+const UNIQUE_KEY_LOCK_SPACE = 730_161;
 
 const INDEX_KEY = /^[a-z][a-z0-9_.-]{0,99}$/;
 /** UTF-8 bytes of one index value; with the key and digest this stays well inside a btree index row (2704 bytes). */
@@ -50,9 +55,15 @@ export class PgRecordStore implements RecordStore {
       });
     }
     const index = validateIndex(input.index ?? []);
+    if (input.unique_key !== undefined) validateUniqueKey(input.unique_key);
     const meta = { kind: kind.data, schema: input.schema, provenance: input.provenance, created_at: createdAt };
     const digest = sha256Hex(envelopeCanonical(meta, body));
     return this.#db.transaction(async (t) => {
+      if (input.unique_key !== undefined) {
+        await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [UNIQUE_KEY_LOCK_SPACE, `${meta.kind}:${input.unique_key}`], t);
+        const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
+        if (existing !== null) return { ...existing, created: false };
+      }
       const inserted = await this.#db.query<{ seq: string; id: string }>(
         `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
@@ -74,8 +85,19 @@ export class PgRecordStore implements RecordStore {
           t,
         );
       }
+      if (input.unique_key !== undefined) await this.#db.query('INSERT INTO record_keys (kind, key, digest) VALUES ($1, $2, $3)', [meta.kind, input.unique_key, digest], t);
       return { id: row.id, ...meta, digest, body: JSON.parse(body) as B, created };
     }, tx);
+  }
+
+  async getByKey<B = unknown>(kind: import('./api.ts').RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
+    if (!RecordKindSchema.safeParse(kind).success) throw new TypeError('unknown record kind');
+    validateUniqueKey(key);
+    const found = await this.#db.query<{ digest: string }>('SELECT digest FROM record_keys WHERE kind = $1 AND key = $2', [kind, key], tx);
+    if (!found.rows.length) return null;
+    const record = await this.get<B>(found.rows[0].digest, tx);
+    if (!record || record.kind !== kind) throw new IntegrityError('唯一业务键没有对应的完整记录');
+    return record;
   }
 
   async get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
@@ -198,8 +220,17 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
   const body = String(row.body);
+  let parsedFallback: unknown;
+  let noncanonical = false;
   if (sha256Hex(envelopeCanonical(meta, body)) !== row.digest) {
-    throw new IntegrityError('记录内容与它的摘要不符（存储被改动过）', { detail: { record: row.id, digest: row.digest } });
+    try {
+      parsedFallback = parseStrictJson(body);
+      const canonicalBody = canonicalize(parsedFallback);
+      if (sha256Hex(envelopeCanonical(meta, canonicalBody)) !== row.digest) throw new Error('digest mismatch');
+      noncanonical = true;
+    } catch {
+      throw new IntegrityError('记录内容与它的摘要不符（存储被改动过或正文不能规范化）', { detail: { record: row.id, digest: row.digest } });
+    }
   }
   const kind = RecordKindSchema.safeParse(meta.kind);
   if (!kind.success || !isProvenanceType(meta.provenance)) {
@@ -211,9 +242,17 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   }
   let parsed: B;
   try {
-    parsed = JSON.parse(body) as B;
+    parsed = noncanonical ? parsedFallback as B : JSON.parse(body) as B;
   } catch (error) {
     throw new IntegrityError('记录正文不是 JSON', { detail: { record: row.id }, cause: error });
   }
-  return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed };
+  if (noncanonical) noteNoncanonical(String(row.id), String(row.digest));
+  return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed, ...(noncanonical?{integrity_note:NONCANONICAL_EXPLANATION}:{}) };
 }
+
+function validateUniqueKey(key: string): void {
+  if (typeof key !== 'string' || key.length === 0 || !isIndexValue(key)) throw new TypeError('unique key must be 1..1000 UTF-8 bytes, well formed, without NUL');
+}
+
+/** Public factory for a store sharing a caller-owned database/transaction boundary. */
+export function createRecordStore(db: Database, options: StoreOptions): RecordStore { return new PgRecordStore(db, options); }

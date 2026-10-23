@@ -191,7 +191,7 @@ test('a submission canonicalize refuses (a lone surrogate) is kept verbatim as a
 test('records and the other history tables are append-only: UPDATE, DELETE and TRUNCATE are rejected', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
-  const record = await kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { x: 1 }, index: [{ key: 'test.key', value: 'v' }] });
+  const record = await kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { x: 1 }, unique_key:'synthetic-record-key',index: [{ key: 'test.key', value: 'v' }] });
   await kit.objects.put(Buffer.from('bytes'), 'text/plain');
   const admin = await kit.principals.bootstrapAdmin('管理员');
   await kit.callLog.append({ traceId: 'a'.repeat(32), userId: admin.user.id, sessionId: null, tool: 'list_task_packs', runId: null, arguments: {}, callResult: 'ok', durationMs: 1, adminNote: '管理员可见的原因' });
@@ -213,6 +213,9 @@ test('records and the other history tables are append-only: UPDATE, DELETE and T
     ['call_notes', "UPDATE call_notes SET note = 'x'"],
     ['call_notes', 'DELETE FROM call_notes'],
     ['call_notes', 'TRUNCATE call_notes'],
+    ['record_keys',"UPDATE record_keys SET key='changed'"],
+    ['record_keys','DELETE FROM record_keys'],
+    ['record_keys','TRUNCATE record_keys'],
   ];
   for (const [table, statement] of attempts) {
     await assert.rejects(sql(kit.database, statement), (error: unknown) => {
@@ -305,7 +308,7 @@ test('migrations apply once, concurrently safe, and later opens apply nothing', 
   const pools = [new Database(createPool(database, 2)), new Database(createPool(database, 2)), new Database(createPool(database, 2))];
   t.after(() => Promise.all(pools.map((db) => db.end())));
   const applied = await Promise.all(pools.map((db) => migrate(db)));
-  assert.deepEqual(applied.flat(), [1, 2]);
+  assert.deepEqual(applied.flat(), MIGRATIONS.map(m => m.version));
   assert.deepEqual(await migrate(pools[0]), []);
   const journal = (await sql(database, 'SELECT version, name, sha256 FROM schema_migrations')).rows;
   assert.equal(journal.length, MIGRATIONS.length);
@@ -322,7 +325,7 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   await assert.rejects(migrate(db, changed), (error: unknown) => error instanceof MigrationError && /校验和/.test((error as Error).message));
   const renamed = MIGRATIONS.map((migration) => ({ ...migration, name: 'renamed' }));
   await assert.rejects(migrate(db, renamed), MigrationError);
-  await assert.rejects(migrate(db, [...MIGRATIONS, { version: 4, name: 'skips_three', sql: 'SELECT 1' }]), TypeError);
+  await assert.rejects(migrate(db, [...MIGRATIONS, { version: MIGRATIONS.length + 2, name: 'skips_next', sql: 'SELECT 1' }]), TypeError);
   // The journal itself was tampered with: the program refuses to open the database.
   await sql(database, "UPDATE schema_migrations SET sha256 = repeat('0', 64) WHERE version = 1");
   const dataDir = postgres.root;
@@ -333,12 +336,12 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   await assert.rejects(openRecords(config), (error: unknown) => error instanceof MigrationError && /不认识的迁移/.test((error as Error).message));
   await sql(database, 'DELETE FROM schema_migrations WHERE version = 99');
   // Version 4 is applied but version 3 is not: migrations only move forward (versions past this program's list).
-  const third = { version: 3, name: 'third', sql: 'CREATE TABLE gap_three (x int)' };
-  const fourth = { version: 4, name: 'fourth', sql: 'CREATE TABLE gap_four (x int)' };
-  await sql(database, 'INSERT INTO schema_migrations (version, name, sha256) VALUES (4, $1, $2)', [fourth.name, migrationChecksum(fourth)]);
+  const third = { version: MIGRATIONS.length + 1, name: 'third', sql: 'CREATE TABLE gap_three (x int)' };
+  const fourth = { version: MIGRATIONS.length + 2, name: 'fourth', sql: 'CREATE TABLE gap_four (x int)' };
+  await sql(database, 'INSERT INTO schema_migrations (version, name, sha256) VALUES ($1, $2, $3)', [fourth.version, fourth.name, migrationChecksum(fourth)]);
   await assert.rejects(migrate(db, [...MIGRATIONS, third, fourth]), (error: unknown) => error instanceof MigrationError && /只能向前迁移/.test((error as Error).message));
   assert.equal((await sql(database, "SELECT to_regclass('gap_three') AS t")).rows[0].t, null);
-  await sql(database, 'DELETE FROM schema_migrations WHERE version = 4');
+  await sql(database, 'DELETE FROM schema_migrations WHERE version = $1', [fourth.version]);
   const kit = await openRecords(config);
   await kit.close();
 });

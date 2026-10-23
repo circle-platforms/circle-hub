@@ -5,9 +5,9 @@
 // action record (B05, action kind `lease`) in the same transaction. Keys are sorted before they are touched, so two
 // acquires of the same key set in opposite orders cannot deadlock. The vocabulary stays neutral: keys are strings
 // under a prefix; this module names no device, bench or product.
-import { recordDigest } from '../records/digest.ts';
 import { isId, newId } from '../records/ids.ts';
-import type { ActionBody } from '../records/api.ts';
+import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord } from '../records/api.ts';
+import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
@@ -34,9 +34,23 @@ export type ChangeOutcome =
   | { ok: true; lease: string; until: string; token: number }
   | { ok: false; code: 'LEASE_UNAVAILABLE' | 'LEASE_EXPIRED' | 'LEASE_TTL' | 'LEASE_NO_ROW'; message: string };
 
+/** Read-only current row for trusted callers enforcing fences. Never sent to a model or client. */
+export interface HolderSnapshot {
+  key: string;
+  lease: string;
+  /** Monotonic operation counter: extend and release also raise it; equality alone is not continuity. */
+  fencing: number;
+  user: string;
+  run: string;
+  released: boolean;
+  expires_at: string;
+}
+
 export interface ServiceOptions {
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
   now?: () => Promise<Date>;
+  /** The configured records store, sharing the lease transaction; defaults to the standard record limit. */
+  records?: RecordStore;
 }
 
 const KEY = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
@@ -66,9 +80,11 @@ interface Row {
 export class LeaseService {
   readonly #db: Database;
   readonly #now: () => Promise<Date>;
+  readonly #records: RecordStore;
 
   constructor(db: Database, options: ServiceOptions = {}) {
     this.#db = db;
+    this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
     this.#now = options.now ?? (async () => (await db.query<{ now: Date }>('SELECT now()::timestamptz AS now')).rows[0]!.now);
   }
 
@@ -167,6 +183,15 @@ export class LeaseService {
     return rows.rows.map((row) => ({ key: row.key, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() }));
   }
 
+  async holderSnapshot(keys: readonly string[]): Promise<HolderSnapshot[]> {
+    const rows = await this.#db.query<Row>('SELECT key, lease_id, token, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1) ORDER BY key', [[...new Set(keys)].sort()]);
+    return rows.rows.map(row => {
+      const fencing = Number(row.token);
+      if (!Number.isSafeInteger(fencing) || fencing < 1) throw new Error('租约围栏不能安全表示，请管理员核对');
+      return { key: row.key, lease: row.lease_id, fencing, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() };
+    });
+  }
+
   /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */
   async view(prefix: string): Promise<{ entries: Array<{ key: string; until: string }> }>;
   /** The same rows with the holder's run (an administrator's view; the run context never asks for it). */
@@ -209,18 +234,19 @@ export class LeaseService {
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */
   async actionLog(prefix: string): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.#db.query<{ body: string }>(
-      `SELECT body FROM records WHERE kind = 'action' AND schema = 'action@1' AND ((body)::jsonb -> 'detail' ->> 'op') IS NOT NULL ORDER BY seq`,
-      [],
-    );
     const out: Array<Record<string, unknown>> = [];
-    for (const row of rows.rows) {
-      const body = JSON.parse(row.body) as { action?: string; detail?: Record<string, unknown> };
-      if (body.action !== 'lease') continue;
-      const keys = (body.detail?.keys as string[] | undefined) ?? [];
-      if (!keys.some((key) => key.startsWith(prefix))) continue;
-      out.push({ op: body.detail?.op, keys, lease: body.detail?.lease, until: body.detail?.until, token: body.detail?.token, reason: (body.detail?.reason as string | undefined) ?? null });
-    }
+    let cursor: string | null = null;
+    do {
+      const page: Page<StoredRecord<ActionBody>> = await this.#records.list<ActionBody>({ kind: 'action', limit: 500, ...(cursor ? { cursor } : {}) });
+      for (const record of page.items) {
+        const body = record.body;
+        if (body.action !== 'lease') continue;
+        const keys = (body.detail?.keys as string[] | undefined) ?? [];
+        if (!keys.some(key => key.startsWith(prefix))) continue;
+        out.push({ ...(record.integrity_note?{integrity_note:record.integrity_note}:{}),op: body.detail.op, keys, lease: body.detail.lease, until: body.detail.until, token: body.detail.token, reason: body.detail.reason ?? null });
+      }
+      cursor = page.next;
+    } while (cursor);
     return out;
   }
 
@@ -320,12 +346,7 @@ export class LeaseService {
       codes: [],
       detail: { ...(detail as unknown as Record<string, unknown>), ...extra },
     };
-    const digest = recordDigest({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body });
-    const bodyText = JSON.stringify(body);
-    await this.#db.query(
-      `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size) VALUES ($1, $2, 'action', $3, 'observed', $4, $5, $6)`,
-      [newId('rcd'), digest, RECORD_SCHEMAS.action, startedAt, bodyText, bodyText.length],
-      tx,
-    );
+    await this.#records.put<ActionBody>({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body,
+      index: [{ key: 'action.kind', value: 'lease' }, { key: 'action.run', value: holder.run }, { key: 'lease.id', value: lease }] }, tx);
   }
 }

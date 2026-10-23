@@ -181,12 +181,12 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
   if (record === null) return html`<p class="empty">提交记录不在</p>`;
   const body = record.body;
   let text: string;
-  let note = '';
+  let note = record.integrity_note ?? '';
   const received = isObject(body) && Object.keys(body).length === 1 && isObject(body.received) ? body.received : null;
   if (received !== null && received.run === runId && typeof received.object === 'string' && SHA256.test(received.object)) {
     const bytes = await ctx.deps.records.objects.get(received.object);
     text = bytes === null ? '' : new TextDecoder().decode(bytes);
-    note = bytes === null ? '保存原文的对象不在' : '收到的参数不是规范 JSON，按收到的 JSON 文本保存';
+    note = [note,bytes === null ? '保存原文的对象不在' : '收到的参数不是规范 JSON，按收到的 JSON 文本保存'].filter(Boolean).join('；');
   } else {
     text = JSON.stringify(body, null, 2) ?? '';
   }

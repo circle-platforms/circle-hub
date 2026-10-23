@@ -1305,6 +1305,27 @@ describe('help', () => {
   });
 });
 
+test('R32 a fresh administrator command exposes noncanonical action diagnostics without body text',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const {newId,recordDigest}=await import('../../records/api.ts');
+  const owner=new Database(createPool({...loadServerConfig(admin.deployment.env).database,user:harness.postgres.config.user},2));t.after(()=>owner.end());
+  const input={kind:'action' as const,schema:'action@1',provenance:'observed' as const,created_at:'2026-10-23T00:00:00.000Z',body:{private_message:'SYNTHETIC_PRIVATE_DIAGNOSTIC',value:1}};
+  const digest=recordDigest(input),text='{ "value": 1, "private_message": "SYNTHETIC_PRIVATE_DIAGNOSTIC" }';
+  await owner.query('INSERT INTO records(id,digest,kind,schema,provenance,created_at,body,size) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[newId('rcd'),digest,input.kind,input.schema,input.provenance,input.created_at,text,Buffer.byteLength(text)]);
+  const result=await admin.run(['records','verify','--kind','action']);assert.equal(result.code,0,result.text);
+  assert.match(result.text,/正文不是规范写法/);assert.match(result.text,new RegExp(digest));assert.doesNotMatch(result.text,/SYNTHETIC_PRIVATE_DIAGNOSTIC/);
+});
+
+test('R33 lease release honors the configured record byte limit atomically',async t=>{
+  const admin=await setup({deployment:{extra:{CIRCLE_HUB_MAX_RECORD_BYTES:'65536'}}});
+  const kit=await admin.kit();t.after(()=>kit.close());const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const {newId}=await import('../../records/api.ts');const user=await kit.principals.findByName('根管理员');assert.ok(user);
+  const leases=new LeaseService(db,{records:kit.store});const key='synthetic/r33';
+  const acquired=await leases.acquire({keys:[key],prefix:'synthetic/',ttlSeconds:60,maxTtlSeconds:3600,holder:{user:user.id,run:newId('run')}});assert.equal(acquired.ok,true);
+  const result=await admin.run(['lease','release',key,'--reason','合成限额原因'.repeat(10000)]);
+  assert.notEqual(result.code,0);assert.equal((await leases.holderSnapshot([key]))[0].released,false);
+});
+
 async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
   await expectOk(admin, ['pack', 'publish', packs.agile]);

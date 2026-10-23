@@ -47,7 +47,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const config = { dataDir, logDir: join(dataDir, 'logs'), database: runtime, limits: { ...DEFAULT_LIMITS } };
   // Before the owner migrated, the runtime role refuses to start instead of trying to create tables.
   await assert.rejects(openRecords(config, { migrate: false }), (error: unknown) => error instanceof MigrationError && /还没有应用/.test((error as Error).message));
-  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2]);
+  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3]);
   assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), []);
   // The role that owns the tables could disable the triggers, so it is refused as the runtime role.
   await assert.rejects(migrateRecords({ database: owner }, { runtimeRole: 'hub_owner' }), MigrationError);
@@ -95,6 +95,11 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
     'DELETE FROM users',
     'DELETE FROM tokens',
     'DELETE FROM pointers',
+    "UPDATE record_keys SET key='changed'",
+    'DELETE FROM record_keys',
+    'TRUNCATE record_keys',
+    'ALTER TABLE record_keys DISABLE TRIGGER ALL',
+    'DROP TABLE record_keys',
     "UPDATE schema_migrations SET sha256 = repeat('0', 64)",
     'CREATE TABLE intruder (x int)',
     'CREATE OR REPLACE FUNCTION hub_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$',
