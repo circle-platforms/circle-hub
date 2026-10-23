@@ -73,3 +73,24 @@ describe('shared quotation vectors', () => {
     );
   });
 });
+
+it('quotation whitespace uses East Asian width while ordinary table normalization keeps spaces', () => {
+  assert.equal(collapseWhitespace('中 \n A'), '中 A');
+  assert.equal(quoteMatches('中 \n A', '中A'), true);
+  assert.equal(quoteInCollapsed(collapseWhitespace('中 \n A'), '中A'), true);
+  assert.equal(quoteInCollapsed(collapseWhitespace('set 10 0'), 'set 100'), false);
+});
+
+it('quotation normalization has no runtime dependency on refs', async () => {
+  const { default: ts } = await import('typescript');
+  const source = readFileSync(new URL('./text.ts', import.meta.url), 'utf8');
+  const ast = ts.createSourceFile('text.ts', source, ts.ScriptTarget.Latest, true);
+  for (const statement of ast.statements) if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text.includes('refs/')) assert.ok(statement.importClause?.isTypeOnly, 'rules may import only refs types');
+});
+
+it('records the stale quote contract wording as an integrator regeneration need', () => {
+  const refs = readFileSync(new URL('../refs/README.md', import.meta.url), 'utf8');
+  const rules = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  assert.match(refs, /QuoteTable[^\n]*description/); assert.match(refs, /quote\.v1\.schema\.json/);
+  assert.match(rules, /stale[^\n]*contract/i);
+});

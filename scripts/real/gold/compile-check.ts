@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
+import { isGoldWideOrFullwidth } from './quote-widths.ts';
 
 export function parseIpv4(ip: string): bigint | null {
   const parts = ip.trim().split('.');
@@ -466,12 +467,27 @@ export function checkCatalogCommand(catalog: CatalogCommand[], line: string, dec
   return fail(problems.join('；') || '命令参数个数错误');
 }
 export const collapseWhitespace = (s: string): string => s.replace(/\s+/g,' ').trim();
+/** Independent decision-37 normalization: replace complete Unicode whitespace runs using their code-point neighbours. */
+function normalizeVerbatimQuote(text: string): string {
+  return text.replace(/\p{White_Space}+/gu, (run: string, offset: number) => {
+    const end = offset + run.length;
+    if (offset === 0 || end === text.length) return '';
+    const left = Array.from(text.slice(Math.max(0, offset - 2), offset)).at(-1)!;
+    const right = String.fromCodePoint(text.codePointAt(end)!);
+    return isGoldWideOrFullwidth(left) || isGoldWideOrFullwidth(right) ? '' : ' ';
+  });
+}
+function verbatimContains(fragment: string, quote: string): boolean {
+  if (!quote.isWellFormed()) return false;
+  const needle = normalizeVerbatimQuote(quote);
+  return needle.length > 0 && normalizeVerbatimQuote(fragment).includes(needle);
+}
 export function checkVerbatimQuote(sources: ReadonlyMap<string,string>, reference: string, quote: string): Answer {
-  if (!quote.trim() || !reference.trim()) return fail('期望结果缺少逐字引文或来源');
+  if (!quote.isWellFormed() || !normalizeVerbatimQuote(quote) || !reference.trim()) return fail('期望结果缺少完整的逐字引文或来源');
   if (!/^(src|rec|tree):/.test(reference)) return fail('期望来源不是 src:/rec:/tree: 引用');
   const fragment = sources.get(reference);
   if (fragment === undefined) return unknown(`来源 ${reference} 无法读取或未绑定`);
-  return collapseWhitespace(fragment).includes(collapseWhitespace(quote)) ? pass() : fail('引文不是来源的逐字片段');
+  return verbatimContains(fragment,quote) ? pass() : fail('引文不是来源的逐字片段');
 }
 // Serialize directly: JSON.stringify on a sorted object would re-order integer-like keys.
 export function canonicalJson(v: unknown): string {
