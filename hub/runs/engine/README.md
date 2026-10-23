@@ -251,6 +251,52 @@ well-formed text). The same reasons go to the admin note of the call they belong
   that fit or admit runs that do not, because a result's size depends on what the model writes; instead every submission gets a
   receipt (decision 17) and start_run refuses what certainly does not fit (the run record, a production result).
 
+## Missing item artifacts in accepted submissions
+
+V05 partitions delivery separately from verdicts. W07 R[2] makes a declared skip incomplete (`declared_skip`), and
+W07 R[3] makes an omitted item incomplete (`not_covered`). W02 F[7] permits repair only of an existing artifact:
+without a submitted item artifact there is nothing to judge or repair. The owner clarified this task's “no repair
+rounds” means no **artifact-check** rounds; W07 R[3] coverage errors and their existing bookkeeping remain.
+
+Before this change, eight synthetic cases (item/run checks, skipped/omitted items, with/without an item judgment
+requirement) established these different outcomes:
+
+| Accepted item handling | Artifact check received null slots | Stored artifact refutation | Receipt and repair | Partition |
+| --- | --- | --- | --- | --- |
+| Declared skip | yes | yes | no check repair | incomplete / declared_skip |
+| Omitted, with item judgments | yes | yes | coverage.shortfall and judgment coverage bookkeeping; no artifact repair | incomplete / not_covered |
+| Omitted, only item facts | yes | yes | false artifact refutation and artifact repair round | delivered |
+
+Now item-artifact checks (including subject builders, tables and declared reads) do not run for skipped or omitted
+items. Their artifact requirements have incomplete terminals at every declared layer, no check claims, and no check
+repair round. This also covers fact requirements when the pack has no item judgment requirement. Target-only checks
+still execute and keep their facts; their routing and terminals follow the existing target/handling rules. A handled
+item with bad artifact data still runs checks and consumes real repair rounds. Carried artifacts still count as handled;
+production evaluation without a submission keeps its previous behavior.
+
+A run check that judges item artifacts receives only handled items and is not called for an empty set. A check of a
+run-level artifact (such as a submitted final conclusion) still receives all target metadata to check coverage, but
+skipped/omitted rows have **no slots property**, rather than null slots. Its per-item artifact outcomes cannot become
+claims on an absent item artifact. This preserves the distinction between judging a final that claims coverage and
+judging an item artifact that was never submitted.
+
+Pack audit (read only; no pack changes in this task):
+
+- `defect-to-case`: `checkDraftShape`, `checkCommandsRefutation` and `checkGroundedReading` explicitly turn null slots
+  into “已声明跳过”的 support; `checkDuplicate` supports zero drafts. The engine no longer calls these paths for a skipped
+  or omitted item. The direct-call compatibility branches remain in the pack.
+- `case-review`: `findings_sources` returns missing_input for absent slots; that extra check claim is no longer made.
+- `case-review-verify`: `dispositionsCheck` returns missing_input for absent slots. Its **run-level** `verdictCheck`
+  depends on all targets' draft findings to reject PASS with undisposed findings on skipped items. Metadata is retained
+  for this real final check; the engine must not discard those targets from its coverage calculation.
+- `case-compile`: its item artifact checks can refute missing plan data or fail plan generation on null slots. Those
+  checks no longer run for absent artifacts. Catalog/quote checks in these packs likewise no longer produce empty-list
+  support facts for such items.
+
+`empty-slots.test.ts` checks actual invocation counts, target facts, empty artifact claim lists, both incomplete layers,
+partitions, coverage bookkeeping and the next submission's remaining real repair budget. It covers item/run checks,
+one or every item absent, mixed valid/invalid artifacts, and run-level finals' retained metadata.
+
 ## Limits
 
 - Exact values can cite sources of the locked root only through `tree:` references (the port does not list the root's source
