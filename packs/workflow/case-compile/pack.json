@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "363af0d00dab0e9b03817d84559a891e000e7640e82afcc0e253800f87731316",
-      "size": 3990
+      "sha256": "e466200c608df5a0d323293c00adfa0215d0ede75e063f8c46c68c7b07eabd5b",
+      "size": 4072
     },
     {
       "path": "functions/cases.ts",
@@ -262,6 +262,11 @@
       "size": 14691
     },
     {
+      "path": "samples/negative/single-quote-backslash.json",
+      "sha256": "fde6f859d1aa03d453e30e576ae64b86c1754f8890bc3d63387d36ee634b1b6c",
+      "size": 14602
+    },
+    {
       "path": "samples/negative/unassigned-parameter.json",
       "sha256": "77fb21bf63424b9b7039a45f52b60bc48ba047526153f5449a94f718a1d37f78",
       "size": 14856
@@ -425,6 +430,11 @@
       "path": "samples/positive/replacement-phantom.json",
       "sha256": "677415afa028f2b6919f438c9fecee120e19a69b55aaf14523b4336e7dacad7e",
       "size": 14552
+    },
+    {
+      "path": "samples/positive/single-quote-backslash.json",
+      "sha256": "9f3caba0ede7f12e700effd0a7720ae8b9669e37efa7845bfb93e5f5ace9ae0c",
+      "size": 14559
     },
     {
       "path": "samples/positive/unassigned-parameter.json",

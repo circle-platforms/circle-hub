@@ -8,6 +8,7 @@ import { goodData, subjectOf, QUOTE, CATALOG_SPEC } from '../functions/test-supp
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
+  { name:'single-quote-backslash',check:'contract_shape',code:'param_value',change:v=>{v.steps[0].args=["widget description 'it\\'s'"]; }},
   { name: 'quote-unpaired', check: 'contract_shape', code: 'param_value', change: (v) => { v.steps[0].args = ['widget health interval "60']; } },
   { name: 'wait-limit', check: 'contract_shape', code: 'wait_value', change: (v) => { v.steps[2].args = ['99999999']; } },
   { name: 'host-expansion', check: 'contract_shape', code: 'host_shell_dynamic', change: (v) => { v.steps[1].args = ['/sbin/re*boot']; } },
