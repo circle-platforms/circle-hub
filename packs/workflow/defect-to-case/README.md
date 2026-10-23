@@ -15,7 +15,7 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 14 个样例（`pack-sample@1`，positive 与 negative 各 7 个），覆盖所有 7 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.1`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.2`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
@@ -131,3 +131,5 @@ not_duplicate 的已实现判据是：相同的规范化命令头集合、相同
 复核修正：本包在投影时检查 fields[fix_field] 必须为非空文字，缺失或为空以 fix_text_missing 拒绝并点名缺陷及字段，要求核对 settings.bug_fix_field 或更换缺陷。PLM 系统包仅回传设置，不承担这个消费方检查。
 
 收尾复核：manual_missing 由 expected_sources 从冻结条目发出，随 start_run 的 evidence gaps 返回，投影日志中的同名警告不再冒充客户端已见。条目摘要也明确未绑定手册；回执列出版本线、manual:cli 地址、配置修复字段和重开动作。
+
+收尾复核第二轮：manual_mismatch 的原因直接按绑定数量、实际外部身份和运行版本线确定。有版本线时允许改绑同线手册或保持未绑定；没有版本线时明确要求不绑定 manual，仅引用修复字段，不再给无法执行的占位手册地址。

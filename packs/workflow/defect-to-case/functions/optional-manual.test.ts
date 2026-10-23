@@ -13,3 +13,21 @@ test('without a manual the run discloses the missing fact and only the configure
   assert.equal(checkQuoteSources({ subject: subject(`src:${digest}/json@1/p/fields/repair_notes`) })[0].verdict, 'support');
   assert.equal(checkQuoteSources({ subject: subject(`src:${'c'.repeat(64)}/markdown@1/b/0`) })[0].verdict, 'refute');
 });
+
+for (const line of ['10.7', null]) test(`manual refusal gives a usable optional binding action for line ${line}`, () => {
+  const external = 'manual:cli:10.8';
+  const result = projectDefects({ ...input, context: { line }, inputs: [...input.inputs, { slot: 'manual', external, sha256: 'c'.repeat(64), model: {} }] });
+  assert.ok('error' in result); assert.equal(result.error.code, 'defect-to-case.manual_mismatch');
+  if (line) {
+    assert.ok(result.error.message.includes(external)); assert.ok(result.error.message.includes(line));
+    assert.match(result.error.fix ?? '', /不绑定 manual/); assert.match(result.error.fix ?? '', /修复说明字段/);
+  } else {
+    assert.match(result.error.message, /没有版本线/); assert.match(result.error.fix ?? '', /不绑定 manual/);
+    assert.ok(!result.error.fix?.includes('manual:cli:'));
+  }
+});
+test('multiple manuals are disclosed as multiple bindings and offer leaving the optional slot unbound', () => {
+  const manuals = ['manual:cli:10.7', 'manual:cli:10.8'].map(external => ({ slot: 'manual', external, sha256: 'c'.repeat(64), model: {} }));
+  const result = projectDefects({ ...input, inputs: [...input.inputs, ...manuals] });
+  assert.ok('error' in result); assert.match(result.error.message, /2.*手册/); assert.match(result.error.fix ?? '', /不绑定 manual/);
+});
