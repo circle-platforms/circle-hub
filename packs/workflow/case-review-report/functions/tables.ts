@@ -1,5 +1,5 @@
 // A deterministic view of source text and already accepted claims. It creates no review judgment.
-import type {Partition,Nature,ProducerKind,SourceRole} from '../../../../contracts/generated/vocabulary.ts';
+import type {Partition,Nature,ProducerKind,SourceRole,Attribution} from '../../../../contracts/generated/vocabulary.ts';
 import labels from '../tables/labels.json' with {type:'json'};
 import {isRecord} from './common.ts';
 
@@ -17,6 +17,7 @@ interface Note {kind:Kind;node:number;owner:number;order:number;record:string;te
 interface Place {row:number|null;group:number|null}
 const DELIVERED='delivered' satisfies Partition;
 const JUDGMENT='judgment' satisfies Nature,FACT='fact' satisfies Nature;
+const SOURCE_ERROR='author_input' satisfies Attribution;
 const MODEL='model' satisfies ProducerKind,FUNCTION='function' satisfies ProducerKind,SUBJECT='subject' satisfies SourceRole;
 const records=(value:unknown):Record<string,any>[]=>Array.isArray(value)?value.filter(isRecord):[];
 const text=(value:unknown):string=>typeof value==='string'?value:'';
@@ -100,17 +101,18 @@ export function reviewTables(input:TableInput):{markdown:string;counts:ReviewCou
       for(const requirement of records(entry.requirements))for(const claim of records(requirement.claims)){
         const statement=isRecord(claim.statement)?claim.statement:{},code=typeof statement.code==='string'?statement.code:null;
         const data=isRecord(statement.data)?statement.data:{};
+        const attributed=records(requirement.layers).some(layer=>layer.layer==='static'&&layer.attribution===SOURCE_ERROR);
         const common={node:sourceLocation(claim,owner),owner,order:order++,record:block.record,text:text(statement.text),rank:typeof statement.rank==='string'?statement.rank:null,code,disposition:null,probe:null};
         if(requirement.requirement==='verification'&&claim.qualifier?.nature===JUDGMENT&&claim.warrant?.producer===MODEL&&labels.dispositions.some(row=>row.code===code)){
           add({...common,kind:code===labels.dispositions.find(row=>row.display==='推翻')?.code?'refuted':'finding',disposition:code,probe:typeof data.probe==='string'?data.probe:null},place(common.node));
         }
         if(claim.qualifier?.nature===FACT&&claim.warrant?.producer===FUNCTION){
-          if(claim.qualifier?.source_role===SUBJECT&&statement.verdict==='refute'&&code!==null)add({...common,kind:'hub'},place(common.node));
+          if(claim.qualifier?.source_role===SUBJECT&&attributed&&statement.verdict==='refute'&&code!==null)add({...common,kind:'hub'},place(common.node));
           // The verifier's source-facts check carries original claims and their original record references as data.
           if(statement.verdict==='support')for(const original of records(data.source_facts)){
             const fact=isRecord(original.claim)?original.claim:{},factStatement=isRecord(fact.statement)?fact.statement:{};
             const qualifier=isRecord(fact.qualifier)?fact.qualifier:{},warrant=isRecord(fact.warrant)?fact.warrant:{};
-            if(qualifier.nature!==FACT||qualifier.source_role!==SUBJECT||warrant.producer!==FUNCTION||factStatement.verdict!=='refute'||typeof factStatement.code!=='string')continue;
+            if(!isRecord(original.layer)||original.layer.attribution!==SOURCE_ERROR||qualifier.nature!==FACT||qualifier.source_role!==SUBJECT||warrant.producer!==FUNCTION||factStatement.verdict!=='refute'||typeof factStatement.code!=='string')continue;
             const at=sourceLocation(fact,nodeOf(original.location)??owner);
             add({...common,node:at,kind:'hub',code:factStatement.code,text:text(factStatement.text),record:text(original.reference),order:order++},place(at));
           }

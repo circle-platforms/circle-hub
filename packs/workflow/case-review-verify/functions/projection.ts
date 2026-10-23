@@ -6,11 +6,13 @@
 // reference a disposition names in data.finding) and the draft level in fields.draft_level; the groups carry the draft level
 // ({ kind: draft_level }) and the draft ({ kind: draft }), frozen with the run. The receiver inherits the items and the
 // references, not the judgments: the checks of this pack re-run on its own boundary.
+import type {Attribution} from '../../../../contracts/generated/vocabulary.ts';
 import type { BoundInput, ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord, warningSink, PACK } from './common.ts';
 import { clip, collapseWhitespace } from './text.ts';
 import type { KityMinderModel, PackError, Warning } from './types.ts';
 
+const SOURCE_ERROR='author_input' satisfies Attribution;
 export const TARGET_SLOT = 'target';
 export const DRAFT_SLOT = 'draft';
 /** The draft pack's requirement keys whose claims this pack verifies. */
@@ -139,8 +141,9 @@ export function projection(input: unknown): ProjectionOutput {
         requirement.claims.forEach((claim,c)=>{
           const reference=recReference(record,base,['partitions',partition,n,'requirements',r,'claims',c]);
           if(requirement.requirement===FINDINGS&&isModelJudgment(claim))findings.push(findingOf(claim,reference));
-          if(isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&claim.qualifier.source_role==='subject'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='refute'){
-            sourceFacts.push({reference,location:entry.location,claim});
+          const attributed=Array.isArray(requirement.layers)?requirement.layers.find(layer=>isRecord(layer)&&layer.layer==='static'&&layer.attribution===SOURCE_ERROR):undefined;
+          if(attributed&&isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&claim.qualifier.source_role==='subject'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='refute'){
+            sourceFacts.push({reference,location:entry.location,layer:attributed,claim});
           }
         });
       });

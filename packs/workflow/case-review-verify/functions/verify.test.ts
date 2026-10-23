@@ -468,6 +468,7 @@ describe('read-only preservation of the initial Hub facts',()=>{
   it('keeps source-attributed refutations and their original record references in the accepted disposition fact',()=>{
     const source=draftResult(),bad={...fact('literal'),statement:{verdict:'refute',code:'core.structure.required_empty',text:'期望为空'}};
     source.partitions.delivered[0].requirements[0].claims.push(bad as any);
+    Object.assign(source.partitions.delivered[0].requirements[0].layers[0],{terminal:'violation',attribution:'author_input',code:'core.structure.required_empty'});
     const projectedRun=projected(projection(input([target(),draft(record(source))])));
     const original=projectedRun.items.find(item=>item.id.endsWith(':c2'))!;
     const snapshot=original.fields.draft_source_facts as Array<{reference:string;claim:unknown}>;
@@ -475,4 +476,12 @@ describe('read-only preservation of the initial Hub facts',()=>{
     const kept=dispositions({subject:{item:original.id,location:loc('c2'),fields:original.fields,slots:{verification:[]}}});
     assert.deepEqual(kept[0].data?.source_facts,snapshot);assert.ok(kept[0].grounds.includes(snapshot[0].reference));
   });
+});
+
+it('an expected catalog refutation is not preserved as an attributed source defect',()=>{
+  const source=draftResult(),entry=source.partitions.delivered[0];
+  entry.requirements.push({requirement:'catalog',layers:[{layer:'static',terminal:'violation',code:'core.catalog.param_out_of_range'}],status:'satisfied',
+    claims:[{...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'反向预期反驳',data:{negative_case:true,expected:true}}}]} as any);
+  const result=projected(projection(input([target(),draft(record(source))])));
+  assert.deepEqual(result.items.find(item=>item.id.endsWith(':c2'))!.fields.draft_source_facts,[]);
 });

@@ -98,6 +98,7 @@ test('empty subitems fold but suggestions and source-attributed Hub facts remain
   const b=block(['c1','c2','c3','direct']);
   const out=reviewTables(input(small(),[b]));
   assert.equal((out.markdown.match(/—— 用例 \d+ 个，无发现/g)??[]).length,3);
+  b.result.partitions.delivered[0].requirements[0].layers=[{layer:'static',terminal:'violation',attribution:'author_input'}];
   b.result.partitions.delivered[0].requirements[0].claims.push({
     qualifier:{nature:'fact',source_role:'subject'},warrant:{producer:'function',id:'structure@1'},
     statement:{verdict:'refute',code:'core.structure.required_empty',text:'已核对：期望为空'},
@@ -129,12 +130,20 @@ test('source-fact provenance is preserved while verifier errors and model-spoofe
   b.result.partitions.delivered[0].requirements[0].claims.push({
     qualifier:{nature:'fact',source_role:'artifact_under_verification'},warrant:{producer:'function',id:'source_facts'},
     statement:{verdict:'support',data:{source_facts:[
-      {reference:'rec:'+'b'.repeat(64)+'#/fact/0',location:ref('c1'),claim:fact('fact','subject','function','原始字面事实')},
-      {reference:'rec:'+'b'.repeat(64)+'#/fact/1',location:ref('c1'),claim:fact('fact','artifact_under_verification','function','这是评论自身错误')},
-      {reference:'rec:'+'b'.repeat(64)+'#/fact/2',location:ref('c1'),claim:fact('judgment','subject','model','这是伪装的判断')},
+      {reference:'rec:'+'b'.repeat(64)+'#/fact/0',location:ref('c1'),layer:{layer:'static',terminal:'violation',attribution:'author_input'},claim:fact('fact','subject','function','原始字面事实')},
+      {reference:'rec:'+'b'.repeat(64)+'#/fact/1',location:ref('c1'),layer:{layer:'static',terminal:'violation',attribution:'author_input'},claim:fact('fact','artifact_under_verification','function','这是评论自身错误')},
+      {reference:'rec:'+'b'.repeat(64)+'#/fact/2',location:ref('c1'),layer:{layer:'static',terminal:'violation',attribution:'author_input'},claim:fact('judgment','subject','model','这是伪装的判断')},
     ]}},
   });
   const out=reviewTables(input(small(),[b]));
   assert.equal(out.counts.total.hubChecks,1);assert.ok(out.markdown.includes(longText));assert.ok(out.markdown.includes('原始字面事实'));
   assert.doesNotMatch(out.markdown,/这是评论自身错误|这是伪装的判断/);
+});
+
+test('an expected negative-case refutation without source-error attribution is not a Hub problem',()=>{
+  const b=block(['c1','c2','c3','direct']),requirement=b.result.partitions.delivered[1].requirements[0];
+  requirement.layers=[{layer:'static',terminal:'violation',code:'core.catalog.param_out_of_range'}];
+  requirement.claims.push({qualifier:{nature:'fact',source_role:'subject'},warrant:{producer:'function',id:'catalog@1'},
+    statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'反向用例的预期越界',data:{negative_case:true,expected:true}}});
+  const out=reviewTables(input(small(),[b]));assert.equal(out.counts.total.hubChecks,0);assert.ok(!out.markdown.includes('反向用例的预期越界'));
 });
