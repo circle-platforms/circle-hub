@@ -1,51 +1,69 @@
 # Knowledge sync on the document host
 
-The Hub reads product documents from a WebDAV mirror that a document host builds (anonymous read, plain HTTP). The host already
-ran two pipelines: an OpenKM export of the development and QA document roots converted to Markdown (every 30 minutes), and a daily
-SVN update plus AsciiDoc conversion of the product manuals for three version lines. Neither covered the version-specific material
-for both name families of the product (APV and NSAE are one product with two names). This directory holds what was added on
-2026-10-21. Nothing existing was changed: the new jobs have their own configuration, state, output folders and a shared lock.
+These are host-side integration scripts for an existing OpenKM export and SVN manual mirror. They are deployment material,
+not Hub runtime dependencies. The host provides the existing exporters and converters; this repository does not install or run them.
+The added jobs keep their own configuration, state and output folders and share a lock.
 
-## What was added
+## Deployment data stays on the host
 
-| Source | Output on the mirror | Notes |
+All absolute paths, document-library directory names, branch names, version lines, source mappings, endpoints and credentials
+are deployment data. Store their actual values only on the document host, outside Git. The owner or integrator configures and
+runs these jobs. Reading this directory does not authorize connecting to the host or running a sync.
+
+Export these variables in the host's job environment (there are no default host paths):
+
+| Variable | Host-provided value |
+| --- | --- |
+| `CIRCLE_HUB_SYNC_TOOLS_DIR` | Absolute directory containing the existing exporter and converter tools |
+| `CIRCLE_HUB_SYNC_UPLOAD_DIR` | Absolute staging root for exported documents and checked-out manuals |
+| `CIRCLE_HUB_SYNC_MIRROR_DIR` | Absolute mirror output root |
+| `CIRCLE_HUB_SYNC_DIR` | Absolute directory containing these scripts and private export properties |
+| `CIRCLE_HUB_SYNC_MANUAL_BRANCHES` | Space-separated manual checkout directory names (names contain no whitespace) |
+| `CIRCLE_HUB_SYNC_RELEASE_SET_1` through `CIRCLE_HUB_SYNC_RELEASE_SET_4` | One `set upload-directory web-target` triplet per variable; each component contains no whitespace |
+
+The four release sets retain their existing order and failure isolation. The private `export-<set>.properties` files name
+the actual OpenKM subtrees and output directories. Replace every angle-bracket placeholder in the example before use; the
+properties file is a template, not an environment-variable expansion mechanism. Keep private files mode 600 and out of Git.
+
+## Source mappings
+
+| Source configured on the host | Output relative to the mirror root | Notes |
 | --- | --- | --- |
-| OpenKM `APV_Release/Infosec_Release_Notes` | `release/infosec/` | release notes of the Infosec-branded builds (10.4.2, 10.4.3, 10.5) |
-| OpenKM `APV_Release/Array_Release_Note` | `release/array/` | release notes of the Array-branded builds (6.5 to 8.3 lines) |
-| OpenKM `APV_Release/OEM_Release_Notes` | `release/oem/` | release notes of OEM builds, including the NSAE-named ones |
-| OpenKM `APV_Release/Critical_Issue` | `release/critical/` | critical issue notifications |
-| SVN branches `rel_apv_10_4_2`, `rel_apv_10_4_5` (company `infosec`, `source/app_cn`, `source/cli_cn`) | `app/rel_apv_<line>/app_cn/`, `cli/rel_apv_<line>/cli_cn/` | Markdown plus the command catalog JSON the converter writes next to it |
+| Primary release-note subtree | `release/<primary-target>/` | Builds of the primary name family and the configured version lines |
+| Alternate release-note subtree | `release/<alternate-target>/` | Builds of the alternate name family |
+| OEM release-note subtree | `release/<oem-target>/` | OEM release notes |
+| Critical-issue subtree | `release/<critical-target>/` | Critical issue notifications |
+| Manual branches and company-specific source subdirectories | `<app-or-cli>/<branch>/<manual-subdirectory>/` | Markdown and the command catalog JSON written alongside it |
 
-Release notes exist as a legacy `.doc` plus a PDF twin. The stock converters only take `.docx` and send PDFs to a cloud
-converter, so `stage_release.py` first converts `.doc` with the host's local LibreOffice and leaves out PDFs that have a Word twin;
-only PDFs without a Word twin go to the PDF converter.
+## Files and processing
 
-## Files
+- `stage_release.py` stages an export for the host's converters: local LibreOffice converts legacy `.doc` files to `.docx`;
+  PDFs with a Word twin are left out. Only PDFs without a Word twin go to the host's PDF converter.
+- `release_pipeline.sh <set> <upload-directory> <web-target>` runs export, stage, document conversion and mirror deployment for one set.
+- `run_release_all.sh` runs the four configured sets, preserving failure isolation.
+- `run_manuals_extra.sh` updates and converts the configured manual branches when sources change.
+- `manuals_first_run.sh` performs the first conversion after a fresh manual checkout.
+- `export-release.properties.example` shows a subtree's exporter settings using placeholders.
 
-- `stage_release.py` stages an export for the stock converters (`.doc` to `.docx`, PDFs without a Word twin).
-- `release_pipeline.sh <set> <upload dir> <web target>` runs export, stage, `docx2md.py`, `pdf2md.py` and `deploy_md.sh` for one set.
-- `run_release_all.sh` runs the four sets (hourly, minute 5). `run_manuals_extra.sh` updates the two added manual lines (daily, 00:20).
-- `manuals_first_run.sh` is the first conversion after a fresh SVN checkout (the daily job only converts when the update brought changes).
-- `export-release.properties.example` shows the exporter configuration of one subtree (real files hold credentials and stay on the host).
+Cron entries share `flock -n "$CIRCLE_HUB_SYNC_DIR/pipeline.lock"` so these jobs never overlap. Configure the variables in the
+host's private job environment. Illustrative schedules (script and log paths are placeholders):
 
-Cron entries, serialized with `flock -n /root/<sync dir>/pipeline.lock` so they never overlap with each other:
-
+```text
+5 * * * *  flock -n <sync-directory>/pipeline.lock <sync-directory>/run_release_all.sh >> <log-directory>/release.log 2>&1
+20 0 * * * flock -n <sync-directory>/pipeline.lock <sync-directory>/run_manuals_extra.sh >> <log-directory>/manuals.log 2>&1
 ```
-5 * * * *  flock -n .../pipeline.lock .../run_release_all.sh   >> logs/cron-release.log 2>&1
-20 0 * * * flock -n .../pipeline.lock .../run_manuals_extra.sh >> logs/cron-manuals.log 2>&1
-```
 
-## Adding a subtree or a version line
+## Adding sources and limits
 
-- OpenKM subtree: copy an export properties file, change `okm.davRoot` and `okm.outDir`, add a line to `run_release_all.sh`.
-- Manual line of a branch that has `tools/company/<company>/source/<manual>_cn`: `svn checkout` it to `uploads/<app|cli>/rel_apv_<line>/<manual>_cn`, run `manuals_first_run.sh` for it, add it to `run_manuals_extra.sh`.
+For a subtree, copy a private export properties file, change its source and output mappings, and configure its release-set
+triplet. For a manual branch, the host checks out its company-specific manual source into the configured upload layout,
+adds the checkout directory name to the branch list, and runs the first conversion.
 
-## Not covered yet
-
-- Version lines up to 10.4.3 keep their manuals only as built PDFs in SVN (no AsciiDoc source), so they are not converted.
-- English manuals (`app_en`, `cli_en`) and the other OpenKM roots (`Release_Status`, installation, configuration and application guides) are not synced.
-- The older pipelines keep flattening `spec`, `product` and `qa` documents by name; version information there is only in the text.
+Lines with only built PDFs and no AsciiDoc sources are not converted by the manual jobs. English manuals and unconfigured
+OpenKM roots are not synced. Older pipelines may still flatten development and QA documents by name; version information
+then remains only in their text. Exact line coverage and directory mappings belong in the host's private deployment inventory.
 
 ## Roll back
 
-Remove the two cron lines, delete the sync directory, `rm -r /var/www/data/release`, and delete the added `app`/`cli` folders of the two lines.
+The owner or integrator removes the two cron entries, the added sync directory, `release/` under the configured mirror root,
+and the added manual output directories. This section describes the procedure; no rollback is performed by these scripts.
