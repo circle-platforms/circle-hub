@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { compileAdoc } from './index.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
-import { produceAdocEntries } from './entries.ts';
+import { catalogOnAdocLine, catalogRefusal, produceAdocEntries } from './entries.ts';
 import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
 
 /** The mapped model of one compile, with the mapping's report checked (nothing left uncited). */
@@ -282,10 +282,20 @@ test('a signature block that verifies on no source line is reported and cites no
   assert.ok(produced.warnings.some((warning) => warning.includes('回核不到原文行') && warning.includes('book.adoc:8')), produced.warnings.join('；'));
 });
 
-test('with an adoc source, the transitional catalog reading is off: a catalog input is refused, not read', () => {
+test('a line with an adoc source refuses the transitional catalog by a typed reason, not by an empty production', () => {
   const catalog = { schema: 'ist.manual-command-catalog', product: 'apv', version: '10.7', signatures: [] };
-  const refused = produceManualEntries(catalog as never, null, { name: 'cli', adocSource: true });
-  assert.ok(refused.entries.length === 0 && refused.warnings.some((w) => w.includes('本版本线有 adoc 源，catalog.json 的过渡读法已停用')), refused.warnings.join('；'));
-  const legacy = produceManualEntries(catalog as never, null, { name: 'cli' });
-  assert.ok(!legacy.warnings.some((w) => w.includes('过渡读法已停用')), 'without an adoc source the transition stays readable');
+  // The decision is made where the source is known — the adoc producer's own guard reads the slot's parser and schema —
+  // and not inside K1's placement code, which reads a catalog whenever it is handed one.
+  assert.equal(catalogOnAdocLine({ parser: 'json@1', model: catalog }), true);
+  assert.equal(catalogOnAdocLine({ parser: 'markdown@1', model: { charset: 'utf-8', sections: [], blocks: [] } }), false, 'a markdown manual is not the transitional catalog');
+  assert.equal(catalogOnAdocLine({ parser: 'json@1', model: { schema: 'other@1' } }), false, 'another json source is not it either');
+  assert.equal(catalogOnAdocLine(null), false);
+  assert.equal(catalogOnAdocLine(undefined), false);
+  const refusal = catalogRefusal('APV');
+  assert.equal(refusal.code, 'apv.adoc.catalog_reading_off');
+  assert.ok(refusal.message.includes('名称族 APV') && refusal.message.includes('ist.manual-command-catalog'), refusal.message);
+  // A real next action for a line that already has an adoc source: how the slot is changed, and what stays until then.
+  assert.ok(refusal.next_action.includes('adoc 文件表') && refusal.next_action.includes('旧知识根不动'), refusal.next_action);
+  assert.equal('entries' in refusal, false, 'a refusal carries no entries: it is not an empty production');
+  assert.equal(catalogRefusal().message.includes('这一版本线'), true, 'without a family the line is named');
 });

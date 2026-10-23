@@ -8,10 +8,45 @@
 import type { FragmentRef, ProducedEntry, Unplaced } from '../../../../../contracts/src/product.ts';
 import { produceManualEntries } from '../manual.ts';
 import type { CommandCatalog } from '../cases-commands.ts';
+import { isRecord } from '../util.ts';
 import { citationFor, type Mapped } from './k1-model.ts';
 
 /** The parser of every fragment an adoc production cites: the chapter files as numbered lines. */
 export const ADOC_PARSER = 'text@1';
+
+/** The schema of the transitional manual command catalog (K1 item 4), which an adoc line no longer reads. */
+export const CATALOG_SCHEMA = 'ist.manual-command-catalog';
+
+/** One manual slot as the Hub hands it to a producer: the parser of the stored source and its parsed model. */
+export interface ManualSlot {
+  parser?: unknown;
+  model?: unknown;
+}
+
+/**
+ * Whether a manual slot of a line that has an adoc source still carries the transitional catalog JSON. This is where
+ * that is known — the adoc producer sees the source it was given — so the decision is made here and not inside K1's
+ * placement code, which reads a catalog whenever it is handed one.
+ */
+export function catalogOnAdocLine(slot: ManualSlot | null | undefined): boolean {
+  if (slot === null || slot === undefined || slot.parser !== 'json@1') return false;
+  return isRecord(slot.model) && slot.model.schema === CATALOG_SCHEMA;
+}
+
+/**
+ * The refusal for that slot (task item 6: the transitional reading is off for a line with an adoc source). It is a typed
+ * failure of the production, never an empty `{entries: [], warnings: […]}`: `ProducerOutput` has no failure channel, so
+ * an empty output would be stored as a production that read this line's manual and found nothing in it, and the old
+ * root would look as if it had been confirmed by a successful run.
+ */
+export function catalogRefusal(family?: string): { code: string; message: string; next_action: string } {
+  return {
+    code: 'apv.adoc.catalog_reading_off',
+    message: `${family === undefined ? '这一版本线' : `名称族 ${family}`}的手册槽给的是 catalog.json（${CATALOG_SCHEMA}），而这一线有 adoc 源：catalog.json 的过渡读法对有 adoc 源的版本线已停用，这一组没有读它，也没有产出`,
+    next_action:
+      '把这条线的手册源换成 adoc 文件表（主文件加目录里的各章，同一 SVN 修订号，属性集按名称族给），或让管理员撤掉这条线的 catalog.json 过渡源，然后重新同步；在换源之前这条线不产出，旧知识根不动',
+  };
+}
 
 export interface AdocEntryOptions {
   /** The manual name of this name family; K1 composes `/manual/<name>/<章节路径>` from it. */

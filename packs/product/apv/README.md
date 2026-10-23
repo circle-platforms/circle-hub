@@ -514,9 +514,18 @@ accepted.
   which K1 would split into row signatures. A listing stays code, which K1 never anchors either, so a `[role=signature]`
   block inside an example stays the reference text it is and the paragraph after the example follows no command from
   inside it.
-- A version line with an adoc source stops the transitional `catalog.json` reading:
-  `produceManualEntries(..., { adocSource: true })` refuses an `ist.manual-command-catalog` input outright and names the
-  next step; a line without an adoc source reads it as before.
+- A version line with an adoc source stops the transitional `catalog.json` reading (task item 6), and the adoc producer is
+  where that is known: `catalogOnAdocLine(slot)` in `entries.ts` reads the slot's parser and schema, and `catalogRefusal()`
+  is the typed failure (`apv.adoc.catalog_reading_off`) the wired producer returns for it, naming the family, how the
+  line's manual source is changed into an adoc file table, and that the old root stays until then. It is a failure and
+  never an empty `{entries: [], warnings: […]}`: `ProducerOutput` has no failure channel, so an empty output would be
+  stored as a production that read this line's manual and found nothing in it. A line without an adoc source reads the
+  catalog as before — K1's own code, unchanged by this package.
+  The `adocSource` option this branch added to `manual.ts` and to `ManualOptions` is superseded by that guard and is to be
+  dropped when kb-sections merges: no caller sets it, the catalog path cannot be reached from a production anyway (the
+  manual producer reads markdown@1 slots only), and when it is set it returns an empty success — exactly what the guard
+  must not do. `manual.ts` and `functions/types.ts` are K1's files, so this package left them alone and reported the two
+  hunks to the integrator instead.
 - `families.ts` (decision 35): every name family runs the expansion with its own attribute set and gets its own document
   model. The manual name carries the family, spelled `<manual>-<family lower-cased>` (`cli-apv`, `cli-nsae`), and both
   copies hang under the manual namespace of the same version line. An attribute-set key must be one of the `names` in
@@ -673,10 +682,12 @@ pack and reviews a mind map against the root it produced.
 ## Needs from other packages
 
 - **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
-  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so two checks stop at
-  this package: that a family's failure leaves the old knowledge root where it is, asserted here only as "no partial
+  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so
+  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and three checks stop at this package: that a family's failure leaves the old knowledge root where it is, asserted here only as "no partial
   result is returned", needs a knowledge sync to be seen on a root; and "this family's attribute set is not configured"
-  can only be written from `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+  can only be written from `param_sources`, which this producer must not guess; and the superseded `adocSource` option of
+  `manual.ts` (an empty success no caller sets) is dropped by reverting this branch's two hunks in `manual.ts` and
+  `functions/types.ts`. All three are follow-ups for the wiring step.
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
