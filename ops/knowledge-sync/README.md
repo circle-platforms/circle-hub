@@ -57,9 +57,16 @@ host's private job environment. Illustrative schedules (script and log paths are
 
 ## Adding sources and limits
 
-For a subtree, copy a private export properties file, change its source and output mappings, and configure its release-set
-triplet. For a manual branch, the host checks out its company-specific manual source into the configured upload layout,
-adds the checkout directory name to the branch list, and runs the first conversion.
+For a subtree, copy a private export properties file and change its source and output mappings. Configure the triplet in
+one of the four existing slots, replacing the previous set if appropriate. A fifth set requires adding a slot to
+`run_release_all.sh` and updating its variable documentation and synthetic test before deployment; setting
+`KNOWLEDGE_SYNC_RELEASE_SET_5` alone does not add a job to the fixed four-slot loop.
+
+For a manual branch, check out the company-specific manual source into exactly
+`$KNOWLEDGE_SYNC_UPLOAD_DIR/<app|cli>/<branch>/<app|cli>_cn`, using the same kind for both placeholders: the jobs iterate
+`app` and `cli` and use the fixed subdirectories `app_cn` and `cli_cn`. The mirror output uses the same relative layout
+under `$KNOWLEDGE_SYNC_MIRROR_DIR`. Add the checkout branch directory name to `KNOWLEDGE_SYNC_MANUAL_BRANCHES` and run
+the first conversion. These steps describe deployment work for the owner or integrator; no checkout or sync is run here.
 
 Lines with only built PDFs and no AsciiDoc sources are not converted by the manual jobs. English manuals and unconfigured
 OpenKM roots are not synced. Older pipelines may still flatten development and QA documents by name; version information
