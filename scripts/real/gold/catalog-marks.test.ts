@@ -1,3 +1,4 @@
+import type { Attribution, Verdict, Nature, SourceRole, Layer, StaticTerminal, Acceptance, ItemHandling } from '../../../contracts/generated/vocabulary.ts';
 // Synthetic XML and source lines only; this oracle imports no executable Hub or pack code.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -72,8 +73,9 @@ const submission = { run: 'run_synthetic', items: [
   { item: 'doc:case-range', handling: 'handled', slots: { findings: [{ text: '合成发现', commands: [{ command: 'widget port 21' }] }] } },
   { item: 'doc:case-negative', handling: 'handled', slots: { findings: [{ text: '合成反向发现', commands: [{ command: 'widget port 22' }] }] } },
 ] };
-const hubMark = (command = 'widget port 21', code = 'core.catalog.param_out_of_range', role = 'subject', pointer = '/phrases/0') => ({ pointer, statement: { verdict: 'refute', code, data: { command } }, qualifier: { nature: 'fact', source_role: role }, warrant: { id: 'catalog@1' } });
-const run = (claims: unknown[] = [hubMark()], attribution: string | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', ...(attribution ? { attribution } : {}) }], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', attribution: 'unattributed' }], claims: [hubMark('widget port 22')] }] }] } } } });
+const staticFixture = (terminal:StaticTerminal, attribution?:Attribution) => ({layer:'static' satisfies Layer,terminal,...(attribution === undefined ? {} : {attribution})});
+const hubMark = (command = 'widget port 21', code = 'core.catalog.param_out_of_range', role: SourceRole = 'subject', pointer = '/phrases/0') => ({ pointer, statement: { verdict: 'refute' satisfies Verdict, code, data: { command } }, qualifier: { nature: 'fact' satisfies Nature, source_role: role }, warrant: { id: 'catalog@1' } });
+const run = (claims: unknown[] = [hubMark()], attribution: Attribution | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation',attribution ?? undefined)], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation','unattributed')], claims: [hubMark('widget port 22')] }] }] } } } });
 
 test('compares attributed cited-command marks and lists negative expected refutations separately', async () => {
   const { compareCatalogMarks } = await import('./catalog-marks.ts');
@@ -310,3 +312,14 @@ test('nondefault projection priorities request their exact run parameter positio
   assert.equal(report.expected.length,0); assert.ok(report.requests.some(r=>r.pointer==='/run/parameters/'+key));
  }
 });
+
+test('catalog comparison vocabulary constants are generated-type constrained', async () => {
+ const module=await import('./catalog-marks.ts');
+ assert.equal(module.CATALOG_VALUES?.refute,'refute');
+ const source=readFileSync(new URL('./catalog-marks.ts',import.meta.url),'utf8');
+ assert.ok(!/\.(?:verdict|nature|source_role|acceptance|handling)\s*!?==?\s*'(?:refute|fact|subject|accepted|skipped)'/.test(source));
+});
+
+// @ts-expect-error Values cannot drift outside the generated axis.
+const invalidVerdict: Verdict = 'invented_catalog_verdict';
+void invalidVerdict;

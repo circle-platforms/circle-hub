@@ -1,4 +1,4 @@
-import { isAttribution } from '../../../contracts/generated/vocabulary.ts';
+import { isAttribution, type Attribution, type Verdict, type Nature, type SourceRole, type Layer, type StaticTerminal, type Acceptance, type ItemHandling } from '../../../contracts/generated/vocabulary.ts';
 // Independent cited-command oracle. No Hub or pack implementation is imported.
 // node scripts/real/gold/catalog-marks.ts --tree <locked command XML> --source <mindmap original>
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
@@ -14,6 +14,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, relative, resolve } from 'node:path';
 import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import type { CoreViolationCode } from '../../../contracts/generated/protocol.ts';
+
+export const CATALOG_VALUES: {refute:Verdict;fact:Nature;subject:SourceRole;static:Layer;violation:StaticTerminal;accepted:Acceptance;skipped:ItemHandling;unattributed:Attribution} = {refute:'refute',fact:'fact',subject:'subject',static:'static',violation:'violation',accepted:'accepted',skipped:'skipped',unattributed:'unattributed'};
 
 export interface Position { input: string; pointer: string; line?: number; column?: number }
 export interface EvidenceRequest extends Position { fact: string; next_action: string; item?: string; command?: string; related?: Position[]; follow_up?: { program: string; args: string[] } }
@@ -294,7 +296,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
   array(submitted.items).forEach((entry, i) => {
     if (!object(entry) || typeof entry.item !== 'string') { report.requests.push(request({ input: 'submission', pointer: `/items/${i}` }, '条目身份', '补取原始提交里这一项的 item 字段后重跑')); return; }
     const at = { input: 'submission', pointer: `/items/${i}` }, target = identify(entry.item, at, object(entry.slots) && array(entry.slots.findings).some(f => object(f) && array(f.commands).some(c => object(c) && typeof c.command === 'string' && c.present === undefined)));
-    if (!target || entry.handling === 'skipped' || entry.reuse !== undefined) return;
+    if (!target || entry.handling === CATALOG_VALUES.skipped || entry.reuse !== undefined) return;
     if (!object(entry.slots) || !Array.isArray(entry.slots.findings)) { report.requests.push(request({ ...at, pointer: at.pointer + '/slots/findings' }, '本条目明确的发现列表（可为空数组）', '导出本次最新受理提交的完整 slots.findings 后重跑；缺字段不能当空列表')); return; }
     const owned: Array<{ command: string; at: Position }> = [];
     entry.slots.findings.forEach((finding, j) => {
@@ -337,12 +339,12 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
     if (!target || boundaryGaps.has(value.item)) return;
     array(value.requirements).forEach((requirement, j) => {
       if (!object(requirement) || requirement.requirement !== 'catalog') return;
-      const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === 'static');
+      const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === CATALOG_VALUES.static);
       const attribution = object(staticLayer) && isAttribution(staticLayer.attribution) ? staticLayer.attribution : null;
       array(requirement.claims).forEach((claim, k) => {
         if (!object(claim) || !object(claim.statement) || !object(claim.qualifier)) return;
         const statement = claim.statement, qualifier = claim.qualifier;
-        if (statement.verdict !== 'refute' || typeof statement.code !== 'string' || !statement.code.startsWith('core.catalog.') || qualifier.nature !== 'fact' || qualifier.source_role !== 'subject') { report.summary.ignored_hub_claims++; return; }
+        if (statement.verdict !== CATALOG_VALUES.refute || typeof statement.code !== 'string' || !statement.code.startsWith('core.catalog.') || qualifier.nature !== CATALOG_VALUES.fact || qualifier.source_role !== CATALOG_VALUES.subject) { report.summary.ignored_hub_claims++; return; }
         const at = { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/requirements/${j}/claims/${k}` };
         if (typeof claim.pointer !== 'string') { report.observed.push({item:value.item as string,node:target.id,command:object(statement.data) && typeof statement.data.command === 'string' ? statement.data.command : '',code:statement.code,pointer:'<missing>',output_error:'输出缺字段：pointer'}); return; }
         if (!/^\/phrases\/[0-9]+$/.test(claim.pointer)) { report.summary.ignored_hub_claims++; return; }
@@ -352,7 +354,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         const command = original !== undefined && displayCommand(original) === fold(statement.data.command) ? original : statement.data.command;
         const mark = { item: value.item as string, node: target.id, command, code: statement.code, pointer: claim.pointer };
         const expectedNegative = target.negative && [RANGE, TYPE, ARITY].includes(statement.code as CoreViolationCode);
-        if (attribution === null || (!expectedNegative && attribution === 'unattributed')) report.observed.push({ ...mark, output_error: '输出缺少或不一致的静态层归责' });
+        if (attribution === null || (!expectedNegative && attribution === CATALOG_VALUES.unattributed)) report.observed.push({ ...mark, output_error: '输出缺少或不一致的静态层归责' });
         else if (expectedNegative) report.negative_observed.push(mark);
         else report.observed.push(mark);
       });
@@ -418,10 +420,10 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的原件字节 sha256', exportSubmission);
   if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整原始字节', exportSubmission);
   else if (wanted !== null && inputs.submission_sha256 !== wanted) add('submission', '/', '提交正文规范 JSON 摘要与最新受理提交不一致', exportSubmission);
-  if (result.acceptance !== 'accepted') add('run', '/latest/result/acceptance', '最新已受理的评审结果', '请集成者重导出本次 circle-hub run show <运行> --json 的最新受理结果');
+  if (result.acceptance !== CATALOG_VALUES.accepted) add('run', '/latest/result/acceptance', '最新已受理的评审结果', '请集成者重导出本次 circle-hub run show <运行> --json 的最新受理结果');
   if (typeof record.run !== 'string' || result.run !== record.run) add('run', '/latest/result/run', '提交、最新受理结果和运行的同一身份', '重新导出同一次运行的 run show 与提交原件后重跑');
   if (typeof record.root !== 'string' || !/^[0-9a-f]{64}$/.test(record.root)) add('run', '/run/root', '本次运行锁定的知识树根', '重导出完整 run show，并由集成者从这个锁定根导出 --tree 命令树原件');
-  const bound = array(record.sources).some(source => object(source) && source.role === 'subject' && typeof source.reference === 'string' && (source.reference === `src:${inputs.source_sha256}` || source.reference.startsWith(`src:${inputs.source_sha256}/`)));
+  const bound = array(record.sources).some(source => object(source) && source.role === CATALOG_VALUES.subject && typeof source.reference === 'string' && (source.reference === `src:${inputs.source_sha256}` || source.reference.startsWith(`src:${inputs.source_sha256}/`)));
   if (!bound) add('source', '/', '脑图原件与运行 subject 的字节摘要绑定', '按 run show 的 subject src 摘要由集成者执行 circle-hub original export 导出原件，再用 --source 重跑');
   let submission: unknown, source: unknown;
   try { source = parseJson(input.sourceBytes); } catch { add('source', '/', '可按 UTF-8 JSON 解析的脑图原件', '请集成者补取原件的编码声明或重新导出正确字节；不要用替换字符继续核对'); }
