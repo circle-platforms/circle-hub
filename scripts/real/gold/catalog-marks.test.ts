@@ -399,3 +399,15 @@ test('closure B7 rule gaps require a declaration and oracle implementation befor
  for(const r of requests){assert.match(r.next_action,/README/);assert.match(r.next_action,/金标准实现/);assert.match(r.next_action,/重跑/);}
  assert.ok(requests.some(r=>r.next_action.includes('hub/rules/README.md') && r.next_action.includes('候选')));
 });
+
+test('closure B9 malformed injection gold is an input gap with a matching repair action',async t=>{
+ const {main}=await import('./catalog-marks.ts');const f=privateInputs(t),gold=join(f.out,'../bad-gold.json'),screen:string[]=[];writeFileSync(gold,'{}');
+ assert.equal(main([...cliArgs(f),'--gold',gold],l=>screen.push(l)),1);
+ assert.ok(!screen.join('').includes('金标准缺陷'));
+ const requests=JSON.parse(readFileSync(join(f.out,'evidence-requests.json'),'utf8'));assert.match(requests[0].fact,/gold.*结构/);assert.match(requests[0].next_action,/重新注入/);
+});
+test('closure B9 readable input inside a checkout requests relocation instead of reexport',async t=>{
+ const {main}=await import('./catalog-marks.ts');const f=privateInputs(t),directory=mkdtempSync(join(tmpdir(),'gold-in-git-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));writeFileSync(join(directory,'.git'),'gitdir: synthetic');
+ const gold=join(directory,'gold.json');writeFileSync(gold,'[]');assert.equal(main([...cliArgs(f),'--gold',gold],()=>{}),1);
+ const requests=JSON.parse(readFileSync(join(f.out,'evidence-requests.json'),'utf8'));assert.match(requests[0].fact,/Git/);assert.match(requests[0].next_action,/移到 Git 外/);assert.ok(!requests[0].next_action.includes('编码'));
+});

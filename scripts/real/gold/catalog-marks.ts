@@ -31,7 +31,7 @@ export const fold = (value: string): string => value.normalize('NFKC').toLowerCa
 const request = (at: Position, fact: string, next_action: string): EvidenceRequest => ({ ...at, fact, next_action });
 
 export class CatalogInputError extends Error {
-  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure' | 'input_unreadable' | 'argument_types';
+  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure' | 'input_unreadable' | 'argument_types' | 'gold_structure' | 'input_in_git';
   constructor(reason: CatalogInputError['reason'], message: string) { super(message); this.reason = reason; this.name = 'CatalogInputError'; }
 }
 export class CatalogOutputError extends Error {
@@ -548,14 +548,14 @@ export function main(argv: string[], say: (line: string) => void = line => proce
   let report: CatalogReport;
   let stage = 'tree';
   try {
-    const read = (key: string): Uint8Array => { stage = key; return readKnownInput(outsideGit(flags.get('--' + key)!)); };
+    const read = (key: string): Uint8Array => { stage = key; return readCatalogInput(flags.get('--' + key)!); };
     const treeBytes = read('tree'), treeXml = decodeCatalog(treeBytes);
     const sourceBytes = read('source'), runBytes = read('run'), run = parseJson(runBytes);
     stage = 'table'; const declaration = readDeclaration(flags.get('--table'), flags.get('--manifest'));
     let excludeNodes: string[] = [];
     if (flags.has('--gold')) {
       const value = parseJson(read('gold'));
-      if (!Array.isArray(value) || !value.every(entry => object(entry) && typeof entry.node === 'string')) throw new Error('注入身份无效');
+      if (!Array.isArray(value) || !value.every(entry => object(entry) && typeof entry.node === 'string')) throw new CatalogInputError('gold_structure', '注入身份结构无效');
       excludeNodes = value.flatMap(entry => [entry.node, ...(typeof entry.copy === 'string' ? [entry.copy] : []), ...array(entry.deletedCases).filter((v): v is string => typeof v === 'string')]);
     }
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
@@ -566,7 +566,9 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
   } catch (error) {
     if (!(error instanceof CatalogInputError) && !(error instanceof CatalogOutputError)) { say('金标准缺陷 1；阶段 ' + stage + '；下一步修正脚本后重跑，不补猜测的输入'); return 1; }
-    report = emptyGap({ input: stage, pointer: '/' }, `缺可读且完整的 --${stage} 输入`, `由集成者补取这份输入的原始文件和编码声明，再带 --${stage} 重跑；保留原字节，不把解析失败当零标记`);
+    if (error instanceof CatalogInputError && error.reason === 'input_in_git') report = emptyGap({input:stage,pointer:'/'}, `--${stage} 输入在 Git 检出里`, '请将该输入原样移到 Git 外，再用对应参数重跑；不修改原件字节');
+    else if (error instanceof CatalogInputError && error.reason === 'gold_structure') report = emptyGap({input:stage,pointer:'/'}, '--gold 注入身份结构无效', '请用当前 inject-defects.ts 重新注入并保存合法的 gold 数组，再用 --gold 重跑');
+    else report = emptyGap({ input: stage, pointer: '/' }, `缺可读且完整的 --${stage} 输入`, `由集成者补取这份输入的原始文件和编码声明，再带 --${stage} 重跑；保留原字节，不把解析失败当零标记`);
   }
   try { writeCatalogReport(out, report); }
   catch { say('设计缺口 1；下一步：使用 Git 外的新目录重新保存明细，不覆盖已有文件'); return 1; }
@@ -595,4 +597,9 @@ export function catalogPreflight(treeXml: string, table: unknown, binding?: { ma
   try { return readCatalog(treeXml).requests; }
   catch (error) { if (!(error instanceof CatalogInputError)) throw error; return [request({ input: 'tree', pointer: '/' }, '可完整解析的锁定根命令树', '请集成者补取正确编码和结构的命令树原件后重跑；评审尚未启动')]; }
 }
-export function readCatalogInput(file: string): Uint8Array { return readKnownInput(outsideGit(file)); }
+export function readCatalogInput(file: string): Uint8Array {
+  let path: string;
+  try { path = outsideGit(file); }
+  catch(error) { if(error instanceof CatalogOutputError && error.reason === 'path_in_git') throw new CatalogInputError('input_in_git','输入在 Git 检出里'); throw error; }
+  return readKnownInput(path);
+}
