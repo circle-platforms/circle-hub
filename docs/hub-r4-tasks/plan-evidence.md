@@ -43,7 +43,7 @@
    - 这套步骤写进 `hub/platform/README.md` 292 行一带和 `hub/server/assemble/README.md` 的 Secrets 一段（117 行）：停服务、移开 `vault/`、`key init`、`operator-token reissue`、`secret import`、起服务。`vault.ts` 11 行的提示加一句：找不回原来的钥匙串项时照这套步骤。
 
 4. **PLM 系统包按名字读构建列表**（`packs/system/plm/system.json` 125–131 行）。
-   - `plm:builds` 的键多一种写法：这条线的各个名字，各自 URI 编码后用 `+` 连接。改成规划函数（`functions/plm.ts` 加 `buildsPlan`、`buildsProject`，`max_requests: 2`）：数字键照旧只读这个产品的构建列表；名字键先读产品列表，产品名按 `/` 拆开（NFKC、去首尾空白、大小写折叠）后含有每个名字的产品正好一个，才读它的构建列表，没有或不止一个就不读。依据：这条线的产品记录名字里列出两族名字（`docs/hub-r4-architecture.md` 156 行；合成桩照这样写，`hub/connectors/testing/plm.ts` 19 行）。
+   - `plm:builds` 的键多一种写法：这条线的各个名字，各自 URI 编码后用 `+` 连接。改成规划函数（`functions/plm.ts` 加 `buildsPlan`、`buildsProject`，`max_requests: 2`）：数字键照旧只读这个产品的构建列表；名字键先读产品列表，产品名整串先 NFKC（全角 `／` 也就成了 `/`），再按 `/` 拆开，每段去首尾空白、转小写，含有每个名字的产品正好一个，才读它的构建列表，没有或不止一个就不读。依据：这条线的产品记录名字里列出两族名字（`docs/hub-r4-architecture.md` 156 行；合成桩照这样写，`hub/connectors/testing/plm.ts` 19 行）。
    - content：`{ product: {id, name} | null, product_resolution, builds: [{ name }] }`。`product_resolution` 用词表轴 `resolution` 的值（`contracts/generated/vocabulary.ts` 12 行：已解析、有歧义、未解析）；构建名取每项的 `name`（合成夹具的形状，`tests/fixtures/plm/index.ts` 43–49 行）。
    - 升小版本（gold-trace 第 5 条也升这个包，版本号接在先合并的那件后面），改 README，`node packs/workflow/case-review/packaging.ts sign plm`。
    - 测试（`plm.test.ts`，合成应答写在测试里，不改 `tests/fixtures/plm` 现有的值）：数字键；名字解析到一个产品；一个也没有；两个产品都列出这些名字；构建列表为空。
