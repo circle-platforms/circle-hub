@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import {parse,type DefaultTreeAdapterMap} from 'parse5';
 
 export interface PageMetrics {
   scripts: number;
@@ -10,13 +11,9 @@ export interface PageMetrics {
   sha256: string;
 }
 
-/** HTML syntax only: ignore displayed URLs, comments and raw-text bodies, and inspect whole attribute values. */
+/** Inspect resource-bearing HTML and CSS syntax, including embedded documents, without following a URL. */
 function externalAddresses(body:string):number {
-  const attributes=new Set(['href','src','srcset','action','formaction','poster','data']);
-  const decode=(value:string)=>value.replace(/&#(x[0-9a-f]+|[0-9]+);?|&(colon|sol|Tab|NewLine|amp|quot|apos);/gi,(all,numeric:string|undefined,named:string|undefined)=>{
-    if(numeric!==undefined){const n=numeric[0].toLowerCase()==='x'?Number.parseInt(numeric.slice(1),16):Number.parseInt(numeric,10);return n>0&&n<=0x10ffff&&!(n>=0xd800&&n<=0xdfff)?String.fromCodePoint(n):'\ufffd';}
-    return ({colon:':',sol:'/',Tab:'\t',NewLine:'\n',amp:'&',quot:'"',apos:"'"} as Record<string,string>)[named!]??all;
-  });
+  const attributes=new Set(['href','src','srcset','action','formaction','poster','data','ping','background','cite','manifest','icon']);
   const external=(value:string)=>{
     const address=value.replace(/[\t\r\n]/g,'').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g,'');
     return /^[a-z][a-z0-9+.-]*:/i.test(address)||address.startsWith('//');
@@ -34,16 +31,52 @@ function externalAddresses(body:string):number {
     }
     return urls;
   };
-  const tags=/<!--[\s\S]*?(?:-->|$)|<![^>]*>|<(script|style|textarea|title)\b((?:"[^"]*"|'[^']*'|[^'">])*)>[\s\S]*?(?:<\/\1\s*>|$)|<([a-z][a-z0-9:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
+  const cssDecode=(value:string)=>value.replace(/\\(?:([0-9a-f]{1,6})(?:\r\n|[\t\n\f\r ])?|(\r\n|[\n\r\f])|(.))/gi,(_all,hex:string|undefined,newline:string|undefined,char:string|undefined)=>{
+    if(hex!==undefined){const code=Number.parseInt(hex,16);return code>0&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)?String.fromCodePoint(code):'\ufffd';}
+    return newline===undefined?char??'':'';
+  });
+  const cssTargets=(css:string):string[]=>{
+    const urls:string[]=[];let at=0;
+    const escapeEnd=(start:number)=>{const match=/^\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|\r\n|[\s\S])/i.exec(css.slice(start));return start+(match?.[0].length??1);};
+    const skip=()=>{while(at<css.length){if(/\s/u.test(css[at])){at++;continue;}if(css.startsWith('/*',at)){const end=css.indexOf('*/',at+2);at=end<0?css.length:end+2;continue;}break;}};
+    const quoted=()=>{const quote=css[at++],start=at;while(at<css.length&&css[at]!==quote)at=css[at]==='\\'?escapeEnd(at):at+1;const value=css.slice(start,at);if(at<css.length)at++;return cssDecode(value);};
+    while(at<css.length){
+      skip();if(at>=css.length)break;
+      if(css[at]==='"'||css[at]==="'"){quoted();continue;}
+      const importing=css[at]==='@';if(importing)at++;
+      const word=/^(?:[a-z_-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\r\n\f]))(?:[a-z0-9_-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\r\n\f]))*/i.exec(css.slice(at));
+      if(!word){at++;continue;}
+      at+=word[0].length;const name=cssDecode(word[0]).toLowerCase();skip();
+      if(importing&&name==='import'&&(css[at]==='"'||css[at]==="'")){urls.push(quoted());continue;}
+      if(name!=='url'||css[at]!=='(')continue;
+      at++;skip();
+      if(css[at]==='"'||css[at]==="'"){urls.push(quoted());skip();if(css[at]===')')at++;continue;}
+      const start=at;while(at<css.length&&css[at]!==')')at=css[at]==='\\'?escapeEnd(at):at+1;
+      urls.push(cssDecode(css.slice(start,at)).trim());if(at<css.length)at++;
+    }
+    return urls;
+  };
   let count=0;
-  for(const tag of body.matchAll(tags)){
-    const text=tag[2]??tag[4];if(text===undefined)continue;
-    const seen=new Set<string>();
-    for(const attribute of text.matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)){
-      const name=attribute[1].toLowerCase();if(seen.has(name))continue;seen.add(name);
-      if(!attributes.has(name))continue;
-      const value=decode(attribute[2]??attribute[3]??attribute[4]??'');
-      count+=(name==='srcset'?candidates(value):[value]).filter(external).length;
+  const pending:DefaultTreeAdapterMap['node'][]=[parse(body)];
+  while(pending.length){
+    const node=pending.pop()!;
+    if('childNodes' in node)for(const child of node.childNodes)pending.push(child);
+    if('content' in node)pending.push(node.content);
+    if(!('tagName' in node))continue;
+    const values=new Map(node.attrs.map(attribute=>[attribute.name.toLowerCase(),attribute.value]));
+    if(node.tagName==='style'){
+      const css=node.childNodes.flatMap(child=>child.nodeName==='#text'&&'value' in child?[child.value]:[]).join('');
+      count+=cssTargets(css).filter(external).length;
+    }
+    for(const attribute of node.attrs){
+      const name=attribute.name.toLowerCase().split(':').at(-1)!,value=attribute.value;
+      if(name==='style')count+=cssTargets(value).filter(external).length;
+      else if(name==='srcdoc')pending.push(parse(value));
+      else if(attributes.has(name))count+=(name==='srcset'?candidates(value):name==='ping'?value.split(/\s+/u):[value]).filter(external).length;
+    }
+    if(node.tagName==='meta'&&values.get('http-equiv')?.trim().toLowerCase()==='refresh'){
+      const target=/(?:^|;)\s*url\s*=\s*([\s\S]*)/i.exec(values.get('content')??'')?.[1].trim().replace(/^["']|["']$/g,'');
+      if(target!==undefined&&external(target))count++;
     }
   }
   return count;

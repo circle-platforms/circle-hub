@@ -24,3 +24,33 @@ test('attribute parsing preserves quoted values and decodes address syntax',()=>
   assert.equal(summarizePage('<img src="&#47;&#47;192.0.2.2/a"><a href="https&colon;//192.0.2.3/a">链接</a>').externalAddresses,2);
   assert.equal(summarizePage('<script>const url="https://192.0.2.4/a";</script>').externalAddresses,0);
 });
+
+for(const markup of [
+  '<style>@import url(https://192.0.2.1/a.css);</style>',
+  '<style>@import "//192.0.2.1/a.css";</style>',
+  '<div style="background:url(https://192.0.2.1/a.png)"></div>',
+  '<meta http-equiv="refresh" content="0;url=https://192.0.2.1/">',
+  '<svg><image xlink:href="https://192.0.2.1/a.png"/></svg>',
+  '<iframe srcdoc="&lt;img src=https://192.0.2.1/a&gt;"></iframe>',
+  '<a ping="https://192.0.2.1/p">link</a>',
+  '<body background="//192.0.2.1/a.png"></body>',
+  '<blockquote cite="https://192.0.2.1/a">text</blockquote>',
+  '<html manifest="https://192.0.2.1/a"></html>',
+  '<menuitem icon="https://192.0.2.1/a">',
+])test('CSS, refresh, namespaced, embedded and additional resource locations are inspected '+markup.split(/[ >]/)[0],()=>{
+  assert.equal(summarizePage(markup).externalAddresses,1);
+});
+
+test('CSS syntax distinguishes resource targets from displayed strings and comments',()=>{
+  assert.equal(summarizePage('<style>/* url(https://192.0.2.1/a) */ p{content:"url(https://192.0.2.2/a)";background:url(/local)}</style>').externalAddresses,0);
+  assert.equal(summarizePage('<style>p{background:u\\72l("\\68ttps://192.0.2.1/a")}</style>').externalAddresses,1);
+  assert.equal(summarizePage('<a ping="/local https://192.0.2.1/a //192.0.2.2/a">link</a>').externalAddresses,2);
+  assert.equal(summarizePage('<meta http-equiv="refresh" content="0;url=&quot;//192.0.2.1/a&quot;">').externalAddresses,1);
+});
+
+test('srcdoc documents are inspected through multiple entity-encoded nesting levels',()=>{
+  const attribute=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const inner='<iframe srcdoc="'+attribute('<img src="//192.0.2.1/a">')+'"></iframe>';
+  assert.equal(summarizePage('<iframe srcdoc="'+attribute(inner)+'"></iframe>').externalAddresses,1);
+  assert.equal(summarizePage('<iframe srcdoc="'+attribute('<p>https://192.0.2.1/displayed</p>')+'"></iframe>').externalAddresses,0);
+});

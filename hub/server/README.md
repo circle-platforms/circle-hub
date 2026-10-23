@@ -255,8 +255,10 @@ links are fixed paths with encoded query parameters).
   origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
   script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
   values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
-  remains covered. External-address counts inspect href/src/srcset/action/formaction/poster/data attributes (scheme or
-  protocol-relative values), including srcset candidates; displayed text, comments and raw-text bodies are not resources. Page content,
+  remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/action/formaction/poster/data,
+  ping/background/cite/manifest/icon, CSS url() and @import in style attributes and style bodies, meta refresh targets,
+  and recursively parsed srcdoc documents. Values with a scheme or protocol-relative address count, including srcset
+  and ping candidates. Displayed text, comments and non-style raw-text bodies are not resource references. Page content,
   paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
   makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
   and real-data checks belong to the integrator.
