@@ -53,11 +53,11 @@ function block(spec: Block): Record<string, unknown> {
 }
 
 type ProjectionAnswer={items?:ProjectedItem[];error?:{code?:string;message?:string;fix?:string}};
-function run(blocks:Array<{result:Record<string,unknown>}>,options:{omitTarget?:boolean;parser?:string;digest?:string;priority?:number|null;model?:unknown}={}):ProjectionAnswer{
+function run(blocks:Array<{result:Record<string,unknown>;record?:string}>,options:{omitTarget?:boolean;parser?:string;digest?:string;priority?:number|null;model?:unknown}={}):ProjectionAnswer{
   let n=0;
   const ids=[...new Set(blocks.flatMap(block=>Object.values((block.result.partitions??{}) as Record<string,any[]>).flatMap(entries=>entries.map(entry=>String(entry.item)))))];
   const source=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成文档'},children:ids.map(id=>({data:{id,text:'用例 '+id,priority:2,resource:['Functional']},children:[{data:{id:id+'-pre',text:'准备',priority:3}},{data:{id:id+'-e',text:'成功'}}]}))}}))).model;
-  const inputs:unknown[]=blocks.map(block=>({slot:'verifications',external:null,sha256:'0'.repeat(64),media_type:'application/json',parser:'json@1',model:{kind:'validation_result',schema:'record@1',body:block.result},meta:{record:String(++n).repeat(64)}}));
+  const inputs:unknown[]=blocks.map(block=>({slot:'verifications',external:null,sha256:'0'.repeat(64),media_type:'application/json',parser:'json@1',model:{kind:'validation_result',schema:'record@1',body:block.result},meta:{record:block.record??String(++n).repeat(64)}}));
   if(!options.omitTarget)inputs.push({slot:'target',external:null,sha256:options.digest??DIGEST,media_type:'application/json',parser:options.parser??'kityminder@1',model:options.model??source,meta:null});
   return projection({inputs,parameters:options.priority===undefined?{}:{precondition_priority:options.priority},context:{}}) as ProjectionAnswer;
 }
@@ -362,4 +362,14 @@ it('refuses a block still carrying repair errors or an unsatisfied independence 
   const repair=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});repair.errors=[{code:'case-review-verify.suggestion_target_missing',item:'c1',requirement:'verification',rounds_left:2}];
   const independent=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});Object.assign((independent.partitions as any).delivered[0].requirements[0],{status:'unsatisfied',unsatisfied_reason:'independence_unknown'});
   for(const result of [repair,independent]){const out=run([{result}]);assert.equal(out.error?.code,'case-review-report.block_unsettled');assert.match(out.error?.fix??'',/修复.*重交|不同.*家族/);assert.ok(!out.items);}
+});
+
+it('tied worst verdicts use the worst declared rank and a stable record reference',()=>{
+  const source=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成同级'},children:['c1','c2'].map(id=>({data:{id,text:id,priority:2},children:[]}))}}))).model;
+  const a={record:'b'.repeat(64),result:block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]})};
+  const b={record:'a'.repeat(64),result:block({verdict:'PARTIAL',level:'P6',entries:[{item:'c2'}]})};
+  const first=reportItemOf(run([a,b],{model:source})),second=reportItemOf(run([b,a],{model:source}));
+  assert.equal((first.fields.overall as any).level,'P6');assert.deepEqual(first.fields.overall,second.fields.overall);assert.equal(first.fields.review_tables,second.fields.review_tables);
+  (a.result.cross_item as any[])[0].statement.rank='P6';
+  const tie=reportItemOf(run([a,b],{model:source}));assert.equal((tie.fields.overall as any).reference,`rec:${'a'.repeat(64)}#/cross_item/0`);
 });

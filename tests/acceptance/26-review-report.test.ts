@@ -350,7 +350,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const reportItem = reportItemOf(run);
 
     // 1. Overall verdict and level in started.text and reportItem.summary
-    assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: await finalReferenceOf(blockE.run,'PARTIAL','P4') });
+    assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: (await Promise.all([finalReferenceOf(blockE.run,'PARTIAL','P4'),finalReferenceOf(blockF.run,'PARTIAL','P4')])).sort()[0] });
     assert.match(reportItem.summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
 

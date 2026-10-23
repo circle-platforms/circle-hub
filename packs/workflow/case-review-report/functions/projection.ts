@@ -19,6 +19,7 @@ export const MAX_BLOCKS = 50;
 export const MAX_ITEMS = 500;
 
 const VERDICT_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalCodes.map((code,index)=>[code.code,index]));
+const LEVEL_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalRanks.map((rank,index)=>[rank.code,index]));
 export type Verdict=string;
 export type Disposition=string;
 
@@ -191,7 +192,7 @@ export default function project(input: unknown): unknown {
     if (finals.every((f) => f !== null)) {
       for (const f of finals) {
         if (f === null) continue;
-        if (verdict === null || VERDICT_ORDER[f.verdict] > VERDICT_ORDER[verdict]) {
+        if (verdict === null || VERDICT_ORDER[f.verdict] > VERDICT_ORDER[verdict] || VERDICT_ORDER[f.verdict] === VERDICT_ORDER[verdict] && ((LEVEL_ORDER[f.level ?? ''] ?? -1) > (LEVEL_ORDER[level ?? ''] ?? -1) || f.level === level && (reference === null || f.reference < reference))) {
           verdict = f.verdict;
           level = f.level;
           reference = f.reference;

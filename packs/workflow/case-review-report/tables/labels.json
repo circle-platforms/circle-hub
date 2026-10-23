@@ -1,6 +1,6 @@
 {
   "schema": "case-review-report.labels@1",
-  "origin": "处置取自 case-review-verify/slots.schema.json 的 item.verification；严重程度和问题类别取自 case-review/tables/codes.json 的 ranks、findings。Hub 核对名称取自 contracts/codes.json 的 when，以及 case-review/tables/codes.json 的 checks；本表只为已存事实提供显示名称，不新增判断。",
+  "origin": "处置取自 case-review-verify/slots.schema.json 的 item.verification；严重程度和问题类别取自 case-review/tables/codes.json 的 ranks、findings。Hub 核对名称取自 contracts/codes.json 的 when，以及 case-review/tables/codes.json 的 checks；本表只为已存事实提供显示名称，不新增判断。整体等级次序取自 case-review-verify/slots.schema.json 的 run.final.ranks。",
   "dispositions": [
     {
       "code": "verified",
@@ -153,6 +153,40 @@
     {
       "code": "case-review.tag_variant",
       "label": "检查 tags：一个用例的类别标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）写法和本文档这一类别最常用的写法不同"
+    }
+  ],
+  "finalRanks": [
+    {
+      "code": "P0",
+      "label": "P0：覆盖全部功能细节，兼容性、反向、压力、边角用例和极端场景非常丰富"
+    },
+    {
+      "code": "P1",
+      "label": "P1：覆盖全部功能细节，兼容性、反向、压力用例丰富"
+    },
+    {
+      "code": "P2",
+      "label": "P2：覆盖全部功能细节，兼容性、反向、压力用例比较丰富"
+    },
+    {
+      "code": "P3",
+      "label": "P3：覆盖全部功能细节，有一些兼容性、反向、压力用例"
+    },
+    {
+      "code": "P4",
+      "label": "P4：覆盖全部功能细节，有一些反向和压力用例，兼容性不足"
+    },
+    {
+      "code": "P5",
+      "label": "P5：覆盖全部功能，有一些反向和压力用例，功能细节的深度不够"
+    },
+    {
+      "code": "P6",
+      "label": "P6：覆盖基本功能，有反向和压力类型，功能细节覆盖不完整"
+    },
+    {
+      "code": "P7",
+      "label": "P7：没有覆盖基本功能，没有反向和压力类型"
     }
   ]
 }

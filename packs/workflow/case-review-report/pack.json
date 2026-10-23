@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "bffbc5552d51d5a16a76cdc7a741180c7165f35c62793949b8a48884fcb2cb58",
-      "size": 21062
+      "sha256": "5a939ef8490d248176575fc455e5daa41b1f436762eba44b0b39a0e8ca626316",
+      "size": 21390
     },
     {
       "path": "functions/tables.ts",
@@ -83,13 +83,13 @@
     },
     {
       "path": "tables/labels.json",
-      "sha256": "13438094c9651d9dd438bf45e63835de25a352b456ee6270776f1b633d462b84",
-      "size": 4858
+      "sha256": "6f62e6d97b17737e0829a628437421a287bbabd3786423f5361d28ef9bc455b9",
+      "size": 6000
     },
     {
       "path": "tables/labels.json.d.ts",
-      "sha256": "b8ccc8ad5646350868866dd4b664c3d6ac3360ef705735a997d3d0073c7f84d4",
-      "size": 400
+      "sha256": "d8d9b282f7ca0ee89fbeca2594ca32b930c24686e27da1b518a153033c2b76c1",
+      "size": 449
     },
     {
       "path": "workflow.json",

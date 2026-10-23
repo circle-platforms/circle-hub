@@ -120,6 +120,7 @@ test('label declarations preserve the source packs codes and Chinese names',()=>
   const labels=readJson('../tables/labels.json'),source=readJson('../../case-review/tables/codes.json'),verify=readJson('../../case-review-verify/slots.schema.json');
   assert.deepEqual(labels.probes,source.findings.map(({code,label}:any)=>({code,label})));
   assert.deepEqual(labels.ranks,source.ranks.map(({rank,label}:any)=>({code:rank,label})));
+  assert.deepEqual(labels.finalRanks,verify.run.final.ranks);
   assert.deepEqual(labels.dispositions.map(({code,label}:any)=>({code,label})),verify.item.verification.codes);
 });
 
