@@ -61,12 +61,12 @@ describe('the case-compile pack files', () => {
     const checks = (json('checks.json') as { checks: Array<{ id: string }> }).checks.map((check) => check.id);
     const files: Record<string, string[]> = {
       positive: ['contract-valid.json', 'addresses-valid.json', 'commands-valid.json', 'expects-sourced.json', 'quotes-verbatim.json', 'plan-deterministic.json'],
-      negative: ['method-forbidden.json', 'listen-blind.json', 'commands-out-of-range.json', 'expect-without-source.json', 'quote-mismatch.json', 'plan-tampered.json'],
+      negative: ['method-forbidden.json', 'listen-blind.json', 'commands-out-of-range.json', 'expect-without-source.json', 'quote-mismatch.json', 'plan-in-slots.json'],
     };
     for (const [polarity, names] of Object.entries(files)) {
       const seen = new Set<string>();
       for (const file of names) {
-        const sample = json(`samples/${polarity}/${file}`) as { check: string; expect: Array<{ verdict: string; code?: string }> };
+        const sample = json(`samples/${polarity}/${file}`) as { check: string; expect: Array<{ verdict: string; code?: string; reason?: string }> };
         seen.add(sample.check);
         if (polarity === 'positive') assert.ok(sample.expect.every((outcome) => outcome.verdict === 'support'), `${file} 正例要全是支持`);
         else assert.ok(sample.expect.some((outcome) => outcome.verdict === 'refute' && outcome.code === sample.expect[0].code), `${file} 负例要有反驳码`);
@@ -85,8 +85,9 @@ describe('the case-compile pack files', () => {
     assert.equal(start.inputs.contract.external, 'doc:doc:compile-contract');
     assert.equal(start.inputs.inventory.external, 'doc:doc:bed-topology');
     const submission = read('examples/submit-result.json');
-    assert.match(submission, /exec-plan@1/);
-    assert.match(submission, /"plan_json": "/);
+    assert.ok(!submission.includes('plan_json'), '执行计划由 Hub 从槽位生成，提交里没有 plan_json');
+    assert.match(submission, /"bucket": "bed-a"/);
+    assert.match(submission, /"quotes": \[/);
   });
 
   it('SKILL.md is short, Chinese, and carries the two markers', () => {

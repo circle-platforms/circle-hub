@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checkDeterministic, checkExpectedSources } from './checks.ts';
-import { canonicalJson, generatePlan, generatePlanJson, readSlots } from './plan.ts';
+import { canonicalJson, diffPlan, generatePlan, generatePlanJson, parsePlan, readSlots, sha256Hex } from './plan.ts';
 import { commandSubject, quoteSubject } from './subject.ts';
 import { contractOf, goodData, QUOTE, subjectOf } from './test-support.ts';
 
@@ -50,7 +50,6 @@ describe('期望结果的来源', () => {
       { text: '健康检查间隔设置成功', quote: QUOTE },
       { text: '会话保持生效', quote: { reference: '', text: '' } },
     ];
-    data.plan_json = '';
     const [outcome] = checkExpectedSources(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.expect_without_source']);
     assert.match(outcome.statement, /第 2 个期望结果「会话保持生效」没有逐字来源/);
@@ -60,7 +59,6 @@ describe('期望结果的来源', () => {
   it('反例：一个期望结果都没有', () => {
     const data = goodData();
     data.expects = [];
-    data.plan_json = '';
     const [outcome] = checkExpectedSources(subjectOf(data));
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.expect_without_source']);
   });
@@ -69,7 +67,7 @@ describe('期望结果的来源', () => {
 describe('确定性', () => {
   it('同一份槽位两次生成的执行计划逐字节相同', () => {
     const contract = contractOf();
-    const data = goodData(contract);
+    const data = goodData();
     const read = readSlots(data);
     assert.equal(read.ok, true);
     if (!read.ok) return;
@@ -82,12 +80,11 @@ describe('确定性', () => {
     assert.ok(first.indexOf('"params":{"address":"192.0.2.10","port":8080}') > 0, '参数按合约声明的顺序');
     assert.ok(first.indexOf('"params":{"backend":"192.0.2.90","status":200}') > 0);
     assert.ok(first.indexOf('"count":3') > 0);
-    assert.equal(data.plan_json, first, '夹具的 plan_json 就是生成器出的文本');
   });
 
   it('缺省参数由生成器按合约填上：模型不写，生成结果里有', () => {
     const contract = contractOf();
-    const data = goodData(contract);
+    const data = goodData();
     const request = data.steps.find((step) => step.method === 'request')!;
     delete request.params.count;
     const read = readSlots(data);
@@ -97,29 +94,63 @@ describe('确定性', () => {
     assert.ok(json.indexOf('"count":"1"') > 0, '缺省值按文档的字符串形式填上');
   });
 
-  it('提交的 plan_json 与槽位生成的一致：支持', () => {
-    const [outcome] = checkDeterministic(subjectOf(goodData()));
+  it('另一个读取器把生成的文本解析回来，和槽位逐项一致', () => {
+    const contract = contractOf();
+    const data = goodData();
+    const read = readSlots(data);
+    assert.equal(read.ok, true);
+    if (!read.ok) return;
+    const text = generatePlanJson('doc-1:c-1', read.slots, contract) as string;
+    const reread = parsePlan(text);
+    assert.ok(reread !== null, '生成的文本必须能被回读器解析');
+    assert.deepEqual(diffPlan(read.slots, reread, contract), []);
+    assert.equal(parsePlan('{"schema":"exec-plan@1","case":"x"}'), null, '缺字段的不是 exec-plan@1');
+    assert.equal(parsePlan('不是 JSON'), null);
+  });
+
+  it('回读不一致能被逐项比对指出来（台架、步骤、参数、期望来源）', () => {
+    const contract = contractOf();
+    const data = goodData();
+    const read = readSlots(data);
+    assert.equal(read.ok, true);
+    if (!read.ok) return;
+    const text = generatePlanJson('doc-1:c-1', read.slots, contract) as string;
+    const reread = parsePlan(text)!;
+    const drifted = { ...reread, bed: 'bed-b', steps: reread.steps.map((step, i) => (i === 1 ? { ...step, params: { line: 'widget health interval 90' } } : step)) };
+    const diffs = diffPlan(read.slots, drifted, contract);
+    assert.ok(diffs.some((diff) => diff.includes('bed-b')), JSON.stringify(diffs));
+    assert.ok(diffs.some((diff) => diff.includes('第 2 步的参数')), JSON.stringify(diffs));
+  });
+
+  it('支持：由槽位生成并回读一致，结论写出 sha256，data 里带计划文本和摘要', () => {
+    const contract = contractOf();
+    const data = goodData();
+    const read = readSlots(data);
+    assert.equal(read.ok, true);
+    if (!read.ok) return;
+    const generated = generatePlanJson('doc-1:c-1', read.slots, contract) as string;
+    const digest = sha256Hex(generated);
+    const [outcome] = checkDeterministic(subjectOf(data));
     assert.equal(outcome.verdict, 'support');
-    assert.match(outcome.statement, /确定性重读一致/);
+    assert.ok(outcome.statement.includes(`sha256 ${digest}`), outcome.statement);
+    assert.ok(outcome.statement.endsWith(MARK));
+    assert.deepEqual(outcome.data, { plan: generated, sha256: digest });
+  });
+
+  it('生成不出来或回读不一致记未知，原因是出件失败，不写成模型的错', () => {
+    const data = goodData();
+    data.steps = [{ object: 'dut', method: 'reset', params: {} }];
+    const [outcome] = checkDeterministic(subjectOf(data));
+    assert.deepEqual([outcome.verdict, outcome.reason], ['unknown', 'output_failed']);
+    assert.ok(!('code' in outcome) || outcome.code === undefined, '出件失败不是模型的违规');
+    assert.match(outcome.statement, /出件失败/);
     assert.ok(outcome.statement.endsWith(MARK));
   });
 
-  it('提交的 plan_json 被手写改动：不通过，并给出生成的规范文本', () => {
-    const data = goodData();
-    data.plan_json = data.plan_json.replace('"port":8080', '"port":8081');
+  it('槽位里写了 plan_json 是不通过：执行计划由 Hub 生成，模型只填槽', () => {
+    const data = { ...goodData(), plan_json: '{"schema":"exec-plan@1"}' };
     const [outcome] = checkDeterministic(subjectOf(data));
-    assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.plan_mismatch']);
+    assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.plan_in_slots']);
     assert.ok(outcome.statement.endsWith(MARK));
-    const generated = (outcome.data as { generated: string }).generated;
-    assert.ok(generated.indexOf('"port":8080') > 0, '数据里带生成的规范文本，供对照');
-  });
-
-  it('键序不同但内容相同的 plan_json 也是不一致（规范形式是唯一的）', () => {
-    const data = goodData();
-    const plan = JSON.parse(data.plan_json) as Record<string, unknown>;
-    const reordered = JSON.stringify({ steps: plan.steps, schema: plan.schema, expects: plan.expects, case: plan.case, blocks: plan.blocks, bed: plan.bed });
-    data.plan_json = reordered;
-    const [outcome] = checkDeterministic(subjectOf(data));
-    assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'case-compile.plan_mismatch']);
   });
 });

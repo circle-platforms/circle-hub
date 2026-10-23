@@ -3,7 +3,7 @@
   "origin": "决定：case-compile 在 Hub 边界重跑编译核对（编译设计第 2 节）；结论都是事实或未知，带“按合成合约核对”（合约是合成的时）和“不证明在真实设备上跑得通”",
   "description": "任务包函数给出的反驳码、拒绝码和警告码。函数代码里的标签与这里一致（pack.test.ts 核对）。解释器给出的码（core.catalog.*、QUOTE_MISMATCH）属核心，不在这里列",
   "violations": [
-    { "code": "case-compile.slots_invalid", "when": "提交的槽位形状不对：bucket 不是字符串、blocks 或 steps 或 expects 不是数组、步骤缺对象或方法、参数不是对象、plan_json 不是字符串", "fix": "按 SKILL.md 的受限结构填槽；执行计划的 JSON 文本由确定性生成规则从槽位出" },
+    { "code": "case-compile.slots_invalid", "when": "提交的槽位形状不对：bucket 不是字符串、blocks 或 steps 或 expects 不是数组、步骤缺对象或方法、参数不是对象", "fix": "按 SKILL.md 的受限结构填槽；执行计划由 Hub 从槽位生成，不由模型写" },
     { "code": "case-compile.block_unknown", "when": "blocks 里有有限集（setup、teardown）之外的块", "fix": "块只写 setup 或 teardown" },
     { "code": "case-compile.method_unknown", "when": "步骤的（对象，方法）不在合约里", "fix": "只用合约声明的对象和方法；要新的（对象，方法）先改合约文档（所有者发布）" },
     { "code": "case-compile.method_forbidden", "when": "步骤用了合约禁用的（对象，方法）组合（例如重启类）", "fix": "换合约不禁用的组合；禁用的组合不能出现在执行计划里" },
@@ -17,7 +17,7 @@
     { "code": "case-compile.backend_not_server", "when": "后端地址不是服务器设备的接口地址（也不是清单 services 里的服务地址）", "fix": "后端地址写服务器设备的接口地址或清单 services 的服务地址" },
     { "code": "case-compile.address_blind", "when": "盲地址（所在网段没有触发设备）被当成虚拟地址", "fix": "盲地址不能当监听或虚拟地址；换同网段有触发设备的地址或分配到的地址" },
     { "code": "case-compile.expect_without_source", "when": "期望结果没有逐字引文（quote 缺 reference 或 text），或一份计划一个期望结果都没有", "fix": "每个期望结果都带 quote：reference 指到用例原文、缺陷修复说明或手册的片段，text 是逐字内容" },
-    { "code": "case-compile.plan_mismatch", "when": "提交的 plan_json 和 Hub 从槽位确定性重新生成的执行计划逐字节不同", "fix": "执行计划只由槽位出：按 SKILL.md 的确定性生成规则重写 plan_json，不要手写或改写生成结果" }
+    { "code": "case-compile.plan_in_slots", "when": "槽位里写了 plan_json：执行计划由 Hub 从槽位生成，模型只填槽（bucket、blocks、steps、expects 和 quotes）", "fix": "把 plan_json 从提交里删掉；执行计划由 Hub 生成，支持结论的 data.plan 里有它" }
   ],
   "refusals": [
     { "code": "case-compile.no_subject", "when": "输入槽 subject 里没有用例文档", "fix": "在 inputs.subject 里绑定评审过的用例脑图（agile:mindmap 或 application/json）" },

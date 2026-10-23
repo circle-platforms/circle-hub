@@ -5,7 +5,7 @@ import { isRecord, markers, type Outcome } from './text.ts';
 import { isForbidden, lookupMethod, orderedParams, paramProblem, parseContract, type Contract } from './contract.ts';
 import { parseManifest, type ManifestBed } from './manifest.ts';
 import { bedFacts, isBackend, isBlind, listenerOf, readAddress, type BedFacts } from './bed.ts';
-import { generatePlanJson, readSlots, type PlanSlots } from './plan.ts';
+import { generatePlanJson, diffPlan, parsePlan, readSlots, sha256Hex } from './plan.ts';
 
 /** The subject as the checks read it: the item, its plan data, and the raw contract and manifest documents re-parsed here. */
 export interface CheckSubject {
@@ -165,21 +165,22 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   return out;
 }
 
-/** The submitted plan_json is byte-identical to the plan the slots deterministically generate. */
+/** The plan is generated from the slots here, then read back by a second reader and compared item by item (P05). */
 export function checkDeterministic(input: unknown): Outcome[] {
   const subject = subjectOf(input);
   if (subject.contract === null) return noContract(subject);
+  // The restricted structure holds no plan of the model's own: a plan_json in the slots is the model playing generator.
+  if (isRecord(subject.data) && subject.data.plan_json !== undefined) {
+    return [refute(subject, 'plan_in_slots', '槽位里写了 plan_json：执行计划由 Hub 从槽位生成，不由模型写或改写')];
+  }
   const read = readSlots(subject.data);
   if (!read.ok) return unreadableSlots(subject);
-  const slots: PlanSlots = read.slots;
-  const generated = generatePlanJson(subject.item, slots, subject.contract);
-  if (generated === null) return [unknown(subject, 'check_error', '从槽位生成执行计划失败（步骤或必填参数的问题由合约检查报告），无法比对')];
-  if (generated !== slots.planJson) {
-    return [
-      refute(subject, 'plan_mismatch', `提交的 plan_json 和从槽位确定性生成的执行计划不一致（生成的规范文本 ${generated.length} 字节，提交的 ${slots.planJson.length} 字节）。执行计划只能由槽位出，不要手写或改写生成结果`, {
-        generated,
-      }),
-    ];
-  }
-  return [support(subject, `执行计划确定性重读一致（${generated.length} 字节）`, { generated })];
+  const generated = generatePlanJson(subject.item, read.slots, subject.contract);
+  if (generated === null) return [unknown(subject, 'output_failed', '从槽位生成执行计划失败，出件失败（步骤或必填参数的问题由合约检查报告）')];
+  const digest = sha256Hex(generated);
+  const reread = parsePlan(generated);
+  if (reread === null) return [unknown(subject, 'output_failed', `生成的执行计划回读解析失败，出件失败（sha256 ${digest}）`)];
+  const diffs = diffPlan(read.slots, reread, subject.contract);
+  if (diffs.length > 0) return [unknown(subject, 'output_failed', `生成的执行计划与槽位回读不一致，出件失败（sha256 ${digest}）：${diffs.slice(0, 3).join('；')}`)];
+  return [support(subject, `执行计划由槽位确定性生成并回读一致（sha256 ${digest}）`, { plan: generated, sha256: digest })];
 }
