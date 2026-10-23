@@ -387,3 +387,15 @@ test('closure B6 mask type failures and impossible arities need no ambiguous cod
   const arity=judgeCommand(catalog,`route 192.0.2.0 ${value}`);assert.equal(arity.code,'core.catalog.arity_mismatch');assert.deepEqual(arity.requests,[]);
  }
 });
+
+test('closure B7 rule gaps require a declaration and oracle implementation before rerun',async()=>{
+ const {compareCatalogMarks}=await import('./catalog-marks.ts');
+ const specimens=[['U16','limit="5"','9'],['U16','optional="perhaps"','9'],['U16','limit="{1|2}"','9'],['IPMASK','','200'],['UNKNOWN','','9'],['U16','length="3"','1234'],['U16','limit="[70000 - 80000]"','100']];
+ const requests=specimens.flatMap(([type,attr,value])=>judgeCommand(readCatalog(`<catalog><item name="sample"><arguments><arg type="${type}" ${attr}/></arguments></item></catalog>`),'sample '+value).requests);
+ requests.push(...judgeCommand(readCatalog('<catalog><item name="sample"><arguments><arg type="STRING"/></arguments></item></catalog>'),'sample \\value').requests);
+ requests.push(...judgeCommand(readCatalog('<catalog><item name="sample"><arguments><arg type="U16"/></arguments><arguments><arg type="DOTTEDIP"/></arguments></item></catalog>'),'sample 70000').requests);
+ const own=structuredClone(source);own.root.children[0].data.text='配置 widget port 21 后检查';requests.push(...compareCatalogMarks({treeXml:tree,source:own,submission,run:run()}).requests);
+ assert.ok(requests.length>=10);
+ for(const r of requests){assert.match(r.next_action,/README/);assert.match(r.next_action,/金标准实现/);assert.match(r.next_action,/重跑/);}
+ assert.ok(requests.some(r=>r.next_action.includes('hub/rules/README.md') && r.next_action.includes('候选')));
+});

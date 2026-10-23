@@ -102,7 +102,7 @@ export function readCatalog(xml: string, argumentTypes: readonly DeclaredArgumen
     if (tag.name === 'menu' && !(attrs.name ?? '').trim()) catalog.requests.push(request(position(path), '未命名菜单及其子命令的路径规则', '请集成者在 case-review README 声明未命名菜单的处理规则，补充金标准实现与样例后重跑'));
     if (tag.name === 'menu') frame.words = [...frame.words, ...(attrs.name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean)];
     if (tag.name === 'item') {
-      if (parent?.command) catalog.requests.push(request(position(path), '嵌套 item 的命令路径规则', '请集成者提供该 XML 结构的路径规则或导出规范树后重跑'));
+      if (parent?.command) catalog.requests.push(request(position(path), '嵌套 item 的命令路径规则', '请集成者在 case-review README 或锁定表声明该 XML 结构的路径规则，补充金标准实现与样例，再按 follow_up 重跑'));
       const words = [...frame.words, ...(attrs.name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean)];
       if (!(attrs.name ?? '').trim()) { catalog.unnamedItems++; frame.command = undefined; frame.signature = undefined; frame.arg = undefined; stack.push(frame); return; }
       const key = fold(words.join(' '));
@@ -163,20 +163,20 @@ function constraint(raw: string | undefined, at: Position, attribute: string, le
     if (Number.isSafeInteger(low) && Number.isSafeInteger(high) && low <= high && (!length || low >= 0)) return { value: { low, high }, requests: [] };
   } else if (attribute === 'length' && /^\d+$/.test(text) && Number.isSafeInteger(Number(text))) return { value: { high: Number(text) }, requests: [] };
   else if (enumeration && attribute !== 'length') return { value: { values: enumeration[1].split(/\s*[|,]\s*/) }, requests: [] };
-  return { value: {}, requests: [request({ ...at, pointer: at.pointer + '/@' + attribute }, '参数约束的可解析语法：' + raw, '请集成者在该位置补取范围或枚举的正式声明；说明语法后重跑独立核对')] };
+  return { value: {}, requests: [request({ ...at, pointer: at.pointer + '/@' + attribute }, '参数约束的可解析语法：' + raw, '请集成者在 case-review README 或锁定表声明该位置约束的正式语法，补充金标准实现与正反样例，再按 follow_up 重跑独立核对')] };
 }
 interface Parameter { raw: Argument; type: string; limit: Constraint; length: Constraint; ambiguities: EvidenceRequest[] }
 function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest[] } {
   const type = raw.type.toUpperCase(), requests: EvidenceRequest[] = [];
-  if (!['STRING', 'XSTRING', 'U16', 'U32', 'DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@type' }, '不认识的参数类型：' + raw.type, '请集成者提供该位置类型的定义、合法样例与反例，再补充金标准后重跑'));
-  if (raw.optionalRaw !== undefined && !/^(yes|y|true|1|no|n|false|0)$/i.test(raw.optionalRaw)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@optional' }, '参数是否可省略的声明', '请集成者补取该位置 optional 的布尔语义后重跑'));
+  if (!['STRING', 'XSTRING', 'U16', 'U32', 'DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@type' }, '不认识的参数类型：' + raw.type, '请集成者在 case-review README 或锁定表声明该位置类型定义，补充金标准实现与正反样例，再按 follow_up 重跑'));
+  if (raw.optionalRaw !== undefined && !/^(yes|y|true|1|no|n|false|0)$/i.test(raw.optionalRaw)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@optional' }, '参数是否可省略的声明', '请集成者在 case-review README 或锁定表声明 optional 的布尔语义，补充金标准实现与样例，再按 follow_up 重跑'));
 
   const limit = constraint(raw.limit, raw.at, 'limit', type === 'STRING' || type === 'XSTRING');
   const length = constraint(raw.length, raw.at, 'length', true);
-  if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者提供此位置 limit 的正式含义；不把数值约束直接当地址字符串长度'));
-  if (limit.value.values && type !== 'STRING' && type !== 'XSTRING') requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '枚举与数值或地址类型的覆盖规则', '请集成者声明枚举是替换类型还是与类型相交，并补正反样例后重跑'));
-  if (raw.length !== undefined && type !== 'STRING' && type !== 'XSTRING') requests.push(request({...raw.at,pointer:raw.at.pointer+'/@length'}, '非字符串类型 length 的适用规则', '请集成者声明此类型的长度语义，补充金标准实现和样例后重跑'));
-  if ((type === 'U16' || type === 'U32') && ((limit.value.high !== undefined && limit.value.high < 0) || (limit.value.low !== undefined && limit.value.low > (type === 'U16' ? 65535 : 4294967295)))) requests.push(request({...raw.at,pointer:raw.at.pointer+'/@limit'}, '与整数类型范围不相交的 limit 的处理规则', '请集成者声明不相交约束的处理规则，补充金标准实现和样例后重跑'));
+  if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者在 case-review README 或锁定表声明地址 limit 的正式含义，补充金标准实现与样例，再按 follow_up 重跑'));
+  if (limit.value.values && type !== 'STRING' && type !== 'XSTRING') requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '枚举与数值或地址类型的覆盖规则', '请集成者在 case-review README 或锁定表声明枚举替换类型还是与类型相交，补充金标准实现与正反样例，再按 follow_up 重跑'));
+  if (raw.length !== undefined && type !== 'STRING' && type !== 'XSTRING') requests.push(request({...raw.at,pointer:raw.at.pointer+'/@length'}, '非字符串类型 length 的适用规则', '请集成者在 case-review README 或锁定表声明此类型的长度语义，补充金标准实现和样例，再按 follow_up 重跑'));
+  if ((type === 'U16' || type === 'U32') && ((limit.value.high !== undefined && limit.value.high < 0) || (limit.value.low !== undefined && limit.value.low > (type === 'U16' ? 65535 : 4294967295)))) requests.push(request({...raw.at,pointer:raw.at.pointer+'/@limit'}, '与整数类型范围不相交的 limit 的处理规则', '请集成者在 case-review README 或锁定表声明不相交约束规则，补充金标准实现和样例，再按 follow_up 重跑'));
   return { value: { raw, type, ambiguities: [], limit: limit.value, length: length.value }, requests: [...requests, ...limit.requests, ...length.requests] };
 }
 function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
@@ -189,7 +189,7 @@ function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
   if (p.type === 'IPMASK') {
     const dotted = isIP(v) === 4 && /^1*0*$/.test(v.split('.').map(n => Number(n).toString(2).padStart(8, '0')).join(''));
     const prefix = /^[+-]?[0-9]+$/.test(v) && Number(v) >= 0 && Number(v) <= 128;
-    if (!dotted && !prefix) { if (/^[+-]?[0-9]+$/.test(v)) p.ambiguities.push(request(p.raw.at, 'IPMASK 的两个分支均不符时采用的错误码', '请集成者声明掩码与前缀双分支失败的代码选择规则后重跑')); return TYPE; }
+    if (!dotted && !prefix) { if (/^[+-]?[0-9]+$/.test(v)) p.ambiguities.push(request(p.raw.at, 'IPMASK 的两个分支均不符时采用的错误码', '请集成者在 case-review README 或锁定表声明掩码与前缀双分支失败的代码选择规则，补充金标准实现与样例，再按 follow_up 重跑')); return TYPE; }
   }
   if (numeric && (!Number.isSafeInteger(Number(v)) || Number(v) < 0 || Number(v) > (p.type === 'U16' ? 65535 : 4294967295))) return RANGE;
   const measured = numeric ? Number(v) : [...v].length;
@@ -208,7 +208,7 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   const command = matches[0]; if (!command) return { in_scope: false, code: null, requests: [] };
   const localRequests = catalog.requests.filter(r => r.pointer.startsWith(command.at.pointer + '/') || r.pointer === command.at.pointer || command.at.pointer.startsWith(r.pointer + '/'));
   if (localRequests.length) return { in_scope: true, code: null, requests: localRequests };
-  if (tokens === null) return { in_scope: true, code: null, requests: [request(command.at, '命令行的引号或转义切分规则', '请集成者核对该用例原件中的完整命令行和转义方式，补齐后重跑')] };
+  if (tokens === null) return { in_scope: true, code: null, requests: [request(command.at, '命令行的引号或转义切分规则', '请集成者以 hub/rules/README.md 的 shell-like 引号、转义与末尾反斜杠拒绝规则为候选，在 case-review README 或锁定表确认，补充金标准实现与样例，再按 follow_up 重跑；保持原件字节不变')] };
   const args = tokens.slice(command.words.length);
   const signatures = command.signatures.map(signature => {
     let expansion = 1;
@@ -258,7 +258,7 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   if (ambiguity.length) return { in_scope: true, code: null, requests: ambiguity };
   if (!arityFits) return { in_scope: true, code: ARITY, requests: [] };
   if (failedCodes.size === 1) return { in_scope: true, code: [...failedCodes][0], requests: [] };
-  return { in_scope: true, code: null, requests: [request(command.at, '多个参数或签名失败时错误码的选择规则', '请集成者明确这些签名及参数位置之间的错误码选择规则，补充规则和样例后重跑；不照抄被核实现的优先级')] };
+  return { in_scope: true, code: null, requests: [request(command.at, '多个参数或签名失败时错误码的选择规则', '请集成者在 case-review README 或锁定表声明签名与参数之间的错误码选择规则，补充金标准实现与样例，再按 follow_up 重跑；不照抄被核实现的优先级')] };
 }
 
 export interface Mark { item: string; node: string; command: string; code: string; pointer: string; output_error?: string }
@@ -354,7 +354,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         if (!quoteFromCase(value.command, target.lines)) {
           if (fold(value.command) && target.lines.some(line => fold(line).includes(fold(value.command as string)))) {
             boundaryGaps.add(entry.item as string);
-            report.requests.push({ ...request({ input: 'table', pointer: '/match/boundary' }, '子串引文的完整词与参数边界规则', '请集成者在锁定版本的表或 README 声明边界规则与正反样例后重跑；也可重新提交完整命令行引文，不能复制被核实现的切分算法'), related: [location, target.at] });
+            report.requests.push({ ...request({ input: 'table', pointer: '/match/boundary' }, '子串引文的完整词与参数边界规则', '请集成者在锁定版本的表或 case-review README 声明边界规则，补充金标准实现与正反样例，再按 follow_up 重跑；也可重新提交完整命令行引文，不能复制被核实现的切分算法'), related: [location, target.at] });
           } else report.summary.not_quoted++;
           return;
         }
