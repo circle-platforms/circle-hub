@@ -44,3 +44,6 @@ test('review 05 catalog normalization cannot introduce an unrepaired quote error
 test('review 06 expectations obey the same single-line and edge-whitespace constraints', () => {
   for (const text of [' 成功', '成功 ', '第一行\n第二行']) { const data = goodData(); data.expects[0].text = text; data.expects[0].quote.text = text; assert.ok(codes(checkExpectedSources(subjectOf(data))).includes('case-compile.expect_value')); }
 });
+test('review 07 dynamic shell syntax cannot bypass the host rejection boundary', () => {
+  for (const text of ['/sbin/re*boot', '/sbin/re?oot', 'r$()eboot', 'echo ready; reboot']) { const data = goodData(); data.steps[1].args = [text]; assert.ok(codes(checkContractShape(subjectOf(data))).includes('case-compile.host_shell_dynamic')); }
+});

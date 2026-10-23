@@ -94,6 +94,11 @@
           "code": "case-compile.wait_value",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-compile.host_shell_dynamic",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },
