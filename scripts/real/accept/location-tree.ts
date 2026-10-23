@@ -115,7 +115,7 @@ function requestedDocuments(capture: Capture): string[] {
   if (!object(args) || !object(args.inputs)) return [];
   return list(args.inputs.documents).flatMap(input => object(input) && typeof input.external === 'string' && input.external.startsWith('agile:mindmap:') ? [input.external.slice('agile:mindmap:'.length)] : []);
 }
-function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
+export function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
   const refused = new Map<string, string>();
   for (const capture of captures) {
     if (capture.request.tool !== 'start_run') continue;

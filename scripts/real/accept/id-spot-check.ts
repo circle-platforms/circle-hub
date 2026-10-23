@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { privatePath, writePrivateJson } from '../gold/builds.ts';
-import { capturedResult, readCaptures, resultItems } from './location-tree.ts';
+import { capturedResult, readCaptures, resultItems, refusedDocuments } from './location-tree.ts';
 
 export interface SampleId {
   id: string;
@@ -18,7 +18,7 @@ interface Entry extends SampleId { found: boolean | null; lookup?: string[] }
 interface SampleRecord {
   schema: 'id-spot-check@1'; seed: string; results_sha256: string;
   totals: { stories: number; bugs: number; unclassified: number };
-  requested: number; population_complete: boolean; entries: Entry[]; not_run: MissingFact[];
+  requested: number; population_complete: boolean; entries: Entry[]; not_run: MissingFact[]; excluded: Array<{ document: string; reason: string }>;
 }
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const digest = (v: string | Uint8Array): string => createHash('sha256').update(v).digest('hex');
@@ -52,12 +52,14 @@ export async function main(argv: string[], print: (line: string) => void = line 
       stage = '--results/runs 完整结果输入'; action = '重读完整 get_nodes 结果到仓库外 runs，再以相同种子和新 --record 重跑';
       const saved = readCaptures(privatePath(resultDir));
       const items = new Map<string, SampleId>(), missing: MissingFact[] = [];
+      const excluded: Array<{ document: string; reason: string }> = [];
+      const accepted = new Set<string>(), refused = refusedDocuments(saved.captures, true);
       const results = new Set<string>(), observed = new Set<string>(), requested = new Set<string>();
       for (const capture of saved.captures) {
         const args = capture.request.args;
         if (capture.request.tool !== 'start_run' || !object(args) || !object(args.inputs)) continue;
         const inputs = Array.isArray(args.inputs.documents) ? args.inputs.documents : [args.inputs.documents];
-        for (const input of inputs) if (object(input) && typeof input.external === 'string' && input.external.startsWith('agile:mindmap:')) requested.add(input.external.slice('agile:mindmap:'.length));
+        for (const input of inputs) if (object(input) && typeof input.external === 'string' && input.external.startsWith('agile:mindmap:')) { const document = input.external.slice('agile:mindmap:'.length); requested.add(document); if (!capture.response.isError && object(capture.response.structured) && capture.response.structured.call_result === 'ok') accepted.add(document); }
       }
       for (const capture of saved.captures) {
         const result = capturedResult(capture); if (result === null) continue;
@@ -80,15 +82,16 @@ export async function main(argv: string[], print: (line: string) => void = line 
           }
         }
       }
-      for (const document of requested) if (!observed.has(document)) missing.push({ document, fact: '已请求但未取得的完整 location 结果', next_action: '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样' });
+      for (const document of requested) if (!observed.has(document) && !accepted.has(document) && refused.has(document)) excluded.push({ document, reason: refused.get(document)! });
+      for (const document of requested) if (!observed.has(document) && !excluded.some(row => row.document === document)) missing.push({ document, fact: '已请求但未取得的完整 location 结果', next_action: '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样' });
       for (const item of items.values()) item.documents.sort(compare);
       if (results.size === 0) missing.push({ document: '（结果输入没有可用文档）', fact: '完整定位结果', next_action: '由集成者重跑全树采集，确认 get_nodes 的结构化 content.text 是完整 JSON 后重新抽样' });
       const totals = { stories: [...items.values()].filter(i => i.kind === 'story').length, bugs: [...items.values()].filter(i => i.kind === 'bug').length, unclassified: [...items.values()].filter(i => i.kind === null).length };
       const entries: Entry[] = missing.length ? [] : sampleIds([...items.values()], count, seed).map(item => ({ ...item, found: null, ...(item.kind === null ? { lookup: [`plm:story:${item.id}`, `plm:bug:${item.id}`] } : {}) }));
-      const record: SampleRecord = { schema: 'id-spot-check@1', seed, results_sha256: saved.sha256, totals, requested: count, population_complete: missing.length === 0, entries, not_run: missing };
+      const record: SampleRecord = { schema: 'id-spot-check@1', seed, results_sha256: saved.sha256, totals, requested: count, population_complete: missing.length === 0, entries, excluded, not_run: missing };
       stage = '--record 新输出文件（不可覆盖）'; action = '保留旧记录，另选仓库外新记录文件后重跑 sample';
       const bytes = writePrivateJson(recordFile, record);
-      print(`${missing.length ? '已见计数（输入不完整）' : '总体'}：需求 ${totals.stories} 个，缺陷 ${totals.bugs} 个，未分类 ${totals.unclassified} 个；抽了 ${entries.length} 个；没跑 ${missing.length} 项`);
+      print(`${missing.length ? '已见计数（输入不完整）' : '总体'}：需求 ${totals.stories} 个，缺陷 ${totals.bugs} 个，未分类 ${totals.unclassified} 个；抽了 ${entries.length} 个；没跑 ${missing.length} 项；开始被拒排除 ${excluded.length} 份`);
       print(`种子 ${seed}`); print(`记录 sha256 ${digest(bytes)}`);
       if (missing.length) print('下一步：按记录里的具体文档和字段重读或重跑，再以相同种子重新抽样；没跑不计通过或不通过');
       else print('下一步：按记录逐个到缺陷系统查询，未分类编号查需求和缺陷两处，只填写 found=true 或 false，再运行 tally');

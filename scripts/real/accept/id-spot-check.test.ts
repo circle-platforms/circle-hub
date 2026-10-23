@@ -89,3 +89,12 @@ test('a document requested but absent from result data is named before any sampl
   assert.equal(record.entries.length, 0);
   assert.ok(record.not_run.some((row: { document: string; next_action: string }) => row.document === '950802' && row.next_action.includes('重跑')));
 });
+
+test('location review 6: refused documents are excluded with codes while available results can be sampled', async t => {
+  const w = world(t);
+  writeFileSync(join(w.results, 'runs/000000.start_run.json'), JSON.stringify({ request: { tool: 'start_run', args: { inputs: { documents: [{ external: 'agile:mindmap:950801' }, { external: 'agile:mindmap:950802' }] } } }, response: { isError: false, text: '', structured: { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', path: '/inputs/documents/1' }] } } }));
+  const screen: string[] = [];
+  assert.equal(await main(['sample', '--results', w.results, '--record', w.record], l => screen.push(l)), 0);
+  const record = JSON.parse(readFileSync(w.record, 'utf8')); assert.equal(record.entries.length, 5); assert.equal(record.excluded[0].document, '950802'); assert.match(record.excluded[0].reason, /SOURCE_UNAVAILABLE/);
+  assert.ok(screen.some(l => l.includes('排除 1')));
+});
