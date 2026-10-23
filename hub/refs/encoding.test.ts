@@ -63,3 +63,21 @@ test('platform Big5 single-byte extensions do not displace following line ranges
     assert.deepEqual(doc.locate('l/2')?.byteRange, [2, 3]);
   }
 });
+
+test('GBK four-byte sequences retain every decodable prefix boundary and later line ranges', async () => {
+  const { decodeEncoding } = await import('./text-decoding.ts');
+  for (const body of [Buffer.from([0x81, 0x30, 0x81, 0x30, 10, 65, 66]), Buffer.from([0x95, 0x32, 0x82, 0x36, 0xd6, 0xd0, 10, 65])]) {
+    const decoded = decodeEncoding('text@1', body, 'gbk');
+    for (let at = 0; at <= body.length; at++) {
+      let prefix: string;
+      try { prefix = new TextDecoder('gbk', { fatal: true }).decode(body.subarray(0, at)); } catch { continue; }
+      assert.equal(decoded.offsets.at(prefix.length), at, `prefix ${at}`);
+    }
+  }
+  const lines = textParser.parse(Buffer.from([0x81, 0x30, 0x81, 0x30, 10, 65, 66]), { mediaType: 'text/plain;charset=gbk' });
+  assert.deepEqual(lines.locate('l/1')?.byteRange, [0, 4]); assert.deepEqual(lines.locate('l/2')?.byteRange, [5, 7]);
+  for (const prefix of [Buffer.alloc(0), Buffer.alloc(16382, 65)]) {
+    const bad = Buffer.concat([prefix, Buffer.from([0x81, 0x30, 0x81, 0x30, 65, 0x81, 0x20])]);
+    assert.throws(() => decodeEncoding('text@1', bad, 'gbk'), (error: unknown) => error instanceof ParseEncodingError && error.offset === prefix.length + 5);
+  }
+});

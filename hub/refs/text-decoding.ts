@@ -129,7 +129,7 @@ function sequenceWidth(bytes: Uint8Array, at: number, charset: TextCharset): num
     return word >= 0xd800 && word <= 0xdbff ? 4 : 2;
   }
   if (bytes[at] < 0x80 || singleByteCodes(charset).has(bytes[at])) return 1;
-  return charset === 'gb18030' && bytes[at + 1] >= 0x30 && bytes[at + 1] <= 0x39 ? 4 : 2;
+  return (charset === 'gb18030' || charset === 'gbk') && bytes[at + 1] >= 0x30 && bytes[at + 1] <= 0x39 ? 4 : 2;
 }
 
 /** Find the first invalid sequence in bounded chunks, then refine only the failing chunk. */
