@@ -231,6 +231,14 @@ describe('no machine paths in repository text', () => {
     for (const path of paths) assert.equal(localPathProblems('hub/example.ts', path).length, 1, path);
   });
 
+  it('ignores network URLs without hiding file URLs or an adjacent local path', () => {
+    for (const text of ['see https://example.com/home/docs/start', 'https://api.example.com/v1/Users/42/profile', '`https://example.com/home/docs`', '[page](https://example.com/home/docs)']) {
+      assert.deepEqual(localPathProblems('docs/example.md', text), [], text);
+    }
+    assert.equal(localPathProblems('docs/example.md', 'file://' + '/' + 'home/operator/x').length, 1);
+    assert.equal(localPathProblems('docs/example.md', 'https://example.com/home/docs ' + '/' + 'home/operator/x').length, 1);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],

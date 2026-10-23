@@ -200,6 +200,8 @@ export function localPathProblems(file: string, text: string): string[] {
   const problems: string[] = [];
   text.split('\n').forEach((line, index) => {
     for (const m of line.matchAll(LOCAL_PATH)) {
+      // A path segment inside a network URL is not a machine path; file URLs still are.
+      if (/(?:^|[\s"'`(<\[{=])(?!file:)[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>]*$/i.test(line.slice(0, m.index))) continue;
       // ~/Library is an OS layout template, not a personal absolute path.
       if (m[0] === '~/' && /^~\/Library(?:[\/\s`"',;)]|$)/.test(line.slice(m.index))) continue;
       if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0])) continue;
