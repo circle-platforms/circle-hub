@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
@@ -48,7 +48,7 @@
     },
     {
       "path": "functions/documents.ts",
-      "sha256": "ef084e1312bbc9a58743664275cfea2c9dbd8342bf6e6dc64c89aef937f1836a",
+      "sha256": "56a96048f95df722085f51a3f24389e1ee204628a1dd67b32d44613ca897c0af",
       "size": 3232
     },
     {
@@ -73,18 +73,18 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "84b16e7e0abb8b73fc74fb067494b66e43773d72d9a3a1b685ad0450aee1bae2",
-      "size": 21910
+      "sha256": "ad87c2d2e6caf6b89318ab5179bbd043ee8242df668621a7d4a50da9a1eb58dd",
+      "size": 75469
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "03198bacf74a2912a9834053fa4d5229f7174b98aea9e3093eddc048613885ee",
+      "sha256": "a3ebd8dad3e791598184440cf7caf168a30446bd1ec23a03f983a9da127c2eee",
       "size": 8645
     },
     {
       "path": "functions/producers.ts",
-      "sha256": "6b0d2fa49e1a2aecf258565e1e99f86bde72d8b74694bddf3191122cee49d269",
-      "size": 5194
+      "sha256": "07329c717bb647e5c186288de374322b27f996e0fa85d6845d9742412a51c56c",
+      "size": 9097
     },
     {
       "path": "functions/release-notes.ts",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "fc3b8c98b8472e3c97b5b9807b888092cc6f1c4eb2637dc98e0ef186cbd94c51",
-      "size": 12634
+      "sha256": "0cf96fcf26d96ff58a278d5a70163bc788b43637198ff3bfb6ed1fd6315271a1",
+      "size": 13934
     },
     {
       "path": "functions/util.ts",
@@ -128,8 +128,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "8f984cfad43cc9e27b909ceee3c780836ee1a56ee263b6783c5f958acf324094",
-      "size": 1872
+      "sha256": "1b4fea68a4b89a10aa9d76c752532da14f64786a685ca161ed073b1c9319aabb",
+      "size": 1910
     }
   ]
 }

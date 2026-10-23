@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.1.5): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.2.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for the existence check and the drift list; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -35,7 +35,8 @@ released builds only (unreleased own-tree builds need `includeUnreleased`), move
 aliases: a run started with an NSAE name locks the root of its APV base (end-to-end test).
 
 Entry kinds follow K02 R[3]: the command tree gives `definition` entries, the manual `definition` for signature paragraphs
-and `behaviour` for the text under a command, the fixed-bug list and release notes `defect`; the finer form stays in
+and `behaviour` for the text under a command and for the prose at the section nodes (`/manual/<手册>/...`), the fixed-bug
+list and release notes `defect`; the finer form stays in
 `data.form` and `data.status`.
 
 ## Functions
@@ -46,7 +47,7 @@ and `behaviour` for the text under a command, the fixed-bug list and release not
 | `select-build.ts` | `selectBuild` | `{ candidates, line, declared?, includePlatforms? }` → `{ build, base, basis, alternatives, notes }` |
 | `sync-plan.ts` | `planSync`, `syncBuilds` | index page model(s) and hub pages read → listing pages, hub pages to read; builds → base builds to produce, aliases |
 | `command-tree.ts` | `produceCommandEntries` | xml@1 model of `command_tree-<build>.xml` (or `{ model, params }`) → definition entries at `/commands/<words>` |
-| `manual.ts` | `produceManualEntries` | markdown@1 model of the CLI manual, or the `ist.manual-command-catalog` JSON → definition entries, unplaced spans |
+| `manual.ts` | `produceManualEntries` | markdown@1 model of a manual (`{ model, heads?, name? }`; `produceManualEntries(model, heads, { name, catalog })`) → signatures (at /commands only when the build's tree has the command), behaviours, section-placed prose; nothing unplaced from markdown. The transitional `ist.manual-command-catalog` JSON → definition entries, unplaced spans |
 | `release-notes.ts` | `produceReleaseEntries` | markdown@1 model of a release note → defect entries (fixed or known) with build and date |
 | `fixed-bugs.ts` | `fixedBugEntries` | html@1 model of `Bugs_Fixed_with_<build>.html` → defect entries (status fixed). The real page is one body block of br-separated anchors: the anchor text is the bug number, the href names the system (`m=bug&f=view&id=` query → `plm`, trailing `show_bug.cgi?id=` → `bugzilla`, else `unknown`, in `data.system`); bare numbers after a `======ID from PLM=======` line are read as `plm` with `after_plm_marker: true`; the older table-cell and leading-number shapes stay |
 | `commands.ts` | `extractCommands` | `{ text, heads }` → command phrases with offsets |
@@ -107,7 +108,7 @@ Selection (K01 R[10], W03 R[0], W06 F[6])
 - `basis` is the provenance type: `declared` or `projected`.
 
 Sync plan
-- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_5`, `apv_10_4_6`) or by no version
+- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_7`, `apv_10_6_4`) or by no version
   (`apv_trunk`, `apv_10_x_patch`). Their content decides: a hub page read that lists builds is a listing page (warning).
   Hub pages linked from hub pages are beyond depth 2 and skipped with a reason.
 - Listing pages by name: `[rel_]<family>[_<platform>]_<n>_<n>[...]_<tokens>`. Mainline: only the version or a mainline
@@ -130,7 +131,13 @@ Producers (K02, K04, C07)
   entries and manual signatures are `definition`, the manual text under a command `behaviour`, release-note items `defect`. The finer form is data: `data.form` `signature` or
   `text` on manual entries (examples also `data.example`), `data.status` `fixed` or `known` on defects. An unplaced span's
   `kind` is the kind its entry will have.
-- Producer placement: only `manual` declares `placement: "judgment_allowed"`, so its unplaced fragments may be offered to the bot for placement proposals; the Hub calls no model and never places them itself (verification is not implemented yet, so today they stay unplaced, marked 未归位). `command-tree`, `release-notes`, and `cases` keep default `code_only` to prevent internal defects and test case titles from leaving the Hub.
+- Producer placement: only `manual` declares `placement: "judgment_allowed"`. Its markdown path now places every block
+  (section nodes under `/manual/<手册>`, existence-checked signatures at /commands). The transitional catalog JSON is
+  reachable only through direct calls of `produceManualEntries` or the default export: the producer reads markdown@1
+  slots only, so no catalog span reaches a production. The release-note defects keep `path: null` under the default
+  `code_only`: they stay unplaced at the root and nothing leaves the Hub; offering them to the bot's verified placement
+  proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
+  prevent internal defects and test case titles from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
   `data` is catalog-entry@1 without `reference`. Types: STRING and XSTRING → string, U16 → int 0..65535, U32 → int
   0..4294967295, DOTTEDIP → ipv4, IPADDR → ipv4 or ipv6, IPMASK → mask or int 0..128; other types → string with a
@@ -141,18 +148,69 @@ Producers (K02, K04, C07)
   `[a - b]` is a value range (int, narrowed to the type range) or a length range (string); `{a|b}` an enumeration; `length`
   a maximum or a range of the length. Defaults are entity-decoded once more (the tree escapes them twice) and unquoted.
   Unnamed arguments are `arg1`, `arg2`, ... The statement has one line per overload plus its help texts.
-- Manual (markdown): a command anchor is a paragraph that is only the bold head plus emphasized parameters
-  (`**demo pool add** *\<name\> \[weight\]*`, also several spans), or a heading written that way. Head groups hold
-  alternatives of one or more words (`{tcp|probe hello}`). The key is the words before the first `{}`/`[]` group (a
-  leading optional group is skipped): the nearest common node of the variants (K01 R[3]). The blocks after an anchor up to
-  the next anchor or heading are text entries at its node. A single-line paragraph without CJK that opens in bold and
-  carries signature syntax but does not parse (a source defect, or an unknown head when `heads` is given) ends the
-  command: it and the blocks after it are unplaced, with a warning. Every other block is returned `unplaced` (for a
-  placement proposal, K04 R[3]).
-- Manual (catalog JSON): each signature is a signature entry (fragment `p/signatures/<k>/signature_verbatim`). A
-  "signature" whose head holds a quoted value or a number after a known head is a worked example: a text entry
-  (`example: true`) at the longest known head, else unplaced; never a synthetic path. A number with no known head before
-  it stays a command word. Value domains and worked examples become text entries at the matching head, else `unplaced`.
+- Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
+  emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
+  hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
+  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (a warning names the missing fact and the next action, and no drift list is computed). Head groups hold
+  alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
+  leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
+  missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
+  follow the anchor's placement. Every other block hangs at its section node `/manual/<手册>/<章节路径>` (the markdown@1
+  block path; the preamble at the namespace root): no manual paragraph is left at the tree root. A paragraph written as
+  a signature that does not parse ends the command before it and hangs at its section with `data.signature_rejected`,
+  with a warning. The heading-numbering prefix is stripped before anchor parsing; a bold standalone line is never a
+  heading, and an attribute placeholder a heading does not parse stays in the title as written.
+- Command tables: a pipe table whose rows carry bold signatures is split by row, decided by the manual alone (each row
+  cites its line's byte range of the table block). A row with exactly one signature hangs at its command node when the
+  command exists in the build's tree, else at its section node (the signature entry, plus a text entry from the row's
+  other cells). A row with several commands hangs one text entry at their nearest common ancestor over ALL of them when
+  every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
+  itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
+  section node, as does any row naming a missing command. The cell rule is PER COLUMN (closure findings 2 and 19):
+  a column whose header is one of the command terms (命令、命令格式、命令名称、命令行、CLI 命令、Command、Commands、
+  Command Syntax) takes every signature-shaped run; in every other column a bold span needs parameter or group syntax
+  to be a signature — a bare bold run, one word or many, is a value, a parameter name or a term. Text before the
+  first bold run of a cell is prose: the whole cell is prose and its bold span is a mention, recorded in
+  `command_literals` only; a prose run between two bold runs ends the list (the runs before it stay signatures, the
+  rest is the row's prose), while a run of bare connectives (与/和/及/或、顿号、逗号；斜线 only in a command column)
+  continues the list. A bold span that follows another with no separator at all rides with it: an anchor may span
+  several runs (a bold keyword or parameter of the same signature). A cell whose bold head equals one of the current
+  command's parameter names, or one enumerated alternative of its variant group, is a value row: such rows keep the
+  table's remainder, and a remainder made only of value rows records no `command_literals`. The header and the rows
+  without a signature make one remainder text entry, which follows the current command, or stays at the section node;
+  a row that states its own condition
+  becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
+  (their rows are not single lines).
+- Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
+  command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
+  written in `data.command_literals` (sorted, deduped, capped at 100 per block with `command_literals_cut`), never
+  resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
+  manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
+  read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
+  are listed in the production warnings as drift candidates. Signature literals are decided by the placement check
+  (never by the leading-run rule): a signature not placed at /commands lists its positive variants and its own raw
+  spelling, and a mention is drift exactly when the tree cannot resolve it by words or by expanding one {a|b} group
+  (a bare key of a variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the
+  tree).
+  The count covers every literal found (past the per-entry
+  cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
+- Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
+  table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
+  row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
+  from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
+  `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
+  never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
+  deictic or non-set words (大多数, 部分, 所有, 该, 以下, 其他, 硬件, ...), negations (不/不再/无法/不能/并非, 仅…不支持),
+  exceptions (以外/之外/外) and partial listings are not read at all — the condition stays in the entry's text.
+  `builds` is never set on a manual entry: which builds use a manual is said by the per-build root and its composition.
+- Manual (catalog JSON): the `ist.manual-command-catalog` JSON keeps being read (signatures, value domains, worked
+  examples) as a transition, until the adoc producer replaces it. It is reachable only through direct calls of
+  `produceManualEntries` or the default export: the production's manual producer reads markdown@1 slots only, so no
+  catalog span reaches a production. Each signature is a signature entry (fragment
+  `p/signatures/<k>/signature_verbatim`). A "signature" whose head holds a quoted value or a number after a known head is
+  a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
+  number with no known head before it stays a command word. Value domains and worked examples become text entries at the
+  matching head, else `unplaced`.
 - Release notes: sections whose heading names fixed issues (已修复问题, 修复的问题, 问题修复, 已解决问题, Fixed Issues,
   Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
   尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
@@ -294,6 +352,21 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
 - "Latest released" is by release date: a sub-build released after a newer build of the same line wins; the alternatives
   show the others.
 - Markdown anchors with other source defects (a stray escaped underscore, text after the parameters) are not anchors.
+- The command literals of a manual are a heuristic over the author's marks: a quoted English word that is no command is
+  recorded too and then shows up in the drift candidates; what is a command is decided when a literal is resolved at
+  read time.
+- Only pipe tables split by row; a grid, multiline or simple table stays one block at its section node.
+- The section-opening scope of applicability is gone: every entry reads only its own text (a section-wide rule waits on
+  the owner's decision).
+- The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
+  backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
+  only the section placement reads the neutral block path. The task asks for dependence on a document model with
+  section paths alone, and that is what the options give: `fragmentParser` names the input model's parser key and
+  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). A model whose
+  sections are cited another way (text@1 l/<a>-<b> line ranges) can instead carry its own decoded `path` array per
+  section: the producer uses it as-is and never decodes h/ then. `sectionSelector` cannot turn a section path into a
+  line range — an adoc model supplies either its own `path` arrays or selectors it can build from a path. The adoc
+  producer needs no change here for placement; only the markdown@1 h/ decoding stays the default.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
@@ -382,8 +455,15 @@ pack and reviews a mind map against the root it produced.
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
-  root (the fixed-bug entries of a build, for example); the manual fragments the `manual` producer declares wait for the
-  bot's placement proposals, verified by the Hub (not implemented yet).
+  root (the fixed-bug entries of a build, for example). The manual producer's markdown path no longer emits unplaced
+  spans; no output of the manual producer waits for placement proposals in production: the markdown path places
+  every block, and catalog spans never reach a production (the catalog JSON is reachable only through direct calls).
+  K04 R[6] proposals, once that channel exists, would only move section-node fragments to finer places (research 2
+  rule 6). A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
+  R[2]) is not implemented; until then the production warnings list the literals the tree cannot resolve, as drift
+  candidates. Follow-up task (registered by the integrator, not part of this one): the drift candidates become
+  queryable drift records (a view by root and command path, readable by review and regression-scope uses); whether a
+  drift is a manual erratum or a defect candidate is a judgment and stays with Circle or a human, never the Hub.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still

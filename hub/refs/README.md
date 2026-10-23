@@ -112,7 +112,10 @@ Parser details:
   block, and tables: pipe tables, pandoc grid, multiline and simple tables. Headings inside code fences or tables are not
   headings. A heading segment is the heading text with white space collapsed and a trailing pandoc attribute block
   (`{#id}`) removed; `[k]` is appended when the text repeats among siblings (from the second), when the text itself ends
-  in `[digits]`, or when it is empty. NUL is removed from texts, never from byte ranges.
+  in `[digits]`, or when it is empty. NUL is removed from texts, never from byte ranges. Every block also carries
+  `path`: the decoded heading segments of its section, spelled exactly as in its `h/` selector (`[]` before the first
+  heading, null when the section has no selector), so a reader sees the section path without decoding selectors; a
+  skipped heading level nests under the nearest lower one and adds no segment.
 - **json@1** keeps the parsed value; member names are compared as own properties only (`__proto__` is an ordinary
   key). Empty member names cannot be addressed. Member order of a re-serialized object follows ECMAScript rules.
 - **text@1** splits on CRLF, CR and LF; a final terminator does not open an extra line.
@@ -246,6 +249,10 @@ update is retained and disclosed to the integrator as a scope deviation; this re
 11. `html@1` gained the selector `b/<a>-<b>`, mirroring text@1's `l/<a>-<b>`; existing selectors keep their meaning.
 12. New optional model fields: `XmlModel.nulRemoved` and `KityMinderModel.surrogatesReplaced` (the parsers always set
     them; optional so that models written by hand in pack tests still type-check).
+13. New optional model field `MarkdownBlock.path`: the decoded heading segments of the block's section (selector
+    spelling, ordinals included), `[]` for the preamble and null exactly when the section's selector is null. The array
+    is shared by the blocks of one section and, like the rest of the model, must be treated as read-only; a heading
+    path past `MAX_SELECTOR_LENGTH` gives null, so a long path is never repeated per block.
 
 ## Known limits
 
