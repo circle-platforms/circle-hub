@@ -28,7 +28,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const builds = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
       const build = file.replace(/^Bugs_Fixed_with_/i, '').replace(/\.html$/i, '');
       const allowed = docsDir ? parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8')) : undefined;
-      const gold = traceGold({ html: readFileSync(join(fixedDir, file), 'utf8'), tree, maps: loadCaseMaps(casesDir, allowed), plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+      const gold = traceGold({ html: readFileSync(join(fixedDir!, file), 'utf8'), tree, maps: loadCaseMaps(casesDir!, allowed), plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
       // Without --plm the closed counts were never read: they stay null (unread), never 0 (the owner's rule — an
       // unknown is transient and names the missing fact and the next action).
       const unread = plm === undefined;
@@ -37,7 +37,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const read = builds.filter((b) => b.closed_traced !== null) as Array<typeof builds[number]>;
     const ranked = [...(read.length > 0 ? read : builds)].sort((a, b) => (b.closed_traced ?? 0) - (a.closed_traced ?? 0) || b.traced - a.traced || a.index - b.index);
     const recommendation = ranked[0]?.traced ? ranked[0].index : null;
-    writeFileSync(resolve(out), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds, recommendation }, null, 2)}\n`);
+    writeFileSync(resolve(out!), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds, recommendation }, null, 2)}\n`);
     const unreadPlm = plm === undefined;
     for (const b of builds) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；${unreadPlm ? '已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）' : `已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`}`);
     if (unreadPlm) {
