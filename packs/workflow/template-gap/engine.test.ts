@@ -351,6 +351,7 @@ it('locks the command catalog and judges both requirements over agile documents 
   const detail = await start({ product: LOCK.names[0], build: BUILD, inputs: { documents: [...maps.map((source, i) => ({ external: onAgile(ids[i]!, source) })), { reference: upload }], case_index: { external } } });
   assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
   assert.equal(detail.answer.run!.root, ROOT);
+  assert.match(detail.answer.run!.items.find(item => item.id === ids[3])!.summary ?? '', /文档不在完整索引里.*构建.*重跑/);
   assert.deepEqual(detail.production!.counts, { delivered: 6, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
   for (const item of detail.production!.result.partitions.delivered) {
     const command = item.requirements.find(r => r.requirement === 'command_coverage')!;

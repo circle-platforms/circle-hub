@@ -32,3 +32,12 @@ test('NFKC and whitespace-only header differences require synchronization', () =
   assert.equal(result.item.fields.command_coverage!.unmatched.length, 1);
   assert.ok(result.outcomes.some(o => o.verdict === 'unknown'));
 });
+
+test('a complete index missing this document gives the same definite summary and verdict', () => {
+  const source = baseDocument(); const view = indexView([], [document]);
+  const out = projectDocuments({ ...projectionInput([bind(source, { external: `agile:mindmap:${document}` }), bindIndex(view)]), context: { ...LOCK, parameters: {} } });
+  assert.ok(!isFailure(out));
+  assert.match(out.items[0]!.summary, /文档不在完整索引里.*构建.*重跑/);
+  const outcomes = commandOutcomes(commandSubject({ item: out.items[0], context: { ...LOCK, groups: out.groups } }));
+  assert.equal(outcomes[0]!.code, 'template-gap.not_indexed');
+});

@@ -156,6 +156,7 @@ function summaryOf(fields: DocumentFields, template: Template): string {
       if (command.uploaded) parts.push('按命令：上传文件不在索引里');
       else if (command.rule_mismatch) parts.push('按命令：规则不一致，用默认 marked 重跑');
       else if (!command.bound) parts.push('按命令：未计算，缺 case_index');
+      else if (!command.documentIndexed && !command.truncated && command.skippedSources === 0 && !command.cutKeys.includes(fields.document) && command.unplacedRoot !== null) parts.push('按命令：文档不在完整索引里，用收了该文档的构建或同步收进后重跑');
       else if (partial) parts.push(`按命令：已读 ${command.commands.length} 个命令，${missing} 个潜在缺口待补证，知识同步后重跑，未判覆盖完整`);
       else if (!command.documentIndexed) parts.push('按命令：文档不在索引里');
       else parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${command.commands.length === 0 ? '；用例未解析出命令' : ''}`);
