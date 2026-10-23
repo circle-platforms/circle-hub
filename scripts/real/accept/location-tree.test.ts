@@ -255,5 +255,20 @@ test('closure unread result after an accepted start is transient and only asks t
  const code=await main(['--tree',join(root,'tree.json'),'--builds',join(root,'builds.json'),'--out',join(root,'out'),'--collect','--token-file',join(root,'token')],{call:async(_options,calls)=>{if(calls[0].tool==='start_run')return[{isError:false,text:'',structured:{call_result:'ok',result:{reference}}}];throw new Error('synthetic read timeout');},print:()=>{}});
  assert.equal(code,2);const report=JSON.parse(readFileSync(join(root,'out/details.json'),'utf8'));
  assert.equal(report.summary.missing.no_item,0);assert.equal(report.summary.missing.result_unread,1);
- assert.ok(report.details.not_run.some((r:any)=>r.next_action.includes('重读 get_nodes') && r.next_action.includes(reference) && r.recovery.tool==='get_nodes'));
+ assert.ok(report.details.not_run.some((r:any)=>r.next_action.includes('location-tree.ts') && r.next_action.includes('--collect') && r.next_action.includes('--batch') && r.recovery.args.reference===reference));
+});
+
+test('closure B4 unread results recover through a fresh same key collect without creating another run',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'unread-recollect-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const treeFile=join(root,'tree.json'),token=join(root,'token'),builds=join(root,'builds.json');writeFileSync(treeFile,JSON.stringify(tree()));writeFileSync(token,'synthetic');writeFileSync(builds,JSON.stringify(emptyBuilds[0]));
+ const created=new Set<string>(),keys:string[]=[];let firstRead=true;
+ const fake=async(_options:unknown,calls:{tool:string;args:unknown}[]):Promise<ToolText[]>=>{
+  const call=calls[0];if(call.tool==='start_run'){const key=(call.args as {client_key:string}).client_key;keys.push(key);created.add(key);return[{isError:false,text:'运行已开始\n问题：定位合成文档',structured:{call_result:'ok',errors:[],run:{run:'run_synthetic',pack:'case-location@1.0.0',items:[],requirements:[]},result:{reference:'rec:'+'f'.repeat(64)}}}];}
+  if(firstRead){firstRead=false;throw new Error('synthetic read timeout');}
+  return[{isError:false,text:'条目 合成文档\n定位：已找到',structured:{call_result:'ok',content:{text:JSON.stringify(result())}}}];
+ };
+ const args=(out:string)=>['--tree',treeFile,'--builds',builds,'--out',out,'--collect','--token-file',token,'--batch','1'];
+ assert.equal(await main(args(join(root,'first')),{call:fake,print:()=>{}}),2);
+ const pending=JSON.parse(readFileSync(join(root,'first/details.json'),'utf8')).details.not_run[0];assert.match(pending.next_action,/location-tree.ts.*--collect/);assert.match(pending.next_action,/24/);assert.ok(pending.recovery.start_args.client_key);
+ const screen:string[]=[];assert.equal(await main(args(join(root,'second')),{call:fake,print:l=>screen.push(l)}),0);assert.ok(screen.includes('判定：通过'));assert.equal(created.size,1);assert.equal(keys[0],keys[1]);
 });

@@ -105,7 +105,7 @@ test('closure unread accepted result pauses sampling and uses the saved get_node
  writeFileSync(join(w.results,'runs/000003.get_nodes.json'),JSON.stringify({transport_error:true,request:{tool:'get_nodes',args:{reference}},response:{isError:true,text:'',structured:{call_result:'error',errors:[]}}}));
  assert.equal(await main(['sample','--results',w.results,'--record',w.record],()=>{}),2);
  const record=JSON.parse(readFileSync(w.record,'utf8'));assert.equal(record.entries.length,0);
- assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('重读 get_nodes') && r.next_action.includes(reference)));
+ assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('location-tree.ts') && r.next_action.includes('--collect') && r.recovery.args.reference===reference));
 });
 
 test('closure a timed out retry supersedes the earlier batch refusal and pauses sampling', async t => {
@@ -116,5 +116,5 @@ test('closure a timed out retry supersedes the earlier batch refusal and pauses 
  assert.equal(await main(['sample','--results',w.results,'--record',w.record],()=>{}),2);
  const record=JSON.parse(readFileSync(w.record,'utf8'));assert.equal(record.population_complete,false);assert.equal(record.entries.length,0);
  assert.deepEqual(record.excluded.map((r:any)=>r.document),['950803']);
- assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('同一 client_key')));
+ assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('同一 client_key') && r.next_action.includes('--collect') && r.recovery.args.client_key==='synthetic-stable-key'));
 });

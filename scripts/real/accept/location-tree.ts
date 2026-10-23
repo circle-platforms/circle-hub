@@ -52,7 +52,7 @@ ROLLBACK;
 
 export interface Capture { session?: string; transport_error?: boolean; request: { tool: string; args: unknown }; response: ToolText }
 export interface ResultItem { document: string; location: Record<string, unknown> | null; candidates: unknown[] | null }
-type Pending = { document: string; fact: string; next_action: string; next_command?: string; recovery?: { tool: string; args: unknown; session: string | null } };
+export type Pending = { document: string; fact: string; next_action: string; next_command?: string; recovery?: { tool: string; args: unknown; session: string | null; start_args?: unknown } };
 type Difference = { document: string; field: string; gold: unknown; actual: unknown; reason: string; next_action?: string };
 type Missing = { document: string; reason: string; next_action: string };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -133,20 +133,20 @@ export function uncertainStarts(captures: Capture[]): Map<string, { args: unknow
 }
 
 /** An accepted run reference without a complete readable capture is an unobserved result, not an empty result. */
-export function unreadResults(captures: Capture[]): Map<string,{reference:string;session:string|null}> {
+export function unreadResults(captures: Capture[]): Map<string,{reference:string;session:string|null;args:unknown}> {
   const readable = new Set<string>();
   for(const capture of captures) if(!transportFailure(capture) && capturedResult(capture)!==null && object(capture.request.args) && typeof capture.request.args.reference==='string') readable.add(capture.request.args.reference);
-  const pending = new Map<string,{reference:string;session:string|null}>();
+  const pending = new Map<string,{reference:string;session:string|null;args:unknown}>();
   for(const capture of captures) {
     if(capture.request.tool!=='start_run' || transportFailure(capture) || capture.response.isError)continue;
     const answer=capture.response.structured;
     if(!object(answer) || answer.call_result!=='ok' || !object(answer.result) || typeof answer.result.reference!=='string')continue;
     const reference=answer.result.reference;
-    for(const document of requestedDocuments(capture)) {if(readable.has(reference))pending.delete(document);else pending.set(document,{reference,session:capture.session ?? null});}
+    for(const document of requestedDocuments(capture)) {if(readable.has(reference))pending.delete(document);else pending.set(document,{reference,session:capture.session ?? null,args:capture.request.args});}
   }
   return pending;
 }
-export const unreadResultAction = (reference:string):string => '结果未读到；在原会话重读 get_nodes '+JSON.stringify({reference})+' 的完整结果，逐页跟随 next/cursor，保存原始应答后重新比较，保持本运行';
+export const collectionRecoveryAction = ():string => '保持同一原树导出、原会话和 --batch，在幂等窗口内（默认 24 小时）运行 node scripts/real/accept/location-tree.ts --collect --tree <同一原树文件> --batch <原批量> --token-file <原令牌文件> --out <仓库外新目录>，保留原 --builds、--facets、--production 和 --url 参数。每批派生保存的同一 client_key，Hub 返回同一运行并重读结果；之后从新 --out 比较或用同一种子抽样。若原 key 缺失或窗口已过，先由集成者查已有运行，不能直接新建 key 重跑';
 
 export function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
   const refused = new Map<string, string>();
@@ -312,15 +312,15 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
     if (category) {
       summary.missing[category]++;
       if (category === 'result_unread') {
-        const pending=unread.get(expected.document)!;const next_action=unreadResultAction(pending.reference);
+        const pending=unread.get(expected.document)!;const next_action=collectionRecoveryAction();
         summary.candidates.not_run++;
         details.missing.push({document:expected.document,reason:'结果未读到',next_action});
-        details.not_run.push({document:expected.document,fact:'已受理运行的完整定位与候选结果',next_action,recovery:{tool:'get_nodes',args:{reference:pending.reference},session:pending.session}});
+        details.not_run.push({document:expected.document,fact:'已受理运行的完整定位与候选结果',next_action,recovery:{tool:'get_nodes',args:{reference:pending.reference},session:pending.session,start_args:pending.args}});
         continue;
       }
       if (category === 'start_uncertain') {
         const recovery = uncertain.get(expected.document)!;
-        const next_action = '原调用超时或断开，不能认定运行没有开始；在幂等窗口内保持原树、原会话与 --batch，使用新 --out 运行 --collect，以派生保存的同一 client_key 和相同请求取回同一运行。若原 key 缺失或幂等窗口已过，先由集成者查已有运行，不能生成新 key 重试';
+        const next_action = collectionRecoveryAction();
         details.missing.push({ document: expected.document, reason: '调用超时或连接中断，运行是否已开始待取回', next_action });
         details.not_run.push({ document: expected.document, fact: '原 start_run 是否已经持久化及其完整结果', next_action, recovery: { tool: 'start_run', args: recovery.args, session: recovery.session } });
         continue;
