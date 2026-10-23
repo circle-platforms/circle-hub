@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { test } from 'node:test';
 import { ParseError, ParseLimitError } from '../parser.ts';
-import { readXlsxArchive, XLSX_ZIP_LIMITS } from './xlsx.ts';
+import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
 type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
@@ -424,4 +424,18 @@ test('all descriptor widths and per-member ZIP64 declarations have valid and con
   const damaged = Buffer.from(wide); const extraAt = central + 46 + wide.readUInt16LE(central + 28); damaged.writeBigUInt64LE(10n, extraAt + 4);
   refuses(damaged, /本地头大小|大小不一致/);
   assert.ok(performance.now() - started < 2000);
+});
+
+for (const [name, value] of [['ASCII', 'x'], ['JSON control escapes', '_x0001_'], ['backslashes', '\\']] as const)
+  test(`serialized XLSX model budget rejects shared-string amplification: ${name}`, { timeout: 5000 }, () => {
+    const shared = `<sst xmlns="${MAIN}"><si><t>${value.repeat(100000)}</t></si></sst>`;
+    const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(335)}</row></sheetData></worksheet>`;
+    badWorkbook({ shared, sheet }, /模型.*JSON.*上限/);
+  });
+
+test('accepted escaped-value models stay below the full JSON byte budget', () => {
+  const shared = `<sst xmlns="${MAIN}"><si><t>${'A"\\_x0001__x0009_中😀'.repeat(2000)}</t></si></sst>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(30)}</row></sheetData></worksheet>`;
+  const document = parseWorkbook({ shared, sheet });
+  assert.ok(Buffer.byteLength(JSON.stringify(document.model)) < XLSX_MODEL_BYTE_LIMIT);
 });

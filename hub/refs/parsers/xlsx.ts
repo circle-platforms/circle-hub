@@ -6,8 +6,19 @@ import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from '../referen
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
 const asciiFold = (value: string): string => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
-/** Sum of UTF-8 value text placed in cells, including each use of a shared string. */
-export const XLSX_CELL_TEXT_LIMIT = 32 * 1024 * 1024;
+/** Conservative full-model JSON budget, leaving room under the sandbox's 32 MiB bound-input cap. */
+export const XLSX_MODEL_BYTE_LIMIT = 16 * 1024 * 1024;
+/** JSON string size without allocating the escaped representation. */
+function jsonStringBytes(text: string): number {
+  let size = 2;
+  for (const char of text) {
+    const cp = char.codePointAt(0)!;
+    if (cp === 34 || cp === 92 || cp === 8 || cp === 9 || cp === 10 || cp === 12 || cp === 13) size += 2;
+    else if (cp < 32 || cp >= 0xd800 && cp <= 0xdfff) size += 6;
+    else size += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp <= 0xffff ? 3 : 4;
+  }
+  return size;
+}
 /** Hard container caps. Parser options may lower input size, but cannot raise these security limits. */
 export const XLSX_ZIP_LIMITS = Object.freeze({ maxBytes: 16 * 1024 * 1024, maxMembers: 256, maxMemberBytes: 16 * 1024 * 1024, maxExpandedBytes: 32 * 1024 * 1024, maxRatio: 100 });
 const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, message); };
@@ -455,6 +466,11 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   const limits = effectiveLimits(LIMITS, options);
   checkSize(KEY, bytes, limits);
   const archive = readXlsxArchive(bytes);
+  let modelBytes = 256; // Root property names, counters and array framing.
+  const charge = (size: number, component: string): void => {
+    modelBytes += size;
+    if (modelBytes > XLSX_MODEL_BYTE_LIMIT) forbidden(`XLSX 序列化模型（单元格文本与结构）的 JSON 字节预算超过上限 ${XLSX_MODEL_BYTE_LIMIT}（${component}）；请减小工作簿的行、值或元数据规模后重读`);
+  };
   let nulRemoved = 0;
   const xstring = (value: string): string => decodeXstring(value, (count) => { nulRemoved += count; });
   if (!archive.has('[Content_Types].xml') || !archive.has('_rels/.rels'))
@@ -575,7 +591,11 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     if (overrides.has(name)) syntax('XLSX 内容类型覆盖部件名重复');
     overrides.set(name, required(element, 'ContentType'));
   }
-  const members = [...archive].map(([name, value]) => ({ name, size: value.length, contentType: name === '[Content_Types].xml' ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null }));
+  const members = [...archive].map(([name, value]) => {
+    const contentType = name === '[Content_Types].xml' ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null;
+    charge(80 + jsonStringBytes(name) + (contentType === null ? 0 : jsonStringBytes(contentType)), '成员元数据');
+    return { name, size: value.length, contentType };
+  });
   // Opaque XML parts are checked for syntax/repairs only; no style, theme, property, macro or link is interpreted.
   for (const member of members)
     if (/\.(?:xml|rels)$/i.test(member.name) || /(?:\+xml|\/xml)$/.test(mediaTypeEssence(member.contentType ?? '')))
@@ -615,6 +635,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       const resolved = external ? null : actualPart(partTarget(source, target));
       if (resolved !== null && !archive.has(resolved))
         syntax('XLSX 关系指向不存在的部件（关系断链）');
+      charge(128 + [source, id, type, target].reduce((sum, text) => sum + jsonStringBytes(text), 0), '关系元数据');
       relationships.push({ source, id, type, target, external });
       list.push({ id, type, target, external, resolved });
     }
@@ -638,11 +659,14 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     const root = part(strings[0].resolved!);
     if (root.name !== 'sst' || !MAIN.includes(root.uri))
       syntax('XLSX 共享字符串部件无效');
-    sharedStrings = children(root, 'si').map(richText);
+    sharedStrings = children(root, 'si').map(element => { const text = richText(element); charge(jsonStringBytes(text) + 1, '共享字符串字典'); return text; });
   }
-  const definedNames = children(book, 'definedNames').flatMap((root) => children(root, 'definedName')).map((element) => ({ name: xstring(required(element, 'name')), scope: attribute(element, 'localSheetId') === undefined ? null : integer(attribute(element, 'localSheetId')!, '定义名作用域'), reference: textOf(element) }));
+  const definedNames = children(book, 'definedNames').flatMap((root) => children(root, 'definedName')).map((element) => {
+    const name = xstring(required(element, 'name')); const reference = textOf(element);
+    charge(96 + jsonStringBytes(name) + jsonStringBytes(reference), '定义名');
+    return { name, scope: attribute(element, 'localSheetId') === undefined ? null : integer(attribute(element, 'localSheetId')!, '定义名作用域'), reference };
+  });
   const sheets: XlsxSheet[] = [];
-  let cellTextBytes = 0;
   const sheetRelations = new Map(bookRelations.map((relationship) => [relationship.id, relationship]));
   const usedSheetParts = new Set<string>();
   // Validate all sheet identities before creating any rows or cells; a cached XML part must not amplify the model.
@@ -688,15 +712,17 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
             syntax('XLSX 共享字符串部件或索引缺失');
           text = sharedStrings[index];
         }
-        cellTextBytes += Buffer.byteLength(text, 'utf8');
-        if (cellTextBytes > XLSX_CELL_TEXT_LIMIT) forbidden(`XLSX 模型的单元格文本总量超过 UTF-8 字节上限 ${XLSX_CELL_TEXT_LIMIT}`);
+        charge(96 + jsonStringBytes(reference) + jsonStringBytes(type) + jsonStringBytes(text), '单元格');
         cells.push({ reference, type, text, formula: children(cell, 'f').length > 0, style: attribute(cell, 's') === undefined ? null : integer(attribute(cell, 's')!, '样式号') });
       }
       const ht = attribute(row, 'ht') ?? null;
+      charge(128 + (ht === null ? 0 : jsonStringBytes(ht)), '行结构');
       const customHeight = bool(attribute(row, 'customHeight'));
       rows.push({ number, hidden: bool(attribute(row, 'hidden')) || (customHeight && ht !== null && ht.trim() !== '' && Number(ht) === 0), ht, customHeight, cells });
     }
-    sheets.push({ relationshipId: relationship.id, relationshipType: relationship.type, name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
+    const name = xstring(required(sheet, 'name')); const state = attribute(sheet, 'state') ?? 'visible';
+    charge(256 + [relationship.id, relationship.type, name, state, sheetPart].reduce((sum, text) => sum + jsonStringBytes(text), 0), '工作表结构');
+    sheets.push({ relationshipId: relationship.id, relationshipType: relationship.type, name, state, part: sheetPart, rows, lastRow });
   }
   if (definedNames.some((name) => name.scope !== null && name.scope >= sheets.length)) syntax('XLSX 定义名作用域指向不存在的工作表');
   const model: XlsxModel = { nulRemoved, members, relationships, sheets, sharedStrings, definedNames };
