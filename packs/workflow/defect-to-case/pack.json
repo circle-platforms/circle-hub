@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ce5d4f77b671ac8d149238ea193831236e43e0eb6f168e20f6995a77c7ab865e",
-      "size": 9017
+      "sha256": "521910b1e5ac2aae2e67cef398149cc832249df4abcc14ce4df562719c57cc6d",
+      "size": 9334
     },
     {
       "path": "checks.json",
-      "sha256": "4e1eb3d304d34b15b6362281300dab09c5a1b6dbd60a50320abc05bbb76d7e57",
-      "size": 3741
+      "sha256": "21bd49c47f5ea6561ba3e96595e8479e36a12a225410e24ae7a34cde9c3ca429",
+      "size": 4002
     },
     {
       "path": "examples/start-run.json",
@@ -33,8 +33,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "f3144c76e50c83c2536e07933a10e522a794330f26f667c1cff4fc67444a5b9f",
-      "size": 26560
+      "sha256": "e47ed04369ff39400da58ca006f75f17071aaf39ed5ce13ba32be700a8b437a8",
+      "size": 25725
+    },
+    {
+      "path": "functions/command-head.ts",
+      "sha256": "7806bc270f185ef1e7b6c323127a2a368ba2f3ecc53fcd6e3a777d33f408b8e3",
+      "size": 1081
     },
     {
       "path": "functions/compact-index.ts",
@@ -53,8 +58,8 @@
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "23b8db9a994b3c7e8965275c683e4946a9c9077d51f9fae821db2aba99731615",
-      "size": 5068
+      "sha256": "6c9fd97d22e7259eb448ed7d55a46e221e3e830f54f691a064dc48d679471d00",
+      "size": 5740
     },
     {
       "path": "functions/types.ts",
@@ -153,8 +158,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "1d708ba49c6b3d4e45acc867241eddd16a7f4c2d0e393a77ad02b68f637c3b2f",
-      "size": 2131
+      "sha256": "c07e42fd9fd3caf5cea83c1ef6f56bdeea366aaa055ad0f1874a497e3f1290bb",
+      "size": 2264
     }
   ]
 }

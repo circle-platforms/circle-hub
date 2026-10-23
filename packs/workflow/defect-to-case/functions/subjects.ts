@@ -1,3 +1,5 @@
+import type { CatalogEntry } from '../../../../contracts/src/tables.ts';
+import { commandHeadOf } from './command-head.ts';
 // Subject builders for defect-to-case checks.
 import type { DraftCase, DraftExpected, DraftStep } from './types.ts';
 
@@ -127,7 +129,13 @@ export function duplicateSubject(input: unknown): unknown {
   return {
     item: itemId,
     drafts,
-    indexed_cases: indexedCases,
+    // New declarations receive the locked catalog and let the engine inject a fresh narrowed view.
+    indexed_cases: Array.isArray(record.catalog) ? null : indexedCases,
+    read_keys: [...new Set(drafts.flatMap(draft => draft.steps.flatMap(step => {
+      const entries = Array.isArray(record.catalog) ? record.catalog.filter(entry => isRecord(entry) && Array.isArray(entry.words) && entry.words.every(word => typeof word === 'string')) as CatalogEntry[] : [];
+      const head = commandHeadOf(step.command, entries);
+      return head === null ? [] : [head];
+    })))].sort(),
   };
 }
 

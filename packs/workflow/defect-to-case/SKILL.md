@@ -5,7 +5,7 @@
 ## 1. 任务目标与输入
 
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单，收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。`only` 在读完缺陷、动笔起草后、开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。推荐省略 `only`，由检查按草稿命令头动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。
@@ -105,5 +105,7 @@ Hub 对提交进行两层核对：
 
 查重未知时必须自动补取：先修正解析不出命令头的草稿；only 未覆盖就重读含草稿命令头的索引并重开；缺键、截断、每键上限、缺 commands 字段或未读来源，就补齐相应事实后重开核对。接口仍拿不到完整数据时明确报告能力缺口，不把未知转述成没有重复。参数值不同不改变命令头集合的比较。
 
-### 查重动态读取接口待补时的客户端出口
-当前包不能在检查中派生新读取。完成草稿后，先按锁定目录解析草稿命令头，读取 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令头，逗号分隔>&fields=commands,document,node,title,negative`；only 的每个命令头分别 URL 编码。以这份新索引重新绑定 inputs.indexed_cases，使用新请求键开新运行后重交草稿。不能在旧运行中重交并期待刷新冻结索引；当前接口不支持时向集成者报告动态读取缺口，不以未知当没有重复。
+### 检查时按草稿动态读取
+Hub 在 duplicate_check 构造主体后，按锁定目录解析出的草稿命令头从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
+
+缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令头，逗号分隔>&fields=commands,document,node,title,negative`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。

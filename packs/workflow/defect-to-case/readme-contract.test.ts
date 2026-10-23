@@ -9,7 +9,13 @@ test('README lists both cross-package needs under the ownership section and all 
   for (const check of checks.checks) assert.ok(readme.includes('| `' + check.id + '` |'), check.id);
 });
 
-test('the dynamic dedup read dependency names the missing interface and an executable client recovery',()=>{
- const readme=readFileSync(new URL('./README.md',import.meta.url),'utf8'),skill=readFileSync(new URL('./SKILL.md',import.meta.url),'utf8');
- assert.match(readme,/CheckReads.*roles.*types.*max_bytes/);assert.match(readme,/动态.*接口.*待/);assert.match(skill,/only=.*fields=commands,document,node,title,negative/);assert.match(skill,/不能.*旧运行.*刷新/);assert.doesNotMatch(skill,/核心的缺口，另有任务修它|唯一正确的写法/);
+test('the dynamic dedup declaration documents engine reads and bounded recovery', () => {
+  const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');
+  const checks = JSON.parse(readFileSync(new URL('./checks.json', import.meta.url), 'utf8'));
+  const check = checks.checks.find((entry: { id: string }) => entry.id === 'duplicate_check');
+  assert.deepEqual(check.reads.narrow, { slot: 'indexed_cases', key_path: '/read_keys', into: '/indexed_cases', max_keys: 100, max_entries: 5000 });
+  for (const word of ['key_path', 'max_keys', 'max_entries', '读取清单', '同一修订']) assert.ok(readme.includes(word), word);
+  assert.match(skill, /only=.*fields=commands,document,node,title,negative/);
+  assert.doesNotMatch(readme + skill, /动态.*接口.*待|当前包不能在检查中派生新读取|ItemSubjectInput 没有动态查询/);
 });
