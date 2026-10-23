@@ -91,7 +91,7 @@ function skipTarget(value: string, bySha: ReadonlyMap<string, string>): string {
  * document of this run, each (document, category) at most once. A skip the pack cannot apply refuses the run with a fix
  * rather than being dropped, so the caller learns that the declaration did not take effect.
  */
-function readSkips(raw: unknown, template: Template, documents: readonly Document[], caseIndex: CaseIndex | null): SkipEntry[] | PackFailure {
+function readSkips(raw: unknown, template: Template, documents: readonly Document[], admitted: ReadonlyMap<string, import('./types.ts').CommandCoverage>): SkipEntry[] | PackFailure {
   if (raw === undefined) return [];
   const ids = documents.map((document) => document.id);
   const listed = `${ids.slice(0, CASE_LIMITS.maxNamed).join('、')}${ids.length > CASE_LIMITS.maxNamed ? ` 等 ${ids.length} 份` : ''}`;
@@ -115,7 +115,7 @@ function readSkips(raw: unknown, template: Template, documents: readonly Documen
     if (document !== null && !inRun.has(document)) return void problems.push(`${at}写的文档 ${clip(entry.document as string, 60).text} 不在这次运行里`);
     if (entry.command !== undefined && (typeof entry.command !== 'string' || isBlank(entry.command) || !commandCategories.has(category))) return void problems.push(`${at}的 command 要写已解析的命令路径，category 只允许 command 组的类别`);
     const command = typeof entry.command === 'string' ? entry.command : undefined;
-    const targets = (document === null ? ids : [document]).filter(id => command === undefined || indexedCommands(caseIndex, id).includes(command));
+    const targets = (document === null ? ids : [document]).filter(id => command === undefined || [...(admitted.get(id)?.commands.map(c => c.command) ?? []), ...(admitted.get(id)?.pending_commands ?? [])].includes(command));
     if (!targets.length || command !== undefined && document !== null && !targets.includes(document)) return void problems.push(`${at}的命令不在该文档的已绑定索引里；绑定包含该命令的 case_index 后重跑`);
     for (const target of targets) {
       const prefix = `${target}\u0000${category}\u0000`;
@@ -242,7 +242,8 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   const caseIndex = readCaseIndex(input, agileDocuments);
   if (caseIndex !== null && 'error' in caseIndex) return { ...caseIndex, warnings: warnings.list() };
 
-  const skips = readSkips(parameters.skipped, template, documents, caseIndex);
+  const admitted = new Map(documents.map(document => [document.id, commandCoverage(template, document.id, document.cases.cases.map(c => ({ id: c.id, visit: c.visit, categories: [] })), caseIndex, [], document.uploaded, {}, caseRule, caseRevisionNodes(document.cases))]));
+  const skips = readSkips(parameters.skipped, template, documents, admitted);
   if (!Array.isArray(skips)) return { ...skips, warnings: warnings.list() };
 
   const empty = documents.filter((document) => document.cases.cases.length === 0);

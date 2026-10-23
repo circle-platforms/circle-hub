@@ -51,6 +51,9 @@ export function commandCoverage(template: Template, document: string, cases: Cas
   });
   const currentKeys = new Set(cases.map(fact => fact.id.slice(document.length + 1)));
   const orphaned = [...rows.keys()].filter(key => !currentKeys.has(key)).sort(compareText);
+  const matchedCommands = new Set(matched.flatMap(m => [...m.row.commands]));
+  const pending_commands = [...new Set(unmatched.flatMap(id => [...(rows.get(id.slice(document.length + 1))?.commands ?? [])]))].sort(compareText);
+  const pending_skips = skips.filter(s => s.command !== undefined && !matchedCommands.has(s.command) && pending_commands.includes(s.command));
   const categories = template.categories.filter(c => c.group === 'command');
   const commands = (uploaded || caseRule !== 'marked' ? [] : [...new Set(matched.flatMap(m => [...m.row.commands]))].sort(compareText)).map(command => {
     const chosen = matched.filter(m => m.row.commands.has(command));
@@ -64,5 +67,5 @@ export function commandCoverage(template: Template, document: string, cases: Cas
     });
     return { command, caseCount: chosen.length, categories: facts, missing: facts.filter(c => !c.present && !skipped.some(s => s.category === c.id)).map(c => c.id), skipped, references: [...new Set(chosen.flatMap(m => [...m.row.references]))].sort(compareText) };
   });
-  return { case_rule: caseRule, rule_mismatch: caseRule !== 'marked', bound: index !== null, uploaded, documentIndexed: index !== null && Object.hasOwn(index.keys, document), root: index?.build.root ?? (typeof lock.root === 'string' ? lock.root : null), build: index?.build.build ?? (typeof lock.build === 'string' ? lock.build : null), caseCount: cases.length, matchedCases: matched.length, unmatched: unmatched.sort(compareText), orphaned, commandlessCases: matched.filter(m => m.row.commands.size === 0).length, truncated: index?.truncated ?? false, skippedSources: index?.skipped ?? 0, cutKeys: index?.cut_keys ?? [], unplacedRoot: null, notes: index?.notes ?? [], commands };
+  return { case_rule: caseRule, rule_mismatch: caseRule !== 'marked', bound: index !== null, uploaded, documentIndexed: index !== null && Object.hasOwn(index.keys, document), root: index?.build.root ?? (typeof lock.root === 'string' ? lock.root : null), build: index?.build.build ?? (typeof lock.build === 'string' ? lock.build : null), caseCount: cases.length, matchedCases: matched.length, unmatched: unmatched.sort(compareText), orphaned, pending_commands, pending_skips, commandlessCases: matched.filter(m => m.row.commands.size === 0).length, truncated: index?.truncated ?? false, skippedSources: index?.skipped ?? 0, cutKeys: index?.cut_keys ?? [], unplacedRoot: null, notes: index?.notes ?? [], commands };
 }
