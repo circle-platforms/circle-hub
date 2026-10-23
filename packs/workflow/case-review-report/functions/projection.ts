@@ -249,7 +249,9 @@ export default function project(input: unknown): unknown {
           ? '第 '+missingSourceFacts.map(gap=>gap.block+' 块条目 '+gap.item).join('、')+' 缺少初评 Hub 核对快照；下一步：用新版复核包重新复核这些条目，再开终稿运行'
           : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
     const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null}):null;
+    if(rendered&&'error'in rendered)return rendered;
     const full=rendered?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null,foldEmpty:false}):null;
+    if(full&&'error'in full)return full;
     const reportItem: ProjectedItem = {
       id: 'report',
       label: '评审终稿',

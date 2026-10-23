@@ -1,7 +1,7 @@
 // A deterministic view of source text and already accepted claims. It creates no review judgment.
 import type {Partition,Nature,ProducerKind,SourceRole,Attribution} from '../../../../contracts/generated/vocabulary.ts';
 import labels from '../tables/labels.json' with {type:'json'};
-import {isRecord} from './common.ts';
+import {failure,isRecord} from './common.ts';
 
 export interface TableNode {text:string;selector:string;parent:number|null;children:number[];data:Record<string,unknown>}
 export interface TableModel {nodes:TableNode[]}
@@ -53,9 +53,10 @@ export function caseText(model:TableModel,index:number,cases:ReadonlySet<number>
   return out;
 }
 
-export function reviewTables(input:TableInput):{markdown:string;counts:ReviewCounts} {
+export type TableResult = {markdown:string;counts:ReviewCounts} | ReturnType<typeof failure>;
+export function reviewTables(input:TableInput):TableResult {
   const {model,digest}=input,bySelector=new Map<string,number>();
-  if(model.nodes.length===0)throw new Error('目标脑图没有根节点，请重新绑定源文件');
+  if(model.nodes.length===0)return failure('target_invalid','目标脑图没有根节点','重新绑定可读的同一份目标脑图后开始终稿');
   const positional:string[]=[];
   for(const [index,node] of model.nodes.entries()){
     positional[index]=node.parent===null?'i':positional[node.parent]+'/'+model.nodes[node.parent].children.indexOf(index);
@@ -69,8 +70,8 @@ export function reviewTables(input:TableInput):{markdown:string;counts:ReviewCou
   const selected=new Map<number,{entry:Record<string,any>;block:TableBlock}>();
   for(const block of input.blocks)for(const entry of records(block.result.partitions?.[DELIVERED])){
     const index=nodeOf(entry.location);
-    if(index===null)throw new Error('已交付条目不在目标脑图，请按条目位置重新绑定 src:'+digest);
-    if(selected.has(index))throw new Error('同一目标用例被多块交付，请重新分块后复核');
+    if(index===null)return failure('target_mismatch','已交付条目 '+text(entry.item).slice(0,60)+' 的位置在 target 中不可解析','按同一份 target 重新复核该条目，使用新回执开始终稿');
+    if(selected.has(index)){const previous=selected.get(index)!;return failure('overlap','第 '+(input.blocks.indexOf(previous.block)+1)+' 块条目 '+text(previous.entry.item).slice(0,60)+' 与第 '+(input.blocks.indexOf(block)+1)+' 块条目 '+text(entry.item).slice(0,60)+' 交付同一目标节点','重新分块，确保同一节点仅由一块交付；独立复核完成后使用新回执开始终稿');}
     selected.set(index,{entry,block});
   }
   const cases=new Set(selected.keys()),ordered=[...cases].sort((a,b)=>a-b),groupOf=new Map<number,number>();

@@ -5,7 +5,8 @@ import {test} from 'node:test';
 import {kityminderParser} from '../../../../hub/refs/api.ts';
 import {projectItems} from '../../case-review/api.ts';
 import {fixtureBytes,largeDocument,compactText} from '../../../../tests/fixtures/mindmaps/index.ts';
-import {reviewTables,escapeTableText,caseText,type TableBlock,type TableInput} from './tables.ts';
+import {reviewTables as rawReviewTables,escapeTableText,caseText,type TableBlock,type TableInput} from './tables.ts';
+function reviewTables(value:TableInput){const output=rawReviewTables(value);assert.ok(!('error'in output),JSON.stringify(output));return output;}
 const SHA='a'.repeat(64);
 const parse=(value:unknown)=>kityminderParser.parse(Buffer.from(JSON.stringify(value))).model;
 const node=(id:string,text:string,children:unknown[]=[],data:Record<string,unknown>={})=>({data:{id,text,...data},children});

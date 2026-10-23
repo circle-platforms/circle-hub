@@ -373,3 +373,10 @@ it('tied worst verdicts use the worst declared rank and a stable record referenc
   (a.result.cross_item as any[])[0].statement.rank='P6';
   const tie=reportItemOf(run([a,b],{model:source}));assert.equal((tie.fields.overall as any).reference,`rec:${'a'.repeat(64)}#/cross_item/0`);
 });
+
+it('shared target nodes under different item identities produce an overlap refusal with both owners',()=>{
+  const a=block({verdict:'PARTIAL',level:'P5',entries:[{item:'draft:c1'}]}),b=block({verdict:'PARTIAL',level:'P5',entries:[{item:'upload:c1'}]});
+  (a.partitions as any).delivered[0].location=`src:${DIGEST}/kityminder@1/n/c1`;(b.partitions as any).delivered[0].location=`src:${DIGEST}/kityminder@1/i/0`;
+  const model=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成节点'},children:[{data:{id:'c1',text:'合成用例',priority:2},children:[]}]}}))).model;
+  const result=run([{result:a},{result:b}],{model});assert.equal(result.error?.code,'case-review-report.overlap');assert.match(result.error?.message??'',/draft:c1.*upload:c1/);assert.match(result.error?.fix??'',/分块.*复核/);
+});
