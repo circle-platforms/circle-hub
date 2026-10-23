@@ -4,7 +4,7 @@ import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { CaseCategory, CaseRevisionNodes, CommandCoverage, Skip } from './types.ts';
 import { isBlank } from './text.ts';
 import { isRecord } from './common.ts';
-import { readCaseIndex } from './index.ts';
+import { readCaseIndex, indexBindingFix } from './index.ts';
 import { readTemplate } from './template.ts';
 import { commandCoverage } from './commands.ts';
 const TIER = 'advisory' as const;
@@ -38,7 +38,7 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
   if (coverage.uploaded) return [refute('not_indexed', `上传文件 ${document} 不在用例索引里；根 ${String(coverage.root)}，构建 ${String(coverage.build)}。下一步：用敏捷平台的文档编号重跑`, { scope: 'document', next_action: '用敏捷平台的文档编号重跑' })];
   if (coverage.rule_mismatch) return [refute('case_rule_mismatch', '按命令覆盖与索引的用例规则不一致：索引采用 marked；下一步：用默认 case_rule（不写或设为 marked）重跑，知识同步不能修复规则不一致', { scope: 'document', expected_case_rule: 'marked', actual_case_rule: coverage.case_rule, next_action: '用默认 case_rule（不写或设为 marked）重跑' })];
   if (!coverage.bound) {
-    const action = `带 case_index（同一构建，only 精确列出本次敏捷平台文档，fields=document,node,commands）重跑文档 ${document}`;
+    const action = `${indexBindingFix(lock.build, Array.isArray(s.scope) ? s.scope.filter((v): v is string => typeof v === 'string') : [])}；绑定 case_index 后重跑文档 ${document}`;
     return [unknown(`文档 ${document} 缺少用例索引 case_index；下一步：${action}`, ['case_index'], { ...data, scope: 'document', next_action: action })];
   }
   const indexIncomplete = coverage.truncated || coverage.skippedSources > 0 || coverage.cutKeys.includes(document) || coverage.unplacedRoot === null;

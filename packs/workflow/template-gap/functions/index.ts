@@ -7,12 +7,16 @@ export const compareText = (a: string, b: string): number => a < b ? -1 : a > b 
 const sha = /^[a-f0-9]{64}$/;
 const count = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
+export function indexBindingFix(build: unknown, documents: string[]): string {
+  const expected = [...new Set(documents)].sort(compareText);
+  return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
+}
 export function readCaseIndex(input: Record<string, unknown>, agileDocuments: string[]): CaseIndex | null | PackFailure {
   const bound = (input.inputs as unknown[]).filter(v => isRecord(v) && v.slot === 'case_index');
   if (bound.length === 0) return null;
   const context = isRecord(input.context) ? input.context : {};
   const expected = [...new Set(agileDocuments)].sort(compareText);
-  const fix = `锁定构建 ${String(context.build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
+  const fix = indexBindingFix(context.build, expected);
   const bad = (fact: string): PackFailure => failure('index_invalid', `用例索引不能绑定：${fact}`, fix);
   if (bound.length !== 1) return bad('case_index 只接受一份视图');
   const source = bound[0];

@@ -26,3 +26,11 @@ test('deleted cases cannot contribute commands and stale rows require synchroniz
   assert.ok(fresh.every(row => row.verdict === 'refute'));
   assert.ok(fresh.every(row => row.data?.command === 'CLI/widget/kept'));
 });
+test('missing index recovery names the locked build, exact scope and all revision fields', () => {
+  const gap = commandOutcomes(subject(null))[0]!;
+  assert.equal(gap.verdict, 'unknown');
+  const action = String(gap.data?.next_action);
+  assert.ok(action.includes(String(LOCK.build)));
+  assert.ok(action.includes(`only=${document}`));
+  assert.ok(action.includes('fields=document,node,commands,title,path_labels'));
+});
