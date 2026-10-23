@@ -225,3 +225,27 @@ test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign na
   assert.equal(xlsxParser.parse(zip(strict)).locate('c/0/B1')?.text, '10.7');
   badWorkbook({ sheet: '<worksheet xmlns="urn:synthetic:foreign"><sheetData/></worksheet>' }, /工作表部件/);
 });
+
+test('the registered XLSX parser is selected by upload extension, while non-ZIP bytes are never recognized', async () => {
+  const { createDefaultRegistry, recognize } = await import('../api.ts');
+  const { mediaTypeFor, structureOf } = await import('../../server/upload.ts');
+  const registry = createDefaultRegistry(); const bytes = workbook();
+  const mediaType = mediaTypeFor(bytes, undefined, 'synthetic.XLSX');
+  assert.equal(mediaType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  assert.equal(registry.get('xlsx@1')?.id, 'xlsx');
+  assert.equal(structureOf(registry, bytes, mediaType)?.parser, 'xlsx@1');
+  assert.equal(recognize(registry, Buffer.from('not a zip'), mediaType), null);
+  assert.equal(mediaTypeFor(bytes, 'application/octet-stream', 'synthetic.xlsx'), 'application/octet-stream');
+  assert.equal(mediaTypeFor(bytes, undefined, undefined), 'application/octet-stream');
+});
+
+test('xlsx@1 also checks XML declared by a case-insensitive media type with parameters', () => {
+  badWorkbook({ types: `<Types xmlns="${TYPES}"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="bin" ContentType="Application/XML; charset=UTF-8"/></Types>`, extra: [{ name: 'opaque.bin', text: '<a x="1" x="2"/>' }] }, /修复|不规范/);
+});
+test('ZIP legacy filename decoding covers all CP437 byte values without dropping a path character', () => {
+  for (let i = 128; i <= 255; i++) {
+    const bytes = zip([{ name: 'a.xml', flags: 0 }]); bytes[30] = i; const central = bytes.readUInt32LE(bytes.length - 6); bytes[central + 46] = i;
+    const name = [...readXlsxArchive(bytes).keys()][0]; assert.equal(name.length, 5);
+    if (i === 0x82) assert.equal(name, 'é.xml'); if (i === 0xff) assert.equal(name, '\u00a0.xml');
+  }
+});

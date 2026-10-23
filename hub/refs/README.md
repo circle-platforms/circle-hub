@@ -356,10 +356,16 @@ occurrence is silently discarded. Each fragment's data is the corresponding cell
 fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
 order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
 paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also
-apply. The same bytes and options produce the same model and deterministic ParseError reasons on rejection.
+apply. XML encodings follow xml@1 (UTF-8, ISO-8859-1 and US-ASCII; UTF-16 is not supported). The same bytes and
+options produce the same model and deterministic ParseError reasons on rejection.
 
 References for format fields: [PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT),
 [SpreadsheetML structure](https://learn.microsoft.com/en-us/office/open-xml/spreadsheet/structure-of-a-spreadsheetml-document),
 and [escaped strings](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/d34ae755-c53f-4a44-a363-c6dd3ee018a4).
 Tests generate every archive/workbook at runtime, including one interoperability case from the already-installed
 ExcelJS writer; production uses only Node zlib and the existing xml@1 parser, with no added dependency.
+
+The parser is available as `createDefaultRegistry().get('xlsx@1')`. An upload filename ending in `.xlsx` (case insensitive)
+selects `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; a caller's explicit media type takes
+precedence. ZIP bytes without a filename or media type are not guessed to be spreadsheets. Non-ZIP bytes never match
+xlsx@1. Runtime registration was appended so the existing parser preference order stays intact.
