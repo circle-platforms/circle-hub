@@ -468,3 +468,9 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 - **owner**: confirm decision 4 (content is plain text only, no second block with the JSON of the answer) against the MCP
   specification's backwards-compatibility SHOULD; if clients that ignore structuredContent must be served, a size-capped
   JSON block can be added back. Measured on the real Circle client: only the text reaches the model.
+
+## 包内本地工具的原字节下载
+
+`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和下架状态；版本必须带 tools/。无权、不存在、下架、没有工具、清单外路径、穿越路径和编码斜杠同形返回。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
+
+发送前重新核对摘要和大小，存储被改动时不给文件字节并记管理员日志；调用日志只留包号、引用及路径的摘要与长度，不留令牌、文件内容或原路径。下发不改写、不重新打包；客户端运行结果仅为“客户端预览”，Hub 沙箱中的重算核验算数。Circle 没有为此新增界面。
