@@ -639,12 +639,14 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       syntax('XLSX 工作表部件 XML 无效');
     for (const row of children(root, 'sheetData').flatMap((root) => children(root, 'row'))) {
       const number = attribute(row, 'r') === undefined ? previousRow + 1 : integer(attribute(row, 'r')!, '行号', 1);
+      if (number <= previousRow) syntax('XLSX 行号必须严格递增');
       previousRow = number;
       const cells: XlsxCell[] = [];
       let column = 0;
       for (const cell of children(row, 'c')) {
         const reference = attribute(cell, 'r') ?? `${columnName(column + 1)}${number}`;
         const position = coordinate(reference);
+        if (position.row !== number) syntax('XLSX 单元格行号与所在行号不一致');
         column = position.column;
         lastRow = Math.max(lastRow, position.row);
         const type = attribute(cell, 't') ?? 'n';
@@ -670,6 +672,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     }
     sheets.push({ name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
   }
+  if (definedNames.some((name) => name.scope !== null && name.scope >= sheets.length)) syntax('XLSX 定义名作用域指向不存在的工作表');
   const model: XlsxModel = { nulRemoved, members, relationships, sheets, sharedStrings, definedNames };
   const fragments = new Map<string, Fragment>();
   let selectorChars = 0;

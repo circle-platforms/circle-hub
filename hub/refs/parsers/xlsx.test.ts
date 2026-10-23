@@ -331,3 +331,9 @@ test('zero custom height is hidden while preserving literal row height and flags
   assert.deepEqual(document.model.sheets[0].rows.map((row) => [row.hidden, row.ht, row.customHeight]), [[true, '0', true], [false, '12.5', true], [false, '0', false]]);
   assert.equal(document.summary().hiddenRows, 1);
 });
+
+test('contradictory row coordinates and dangling defined name scopes are refused', () => {
+  for (const rows of ['<row r="1"><c r="A5"/></row>', '<row r="2"/><row r="1"/>', '<row r="1"/><row r="1"/>'])
+    badWorkbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData>${rows}</sheetData></worksheet>` }, /行号.*不一致|行号.*递增/);
+  badWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="合成" sheetId="1" r:id="sheet"/></sheets><definedNames><definedName name="合成名" localSheetId="1">A1</definedName></definedNames></workbook>` }, /作用域.*不存在/);
+});
