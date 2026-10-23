@@ -1,0 +1,38 @@
+// Retry only transient parent-side sandbox failures. Each attempt keeps the caller's resolved resource limits.
+import { setTimeout } from 'node:timers/promises';
+import { SandboxError, type SandboxErrorCode } from './errors.ts';
+
+export interface FunctionAttempt {
+  attempt: number;
+  timeoutMs: number;
+  durationMs: number;
+  delayMs: number;
+  retry: boolean;
+  code?: SandboxErrorCode;
+  reason?: string;
+}
+
+export function transientFunctionFailure(error: unknown): error is SandboxError {
+  return error instanceof SandboxError && (error.code === 'SANDBOX_TIMEOUT'
+    || (error.code === 'SANDBOX_UNAVAILABLE' && ['queue_full', 'stopping', 'spawn_failed'].includes(String(error.detail.reason))));
+}
+
+export async function retryFunction<T>(execute: () => Promise<T>, timeoutMs: number, observe?: (attempt: FunctionAttempt) => void): Promise<T> {
+  const notify = (attempt: FunctionAttempt): void => { try { observe?.(attempt); } catch { /* Diagnostics cannot change execution. */ } };
+  for (let attempt = 1; ; attempt++) {
+    const started = Date.now();
+    try {
+      const value = await execute();
+      notify({ attempt, timeoutMs, durationMs: Date.now() - started, delayMs: 0, retry: false });
+      return value;
+    } catch (error) {
+      const retry = attempt < 3 && transientFunctionFailure(error);
+      const delayMs = retry ? 50 * 2 ** (attempt - 1) : 0;
+      notify({ attempt, timeoutMs, durationMs: Date.now() - started, delayMs, retry,
+        ...(error instanceof SandboxError ? { code: error.code,
+          ...(typeof error.detail.reason === 'string' ? { reason: error.detail.reason } : {}) } : {}) });
+      if (!retry) throw error;
+      await setTimeout(delayMs);
+    }
+  }
+}

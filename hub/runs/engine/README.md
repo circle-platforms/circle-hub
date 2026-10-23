@@ -410,3 +410,12 @@ one item and two checks, separately for item and whole-run subjects: the origina
 They also verify both checks execute, every submission receives its receipt, concurrent identical repeats return identical
 receipt bytes, and only one submission, result and validate action is stored per run. Unit tests cover input/function/scope
 separation, byte-preserving result copies, mutation isolation, an input snapshot and retries after construction failure.
+
+## Retry evidence before the unknown-exit contract
+
+Transient check-function and subject-builder attempts run through the sandbox's bounded retry policy. Validation actions
+store their retry_attempts, including the first transient failure and the recovery or final failure, with operation,
+module and item where applicable, fixed codes, durations and 50/100 ms backoff. Successful first calls do not enlarge this
+retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache still
+shares successful construction only, and replay of a completed identical submission creates no new attempt or action.
+Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.

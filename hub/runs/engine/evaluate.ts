@@ -14,7 +14,7 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { createSubjectBuilder } from './subjects.ts';
@@ -35,7 +35,7 @@ import {
   type Handling,
   type JudgedOutcome,
 } from './terminals.ts';
-import { mapLimited, pointerOf, tooDeep, unique } from './util.ts';
+import { isObject, mapLimited, pointerOf, tooDeep, unique } from './util.ts';
 
 /** An item the submission handled by carrying the predecessor's fragment over (C08 R[4]). */
 export interface CarriedItem {
@@ -77,6 +77,7 @@ export interface Evaluation {
   problems: Set<string>;
   /** Requirements of the items the submission did not cover (W07 R[3]: also a repair round). */
   uncovered: Set<string>;
+  retryAttempts: Array<Record<string, unknown>>;
 }
 
 type Slots = Record<string, unknown> | null;
@@ -186,6 +187,16 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
+  const retryAttempts: Array<Record<string, unknown>> = [];
+  const sandboxFor = (operation: string, module?: string, item?: string): SandboxOptions => ({
+    ...ctx.deps.sandbox,
+    onAttempt: attempt => {
+      if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation,
+        ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}), ...attempt });
+      try { ctx.deps.sandbox?.onAttempt?.(attempt); } catch { /* Diagnostics cannot change a check. */ }
+    },
+  });
+
   // The sample marks of the locked version's checks (T02 R[1]), computed once: fact claims of a check with only author
   // samples carry author_samples_only. A model judgment never takes them — they speak about a rule's samples.
   const sampleMarks = publishCheckMarks(workflow);
@@ -436,7 +447,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }));
   };
 
-  const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>): Promise<CheckOutcome[]> => {
+  const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>, item?: string): Promise<CheckOutcome[]> => {
     let table: unknown;
     if (check.table !== undefined) {
       try {
@@ -470,14 +481,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         sourceTexts: record,
         sources: gradedSourceView(texts),
         unreadSources,
-        ...(ctx.deps.sandbox !== undefined ? { sandbox: ctx.deps.sandbox } : {}),
+        sandbox: sandboxFor('check', check.function?.module, item),
         onError,
       },
     );
     return outcomes.map((o) => bounded(check, o));
   };
   const subjectBuilder = () => createSubjectBuilder(async (target, subjectInput) =>
-    (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, ctx.deps.sandbox)).output);
+    (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, sandboxFor('subject', target.module,
+      isObject(subjectInput) && isObject(subjectInput.item) && typeof subjectInput.item.id === 'string' ? subjectInput.item.id : undefined))).output);
   const buildSubject = async (subjectFor: ReturnType<typeof createSubjectBuilder>, check: CheckEntry, builderInput: unknown, fallback: () => unknown): Promise<{ subject: unknown } | { failure: CheckOutcome }> => {
     if (check.subject === undefined) return { subject: fallback() };
     try {
@@ -542,7 +554,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         slots,
         evidence,
       }));
-      const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, ev.texts);
+      const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, ev.texts, it.id);
       let byItem = itemOutcomes.get(check.id);
       if (!byItem) itemOutcomes.set(check.id, (byItem = new Map()));
       byItem.set(it.id, outcomes);
@@ -814,5 +826,5 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     locks: { pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
-  return { result, errors, problems, uncovered };
+  return { result, errors, problems, uncovered, retryAttempts };
 }

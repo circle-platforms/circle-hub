@@ -218,6 +218,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
+    extra: { retry_attempts: saved.retryAttempts },
   });
   return answerOf(saved.result.body);
 }
@@ -238,6 +239,7 @@ interface Validated {
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */
   problems: Set<string>;
+  retryAttempts?: Array<Record<string, unknown>>;
 }
 
 const requirementsOf = (errors: readonly ProtocolError[]): Set<string> => new Set(errors.flatMap((e) => (e.requirement !== undefined ? [e.requirement] : [])));
@@ -300,11 +302,11 @@ function notAccepted(base: Basis, errors: ProtocolError[]): ValidationResult {
  * Stores the result. A result a record cannot hold (over the record limit, or nesting canonical JSON refuses) is answered not
  * accepted with SUBMISSION_SCHEMA_VIOLATION and the fix to split the target, so that every call still gets a receipt.
  */
-async function keepResult(base: Basis, outcome: Validated): Promise<{ result: StoredRecord<ValidationResult>; problems: Set<string> }> {
+async function keepResult(base: Basis, outcome: Validated): Promise<{ result: StoredRecord<ValidationResult>; problems: Set<string>; retryAttempts: Array<Record<string, unknown>> }> {
   const { ctx } = base;
   const store = ctx.deps.records.store;
   try {
-    return { result: await putResult(store, outcome.result, ctx.now().toISOString()), problems: outcome.problems };
+    return { result: await putResult(store, outcome.result, ctx.now().toISOString()), problems: outcome.problems, retryAttempts: outcome.retryAttempts ?? [] };
   } catch (error) {
     if (!(error instanceof LimitError) && !(error instanceof CanonicalizationError)) throw error;
     ctx.log({ traceId: base.call.traceId, run: base.run.run, what: 'submit_result', detail: `validation result not stored: ${describe(error)}` });
@@ -318,7 +320,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       path: '',
       fix: size !== null && limit !== null ? `把被判对象分成至少 ${Math.ceil(size / limit)} 块（每块分别开运行），或缩短陈述和引文后重交` : '把被判对象分块（每块分别开运行），或缩短陈述和引文后重交',
     });
-    return { result: await putResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set() };
+    return { result: await putResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set(), retryAttempts: outcome.retryAttempts ?? [] };
   }
 }
 
@@ -402,7 +404,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]) };
+    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: evaluation.retryAttempts };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);
@@ -411,5 +413,6 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   return {
     result: notAccepted(base, [...rejection, ...notes]),
     problems: new Set([...requirementsOf(rejection), ...evaluation.problems]),
+    retryAttempts: evaluation.retryAttempts,
   };
 }

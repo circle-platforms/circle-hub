@@ -300,3 +300,13 @@ and the model's fix has the same shape either way.
 A pack-owned generation/read-back failure may return `unknown` with reason `output_failed` from a check. It is a valid
 check outcome, not `check_error`: the requirement's static layer is incomplete and the item enters the incomplete
 partition. Other model/submission-only reasons remain invalid as check outcomes.
+
+## Bounded transient function retries
+
+callPackFunction now retries only SANDBOX_TIMEOUT and SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed.
+There are at most three attempts, with 50 and 100 ms backoff. Every attempt keeps the caller's resolved timeout and
+resource caps; no global limit is raised. Function defects, output limits, violations and missing OS isolation do not
+retry. The parent-only onAttempt observer receives fixed codes, durations and backoff, never arguments or output.
+A throwing observer cannot change execution. Retrying is centralized here: checks and subject builders do not multiply it.
+stopAll invalidates outstanding calls by generation, so backoff cannot resurrect a cancelled child; independent later
+calls can still start. Exhausted errors retain their existing conversion by runCheck; exit fields await hub-unknown-model.

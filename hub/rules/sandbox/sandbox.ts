@@ -3,7 +3,7 @@
 // model, the bootstrap's lockdown and import policy, and the parent's wall-clock, memory (resident size) and output limits.
 // Every failure is a SandboxError; the parent kills the child's whole process group and keeps working. stopAll ends every
 // running child (also when the Hub process exits); sweepOrphans (orphans.ts) ends those an earlier Hub process left behind.
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
@@ -14,6 +14,7 @@ import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable,
 import { ENTRY_EXTENSIONS } from './policy.ts';
 import { createResidentWatch, residentSizes } from './resident.ts';
 import { createSlotPool } from './slots.ts';
+import { retryFunction, type FunctionAttempt } from './retry.ts';
 
 export interface PackFunctionTarget {
   /** The extracted pack directory. */
@@ -43,6 +44,8 @@ export interface SandboxOptions {
    * model does not. Only synthetic test environments without it may pass false; the result then reports osIsolation false.
    */
   requireOsIsolation?: boolean;
+  /** Parent-side attempt metadata, never function inputs, output or messages. Observer failures are ignored. */
+  onAttempt?: (attempt: FunctionAttempt) => void;
 }
 
 export interface SandboxResult {
@@ -109,6 +112,7 @@ const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: reside
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
 let exitHook = false;
+let stopEpoch = 0;
 
 /** Pids of the running children. */
 export function livePids(): number[] {
@@ -120,6 +124,7 @@ export function livePids(): number[] {
  * many children were stopped. Synchronous, so a signal handler can call it before exiting; it also runs when the process exits.
  */
 export function stopAll(): number {
+  stopEpoch++;
   slots.rejectWaiting(() => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
   const stops = [...live.values()];
   for (const stop of stops) stop('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
@@ -234,16 +239,21 @@ export async function callPackFunction(
   limits: Partial<SandboxLimits> = {},
   options: SandboxOptions = {},
 ): Promise<SandboxResult> {
+  const epoch = stopEpoch;
   const lim = resolveLimits(limits);
   const os = await osIsolationAvailable();
   if (!os && options.requireOsIsolation !== false) {
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
   }
-  return slots.run(async () => {
-    const inputText = serializeInput(input, lim.inputBytes);
-    const pack = await preparePack(target);
-    return runChild(pack, inputText, lim, os);
-  });
+  return retryFunction(() => {
+    if (epoch !== stopEpoch) return Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
+    return slots.run(async () => {
+      const inputText = serializeInput(input, lim.inputBytes);
+      const pack = await preparePack(target);
+      if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
+      return runChild(pack, inputText, lim, os);
+    });
+  }, lim.timeoutMs, options.onAttempt);
 }
 
 function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean): Promise<SandboxResult> {
@@ -271,12 +281,18 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
 
   return new Promise<SandboxResult>((resolve, reject) => {
     const started = Date.now();
-    const child = spawn(command.command, command.args, {
-      cwd: pack.dir,
-      env: { TZ: 'UTC' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(command.command, command.args, {
+        cwd: pack.dir,
+        env: { TZ: 'UTC' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
+      });
+    } catch (error) {
+      reject(error instanceof SandboxError ? error : new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'spawn_failed' }));
+      return;
+    }
     const frameCap = lim.outputBytes + 16 * lim.logBytes + 65_536;
     const frameChunks: Buffer[] = [];
     let frameBytes = 0;
