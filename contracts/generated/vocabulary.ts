@@ -61,6 +61,7 @@ export const AXES = {
   target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
+  fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '未绑定到本运行' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'retain_only', label: '只保留不可读' }, { code: 'too_large', label: '超过大小上限' }, { code: 'unavailable', label: '暂时读不到' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -587,6 +588,15 @@ export function isPlacement(value: unknown): value is Placement {
   return (PLACEMENT as readonly unknown[]).includes(value);
 }
 
+/** 片段读取状态 (T04) */
+export const FRAGMENT_READ = ['bound', 'not_bound', 'no_fragment', 'retain_only', 'too_large', 'unavailable'] as const;
+export type FragmentRead = (typeof FRAGMENT_READ)[number];
+export const FRAGMENT_READ_LABEL = { 'bound': '已绑定可读', 'not_bound': '未绑定到本运行', 'no_fragment': '找不到片段', 'retain_only': '只保留不可读', 'too_large': '超过大小上限', 'unavailable': '暂时读不到' } as const satisfies { readonly [K in FragmentRead]: string };
+export const FragmentReadSchema = z.enum(FRAGMENT_READ);
+export function isFragmentRead(value: unknown): value is FragmentRead {
+  return (FRAGMENT_READ as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -646,6 +656,7 @@ export interface AxisValues {
   target: Target;
   measure: Measure;
   placement: Placement;
+  fragment_read: FragmentRead;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -707,6 +718,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   target: TARGET_LABEL,
   measure: MEASURE_LABEL,
   placement: PLACEMENT_LABEL,
+  fragment_read: FRAGMENT_READ_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

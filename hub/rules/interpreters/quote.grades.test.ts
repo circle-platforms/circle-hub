@@ -5,6 +5,7 @@
 // grading for references that appear only inside slot data, parsed by the boundary's own parser.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { FragmentRead } from '../../../contracts/generated/vocabulary.ts';
 import type { SourceView } from '../types.ts';
 import type { CheckOutcome } from '../../../contracts/src/tables.ts';
 import { runCheck } from '../check.ts';
@@ -21,7 +22,7 @@ const run = (sources: SourceView, subject: unknown): CheckOutcome[] => {
 };
 
 /** A graded view: text() for the bound fragments, and why() for everything else. */
-const graded = (texts: Record<string, string>, why: (reference: string) => string): SourceView => {
+const graded = (texts: Record<string, string>, why: (reference: string) => FragmentRead): SourceView => {
   const view = sourcesFrom(texts);
   return {
     text: (reference) => view.text(reference),
@@ -68,3 +69,10 @@ describe('quote@1 over the graded source view', () => {
     assert.equal(out[0].verdict, 'unknown');
   });
 });
+
+// Type checking guards the stored grading vocabulary as well as the runtime cases above.
+const invalidGrade: SourceView = { text: () => undefined,
+  // @ts-expect-error The model owns fragment read states; free-form grades cannot enter claims.
+  why: () => 'invented_grade',
+};
+void invalidGrade;

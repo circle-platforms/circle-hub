@@ -392,3 +392,44 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
    (never satisfied without a predecessor)? See Deviations.
 4. **More than 100 cases**: keep the whole refusal with the slices and blocks in its fix, or start a run of the first part?
    See Deviations.
+
+## 生成词表与包版本
+
+case-review@1.0.4 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+### 全仓词表扫描的待完成项
+
+`packs.test.ts` 扫描 hub 与全部包，不设手写轴例外或临时债务基线。只把生成器明确列出的包内快照当生成物，且仍逐字核对生成结果。当前以下 K2 文件尚未修改；在这些命中清完前，全仓扫描失败，本项不能合并：
+
+| 文件 | 当前行 | 轴 | 处理方 |
+| --- | --- | --- | --- |
+| hub/knowledge/lists.ts | 284 | action_result | K2 |
+| hub/knowledge/test-support.ts | 179 | placement | K2 |
+| hub/knowledge/test-support.ts | 385 | read_tier | K2 |
+| hub/knowledge/views.ts | 47 | entry_kind | K2 |
+| hub/server/tools.ts | 508 | call_result | K2 |
+| hub/runs/engine/submit.ts | 179 | acceptance | K2，合并后由 core-fixes 补完剩余 |
+
+行号是本任务工作树的定位，不代表 K2 分支合并后的行号。第 4 项需要新增的轴只有已获模型负责人授权的 T04 `fragment_read`；其他命中使用既有轴。
+
+### 本次验证记录（第 4 项尚未完成）
+
+类型检查 `npx tsc --noEmit` 和 `node tools/gen-contracts.ts --check` 通过；后者核对 63 份核心生成物及 5 份包内快照。
+
+以下串行命令共运行 1,439 项：1,436 通过，2 失败，1 跳过。失败之一为上表 6 处 K2 命中的全仓扫描；另一项是本包静态导入测试原本只允许平铺文件，尚未允许已获授权的包内生成文件。后者已改为只额外允许 `./generated/vocabulary.ts`，保持禁止包外运行时导入；其所在 `functions/tables.test.ts` 复测 11 项全部通过。`packs.test.ts` 最后复测为 16 项、15 通过、1 失败，唯一失败仍是 K2 清单。跳过的是 `without sandbox-exec the default refuses to run`，原因是本机具备 sandbox-exec，因此该反向环境分支不适用；没有把跳过计作通过。
+
+```sh
+node --test --test-concurrency=1 \
+  "hub/runs/**/*.test.ts" "hub/rules/**/*.test.ts" "hub/records/**/*.test.ts" \
+  hub/leases/service.test.ts \
+  "packs/workflow/case-review/**/*.test.ts" "packs/workflow/case-review-verify/**/*.test.ts" \
+  "packs/workflow/case-location/**/*.test.ts" "packs/workflow/case-compile/**/*.test.ts" \
+  "packs/workflow/maintenance-sweep/**/*.test.ts" "packs/workflow/regression-scope/**/*.test.ts" \
+  "packs/workflow/test-bed/**/*.test.ts" "packs/workflow/quality-board/**/*.test.ts" \
+  "packs/workflow/traceability/**/*.test.ts" \
+  tools/gen-contracts.pack-vocabulary.test.ts contracts/src/generator.test.ts
+node --test --test-concurrency=1 packs/workflow/case-review/functions/tables.test.ts
+node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
+```
+
+生成器定向测试（`tools/gen-contracts.pack-vocabulary.test.ts` 与 `contracts/src/generator.test.ts`）22 项通过，覆盖包快照缺失、被改动、词表变化及 CLI 检查。第 3 项缺陷转用例的完整测试另运行 `node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"`，65 项通过。

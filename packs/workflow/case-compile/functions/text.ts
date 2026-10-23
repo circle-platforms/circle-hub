@@ -1,3 +1,4 @@
+import type { Verdict, CheckTier, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Shared helpers of the case-compile pack functions (pure TypeScript, no imports outside the pack).
 
 export const PACK = 'case-compile';
@@ -25,12 +26,12 @@ export function refusal(code: string, message: string, fix: string, warnings: Pa
 
 /** A check outcome, statement always closed by the two markers (the synthetic one only when the contract is synthetic). */
 export interface Outcome {
-  verdict: 'support' | 'refute' | 'unknown';
+  verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
   grounds: string[];
-  tier: 'blocking' | 'advisory';
-  reason?: 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed';
+  tier: CheckTier;
+  reason?: Extract<UnknownReason, 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed'>;
   item?: string;
   /** Where the judged content sits in the subject (the /data/... forms of this pack, or the interpreter's own). */
   pointer?: string;

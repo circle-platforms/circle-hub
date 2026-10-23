@@ -2144,7 +2144,8 @@
     "E3-117"
    ],
    "changes": [
-    "引文范围包括本次上传的被判对象（画布修正 31）"
+    "引文范围包括本次上传的被判对象（画布修正 31）",
+    "新增 fragment_read 片段读取状态轴；来源：集成者 2026-10-23 终审：检查时的片段分级不能手写取值"
    ],
    "changes3": [
     "解析范围扩到全部已绑定输入（复核 P4.G5）",
@@ -5169,6 +5170,37 @@
     {
      "code": "judgment_allowed",
      "label": "可由 bot 提议归位"
+    }
+   ]
+  },
+  {
+   "axis": "fragment_read",
+   "label": "片段读取状态",
+   "owner": "T04",
+   "values": [
+    {
+     "code": "bound",
+     "label": "已绑定可读"
+    },
+    {
+     "code": "not_bound",
+     "label": "未绑定到本运行"
+    },
+    {
+     "code": "no_fragment",
+     "label": "找不到片段"
+    },
+    {
+     "code": "retain_only",
+     "label": "只保留不可读"
+    },
+    {
+     "code": "too_large",
+     "label": "超过大小上限"
+    },
+    {
+     "code": "unavailable",
+     "label": "暂时读不到"
     }
    ]
   }

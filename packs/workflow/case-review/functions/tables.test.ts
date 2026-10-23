@@ -205,7 +205,7 @@ describe('the pack functions', () => {
         .filter((line) => !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*') && !line.trimStart().startsWith('/**'))
         .join('\n');
       for (const match of code.matchAll(/^\s*import\s+(type\s+)?[^'"]*from\s+'([^']+)'/gm)) {
-        if (match[1] === undefined) assert.match(match[2], /^\.\/[a-z-]+\.ts$/, `${name} imports ${match[2]} at run time`);
+        if (match[1] === undefined) assert.match(match[2], /^\.\/(?:[a-z-]+\.ts|generated\/vocabulary\.ts)$/, `${name} imports ${match[2]} at run time`);
       }
       for (const forbidden of [/\bDate\b/, /Math\.random/, /\bprocess\b/, /\brequire\(/, /\bfetch\(/, /\bsetTimeout\b/, /\bperformance\b/, /\beval\(/, /new Function/, /\bimport\(/, /\bglobalThis\b/, /from 'node:/, /\bBuffer\b/]) {
         assert.ok(!forbidden.test(code), `${name} uses ${forbidden}`);

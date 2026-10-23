@@ -1,3 +1,4 @@
+import type { ChangeKind, Verdict, CheckTier, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Pack checks. command_exists: a case on a removed path is a blocking refutation. command_unchanged: first the whole
 // command diff as one cross-item fact (one line per changed path with its earlier-build case count, grounded on the
 // impact view), then a case on a modified path whose definition data differ is an advisory refutation. A well-formed
@@ -24,7 +25,7 @@ interface ParsedField {
 
 interface ParsedReason {
   detail: number;
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
 }
 
 interface DetailRow {
@@ -34,12 +35,12 @@ interface DetailRow {
 }
 
 interface Outcome {
-  verdict: 'support' | 'refute' | 'unknown';
+  verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
   grounds: string[];
-  tier: 'blocking' | 'advisory';
-  reason?: 'missing_input' | 'integrity_unproven' | 'check_error';
+  tier: CheckTier;
+  reason?: Extract<UnknownReason, 'missing_input' | 'integrity_unproven' | 'check_error'>;
   item?: string;
   data?: { [key: string]: unknown };
 }

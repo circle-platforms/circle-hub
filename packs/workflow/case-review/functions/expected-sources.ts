@@ -1,3 +1,4 @@
+import { MEASURE, type Measure } from './generated/vocabulary.ts';
 // Expected sources of a case-review run (pack function): the PLM stories and bugs named in the document title and the folders
 // above it, and a manual search for the feature words of the title. Only external object ids come out; the Hub reads them
 // with the system packs and binds what it read (role expected) with its revision.
@@ -243,7 +244,7 @@ function readRange(value: unknown): IdRange | null | undefined {
   if (value === undefined) return null;
   if (!isRecord(value) || Object.keys(value).some((key) => key !== 'min' && key !== 'max')) return undefined;
   const range: IdRange = {};
-  for (const key of ['min', 'max'] as const) {
+  for (const key of MEASURE.filter((key): key is Extract<Measure, 'min' | 'max'> => key === 'min' || key === 'max')) {
     const bound = value[key];
     if (bound === undefined) continue;
     if (typeof bound !== 'number' || !Number.isSafeInteger(bound) || bound < 0) return undefined;

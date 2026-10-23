@@ -1,3 +1,4 @@
+import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 // Test harness against the real Hub parts (not part of the pack): a records kit in a temporary PostgreSQL, the real pack
 // registry and run engine, and a fake external reader that serves synthetic impact views. The pack binds no product line.
 import { join } from 'node:path';
@@ -141,7 +142,7 @@ export async function openHub(postgres: TemporaryPostgres, options: OpenHubOptio
       now,
       adminLog: (entry) => logs.push(entry),
     });
-    const principal = (u: { id: string; name: string; role: 'user' | 'admin' }): Principal => ({ id: u.id, name: u.name, role: u.role });
+    const principal = (u: { id: string; name: string; role: PermissionRole }): Principal => ({ id: u.id, name: u.name, role: u.role });
     return {
       kit,
       registry,

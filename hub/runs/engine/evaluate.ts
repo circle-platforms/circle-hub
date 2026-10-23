@@ -3,7 +3,7 @@
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
@@ -350,18 +350,18 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
   let fragmentScope: ReturnType<typeof buildScope> | undefined;
-  const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
-  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
+  const fragmentCache = new Map<string, Promise<{ text?: string; why: FragmentRead }>>();
+  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: FragmentRead }> => {
     let pending = fragmentCache.get(reference);
     if (pending === undefined) {
-      pending = (async () => {
+      pending = (async (): Promise<{ text?: string; why: FragmentRead }> => {
         let ref: ReturnType<typeof parseReference>;
         try {
           ref = parseReference(reference);
         } catch {
           return { why: 'unavailable' };
         }
-        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: string }> => {
+        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: FragmentRead }> => {
           if (!r.resolved) {
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
@@ -396,7 +396,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
   };
   const warmed = new Map<string, string>();
-  const warmedWhy = new Map<string, string>();
+  const warmedWhy = new Map<string, FragmentRead>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest

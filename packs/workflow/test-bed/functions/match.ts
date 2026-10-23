@@ -1,3 +1,4 @@
+import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 // matchNeed: which bed fits the need, from the normalized manifest beds, the installed-build reports, the build
 // alias map (a name to the base build it uses, the same base/base writing as the case-location candidates), the
 // lease table (key → until) and now. Pure; the wording of every conclusion says “Hub 记录里”, because Hub records
@@ -18,7 +19,7 @@ export interface Need {
 /** What one device holds: the reported build, where the report came from, and when. */
 export interface Installed {
   build: string;
-  source: 'declared' | 'observed';
+  source: Extract<ProvenanceType, 'declared' | 'observed'>;
   /** When the report was made; absent for a manifest declaration (the document carries no per-entry time). */
   at?: string;
 }

@@ -1,3 +1,4 @@
+import type { ProducerKind } from '../../contracts/generated/vocabulary.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
 import type { RunsService } from '../ports.ts';
@@ -11,7 +12,7 @@ import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs
 export function sourceReaderFor(
   records: RecordsKit,
   principal: Principal,
-  consumer: 'function' | 'model' = 'function',
+  consumer: Extract<ProducerKind, 'function' | 'model'> = 'function',
   note: (reason: string) => void = () => {},
 ): SourceReader {
   return {

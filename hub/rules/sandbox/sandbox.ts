@@ -1,3 +1,4 @@
+import type { CallResult } from '../../../contracts/generated/vocabulary.ts';
 // callPackFunction: runs one pure pack function in a fresh, isolated child process and returns its JSON output.
 // Layers: pre-flight scan of the pack (no links, no special files), CPU-time ulimit, sandbox-exec on macOS, the Node permission
 // model, the bootstrap's lockdown and import policy, and the parent's wall-clock, memory (resident size) and output limits.
@@ -202,7 +203,7 @@ function serializeInput(input: unknown, limit: number): string {
 }
 
 interface Frame {
-  status: 'ok' | 'error';
+  status: Extract<CallResult, 'ok' | 'error'>;
   output?: unknown;
   code?: unknown;
   detail?: unknown;

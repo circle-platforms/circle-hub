@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { packVocabularyFiles } from '../../../tools/gen-contracts.ts';
 import { AXES } from '../../../contracts/generated/vocabulary.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { StartRunInput } from '../../../contracts/src/tools.ts';
@@ -95,7 +96,7 @@ function handWrittenAxes(text: string): Array<{ line: number; axis: string; valu
 
 describe('the vocabulary', () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const owned = ['packs/workflow/case-review', 'packs/workflow/case-review-verify', 'packs/product', 'packs/system', 'tests/fixtures'];
+  const owned = ['hub', 'packs', 'tests/fixtures'];
   const sources = (dir: string): string[] =>
     readdirSync(join(root, dir))
       .sort()
@@ -112,47 +113,18 @@ describe('the vocabulary', () => {
     assert.deepEqual(handWrittenAxes("type F = 'APV' | 'NSAE' | 'other'; const f = ['positive', 'negative'];"), []);
   });
 
-  interface VocabularyScanException {
-    file: string;
-    values: string[];
-    reason: string;
-  }
-
-  const EXCEPTIONS: VocabularyScanException[] = [
-    {
-      file: 'packs/workflow/case-review/functions/expected-sources.ts',
-      values: ['min', 'max'],
-      reason: '编号范围对象的键，不是度量',
-    },
-    {
-      file: 'packs/workflow/case-review-verify/functions/expected-sources.ts',
-      values: ['min', 'max'],
-      reason: '编号范围对象的键，不是度量',
-    },
-  ];
-
-  it('is never written by hand in the code of this package: the generated types and schemas are used', () => {
-    const hits = new Map<VocabularyScanException, number>(EXCEPTIONS.map((e) => [e, 0]));
+  it('uses generated axes in hub and every pack without handwritten exceptions', () => {
     const found: string[] = [];
+    const generated = packVocabularyFiles(root);
     for (const path of owned.flatMap(sources)) {
       const text = readFileSync(join(root, path), 'utf8');
-      for (const h of handWrittenAxes(text)) {
-        const match = EXCEPTIONS.find(
-          (e) => e.file === path && e.values.length === h.values.length && e.values.every((v, i) => v === h.values[i]),
-        );
-        if (match) {
-          hits.set(match, (hits.get(match) ?? 0) + 1);
-        } else {
-          found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
-        }
+      if (Object.hasOwn(generated, path)) {
+        assert.equal(text, generated[path], `${path} 必须与生成器一致`);
+        continue;
       }
-    }
-    for (const exc of EXCEPTIONS) {
-      assert.equal(
-        hits.get(exc),
-        1,
-        `例外表条目 ${exc.file} [${exc.values.join(', ')}] 命中次数为 ${hits.get(exc)}，必须正好命中 1 次（理由：${exc.reason}）`,
-      );
+      for (const h of handWrittenAxes(text)) {
+        found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
+      }
     }
     assert.deepEqual(found, []);
   });

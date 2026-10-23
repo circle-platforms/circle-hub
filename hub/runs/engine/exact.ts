@@ -3,7 +3,7 @@
 // fragment its reference resolves to; every command resolves against the locked catalogs or, taken verbatim from a bound
 // source, as a quotation of it (T04 R[5]). A value that does not resolve keeps the whole submission from being accepted
 // (T03 R[3]); a statement the catalog contradicts is not an unresolved value but a fact the checks judge.
-import type { Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
@@ -56,7 +56,7 @@ export function recordBytes(record: { kind: string; schema: string; provenance: 
 }
 
 /** The scope of a run for one reader. `consumer` decides what text a reader is given (functions for the boundary, model for previews). */
-export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: 'function' | 'model'): Promise<RunScope> {
+export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: Extract<ProducerKind, 'function' | 'model'>): Promise<RunScope> {
   const { store, artifacts } = ctx.deps.records;
   const sources = new Map<string, SourceRole>();
   const records = new Map<string, SourceRole | null>();
@@ -158,7 +158,7 @@ export function scopeProblem(ref: Reference, scope: RunScope): string | null {
   }
 }
 
-export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'function' | 'model'): Resolver {
+export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Extract<ProducerKind, 'function' | 'model'>): Resolver {
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();

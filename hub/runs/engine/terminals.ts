@@ -1,3 +1,4 @@
+import type { Verdict } from '../../../contracts/generated/vocabulary.ts';
 // Layer terminals, requirement status and attribution (V01, V03, V04, W02 R[4]-R[5], W07 R[2]-R[3], T03 R[4]). Pure: the
 // evaluation hands in the check outcomes of one (item, requirement) and what the submission said about the item; nothing
 // here reads records. Per-value behaviour is in tables typed against the vocabulary, so a new value does not compile until
@@ -69,7 +70,7 @@ export type Handling = 'handled' | 'skipped' | 'not_covered';
 
 /** What the check contract expects for one (item, requirement): support, or a refutation with one of some codes. */
 export interface Expectation {
-  outcome: 'support' | 'refute';
+  outcome: Extract<Verdict, 'support' | 'refute'>;
   codes: string[];
 }
 

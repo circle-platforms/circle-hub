@@ -299,3 +299,9 @@ and the model's fix has the same shape either way.
 A pack-owned generation/read-back failure may return `unknown` with reason `output_failed` from a check. It is a valid
 check outcome, not `check_error`: the requirement's static layer is incomplete and the item enters the incomplete
 partition. Other model/submission-only reasons remain invalid as check outcomes.
+
+### Fragment read vocabulary
+
+`SourceView.why`, the engine's fragment cache and its warmed grades use the generated `FragmentRead` type from the
+model's T04 `fragment_read` axis. Resolution state, unknown reason and read tier keep their own meanings; none is used
+as a substitute for the fragment read state. The model owner authorized this axis at the 2026-10-23 final review.
