@@ -577,3 +577,5 @@ oversized values. Routing accepts a shape-valid oversized identity only when its
 inputs reach read() and preserve the byte count in the administrator note. executeRead uses the same counted reason
 before any plan, login or request; malformed identities and unknown types do not become accepted reads. Synthetic tests
 cover the real createTestHub start_run path, executeRead, and absence of request/key echoes.
+
+External-id size advice in core is deliberately generic (缩短读取键后重读). Product-specific name-set or product-id advice remains in the system pack. The non-PLM oversized-key regression checks the actual reader entry.

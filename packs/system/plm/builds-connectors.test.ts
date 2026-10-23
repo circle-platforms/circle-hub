@@ -143,3 +143,11 @@ test('oversized enabled external identities route to counted failures through ex
   assert.match(answer.reason, /901 字节/); assert.match(answer.reason, /900 字节上限/);
   assert.ok(!answer.reason.includes(key)); assert.equal(plm.requests.length, before);
 });
+
+test('an oversized non-PLM key gets generic connector advice only', async () => {
+  const answer = await kit.connectors.reader.read('svn:file:' + 'docs/'.repeat(179), context());
+  assert.equal(answer.ok, false); if (answer.ok) throw new Error('unexpected success');
+  assert.match(answer.reason, /904 字节.*900 字节上限/);
+  assert.match(answer.reason, /缩短读取键/);
+  assert.doesNotMatch(answer.reason, /产品编号|名字集合|plm:builds/);
+});

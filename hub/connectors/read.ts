@@ -150,7 +150,7 @@ interface CacheEntry {
 export const MAX_EXTERNAL_ID_BYTES = 900;
 export function externalSizeReason(id: string): string | null {
   const bytes = Buffer.byteLength(id, 'utf8');
-  return bytes > MAX_EXTERNAL_ID_BYTES ? `外部对象标识是 ${bytes} 字节，超过 ${MAX_EXTERNAL_ID_BYTES} 字节上限；缩短名字集合或改用产品编号后重读` : null;
+  return bytes > MAX_EXTERNAL_ID_BYTES ? `外部对象标识是 ${bytes} 字节，超过 ${MAX_EXTERNAL_ID_BYTES} 字节上限；缩短读取键后重读` : null;
 }
 
 export function parseExternal(id: string): ReadSubject | null {
