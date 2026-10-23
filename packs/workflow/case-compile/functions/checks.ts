@@ -1,4 +1,5 @@
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
+import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './g-syntax.ts';
 import { gOptions } from './generate.ts';
 import { isRecord, markers, type Outcome } from './text.ts';
@@ -107,7 +108,7 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
     if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符的有效原文；从引文选择可写片段', `${pointer}/text`));
-    if (!replacedQuote(expect.quote.text, slots.replacements).includes(expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望文字不是套用地址替换表后引文的逐字片段', `${pointer}/text`));
+    if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望文字不符合地址替换后引文的逐字规则（只忽略引文规则允许的空白差异）；从替换后引文选择片段并自动重核', `${pointer}/text`));
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));
   }

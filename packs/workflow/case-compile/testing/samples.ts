@@ -61,6 +61,8 @@ export function writeSamples(): void {
     save('positive', rule.name, rule.check, subjectOf(goodData()).subject);
     const bad = goodData(); rule.change(bad); save('negative', rule.name, rule.check, subjectOf(bad).subject, `case-compile.${rule.code}`);
   }
+  const cjk=goodData();cjk.expects[0].quote.text='页面跳转到\n首页';cjk.expects[0].text='页面跳转到首页';save('positive','quote-wide-whitespace','expected_sources',subjectOf(cjk).subject);cjk.expects[0].text='页面跳转到登录页';save('negative','quote-wide-whitespace','expected_sources',subjectOf(cjk).subject,'case-compile.expect_not_in_quote');
+  const latin=goodData();latin.expects[0].quote.text='set  10\t0';latin.expects[0].text='set 10 0';save('positive','quote-latin-boundary','expected_sources',subjectOf(latin).subject);latin.expects[0].text='set 100';save('negative','quote-latin-boundary','expected_sources',subjectOf(latin).subject,'case-compile.expect_not_in_quote');
   const quoted=goodData();quoted.steps[1].args=["curl 'http://192.0.2.90/index.html?id=1'"];save('positive','quoted-host-url','contract_shape',subjectOf(quoted).subject);quoted.steps[1].args=['curl http://192.0.2.90/index.html?id=1'];save('negative','quoted-host-url','contract_shape',subjectOf(quoted).subject,'case-compile.host_shell_dynamic');
   const fraction=goodData();fraction.steps[1].args=['ping -i 0.2 -c 3 192.0.2.90'];save('positive','subsecond-host-option','bed_addresses',subjectOf(fraction).subject);fraction.steps[1].args=['curl -m 2.5 http://192.0.2.90/'];save('negative','subsecond-host-option','bed_addresses',subjectOf(fraction).subject,'case-compile.address_notation');
   const extra = structuredClone(CONTRACT_DOC); const method = extra.entries.find((v) => v.e === 'widget-host' && v.f === 'shell')!;

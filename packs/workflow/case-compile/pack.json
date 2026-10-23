@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "92cfa1a14811f97117e9afc07c733314484f1696bf2261f48ba0b10ea148bc37",
-      "size": 14808
+      "sha256": "7909ed1f6fbec39491818bcbcaed6ac043aa9dfc805a8c5912b893ceb153652c",
+      "size": 14946
     },
     {
       "path": "functions/g-syntax.ts",
@@ -100,6 +100,16 @@
       "path": "functions/project.ts",
       "sha256": "d9ed78e1add9ad5009d558e12b8a102b97ccd7639414e83ead89fa88ccc5024a",
       "size": 10535
+    },
+    {
+      "path": "functions/quote-width.ts",
+      "sha256": "614774cd365ceb799a87a9c13e513ba0c44d75c30c5829b4a1c474bb404d4a99",
+      "size": 4781
+    },
+    {
+      "path": "functions/quote.ts",
+      "sha256": "17fa49bd823c1e48578f2e46203863337ff3aaae06c0ce676facd91eb92fbb44",
+      "size": 840
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -302,6 +312,11 @@
       "size": 14758
     },
     {
+      "path": "samples/negative/quote-latin-boundary.json",
+      "sha256": "f08d11f099a11d592a039bbb861ea4ee384c15ddef048ce38843ee5ccd1b79d3",
+      "size": 14727
+    },
+    {
       "path": "samples/negative/quote-mismatch.json",
       "sha256": "4a6be7afb94096655b0f2470a6e91a8c58a596e226372a68f377c8ee0caabc7c",
       "size": 661
@@ -310,6 +325,11 @@
       "path": "samples/negative/quote-unpaired.json",
       "sha256": "8786d918ddc5aa33dbe92a9df6c8d2035859ccbff0def6035eb9da6cafd12c9f",
       "size": 14750
+    },
+    {
+      "path": "samples/negative/quote-wide-whitespace.json",
+      "sha256": "72b0f4e3239524534f611887b453c030190be10a6c1d9247c89fcf4a2ff15266",
+      "size": 14759
     },
     {
       "path": "samples/negative/quoted-host-url.json",
@@ -363,7 +383,7 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "25cf3333472d5faa69553e1705a7347934b1a891053fa459a27d12a715f37f07",
+      "sha256": "3e1d3d9a2377401fee5f0b69b61c1b7fa2d914eb6dc896fd84b68eb4b92b03cb",
       "size": 29477
     },
     {
@@ -527,6 +547,11 @@
       "size": 14714
     },
     {
+      "path": "samples/positive/quote-latin-boundary.json",
+      "sha256": "2086cbb679747d87bdde59eff6fd007575a6c343e348ec1420f3296646f830eb",
+      "size": 14679
+    },
+    {
       "path": "samples/positive/quote-mismatch.json",
       "sha256": "13cb9b4a026e056c9681eafcb6557c651772db5f20645ba99a95f31728636e5d",
       "size": 642
@@ -534,6 +559,11 @@
     {
       "path": "samples/positive/quote-unpaired.json",
       "sha256": "4cac1b2cfb7123322c0230d24dbd9232896aab36d1a3a80fb6e8ec5d339d56d7",
+      "size": 14707
+    },
+    {
+      "path": "samples/positive/quote-wide-whitespace.json",
+      "sha256": "db1b3a3537c5635ddf20d0b036f68aacea60956123f54da0f773cbd36ab2db2b",
       "size": 14707
     },
     {
@@ -588,7 +618,7 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "ce410b6519297f3f41fa386b13e37104b32e9f632d0bcbc90a4cf651934bde89",
+      "sha256": "37f553fe4887f0c1fe55f060b62690c812ca58c78d00fef415585df3b0126a43",
       "size": 29431
     },
     {
@@ -628,7 +658,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "3715c243b971cb5149527d3a5202ac7a0a259be424308d58bb9544d22f35ecb1",
+      "sha256": "5ee12b5bfc4d1f979dcf4fc5d0f585c412ef0b28b18b649bab4ae0c304a3693e",
       "size": 555
     },
     {
