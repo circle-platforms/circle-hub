@@ -42,7 +42,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.equal(reads, 3);
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
-      const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'exact_source');
+      const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'read');
       assert.deepEqual(attempts.map(attempt => attempt.attempt), [1, 2, 3]); return;
     }
     assert.ok(h.logs.some(entry => entry.detail.includes('SyntheticPrivateReadFailure')));

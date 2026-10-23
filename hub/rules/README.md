@@ -303,7 +303,8 @@ partition. Other model/submission-only reasons remain invalid as check outcomes.
 
 ## Bounded transient function retries
 
-callPackFunction now retries only SANDBOX_TIMEOUT and SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed.
+callPackFunction retries startup SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed; engine callers alone
+opt in to one wall-clock SANDBOX_TIMEOUT retry. CPU-limit timeouts are never retried.
 There are at most three attempts, with 50 and 100 ms backoff. Every attempt keeps the caller's resolved timeout and
 resource caps; no global limit is raised. Function defects, output limits, violations and missing OS isolation do not
 retry. The parent-only onAttempt observer receives fixed codes, durations and backoff, never arguments or output.

@@ -80,7 +80,7 @@ for (const mode of ['recover', 'exhaust', 'size', 'retain', 'hub-retain', 'binar
     if (mode === 'recover' || mode === 'exhaust') {
       const actions = (await h.kit.store.find<ActionBody>({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items;
       const action = actions.find(action => action.body.action === 'validate')!;
-      const attempts = (action.body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'bound_source');
+      const attempts = (action.body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'read');
       assert.deepEqual(attempts.map(attempt => attempt.attempt), [1, 2, 3]);
       assert.deepEqual(attempts.map(attempt => attempt.delayMs), [50, 100, 0]);
     }

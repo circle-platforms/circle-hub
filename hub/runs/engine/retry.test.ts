@@ -48,8 +48,9 @@ for (const operation of ['check', 'subject']) test(`recovered ${operation} attem
     const saved = await actions(); assert.equal(saved.length, 1);
     const attempts = saved[0].body.detail.retry_attempts as Array<Record<string, unknown>>;
     assert.equal(attempts.length, 2); assert.deepEqual(attempts.map(attempt => attempt.attempt), [1, 2]);
-    assert.equal(attempts[0].code, 'SANDBOX_TIMEOUT'); assert.equal(attempts[0].delayMs, 50);
-    assert.ok(attempts.every(attempt => attempt.operation === operation));
+    assert.equal(attempts[0].reason, 'timeout');
+    assert.ok(attempts.every(attempt => attempt.code === undefined && attempt.component === run.pack)); assert.equal(attempts[0].delayMs, 50);
+    assert.ok(attempts.every(attempt => attempt.operation === 'validate'));
     const before = failures;
     assert.deepEqual(await h.service.submitResult(h.alice, submission, h.call()), answer);
     assert.equal(failures, before); assert.equal((await actions()).length, 1);

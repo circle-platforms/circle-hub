@@ -16,7 +16,8 @@ import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
-import { type EngineContext } from './deps.ts';
+import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
+import { attemptEvidence } from './retry-evidence.ts';
 import { retryRead, type ReadFailureReason } from './retry-read.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
@@ -195,12 +196,12 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
   const retryAttempts: Array<Record<string, unknown>> = [];
-  const sandboxFor = (operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
+  const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
     retryWallTimeout: true,
     onAttempt: attempt => {
-      if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation, ...extra,
-        ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}), ...attempt });
+      if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('validate', run.pack, attempt, { ...extra,
+        ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}) }));
       try { ctx.deps.sandbox?.onAttempt?.(attempt); } catch { /* Diagnostics cannot change a check. */ }
     },
   });
@@ -322,7 +323,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           const parsed = parseReference(reference);
           const result = await retryRead(() => resolveReference(parsed, resolveCtx), result => result.resolved ? null
             : { reason: result.reason ?? result.code, retry: result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
-              if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation: 'bound_source', reference, ...attempt });
+              if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
           if (!result.resolved) {
             return { resolved: false, text: null, reason: result.reason ?? result.code };

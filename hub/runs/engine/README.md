@@ -413,14 +413,14 @@ separation, byte-preserving result copies, mutation isolation, an input snapshot
 ## Retry evidence before the unknown-exit contract
 
 Transient check-function and subject-builder attempts run through the sandbox's bounded retry policy. Validation actions
-store their retry_attempts, including the first transient failure and the recovery or final failure, with operation,
-module and item where applicable, fixed codes, durations and 50/100 ms backoff. Successful first calls do not enlarge this
+store their retry_attempts, including the first transient failure and the recovery or final failure, with a generated action_kind operation and component@version,
+module and item where applicable, generated reasons, durations and 50/100 ms backoff. Successful first calls do not enlarge this
 retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache
 shares successful construction and exhausted transient failures, and replay of a completed identical submission creates no new attempt or action.
 Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
 
 Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
-action retains bound_source retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
+action retains read retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
 use registered check_error or integrity_unproven, an unresolved selector REFERENCE_UNRESOLVED. Text that cannot be provided
 uses missing_input; a pinned text exceeding reads.max_bytes uses budget_exhausted. Deterministic no-text/size limits do not
 repeat identical reads. Free-text diagnostics go only to the admin log. Every affected check outcome carries the actual
@@ -495,3 +495,7 @@ gets a fresh cycle. Ordinary build failures and Hub-copy failures keep their sep
 
 Resolver diagnostics from both runner and Hub evaluation contexts, exact references and exhausted scope reads retain
 the actual cause only in the administrator log. Caller answers, stored unread_sources and retry evidence contain no raw error text.
+
+Retry evidence uses action_kind read/validate and the actual versioned pack or engine component; module/item/reference
+identify the operation without a new classification axis. Sandbox control codes and queue_full/spawn_failed/stopping
+remain parent-only diagnostics; persisted reasons map to timeout, budget_exhausted or check_error.

@@ -29,7 +29,8 @@ import {
   type Resolved,
 } from '../../refs/api.ts';
 import type { CatalogView } from '../../rules/api.ts';
-import type { EngineContext } from './deps.ts';
+import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
+import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
 import { recordReader, sourceReader } from './readers.ts';
@@ -62,7 +63,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   const readScope = async <T>(reference: string, read: () => Promise<T>): Promise<T> => {
     try {
       return await retryRead(read, () => null, attempt => {
-        if (attempt.retry || attempt.attempt > 1) attempts.push({operation:'exact_source', reference, ...attempt});
+        if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
       });
     } catch (error) {
       ctx.log({traceId:null,run:run.run,what:'exact scope read',detail:describe(error)});
@@ -207,7 +208,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
       try {
         result = await retryRead(() => resolveReference(ref, context), result => !result.resolved
           && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
-          attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push({ operation: 'exact_source', reference: canonical, ...attempt }); });
+          attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference:canonical})); });
       } catch (error) {
         ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
