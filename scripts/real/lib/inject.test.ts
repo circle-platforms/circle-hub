@@ -254,3 +254,21 @@ test('review 19: keep counts marked cases using the selected case rule', () => {
   assert.equal(caseNodesOf(parseMindMap(firstCases(source, 2)), { caseRule: 'marked' }).length, 2);
   assert.equal(caseNodesOf(parseMindMap(firstCases(source, 2, { caseRule: 'tagged' })), { caseRule: 'tagged' }).length, 0);
 });
+
+test('closure refusal reasons are fixed at throw sites even when private values resemble another reason', () => {
+ const source=document(); source.root.children!.push(group('empty','empty'));
+ const manual={text:'manual allows 10',sha256:'a'.repeat(64)};
+ const op={kind:'contradict_manual' as const,node:'c3',from:'生成甲',to:'999',quote:'manual allows 10'};
+ const checks:Array<{op:Planned['op'];seen_by?:Planned['seen_by'];manual?:ManualFragment;reason:string;line:string}>=[
+  {op:{...op,to:'10'},manual,reason:'to_in_quote',line:'to 不构成矛盾'},
+  {op:{...op,from:'manual'},manual,reason:'from_not_found',line:'期望中找不到 from'},
+  {op:{...op,from:''},manual,reason:'empty_operand',line:'from、to、quote 或 text 必须为非空文本'},
+  {op:{...op,quote:'not verbatim'},manual,reason:'quote_not_verbatim',line:'quote 不在片段里或格式不合法'},
+  {op,reason:'missing_manual',line:'缺少 --manual 输入'},
+  {op,manual,seen_by:'mechanical',reason:'seen_by',line:'seen_by 不符合可见性'},
+  {op:{kind:'delete_negative_group',node:'g1'},reason:'group_not_negative',line:'分组包含非反向用例'},
+  {op:{kind:'delete_negative_group',node:'empty'},reason:'group_empty',line:'分组没有用例'},
+  {op:{kind:'delete_expected',node:'private-manual-node'},reason:'node_not_found',line:'目标节点不存在'},
+ ];
+ for(const c of checks) assert.throws(()=>inject(source,[{label:'synthetic',seen_by:c.seen_by ?? 'judgment',op:c.op}],{manual:c.manual}),e=>e instanceof Error && 'reason' in e && e.reason===c.reason && e.message===`计划第 1 条（${c.op.kind}）：${c.line}`);
+});
