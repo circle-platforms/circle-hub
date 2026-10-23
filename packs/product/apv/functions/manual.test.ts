@@ -770,6 +770,27 @@ describe('applicability from explicit conditions', () => {
     assert.ok(Date.now() - started < 500, 'a hostile clause must not backtrack exponentially');
   });
 
+
+  it('a table row states its own condition only: conditioned rows become their own entries, unconditioned rows stay undeclared (second review findings 2 and 5)', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const catalog = commandCatalog(xml(tree)).catalog;
+    // A split command table: the ft row states nothing, the hg-k row states its own condition.
+    const split = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* | 添加成员 |\n| hg-k | 仅 hg-k 平台支持硬件加速 |\n| ft | 软件实现 |\n'), null, { catalog });
+    const conditioned = split.entries.find((entry) => String(entry.statement).includes('硬件加速'));
+    assert.deepEqual(conditioned?.applicability, { platforms: ['hg-k'] }, 'the conditioned row reads its own condition');
+    const unconditioned = split.entries.find((entry) => String(entry.statement).includes('软件实现'));
+    assert.ok(unconditioned !== undefined, JSON.stringify(split.entries.map((e) => String(e.statement).slice(0, 24))));
+    assert.equal(unconditioned.applicability, null, 'the unconditioned row states nothing');
+    // An unsplit parameter table under an anchor: the weight row states its own condition, the name row stays null.
+    const params = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n| 参数 | 说明 |\n|---|---|\n| name | 成员名 |\n| weight | 权重，仅 hg-k 平台支持 |\n'), null, { catalog });
+    const weightRow = params.entries.find((entry) => String(entry.statement).includes('权重'));
+    assert.deepEqual(weightRow?.applicability, { platforms: ['hg-k'] }, 'the weight row is its own entry with its own condition');
+    const nameRow = params.entries.find((entry) => String(entry.statement).includes('成员名'));
+    assert.ok(nameRow !== undefined, JSON.stringify(params.entries.map((e) => String(e.statement).slice(0, 24))));
+    assert.equal(nameRow.applicability, null, 'the name row inherits nothing');
+  });
+
   it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n适用于 ft-kylinv10 平台的功能。\n\n本节的另一段。\n\n### 小节\n\n子节的一段。\n'));
     const [own, other, sub] = result.entries;

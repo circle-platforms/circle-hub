@@ -750,22 +750,50 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           split.push(textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment] }));
         }
         for (const literal of valueLiterals) allLiterals.add(literal);
+        const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
+        // Rows that state their own condition become their own row entries (a row's condition is read from that row
+        // alone, never shared with the other rows of the entry); the unconditioned rows keep the shared entry, whose
+        // applicability is null (K02 F[6]: 未声明).
+        const emitRows = (rowLines: number[], withHeader: boolean): void => {
+          const quiet: number[] = [];
+          for (const line of rowLines) {
+            const rowText = table.lines[line].trimEnd();
+            const own = conditionsOf(rowText);
+            if (toApplicability(own) !== null) {
+              entries.push(
+                textEntry({
+                  path: remainderPath,
+                  statement: rowText,
+                  block: 'table',
+                  section: block.section,
+                  fragments: [{ parser: MARKDOWN, selector: block.selector, range: ranges[line] } as FragmentRef],
+                  ...(current !== null ? { words: current.words } : {}),
+                }),
+              );
+            } else {
+              quiet.push(line);
+            }
+          }
+          if (quiet.length === 0) return;
+          const lines = (withHeader ? [table.lines[0]] : []).concat(quiet.map((line) => table.lines[line])).map((line) => line.trimEnd());
+          entries.push(
+            textEntry({
+              path: remainderPath,
+              statement: lines.join('\n'),
+              block: 'table',
+              section: block.section,
+              fragments: (withHeader ? [0] : []).concat(quiet).map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
+              ...(current !== null ? { words: current.words } : {}),
+            }),
+          );
+        };
         if (signatureRows > 0) {
           entries.push(...split);
-          if (remainder.length > 0) {
-            const lines = [table.lines[0], ...remainder.map((line) => table.lines[line])].map((line) => line.trimEnd());
-            entries.push(
-              textEntry({
-                path: current !== null ? current.path : sectionPath(value, block.section),
-                statement: lines.join('\n'),
-                block: 'table',
-                section: block.section,
-                fragments: [0, ...remainder].map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
-              }),
-            );
-          }
+          if (remainder.length > 0) emitRows(remainder, true);
           continue;
         }
+        emitRows(table.rows.map((row) => row.line), false);
+        continue;
       }
     }
     const rejectedSignature = block.kind === 'paragraph' && looksLikeSignature(text);
