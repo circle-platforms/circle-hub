@@ -723,6 +723,53 @@ describe('applicability from explicit conditions', () => {
     assert.equal(builds.applicability, null, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
   });
 
+
+  it('reads no negated, hedged, inclusive or partly listed condition, and no exception list (second review findings 3 and 6)', () => {
+    const sentences = [
+      '不会适用于 hg-k 平台。',
+      '不可适用于 hg-k 平台。',
+      '未适用于 hg-k 平台。',
+      '尚未适用于 hg-k 平台。',
+      '不一定仅 hg-k 平台支持。',
+      '未必仅 hg-k 平台支持。',
+      '不完全仅 hg-k 平台支持。',
+      '并不总是仅 hg-k 平台支持。',
+      '不是仅 hg-k 平台支持。',
+      '也适用于 hg-k 平台。',
+      '同样适用于 hg-k 平台。',
+      '适用于 hg-k 平台以及其他平台。',
+      '适用于 hg-k 平台等。',
+      '适用于 hg-k 平台等环境。',
+      '适用于 hg-k 平台、ft-kylinv10 平台等。',
+      '适用于 hg-k 平台和 ft-kylinv10 平台以外的所有平台。',
+      '适用于 hg-k 平台和 ft-kylinv10 平台之外的环境。',
+      '适用于虚拟平台和物理平台以外的环境。',
+      '适用于 X9000 系列和 X8000 系列以外的机型。',
+      '该命令用于添加成员。',
+    ];
+    for (const sentence of sentences) {
+      const result = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${sentence}\n`));
+      const behaviour = result.entries.find((entry) => entry.data.form === 'text');
+      assert.equal(behaviour?.applicability, null, `${sentence} 不该读出条件`);
+    }
+    // The readable forms still read: a coordinated list counts only when every item of it is readable.
+    const readable = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n该命令仅适用于 hg-k 平台与 zx-neokylin 平台。\n'));
+    assert.deepEqual(readable.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'every item of a closed coordinated list still reads');
+    for (const join of ['与', '及', '以及', '或']) {
+      const closed = produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n适用于 hg-k 平台${join} ft-kylinv10 平台。\n`));
+      assert.deepEqual(closed.entries.find((entry) => entry.data.form === 'text')?.applicability, { platforms: ['ft-kylinv10', 'hg-k'] }, `${join} joins a closed list: both items read, never only the first`);
+    }
+    const modelsClosed = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n适用于 X9000 系列及 X8000 系列。\n'));
+    assert.deepEqual(modelsClosed.entries.find((entry) => entry.data.form === 'text')?.applicability, { models: ['X8000', 'X9000'] }, 'a coordinated model list reads every item');
+  });
+
+  it('stays linear on Han runs full of 和 (no exponential backtracking)', () => {
+    const hostile = `适用于${'和平'.repeat(40)}。`;
+    const started = Date.now();
+    produceManualEntries(markdown(`**demo pool add** *\\<name\\>*\n\n${hostile}\n`));
+    assert.ok(Date.now() - started < 500, 'a hostile clause must not backtrack exponentially');
+  });
+
   it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n适用于 ft-kylinv10 平台的功能。\n\n本节的另一段。\n\n### 小节\n\n子节的一段。\n'));
     const [own, other, sub] = result.entries;

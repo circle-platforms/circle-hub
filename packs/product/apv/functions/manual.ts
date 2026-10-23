@@ -371,49 +371,102 @@ const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequ
 /** The product's own names are never models (APV and NSAE name one product). */
 const PRODUCT_NAMES_LOWER: ReadonlySet<string> = new Set(PRODUCT_LINE.names.map((name) => name.toLowerCase()));
 
-const PLATFORM_ATOM = '[A-Za-z0-9][A-Za-z0-9-]{0,31}|[一-鿿]{1,8}';
-const MODEL_ATOM = '[A-Za-z0-9][A-Za-z0-9-]{0,31}';
-/** A coordinated list: `X、Y 平台` or `X 平台和 Y 平台` (every item may repeat the noun; the series ends on it). */
-const platformSeries = (noun: string): string => {
-  const item = `(?:${PLATFORM_ATOM})(?:\\s*${noun})?`;
-  return `${item}(?:\\s*[、,，/和]\\s*${item})*\\s*${noun}`;
-};
-const modelSeries = (noun: string): string => {
-  const item = `(?:${MODEL_ATOM})(?:\\s*${noun})?`;
-  return `${item}(?:\\s*[、,，/和]\\s*${item})*\\s*${noun}`;
-};
-const NO = '(?<!不)(?<!不再)(?<!无法)(?<!不能)(?<!并非)';
-const NO_SUPPORT = '(?<!不)支持';
-const NO_AFTER = '(?!\\s*(?:以外|之外|外))';
-const CONDITION_RULES: Array<{ field: 'platforms' | 'models'; re: RegExp; noun: string }> = [
-  { field: 'platforms', re: new RegExp(`${NO}适用于\\s*(${platformSeries('平台')})${NO_AFTER}`, 'g'), noun: '平台' },
-  { field: 'platforms', re: new RegExp(`${NO}(?:仅|只)\\s*(${platformSeries('平台')})\\s*${NO_SUPPORT}`, 'g'), noun: '平台' },
-  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('系列')})${NO_AFTER}`, 'g'), noun: '系列' },
-  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('机型')})${NO_AFTER}`, 'g'), noun: '机型' },
-  { field: 'models', re: new RegExp(`${NO}适用于\\s*(${modelSeries('型号')})${NO_AFTER}`, 'g'), noun: '型号' },
-  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('系列')})\\s*${NO_SUPPORT}`, 'g'), noun: '系列' },
-  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('机型')})\\s*${NO_SUPPORT}`, 'g'), noun: '机型' },
-  { field: 'models', re: new RegExp(`${NO}(?:仅|只)\\s*(${modelSeries('型号')})\\s*${NO_SUPPORT}`, 'g'), noun: '型号' },
-];
+/** Escapes a literal for use inside a RegExp. */
+const escapeRe = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** List connectives between items (a coordinated list counts only when every item is readable). */
+const CONNECTIVES = ['、', ',', '，', '/', '和', '与', '及', '以及', '或者', '或', '并'];
+/** A list followed by 等 never counts (the source says it is partial), and an exception list (以外/之外) inverts. */
+const ETC = /等等?|以外|之外|其余|其他/;
+/** Any of these in the clause before the trigger makes the whole match unread (a negation over the condition). */
+const CLAUSE_NEGATION = /[不未无非没勿]/;
+/** These right before the trigger widen instead of restrict (也适用于): unread. */
+const ALSO_BEFORE = /(?:也|同样|亦|还)\s*$/;
+/** The applicability triggers: what follows one, up to the clause's end, is the candidate series. */
+const TRIGGERS = [/适用于/gu, /(?:仅|只)\s*(?=[^。；，：]*?支持)/gu];
 
-/** The conditions one text declares, per field. A coordinated list counts only when every item of it is readable. */
+/** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
+const CLAUSE_END = /[。；，：\n]/;
+
+/**
+ * The conditions one text declares, per field — read linearly, never by a backtracking series regex. For every
+ * trigger: the clause before it may not carry a negation or a widening word; the tokens after it, split on the
+ * connectives and the field's noun, must all be readable; a trailing 等 (a partial listing) or another connective
+ * after the series makes it unread; one unreadable token makes the whole series unread, never a narrowed one.
+ */
 function conditionsOf(text: string): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
-  for (const { field, re, noun } of CONDITION_RULES) {
-    re.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(text)) !== null) {
-      const tokens = match[1]
-        .split(new RegExp(`\\s*(?:[、,，/和]|${noun})\\s*`))
-        .map((token) => squeeze(token))
-        .filter((token) => token !== '');
+  for (const trigger of TRIGGERS) {
+    trigger.lastIndex = 0;
+    let at: RegExpExecArray | null;
+    while ((at = trigger.exec(text)) !== null) {
+      // The clause before the trigger: back to the previous clause boundary.
+      let boundary = 0;
+      for (let k = at.index - 1; k >= 0; k -= 1) {
+        if (CLAUSE_END.test(text[k] ?? '')) { boundary = k + 1; break; }
+      }
+      const before = text.slice(boundary, at.index);
+      if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
+      const after = text.slice(at.index + at[0].length);
+      const seriesEnd = after.search(CLAUSE_END);
+      const candidate = (seriesEnd === -1 ? after : after.slice(0, seriesEnd)).trim();
+      const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
+      // The series is read as repeated items: `X、Y 平台` or `X 平台与 Y 平台` (each item may repeat the noun). The
+      // FIRST noun ends an item group; a connective after it continues the series, another noun extends the field
+      // word (系列机型), 等/以外/其他/其余 ends it unread, a negation anywhere after the trigger ends it unread, and
+      // any other tail (的功能) is quiet and ends the read.
+      const NOUN_RE = /(平台|系列|机型|型号)(?:\s*支持)?/u;
+      const fieldOf = (word: string): 'platforms' | 'models' => (word === '平台' ? 'platforms' : 'models');
+      let rest = candidate;
+      const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
+      let field: 'platforms' | 'models' | null = null;
+      let ok = true;
+      let quiet = false;
+      for (;;) {
+        const head = NOUN_RE.exec(rest);
+        if (head === null) {
+          // What is left after the last noun must be quiet (的功能) or a connective followed by the next item.
+          const left = rest;
+          if (left.trim() === '') break;
+          const continued = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})`, 'u').exec(left);
+          if (continued !== null) {
+            rest = left.slice(continued[0].length);
+            const nextNoun = NOUN_RE.exec(rest);
+            if (nextNoun === null) { ok = false; break; } // 或其他平台: a connective with no readable item after it
+            continue;
+          }
+          quiet = true;
+          break;
+        }
+        const itemPart = rest.slice(0, head.index);
+        const nounWord = head[1]!;
+        const nextField = fieldOf(nounWord);
+        if (field === null) field = nextField;
+        else if (field !== nextField) { ok = false; break; } // mixed fields in one series stay unread
+        const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
+        if (itemPart.trim() !== '' && pieceTokens.length === 0) { ok = false; break; }
+        tokensByField[field].push(...pieceTokens);
+        rest = rest.slice(head.index + head[0].length);
+        const after = rest;
+        if (after.trim() === '') break;
+        if (ETC.test(after) || CLAUSE_NEGATION.test(after)) { ok = false; break; }
+        const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(after);
+        if (connective !== null) {
+          rest = after.slice(connective[0].length);
+          continue;
+        }
+        quiet = true;
+        break;
+      }
+      if (!ok || field === null || quiet === false && rest.trim() !== '') continue;
+      void quiet;
+      const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
+      if (tokens.length === 0) continue;
+      const noun = field === 'platforms' ? '平台' : '系列';
       if (field === 'platforms') {
         const lowered = tokens.map((token) => token.toLowerCase());
-        // Only the closed set counts; one unreadable item makes the whole list undeclared, never a narrowed one.
-        if (lowered.length > 0 && lowered.every((token) => PLATFORM_WORDS.has(token))) lowered.forEach((token) => found.platforms.add(token));
-      } else {
-        // The product's own names are not models; one such item makes the whole list undeclared.
-        if (tokens.length > 0 && tokens.every((token) => !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) tokens.forEach((token) => found.models.add(token));
+        if (lowered.every((token) => PLATFORM_WORDS.has(token))) lowered.forEach((token) => found.platforms.add(token));
+      } else if (tokens.every((token) => !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) {
+        tokens.forEach((token) => found.models.add(token));
       }
     }
   }
