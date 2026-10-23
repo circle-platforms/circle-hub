@@ -91,7 +91,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     try {
       const published = await hub.registry.publish(hub.alice, await stageBed(join(temp.path, 'bed'))); assert.equal(published.ok, true, JSON.stringify(published));
       await hub.registry.assign(hub.admin, hub.alice.id, 'test-bed');
-      const booking = await hub.service.startRunDetailed(hub.alice, { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:fixture-bed' } }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] }, hours: 1, addresses: { segment: '192.0.2.0/26', count: 1 } } }, call());
+      const booking = await hub.service.startRunDetailed(hub.alice, { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:fixture-bed' } }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] }, addresses: { segment: '192.0.2.0/26', count: 1 } } }, call());
       assert.equal(booking.answer.call_result, 'ok', JSON.stringify(booking.answer.errors));
       const compiled = await hub.service.startRunDetailed(hub.alice, { ...start(), predecessor: booking.answer.run!.run }, call()); assert.equal(compiled.answer.call_result, 'ok', JSON.stringify(compiled.answer.errors));
       const stored = (await hub.service.getRun(hub.alice, compiled.answer.run!.run))!;

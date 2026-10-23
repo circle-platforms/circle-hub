@@ -1,4 +1,4 @@
-import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition, isEffectOutcome } from '../../contracts/generated/vocabulary.ts';
@@ -20,7 +20,7 @@ function retrySafeOutcome(value:unknown):boolean {
 }
 export interface DispatchOptions {
   knowledge?: BuildKnowledge;
-  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
+  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
 export interface JobStatus { failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
@@ -74,6 +74,22 @@ export class DispatchService {
     const jobs=await this.journal.blockers(executor,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
     return Promise.all(jobs.map(job=>this.status(by,job)));
   }
+  /** Trusted lease boundary: unresolved effects block local release even after a terminal observation. */
+  async activeLeaseJobs(keys: readonly string[]): Promise<Array<{key:string;job:string}>> {
+    if (!keys.length) return [];
+    const keysSet=new Set(keys);const events=await this.journal.targets(keys);
+    const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort();
+    const rows:Array<{key:string;job:string}>=[];
+    for(const job of jobs){
+      const history=await this.journal.events(job);
+      const reservation=history.find(e=>e.body.detail.phase==='reservation');
+      const binding=reservation?.body.detail.binding as JobBinding|undefined;
+      if(!binding)throw new Error('作业缺少资源登记，请管理员恢复作业登记后核验');
+      if(reservation?.body.detail.read_only===true || isDone(history) && !isFrozen(history))continue;
+      for(const key of binding.resources)if(keysSet.has(key))rows.push({key,job});
+    }
+    return rows.sort((a,b)=>a.key.localeCompare(b.key)||a.job.localeCompare(b.job));
+  }
   async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
@@ -109,7 +125,7 @@ export class DispatchService {
     const d = registered.definition;
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
     const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const client = this.session(binding,d,await this.secret(executor));
     let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
     try {
@@ -196,7 +212,7 @@ export class DispatchService {
     const secret = await this.secret(executor);
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if (JSON.stringify(binding).includes(secret)) throw new Error('绑定元数据不能包含执行器密钥');
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const session = this.session(binding, d, secret);
     let remote: RemoteLease | undefined; let stop = async () => {}; let pulse:Heartbeat|undefined;
@@ -496,7 +512,8 @@ export class DispatchService {
     return true;
   }
 
-  private async reserve(binding: JobBinding): Promise<void> {
+  private async reserve(binding: JobBinding, tx?: Transaction): Promise<void> {
+    if(binding.fences?.length && !this.sameFences(binding.fences,await this.options.leases.holderSnapshot(binding.resources,tx)))throw new Error('预留前围栏或血缘已改变，尚未提交；重新读取登记和租约后重开核验');
     const definition=await this.pinned(binding);
     // Read the CAS heads before checking occupancy. A reservation committed during
     // that check must either be observed as a blocker or invalidate our CAS head.
@@ -520,11 +537,11 @@ export class DispatchService {
   }
   private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
     const rows = await this.options.leases.holderSnapshot(keys);
-    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || Date.parse(r.expires_at) <= this.now().getTime() + requiredMs)) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
+    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || (r.expires_at !== null && Date.parse(r.expires_at) <= this.now().getTime() + requiredMs))) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
-    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && b.fencing >= a.fencing && !b.released && Date.parse(b.expires_at) > this.now().getTime()));
+    return before.length === after.length && before.every(a => after.some(b => a.key === b.key && a.lease === b.lease && b.fencing >= a.fencing && !b.released && (b.expires_at === null || Date.parse(b.expires_at) > this.now().getTime())));
   }
   private async secret(id: string): Promise<string> { const secret = await this.options.records.vault.getText(`executor.${id}.bearer`); if (!secret) throw new Error('执行器密钥不可用'); return secret; }
   private async pinned(binding: JobBinding): Promise<ExecutorDefinition> {
@@ -670,7 +687,7 @@ export class DispatchService {
       const response = await this.retryRead(binding, client, 'status', context, deadline);
       const observedHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
       if (!drift && !this.sameFences(fences, observedHolders)) {
-        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:observedHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
+        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:observedHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
       }
       const mapping = mapped(d.status.map, at(response.value, d.status.pointer));
       if (!mapping || mapping.effect_outcome === 'unknown' || mapping.action_result === 'unknown' || mapping.acceptance === 'not_accepted' || mapping.effect_outcome === 'read_back_mismatch' || mapping.effect_outcome === 'target_rejected' || mapping.effect_outcome === 'not_dispatched' || mapping.effect_outcome === 'proven_not_executed') { await this.unknown(binding, '目标状态不能作为可信终态（未映射或缺拒绝阶段、未执行证明）；下一步管理员对账', [response.source], { reported_state: mapping ?? null }); return this.status(by, binding.job); }
@@ -688,7 +705,7 @@ export class DispatchService {
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
     const finalHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
     if (!drift && !this.sameFences(fences, finalHolders)) {
-      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
+      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
     }
     await stopHeartbeat();
     const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);
