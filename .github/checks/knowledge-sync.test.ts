@@ -63,8 +63,9 @@ test('release wrapper keeps four configured triplets in order and continues afte
   writeFileSync(join(root, 'sync', 'release_pipeline.sh'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE"\n[ "$1" != "sample-one" ]\n', { mode: 0o700 });
   const sets = ['one', 'two', 'three', 'four'].map((n) => `sample-${n} SAMPLE_${n} target-${n}`);
   for (const [i, set] of sets.entries()) env[`KNOWLEDGE_SYNC_RELEASE_SET_${i + 1}`] = set;
-  runScript('run_release_all.sh', env);
+  const result = runScript('run_release_all.sh', env);
   assert.deepEqual(readFileSync(env.TRACE!, 'utf8').trim().split('\n'), sets);
+  assert.match(result.stdout, /\[fail\] sample-one rc=1(?:\n|$)/);
 }));
 
 function realReleasePipeline(root: string): void {
@@ -118,5 +119,15 @@ test('a direct release pipeline rejects wrong argument counts and unsafe compone
     const result = scriptResult('release_pipeline.sh', env, args);
     assert.equal(result.status, 2, JSON.stringify(args));
     assert.equal(readFileSync(env.TRACE!, 'utf8'), '', 'no export, stage, conversion or deployment is allowed');
+  }
+}));
+
+test('manual update failures keep their original exit codes and do not stop the other updates', () => scratch((root, env) => {
+  for (const code of [7, 126]) {
+    writeFileSync(env.TRACE!, '');
+    writeFileSync(join(root, 'bin', 'python3'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE"\nif [ "$2" = "$KNOWLEDGE_SYNC_UPLOAD_DIR/app/sample-one/app_cn" ]; then exit ' + code + '; fi\n', { mode: 0o700 });
+    const result = runScript('run_manuals_extra.sh', env);
+    assert.equal(readFileSync(env.TRACE!, 'utf8').trim().split('\n').length, 4);
+    assert.match(result.stdout, new RegExp('\\[fail\\] app/sample-one/app_cn rc=' + code + '(?:\\n|$)'));
   }
 }));

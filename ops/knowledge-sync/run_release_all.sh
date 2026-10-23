@@ -24,6 +24,9 @@ for s in "${KNOWLEDGE_SYNC_RELEASE_SET_1-}" "${KNOWLEDGE_SYNC_RELEASE_SET_2-}" "
     malformed=1
     continue
   fi
-  ./release_pipeline.sh "$1" "$2" "$3" || echo "[$(date '+%F %T')] [fail] $1 rc=$?"
+  ./release_pipeline.sh "$1" "$2" "$3" || {
+    exit_code=$?
+    echo "[$(date '+%F %T')] [fail] $1 rc=$exit_code"
+  }
 done
 exit "$malformed"
