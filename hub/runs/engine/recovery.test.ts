@@ -62,3 +62,11 @@ test('output_failed carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('能回读且与重'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('repair_exhausted carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'repair_exhausted' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('修复后符合要'));
+  assert.ok(LayerResult.safeParse(result).success);
+});

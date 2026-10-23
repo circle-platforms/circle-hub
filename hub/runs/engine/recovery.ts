@@ -19,6 +19,7 @@ const RULES: Partial<Record<Reason, Rule>> = {
   not_covered: { missing: "未覆盖条目的提交产物；下一步：运行者补交该条目后自动重核", request: 'repair', audience: 'runner' },
   awaiting_step: { missing: "所等步骤的完成事实；下一步：运行者完成前置修复或请求后自动重核", request: 'repair', audience: 'runner' },
   output_failed: { missing: "能回读且与重算一致的产物；下一步：运行者修复出件并重新提交后自动重核", request: 'repair', audience: 'runner' },
+  repair_exhausted: { missing: "修复后符合要求的产物；下一步：运行者修复并以前驱开新修订重跑", request: 'repair', audience: 'runner' },
 };
 
 export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome[], context: RecoveryContext): LayerResult {
