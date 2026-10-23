@@ -588,8 +588,14 @@ accepted.
   inside it. K1 still places that text where it places any other block — under the command before it, with that command's
   words in `data` — so `produceAdocEntries` marks every entry whose fragments all cite example content with
   `data.reference_only: true`: an example takes no part in judgment, and a reader, a drift count or a review can tell
-  example content from what the manual states. The command literals K1 records on such an entry ride along with the mark
-  (K1's own code is unchanged); a read-time view that counts drift candidates skips entries marked this way.
+  example content from what the manual states. The judgment side is done here: the production's report lines — K1's drift
+  candidates included — come from a second placement run over the model without the example content, so a literal only an
+  example carries is no drift candidate of the manual while the same literal in real prose still is; K1 places every other
+  block the same in both runs (an example block is no anchor and ends no command) and its files are unchanged. The command
+  literals K1 records on an example entry still ride along with the mark, and one warning says how many entries and literals
+  that is. What no code does yet is the consumer side: `data.reference_only` has one writer and no reader, so a read-time
+  view, a review or a regression check still has to drop the entries marked reference only before it judges a command or
+  counts mentions (handed to the integrator below).
 - A version line with an adoc source stops the transitional `catalog.json` reading (task item 6), and the adoc producer is
   where that is known: `catalogOnAdocLine(slot)` in `entries.ts` reads the slot's parser and schema, and `catalogRefusal()`
   is the typed failure (`apv.adoc.catalog_reading_off`) the wired producer returns for it, naming the family, how the
@@ -788,6 +794,12 @@ pack and reviews a mind map against the root it produced.
   The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
   block, or an option that switches anchor reading off for parts, would be the clean interface. This package does not
   change K1's files.
+- **integrator (adoc, examples)**: the production side of "examples take no part in judgment" (task item 6) is done — the
+  drift candidates are computed without the example content, and the entries carry `data.reference_only`. The consumer side
+  is not: the mark has one writer and no reader anywhere in `hub/`, `packs/` or `contracts/`. Whoever wires the producer has
+  to make the read-time views, the review and the regression checks drop the entries marked `reference_only` before they
+  judge a command or count mentions; the acceptance of "examples take no part in judgment" then has to run against a catalog
+  in which only the example's literal is missing, so an unfiltered consumer fails it.
 - **knowledge (adoc)**: the mapping's report must not stay an object only a test can see. When the producer is wired,
   `uncited` (a block or a table row that cites no source line), `unparsed` (a line declared a signature that reads as
   none), the misaligned-table lines and the unverified-heading lines have to reach the knowledge sync's result for the

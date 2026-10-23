@@ -9,6 +9,7 @@ import { compileAdoc } from './index.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
 import { catalogOnAdocLine, catalogRefusal, produceAdocEntries } from './entries.ts';
+import type { CommandCatalog } from '../cases-commands.ts';
 import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
 
 /** The mapped model of one compile, with the mapping's report checked (nothing left uncited). */
@@ -440,4 +441,64 @@ test('a spaced literal mark is no markup: such a line reads as no signature and 
     'each line stays the words the source has, on its own line',
   );
   assert.ok(produced.warnings.some((warning) => warning.includes('读不成命令签名') && warning.includes('book.adoc:7')), produced.warnings.join('；'));
+});
+
+/** A synthetic command catalog of complete commands, in the shape K1's placement and drift checks read. */
+const catalogOf = (commands: string[][]): CommandCatalog => {
+  type Node = { children: Map<string, Node>; path: string | null };
+  const root: Node = { children: new Map(), path: null };
+  for (const words of commands) {
+    let node = root;
+    words.forEach((word, index) => {
+      const key = word.toLowerCase();
+      let next = node.children.get(key);
+      if (next === undefined) {
+        next = { children: new Map(), path: null };
+        node.children.set(key, next);
+      }
+      if (index === words.length - 1) next.path = `/commands/${words.join('/')}`;
+      node = next;
+    });
+  }
+  return { root, heads: [...new Set(commands.map((words) => (words[0] ?? '').toLowerCase()))], size: commands.length } as unknown as CommandCatalog;
+};
+
+test('an example takes no part in judgment: its literal is no drift candidate, and the mark is disclosed', async () => {
+  const out = await compile({
+    'book.adoc': [
+      '= Book',                            // 1
+      '',                                  // 2
+      '== 命令',                            // 3
+      '',                                  // 4
+      '*demo probe* _<target>_',           // 5
+      '',                                  // 6
+      '探测目标，另见 `demo ghost show`。',   // 7
+      '',                                  // 8
+      '.示例',                              // 9
+      '====',                              // 10
+      '先用 `demo ghost add` 建立目标。',     // 11
+      '====',                              // 12
+      '',                                  // 13
+    ].join('\n'),
+  });
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo', 'probe']]) });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const examples = produced.entries.filter((entry) => entry.data.reference_only === true);
+  assert.equal(examples.length, 1, JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.data])));
+  assert.deepEqual(examples[0]!.data.command_literals, ['demo ghost add']);
+  // The example's literal is not a drift candidate of the manual; the same-shaped literal in real prose is.
+  const drift = produced.warnings.filter((warning) => warning.includes('解析不到，是漂移候选'));
+  assert.equal(drift.length, 1, produced.warnings.join('；'));
+  assert.ok(drift[0]!.includes('demo ghost show'), drift[0]);
+  assert.ok(!drift[0]!.includes('demo ghost add'), `an example takes no part in judgment: ${drift[0]}`);
+  // The mark and what a consumer still has to do are said out loud.
+  assert.ok(
+    produced.warnings.some((warning) => warning.includes('data.reference_only') && warning.includes('分流')),
+    produced.warnings.join('；'),
+  );
+  // The real behaviour of the command carries no such mark.
+  const real = produced.entries.find((entry) => String(entry.statement).includes('探测目标'));
+  assert.ok(real !== undefined && real.data.reference_only === undefined, JSON.stringify(real?.data));
+  assert.deepEqual(real!.data.command_literals, ['demo ghost show']);
 });
