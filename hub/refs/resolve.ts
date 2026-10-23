@@ -83,6 +83,8 @@ export interface ResolveDiagnostic {
 
 export interface ResolveContext {
   reader: ReaderIdentity;
+  /** The clock validity re-reads judge against (B01 R[3]); absent, the wall clock. */
+  now?: () => Date;
   parsers: ParserRegistry;
   sources?: SourceReader;
   trees?: TreeReader;
@@ -328,6 +330,16 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
       }
       let value: unknown = record.body;
       let validity: unknown = validityOf(value);
+      // B01 R[3] (re-read before relying): an expires_at in the record's own validity is checked at read time — a
+      // past expiry surfaces as expired instead of the stale status stored with the claim. The context's injected
+      // clock decides "now" when there is one (deterministic tests); Date.now() only as the default.
+      if (validity !== undefined && typeof validity === 'object' && validity !== null) {
+        const at = (validity as { expires_at?: unknown }).expires_at;
+        const now = typeof ctx.now === 'function' ? ctx.now() : new Date();
+        if (typeof at === 'string' && Date.parse(at) <= now.getTime() && (validity as { status?: unknown }).status !== 'expired') {
+          validity = { ...(validity as Record<string, unknown>), status: 'expired' };
+        }
+      }
       if (ref.pointer !== undefined) {
         for (const token of pointerTokens(ref.pointer)) {
           const next = step(value, token);

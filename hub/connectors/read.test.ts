@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
-import { callPackFunction } from '../rules/api.ts';
+import { SandboxError, callPackFunction } from '../rules/api.ts';
 import { kityminderParser, htmlParser } from '../refs/api.ts';
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
 import type { Page, SourceArtifact, StoredRecord } from '../records/api.ts';
@@ -20,6 +20,8 @@ import { PLM_BUGS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub, text, type StubServer } from './testing/stub.ts';
 import { DOCUMENTS, startWebDavStub } from './testing/webdav.ts';
 import type { PackFunctionRunner } from './read.ts';
+import { openHarness } from '../runs/engine/testing/harness.ts';
+import { createTestServer } from '../server/testing.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -651,4 +653,68 @@ test('a projection inherits accepted findings only from its actual original', as
   assert.equal(ungrounded.artifacts.find(a => a.name === 'content')?.artifact.body.read_tier,'retain_only');
   await w.k.records.artifacts.revokeFindings(w.k.admin,sha);
   for (const {artifact} of outputs.filter(a => a.artifact.body.scan.findings.length > 0)) assert.equal((await w.k.records.artifacts.source(w.k.user,artifact.body.sha256))?.bytes,null);
+});
+
+for (const mode of ['sandbox exception', 'empty plan'] as const) {
+  test(`${mode}: the missing setting reaches only the administrator note, never the receipt or tool text`, async (t) => {
+    const diagnostic = `缺少设置 settings.repository_path；合成秘密 ${PASSWORD}`;
+    const wrapped: PackFunctionRunner = async (_target, _input, kind) => {
+      if (kind === 'plan') {
+        if (mode === 'sandbox exception') throw new SandboxError('FUNCTION_THREW', { phase: 'call', message: diagnostic });
+        return { requests: [], done: true };
+      }
+      return { error: { code: 'synthetic.configuration', message: diagnostic } };
+    };
+    const w = await world(t, { callFunction: wrapped });
+    const h = await openHarness(postgres);
+    t.after(() => h.close());
+    h.external.read = async () => w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx);
+    const server = await createTestServer({ postgres, withoutRunsDetail: true });
+    t.after(() => server.close());
+    server.deps.runs.startRun = (_principal, input, context) => h.service.startRun(h.alice, input, context);
+    const user = await server.createUser('合成读者');
+    const client = await server.client(user.token);
+    const answer = await client.call('start_run', { pack: 'toy-review', product: 'Meadow', inputs: { map: { external: 'toy:mindmap:docq7' } } });
+    const adminLog = await server.records.callLog.query(server.admin.principal, { tool: 'start_run', limit: 1 });
+    assert.doesNotMatch(JSON.stringify(answer.structuredContent), /settings\.repository_path/);
+    assert.doesNotMatch(JSON.stringify(answer.content), /settings\.repository_path/);
+    const userLog = await server.records.callLog.query(user.principal, { tool: 'start_run', limit: 1 });
+    assert.equal(userLog.items[0].admin_note, undefined);
+    assert.match(adminLog.items[0].admin_note ?? '', /settings\.repository_path/);
+    assert.doesNotMatch(adminLog.items[0].admin_note ?? '', new RegExp(PASSWORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    const manifests = await w.k.records.store.list({ kind: 'action', limit: 10 });
+    assert.ok(manifests.items.length > 0);
+    assert.doesNotMatch(JSON.stringify(manifests), /settings\.repository_path/);
+    assert.equal(w.agile.requests.length, 0);
+  });
+}
+
+test('an empty plan cannot turn a successful diagnostic projection into readable artifacts', async (t) => {
+  const wrapped: PackFunctionRunner = async (_target, _input, kind) => kind === 'plan'
+    ? { requests: [], done: true }
+    : { artifacts: [{ name: 'content', media_type: 'text/plain', text: 'synthetic projected success without a source' }] };
+  const w = await world(t, { callFunction: wrapped });
+  const outcome = await w.k.connectors.executeRead(w.resources.agile.id, 'mindmap', { id: DOC }, w.ctx);
+  assert.equal(outcome.ok, false);
+  assert.equal((await w.k.records.store.list({ kind: 'source_artifact', limit: 10 })).items.length, 0);
+  assert.equal(w.agile.requests.length, 0);
+});
+
+test('a nested pack receives no sandbox diagnostic that it could copy into tool content', async (t) => {
+  const marker = 'settings.repository_path';
+  let nestedView: unknown;
+  const wrapped: PackFunctionRunner = async (_target, input, kind) => {
+    const value = input as { round?: number; external: { system: string }; reads?: Record<string, unknown> };
+    if (value.external.system === 'agile') throw new SandboxError('FUNCTION_THREW', { message: `缺少 ${marker}` });
+    if (kind === 'plan') return { requests: [{ key: 'original', route: 'list', params: { path: 'spec' } }], reads: [{ external: `agile:mindmap:${DOC}` }], done: true };
+    nestedView = value.reads;
+    return { artifacts: [{ name: 'content', media_type: 'application/json', json: value.reads }] };
+  };
+  const w = await world(t, { callFunction: wrapped });
+  const read = success(await w.k.connectors.reader.read('manual:spec-search:diagnostic', w.ctx));
+  assert.ok(nestedView);
+  assert.ok(!JSON.stringify(nestedView).includes(marker));
+  const content = read.artifacts.find((artifact) => artifact.name === 'content')!;
+  assert.ok(!(await bytesOf(w, content.artifact)).toString().includes(marker));
+  assert.ok(JSON.stringify(w.k.log).includes(marker), 'only the administrator log keeps the nested diagnostic');
 });
