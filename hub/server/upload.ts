@@ -36,6 +36,7 @@ const BY_EXTENSION: Record<string, string> = {
   txt: 'text/plain',
   text: 'text/plain',
   csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
 function startsWithText(bytes: Uint8Array, prefix: RegExp): boolean {
