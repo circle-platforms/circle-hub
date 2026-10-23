@@ -3,7 +3,7 @@ import { isUtf8 } from 'node:buffer';
 import { ParseEncodingError, mediaTypeCharset } from './parser.ts';
 
 /** Charsets the text parsers decode with exact byte offsets. */
-export type TextCharset = 'utf-8' | 'iso-8859-1' | 'windows-1252' | 'us-ascii';
+export type TextCharset = 'utf-8' | 'iso-8859-1' | 'windows-1252' | 'us-ascii' | 'utf-16le' | 'utf-16be' | 'gb18030' | 'gbk' | 'big5';
 
 export interface DecodedText {
   text: string;
@@ -77,7 +77,7 @@ export function decodeUtf8(parser: string, bytes: Uint8Array): DecodedText {
 }
 
 /** One byte per character: true ISO-8859-1, WHATWG windows-1252, or US-ASCII (bytes above 0x7F rejected). */
-export function decodeSingleByte(parser: string, bytes: Uint8Array, charset: Exclude<TextCharset, 'utf-8'>): DecodedText {
+export function decodeSingleByte(parser: string, bytes: Uint8Array, charset: 'iso-8859-1' | 'windows-1252' | 'us-ascii'): DecodedText {
   let text: string;
   if (charset === 'windows-1252') {
     text = new TextDecoder('windows-1252').decode(bytes);
@@ -91,15 +91,105 @@ export function decodeSingleByte(parser: string, bytes: Uint8Array, charset: Exc
   return { text, charset, bom: 0, offsets: new ByteOffsets(text, false, 0) };
 }
 
-/**
- * Decodes text for the text-like parsers: the charset parameter of the media type decides (UTF-8 by default, WHATWG
- * windows-1252 for ISO-8859-1 and ASCII labels); any other declared charset is refused.
- */
+/** BOM precedence for text-like sources; XML additionally checks declaration consistency. */
+export function bomCharset(bytes: Uint8Array): 'utf-8' | 'utf-16le' | 'utf-16be' | null {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return 'utf-16le';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be';
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 'utf-8';
+  return null;
+}
+
+export function legacyCharset(label: string): TextCharset | null {
+  try {
+    const name = new TextDecoder(label).encoding;
+    if (name === 'utf-16le' || name === 'utf-16be' || name === 'gb18030' || name === 'gbk' || name === 'big5') return name;
+  } catch { /* Unsupported labels are reported by the caller. */ }
+  return null;
+}
+
+// ICU accepts a few legacy single-byte extensions (notably Big5 0x80/0xff). Learn them from the same decoder.
+const legacySingleBytes = new Map<TextCharset, ReadonlySet<number>>();
+function singleByteCodes(charset: TextCharset): ReadonlySet<number> {
+  const cached = legacySingleBytes.get(charset);
+  if (cached) return cached;
+  const codes = new Set<number>();
+  const decoder = new TextDecoder(charset, { fatal: true, ignoreBOM: true });
+  for (let byte = 0x80; byte <= 0xff; byte++) {
+    try { decoder.decode(Uint8Array.of(byte)); codes.add(byte); }
+    catch { /* A lead byte requires a following sequence. */ }
+  }
+  legacySingleBytes.set(charset, codes);
+  return codes;
+}
+
+/** A byte sequence's width; the fatal decoder validates its actual mapping. */
+function sequenceWidth(bytes: Uint8Array, at: number, charset: TextCharset): number {
+  if (charset === 'utf-16le' || charset === 'utf-16be') {
+    const word = charset === 'utf-16le' ? bytes[at] | (bytes[at + 1] << 8) : (bytes[at] << 8) | bytes[at + 1];
+    return word >= 0xd800 && word <= 0xdbff ? 4 : 2;
+  }
+  if (bytes[at] < 0x80 || singleByteCodes(charset).has(bytes[at])) return 1;
+  return charset === 'gb18030' && bytes[at + 1] >= 0x30 && bytes[at + 1] <= 0x39 ? 4 : 2;
+}
+
+/** Find the first invalid sequence in bounded chunks, then refine only the failing chunk. */
+function invalidSequence(bytes: Uint8Array, charset: TextCharset): number {
+  const decoder = new TextDecoder(charset, { fatal: true, ignoreBOM: true });
+  for (let start = 0; start < bytes.length;) {
+    let end = start;
+    while (end < bytes.length && end - start < 16384) end += sequenceWidth(bytes, end, charset);
+    end = Math.min(end, bytes.length);
+    try { decoder.decode(bytes.subarray(start, end)); }
+    catch {
+      for (let at = start; at < end; at += sequenceWidth(bytes, at, charset)) {
+        try { decoder.decode(bytes.subarray(at, Math.min(end, at + sequenceWidth(bytes, at, charset)))); }
+        catch { return at; }
+      }
+      return start;
+    }
+    start = end;
+  }
+  return 0;
+}
+
+/** Strict platform decoding with a map from decoded UTF-16 indices to original sequence boundaries. */
+export function decodeEncoding(parser: string, bytes: Uint8Array, charset: TextCharset): DecodedText {
+  if (charset === 'utf-8') return decodeUtf8(parser, bytes);
+  if (charset === 'iso-8859-1' || charset === 'windows-1252' || charset === 'us-ascii') return decodeSingleByte(parser, bytes, charset);
+  const marker = bomCharset(bytes);
+  const bom = marker === charset && charset.startsWith('utf-16') ? 2 : 0;
+  if (charset.startsWith('utf-16') && !bom) throw new ParseEncodingError(parser, `${charset} 缺少字节序标记（第 0 字节）`, 0);
+  const body = bytes.subarray(bom);
+  const decoder = new TextDecoder(charset, { fatal: true, ignoreBOM: true });
+  let text: string;
+  try { text = decoder.decode(body); }
+  catch {
+    const at = bom + invalidSequence(body, charset);
+    throw new ParseEncodingError(parser, `不是有效的 ${charset}（第 ${at} 字节起）`, at);
+  }
+  const positions = new Uint32Array(text.length + 1);
+  let index = 0;
+  for (let at = 0; at < body.length;) {
+    const width = sequenceWidth(body, at, charset);
+    // Four Big5 pairs can expand to two code points; use the platform decoder mapping rather than assuming ICU data.
+    const pointer = charset === 'big5' && width === 2 ? (body[at] - 0x81) * 157 + body[at + 1] - (body[at + 1] < 0x7f ? 0x40 : 0x62) : -1;
+    const units = pointer === 1133 || pointer === 1135 || pointer === 1164 || pointer === 1166 ? decoder.decode(body.subarray(at, at + width)).length : text.codePointAt(index)! > 0xffff ? 2 : 1;
+    for (let unit = 0; unit < units; unit++) positions[index++] = bom + at;
+    at += width;
+  }
+  positions[text.length] = bytes.length;
+  return { text, charset, bom, offsets: new ByteOffsets(text, false, 0, positions) };
+}
+
 export function decodeDeclared(parser: string, bytes: Uint8Array, mediaType: string | undefined): DecodedText {
+  const marker = bomCharset(bytes);
+  if (marker) return decodeEncoding(parser, bytes, marker);
   const label = mediaTypeCharset(mediaType);
   if (label === null || isUtf8Label(label)) return decodeUtf8(parser, bytes);
   if (isWindows1252Label(label)) return decodeSingleByte(parser, bytes, 'windows-1252');
-  throw new ParseEncodingError(parser, `不支持的字符编码：${label}`);
+  const charset = legacyCharset(label);
+  if (charset) return decodeEncoding(parser, bytes, charset);
+  throw new ParseEncodingError(parser, '不支持所声明的字符编码', 0);
 }
 
 /** Maps UTF-16 indices of a decoded string to byte offsets in the original bytes. */
@@ -108,8 +198,10 @@ export class ByteOffsets {
   readonly #utf8: boolean;
   readonly #base: number;
   #checkpoints: Float64Array | null = null;
+  readonly #positions: Uint32Array | null;
 
-  constructor(text: string, utf8: boolean, base: number) {
+  constructor(text: string, utf8: boolean, base: number, positions: Uint32Array | null = null) {
+    this.#positions = positions;
     this.#text = text;
     this.#utf8 = utf8;
     this.#base = base;
@@ -117,6 +209,7 @@ export class ByteOffsets {
 
   /** Byte offset of the character at `index` (or of the end when index equals the length). */
   at(index: number): number {
+    if (this.#positions) return this.#positions[index];
     if (!this.#utf8) return this.#base + index;
     const text = this.#text;
     const checkpoints = (this.#checkpoints ??= buildCheckpoints(text));

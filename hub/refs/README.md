@@ -82,10 +82,10 @@ Parser details:
   fields as given, ordered child indices, the parent index (the parent chain) and the canonical selector. Duplicate or
   missing ids are reported (`duplicateIds`, `missingIds`); such nodes, ids starting with `@`, and ids whose `n/`
   selector would be too long are addressed by position. Numeric ids and texts are written as decimal text.
-- **xml@1** uses saxes. A DOCTYPE is refused outright, so no entity is ever declared, expanded or fetched. Charset by
-  RFC 7303 section 3.2: a byte order mark (UTF-8; UTF-16 is refused), else the `charset` parameter of the media type,
-  else the encoding declaration; a BOM that disagrees with either is refused. UTF-8, ISO-8859-1 (true Latin-1, as the
-  XML specification reads it) and US-ASCII. Start tags whose attribute values contain their own quote character or a
+- **xml@1** uses saxes. Entity-free DOCTYPE declarations are accepted, including external identifiers which are
+  never fetched. An actual ENTITY declaration outside comments and quoted identifiers is refused before expansion.
+  Charset precedence is BOM, media-type charset, then XML declaration; contradictory BOM declarations are refused.
+  UTF-8, BOM-marked UTF-16LE/BE, GB18030, GBK, Big5, true ISO-8859-1 and US-ASCII are supported. Start tags whose attribute values contain their own quote character or a
   `<` are repaired before parsing by swapping those characters for unused private-use placeholders (same length, so
   positions stay exact) and swapping them back in the values: the closing quote of a value is the first one followed by
   the end of the tag, or by white space and another attribute. The repair is linear: whether a quote can close a value
@@ -265,7 +265,8 @@ update is retained and disclosed to the integrator as a scope deviation; this re
   callers that show matches should cut it.
 - The XML repair heuristic can misplace a closing quote when a help text contains white space, a word and `=` right
   after an inner quote (`"... "key=value" ..."`); such elements are flagged `irregular` with the start tag as written.
-- HTML in UTF-16, and XML in any encoding other than UTF-8, ISO-8859-1 and US-ASCII, is refused.
+- XML supports only the encodings declared above. UTF-16 requires a BOM. Other legacy HTML encodings retain the
+  existing platform decoder behavior and have no byte-range map.
 
 ## Tests
 
@@ -366,7 +367,7 @@ No ambiguous name selector is listed or resolved; no occurrence is discarded. Ea
 fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
 order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
 paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also
-apply. XML encodings follow xml@1 (UTF-8, ISO-8859-1 and US-ASCII; UTF-16 is not supported). The same bytes and
+apply. XML encodings follow xml@1, including BOM-marked UTF-16 and declared GB18030/GBK/Big5. The same bytes and
 options produce the same model and deterministic ParseError reasons on rejection.
 
 References for format fields: [PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT),
@@ -413,3 +414,13 @@ parser id, rule/reason and the generated fix; it creates no upload receipt. No c
 upload, while input binding refuses that media type explicitly. Successful fallback is still accepted. Input binding
 uses the same last refusal with the input path. Unexpected parser failures stay internal errors. Raw source text and
 underlying library details are not included; XML exposes a rule classification and keeps library text in detail only.
+
+## Declared encodings (decision 37)
+
+Text and Markdown use BOM precedence, otherwise the media-type charset; XML additionally uses its encoding declaration.
+HTML accepts UTF-16 BOMs and declared GB18030, GBK and Big5. New multibyte decoding is fatal (no replacement on error),
+uses Node TextDecoder, and reports the encoding and zero-based first invalid sequence byte. UTF-16 without a BOM is
+refused. Byte maps retain original sequence boundaries for line, element and HTML fragment ranges; a supplementary
+character or a platform Big5 expansion shares one original sequence. No Unicode normalization is applied.
+The [Encoding Standard](https://encoding.spec.whatwg.org/) documents the decoder API and sequence layouts; legacy
+character mappings follow the installed Node/ICU decoder, including its Big5 special-pair mapping.

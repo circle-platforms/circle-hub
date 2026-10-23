@@ -26,7 +26,7 @@ import {
   type QuotationUnit,
 } from '../parser.ts';
 import { trySelectorSegments } from '../reference.ts';
-import { decodeSingleByte, decodeUtf8, isUtf8Label, isWindows1252Label, removeNul, type ByteOffsets } from '../text-decoding.ts';
+import { bomCharset, decodeEncoding, legacyCharset, decodeSingleByte, decodeUtf8, isUtf8Label, isWindows1252Label, removeNul, type ByteOffsets } from '../text-decoding.ts';
 
 const KEY = 'html@1';
 // Nodes count elements, text nodes and template contents.
@@ -163,11 +163,8 @@ function metaCharset(bytes: Uint8Array): string | null {
 }
 
 function decode(bytes: Uint8Array, mediaType: string | undefined): { text: string; charset: string; offsets: ByteOffsets | null } {
-  if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0xff && bytes[1] === 0xfe)) throw new ParseEncodingError(KEY, '不支持 UTF-16 编码的 HTML');
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    const decoded = decodeUtf8(KEY, bytes);
-    return { text: decoded.text, charset: 'utf-8', offsets: decoded.offsets };
-  }
+  const marker = bomCharset(bytes);
+  if (marker) return decodeEncoding(KEY, bytes, marker);
   let label = mediaTypeCharset(mediaType) ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
   if (label.startsWith('utf-16')) label = 'utf-8';
   if (isUtf8Label(label)) {
@@ -178,6 +175,8 @@ function decode(bytes: Uint8Array, mediaType: string | undefined): { text: strin
     const decoded = decodeSingleByte(KEY, bytes, 'windows-1252');
     return { text: decoded.text, charset: 'windows-1252', offsets: decoded.offsets };
   }
+  const legacy = legacyCharset(label);
+  if (legacy) return decodeEncoding(KEY, bytes, legacy);
   let decoder: TextDecoder;
   try {
     decoder = new TextDecoder(label);

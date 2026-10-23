@@ -1,5 +1,5 @@
-// xml@1: a generic ordered element tree read with saxes. No DOCTYPE, so no entity declarations or external entities;
-// UTF-8, ISO-8859-1 and US-ASCII; nesting, element, attribute and selector limits. Irregular start tags (unescaped
+// xml@1: a generic ordered element tree read with saxes. Entity-free DOCTYPE is data; entities are never expanded/fetched.
+// UTF-8, BOM-marked UTF-16, GB18030, GBK, Big5, ISO-8859-1 and US-ASCII; nesting, element, attribute and selector limits. Irregular start tags (unescaped
 // quotes or '<' inside attribute values, attributes without values, duplicates) are tolerated and flagged on the
 // element; any other malformation is an error.
 // Selectors: `x/<name>[/<name>[k]...]` by element names (XPath style, k counts same-name siblings from 1 and is written
@@ -30,7 +30,7 @@ import {
   type QuotationUnit,
 } from '../parser.ts';
 import { MAX_SELECTOR_LENGTH, ReferenceSyntaxError, selectorSegment, trySelectorSegments } from '../reference.ts';
-import { decodeSingleByte, decodeUtf8, isUtf8Label, type DecodedText } from '../text-decoding.ts';
+import { bomCharset, decodeEncoding, isUtf8Label, legacyCharset, type DecodedText } from '../text-decoding.ts';
 
 const KEY = 'xml@1';
 const LIMITS: Readonly<ParseLimits> = { maxBytes: 16 * 1024 * 1024, maxDepth: 100, maxNodes: 1_000_000, maxAttributes: 1024 };
@@ -102,25 +102,26 @@ function charsetOf(label: string, from: string): XmlCharset {
   if (isUtf8Label(label)) return 'utf-8';
   if (LATIN1_LABELS.has(label)) return 'iso-8859-1';
   if (ASCII_LABELS.has(label)) return 'us-ascii';
-  throw new ParseEncodingError(KEY, `不支持的 XML 编码：${label}（${from}；只支持 UTF-8、ISO-8859-1、US-ASCII）`);
+  const legacy = legacyCharset(label);
+  if (legacy) return legacy as XmlCharset;
+  throw new ParseEncodingError(KEY, `XML ${from} 使用了不支持的编码`, 0);
 }
 
 /** RFC 7303 section 3.2: a byte order mark, else the charset parameter of the media type, else the XML declaration. */
 function detectCharset(bytes: Uint8Array, mediaType: string | undefined): XmlCharset {
-  if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0xff && bytes[1] === 0xfe)) {
-    throw new ParseEncodingError(KEY, '不支持 UTF-16 编码的 XML');
-  }
-  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  const marker = bomCharset(bytes);
+  const bom = marker === 'utf-8' ? 3 : marker ? 2 : 0;
   const parameter = mediaTypeCharset(mediaType);
   const given = parameter === null ? null : charsetOf(parameter, '媒体类型的 charset 参数');
-  const head = Buffer.from(bytes.buffer, bytes.byteOffset + bom, Math.min(1024, bytes.byteLength - bom)).toString('latin1');
+  const head = marker?.startsWith('utf-16') ? new TextDecoder(marker).decode(bytes.subarray(0, 1024)) : Buffer.from(bytes.buffer, bytes.byteOffset + bom, Math.min(1024, bytes.byteLength - bom)).toString('latin1');
   const declaration = /^<\?xml[ \t\r\n][^>]*?\?>/.exec(head);
   const declared = declaration ? /[ \t\r\n]encoding[ \t\r\n]*=[ \t\r\n]*(["'])([A-Za-z][A-Za-z0-9._-]*)\1/.exec(declaration[0]) : null;
   const label = declared ? declared[2].toLowerCase() : null;
-  if (bom) {
-    if (given !== null && given !== 'utf-8') throw new ParseEncodingError(KEY, `XML 带 UTF-8 字节序标记，媒体类型却声明编码为 ${parameter}`);
-    if (label !== null && !isUtf8Label(label)) throw new ParseEncodingError(KEY, `XML 带 UTF-8 字节序标记，却声明编码为 ${label}`);
-    return 'utf-8';
+  if (marker) {
+    const agrees = (value: string): boolean => value.toLowerCase() === 'utf-16' && marker.startsWith('utf-16') || charsetOf(value.toLowerCase(), '编码声明') === marker;
+    if (parameter !== null && !agrees(parameter)) throw new ParseEncodingError(KEY, 'XML 字节序标记与媒体类型编码不一致', 0);
+    if (label !== null && !agrees(label)) throw new ParseEncodingError(KEY, 'XML 字节序标记与 XML 编码声明不一致', 0);
+    return marker;
   }
   if (given !== null) return given;
   return label === null ? 'utf-8' : charsetOf(label, 'XML 声明');
@@ -129,7 +130,7 @@ function detectCharset(bytes: Uint8Array, mediaType: string | undefined): XmlCha
 /** The decoded text of XML bytes, by the same charset rules as xml@1 (the whole-file text of an XML source). */
 export function decodeXmlText(bytes: Uint8Array, mediaType: string | undefined): string {
   const charset = detectCharset(bytes, mediaType);
-  return (charset === 'utf-8' ? decodeUtf8(KEY, bytes) : decodeSingleByte(KEY, bytes, charset)).text;
+  return decodeEncoding(KEY, bytes, charset).text;
 }
 
 /**
@@ -318,7 +319,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
   const limits = effectiveLimits(LIMITS, options);
   checkSize(KEY, bytes, limits);
   const charset = detectCharset(bytes, options.mediaType);
-  const decoded = charset === 'utf-8' ? decodeUtf8(KEY, bytes) : decodeSingleByte(KEY, bytes, charset);
+  const decoded = decodeEncoding(KEY, bytes, charset);
   const source = decoded.text;
   const { offsets } = decoded;
   const marks = placeholdersFor(source);
@@ -354,8 +355,12 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
   parser.on('xmldecl', (decl) => {
     declaration = { version: decl.version ?? null, encoding: decl.encoding ?? null, standalone: decl.standalone ?? null };
   });
-  parser.on('doctype', () => {
-    throw new ParseForbiddenError(KEY, '不支持 DOCTYPE 与实体声明（防止实体扩展与外部实体）', here());
+  parser.on('doctype', (value) => {
+    for (let i = 0; i < value.length; i++) {
+      if (value.startsWith('<!--', i)) { const end = value.indexOf('-->', i + 4); i = end < 0 ? value.length : end + 2; }
+      else if (value[i] === '"' || value[i] === "'") { const end = value.indexOf(value[i], i + 1); i = end < 0 ? value.length : end; }
+      else if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
+    }
   });
   parser.on('processinginstruction', () => {
     processingInstructions++;
