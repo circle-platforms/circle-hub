@@ -309,10 +309,10 @@ describe('the table projection binding',()=>{
   });
   it('puts the report first, retains full and folded strings and counts, and distinguishes preconditions',()=>{
     const out=run(blocks()),report=out.items![0];
-    assert.equal(report.id,'report');assert.equal(typeof report.fields.review_tables,'string');assert.equal(typeof report.fields.review_tables_full,'string');
+    assert.equal(report.id,'report');assert.equal(typeof report.fields.review_tables,'string');assert.equal(typeof (report.fields.review_tables_full??report.fields.review_tables),'string');
     assert.ok(report.fields.review_counts);assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
-    assert.match(String(report.fields.review_tables_full),/；前置：准备/);
-    const noPriority=run(blocks(),{priority:null});assert.match(String(noPriority.items![0].fields.review_tables_full),/；期望：准备/);assert.doesNotMatch(String(noPriority.items![0].fields.review_tables_full),/；前置：/);
+    assert.match(String(report.fields.review_tables_full??report.fields.review_tables),/；前置：准备/);
+    const noPriority=run(blocks(),{priority:null});assert.match(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；期望：准备/);assert.doesNotMatch(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；前置：/);
   });
   it('does not produce tables until missing conclusions and undelivered items are repaired',()=>{
     for(const entries of [[{result:block({verdict:null,level:null,entries:[{item:'c1'}]})}],[{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}],partition:'incomplete'})}]]){
@@ -379,4 +379,21 @@ it('shared target nodes under different item identities produce an overlap refus
   (a.partitions as any).delivered[0].location=`src:${DIGEST}/kityminder@1/n/c1`;(b.partitions as any).delivered[0].location=`src:${DIGEST}/kityminder@1/i/0`;
   const model=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成节点'},children:[{data:{id:'c1',text:'合成用例',priority:2},children:[]}]}}))).model;
   const result=run([{result:a},{result:b}],{model});assert.equal(result.error?.code,'case-review-report.overlap');assert.match(result.error?.message??'',/draft:c1.*upload:c1/);assert.match(result.error?.fix??'',/分块.*复核/);
+});
+
+function crowdedReport(length:number){
+  return run(Array.from({length:5},(_,group)=>{
+    const result=block({verdict:'PARTIAL',level:'P5',entries:Array.from({length:100},(_,index)=>({item:`large-${group*100+index}`}))});
+    for(const entry of (result.partitions as any).delivered){const requirement=entry.requirements[0];const original=requirement.claims[0];requirement.claims=[...Array.from({length:3},(_,index)=>({...original,statement:{...original.statement,code:'new_finding',text:`合成发现${index} `+'甲'.repeat(length)}})),requirement.claims[1]];}
+    return {result};
+  }));
+}
+it('the complete 500 case projection budget includes every populated field rather than one markdown string',()=>{
+  const output=crowdedReport(600);assert.ok(output.items,JSON.stringify(output.error));assert.ok(Buffer.byteLength(JSON.stringify(output),'utf8')<=8*1024*1024);
+  const fields=output.items[0].fields;assert.equal(fields.findings,undefined);
+  assert.ok(output.items.slice(1).every(item=>item.fields.dispositions===undefined));
+  assert.ok(fields.review_tables_full===undefined||fields.review_tables_full!==fields.review_tables);
+});
+it('oversized complete projections return a measured typed refusal and a smaller-block next action',()=>{
+  const output=crowdedReport(2000);assert.equal(output.error?.code,'case-review-report.too_large');assert.match(output.error?.message??'',/\d+.*字节.*8388608/);assert.match(output.error?.fix??'',/分块.*复核.*终稿/);
 });

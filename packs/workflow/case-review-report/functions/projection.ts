@@ -17,6 +17,7 @@ export const TARGET_SLOT = 'target';
 export const VERIFY_PACK = 'case-review-verify';
 export const MAX_BLOCKS = 50;
 export const MAX_ITEMS = 500;
+export const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 const VERDICT_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalCodes.map((code,index)=>[code.code,index]));
 const LEVEL_ORDER:Readonly<Record<string,number>>=Object.fromEntries(labels.finalRanks.map((rank,index)=>[rank.code,index]));
@@ -90,7 +91,7 @@ export function dispositionsOf(result: Record<string, unknown>, block: { record:
             // A rec: pointer addresses the record's body (valueAt(record.body, pointer)), never the envelope.
             reference: `rec:${block.record}#/partitions/${partition}/${e}/requirements/${r}/claims/${c}`,
             itemId: typeof entry.item === 'string' ? entry.item : null,
-            text: typeof claim.statement.text === 'string' ? claim.statement.text.slice(0, 400) : '',
+            text: typeof claim.statement.text === 'string' ? claim.statement.text : '',
             rank: typeof claim.statement.rank === 'string' ? claim.statement.rank : null,
           });
         }
@@ -223,7 +224,6 @@ export default function project(input: unknown): unknown {
           },
           fields: {
             block: b,
-            dispositions: dispositions.map((d) => ({ kind: d.kind, reference: d.reference, text: d.text, rank: d.rank, block: b })),
           },
         });
       }
@@ -260,14 +260,16 @@ export default function project(input: unknown): unknown {
       fields: {
         blocks: blocks.length,
         overall:complete?{verdict,level,reference}:null,
-        ...(rendered&&full?{review_tables:rendered.markdown,review_tables_full:full.markdown,review_counts:rendered.counts}:{}),
-        findings: collectFindings(blocks),
+        ...(rendered&&full?{review_tables:rendered.markdown,...(full.markdown===rendered.markdown?{}:{review_tables_full:full.markdown}),review_counts:rendered.counts}:{}),
         missing_items:missing,
         missing_blocks:missingBlocks,
         missing_source_facts:missingSourceFacts,
       },
     };
-    return { items:[reportItem,...items],warnings:[] };
+    const output = { items:[reportItem,...items],warnings:[] };
+    const bytes = new TextEncoder().encode(JSON.stringify(output)).byteLength;
+    if(bytes>MAX_OUTPUT_BYTES)return failure('too_large', `完整终稿投影为 ${bytes} 字节，超过 ${MAX_OUTPUT_BYTES} 字节上限`, '按更小分块分别独立复核、分别开始终稿；明确每批范围和完整记录引用，不删减发现或建议');
+    return output;
   });
 }
 
@@ -285,13 +287,3 @@ function entriesOf(result: Record<string, unknown>): Array<{ partition: string; 
   return out;
 }
 
-function collectFindings(blocks: Array<{ result: Record<string, unknown>; record: string; base: string }>): Array<{ kind: Disposition; reference: string; block: number; text: string; rank: string | null }> {
-  const out: Array<{ kind: Disposition; reference: string; block: number; text: string; rank: string | null }> = [];
-  for (let b = 0; b < blocks.length; b++) {
-    // Every disposition, the refuted ones too: the report check must see them to refuse a report that cites one.
-    for (const d of dispositionsOf(blocks[b]!.result, blocks[b]!)) {
-      out.push({ kind: d.kind, reference: d.reference, block: b, text: d.text, rank: d.rank });
-    }
-  }
-  return out;
-}

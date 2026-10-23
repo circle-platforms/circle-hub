@@ -275,10 +275,8 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.match(reportItemOf(run).summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
     assert.match(started.text,/复核发现 0 条；推翻 1 条/);
-    // The refuted finding's reference as this run sees it (from its own projected fields, bound to this run).
-    const projected = reportItemOf(run).fields.findings as Array<{ kind: string; reference: string }>;
-    const refutedReference = projected.find((f) => f.kind === 'refuted')?.reference;
-    assert.ok(refutedReference !== undefined, 'the projected findings carry the refuted one');
+    assert.equal(reportItemOf(run).fields.findings,undefined,'unused text copies are not projected');
+    assert.equal((reportItemOf(run).fields.review_counts as {total:{refuted:number}}).total.refuted,1);
     void draftFindings;
 
     // The report now needs no per-finding transcription. Its table omits the refuted statement and keeps the count.
@@ -366,10 +364,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const counts=reportItem.fields.review_counts as {total:{findings:number;refuted:number}};assert.equal(counts.total.findings,44);assert.equal(counts.total.refuted,1);
     assert.match(started.text, /推翻 1 条/);
 
-    const allFindings = reportItem.fields.findings as Array<{ kind: string; reference: string }>;
-    const refutedFinding = allFindings.find((f) => f.kind === 'refuted');
-    assert.ok(refutedFinding !== undefined, 'refuted finding exists in projected findings');
-    assert.ok(!citableMatches.includes(refutedFinding.reference), 'refuted finding reference is not copied as citable');
+    assert.equal(reportItem.fields.findings,undefined,'the original receipts retain findings without a second text copy');
 
     // 3. Model submits the final report copied directly from started.text: accepted on the first attempt!
     const answer = await client.call('submit_result', {
