@@ -2,7 +2,8 @@
 // checked against contracts/codes.json, and literal.ts is checked to import nothing from hub/ or packs/.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import ts from 'typescript';
 import { test } from 'node:test';
 import type { MindNode } from '../lib/inject.ts';
 import { parseMindMap } from './cases.ts';
@@ -23,10 +24,7 @@ test('the three code names exist in contracts/codes.json verbatim', () => {
 });
 
 test('literal.ts imports nothing from hub/ or packs/', () => {
-  const source = readFileSync(join(import.meta.dirname, 'literal.ts'), 'utf8');
-  for (const line of source.split('\n')) {
-    if (/^\s*import\b/.test(line)) assert.ok(!/['"](hub|packs)\//.test(line), `an import reaches the Hub: ${line.trim()}`);
-  }
+  assert.deepEqual(independentImports(join(import.meta.dirname, 'literal.ts'), resolve(import.meta.dirname, '../../..')), []);
 });
 
 test('a healthy case has no code; each required_empty problem has one', () => {
@@ -159,4 +157,34 @@ test('review 12: blank-only raw tags still identify a tagged case without priori
   const map = doc(group('r', 'synthetic', { data: { id: 'blank-tag', text: 'synthetic', resource: [' '] }, children: [leaf('e', 'expected')] }));
   const answer = literalGold(map, { caseRule: 'tagged' });
   assert.ok(answer.cases.find(c => c.id === 'blank-tag')?.codes.includes(CODE_REQUIRED_EMPTY));
+});
+
+function independentImports(entry: string, root: string, read: (file: string) => string = file => readFileSync(file, 'utf8')): string[] {
+  const violations: string[] = [], seen = new Set<string>();
+  const visit = (file: string): void => {
+    if (seen.has(file)) return; seen.add(file);
+    const syntax = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const check = (specifier: string): void => {
+      if (specifier.startsWith('node:')) return;
+      const target = /^(hub|packs)\//.test(specifier) ? resolve(root, specifier) : specifier.startsWith('.') || isAbsolute(specifier) ? resolve(dirname(file), specifier) : null;
+      if (target === null) return;
+      if (['hub','packs'].some(dir => target === join(root, dir) || target.startsWith(join(root, dir) + sep))) { violations.push(file + ' -> ' + target); return; }
+      if (target.endsWith('.ts')) visit(target);
+    };
+    const walk = (node: ts.Node): void => {
+      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) check(node.moduleSpecifier.text);
+      if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
+        if (node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])) check(node.arguments[0].text); else violations.push(file + ': unresolved dynamic import');
+      }
+      if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteralLike(node.argument.literal)) check(node.argument.literal.text);
+      ts.forEachChild(node, walk);
+    };
+    walk(syntax);
+  };
+  visit(resolve(entry)); return violations;
+}
+test('review 13: independence guards relative dynamic and transitive target imports', () => {
+  const root = resolve(import.meta.dirname, '../../..'), entry = join(root, 'scripts/real/gold/fake.ts');
+  for (const code of ["import { x } from '../../../hub/fake.ts';", "export * from '../../../packs/fake.ts';", "import('../../../hub/fake.ts');"]) assert.ok(independentImports(entry, root, () => code).length);
+  assert.ok(independentImports(entry, root, file => file === entry ? "import './cases.ts';" : "export * from '../../../hub/fake.ts';").length);
 });
