@@ -151,6 +151,7 @@ export class DispatchService {
     } catch (error) {
       if (intended || eventOf(await this.journal.events(binding.job), 'intent')) {
         if (eventOf(await this.journal.events(binding.job), 'receipt')) await this.pendingRead(binding);
+        else if (d.reconciliation && d.calls.query) return await this.reconcileRequest(by,binding,d,session,stop);
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       }
       else {
@@ -171,13 +172,14 @@ export class DispatchService {
       await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', next_action: '从未写入派发意图，必要时重新核对后派发' });
       return this.status(by, job);
     }
-    if (!receipt || isFrozen(events)) { await this.unknown(binding, '有意图但无完整可信回执或仍被冻结；下一步由管理员对账'); return this.status(by, job); }
     const d = await this.pinned(binding);
+    if ((!receipt || isFrozen(events)) && (!d.reconciliation || !d.calls.query)) { await this.unknown(binding, '有意图但无完整可信回执或仍被冻结；下一步由管理员对账'); return this.status(by, job); }
     const client = this.session(binding, d, await this.secret(binding.executor));
     await client.connect();
     const remote = intent.body.detail.remote_lease as unknown as RemoteLease;
     const stop = this.heartbeat(binding, d, client, remote);
-    try { return await this.observe(by, binding, d, client, receipt.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
+    if (!receipt || isFrozen(events)) { try { return await this.reconcileRequest(by,binding,d,client,stop); } finally { await stop(); } }
+    try { return await this.observe(by, binding, d, client, receipt!.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
     catch { await this.pendingRead(binding); return this.status(by, job); }
     finally { await stop(); }
   }
@@ -224,6 +226,43 @@ export class DispatchService {
       await this.journal.append(binding, 'dispose', 'read_back', 'error', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: false, uncertain: true, missing_fact: '未取得与原派发身份、摘要和时间窗一致的记录', next_action: '管理员继续只读审计；保持未知，或显式确认风险后标记失败' });
       throw new Error('对账未通过；查无记录不能证明未执行，仍冻结');
     }
+  }
+
+  private async reconcileRequest(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, stop: () => Promise<void>): Promise<JobStatus> {
+    const intent = eventOf(await this.journal.events(binding.job),'intent')!;
+    const lease = intent.body.detail.remote_lease as unknown as RemoteLease;
+    const context = {...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,lease_id:lease.id,lease_token:lease.token};
+    const deadline = Date.parse(String(intent.body.detail.not_after));
+    await this.journal.append(binding,'receipt_pending','read','completed',{missing_fact:'提交回执未取得，须取得原请求记录',next_action:'到请求截止时自动只读核对；进程退出后用 job resume 继续，不重发提交'});
+    const wait = deadline - this.now().getTime(); if (wait > 0) await this.sleep(wait);
+    const r = d.reconciliation!;
+    let response: Exchange;
+    try { response = await this.retryRead(binding,client,'query',context,Infinity); }
+    catch { await this.unknown(binding,'原请求记录连续三次读取失败；管理员恢复只读通道后运行 job resume，不得重交'); return this.status(by,binding.job); }
+    const value = response.value; const found = at(value,r.found);
+    const reported = mapped(r.map,at(value,r.state));
+    const identity = at(value,r.request_id) === context.request_id && at(value,r.sha256) === binding.input!.sha256;
+    if (found === true && identity && reported === 'issued' && this.opaque(at(value,r.id))) {
+      await this.journal.append(binding,'receipt','read_back','completed',{remote_id:at(value,r.id),acceptance:'accepted',outcome:'issued',unfreeze:true,reconciled:true},[response.source]);
+      try { return await this.observe(by,binding,d,client,at(value,r.id),intent.body.detail.fences as unknown as HolderSnapshot[],stop); }
+      catch { await this.pendingRead(binding); return this.status(by,binding.job); }
+    }
+    const certified = await this.certified(binding,d,client,'request_journal');
+    if (found === true && identity && reported === 'target_rejected') {
+      const remapped = {...d,receipt:{...d.receipt,stage:r.stage,reached_device:r.reached_device}};
+      if (await this.refused(binding,remapped,client,response,lease)) return this.status(by,binding.job);
+    }
+    const time = (v: unknown) => typeof v === 'number' && r.time_scale_ms !== undefined ? v * r.time_scale_ms : typeof v === 'string' ? Date.parse(v) : NaN;
+    const clock = time(at(value,r.gateway_time)), floor = time(at(value,r.gc_before));
+    const absent = found === false && Number.isFinite(clock) && Number.isFinite(floor) && clock > deadline && deadline > floor;
+    if (certified && (absent || (found === true && identity && reported === 'proven_not_executed' && at(value,r.reached_device) === false))) {
+      await this.journal.append(binding,'reconciled','read_back','completed',{outcome:'proven_not_executed',unfreeze:true,reached_device:false},[response.source]);
+      await stop(); await this.release(binding,client,lease);
+      await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'proven_not_executed',unfreeze:true,next_action:'原请求记录证明未执行；修正前提后可开启新的请求尝试'});
+      return this.status(by,binding.job);
+    }
+    await this.unknown(binding,!certified ? '当前目标版本的请求记录前提未认证；管理员先运行 job conformance 采证并登记该版本，再 resume' : '原请求记录的身份、摘要、状态或保留时间边界不足；管理员核对原件后 resume，不得重交',[response.source]);
+    return this.status(by,binding.job);
   }
 
   private async certified(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, premise: keyof ExecutorDefinition['premises']): Promise<boolean> {

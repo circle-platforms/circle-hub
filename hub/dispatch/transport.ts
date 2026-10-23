@@ -61,7 +61,9 @@ export class RpcClient {
     if (this.definition.allowed_tools.some(name => !seen.has(name))) throw new Error('目标缺少允许清单中的工具；未提交');
   }
   async call(role: CallRole, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
-    return this.invoke(this.definition.calls[role], context, role, role === 'submit' ? this.definition.submit_timeout_ms : this.definition.calls[role].timeout_ms);
+    const declaration = this.definition.calls[role];
+    if (!declaration) throw new Error('该生命周期调用未登记；请补齐定义');
+    return this.invoke(declaration, context, role, role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms);
   }
   async precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
     const declaration = this.definition.precheck_reads[index];
