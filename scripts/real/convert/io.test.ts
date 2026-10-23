@@ -55,6 +55,20 @@ test('case CLI keeps identifiers out of stdout', async () => {
     const map = { root: { data: { text: 'synthetic-root' }, children: Array.from({ length: 5 }, (_, i) => ({ data: { text: 'synthetic-case', priority: 2, auto: 'YES', autoid: `synthetic-case-${i}` } })) } };
     output(dir, 'map.json', JSON.stringify(map));
     const cases = spawnSync(process.execPath, ['scripts/real/convert/auto-cases.ts', join(dir, 'map.json'), '--out', join(dir, 'cases')], { encoding: 'utf8' });
-    assert.equal(cases.status, 0, cases.stderr); assert.match(cases.stdout, /^\{"count":5,"sha256":"[a-f0-9]{64}"\}\n$/);
+    assert.equal(cases.status, 0, cases.stderr); const receipt = JSON.parse(cases.stdout); assert.equal(receipt.count, 5); assert.match(receipt.sha256, /^[a-f0-9]{64}$/); assert.match(receipt.normalized_sha256, /^[a-f0-9]{64}$/); assert.equal(receipt.transformations, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test('original mind map CLI reports normalization hashes and retains the exact upload bytes privately', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'convert-original-'));
+  try {
+    const map = { data: { text: '合成原件' }, children: Array.from({ length: 5 }, (_, i) => ({ data: { text: '合成用例', priority: 2, auto: 'YES', autoid: `synthetic-${i}` } })) };
+    const original = '\uffff\uffff' + JSON.stringify([map]); output(dir, 'original.json', original);
+    const child = spawnSync(process.execPath, ['scripts/real/convert/auto-cases.ts', join(dir, 'original.json'), '--out', join(dir, 'out')], { encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr); const receipt = JSON.parse(child.stdout); assert.equal(receipt.transformations, 2);
+    const provenance = JSON.parse(readFileSync(join(dir, 'out/case-source.normalization.json'), 'utf8')); assert.equal(provenance.transformations.length, 2);
+    assert.equal(receipt.normalized_sha256, provenance.normalized_sha256); assert.ok(!child.stdout.includes('synthetic-0'));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'out/case-source.normalized.json'), 'utf8')), { root: map });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

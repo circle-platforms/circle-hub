@@ -33,7 +33,7 @@ node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合�
 node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked] [--profile <运行环境配置>]
 ```
 
-核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则及编号列表，标准输出仅个数与源字节摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
+先调用包公开的 normalizeMindmap，再用核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则及编号列表，标准输出仅个数与源字节摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
 
 探测只由执行器定义声明，不放进 runtime-profile。6a125df0 的 profile probes 扩展及旧草稿脚本已撤回，case-compile 的同版本字节回到工作簿分支的基线。执行器定义的 version/interfaces 两项形状由 dispatch-gateway 分支确定；它合并以后再接 probes.ts，当前没有猜造兼容形状或跳过测试。
 
@@ -82,3 +82,5 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 零参数启用方法也等待集成者显式决定：草稿不自动放进 allowed，pending 指出缺方法语义和效果事实。明确开放可列为 {object,method,parameters:{}}；明确未开则用 parameters:[]，另填方法级 missing、reason、next。没有决定时，即使删掉 pending，完整覆盖核对也不能通过。
 
 用例选择与计划运行同一抽取规则：任何抽取用例含不精确数值编号即拒绝；每个入选编号必须在全部抽取用例中只出现一次，不只比五个 YES。传 --profile 时按同份配置的 workbook.autoid_pattern 核对入选编号；未提供配置时不声称核过网关的编号位数，集成者在计划前应带同份配置重跑。
+
+原脑图先走同一份 normalize-mindmap.ts 的公开规整：仅去掉头部两个 U+FFFF、转换单元素数组包装。选用例的就是 case-source.normalized.json 那份字节，可交给 Circle 上传；另存变换说明及规整前后摘要。屏幕只加变换条数和规整摘要，不显示原件内容；无法规整时明确要求补取原件并重跑该工具。

@@ -28,3 +28,9 @@ test('the optional deployment profile applies the exact plan autoid pattern', ()
   assert.equal(autoCases(bytes, 'marked', profile).length, 5);
   for (const pattern of ['^[0-9]{18}$', '[', 'unanchored']) assert.throws(() => autoCases(bytes, 'marked', { ...profile, workbook: { autoid_pattern: pattern } }), /autoid_pattern.*--profile/);
 });
+
+test('selection normalizes the two documented local original forms without changing case order', () => {
+  const raw = mindmap(5); const expected = autoCases(Buffer.from(JSON.stringify(raw)));
+  for (const value of ['\uffff\uffff' + JSON.stringify(raw), JSON.stringify([raw]), '\uffff\uffff' + JSON.stringify([raw.root])]) assert.deepEqual(autoCases(Buffer.from(value)), expected);
+  assert.throws(() => autoCases(Buffer.from(JSON.stringify([raw, raw]))), /normalize-mindmap\.ts.*重跑/);
+});
