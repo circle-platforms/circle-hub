@@ -447,7 +447,7 @@ const getNodes: Handler = async (deps, call, args) => {
       }
       note(`knowledge reader attempt ${attempt+1} failed: ${describeError(error)}`);
       if(attempt===2) {
-        const next=new Date(Date.now()+1000).toISOString();
+        const next=new Date((deps.now?.()??new Date()).getTime()+1000).toISOString();
         return {answer:errorAnswer('get_nodes',[{code:'SOURCE_RETRYABLE',message:`缺少这次知识页的读取结果；下一次重读时间 ${next}，保持原查询重读`,fix:PROTOCOL_CODES.SOURCE_RETRYABLE.fix}])};
       }
       await new Promise(resolve=>setTimeout(resolve,10*(attempt+1)));
@@ -489,6 +489,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   const reader: ReaderIdentity = { user: call.principal.id, role: call.principal.role, ...(run === undefined ? {} : { run }) };
   const result = await resolveReference(parsed, {
     retryReads:true,
+    now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
     sources,

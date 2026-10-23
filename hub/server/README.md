@@ -526,3 +526,5 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 Needs：登录停止的具名管理员请求、处置后的自动重读等 hub-unknown-exits 的请求记录接口；未接入前不声称已发出请求。按运行开始时授权读取冻结输入的第 9 条仍等整合者通知相关依赖合并，本分支没有改成绕过当前查看权限。
 
 首轮复核补充：管理员理由只在数据库私有字段查询；calls JSONL 和重建路径均不序列化私有摘要或完整理由，短理由也不例外。
+
+可重试读取的下一次时刻统一由本次调用的 Hub 时钟计算；get_nodes 按引用读取也向解析器传入同一时钟，不另取 Date.now。

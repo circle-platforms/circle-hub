@@ -26,3 +26,12 @@ test('transient reader recovery resolves bytes; integrity failure does not retry
   assert.match(result.fix,/备份恢复/);
  }
 });
+test('source tree entry and record retry deadlines use the resolving Hub clock',async()=>{
+ const at=Date.parse('2035-06-07T08:09:10.000Z');
+ for(const target of [reference,'tree:'+'a'.repeat(64)+'/','entry:'+'a'.repeat(64),'rec:'+'a'.repeat(64)]){
+  let tick=at,calls=0;
+  const fail=()=>{calls++;tick+=500;throw new Error('synthetic reader fault');};
+  const result=await resolveReference(target,{...base,now:()=>new Date(tick),sources:{read:fail},trees:{read:fail,readEntry:fail},records:{read:fail}});
+  assert.equal(calls,3);assert.ok(!result.resolved);assert.equal(result.code,'SOURCE_RETRYABLE');assert.ok(result.message.includes(new Date(tick+1000).toISOString()),result.message);
+ }
+});

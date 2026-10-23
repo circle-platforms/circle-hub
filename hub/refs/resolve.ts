@@ -177,10 +177,9 @@ export function fragmentDigest(fragment: Pick<Fragment, 'text'>): string {
   return sha256Hex(fragment.text);
 }
 
-function unavailable(reference: string, reason?: UncheckedReason): Unresolved {
+function unavailable(reference: string, ctx:ResolveContext, reason?: UncheckedReason): Unresolved {
   const code = reason === 'integrity_unproven' ? 'SOURCE_INTEGRITY_UNPROVEN' : reason === 'check_error' ? 'SOURCE_RETRYABLE' : 'SOURCE_UNAVAILABLE';
-  const next = new Date(Date.now() + 1000).toISOString();
-  const message = reason === 'integrity_unproven' ? '缺少经摘要核验的原件；请管理员从备份恢复后重读' : reason === 'check_error' ? `缺少本次来源读取结果；下一次重读时间 ${next}，按原引用重读` : UNAVAILABLE_MESSAGE;
+  const message = reason === 'integrity_unproven' ? '缺少经摘要核验的原件；请管理员从备份恢复后重读' : reason === 'check_error' ? `缺少本次来源读取结果；下一次重读时间 ${new Date((ctx.now?.()??new Date()).getTime()+1000).toISOString()}，按原引用重读` : UNAVAILABLE_MESSAGE;
   const result: Unresolved = { resolved: false, reference, code, message, fix: PROTOCOL_CODES[code].fix };
   if (reason !== undefined) Object.defineProperty(result, 'reason', { value: reason, enumerable: false });
   return result;
@@ -265,7 +264,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     case 'entry': {
       if (!ctx.trees) {
         diagnose('no tree reader configured');
-        return unavailable(canonical, 'check_error');
+        return unavailable(canonical, ctx, 'check_error');
       }
       const trees = ctx.trees;
       const { value: read, error } = await settle(() =>
@@ -273,7 +272,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
       );
       if (error !== null) {
         diagnose(`tree reader failed: ${String(error)}`);
-        return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
+        return unavailable(canonical, ctx, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
       }
       if (read === null) {
         if (ref.scheme === 'tree' && trees.hasRoot) {
@@ -281,11 +280,11 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
           const visible = await settle(() => hasRoot(ref.root, ctx.reader), ctx.retryReads);
           if (visible.error !== null) {
             diagnose(`tree reader failed: ${String(visible.error)}`);
-            return unavailable(canonical, 'check_error');
+            return unavailable(canonical, ctx, 'check_error');
           }
           if (visible.value === true) return unresolved(canonical, ref.entry ? '知识树里没有这个路径，或这个路径上没有所指的条目' : '知识树里没有这个路径');
         }
-        return unavailable(canonical);
+        return unavailable(canonical, ctx);
       }
       const seen = visibility(read.readTier, consumer, read.text, () => null);
       const grounds = (read.grounds ?? []).filter((ground) => {
@@ -314,25 +313,25 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     case 'rec': {
       if (!ctx.records) {
         diagnose('no record reader configured');
-        return unavailable(canonical, 'check_error');
+        return unavailable(canonical, ctx, 'check_error');
       }
       const records = ctx.records;
       const { value: record, error } = await settle(() => records.read(ref.record, ctx.reader), ctx.retryReads);
       if (error !== null) {
         diagnose(`record reader failed: ${String(error)}`);
-        return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
+        return unavailable(canonical, ctx, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
       }
-      if (record === null) return unavailable(canonical);
+      if (record === null) return unavailable(canonical, ctx);
       let digest: string;
       try {
         digest = recordDigest(record);
       } catch (cause) {
         diagnose(`record cannot be canonicalized: ${String(cause)}`);
-        return unavailable(canonical, 'integrity_unproven');
+        return unavailable(canonical, ctx, 'integrity_unproven');
       }
       if (digest !== ref.record) {
         diagnose(`stored record hashes to ${digest}, not to the referenced digest`);
-        return unavailable(canonical, 'integrity_unproven');
+        return unavailable(canonical, ctx, 'integrity_unproven');
       }
       let value: unknown = record.body;
       let validity: unknown = validityOf(value);
@@ -403,24 +402,24 @@ async function resolveSource(
   if (ref.parser !== undefined && !parser) return unresolved(canonical, `解析器 ${ref.parser} 没有登记`);
   if (!ctx.sources) {
     diagnose('no source reader configured');
-    return unavailable(canonical, 'check_error');
+    return unavailable(canonical, ctx, 'check_error');
   }
   const sources = ctx.sources;
   const { value: read, error } = await settle(() => sources.read(ref.sha256, ctx.reader), ctx.retryReads);
   if (error !== null) {
     diagnose(`source reader failed: ${String(error)}`);
-    return unavailable(canonical, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
+    return unavailable(canonical, ctx, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
   }
-  if (read === null) return unavailable(canonical);
+  if (read === null) return unavailable(canonical, ctx);
   const groundable = isGroundable('src');
   if (read.bytes === null || read.bytes === undefined) {
     if (read.readTier !== 'retain_only') {
       diagnose(`source reader withheld the bytes of a ${String(read.readTier)} source`);
-      return unavailable(canonical, 'integrity_unproven');
+      return unavailable(canonical, ctx, 'integrity_unproven');
     }
   } else if (read.bytes.length !== read.size || sha256Hex(read.bytes) !== ref.sha256) {
     diagnose(`stored bytes (size ${read.bytes.length}, recorded ${read.size}) do not hash to the referenced digest`);
-    return unavailable(canonical, 'integrity_unproven');
+    return unavailable(canonical, ctx, 'integrity_unproven');
   }
   if (read.readTier === 'retain_only') {
     // B02 R[4]: no text, no fragment, no structure. Nor is the selector or range evaluated: whether one resolves would

@@ -504,3 +504,5 @@ boolean checks name the actual attribute. No public filename or source value is 
 OPC member identity is ASCII case-insensitive throughout: required metadata, relationship suffix/directory recognition,
 source/target lookup and duplicate detection all use that equivalence. Original spellings remain in members and no
 relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.
+
+首轮复核修正：读取失败的下一次时刻与有效条件重读共用 ResolveContext.now，只有未注入时才用墙钟；来源、树、条目和记录的失败出口一致。

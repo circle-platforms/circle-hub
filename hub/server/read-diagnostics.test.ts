@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import {test} from 'node:test';
 import {IntegrityError} from '../records/api.ts';
+import {createDefaultRegistry} from '../refs/api.ts';
 import {KnowledgeError} from '../knowledge/api.ts';
 import type {ServerDeps} from './api.ts';
 import {callTool} from './tools.ts';
@@ -28,4 +29,14 @@ test('a typed knowledge integrity fault is reported once with backup recovery',a
  let calls=0;
  const answer=await call({knowledge:{getNodes:async()=>{calls++;throw new IntegrityError('synthetic missing root bytes');}}},{root});
  assert.equal(calls,1);assert.equal(answer.errors[0].code,'SOURCE_INTEGRITY_UNPROVEN');assert.match(answer.errors[0].fix!,/备份恢复/);
+});
+test('knowledge retries and source-reference retries share the injected Hub clock',async()=>{
+ const initial=Date.parse('2035-06-07T08:09:10.000Z');
+ let tick=initial,attempts=0;
+ const now=()=>new Date(tick);
+ const knowledge=await call({now,knowledge:{getNodes:async()=>{attempts++;tick+=500;throw new Error('synthetic page fault');}}},{root});
+ assert.equal(attempts,3);assert.equal(knowledge.errors[0].code,'SOURCE_RETRYABLE');assert.ok(knowledge.errors[0].message.includes(new Date(tick+1000).toISOString()));
+ tick=initial;attempts=0;
+ const source=await call({now,parsers:createDefaultRegistry(),records:{artifacts:{source:async()=>{attempts++;tick+=500;throw new Error('synthetic source fault');}}},knowledge:{treeReader:()=>({read:()=>null,readEntry:()=>null})}},{reference:'src:'+'b'.repeat(64)});
+ assert.equal(attempts,3);assert.equal(source.errors[0].code,'SOURCE_RETRYABLE');assert.ok(source.errors[0].message.includes(new Date(tick+1000).toISOString()));
 });
