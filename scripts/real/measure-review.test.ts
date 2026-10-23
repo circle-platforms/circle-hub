@@ -418,3 +418,15 @@ test('closure B8 another checkout is refused before output or sessions exist',t=
  assert.throws(()=>measureReview({...options(target),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes},driver,()=>{}),e=>e instanceof Error && 'reason' in e && e.reason==='path_in_git');
  assert.equal(calls,0);assert.throws(()=>statSync(target));
 });
+
+test('closure B12 accepted submission reads and recovery retain the session Hub endpoint',async t=>{
+ const {submissionReadArgs}=await import('./measure-review.ts');
+ const f=catalogFixture(t,{provideSubmission:false});const url='http://127.0.0.1:19481/mcp',reference='rec:'+'b'.repeat(64);
+ const show=f.driver.show;f.driver.show=(run)=>{const result=show(run),value=JSON.parse(result.json);value.submissions=[{record:reference,result:value.latest.record}];return {...result,json:JSON.stringify(value)};};
+ let received:string|undefined;f.driver.readSubmission=(_ref,_dir,hubUrl)=>{received=hubUrl;return{code:1,json:''};};
+ assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes,draft:{args:['--hub-url',url],prompt:'synthetic'}},f.driver,()=>{}),1);
+ assert.equal(received,url);
+ const argv=submissionReadArgs({reference},'synthetic.jsonl',url);assert.equal(argv[argv.indexOf('--url')+1],url);
+ const requests=JSON.parse(readFileSync(join(f.out,'r1/catalog/evidence-requests.json'),'utf8'));const gap=requests.find((r:any)=>r.input==='submission');
+ assert.ok(gap.next_action.includes('--url '+JSON.stringify(url)));assert.equal(gap.follow_up.args[gap.follow_up.args.indexOf('--hub-url')+1],url);
+});

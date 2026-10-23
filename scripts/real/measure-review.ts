@@ -35,7 +35,7 @@ export interface Drivers {
   review(spec: SessionSpec, prompt: string, out: string, name: string): { code: number; calls: string };
   /** Fetches one run (`node bin/circle-hub run show <run> --json`). */
   show(run: string): { code: number; json: string };
-  readSubmission?(reference: string, out: string): {code:number;json:string};
+  readSubmission?(reference: string, out: string, hubUrl?: string): {code:number;json:string};
 }
 
 /** Fetch the complete record body; a cursor loop or unavailable page cannot become a partial submission. */
@@ -59,14 +59,18 @@ export function readSubmissionPages(read: (args: {reference:string;cursor?:strin
   return {code:1,json:''};
 }
 
+export function submissionReadArgs(args:{reference:string;cursor?:string}, file:string, hubUrl?:string):string[] {
+  return [resolve(import.meta.dirname,'hub-call.ts'),...(hubUrl === undefined ? [] : ['--url',hubUrl]),'--token-env','HUB_REAL_TOKEN','--structured',file,'get_nodes',JSON.stringify(args)];
+}
+
 /** The real drivers: subprocesses, with the Hub's loopback URL and the repo's binary. */
 export const realDrivers: Drivers = {
-  readSubmission: (reference, out) => {
+  readSubmission: (reference, out, hubUrl) => {
     let page = 0;
     return readSubmissionPages(args => {
       const file = join(out, 'submission-page-' + (++page) + '.jsonl');
       writeFileSync(file, '', {flag:'wx',mode:0o600});
-      const result = spawnSync(process.execPath, [resolve(import.meta.dirname,'hub-call.ts'),'--token-env','HUB_REAL_TOKEN','--structured',file,'get_nodes',JSON.stringify(args)], {cwd:resolve(import.meta.dirname,'../..'),encoding:'utf8',env:process.env,maxBuffer:64*1024*1024});
+      const result = spawnSync(process.execPath, submissionReadArgs(args,file,hubUrl), {cwd:resolve(import.meta.dirname,'../..'),encoding:'utf8',env:process.env,maxBuffer:64*1024*1024});
       return {code:result.status ?? 1,json:readFileSync(file,'utf8').trim()};
     },reference);
   },
@@ -328,6 +332,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       if (draftJudged.detail !== undefined) writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
     }
     if (catalogInput !== undefined && round.draftValid) {
+      const hubUrlIndex = options.draft.args.indexOf('--hub-url');
+      const hubUrl = hubUrlIndex < 0 ? undefined : options.draft.args[hubUrlIndex + 1];
       let original: Uint8Array | undefined;
       if (options.submission !== undefined) {
         try { original = readCatalogInput(options.submission.replaceAll('{n}', String(n))); } catch { /* The report requests accepted bytes by digest. */ }
@@ -336,15 +342,15 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       if (original === undefined && drivers.readSubmission) {
         const reference = acceptedSubmissionReference(shown);
         if (reference !== null) {
-          const read = drivers.readSubmission(reference, dir);
+          const read = drivers.readSubmission(reference, dir, hubUrl);
           if (read.code === 0) original = Buffer.from(read.json, 'utf8');
         }
       }
       const excludeNodes = injected.gold.flatMap(entry => [entry.node, ...(entry.copy === undefined ? [] : [entry.copy]), ...(entry.deletedCases ?? [])]);
-      round.catalog = catalogMarks({ treeXml: catalogInput.treeXml, treeBytes: catalogInput.treeBytes, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, packManifest: catalogInput.manifest, tableBytes: catalogInput.bytes, argumentTypes: catalogInput.argumentTypes, excludeNodes });
+      round.catalog = catalogMarks({ hubUrl, treeXml: catalogInput.treeXml, treeBytes: catalogInput.treeBytes, sourceBytes: copyBytes, run: shown, submissionBytes: original, table: catalogInput.table, packManifest: catalogInput.manifest, tableBytes: catalogInput.bytes, argumentTypes: catalogInput.argumentTypes, excludeNodes });
       for (const pending of round.catalog.requests) {
         pending.next_action += '；补证后运行 follow_up 参数里的独立核对，不要为重新计分再次开模型会话；提交原件路径和输出目录用新的仓库外文件';
-        pending.follow_up = { program: 'node', args: ['scripts/real/gold/catalog-marks.ts', '--tree', options.tree!, '--source', join(options.out, 'mutated.json'), '--run', join(dir, 'draft.run.json'), '--submission', '<已导出的提交原件文件>', '--gold', join(options.out, 'gold.json'), ...(options.catalogManifest === undefined ? [] : ['--manifest', options.catalogManifest]), ...(options.argumentTypes === undefined ? [] : ['--argument-types', options.argumentTypes]), ...(options.catalogTable === undefined ? [] : ['--table', options.catalogTable]), '--out', '<仓库外新核对目录>'] };
+        pending.follow_up = { program: 'node', args: ['scripts/real/gold/catalog-marks.ts', ...(hubUrl === undefined ? [] : ['--hub-url',hubUrl]), '--tree', options.tree!, '--source', join(options.out, 'mutated.json'), '--run', join(dir, 'draft.run.json'), '--submission', '<已导出的提交原件文件>', '--gold', join(options.out, 'gold.json'), ...(options.catalogManifest === undefined ? [] : ['--manifest', options.catalogManifest]), ...(options.argumentTypes === undefined ? [] : ['--argument-types', options.argumentTypes]), ...(options.catalogTable === undefined ? [] : ['--table', options.catalogTable]), '--out', '<仓库外新核对目录>'] };
       }
       writeCatalogReport(join(dir, 'catalog'), round.catalog);
       writeFileSync(join(dir, 'catalog-counts.json'), JSON.stringify(round.catalog.summary, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

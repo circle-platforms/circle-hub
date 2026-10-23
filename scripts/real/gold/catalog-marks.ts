@@ -2,7 +2,7 @@ import { isAttribution, type Attribution, type Verdict, type Nature, type Source
 // Independent cited-command oracle. No Hub or pack implementation is imported.
 // node scripts/real/gold/catalog-marks.ts --tree <locked command XML> --source <mindmap original>
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
-//   [--table <cited-commands.json>] --out <new private directory>
+//   [--hub-url <same endpoint as the draft session>] [--table <cited-commands.json>] --out <new private directory>
 // --manifest <pack.json> binds the table bytes and run.pack_digest to the locked pack version.
 // --argument-types <JSON array> supplies the locked-root overrides: [{command,position,type,origin}], including [].
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
@@ -422,6 +422,7 @@ export interface CatalogReport extends CatalogComparison {
   inputs: { tree_sha256: string | null; source_sha256: string | null; submission_sha256: string | null; expected_submission_sha256: string | null; locked_root: string | null };
 }
 export interface CatalogInputs {
+  hubUrl?: string;
   treeXml: string; treeBytes?: Uint8Array; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
   table: unknown; packManifest?: unknown; tableBytes?: Uint8Array; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
 }
@@ -469,7 +470,7 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   if (!input.tableBytes || !object(tableEntry) || tableEntry.sha256 !== sha256(input.tableBytes)) add('table', '/', '目录表原始字节与锁定清单的摘要', '请集成者取锁定包 tables/cited-commands.json 原字节，通过 --table 和 --manifest 传入后重跑');
   const recordRef = acceptedSubmissionReference(run) ?? '<run.submissions 中 result 等于 latest.record 的 record>';
   if (input.argumentTypes === undefined) add('argument-types', '/', '锁定根生产参数中的 argumentTypes 声明（允许空数组）', '请集成者从锁定根对应生产记录导出声明数组，每项为 {command, position, type, origin}，保存为 Git 外 JSON，通过 --argument-types 传入后重跑');
-  const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
+  const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts' + (input.hubUrl === undefined ? '' : ' --url ' + JSON.stringify(input.hubUrl)) + ' --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
 
   if (wanted === null) add('run', '/latest/result/submission', '最新受理提交的规范 JSON sha256', exportSubmission);
   if (input.submissionBytes === undefined) add('submission', '/', '最新受理提交的完整正文 JSON', exportSubmission);
@@ -539,7 +540,7 @@ function emptyGap(at: Position, fact: string, next_action: string): CatalogRepor
 export function main(argv: string[], say: (line: string) => void = line => process.stdout.write(line + '\n')): number {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
-    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table', '--manifest', '--argument-types'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
+    if (!['--hub-url', '--tree', '--source', '--run', '--out', '--submission', '--gold', '--table', '--manifest', '--argument-types'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
     flags.set(argv[i], argv[i + 1]);
   }
   if (!['--tree', '--source', '--run', '--out'].every(key => flags.has(key))) { say('设计缺口 1；缺 --tree、--source、--run 或 --out；下一步：补齐这些输入后重跑'); return 1; }
@@ -561,7 +562,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
     const argumentTypes = flags.has('--argument-types') ? readArgumentTypes(read('argument-types')) : undefined;
     stage = 'compare';
-    report = catalogMarks({ treeXml, treeBytes, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
+    report = catalogMarks({ hubUrl:flags.get('--hub-url'), treeXml, treeBytes, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
     report.inputs.tree_sha256 = sha256(treeBytes);
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
   } catch (error) {
