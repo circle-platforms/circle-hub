@@ -408,7 +408,7 @@ test('glob patterns cannot escape the workspace independently of their reported 
   const f=skillsFixture();
   try{
     for(const pattern of [join(f.dir,'outside','**/*'),'../../**/*.yml','~/private/**/*','{../outside,safe}/**/*','{safe,/outside}/**/*',String.raw`nested/\.\./\.\./outside/*`])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'deny',pattern);
-    for(const pattern of ['**/*.ts','{src,test}/**/*.ts','name..literal/*'])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'allow',pattern);
+    for(const pattern of ['**/*.ts','src/**/*.ts','test/**/*.ts','name..literal/*'])assert.equal(f.decide(f.input('glob',{pattern,path:f.workdir},[f.workdir])).decision,'allow',pattern);
     assert.equal(f.decide(f.input('read_file',{path:'large_tool_results/example'},[join(f.workdir,'large_tool_results/example')])).decision,'allow','Circle-owned offload reads retain their existing semantics');
   }finally{f.close();}
 });
@@ -448,4 +448,23 @@ test('delegated decisions identify the skill and hook even when the hook omits i
     skillHooks(f,[{source:'console.log(JSON.stringify({decision:"ask"}));'}]);const result=f.decide(f.input());assert.equal(result.decision,'ask');assert.match(result.reason,/技能.*x.*synthetic-0.*确认/);
     skillHooks(f,[{source:'process.exit(1);'}]);const failed=f.decide(f.input());assert.equal(failed.decision,'deny');assert.match(failed.reason,/技能.*x.*synthetic-0.*退出码 1.*verify/);
   }finally{f.close();}
+});
+
+for (const pattern of ['[.][.]/**/*', '.[.]/*', '[.]./*', '{.,x}{.,y}/**/*', '.{.,z}/*', '{.,z}./*', '[.][.]/[.][.]/**/*']) {
+  test(`glob refuses expanded parent traversal ${pattern}`, () => {
+    const f = skillsFixture();
+    try { assert.equal(f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir])).decision, 'deny'); }
+    finally { f.close(); }
+  });
+}
+
+test('glob permits only nonempty relative literal and star segments with no expansion syntax', () => {
+  const f = skillsFixture();
+  try {
+    for (const pattern of ['*.json', '**/*', 'src/**/*.ts', 'src-1/_file.*', '.config/*.json', '*.*', 'name..literal/*']) assert.equal(f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir])).decision, 'allow', pattern);
+    for (const pattern of ['', '/', '//src/*', '/src/*', 'src//*.ts', 'src/', '..', 'src/../*', './*', '[ab]/*', '{src,test}/**/*.ts', '**/*.{ts,js}', '@(src|test)/*', '!(src)/*', 'src/?.ts', 'src\\*.ts', 'src/**x/*', 'src/文件*', 'src/*.ts\n']) {
+      const reply = f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir]));
+      assert.equal(reply.decision, 'deny', pattern); assert.match(reply.reason, /glob.*文法.*重试/);
+    }
+  } finally { f.close(); }
 });

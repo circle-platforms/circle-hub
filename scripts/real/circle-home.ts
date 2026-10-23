@@ -135,15 +135,12 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     try { return path.resolve(fs.realpathSync.native(parent), ...tail); } catch { refuse(`路径 ${JSON.stringify(file)} 无法规范化；请核对权限和软链接后重试`); }
   };
   const safeGlob = (value: unknown): boolean => {
-    if (typeof value !== 'string' || !value.length || /[\0\r\n]/.test(value)) return false;
-    // Inspect literal, escaped and separator spellings before the backend expands braces or globs.
-    const forms = [value, value.replace(/\\([\s\S])/g, '$1'), value.replaceAll('\\', '/')];
-    return forms.every(form => {
-      const normalized = form.replaceAll('\\', '/');
-      return !path.isAbsolute(form) && !path.win32.isAbsolute(form) && !normalized.startsWith('~')
-        && !normalized.split(/[/{},()|]/).some(segment => segment === '..')
-        && !/(?:^|[{,(|])(?:~|\/|[A-Za-z]:)/.test(normalized);
-    });
+    // Circle uses glob 13.0.6 with dot:true, follow:false. In this subset, only *
+    // and whole-segment ** expand; their matches cannot name . or .. entries.
+    // No braces, character classes, escapes or extglobs can synthesize a parent.
+    if (typeof value !== 'string' || !value.length || /[^A-Za-z0-9_.*\/-]/.test(value)) return false;
+    return value.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..'
+      && (!segment.includes('**') || segment === '**'));
   };
   const scriptOf = (command: string, root: string): string | null => {
     let line = command;
@@ -298,7 +295,7 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some(file => typeof file !== 'string'))) refuse('工具 paths 不是文字路径列表；请用工作目录内的完整路径重新发起调用');
     if (allowed.includes(input.tool_name)) result = allow();
     else if (['read_file', 'ls', 'glob', 'grep'].includes(input.tool_name)) {
-      if (input.tool_name === 'glob' && !safeGlob(input.tool_input.pattern)) refuse('glob 的 pattern 不是工作目录内的相对模式；请改用不含绝对路径、~ 或父目录分支的模式后重试');
+      if (input.tool_name === 'glob' && !safeGlob(input.tool_input.pattern)) refuse('glob 的 pattern 不符合本主目录的窄文法；请改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试');
       const root = canonical(workspace);
       if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) refuse('文件工具缺少绝对 cwd；请在专用工作目录重新发起调用');
       if (!Array.isArray(input.paths) || !input.paths.length) refuse(`${input.tool_name} 缺少路径；请填写工作目录内的 path 或 file_path 后重试`);
