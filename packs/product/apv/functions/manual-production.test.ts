@@ -142,6 +142,9 @@ describe('production with the real manual producer', () => {
     assert.ok(again.ok, again.reason ?? '');
     assert.equal(again.root, first.root, 'byte-identical reproduction (K01)');
     assert.ok((await nodeDigest(first.root as string, ['manual', 'cli'])) !== null, 'the manual namespace hangs in the root');
+    // Every production namespace the manual producer fills has a non-null digest (closure finding 22): commands
+    // because the tree names them, manual because the namespaces hang in the root above.
+    assert.ok((await nodeDigest(first.root as string, ['commands', 'demo', 'pool', 'add'])) !== null, 'the named command hangs in /commands');
     const warning = JSON.stringify(again);
     assert.ok(!warning.includes('内部错误'), warning);
 
