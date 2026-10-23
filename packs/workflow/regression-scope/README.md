@@ -26,6 +26,9 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 
 ## The answer
 
+Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<target build>?kind=case&by=commands`, matching the impact product and target root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. `uncovered_changes` adds a support disclosure: N cases have no parsed command and were excluded from scope. This does not change the items, reasons or detail table. The client skill continues by listing those cases for the user to establish command ownership.
+
+
 Each item is one case, id `<document>:<node>`, sorted by id. A case on several added or modified paths is one item; its
 `reasons` are sorted by path and carry only the index of the path in the run-level details table and the change
 (`added` or `modified`) — since 1.3.0 the path string, the digests and the tree references live once per path in
@@ -74,7 +77,7 @@ empty `priorities` array keeps nothing. Input order does not change the output.
 ## How to test
 
 ```
-node --test --test-concurrency=2 "packs/workflow/regression-scope/**/*.test.ts"
+node --test --test-concurrency=1 "packs/workflow/regression-scope/**/*.test.ts"
 npx tsc --noEmit
 node packs/workflow/regression-scope/pack-files.ts --check
 ```
@@ -83,10 +86,12 @@ The function tests build impact views by hand: every change kind, one case on tw
 changed path with no case, the priority filter, `include_added` false, an empty view, 5,000 cases, and order
 independence. `publish.test.ts` publishes through the real registry. `production.test.ts` runs `start_run` against a
 fake reader. Both use a temporary PostgreSQL and are skipped where `sandbox-exec` is absent. A skip is not a pass.
-`production.test.ts` has one `it.todo` for the real knowledge reader, which waits until the product pack's cases index
-is committed.
+`production.test.ts` also exercises the real knowledge reader with synthetic cases, including one unplaced case. The facet tests cover required binding, zero and positive counts, wrong roots and fields, and truncation refusal.
 
 ## Limits
+
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`regression-scope.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a definite disclosure, not an unknown scope verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
+
 
 - At most 10,000 check outcomes in one call (the engine's cap). A larger run becomes one `check_error`. The 5,000-case
   test calls the function directly.
@@ -102,11 +107,18 @@ is committed.
 
 ## Needs from other packages
 
+- If the impact view carried unplaced counts for each side, the second input would no longer be needed. A truncation-proof facet summary is pending in knowledge.
+
+
 - **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): done — empty item sets are accepted as legal answers, storing an empty validation result and carrying the projection's explanation.
 - **runs engine** (C05 R[0], T02): every check needs a refuting sample. This pack's refutations are invariants, not defects of a scope. Request: allow a check whose only honest outcomes are support and unknown to publish without a refutation.
-- **product pack** (`packs/product/apv` cases producer, not in this tree): confirm the case entry fields (`document`, `node`, `title`, `priority`, `negative`). Until that producer is committed, the real-reader end-to-end test stays a todo. Tests here use hand-built views.
+- **product pack** (`packs/product/apv` cases producer, not in this tree): confirm the case entry fields (`document`, `node`, `title`, `priority`, `negative`). The real-reader end-to-end test uses a synthetic producer; other function tests use hand-built views.
 - **knowledge pack**: the impact view is served by the Hub's reader. This pack only parses `impact-view@1`.
 
 ## 生成词表与包版本
 
 regression-scope@1.6.1 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+## Independent gold boundary
+
+The separate raw-map gold imports no Hub or pack code. Its hand-truth exception is `not-prose-ping`: the product README does not specify an English prose stop-word guard for a complete single-word command. No vocabulary axis was added. The integration owner clarified that positive unplaced counts are support disclosures and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes.

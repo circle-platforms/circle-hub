@@ -7,6 +7,7 @@ import type { ChangeKind, Verdict, Reason as UnknownReason } from '../../../../c
 // (C05 R[0]). One ground per outcome (the item's case reference); path strings and definition references are joined from
 // the run-level note.details, so an outcome stays small at any scale.
 
+import { unplacedMessage } from './facets.ts';
 import { groundsOf } from './scope.ts';
 import { uniqueSorted } from './text.ts';
 import { CHANGE_LABEL, PACK, guarded, isRecord } from './text.ts';
@@ -267,8 +268,16 @@ function uncovered(subject: unknown): Outcome[] {
   return out;
 }
 
+function unplacedDisclosure(subject: unknown): Outcome[] {
+  const note = noteOf(subject);
+  // Only projections carry a complete count. Legacy author samples without it do not assert anything about placement.
+  if (note === null || !Object.hasOwn(note, 'unplaced')) return [];
+  if (typeof note.unplaced !== 'number' || !Number.isInteger(note.unplaced) || note.unplaced < 0 || typeof note.unplaced_build !== 'string') return [{ verdict: 'unknown', reason: 'check_error', statement: '缺少完整的未归位计数及构建名；重新绑定完整分面视图并开始运行', grounds: [], tier: TIER }];
+  return [{ verdict: 'support', statement: unplacedMessage({ unplaced: note.unplaced, build: note.unplaced_build }), grounds: [], tier: TIER, data: { unplaced: note.unplaced, build: note.unplaced_build } }];
+}
+
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
-  if (check === 'uncovered_changes') return [...diffSummaries(subject), ...uncovered(subject)];
+  if (check === 'uncovered_changes') return [...diffSummaries(subject), ...uncovered(subject), ...unplacedDisclosure(subject)];
   if (check === 'in_scope') return inScope(subject);
   return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: TIER }];
 }

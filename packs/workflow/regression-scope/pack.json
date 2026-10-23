@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "kind": "workflow",
   "title": "回归范围",
   "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1；瘦身：attached_fields=document,node,title,priority,negative）先按路径列出整个命令差（变更种类、后一构建用例数），再列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "9edcdfdd20a38af46da09e556e6aa500bbcc91e2c06a30c3fa11c34478e3a0e4",
-      "size": 2333
+      "sha256": "5f3eef30b998fc6871556ea47839b33397abf5989596e842824d4a7221ddc5f3",
+      "size": 3375
     },
     {
       "path": "checks.json",
@@ -23,8 +23,13 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "76929123798b23c57027517413f552819e7e620e804a27bf3c533d152509fd54",
-      "size": 13415
+      "sha256": "36d5d9ad87fb0f6f8c03c3f8a5313be362d4825f456bd117e2be2b14ecc7bbab",
+      "size": 14310
+    },
+    {
+      "path": "functions/facets.ts",
+      "sha256": "4ac1db95b861ce392dffaa386d9cbbd25a927833ac63ac2e6cc24a33b5e71186",
+      "size": 2902
     },
     {
       "path": "functions/generated/vocabulary.ts",
@@ -33,8 +38,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "4f032fb651bf6b4f30d7b7448cbc079c264e5298eab5755fada380a36476c45c",
-      "size": 7794
+      "sha256": "d4578631c2369bd7348e43821a9c89a93e5aa407118db55c419558c786f11f29",
+      "size": 8136
     },
     {
       "path": "functions/scope.ts",
@@ -53,13 +58,13 @@
     },
     {
       "path": "functions/view.ts",
-      "sha256": "82961796d92794240fe03e6af8bd83c092797003af02b22f0507f68d4841c561",
-      "size": 7393
+      "sha256": "a9c53467525e928e33417fa9bc8b7ea4d6cd337be40b7e327b50f61118c9a4b3",
+      "size": 7493
     },
     {
       "path": "requirements.json",
-      "sha256": "0ae4ab0d6c84194788c561e1a51d1ed1ec42ef013c81c24b2aee5d5fee278bed",
-      "size": 1324
+      "sha256": "fca86e910ab6221880be63c3c7289814332f57643a1a292c239a415128a57012",
+      "size": 1571
     },
     {
       "path": "samples/negative/not-in-scope.json",
@@ -88,13 +93,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "84b0ec0ec4b4a350595282e547b2a04a34c6630605b61cd863a75cc1d0c7c523",
-      "size": 4532
+      "sha256": "5ccfb55a6bb495920d8c767c0ccad8c3e363240366925e6886834726d059c277",
+      "size": 4862
     },
     {
       "path": "workflow.json",
-      "sha256": "17beba987090757a624a35901eceef52803886d0d565715afce7b91f3cc9e7b0",
-      "size": 1912
+      "sha256": "b2b9cf03324ad407601f098c1bfa96e36f0905c226ce3156aa407fe4eb283aee",
+      "size": 2265
     }
   ]
 }

@@ -54,6 +54,11 @@
       "code": "regression-scope.behaviour_view",
       "when": "behaviour 槽绑了不可用的影响视图：不是影响视图、changed_kinds 不是 behaviour、或不是同一对构建",
       "fix": "behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定"
+    },
+    {
+      "code": "regression-scope.facets_view",
+      "when": "未绑定唯一的完整目标根用例命令分面，或分面截断、内容不合式",
+      "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；缺少完整计数时先补取未截断视图再开始运行"
     }
   ],
   "warnings": [
