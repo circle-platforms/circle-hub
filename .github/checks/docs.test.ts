@@ -265,6 +265,11 @@ describe('no machine paths in repository text', () => {
     for(const scheme of ['http','https','ftp','ftps'])assert.deepEqual(localPathProblems('docs/example.md',scheme+'://example.com'+'/'+'home/docs'),[]);
   });
 
+  it('accepts network URL paths adjoining prose and punctuation without hiding adjacent machine paths', () => {
+    for(const value of ['参见https://example.com/home/docs/start','链接：https://api.example.com/v1/Users/42/profile','文档（https://example.com/home/docs）','URL:https://example.com/home/docs','|https://example.com/home/docs|','name,https://example.com/home/docs','**https://example.com/home/docs**'])assert.deepEqual(localPathProblems('docs/example.md',value),[],value);
+    for(const prefix of ['[x](https://example.com)','参见https://example.com，'])assert.equal(localPathProblems('docs/example.md',prefix+'/'+'home/synthetic/project').length,1,prefix);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
