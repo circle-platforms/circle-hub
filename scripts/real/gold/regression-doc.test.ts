@@ -134,8 +134,8 @@ describe('regressionDocGold', () => {
   const syntheticXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
 <commands>
   <scope type="global">
-    <menu name="slb">
-      <menu name="proxyip">
+    <menu name="gizmo">
+      <menu name="relay">
         <item name="global">
           <arguments>
             <arg name="" type="IPADDR"></arg>
@@ -172,7 +172,7 @@ describe('regressionDocGold', () => {
         children: [
           node('061：10.6.4', {
             children: [
-              node('配置slb proxyip global 192.0.2.1 80', { id: 'case-glued-1', resource: ['功能'] }),
+              node('配置gizmo relay global 192.0.2.1 80', { id: 'case-glued-1', resource: ['功能'] }),
             ],
           }),
         ],
@@ -182,7 +182,7 @@ describe('regressionDocGold', () => {
     assert.deepEqual(gold.defects, ['160002']);
     assert.equal(gold.cases.length, 1);
     assert.deepEqual(gold.cases[0].commands, [
-      { head: 'slb proxyip global', parameters: ['192.0.2.1', '80'] },
+      { head: 'gizmo relay global', parameters: ['192.0.2.1', '80'] },
     ]);
   });
 
