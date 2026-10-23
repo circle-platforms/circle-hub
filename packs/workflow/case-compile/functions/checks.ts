@@ -35,8 +35,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     const at = `/data/steps/${i}`;
     const method = runtimeMethod(s.contract!, step.object, step.method);
     if (!method) { out.push(refute(s, 'method_forbidden', `第 ${i + 1} 步不是合约启用的组合`, at)); continue; }
-    const allowed = allowedCall(s.profile!, step.object, step.method);
-    if (!allowed) { out.push(refute(s, 'method_not_allowed', `第 ${i + 1} 步虽在合约启用集合里，本轮配置没有允许`, at)); continue; }
+    const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
     if (Object.values(allowed.parameters).some((role) => role === 'literal_assertion')) { out.push(refute(s, 'assertion_in_steps', '断言写进 expects，带引文和 after', at)); continue; }
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
@@ -45,13 +44,13 @@ export function checkContractShape(input: unknown): Outcome[] {
       const role = allowed.parameters[v.name];
       if (!Object.hasOwn(allowed.parameters, v.name)) { out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色；先在运行环境配置里给它定角色，再按角色筛查`, v.pointer)); continue; }
       if (role === 'wait' && (!/^[0-9]+$/.test(v.value) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
-      if (role === 'device_cli' && !hasBalancedCommandText(v.value.normalize('NFKC'))) out.push(refute(s, 'param_value', '命令目录正规化后的引号必须成对，不能以反斜杠结尾；先修正命令文字', v.pointer));
+      if (role === 'device_cli' && !hasBalancedCommandText(v.value.normalize('NFKC')) && !bound.problems.some((problem) => problem.code === 'param_value' && problem.pointer === v.pointer)) out.push(refute(s, 'param_value', '命令目录正规化后的引号必须成对，不能以反斜杠结尾；先修正命令文字', v.pointer));
       if (role === 'device_cli' && deniedCommand(v.value, s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
       if (role === 'host_shell' && /[$`*?\[\]{}~;|&<>]/.test(v.value)) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
       if (role === 'host_shell' && deniedCommand(v.value, s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
   }
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约与本轮允许集合，签名和值均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -78,11 +77,11 @@ export function checkAddresses(input: unknown): Outcome[] {
       const found = readAddress(bed, s.leases, s.now, address.text);
       if (found.kind === 'off_bed') { out.push(refute(s, 'address_off_bed', `字面地址 ${address.text} 不在本台架或本血缘分配集合里`, pointer)); continue; }
 
-      if (device && found.kind === 'interface' && found.device !== device && found.type !== 'server') out.push(refute(s, 'address_wrong_device', '设备命令只许本设备接口地址、本血缘分配地址和服务器接口地址', pointer));
+      // Decision 35 permits every interface of this bed, including other devices, plus lineage allocations.
     }
   };
   for (const [i, step] of slots.steps.entries()) {
-    const method = runtimeMethod(s.contract!, step.object, step.method); const allowed = allowedCall(s.profile!, step.object, step.method);
+    const method = runtimeMethod(s.contract!, step.object, step.method); const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
     const bound = method ? bindArguments(method, step, `/data/steps/${i}`).values : [];
     for (const v of bound) if (allowed && !Object.hasOwn(allowed.parameters, v.name) && !method?.parameters.some((p) => p.name === v.name && p.redacted)) out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色，地址用途无法核对；请在运行环境配置里给它定角色`, v.pointer));
     const seat = s.profile!.seats.find((v) => v.object === step.object);

@@ -30,7 +30,7 @@ export function commandSubject(input: unknown): unknown {
   if (read.ok && contract.ok && profile?.ok) for (const step of read.slots.steps) {
     const allowed = allowedCall(profile.profile, step.object, step.method);
     const method = contract.contract.enabled.find((v) => v.object === step.object && v.method === step.method);
-    if (!allowed || !method) continue;
+    if (!allowed || !method) return { item: subject.item, location: subject.location };
     const bound = bindArguments(method, step, '');
     if (bound.problems.length || bound.values.some((v) => !Object.hasOwn(allowed.parameters, v.name))) return { item: subject.item, location: subject.location };
     for (const v of bound.values) if (allowed.parameters[v.name] === 'device_cli') { if (!hasBalancedCommandText(v.value.normalize('NFKC'))) return { item: subject.item, location: subject.location }; phrases.push(v.value); }

@@ -70,9 +70,8 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (!isRecord(raw)) { issue(at, '允许组合不是对象'); continue; }
     const method = runtimeMethod(contract, String(raw.object), String(raw.method));
     if (!method) issue(at, '允许组合不在合约启用集合里');
-    else if (FORMAT.closed_dispatches.includes(method.dispatch)) issue(at, '本轮不开放该派发方式');
     const pair = JSON.stringify([raw.object, raw.method]); if (pairs.has(pair)) issue(at, '允许组合重复'); pairs.add(pair);
-    if (!isRecord(raw.parameters) || !Object.keys(raw.parameters).length) issue(`${at}/parameters`, '没有参数角色映射');
+    if (!isRecord(raw.parameters)) issue(`${at}/parameters`, '没有参数角色映射对象');
     const parameters = Object.create(null) as Record<string, string>;
     for (const [name, role] of Object.entries(isRecord(raw.parameters) ? raw.parameters : {})) {
       const pat = `${at}/parameters/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;

@@ -31,7 +31,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "每个字面地址都在本台架，设备命令只许本设备接口、本血缘分配和服务器地址；替换表一一对应且已应用"
+      "basis": "决定 35：本台架所有设备接口及本血缘分配地址均可出现；台架外原地址经 replacements 换入，掩码、前缀与非地址令牌不当作主机地址"
     },
     {
       "id": "commands_catalog",

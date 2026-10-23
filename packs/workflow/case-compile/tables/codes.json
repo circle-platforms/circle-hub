@@ -14,11 +14,6 @@
       "fix": "只用合约启用且非内部、非认证候选的组合"
     },
     {
-      "code": "case-compile.method_not_allowed",
-      "when": "组合没有被本轮配置允许",
-      "fix": "换成本轮配置允许的组合，不通过工作簿或计划申请授权"
-    },
-    {
       "code": "case-compile.param_arity",
       "when": "多余、缺失或重复参数",
       "fix": "按原始签名给齐必填参数，删去未声明或重复参数，不补默认值"
@@ -57,11 +52,6 @@
       "code": "case-compile.address_off_bed",
       "when": "字面地址或替换目标不在台架或本血缘分配中",
       "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行；用例原文的台架外地址应加入 replacements 并在槽位写替换后的最终文字"
-    },
-    {
-      "code": "case-compile.address_wrong_device",
-      "when": "设备命令使用了其他非服务器设备地址",
-      "fix": "换成该座位设备的接口地址、本血缘分配地址或服务器地址"
     },
     {
       "code": "case-compile.replacement_invalid",

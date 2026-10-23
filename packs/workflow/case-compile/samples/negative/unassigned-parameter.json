@@ -1,9 +1,14 @@
 {
-  "id": "method_not_allowed_negative",
+  "id": "unassigned_parameter_negative",
   "source": "author",
   "check": "contract_shape",
-  "note": "合成反例：method-not-allowed",
+  "note": "合成反例：unassigned-parameter",
   "subject": {
+    "case_texts": [
+      "健康检查间隔配置测试",
+      "widget health interval 60",
+      "健康检查间隔设置成功"
+    ],
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "data": {
@@ -13,8 +18,10 @@
       "steps": [
         {
           "object": "widget-seat",
-          "method": "credential",
-          "args": [],
+          "method": "configure",
+          "args": [
+            "widget health interval 60"
+          ],
           "keywords": {}
         },
         {
@@ -23,7 +30,9 @@
           "args": [
             "echo 192.0.2.90"
           ],
-          "keywords": {}
+          "keywords": {
+            "then": "reboot"
+          }
         },
         {
           "object": "widget-clock",
@@ -131,12 +140,20 @@
                 "kind": "positional_or_keyword",
                 "required": true,
                 "default": null
+              },
+              {
+                "name": "then",
+                "kind": "positional_or_keyword",
+                "required": false,
+                "default": null
               }
             ],
             "required": [
               "command"
             ],
-            "optional": [],
+            "optional": [
+              "then"
+            ],
             "text": "(fixture)"
           },
           "g_syntax": "synthetic argument description",
@@ -327,14 +344,15 @@
         "schema": "ist.excel.capability-certification-set",
         "receipt_count": 0
       },
-      "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+      "contract_sha256": "55914c6376d678972ec4e291d767dcd20d3f4943f9df80614b0a94cfe12c4317"
     },
     "profile": {
       "schema": "runtime-profile@1",
       "synthetic": true,
+      "max_wait_seconds": 300,
       "runtime": {
         "minimum_version": "synthetic-runtime-v2",
-        "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+        "contract_sha256": "55914c6376d678972ec4e291d767dcd20d3f4943f9df80614b0a94cfe12c4317"
       },
       "bed": "bed-a",
       "workbook": {
@@ -517,7 +535,7 @@
   "expect": [
     {
       "verdict": "refute",
-      "code": "case-compile.method_not_allowed",
+      "code": "case-compile.param_unassigned",
       "item": "doc-1:c-1",
       "tier": "blocking"
     }

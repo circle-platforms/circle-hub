@@ -74,9 +74,9 @@ describe('literal address verification for runtime plans', () => {
     const data = goodData(); data.steps[0].args = [`widget address ${address}`];
     assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
   });
-  for (const address of ['192.0.2.1', '192.0.2.80', '192.0.2.130']) it(`another device address is refused in device CLI: ${address}`, () => {
+  for (const address of ['192.0.2.1', '192.0.2.80', '192.0.2.130']) it(`other bed interfaces are allowed by decision 35: ${address}`, () => {
     const data = goodData(); data.steps[0].args = [`widget address ${address}`];
-    assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.address_wrong_device');
+    assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
   });
   it('off-bed addresses and unowned leases cannot be used', () => {
     const data = goodData(); data.steps[0].args = ['widget address 192.0.2.200'];
@@ -89,11 +89,11 @@ describe('literal address verification for runtime plans', () => {
   it('replacement targets are on bed and the mapping is one-to-one', () => {
     const data = goodData(); data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }, { case: '192.0.2.201', bed: '192.0.2.90' }];
     assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.replacement_invalid');
-    data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.250' }];
+    data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.250' }]; data.expects[0].quote.text = '原文 192.0.2.200 健康检查间隔设置成功';
     assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.address_off_bed');
   });
   it('a declared replacement must already be applied to plan text', () => {
-    const data = goodData(); data.replacements = [{ case: '192.0.2.10', bed: '192.0.2.90' }]; data.steps[0].args = ['widget address 192.0.2.10'];
+    const data = goodData(); data.replacements = [{ case: '192.0.2.10', bed: '192.0.2.90' }]; data.expects[0].quote.text = '原地址 192.0.2.10 健康检查间隔设置成功'; data.steps[0].args = ['widget address 192.0.2.10'];
     assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.replacement_missing');
   });
   it('an unknown bed is refused', () => { const data = goodData(); data.bucket = 'absent'; assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.bed_unknown'); });
