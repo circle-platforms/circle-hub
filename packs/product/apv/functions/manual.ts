@@ -766,45 +766,69 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    * is read only outside parameter syntax: emphasis `*…*`, group brackets {}, [], <> and their contents are skipped,
    * so a slash or comma inside a parameter never becomes a split point (closure findings 1 and 16).
    */
-  const boldRuns = (cell: string): Array<{ bold: string; between: string }> => {
-    const out: Array<{ bold: string; between: string }> = [];
+  const boldRuns = (cell: string): Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> => {
+    const out: Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> = [];
     let at = 0;
     let between = '';
     let guard = 0;
     while (at < cell.length && guard++ < 10000) {
       const open = cell.indexOf('**', at);
       if (open < 0) break;
-      // The text before this bold run: emphasis marks and group brackets (with their contents) are part of the
-      // signature's own syntax, so only the characters OUTSIDE them count as a plain between-run.
-      const pending = cell.slice(at, open);
-      let clean = '';
-      let scan = 0;
-      while (scan < pending.length) {
-        const ch = pending[scan]!;
-        if (ch === '*' || ch === '\\') { scan += ch === '\\' && pending[scan + 1] === '*' ? 2 : 1; continue; }
-        if (ch === '{' || ch === '[' || ch === '<') {
-          const close = ch === '{' ? '}' : ch === '[' ? ']' : '>';
-          const end = pending.indexOf(close, scan + 1);
-          scan = end < 0 ? pending.length : end + 1;
-          continue;
-        }
-        clean += ch;
-        scan += 1;
-      }
-      between += clean;
       const close = cell.indexOf('**', open + 2);
       if (close < 0) break;
-      // The parameter syntax after the bold head rides with it up to the next bold run's opening '**'. When another
-      // bold run follows, the text between the two runs is a between-run (checked for connectives), never part of
-      // this piece; when none follows, the rest of the cell is the signature's own parameter tail.
       const nextOpen = cell.indexOf('**', close + 2);
       if (nextOpen < 0) {
-        out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between });
+        // The tail after the last bold close rides with the signature ONLY when it is signature syntax (emphasis
+        // marks, escaped marks, parameter brackets with their contents, white space): plain words and notes after
+        // the head make the whole cell prose (closure c3 item 1) — they are never re-wrapped in bold.
+        const tail = cell.slice(close + 2);
+        let tailScan = 0;
+        let tailOk = true;
+        while (tailScan < tail.length) {
+          const ch = tail[tailScan]!;
+          if (ch === '\\') { tailScan += tail[tailScan + 1] === '*' ? 2 : 1; continue; }
+          if (ch === '{' || ch === '[' || ch === '<') {
+            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
+            const end = tail.indexOf(closeCh, tailScan + 1);
+            if (end < 0) { tailOk = false; break; }
+            tailScan = end + 1;
+            continue;
+          }
+          if (ch === '*' || /\s/u.test(ch)) { tailScan += 1; continue; }
+          tailOk = false;
+          break;
+        }
+        if (!tailOk) {
+          out.push({ bold: '', between, start: open, end: cell.length, proseTail: true });
+        } else {
+          out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between, start: open, end: cell.length });
+        }
         between = '';
         at = cell.length;
       } else {
-        out.push({ bold: cell.slice(open + 2, close), between });
-        between = cell.slice(close + 2, nextOpen);
+        // Split the mid at its last signature syntax: the parameters ride with their run VERBATIM, the remaining
+        // run is the separator (a connective, or prose — the caller decides), never part of this piece.
+        const mid = cell.slice(close + 2, nextOpen);
+        let midScan = 0;
+        let syntaxEnd = 0;
+        while (midScan < mid.length) {
+          const ch = mid[midScan]!;
+          if (ch === '\\') { midScan += mid[midScan + 1] === '*' ? 2 : 1; syntaxEnd = midScan; continue; }
+          if (ch === '{' || ch === '[' || ch === '<') {
+            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
+            const end = mid.indexOf(closeCh, midScan + 1);
+            if (end < 0) break;
+            midScan = end + 1;
+            syntaxEnd = midScan;
+            continue;
+          }
+          if (ch === '*') { midScan += 1; syntaxEnd = midScan; continue; }
+          if (/\s/u.test(ch)) { midScan += 1; continue; }
+          break;
+        }
+        const syntax = mid.slice(0, syntaxEnd);
+        out.push({ bold: cell.slice(open + 2, close) + syntax, between, start: open, end: close + 2 + syntaxEnd });
+        between = mid.slice(syntaxEnd).trim();
         at = nextOpen;
       }
     }
@@ -813,27 +837,40 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
     if (!cell.includes('**')) return [];
-    // Split ONLY between two bold runs, and only when the plain text between them is nothing but connectives
-    // (与/和/及/或、顿号、逗号；斜线只在命令列，closure 33b62b43). Everything inside emphasis, {} [] <> groups stays
-    // part of one signature, and a between-run holding more than connectives makes the whole cell prose: its bold
-    // span is a mention, recorded in command_literals only.
+    // The pieces of one cell: bold runs with the parameter syntax that rides with them, split ONLY at a plain
+    // connective run (与/和/及/或、顿号、逗号；斜线只在命令列). A bold span that follows another with NO separator
+    // rides with it (a bold keyword or parameter — README 151-153: an anchor may span several runs); a prose run
+    // ends the list, the bold runs before it stay signatures and the rest of the cell is the row's prose.
     const runs = boldRuns(cell);
     if (runs.length === 0) return [];
+    if (runs.some((run) => run.proseTail === true)) return [];
     const out: Anchor[] = [];
+    let acceptedEnd = -1;
+    let outStart = -1;
     for (const [k, run] of runs.entries()) {
       if (k > 0) {
-        // Only a purely connective plain run continues the list; a slash run does so only in a command column.
-        const connective = /^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between));
-        if (!connective) {
-          // A prose run ENDS the list: the bold runs before it (a list of signatures) stay, the rest of the cell is
-          // the row's prose — its bold span is a mention of the LAST listed command, never a separate signature.
-          break;
+        const connective = run.between.trim() !== '' && (/^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between)));
+        const prose = run.between.trim() !== '' && !connective;
+        if (prose) break;
+        if (run.between.trim() === '' && acceptedEnd >= 0) {
+          // Fold into one signature: re-parse the cell from the first run's bold open through this run's syntax.
+          const merged = parseAnchor(cell.slice(outStart, run.end), heads);
+          if (merged !== null && isRowSignature(merged, headerNamesCommands)) {
+            out.pop();
+            out.push(merged);
+            acceptedEnd = run.end;
+            continue;
+          }
+          return [];
         }
       }
-      const anchor = parseAnchor(`**${run.bold}**`, heads);
-      if (anchor === null) return [];
-      if (!isRowSignature(anchor, headerNamesCommands)) return [];
+      // Parse THIS run's own syntax, bold marks intact (re-wrapping run.bold would double the closing stars of a
+      // ***-closed run; slicing from the cell start would swallow the connective before it).
+      const anchor = parseAnchor(cell.slice(run.start, run.end), heads);
+      if (anchor === null || !isRowSignature(anchor, headerNamesCommands)) return [];
       out.push(anchor);
+      acceptedEnd = run.end;
+      if (outStart < 0) outStart = run.start;
     }
     return out;
   };

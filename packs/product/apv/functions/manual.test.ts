@@ -586,6 +586,37 @@ describe('placement against the build’s command tree', () => {
   });
 
 
+
+  it('keeps a multi-run cell whole: parameters and bold keywords ride with their signature (closure c3 item 1)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu><menu name="show"><item name="version" help_string="v"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    // A bold parameter keyword after the head's parameters: one signature, both parameters.
+    const keyword = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* **weight** *\\<w\\>* | 添加 |\n'), null, { catalog: tree });
+    const def = keyword.entries.find((entry) => entry.kind === 'definition' && entry.path === '/commands/demo/pool/add');
+    assert.ok(def !== undefined, JSON.stringify(keyword.entries.map((e) => [e.kind, e.path])));
+    assert.equal(def.statement, 'demo pool add <name> weight <w>');
+    // Two parameterized signatures joined by 与 or 、: both commands appear (a row under their common parent with
+    // both literals), and neither is dropped from the statement.
+    for (const join of ['与', '、']) {
+      const two = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* ${join} **demo pool mode** *\\<m\\>* | 说明 |\n`), null, { catalog: tree });
+      const row = two.entries.find((entry) => String(entry.statement).includes('demo pool add') && String(entry.statement).includes('demo pool mode'));
+      assert.ok(row !== undefined, join);
+      const literals = (row.data.command_literals ?? []) as string[];
+      assert.ok(literals.includes('demo pool add') && literals.includes('demo pool mode'), `${join}: ${JSON.stringify(literals)}`);
+    }
+    // A ***-closed first signature still splits at the connective: both commands reach the row's statement.
+    const star = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add *\\<name\\>***、**demo pool mode** | 说明 |\n'), null, { catalog: tree });
+    const starRow = star.entries.find((entry) => String(entry.statement).includes('demo pool add') && String(entry.statement).includes('demo pool mode'));
+    assert.ok(starRow !== undefined, JSON.stringify(star.entries.map((e) => [e.kind, String(e.statement)])));
+    const starLiterals = (starRow.data.command_literals ?? []) as string[];
+    assert.ok(starLiterals.includes('demo pool add') && starLiterals.includes('demo pool mode'), JSON.stringify(starLiterals));
+    // A plain word after the head and a note after the parameter are prose, never a re-wrapped signature.
+    for (const cell of ['**show version** detail', '**demo pool add** *\\<name\\>* (optional)']) {
+      const prose = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| ${cell} | 说明 |\n`), null, { catalog: tree });
+      assert.ok(!prose.entries.some((entry) => entry.kind === 'definition' && String(entry.statement).includes('detail') || entry.kind === 'definition' && String(entry.statement).includes('(optional)')), cell);
+      assert.ok(!prose.entries.some((entry) => entry.kind === 'definition' && String(entry.statement) === 'show version detail'), cell);
+    }
+  });
+
   it('lists as drift only the literals the tree cannot resolve, and records row literals (closure findings 4, 17, 20, 21)', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item><item name="add" help_string="a2"><arguments></arguments></item></menu><item name="probe" help_string="p"><arguments></arguments></item></menu><menu name="show"><item name="demo" help_string="d"><arguments></arguments></item></menu></scope></commands>')).catalog;
     // A variant signature with one variant present: only the missing one is drift.
