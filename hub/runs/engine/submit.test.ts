@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { RunSummary } from '../../../contracts/src/run.ts';
@@ -396,7 +397,7 @@ test('absent and forbidden runs give the same answer', { skip }, async () => {
   const malformed = await h.service.submitResult(h.alice, { items: [] }, h.call());
   assert.deepEqual(unknown, forbidden);
   assert.deepEqual(malformed, forbidden);
-  assert.deepEqual(forbidden, { call_result: 'error', acceptance: 'not_accepted', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无；真实原因只在管理员日志里', path: '/run' }] });
+  assert.deepEqual(forbidden, { call_result: 'error', acceptance: 'not_accepted', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/run' }] });
   valid(forbidden);
   // nothing of bob's was stored on alice's run
   const stored = await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' });

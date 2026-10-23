@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
 import type { RunSummary } from '../../../contracts/src/run.ts';
 import { ResolveReferenceOutput } from '../../../contracts/src/tools.ts';
@@ -117,7 +118,7 @@ test('resolve_reference on a run the caller may not see gives the same empty sha
   const forbidden = await h.service.resolveReference(h.bob, { run: run.run, text: '设置' }, h.call());
   const absent = await h.service.resolveReference(h.alice, { run: 'run_01m5h9zh07x7amhg4bwmye5yhw', text: '设置' }, h.call());
   assert.deepEqual(forbidden, absent);
-  assert.deepEqual(forbidden, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无；真实原因只在管理员日志里', path: '/run' }], references: [], diagnostics: [] });
+  assert.deepEqual(forbidden, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/run' }], references: [], diagnostics: [] });
   assert.ok(ResolveReferenceOutput.safeParse({ ...forbidden, trace: '0af7651916cd43dd8448eb211c80319c' }).success);
 });
 

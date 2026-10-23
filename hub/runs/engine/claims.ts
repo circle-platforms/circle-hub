@@ -101,7 +101,8 @@ function worstResolution(resolutions: readonly ValueResolution[]): ValueResoluti
 export interface FactClaimInput {
   item?: string;
   requirement?: string;
-  outcome: CheckOutcome;
+  // Check outputs validate their tier at the check boundary. Projection facts have no check tier to consume here.
+  outcome: Omit<CheckOutcome, 'tier'> & Partial<Pick<CheckOutcome, 'tier'>>;
   /** rule@version of the check: the interpreter, or the pack function check of the pack version. */
   rule: string;
   judges: SourceRole;
