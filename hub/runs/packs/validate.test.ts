@@ -286,7 +286,7 @@ test('declaration files follow their contract shapes', async () => {
 
 test('versions have one spelling, and each kind keeps to its own declaration files', async () => {
   await refused({ ...base, version: '1.01.0' }, 'manifest.version', { file: 'pack.json', field: '/version' });
-  await accepted({ ...base, version: '10.0.12' });
+  await accepted({ ...base, version: '11.0.12' });
   await refused(withFiles(productPack(), { 'workflow.json': base.files['workflow.json'] }), 'manifest.foreign_file', { file: 'pack.json' });
   await refused(withFiles(productPack(), { 'samples/positive/s.json': base.files['samples/positive/titles-good.json'] }), 'samples.unknown_check');
   await refused(withFiles(systemPack(), { 'checks.json': base.files['checks.json'] }), 'manifest.foreign_file');
@@ -423,4 +423,26 @@ test('check reads max_bytes is validated against core limit of 1 MiB', async () 
     (f.checks[0].reads as any) = { roles: ['expected'], types: ['invalid-no-colon'] };
   });
   await refused(invalidType, 'checks.shape', { file: 'checks.json' });
+});
+
+test('publishing checks every local tool while packages without tools retain their validation', async () => {
+  await accepted(workflowPack({ version: '10.6.0' }));
+  await accepted(withFiles(workflowPack({ version: '10.6.0' }), { 'tools/task.ts': "import { readFile } from 'node:fs/promises'; import '../functions/helper.ts'; void readFile;", 'functions/helper.ts': 'export const helper = 1;' }));
+  await refused(withFiles(workflowPack({ version: '10.6.0' }), { 'tools/task.ts': "import 'zod';" }), 'tools.import_package', { file: 'tools/task.ts' });
+  await refused(withFiles(workflowPack({ version: '10.6.0' }), { 'tools/task.ts': "import '../../outside.ts';" }), 'tools.import_outside');
+  await refused(withFiles(workflowPack({ version: '10.6.0' }), { 'tools/task.mjs': 'module.exports = 1;' }), 'tools.unsupported_syntax');
+});
+
+test('core emitter usage follows the configured contribution requirement rather than an installed interpreter',async()=>{
+  const code='core.contribution.signature_required';
+  const row=(pack:PackDescription,index:number)=>editJson<Json>(pack,'requirements.json',value=>{value.requirements[index].error_handling.push({code,action:'repair',max_rounds:2});});
+  const capability=editJson<Json>(base,'workflow.json',value=>{value.contribution={slot:'findings',requirement:'titles'};});
+  const used=await accepted(row(capability,0));
+  assert.ok(!used.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+  const other=await accepted(row(capability,1));assert.ok(other.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('回注准入')));
+  const absent=await accepted(row(base,0));assert.ok(absent.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('回注准入')));
+  const structure=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.structure.duplicate_key',action:'repair',max_rounds:2});}));
+  assert.ok(!structure.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
+  const catalog=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.catalog.not_member',action:'repair',max_rounds:2});}));
+  assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
 });

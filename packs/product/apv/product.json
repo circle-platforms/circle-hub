@@ -27,7 +27,8 @@
       "function": { "module": "functions/producers.ts", "export": "manual" },
       "inputs": {
         "cli": { "external": "manual:cli:{line}", "optional": true },
-        "app": { "external": "manual:app:{line}", "optional": true }
+        "app": { "external": "manual:app:{line}", "optional": true },
+        "tree": { "source": "tree" }
       },
       "placement": "judgment_allowed"
     },

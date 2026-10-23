@@ -1,3 +1,4 @@
+import type { Verdict, CheckTier, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Shared helpers of the case-compile pack functions (pure TypeScript, no imports outside the pack).
 
 export const PACK = 'case-compile';
@@ -25,12 +26,12 @@ export function refusal(code: string, message: string, fix: string, warnings: Pa
 
 /** A check outcome, statement always closed by the two markers (the synthetic one only when the contract is synthetic). */
 export interface Outcome {
-  verdict: 'support' | 'refute' | 'unknown';
+  verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
   grounds: string[];
-  tier: 'blocking' | 'advisory';
-  reason?: 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed';
+  tier: CheckTier;
+  reason?: Extract<UnknownReason, 'missing_input' | 'integrity_unproven' | 'check_error' | 'output_failed'>;
   item?: string;
   /** Where the judged content sits in the subject (the /data/... forms of this pack, or the interpreter's own). */
   pointer?: string;
@@ -38,8 +39,10 @@ export interface Outcome {
 }
 
 /** The two markers every conclusion of this pack carries (task page A.5): never "可以运行". */
-export function markers(synthetic: boolean): string {
-  return synthetic ? '（按合成合约核对；不证明在真实设备上跑得通）' : '（不证明在真实设备上跑得通）';
+export function markers(synthetic: boolean, identity?: { runtimeVersion: string; digest: string }): string {
+  const basis = synthetic ? '按合成合约核对' : '按发布的运行器合约核对';
+  const who = identity ? `；运行时 ${identity.runtimeVersion}；身份 ${identity.digest.slice(0, 12)}` : '';
+  return `（${basis}${who}；不证明在真实设备上跑得通）`;
 }
 
 export function outcome(kind: Outcome['verdict'], statement: string, tier: Outcome['tier'], item: string, extras: Partial<Outcome> = {}): Outcome {

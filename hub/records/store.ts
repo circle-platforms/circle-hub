@@ -1,3 +1,4 @@
+import { RecordsError } from './errors.ts';
 // Append-only record store over PostgreSQL. Bodies are stored as their RFC 8785 canonical text, so every value canonicalize
 // accepts (JSON data with well-formed strings, U+0000 included, which PostgreSQL text and jsonb reject raw) is kept exactly;
 // digests are re-verified on read. Input canonicalize refuses (a lone surrogate) is kept as an object instead (README).
@@ -14,6 +15,11 @@ import type { Database, Row } from './db.ts';
 import { envelopeCanonical, isSha256, sha256Hex } from './digest.ts';
 import { IntegrityError, LimitError } from './errors.ts';
 import { newId } from './ids.ts';
+
+/** Dedicated two-key namespace for typed business identities, separate from all other records locks. */
+const BUSINESS_LOCK_SPACE = 730_160;
+/** Separate namespace for atomically binding a record to its unique business key. */
+const UNIQUE_KEY_LOCK_SPACE = 730_161;
 
 const INDEX_KEY = /^[a-z][a-z0-9_.-]{0,99}$/;
 /** UTF-8 bytes of one index value; with the key and digest this stays well inside a btree index row (2704 bytes). */
@@ -54,7 +60,7 @@ export class PgRecordStore implements RecordStore {
     const digest = sha256Hex(envelopeCanonical(meta, body));
     return this.#db.transaction(async (t) => {
       if (input.unique_key !== undefined) {
-        await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [730157, `${meta.kind}:${input.unique_key}`], t);
+        await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [UNIQUE_KEY_LOCK_SPACE, `${meta.kind}:${input.unique_key}`], t);
         const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
         if (existing !== null) return { ...existing, created: false };
       }
@@ -171,6 +177,12 @@ export class PgRecordStore implements RecordStore {
       tx,
     );
     return page<B>(result.rows, limit);
+  }
+
+  async lock(key: string, tx: Transaction): Promise<void> {
+    if (!tx || typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('业务锁需要给定事务和有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
+    // The dedicated namespace separates business identities from ingestion and authorization decisions.
+    await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [BUSINESS_LOCK_SPACE, `record-store.business:${key}`], tx);
   }
 
   withTransaction<T>(fn: (tx: Transaction) => Promise<T>, outer?: Transaction): Promise<T> {

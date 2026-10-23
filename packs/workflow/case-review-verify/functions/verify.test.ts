@@ -12,7 +12,7 @@ import { kityminderParser } from '../../../../hub/refs/api.ts';
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import expectedFn, { expected } from './expected.ts';
 import projectionFn, { MAX_SUMMARY, projection } from './projection.ts';
-import verifyFn, { CODES, dispositions, dispositionsCheck, verdict, verdictCheck } from './verify.ts';
+import verifyFn, { CODES, dispositions, dispositionsCheck, verdict, verdictCheck, suggestionTargets } from './verify.ts';
 import { claimSubject } from './subjects.ts';
 
 const TARGET = 'a'.repeat(64);
@@ -442,4 +442,56 @@ describe('the pack', () => {
       assert.deepEqual(result.output, JSON.parse(JSON.stringify(fn(value))), `${module} ${name ?? 'default'}`);
     }
   });
+});
+
+describe('suggestion target and completeness checks',()=>{
+  const subject=(suggestions:Record<string,unknown>[])=>({
+    items:[{id:'skipped',location:loc('c2'),fields:{},slots:null},{id:'handled',location:loc('c1'),fields:{},slots:{verification:[]}}],
+    cross_item:[{code:'PARTIAL',statement:'结论',rank:'P4'},...suggestions],
+  });
+  const suggestion=(grounds:string[],statement='补：间隔为 0 的用例；因为：只测上界；期望：拒绝非法输入')=>({code:'suggestion',statement,grounds,rank:'minor'});
+  it('supports case and subitem targets and the absence of suggestions',()=>{
+    for(const suggestions of [[],[suggestion([loc('c1')])],[suggestion([loc('g1')])]]){
+      const outcomes=suggestionTargets({subject:subject(suggestions)});assert.ok(outcomes.length>0);assert.ok(outcomes.every(outcome=>outcome.verdict==='support'));
+    }
+  });
+  it('refutes missing targets, expectation-only grounds and missing or empty labeled parts at their cross-item pointer',()=>{
+    for(const candidate of [suggestion([]),suggestion(['src:'+'c'.repeat(64)+'/markdown@1/h/spec']),suggestion([loc('c1')],'补：用例；因为：缺口'),suggestion([loc('c1')],'补：；因为：缺口；期望：成功')]){
+      const outcomes=suggestionTargets({subject:subject([candidate])});
+      assert.ok(outcomes.some(outcome=>outcome.verdict==='refute'));assert.ok(outcomes.every(outcome=>outcome.item==='handled'&&outcome.pointer==='/cross_item/1'));
+      assert.ok(outcomes.some(outcome=>outcome.code===(candidate.grounds.length===0||candidate.grounds[0].includes('markdown@1')?'case-review-verify.suggestion_target_missing':'case-review-verify.suggestion_incomplete')));
+    }
+  });
+});
+
+describe('read-only preservation of the initial Hub facts',()=>{
+  it('keeps source-attributed refutations and their original record references in the accepted disposition fact',()=>{
+    const source=draftResult(),bad={...fact('literal'),statement:{verdict:'refute',code:'core.structure.required_empty',text:'期望为空'}};
+    source.partitions.delivered[0].requirements[0].claims.push(bad as any);
+    Object.assign(source.partitions.delivered[0].requirements[0].layers[0],{terminal:'violation',attribution:'author_input',code:'core.structure.required_empty'});
+    const projectedRun=projected(projection(input([target(),draft(record(source))])));
+    const original=projectedRun.items.find(item=>item.id.endsWith(':c2'))!;
+    const snapshot=original.fields.draft_source_facts as Array<{reference:string;claim:unknown}>;
+    assert.equal(snapshot.length,1);assert.deepEqual(snapshot[0].claim,bad);assert.match(snapshot[0].reference,new RegExp('^rec:'+RECORD+'#/partitions/delivered/0/requirements/0/claims/1$'));
+    const kept=dispositions({subject:{item:original.id,location:loc('c2'),fields:original.fields,slots:{verification:[]}}});
+    assert.deepEqual(kept[0].data?.source_facts,snapshot);assert.ok(kept[0].grounds.includes(snapshot[0].reference));
+  });
+});
+
+it('an expected catalog refutation is not preserved as an attributed source defect',()=>{
+  const source=draftResult(),entry=source.partitions.delivered[0];
+  entry.requirements.push({requirement:'catalog',layers:[{layer:'static',terminal:'violation',code:'core.catalog.param_out_of_range'}],status:'satisfied',
+    claims:[{...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'反向预期反驳',data:{negative_case:true,expected:true}}}]} as any);
+  const result=projected(projection(input([target(),draft(record(source))])));
+  assert.deepEqual(result.items.find(item=>item.id.endsWith(':c2'))!.fields.draft_source_facts,[]);
+});
+
+it('mixed expected and author-input catalog refutations preserve only the unexpected claim',()=>{
+  const source=draftResult(),entry=source.partitions.delivered[0];
+  const unexpected={...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.not_member',text:'合成未知命令',data:{expected:false}}};
+  entry.requirements.push({requirement:'catalog',layers:[{layer:'static',terminal:'violation',code:'core.catalog.not_member',attribution:'author_input'}],status:'unsatisfied',claims:[
+    {...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'合成期望越界',data:{expected:true,negative_case:true}}},unexpected]} as any);
+  const result=projected(projection(input([target(),draft(record(source))])));
+  const snapshots=result.items.find(item=>item.id.endsWith(':c2'))!.fields.draft_source_facts as Array<{claim:unknown}>;
+  assert.deepEqual(snapshots.map(row=>row.claim),[unexpected]);
 });

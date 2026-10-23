@@ -178,6 +178,10 @@ export const Rounds = z.strictObject({ used: count, max: count }).refine((r) => 
 export const ValidationResult = z
   .strictObject({
     schema: z.literal('validation@1'),
+  contributions: z.strictObject({ submitted: z.number().int().nonnegative(),
+    stored: z.array(z.strictObject({ item: z.string(), record: Sha256 })),
+    not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),
+  }).optional().describe('Dedicated contribution run receipt; ordinary submissions never write the knowledge layer'),
     run: RunId,
     submission: Sha256.describe('digest of the submission as received, the idempotency key together with the run'),
     acceptance: AcceptanceSchema,
@@ -190,6 +194,11 @@ export const ValidationResult = z
     trace: TraceId.describe('trace id of the call that produced this result'),
   })
   .superRefine((v, ctx) => {
+    if (v.contributions !== undefined) {
+      const c = v.contributions;
+      if (c.submitted !== c.stored.length + c.not_stored.length) ctx.addIssue({code:'custom',path:['contributions'],message:'contribution receipt counts agree'});
+      if (v.acceptance === 'not_accepted' && c.stored.length > 0) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a refused submission admits no contribution'});
+    }
     if (v.acceptance !== 'not_accepted') return;
     if (v.errors.length === 0) ctx.addIssue({ code: 'custom', path: ['errors'], message: 'a submission that is not accepted names its codes (W08 R[1])' });
     for (const p of PARTITION) {

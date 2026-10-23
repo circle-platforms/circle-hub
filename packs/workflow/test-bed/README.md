@@ -64,3 +64,9 @@
 - `bedFacts(bed: ManifestBed): BedFacts` —— `bed-facts` 工作流的投影函数入口（P4）。
 - `matchNeed(beds, need, installed, builds, leases, now): BedMatch[]` —— `bed-search` 工作流的投影函数入口（P2）；`installed` 与 `leases` 的键 `bed/<台架>/<设备>` 与租约键一致。
 - P3 的 `bed-booking` 投影自行组 `lease_requests`（键、期限），不经本文件。
+
+## 生成词表与包版本
+
+test-bed@1.1.1 改用生成词表的类型。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+终审复核：枚举及子集使用 contracts/generated 的生成类型；运行时快照仍由生成器核对，类型调整后已升版重签。

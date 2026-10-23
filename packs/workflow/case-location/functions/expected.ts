@@ -4,7 +4,8 @@
 // plm:story:<id>, a defect id as plm:bug:<id>, an unmarked id as the kind the caller's id ranges give it (a declaration, said
 // in the reason). An unmarked id whose kind nothing decides is not read: stories and bugs are separate numberings, so a guess
 // would show a false evidence gap for the kind that does not exist, or bind an unrelated record of the other numbering.
-import { locate, locateInputOf } from './locate.ts';
+import { bugToCaseIds } from './ids.ts';
+import { displayId, locate, locateInputOf } from './locate.ts';
 import { PACK, guarded, isRecord } from './text.ts';
 import type { IdSource, LinkedId, PackWarning } from './types.ts';
 
@@ -28,6 +29,7 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
   const warnings: PackWarning[] = [];
   const seen = new Set<string>();
   const unread: string[] = [];
+  const unreadOriginals = new Map<string, string>();
   let dropped = 0;
   const bind = (external: string, reason: string): void => {
     if (seen.has(external)) return;
@@ -40,22 +42,26 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
   };
   for (const item of Array.isArray(raw.items) ? raw.items : []) {
     if (!isRecord(item) || typeof item.id !== 'string') continue;
-    const answer = locate(locateInputOf(item.id, item.fields, { ...context, parameters }));
+    const locatedInput = locateInputOf(item.id, item.fields, { ...context, parameters });
+    const answer = locate(locatedInput);
+    const titleBugs = new Set(bugToCaseIds(locatedInput.title ?? ''));
     for (const [kind, ids] of [['story', answer.requirements], ['bug', answer.defects]] as const) {
-      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, kind)}里标明的${KIND[kind]} ${id}`);
+      for (const id of ids) bind(`plm:${kind}:${id}`, kind === 'bug' && titleBugs.has(id) ? `条目 ${item.id} 的标题里“bug to case”后面的编号 ${displayId(answer, id, kind)}，按缺陷号读` : `条目 ${item.id} 的${whereOf(answer.id_sources, id, kind)}里标明的${KIND[kind]} ${displayId(answer, id, kind)}`);
     }
     for (const [kind, ids] of [['story', answer.ranged.requirements], ['bug', answer.ranged.defects]] as const) {
-      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${id} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);
+      for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${displayId(answer, id, null)} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);
     }
     for (const id of answer.unclassified) {
-      if (!answer.ranged.requirements.includes(id) && !answer.ranged.defects.includes(id) && !unread.includes(id)) unread.push(id);
+      if (!answer.ranged.requirements.includes(id) && !answer.ranged.defects.includes(id) && !unread.includes(id)) {
+        unread.push(id); unreadOriginals.set(id, displayId(answer, id, null));
+      }
     }
   }
   if (unread.length > 0) {
     const named = unread.slice(0, MAX_NAMED);
     warnings.push({
       code: `${PACK}.id_kind_unknown`,
-      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).join('、')}${unread.length > 5 ? ' 等' : ''}），没有读取缺陷系统；参数 id_ranges 给出缺陷系统的编号范围可以分开`,
+      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），没有读取缺陷系统；参数 id_ranges 给出缺陷系统的编号范围可以分开`,
       data: { ids: named, count: unread.length },
     });
   }

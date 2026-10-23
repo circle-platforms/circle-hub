@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { writePrivateJson } from '../gold/builds.ts';
 // Capability 3, case location, through the real client (architecture 6b):
 // The model starts the production run for a document or a list of documents (at least 5, covering different lines and modules).
 // The Hub's answers are compared with the gold file: version line, release train, module, build candidates,
@@ -62,6 +64,9 @@ export type LocationGold = DocumentLocationGold | LocationListGold;
 interface ParsedCandidate {
   name: string;
   base: string;
+  family: string;
+  released: string | null;
+  baseMention: boolean;
   built: string | null;
   raw: string;
 }
@@ -85,48 +90,54 @@ export function orderGoldCandidates(candidates: BuildCandidateGold[]): BuildCand
   });
 }
 
-/** Parses candidate builds and alias indications from the candidate section of the text. */
+/** Reassembles renderer-split lines before finding document-owned claims. */
+export function reassembleResultLines(turns: readonly LoggedTurn[]): string[] {
+  const lines: string[] = [];
+  for (const result of turns.flatMap(t => t.toolResults)) {
+    let continuation = false;
+    for (const line of result.text.split('\n')) {
+      if (/^（接上页：第 \d+ 行的前 \d+ 个字符在上一页）$/.test(line)) { continuation = true; continue; }
+      if (/^(?:内容 rec:|共 \d+ 行|下一页：get_nodes|完整结果|（接上页：条目)/.test(line)) continue;
+      if (!line.trim()) continue;
+      if (continuation && lines.length) lines[lines.length - 1] += line;
+      else lines.push(line);
+      continuation = false;
+    }
+  }
+  return lines;
+}
+const escaped = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Only a claim whose position names this exact item and requirement can supply its statement. */
+export function ownClaimTexts(lines: readonly string[], document: string, requirement: string): string[] {
+  const position = new RegExp(`位置：条目 ${escaped(document)}(?:，|,|；).*?要求项 ${escaped(requirement)}(?:，|；|$)`);
+  return [...new Set(lines.filter(line => position.test(line)).map(line => {
+    const statement = line.indexOf('陈述：');
+    if (statement < 0) return '';
+    return line.slice(statement + 3).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].trim();
+  }).filter(Boolean))];
+}
+
+/** Parses the displayed candidates of a single candidate statement, preserving their order. */
 export function parseReportedCandidates(text: string): ParsedCandidate[] {
   const match = /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.exec(text);
   if (!match) return [];
-  const after = text.slice(match.index);
-  const endMatch = /(?:另有\s*\d+\s*个|(?:\n\s*(?:写出的构建名|问题与未知|条目|要求项|规则|结果)|\n\n)|[。])/u.exec(after);
-  const section = endMatch ? after.slice(0, endMatch.index) : after;
-
-  const parts = section.split(/[、,\n]|[；;](?=(?:Rel|Beta)_|另有)/u);
-  const candidates: ParsedCandidate[] = [];
-  for (const part of parts) {
-    const nameMatch = /(?:Rel|Beta)_[A-Za-z0-9_.\-]+/.exec(part);
-    if (!nameMatch) continue;
-    const name = nameMatch[0];
-    const baseMatch = /(?:依据|基于|based\s+on)\s*((?:Rel|Beta)_[A-Za-z0-9_.\-]+)/i.exec(part);
-    const base = baseMatch ? baseMatch[1] : name;
-    const builtMatch = /制作于\s*([0-9]{4}-[0-9]{2}-[0-9]{2})(?:\s+([0-9]{2}:[0-9]{2}))?/.exec(part);
-    const built = builtMatch ? `${builtMatch[1]}T${builtMatch[2] ?? '00:00'}:00` : null;
-    candidates.push({ name, base, built, raw: part.trim() });
+  const statement = text.slice(match.index).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].replace(/，(?:支持|未知|反驳).*$/, '');
+  const colon = statement.indexOf('：');
+  if (colon < 0) return [];
+  const out: ParsedCandidate[] = [];
+  for (const raw of statement.slice(colon + 1).split('；')) {
+    const row = /^([A-Za-z0-9_.-]+)（(APV|NSAE)(?:，基于 ([A-Za-z0-9_.-]+))?）(制作时间未知|制作于 ([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}))，(未发布|已发布 ([0-9]{4}-[0-9]{2}(?:-[0-9]{2})?))$/.exec(raw.trim());
+    if (!row) continue;
+    out.push({ name: row[1], family: row[2], base: row[3] ?? row[1], baseMention: row[3] !== undefined, built: row[5] ? `${row[5]}T${row[6]}:00` : null, released: row[8] ?? null, raw: raw.trim() });
   }
-  return candidates;
+  return out;
 }
 
 /** Builds manual spot-check report section from gold plmFound records. */
-export function buildManualPlmSections(docs: DocumentLocationGold[], isList: boolean): ReportSection[] {
-  const manualLines: string[] = [];
-  for (const doc of docs) {
-    if (doc.plmFound !== undefined) {
-      for (const [id, found] of Object.entries(doc.plmFound)) {
-        const prefix = isList ? `文档 ${doc.document}：` : '';
-        const outcome = found === true ? '在缺陷系统里找到' : found === false ? '在缺陷系统里未找到' : String(found);
-        manualLines.push(`- ${prefix}关联编号 ${id} ${outcome}`);
-      }
-    }
-  }
-  if (manualLines.length === 0) return [];
-  return [
-    {
-      title: '人工抽查（不是场景核对）',
-      lines: manualLines,
-    },
-  ];
+export function buildManualPlmSections(docs: DocumentLocationGold[], _isList: boolean): ReportSection[] {
+  const found = docs.flatMap(d => Object.values(d.plmFound ?? {}));
+  return found.length ? [{ title: '人工抽查（不是场景核对）', lines: [`找到 ${found.filter(v => v === true).length} 个，没找到 ${found.filter(v => v === false).length} 个`] }] : [];
 }
 
 export interface ReportedDocData {
@@ -141,18 +152,7 @@ function extractDataFromJsonObject(docId: string, obj: unknown): { requirements:
   if (!obj || typeof obj !== 'object') return null;
   const o = obj as Record<string, unknown>;
 
-  // Direct match on case_id / document
-  const caseId = String(o.case_id ?? o.document ?? o.item ?? o.id ?? '');
-  if (caseId === docId || caseId === `doc:${docId}` || caseId.endsWith(`:${docId}`)) {
-    if (Array.isArray(o.requirements) || Array.isArray(o.defects) || Array.isArray(o.unclassified)) {
-      return {
-        requirements: Array.isArray(o.requirements) ? o.requirements.map(String) : [],
-        defects: Array.isArray(o.defects) ? o.defects.map(String) : [],
-        unclassified: Array.isArray(o.unclassified) ? o.unclassified.map(String) : [],
-      };
-    }
-  }
-
+  if (o.body && typeof o.body === 'object') return extractDataFromJsonObject(docId, o.body);
   // Partitions in ValidationResult
   if (o.partitions && typeof o.partitions === 'object') {
     const partitions = o.partitions as Record<string, unknown>;
@@ -162,12 +162,12 @@ function extractDataFromJsonObject(docId: string, obj: unknown): { requirements:
         if (!item || typeof item !== 'object') continue;
         const it = item as Record<string, unknown>;
         const itemId = String(it.item ?? it.id ?? '');
-        if (itemId === docId || itemId === `doc:${docId}` || itemId.endsWith(`:${docId}`)) {
+        if (itemId === docId || itemId === `doc:${docId}`) {
           if (Array.isArray(it.requirements)) {
             for (const req of it.requirements) {
               if (!req || typeof req !== 'object') continue;
               const r = req as Record<string, unknown>;
-              if (Array.isArray(r.claims)) {
+              if (r.requirement === 'location' && Array.isArray(r.claims)) {
                 for (const claim of r.claims) {
                   if (!claim || typeof claim !== 'object') continue;
                   const c = claim as Record<string, unknown>;
@@ -192,13 +192,6 @@ function extractDataFromJsonObject(docId: string, obj: unknown): { requirements:
     }
   }
 
-  // Items list
-  if (Array.isArray(o.items)) {
-    for (const item of o.items) {
-      const res = extractDataFromJsonObject(docId, item);
-      if (res) return res;
-    }
-  }
 
   return null;
 }
@@ -247,6 +240,23 @@ function extractIdsFromSnippet(snippet: string, marker: string): string[] {
   return ids;
 }
 
+/** No whole-answer fallback: a missing item remains missing even if another item has identical values. */
+export function ownLocationText(lines: readonly string[], document: string): string | null {
+  const claims = ownClaimTexts(lines, document, 'location');
+  if (claims.length === 1) return claims[0];
+  if (claims.length > 1) return null;
+  const pattern = new RegExp('^\\s*-?\\s*(?:doc:)?' + escaped(document) + '\\s*\\|');
+  let itemTable = false; const rows: string[] = [];
+  for (const line of lines) {
+    if (/^条目（.*编号.*名称.*摘要/.test(line)) { itemTable = true; continue; }
+    if (/^(?:问题|内容|完整结果)|^\s*·/.test(line)) itemTable = false;
+    if (!itemTable || !pattern.test(line)) continue;
+    const summary = line.split(' | ')[2] ?? '';
+    if (/产品线|版本 |发布火车|模块 /.test(summary)) rows.push(line);
+  }
+  const unique = [...new Set(rows)]; return unique.length === 1 ? unique[0] : null;
+}
+
 export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]): ReportedDocData {
   for (const turn of turns) {
     for (const res of turn.toolResults) {
@@ -282,10 +292,7 @@ export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]):
   }
 
   // Fallback to text
-  const text = resultTexts(turns).join('\n');
-  const docRegex = new RegExp(`(?:^|\\n)[\\s\\-]*(?:doc:)?${docId}\\s*\\|[^\n]*`, 'u');
-  const docMatch = docRegex.exec(text);
-  const docSnippet = docMatch ? docMatch[0] : text;
+  const docSnippet = ownLocationText(reassembleResultLines(turns), docId) ?? '';
 
   const stories = new Set(extractIdsFromSnippet(docSnippet, '需求'));
   const bugs = new Set(extractIdsFromSnippet(docSnippet, '缺陷'));
@@ -295,386 +302,97 @@ export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]):
   return { stories, bugs, unclassified, all, fromData: false };
 }
 
-function checkCandidateBuilds(
-  area: string,
-  text: string,
-  goldCandidatesInput: BuildCandidateGold[] | BuildCandidatesGold,
-  writtenBuildsInput?: WrittenBuildGold[],
-  docPrefix = '',
+export function checkCandidateBuilds(
+  area: string, text: string, input: BuildCandidateGold[] | BuildCandidatesGold | undefined,
+  writtenInput?: WrittenBuildGold[], prefix = '',
 ): Check[] {
   const checks: Check[] = [];
-  const goldCandidates: BuildCandidateGold[] = Array.isArray(goldCandidatesInput)
-    ? goldCandidatesInput
-    : goldCandidatesInput.candidates;
-  const goldWritten: WrittenBuildGold[] = Array.isArray(goldCandidatesInput)
-    ? (writtenBuildsInput ?? [])
-    : (goldCandidatesInput.written ?? writtenBuildsInput ?? []);
-
-  const reported = parseReportedCandidates(text);
-  const orderedGold = orderGoldCandidates(goldCandidates);
-  const expectedListed = orderedGold.slice(0, MAX_LISTED);
-  const expectedNames = new Set(expectedListed.map((c) => c.name));
-  const reportedNames = new Set(reported.map((c) => c.name));
-
-  const missing = [...expectedNames].filter((n) => !reportedNames.has(n));
-  const extra = [...reportedNames].filter((n) => !expectedNames.has(n));
-
-  checks.push({
-    area,
-    name: `${docPrefix}构建候选：Hub 报出的候选构建名集合与独立依据一致`,
-    expected: `共 ${expectedNames.size} 个（${[...expectedNames].sort().join('、')}）`,
-    actual: missing.length === 0 && extra.length === 0
-      ? `共 ${reportedNames.size} 个，集合一致`
-      : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
-    ok: missing.length === 0 && extra.length === 0,
+  const add = (name: string, ok: boolean, expected = '一致', actual = ok ? '一致' : '不一致'): void => { checks.push({ area, name: prefix + name, expected, actual, ok }); };
+  if (input === undefined) { add('构建候选：独立答案完整', false, '候选依据 1 份', '候选依据 0 份'); return checks; }
+  const gold = orderGoldCandidates(Array.isArray(input) ? input : input.candidates);
+  const claims = text.split('\n').filter(line => /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.test(line));
+  if (claims.length !== 1 || /，未知(?:，|；|$)/.test(claims[0])) { add('构建候选：文档自己的主张可用', false, '可用主张 1 条', '可用主张 0 条；缺候选事实；下一步：翻页读取本份 build_candidates 主张，仍缺则核对构建同步并重跑本份文档'); return checks; }
+  const statement = claims[0], reported = parseReportedCandidates(statement);
+  const total = Number(/的构建候选\s+(\d+)\s+个/.exec(statement)?.[1] ?? -1);
+  const aliases = Number(/其中别名\s+(\d+)\s+个/.exec(statement)?.[1] ?? 0);
+  add('构建候选：候选总数', total === gold.length, `${gold.length} 个`, `${total < 0 ? 0 : total} 个`);
+  add('构建候选：别名数', aliases === gold.filter(c => c.name !== c.base).length);
+  const expected = gold.slice(0, MAX_LISTED);
+  const missing = expected.filter(c => !reported.some(r => r.name === c.name)).length;
+  const extra = reported.filter(c => !expected.some(r => r.name === c.name)).length;
+  add('构建候选：候选构建名集合', !missing && !extra && reported.length === expected.length, `${expected.length} 个`, `缺 ${missing} 个，多 ${extra} 个`);
+  add('构建候选：超出上限的候选构建计数（另有）', Number(/；另有\s*(\d+)\s*个/.exec(statement)?.[1] ?? 0) === Math.max(0, gold.length - MAX_LISTED));
+  expected.forEach((candidate, j) => {
+    const got = reported[j], label = `第 ${j + 1} 个候选：`;
+    add(label + '名称和顺序', got?.name === candidate.name);
+    add(label + '名称族', got?.family === candidate.family);
+    add(label + '基础构建', !!got && got.base === candidate.base && got.baseMention === (candidate.base !== candidate.name));
+    add(label + '制作时间', !!got && (got.built?.slice(0, 16) ?? null) === (candidate.built?.slice(0, 16) ?? null));
+    add(label + '发布状态和日期', !!got && got.released === (candidate.released?.slice(0, 10) ?? null));
   });
-
-  const expectedMore = Math.max(0, goldCandidates.length - MAX_LISTED);
-  const moreMatch = /另有\s*(\d+)\s*个/.exec(text);
-  const reportedMore = moreMatch ? Number(moreMatch[1]) : null;
-  const moreOk = expectedMore > 0 ? reportedMore === expectedMore : reportedMore === null;
-
-  checks.push({
-    area,
-    name: `${docPrefix}构建候选：超出上限的候选构建计数与独立依据一致`,
-    expected: expectedMore > 0 ? `另有 ${expectedMore} 个` : '没有“另有”计数',
-    actual: reportedMore !== null
-      ? `另有 ${reportedMore} 个`
-      : (expectedMore > 0 ? '未报告“另有”计数' : '没有“另有”计数'),
-    ok: moreOk,
+  const written = Array.isArray(input) ? writtenInput ?? [] : input.written ?? writtenInput ?? [];
+  written.forEach((item, j) => {
+    const owned = text.split('\n').filter(line => line.includes(item.name)).join('\n');
+    const ok = item.classification === 'known' ? /是定位到的版本线的构建|是候选/.test(owned) : item.classification === 'other_line' ? owned.includes('属于版本线') && (!item.line || owned.includes(item.line)) : /不认识写出的构建名/.test(owned);
+    add(`第 ${j + 1} 个写出的构建名分类`, ok);
   });
-
-  for (const alias of expectedListed.filter((c) => c.name !== c.base)) {
-    const item = reported.find((r) => r.name === alias.name);
-    const aliasOk = item !== undefined && (item.base === alias.base || item.raw.includes(alias.base));
-    checks.push({
-      area,
-      name: `${docPrefix}候选别名 ${alias.name} 带出依据的构建 ${alias.base}`,
-      expected: `注明依据构建 ${alias.base}`,
-      actual: aliasOk ? `已带出依据构建 ${alias.base}` : (item ? `未注明依据构建（实际：${item.raw}）` : '未列出该候选'),
-      ok: aliasOk,
-    });
-  }
-
-  for (const gold of expectedListed) {
-    if (gold.built === undefined && gold.base === undefined) continue;
-    const item = reported.find((r) => r.name === gold.name);
-    const expected: string[] = [];
-    const actual: string[] = [];
-    let ok = item !== undefined;
-    if (gold.built !== undefined) {
-      expected.push(`制作于 ${gold.built ?? '未知'}`);
-      const got = item === undefined ? '' : item.built === null ? '制作时间未知' : item.built.replace('T', ' ').slice(0, 16);
-      actual.push(got);
-      const timeMatch = item !== undefined && (
-        gold.built === null
-          ? item.built === null
-          : (item.built !== null && item.built.slice(0, 16) === gold.built.slice(0, 16))
-      );
-      ok = ok && timeMatch;
-    }
-    if (gold.base !== undefined && gold.base !== gold.name) {
-      expected.push(`基于 ${gold.base}`);
-      const got = item === undefined ? '' : item.base;
-      actual.push(got === gold.base ? `基于 ${gold.base}` : `基于 ${got || '（未注明）'}`);
-      ok = ok && item !== undefined && item.base === gold.base;
-    }
-    checks.push({
-      area,
-      name: `${docPrefix}候选 ${gold.name} 的制作时间与基础构建与独立依据一致`,
-      expected: expected.join('；'),
-      actual: ok ? actual.join('；') : item === undefined ? '未列出该候选' : `不一致（${actual.join('；')}）`,
-      ok,
-    });
-  }
-
-  for (const w of goldWritten) {
-    let match = false;
-    let actualDesc = '';
-    if (w.classification === 'known') {
-      match = text.includes(`写出的构建名 ${w.name} 是定位到的版本线的构建`) ||
-              text.includes(`写出的构建名 ${w.name} 是候选`) ||
-              new RegExp(`${w.name}[^\\n]*?(?:已知|定位到的版本线|候选)`).test(text);
-      actualDesc = match ? '已知构建' : '未按已知报告';
-    } else if (w.classification === 'other_line') {
-      const lineMatch = w.line ? text.includes(w.line) : true;
-      match = (text.includes(`写出的构建名 ${w.name} 属于版本线`) || text.includes('build_other_line') || new RegExp(`${w.name}[^\\n]*?(?:属于版本线|另一条线)`).test(text)) && lineMatch;
-      actualDesc = match ? `属于另一条版本线${w.line ? ` ${w.line}` : ''}` : '未报告为别的版本线';
-    } else {
-      match = text.includes(`知识库不认识写出的构建名 ${w.name}`) ||
-              text.includes(`不认识写出的构建名 ${w.name}`) ||
-              new RegExp(`${w.name}[^\\n]*?(?:未知|不认识)`).test(text);
-      actualDesc = match ? '知识库不认识（未知）' : '未报告为未知';
-    }
-    checks.push({
-      area,
-      name: `${docPrefix}写出的构建名 ${w.name} 分类与独立依据一致（${w.classification}）`,
-      expected: `分类为 ${w.classification}${w.line ? ` (${w.line})` : ''}`,
-      actual: actualDesc,
-      ok: match,
-    });
-  }
-
   return checks;
 }
 
-export default function scenario(gold: LocationGold): Scenario {
-  const area = '用例定位';
-  const pack = 'case-location';
-  const pagerState = createPagerState();
-
-  const isList = 'documents' in gold && Array.isArray(gold.documents);
-  const docs: DocumentLocationGold[] = isList
-    ? (gold as LocationListGold).documents
-    : [gold as DocumentLocationGold];
-
-  const defaultProduct = (isList ? (gold as LocationListGold).product : (gold as DocumentLocationGold).product) ?? 'apv';
-
-  const prompt = isList
-    ? `请对敏捷平台上的测试脑图 ${docs.map((d) => d.document).join('、')} 做用例定位。`
-    : `请对敏捷平台上的测试脑图 ${docs[0].document} 做用例定位。`;
-
-  const manualSections = buildManualPlmSections(docs, isList);
-
+export default function scenario(gold: LocationGold, detailsOut?: string): Scenario {
+  const area = '用例定位', pagerState = createPagerState();
+  const docs = 'documents' in gold ? gold.documents : [gold];
+  const manualSections = buildManualPlmSections(docs, docs.length > 1);
   return {
-    name: 'case-location',
-    area,
-    prompt,
-    sections: manualSections.length > 0 ? manualSections : undefined,
-    respond: (turn) =>
-      pagedRespond(
-        turn,
-        pagerState,
-        () => [
-          {
-            tool: 'hub_start_run',
-            input: {
-              pack,
-              product: defaultProduct,
-              inputs: {
-                documents: isList
-                  ? docs.map((d) => ({ external: `agile:mindmap:${d.document}` }))
-                  : { external: `agile:mindmap:${docs[0].document}` },
-              },
-            },
-          },
-        ],
-        '定位完成。',
-      ),
-    check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
-      const has = (needle: string): boolean => text.includes(needle);
-
-      const checks: Check[] = [
-        {
-          area,
-          name: '模型拿到了运行结果，不是错误',
-          expected: '回答里有“运行 run_…”，没有“出错”',
-          actual: has('运行 run_') && !has('出错：') ? '有运行结果' : text.slice(0, 120),
-          ok: has('运行 run_') && !has('出错：'),
-        },
-      ];
-
-      if (isList) {
-        const distinctLines = new Set(docs.map((d) => d.line));
-        const distinctModules = new Set(docs.map((d) => d.module).filter(Boolean));
-        const isSufficient = docs.length >= 5 && distinctLines.size >= 2 && distinctModules.size >= 2;
-        checks.push({
-          area,
-          name: '文档清单至少 5 份（覆盖不同版本线与模块）',
-          expected: '至少 5 份文档，至少 2 条版本线，至少 2 个模块',
-          actual: `共 ${docs.length} 份文档，${distinctLines.size} 条版本线，${distinctModules.size} 个模块`,
-          ok: isSufficient,
-        });
-
-        const expectedSatisfy = `location 用例定位：满足 ${docs.length}`;
-        const hasSatisfy = has(expectedSatisfy) || has('location 用例定位：满足');
-        checks.push({
-          area,
-          name: '要求项 location 满足',
-          expected: expectedSatisfy,
-          actual: hasSatisfy ? expectedSatisfy : '未满足',
-          ok: hasSatisfy,
-        });
-
-        // Per-document checks
-        for (const doc of docs) {
-          const docPrefix = `文档 ${doc.document}：`;
-
-          // Find document line or item snippet
-          const docRegex = new RegExp(`(?:^|\\n)[\\s\\-]*${doc.document}\\s*\\|[^\n]*`, 'u');
-          const docMatch = docRegex.exec(text);
-          const docText = docMatch ? docMatch[0] : text;
-
-          // Line
-          const lineExpected = `版本 ${doc.line}（目录，置信度高）`;
-          const lineOk = docText.includes(lineExpected) || has(`文档 ${doc.document}[^\\n]*${doc.line}`) || (has(lineExpected) && docs.length === 1);
-          checks.push({
-            area,
-            name: `${docPrefix}版本线与独立依据一致`,
-            expected: lineExpected,
-            actual: lineOk ? '一致' : '不一致',
-            ok: lineOk,
-          });
-
-          // Train
-          if (doc.train !== undefined) {
-            const trainExpected = `发布火车 ${doc.train}`;
-            const trainOk = docText.includes(trainExpected) || has(`文档 ${doc.document}[^\\n]*${doc.train}`) || (has(trainExpected) && docs.length === 1);
-            checks.push({
-              area,
-              name: `${docPrefix}发布火车与独立依据一致`,
-              expected: trainExpected,
-              actual: trainOk ? '一致' : '不一致',
-              ok: trainOk,
-            });
-          }
-
-          // Module
-          if (doc.module !== undefined) {
-            const moduleExpected = `模块 ${doc.module}`;
-            const moduleOk = docText.includes(moduleExpected) || has(`文档 ${doc.document}[^\\n]*${doc.module}`) || (has(moduleExpected) && docs.length === 1);
-            checks.push({
-              area,
-              name: `${docPrefix}模块与独立依据一致`,
-              expected: moduleExpected,
-              actual: moduleOk ? '一致' : '不一致',
-              ok: moduleOk,
-            });
-          }
-
-          // Associated IDs & Categories
-          const reported = extractReportedDocumentData(doc.document, turns);
-          const goldStories = new Set(doc.stories ?? []);
-          const goldBugs = new Set(doc.bugs ?? []);
-          const goldUnclassified = doc.unclassified !== undefined
-            ? new Set(doc.unclassified)
-            : new Set((doc.associatedIds ?? []).filter((id) => !goldStories.has(id) && !goldBugs.has(id)));
-          const goldAssociated = new Set(doc.associatedIds ?? [...goldStories, ...goldBugs, ...goldUnclassified]);
-
-          const hasAnyGoldIds = doc.associatedIds !== undefined || doc.stories !== undefined || doc.bugs !== undefined || doc.unclassified !== undefined;
-
-          if (hasAnyGoldIds) {
-            const missing = [...goldAssociated].filter((id) => !reported.all.has(id));
-            const extra = [...reported.all].filter((id) => !goldAssociated.has(id));
-            const setOk = missing.length === 0 && extra.length === 0;
-            checks.push({
-              area,
-              name: `${docPrefix}关联编号集合与独立依据一致`,
-              expected: `共 ${goldAssociated.size} 个（${[...goldAssociated].sort().join('、')}）`,
-              actual: setOk
-                ? `共 ${reported.all.size} 个，集合一致`
-                : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
-              ok: setOk,
-            });
-
-            // Stories
-            for (const storyId of [...goldStories].sort()) {
-              const storyOk = reported.stories.has(storyId);
-              checks.push({
-                area,
-                name: `${docPrefix}关联需求 ${storyId} 与独立依据一致`,
-                expected: `需求 ${storyId}`,
-                actual: storyOk ? '一致' : '不一致',
-                ok: storyOk,
-              });
-            }
-
-            // Bugs
-            for (const bugId of [...goldBugs].sort()) {
-              const bugOk = reported.bugs.has(bugId);
-              checks.push({
-                area,
-                name: `${docPrefix}关联缺陷 ${bugId} 与独立依据一致`,
-                expected: `缺陷 ${bugId}`,
-                actual: bugOk ? '一致' : '不一致',
-                ok: bugOk,
-              });
-            }
-
-            // Unclassified
-            for (const id of [...goldUnclassified].sort()) {
-              const unclassOk = reported.unclassified.has(id);
-              checks.push({
-                area,
-                name: `${docPrefix}未分类编号 ${id} 与独立依据一致`,
-                expected: `未分类编号 ${id}`,
-                actual: unclassOk ? '一致' : '不一致',
-                ok: unclassOk,
-              });
-            }
-          }
-
-          // Candidates for this doc if provided
-          if (doc.buildCandidates !== undefined) {
-            checks.push(...checkCandidateBuilds(area, text, doc.buildCandidates, doc.writtenBuilds, docPrefix));
-          }
-        }
-      } else {
-        // Single document backward-compatible checks
-        const singleDoc = docs[0];
-        checks.push(
-          { area, name: '要求项 location 满足', expected: 'location 用例定位：满足 1', actual: has('location 用例定位：满足 1') ? '满足 1' : '未满足', ok: has('location 用例定位：满足 1') },
-          { area, name: '版本线与独立依据一致', expected: `版本 ${singleDoc.line}（目录，置信度高）`, actual: has(`版本 ${singleDoc.line}（目录，置信度高）`) ? '一致' : '不一致', ok: has(`版本 ${singleDoc.line}（目录，置信度高）`) },
-          { area, name: '产品线', expected: '产品线 apv', actual: has('产品线 apv') ? '一致' : '不一致', ok: has('产品线 apv') },
-        );
-        if (singleDoc.train !== undefined) {
-          checks.splice(3, 0, { area, name: '发布火车与独立依据一致', expected: `发布火车 ${singleDoc.train}`, actual: has(`发布火车 ${singleDoc.train}`) ? '一致' : '不一致', ok: has(`发布火车 ${singleDoc.train}`) });
-        }
-        if (singleDoc.module !== undefined) {
-          checks.push({ area, name: '模块与独立依据一致', expected: `模块 ${singleDoc.module}`, actual: has(`模块 ${singleDoc.module}`) ? '一致' : '不一致', ok: has(`模块 ${singleDoc.module}`) });
-        }
-
-        const hasAnyGoldIds = singleDoc.associatedIds !== undefined || singleDoc.stories !== undefined || singleDoc.bugs !== undefined || singleDoc.unclassified !== undefined;
-        if (hasAnyGoldIds) {
-          const reported = extractReportedDocumentData(singleDoc.document, turns);
-          const goldStories = new Set(singleDoc.stories ?? []);
-          const goldBugs = new Set(singleDoc.bugs ?? []);
-          const goldUnclassified = singleDoc.unclassified !== undefined
-            ? new Set(singleDoc.unclassified)
-            : new Set((singleDoc.associatedIds ?? []).filter((id) => !goldStories.has(id) && !goldBugs.has(id)));
-          const goldAssociated = new Set(singleDoc.associatedIds ?? [...goldStories, ...goldBugs, ...goldUnclassified]);
-
-          const missing = [...goldAssociated].filter((id) => !reported.all.has(id));
-          const extra = [...reported.all].filter((id) => !goldAssociated.has(id));
-          const setOk = missing.length === 0 && extra.length === 0;
-          checks.push({
-            area,
-            name: '关联编号集合与独立依据一致',
-            expected: `共 ${goldAssociated.size} 个（${[...goldAssociated].sort().join('、')}）`,
-            actual: setOk
-              ? `共 ${reported.all.size} 个，集合一致`
-              : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
-            ok: setOk,
-          });
-
-          for (const storyId of [...goldStories].sort()) {
-            const storyOk = reported.stories.has(storyId);
-            checks.push({ area, name: `关联需求 ${storyId} 与独立依据一致`, expected: `需求 ${storyId}`, actual: storyOk ? '一致' : '不一致', ok: storyOk });
-          }
-          for (const bugId of [...goldBugs].sort()) {
-            const bugOk = reported.bugs.has(bugId);
-            checks.push({ area, name: `关联缺陷 ${bugId} 与独立依据一致`, expected: `缺陷 ${bugId}`, actual: bugOk ? '一致' : '不一致', ok: bugOk });
-          }
-          for (const id of [...goldUnclassified].sort()) {
-            const unclassOk = reported.unclassified.has(id);
-            checks.push({ area, name: `未分类编号 ${id} 与独立依据一致`, expected: `未分类编号 ${id}`, actual: unclassOk ? '一致' : '不一致', ok: unclassOk });
-          }
-        }
-
-        if (singleDoc.buildCandidates !== undefined) {
-          checks.push(...checkCandidateBuilds(area, text, singleDoc.buildCandidates, singleDoc.writtenBuilds));
-        }
+    name: 'case-location', area,
+    prompt: `请对敏捷平台上的测试脑图 ${docs.map(d => d.document).join('、')} 做用例定位。`,
+    sections: manualSections.length ? manualSections : undefined,
+    respond: turn => pagedRespond(turn, pagerState, () => [{ tool: 'hub_start_run', input: { pack: 'case-location', product: gold.product ?? 'apv', inputs: { documents: 'documents' in gold ? docs.map(d => ({ external: `agile:mindmap:${d.document}` })) : { external: `agile:mindmap:${docs[0].document}` } } } }], '定位完成。'),
+    check(turns) {
+      const lines = reassembleResultLines(turns), text = lines.join('\n');
+      const checks: Check[] = [];
+      const at = process.argv.indexOf('--out');
+      const destination = detailsOut ?? (at >= 0 ? process.argv[at + 1] : undefined);
+      const audits: Array<{ document: string; requirement: string; statement: string | null; next_action: string }> = [];
+      const add = (name: string, ok: boolean, expected = '一致', actual = ok ? '一致' : '不一致'): void => { checks.push({ area, name, expected, actual, ok }); };
+      add('模型拿到了运行结果，不是错误', text.includes('运行 run_') && !turns.some(t => t.toolResults.some(r => r.isError)) && !text.includes('出错：'), '可用结果 1 份', text.includes('运行 run_') ? '结果 1 份' : '结果 0 份；下一步：重跑定位运行');
+      if ('documents' in gold) {
+        const counts = [docs.length, new Set(docs.map(d => d.line)).size, new Set(docs.map(d => d.module).filter(Boolean)).size];
+        add('文档清单覆盖', counts[0] >= 5 && counts[1] >= 2 && counts[2] >= 2, '文档至少 5，版本线至少 2，模块至少 2', `文档 ${counts[0]}，版本线 ${counts[1]}，模块 ${counts[2]}`);
       }
-
-      checks.push({
-        area,
-        name: '回答没有超过客户端能转交的长度',
-        expected: '每个工具结果不超过 30000 个字符',
-        actual: `最长 ${Math.max(0, ...resultTexts(turns).map((t) => t.length))} 个字符`,
-        ok: resultTexts(turns).every((t) => t.length <= 30_000),
+      docs.forEach((doc, i) => {
+        const prefix = `第 ${i + 1} 份文档：`;
+        const owned = ownLocationText(lines, doc.document);
+        const claims = ownClaimTexts(lines, doc.document, 'location');
+        const fact = claims.length === 1 && /，支持$/.test(claims[0]);
+        add(prefix + '定位结论是事实', fact, '本份支持主张 1 条', fact ? '支持主张 1 条' : '支持主张 0 条；下一步：重读本份 location 主张，按私有详情中的 Hub 原因核对产品名称和目录树输入，再单独重跑');
+        audits.push({ document: doc.document, requirement: 'location', statement: claims.length === 1 ? claims[0] : null, next_action: fact ? '' : 'Hub 原因：' + (claims[0] ?? '缺本份 location 主张') + '；据此核对原件产品名称及目录树，重读完整主张或修正输入后重跑本份文档' });
+        add(prefix + '定位数据可用', owned !== null, '本份数据 1 份', owned === null ? '本份数据 0 份；下一步：翻页读取本份 location 主张；仍缺则重跑本份文档' : '本份数据 1 份');
+        if (owned !== null) {
+          const exactField = (label: string, value: string): boolean => new RegExp('(?:^|[；|：])' + label + '\\s+' + escaped(value) + '(?=[；|]|，(?:支持|未知|反驳)|$)').test(owned);
+          add(prefix + '版本线与独立依据一致', owned.includes(`版本 ${doc.line}（目录，置信度高）`));
+          if (doc.train !== undefined) add(prefix + '发布火车与独立依据一致', exactField('发布火车', doc.train));
+          if (doc.module !== undefined) add(prefix + '模块与独立依据一致', exactField('模块', doc.module));
+          add(prefix + '产品线', owned.toLowerCase().includes(`产品线 ${(doc.product ?? gold.product ?? 'apv').toLowerCase()}`));
+        }
+        const reported = extractReportedDocumentData(doc.document, turns);
+        const stories = new Set(doc.stories ?? []), bugs = new Set(doc.bugs ?? []);
+        const unclassified = new Set(doc.unclassified ?? (doc.associatedIds ?? []).filter(id => !stories.has(id) && !bugs.has(id)));
+        const all = new Set(doc.associatedIds ?? [...stories, ...bugs, ...unclassified]);
+        if (doc.associatedIds !== undefined || doc.stories !== undefined || doc.bugs !== undefined || doc.unclassified !== undefined) {
+          const missing = [...all].filter(id => !reported.all.has(id)).length, extra = [...reported.all].filter(id => !all.has(id)).length;
+          add(prefix + '关联编号集合与独立依据一致', !missing && !extra, `共 ${all.size} 个`, `共 ${reported.all.size} 个，缺 ${missing} 个，多 ${extra} 个`);
+          for (const [kind, expected, actual] of [['需求', stories, reported.stories], ['缺陷', bugs, reported.bugs], ['未分类编号', unclassified, reported.unclassified]] as const) {
+            [...expected].sort().forEach((id, j) => add(`${prefix}第 ${j + 1} 个${kind}分类`, actual.has(id)));
+          }
+        }
+        checks.push(...checkCandidateBuilds(area, ownClaimTexts(lines, doc.document, 'build_candidates').join('\n'), doc.buildCandidates, doc.writtenBuilds, prefix));
       });
-
+      if (destination !== undefined) { try { writePrivateJson(join(destination, 'case-location-details.json'), audits); } catch { add('定位私有明细已保存', false, '新明细文件 1 份', '明细文件 0 份；下一步：改用 Git 外新 --out 目录后重跑，不覆盖旧证据'); } }
+      const compared = docs.flatMap(doc => ownClaimTexts(lines, doc.document, 'build_candidates').filter(line => !/，未知(?:，|；|$)/.test(line)).flatMap(parseReportedCandidates));
+      for (const [name, ok] of [['APV 名称族', compared.some(c => c.family === 'APV')], ['NSAE 名称族', compared.some(c => c.family === 'NSAE')], ['别名', compared.some(c => c.baseMention)]] as const) add('候选覆盖：' + name, ok, '至少 1 个', ok ? '至少 1 个' : '0 个；下一步：选择前 12 项覆盖两个名称族和别名的版本线后重跑');
+      const longest = Math.max(0, ...resultTexts(turns).map(t => t.length));
+      add('回答没有超过客户端能转交的长度', longest <= 30_000, '不超过 30000 个字符', `最长 ${longest} 个字符`);
       return checks;
     },
   };

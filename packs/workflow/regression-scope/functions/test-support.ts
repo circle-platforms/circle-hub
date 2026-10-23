@@ -1,3 +1,4 @@
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Synthetic impact views for the regression-scope tests. Not a pack file.
 
 export const FROM_ROOT = 'ab'.repeat(32);
@@ -17,7 +18,7 @@ export interface CaseSpec {
 
 export interface ChangeSpec {
   path: string;
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
   before?: { [key: string]: unknown }[];
   after?: { [key: string]: unknown }[];
   behaviourBefore?: string[];
@@ -175,4 +176,17 @@ export function reversedView(view: { [key: string]: unknown }): { [key: string]:
   const entries: { [key: string]: unknown } = {};
   for (const key of Object.keys(copy.entries as object).reverse()) entries[key] = (copy.entries as { [key: string]: unknown })[key];
   return { ...copy, changes, placements, entries };
+}
+
+// Bind the required synthetic disclosure input for existing projection scenarios.
+export function facetInput(view: { [key: string]: unknown }, unplaced = 0): { [key: string]: unknown } {
+  return { slot: 'facets', sha256: SOURCE, model: { schema: 'facet-view@1', product: view.product, build: structuredClone(view.to), kind: 'case', by: ['commands'], rows: unplaced ? [{ values: { commands: null }, count: unplaced }] : [], total: unplaced, truncated: false, skipped: (view.skipped as {from:number;to:number})?.to ?? 0, notes: [] } };
+}
+import { projectItems as rawProject, LIMITS } from './project.ts';
+export { LIMITS };
+export function projectItems(input: unknown, limits: Parameters<typeof rawProject>[1] = {}): unknown {
+  const value = input as { inputs?: Array<{ slot?: string; model?: unknown }> };
+  const impact = value?.inputs?.find((v) => v.slot === 'impact')?.model;
+  if (impact && typeof impact === 'object' && !value.inputs?.some((v) => v.slot === 'facets')) return rawProject({ ...value, inputs: [...value.inputs!, facetInput(impact as { [key: string]: unknown })] }, limits);
+  return rawProject(input, limits);
 }

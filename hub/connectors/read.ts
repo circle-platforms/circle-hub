@@ -147,8 +147,25 @@ interface CacheEntry {
 }
 
 /** `system:type:key[@revision]` split, or null when it is not an external object identity. */
+export const MAX_EXTERNAL_ID_BYTES = 900;
+export function externalSizeReason(id: string): string | null {
+  const bytes = Buffer.byteLength(id, 'utf8');
+  return bytes > MAX_EXTERNAL_ID_BYTES ? `外部对象标识是 ${bytes} 字节，超过 ${MAX_EXTERNAL_ID_BYTES} 字节上限；缩短读取键后重读` : null;
+}
+
 export function parseExternal(id: string): ReadSubject | null {
-  if (!ExternalObjectId.safeParse(id).success || Buffer.byteLength(id, 'utf8') > 900) return null;
+  const subject = externalShape(id);
+  return subject === null || externalSizeReason(id) !== null ? null : subject;
+}
+
+/** Routing may admit a shape-valid oversized id so read() can report the actual byte failure. */
+export function externalRoutingType(id: string): string | null {
+  const parsed = externalShape(id);
+  return parsed === null ? null : `${parsed.system}:${parsed.type}`;
+}
+
+function externalShape(id: string): ReadSubject | null {
+  if (!ExternalObjectId.safeParse(id).success) return null;
   const first = id.indexOf(':');
   const second = id.indexOf(':', first + 1);
   const rest = id.slice(second + 1);
@@ -161,7 +178,7 @@ export function parseExternal(id: string): ReadSubject | null {
 }
 
 function indexValue(value: string): string {
-  return Buffer.byteLength(value, 'utf8') <= 900 ? value : `sha256:${sha256Hex(value)}`;
+  return Buffer.byteLength(value, 'utf8') <= MAX_EXTERNAL_ID_BYTES ? value : `sha256:${sha256Hex(value)}`;
 }
 
 function fillId(value: unknown, key: string, depth = 0): unknown {
@@ -221,6 +238,8 @@ export class ReadEngine {
   /** One read of one external object through one resource. Never throws: a failure is an outcome with a reason. */
   async execute(runtime: ResourceRuntime, read: ReadDeclaration, args: ReadArgs, context: ExternalReadContext): Promise<ReadOutcome> {
     const external = `${read.external}:${String(args?.id)}${args?.revision ? `@${args.revision}` : ''}`;
+    const sizeReason = externalSizeReason(external);
+    if (sizeReason !== null) return { ok: false, external, code: 'PLAN_INVALID', reason: sizeReason, manifest: null };
     const subject = parseExternal(external);
     if (subject === null) return { ok: false, external, code: 'PLAN_INVALID', reason: `${this.#o.redactor.text(external)} 不是外部对象标识`, manifest: null };
     return this.top(runtime, read, subject, context, args.args ?? {});

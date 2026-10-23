@@ -166,6 +166,9 @@ export interface ListQuery extends PageQuery {
 
 export interface RecordStore {
   getByKey<B = unknown>(kind: RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
+
+  /** Holds a typed business-key advisory lock until the given transaction commits or rolls back. */
+  lock(key: string, tx: Transaction): Promise<void>;
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;

@@ -1,9 +1,10 @@
+import type { CallResult } from '../../../contracts/generated/vocabulary.ts';
 // callPackFunction: runs one pure pack function in a fresh, isolated child process and returns its JSON output.
 // Layers: pre-flight scan of the pack (no links, no special files), CPU-time ulimit, sandbox-exec on macOS, the Node permission
 // model, the bootstrap's lockdown and import policy, and the parent's wall-clock, memory (resident size) and output limits.
 // Every failure is a SandboxError; the parent kills the child's whole process group and keeps working. stopAll ends every
 // running child (also when the Hub process exits); sweepOrphans (orphans.ts) ends those an earlier Hub process left behind.
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
@@ -14,6 +15,7 @@ import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable,
 import { ENTRY_EXTENSIONS } from './policy.ts';
 import { createResidentWatch, residentSizes } from './resident.ts';
 import { createSlotPool } from './slots.ts';
+import { retryFunction, type FunctionAttempt } from './retry.ts';
 
 export interface PackFunctionTarget {
   /** The extracted pack directory. */
@@ -38,11 +40,15 @@ export interface SandboxLimits {
 }
 
 export interface SandboxOptions {
+  /** Engine checks/subjects only: retry a wall-clock timeout once under the same cap. */
+  retryWallTimeout?: boolean;
   /**
    * Default true: refuse to run (SANDBOX_UNAVAILABLE) where sandbox-exec cannot deny the network, because Node 24's permission
    * model does not. Only synthetic test environments without it may pass false; the result then reports osIsolation false.
    */
   requireOsIsolation?: boolean;
+  /** Parent-side attempt metadata, never function inputs, output or messages. Observer failures are ignored. */
+  onAttempt?: (attempt: FunctionAttempt) => void;
 }
 
 export interface SandboxResult {
@@ -109,6 +115,7 @@ const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: reside
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
 let exitHook = false;
+let stopEpoch = 0;
 
 /** Pids of the running children. */
 export function livePids(): number[] {
@@ -120,6 +127,7 @@ export function livePids(): number[] {
  * many children were stopped. Synchronous, so a signal handler can call it before exiting; it also runs when the process exits.
  */
 export function stopAll(): number {
+  stopEpoch++;
   slots.rejectWaiting(() => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
   const stops = [...live.values()];
   for (const stop of stops) stop('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
@@ -202,7 +210,7 @@ function serializeInput(input: unknown, limit: number): string {
 }
 
 interface Frame {
-  status: 'ok' | 'error';
+  status: Extract<CallResult, 'ok' | 'error'>;
   output?: unknown;
   code?: unknown;
   detail?: unknown;
@@ -228,30 +236,70 @@ function parseFrame(raw: Buffer, nonce: string): Frame | 'invalid' | undefined {
  * Runs `export` (default `default`) of `module` inside `packDir` with `input` (any JSON value) and returns its JSON output.
  * Throws SandboxError for every failure of the function or the sandbox; TypeError or RangeError for an invalid call.
  */
-export async function callPackFunction(
+export type SandboxBatchItem = { ok: true; result: SandboxResult } | { ok: false; error: SandboxError };
+
+export async function callPackFunction(target: PackFunctionTarget, input: unknown, limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxResult> {
+  return executePack(target, input, limits, options, false);
+}
+
+/** One pure module invocation per item inside one evaluation-scoped isolated process. */
+export async function callPackFunctionBatch(target: PackFunctionTarget, inputs: readonly unknown[], limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxBatchItem[]> {
+  if (!Array.isArray(inputs)) throw new TypeError('批量输入必须是数组');
+  if (!inputs.length) return [];
+  const batch = await executePack(target, inputs, limits, options, true);
+  if (!Array.isArray(batch.output) || batch.output.length !== inputs.length) throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_frame' });
+  return batch.output.map((item: unknown): SandboxBatchItem => {
+    if (item === null || typeof item !== 'object') throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+    const row = item as Record<string, unknown>;
+    if (typeof row.stdout !== 'string' || typeof row.stderr !== 'string' || typeof row.truncated !== 'boolean' || typeof row.durationMs !== 'number') throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+    const logs = { stdout: row.stdout, stderr: row.stderr };
+    if (row.ok === true && Object.hasOwn(row, 'output')) return { ok: true, result: { ...batch, ...logs, output: row.output, durationMs: row.durationMs, truncated: row.truncated } };
+    if (row.ok === false && isSandboxErrorCode(row.code) && row.detail !== null && typeof row.detail === 'object') return { ok: false, error: new SandboxError(row.code, row.detail as Record<string, unknown>, logs) };
+    throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
+  });
+}
+
+async function executePack(
   target: PackFunctionTarget,
   input: unknown,
   limits: Partial<SandboxLimits> = {},
-  options: SandboxOptions = {},
+  options: SandboxOptions,
+  batch: boolean,
 ): Promise<SandboxResult> {
+  const epoch = stopEpoch;
   const lim = resolveLimits(limits);
   const os = await osIsolationAvailable();
   if (!os && options.requireOsIsolation !== false) {
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
   }
-  return slots.run(async () => {
-    const inputText = serializeInput(input, lim.inputBytes);
-    const pack = await preparePack(target);
-    return runChild(pack, inputText, lim, os);
+  return retryFunction(() => {
+    if (epoch !== stopEpoch) return Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
+    return slots.run(async () => {
+      const inputText = serializeInput(input, lim.inputBytes);
+      const pack = await preparePack(target);
+      if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
+      return runChild(pack, inputText, lim, os, batch);
+    });
+  }, lim.timeoutMs, options.onAttempt, options);
+}
+
+/** Preserve host startup diagnostics only on the private error; the public sandbox message stays fixed. */
+function spawnFailure(error: unknown): SandboxError {
+  if (error instanceof SandboxError) return error;
+  const errno = typeof error === 'object' && error !== null ? (error as {code?:unknown}).code : undefined;
+  return new SandboxError('SANDBOX_UNAVAILABLE', {reason:'spawn_failed',
+    ...(typeof errno === 'string' || typeof errno === 'number' ? {errno} : {}),
+    message:error instanceof Error ? error.message : String(error),
   });
 }
 
-function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean): Promise<SandboxResult> {
+function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {
   const deps = declaredDependencies();
   const nonce = randomBytes(16).toString('hex');
   const dirUrl = (dir: string): string => `${pathToFileURL(dir).href}/`;
   const header = JSON.stringify({
     nonce,
+    batch,
     pack: dirUrl(pack.dir),
     entry: pathToFileURL(pack.entry).href,
     exportName: pack.exportName,
@@ -271,12 +319,18 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
 
   return new Promise<SandboxResult>((resolve, reject) => {
     const started = Date.now();
-    const child = spawn(command.command, command.args, {
-      cwd: pack.dir,
-      env: { TZ: 'UTC' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(command.command, command.args, {
+        cwd: pack.dir,
+        env: { TZ: 'UTC' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
+      });
+    } catch (error) {
+      reject(spawnFailure(error));
+      return;
+    }
     const frameCap = lim.outputBytes + 16 * lim.logBytes + 65_536;
     const frameChunks: Buffer[] = [];
     let frameBytes = 0;
@@ -380,7 +434,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       settled = true;
       kill();
       forget();
-      reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'spawn_failed', message: error.message }));
+      reject(spawnFailure(error));
     });
     // close follows exit once the pipes are drained; a descendant holding them open must not keep the call waiting.
     child.on('exit', (exitCode, signal) => {

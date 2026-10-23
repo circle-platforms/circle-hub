@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ParseEncodingError, ParseLimitError, markdownParser, type MarkdownModel } from '../api.ts';
+import { ParseEncodingError, ParseLimitError, markdownParser, selectorSegment, type MarkdownModel } from '../api.ts';
 import { fixture, latin1, timed, utf8 } from '../test-support.ts';
 
 const bytes = fixture('spec.md');
@@ -221,5 +221,54 @@ describe('markdown@1 on hostile headings', () => {
     assert.ok(outcome.error instanceof ParseLimitError && outcome.error.limit === 'maxSelectorChars', String(outcome.error));
     const fewer = parsed(`# ${heading}\n\n${'p\n\n'.repeat(1_000)}`);
     assert.equal(fewer.model.blocks[999].selector, `b/999/${heading}`);
+  });
+});
+
+describe('markdown@1 block section paths', () => {
+  it('gives every block the heading path of its section, decoded', () => {
+    const bySelector = new Map(model.blocks.map((block) => [block.selector, block.path]));
+    assert.deepEqual(bySelector.get('b/0'), [], 'the metadata block before the first heading');
+    assert.deepEqual(bySelector.get('b/0/概述'), ['概述']);
+    assert.deepEqual(bySelector.get('b/1/概述'), ['概述']);
+    assert.deepEqual(bySelector.get('b/0/概述/术语'), ['概述', '术语']);
+    assert.deepEqual(bySelector.get('b/1/概述/功能说明/会话保持'), ['概述', '功能说明', '会话保持']);
+    assert.deepEqual(bySelector.get('b/2/概述/功能说明/超时'), ['概述', '功能说明', '超时']);
+    assert.deepEqual(bySelector.get('b/0/概述/功能说明/超时[2]'), ['概述', '功能说明', '超时[2]'], 'the second same-named section carries its ordinal');
+    assert.deepEqual(bySelector.get('b/4/概述/配置示例[2][1]'), ['概述', '配置示例[2][1]'], 'a title that ends in [digits] always carries an ordinal');
+    assert.deepEqual(bySelector.get('b/0/概述/配置命令示例'), ['概述', '配置命令示例']);
+    assert.deepEqual(bySelector.get('b/2/附录/[1]'), ['附录', '[1]'], 'an empty heading key carries its ordinal');
+  });
+
+  it('spells a path so it maps back to the section selector of its section', () => {
+    for (const block of model.blocks) {
+      if (block.path === undefined || block.path === null) continue;
+      const selector = block.path.length === 0 ? null : `h/${block.path.map(selectorSegment).join('/')}`;
+      assert.equal(selector, model.sections[block.section].selector, block.selector ?? '');
+    }
+  });
+
+  it('nests a skipped level under the nearest lower heading without a synthetic segment', () => {
+    const document = markdownParser.parse(utf8('# A\n\n### B\n\n正文\n'));
+    assert.deepEqual(document.model.sections[2].level, 3);
+    assert.deepEqual(document.model.blocks[0].path, ['A', 'B']);
+    assert.equal(document.locate('h/A/B')!.text, '### B\n\n正文');
+  });
+
+  it('keeps duplicated sibling titles apart by their ordinal', () => {
+    const document = markdownParser.parse(utf8('# 重复\n\n甲\n\n# 重复\n\n乙\n'));
+    assert.deepEqual(
+      document.model.blocks.map((block) => [block.text, block.path]),
+      [
+        ['甲', ['重复']],
+        ['乙', ['重复[2]']],
+      ],
+    );
+  });
+
+  it('gives a null path exactly when the section has no selector', () => {
+    const document = markdownParser.parse(utf8(`# ${'h'.repeat(20_000)}\n\n正文\n\n# short\n\nx\n`));
+    assert.equal(document.model.sections[1].selector, null);
+    assert.equal(document.model.blocks[0].path, null);
+    assert.deepEqual(document.model.blocks[1].path, ['short']);
   });
 });

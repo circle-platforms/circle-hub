@@ -4,13 +4,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { projectItems, PROJECT_LIMITS, type ProjectLimits } from './project.ts';
-import { boundView, facetRow, facetViewOf, reversed } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf, reversed } from './test-support.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
 
 function project(rows: Parameters<typeof facetViewOf>[0], options: { parameters?: Record<string, unknown>; overrides?: Parameters<typeof facetViewOf>[1]; context?: Record<string, unknown> } = {}, limits?: Partial<ProjectLimits>) {
   const parameters = options.parameters ?? {};
-  return projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, ...options.context, parameters } }, limits);
+  return projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, ...options.context, parameters } }, limits);
 }
 
 type Items = { items: Array<{ id: string; label: string; summary?: string; location: { slot: string; source: string; parser: string; selector: string }; fields: Record<string, unknown> }>; groups?: Array<Record<string, unknown>>; warnings: Array<{ code: string; message: string }> };
@@ -24,7 +24,7 @@ describe('projectItems', () => {
   it('projects one item per (line, module) group with the metrics frozen in the fields', () => {
     const out = asItems(
       project([
-        facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18),
+        facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23),
         facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2),
         facetRow({ line: '10.6.1', module: null, has_expected: true, vague_expected: true, negative: false }, 4),
       ]),
@@ -32,15 +32,15 @@ describe('projectItems', () => {
     assert.deepEqual(
       out.items.map((i) => [i.id, i.label, i.summary]),
       [
-        ['10.6.1/SSL', '10.6.1/SSL', '用例 20 个；无期望结果 10.0%；含糊期望 0.0%；负面用例 10.0%'],
-        ['10.6.1/unplaced', '10.6.1/unplaced', '用例 4 个；无期望结果 0.0%；含糊期望 100.0%；负面用例 0.0%'],
+        ['10.6.1/SSL', '10.6.1/SSL', '用例 25 个；无期望结果 2 个（8.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（8.0%）'],
+        ['10.6.1/unplaced', '10.6.1/unplaced', '用例 4 个；无期望结果 0 个（0.0%）；含糊期望 4 个（100.0%）；负面用例 0 个（0.0%）'],
       ],
     );
     const [ssl] = out.items;
     assert.deepEqual([ssl.location.slot, ssl.location.parser, ssl.location.selector], ['facets', 'json@1', 'p/rows']);
     const fields = ssl.fields as { line: string; module: string; counts: unknown; ratios: { negative: { num: number; den: number } } };
     assert.deepEqual([fields.line, fields.module], ['10.6.1', 'SSL']);
-    assert.deepEqual(fields.ratios.negative, { num: 2, den: 20 });
+    assert.deepEqual(fields.ratios.negative, { num: 2, den: 25 });
   });
 
   it('freezes the view facts in the run groups', () => {
@@ -98,7 +98,7 @@ describe('projectItems', () => {
     ];
     const one = asItems(project(rows));
     const view = facetViewOf(rows);
-    const flipped = projectItems({ inputs: [{ ...boundView('facets', view), model: reversed(view) }], parameters: {}, context: CONTEXT });
+    const flipped = projectItems({ inputs: [{ ...boundView('facets', view), model: reversed(view) }, placementFor(view)], parameters: {}, context: CONTEXT });
     const two = asItems(flipped);
     // The flipped input keeps the original digest (as the Hub's canonical storage would): the outputs are identical.
     assert.deepEqual(two, one);

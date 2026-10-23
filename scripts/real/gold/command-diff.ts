@@ -19,7 +19,7 @@ export type XmlNode = { name: string; attributes: Record<string, string>; childr
 export type XmlElementChild = { text: string } | { element: XmlNode };
 
 /** A small XML reader for the command tree's shape: elements, attributes and text, no namespaces, no DTDs. */
-class XmlReader {
+export class XmlReader {
   private at = 0;
   private readonly text: string;
   private constructor(text: string) {

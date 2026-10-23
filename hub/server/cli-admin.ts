@@ -7,7 +7,7 @@
 // keychain item that cannot be read only costs a notice. Reads are not an access boundary: without any token they act as
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
-// or a secret value: secrets and tokens come from standard input only, never from argv.
+// or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -30,6 +30,7 @@ import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble
 import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
+import { readNamedEnvironment } from './assemble/env-file.ts';
 import { vaultKeyProblem } from './assemble/vault.ts';
 import { CliError, UsageError } from './errors.ts';
 
@@ -48,8 +49,8 @@ export interface AdminCommandOptions {
 export const PACK_USAGE =
   'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
 export const RESOURCE_USAGE =
-  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | list | disable <资源> | enable <资源> | reset-login <资源>';
-export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
+  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+export const SECRET_USAGE = 'secret import --env-file <文件> --key <键名>=<资源>/<凭据项>… [--basic <用户键>:<密码键>=<资源>/<凭据项>] [--dry-run] | set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由>';
@@ -173,9 +174,9 @@ class Session {
    * The assembly over this invocation's records (one per invocation): the vault key is required by the commands that read
    * or write a secret value; its operator's log lines (connector and registry events) go to this command's stderr.
    */
-  hub(requireVaultKey = false): Promise<AssembledHub> {
+  hub(requireVaultKey = false, quiet?: boolean): Promise<AssembledHub> {
     this.#hub ??= (async () =>
-      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, requireVaultKey, command: true }))();
+      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet === undefined ? {} : { log: quiet ? () => {} : (line: string) => this.err(line) }), requireVaultKey, command: true }))();
     return this.#hub;
   }
 
@@ -578,6 +579,20 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       if (changes.system_pack !== undefined) session.out('凭据项如果有改动，用 circle-hub secret set 重新设置；正在运行的 Hub 在几秒内（资源列表缓存）读到新的定义');
       return 0;
     }
+    case 'read': {
+      const { positionals, values } = parse(rest, { events: { type: 'boolean' } }, 3);
+      const admin = await session.admin();
+      // Default output is metadata only; --events sends redacted connector diagnostics to stderr for smoke capture.
+      const hub = await session.hub(true, values.events !== true);
+      const [resource, readName, key] = positionals;
+      const described = await decided(() => hub.connectors.admin.describe(admin, resource));
+      if (described === null) throw new CliError('资源不可用');
+      const result = await hub.connectors.executeRead(resource, readName, { id: key }, { principal: admin, purpose: '管理员冒烟读取' });
+      session.out(`${described.system_pack}/${readName}：${result.ok ? '读取完成' : `失败（${result.code}）`}`);
+      if (result.ok) for (const artifact of result.artifacts) session.out(`产物 ${artifact.name} ${artifact.artifact.body.sha256} ${artifact.artifact.body.size} 字节`);
+      if (result.manifest !== null) session.out(`读清单 ${result.manifest}`);
+      return result.ok ? 0 : 1;
+    }
     case 'list': {
       const { values } = parse(rest, { as: { type: 'string' } }, 0);
       const viewer = await session.viewer(values.as);
@@ -634,10 +649,84 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
   }
 }
 
+// Temporary mirror of ResourceAdmin.setCredentials until connectors exports a reusable value check.
+// Keep this at the import boundary so a dry run and every resource are checked before the first write.
+const IMPORT_VALUE_MAX_CHARS = 4096;
+function importValueProblem(value: string): string | null {
+  if (!value.length) return '值是空的';
+  if (value.length > IMPORT_VALUE_MAX_CHARS) return `长度超过 ${IMPORT_VALUE_MAX_CHARS} 个字符`;
+  if (/[\u0000-\u001f\u007f]/.test(value)) return '含控制字符';
+  return null;
+}
+
 // ---------------------------------------------------------------- secret
 
 async function secretCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'import') {
+    const { values } = parse(rest, { 'env-file': { type: 'string' }, key: { type: 'string', multiple: true }, basic: { type: 'string', multiple: true }, 'dry-run': { type: 'boolean' } }, 0);
+    if (!values['env-file'] || (!(values.key?.length) && !(values.basic?.length))) throw new UsageError(SECRET_USAGE);
+    const admin = await session.admin();
+    const hub = await session.hub(values['dry-run'] !== true);
+    const mappings: { keys: string[]; resource: string; entry: string; rule: string }[] = [];
+    const targets = new Set<string>();
+    for (const [basic, inputs] of [[false, values.key ?? []], [true, values.basic ?? []]] as const) {
+      for (const input of inputs) {
+        const match = /^(.*?)=(res_[0-9a-z]{26})\/([a-z0-9][a-z0-9._-]*)$/.exec(input);
+        const keys = match?.[1].split(':') ?? [];
+        if (!match || keys.length !== (basic ? 2 : 1) || keys.some((key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new UsageError('导入映射格式不对，用键名=资源/凭据项；Basic 用用户键:密码键=资源/凭据项');
+        const [, , resource, entry] = match;
+        if (targets.has(`${resource}/${entry}`)) throw new CliError('同一个凭据项不能写两次');
+        targets.add(`${resource}/${entry}`);
+        const described = await decided(() => hub.connectors.admin.describe(admin, resource));
+        if (described === null) throw new CliError(`没有资源 ${resource.slice(0, 80)}`, '用 circle-hub resource list 查看资源号');
+        const credential = described.credentials.find((credential) => credential.name === entry);
+        if (credential === undefined) throw new CliError(`资源 ${resource} 没有凭据项 ${entry.slice(0, 80)}`, `它的凭据项是 ${described.credentials.map(item => item.name).join('、') || '（无）'}`);
+        if (basic) {
+          // Inspect the bound system declaration, never infer an authorization target from its display name.
+          const ref = parsePackRef(described.system_pack);
+          const version = ref?.version ? await hub.registry.getVersion(ref.id, ref.version) : null;
+          const declaration = version ? await hub.registry.declarations(version.digest) : null;
+          const auth = declaration?.kind === 'system' ? declaration.system.auth : null;
+          if (credential.digest !== 'plain' || auth?.kind !== 'static_header' || auth.credential !== entry
+            || auth.header.name.toLowerCase() !== 'authorization' || auth.header.scheme !== 'raw') {
+            throw new CliError('Basic 只可写入原样存储整个 Authorization 头的静态凭据项；未写入任何凭据',
+              `--basic 只用于系统包声明为原样静态 Authorization 头的凭据项；这个资源（系统包 ${described.system_pack}）的凭据项是 ${described.credentials.map(item => item.name).join('、') || '（无）'}；用 circle-hub resource list 查看各资源绑定的系统包，再修正 --basic 的目标`);
+          }
+        }
+        mappings.push({ keys, resource, entry, rule: credential.digest });
+      }
+    }
+    const keys = [...new Set(mappings.flatMap((mapping) => mapping.keys))];
+    const found = await readNamedEnvironment(values['env-file'], keys);
+    const missing: string[] = []; const empty: string[] = [];
+    for (const key of keys) {
+      const value = found.get(key);
+      if (value === undefined) { session.out(`${key}：没有`); missing.push(key); }
+      else if (!value.length) { session.out(`${key}：是空的`); empty.push(key); }
+      else session.out(`${key}：找到，长度 ${value.length}`);
+    }
+    if (missing.length || empty.length) throw new CliError(`凭据导入已拒绝；缺少键 ${missing.join('、') || '无'}；空值键 ${empty.join('、') || '无'}；未写入任何凭据`, '在环境文件里补上这些键的有效行后重跑，先加 --dry-run');
+    for (const key of keys) {
+      const problem = importValueProblem(found.get(key)!);
+      if (problem) throw new CliError(`键 ${key} ${problem}；未写入任何凭据`, '在环境文件中修正该键的有效值，先用 --dry-run 核对后重跑');
+    }
+    const grouped = new Map<string, Record<string, string>>();
+    for (const mapping of mappings) {
+      if (mapping.keys.length === 2 && found.get(mapping.keys[0])!.includes(':')) throw new CliError(`键 ${mapping.keys[0]} 的用户名含冒号，不能组成 Basic 头值`);
+      const value = mapping.keys.length === 1 ? found.get(mapping.keys[0])! : `Basic ${Buffer.from(mapping.keys.map((key) => found.get(key)!).join(':')).toString('base64')}`;
+      const problem = importValueProblem(value);
+      if (problem) throw new CliError(`键 ${mapping.keys.join('、')} 组成的凭据${problem}；未写入任何凭据`, '修正这些键的有效值，先用 --dry-run 核对后重跑');
+      const entries = grouped.get(mapping.resource) ?? {};
+      entries[mapping.entry] = value; grouped.set(mapping.resource, entries);
+    }
+    if (values['dry-run']) return 0;
+    for (const [resource, entries] of grouped) {
+      await decided(() => hub.connectors.admin.setCredentials(admin, resource, entries));
+      for (const { entry, rule } of mappings.filter((mapping) => mapping.resource === resource)) session.out(`已设置资源 ${resource} 的凭据 ${entry}：${rule === 'sha512_base64' ? '按系统包的规则只存它的 Base64(SHA-512) 摘要，不存原值' : '按系统包的规则原样存进密钥库'}；密钥库里这个资源的登录状态已清除`);
+    }
+    return 0;
+  }
   if (sub === 'set') {
     const { positionals } = parse(rest, {}, 2);
     const [resource, entry] = positionals;

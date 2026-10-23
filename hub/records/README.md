@@ -515,3 +515,13 @@ Migration 3 adds append-only `record_keys` with primary key `(kind,key)` and a f
 The digest is defined over canonical content. Reads first verify the stored body text without reparsing for the hash. If that fast check fails, they strictly parse JSON (rejecting duplicate member names), canonicalize it, and recompute the same canonical envelope digest. Only an exact digest match is accepted. Different content, malformed JSON or noncanonicalizable values still raise IntegrityError. Historical body bytes, digests and migrations are never rewritten.
 
 Every accepted fallback is disclosed through `recordIntegrityNotes()` in the public API: the process-local total read count and per-record id/digest/read counts with the explanation “正文不是规范写法、内容与摘要一致”. Snapshots are detached, contain no body text, retain up to 1000 distinct examples and explicitly mark truncation; the total count continues beyond that cap. This is maintenance telemetry, not a new authorization or a rewritten historical fact. An operator examining old data queries it in the same process that performed the reads. Fast-path reads do not increment it.
+
+### 已应用迁移的字节基线
+
+`migrations.snapshot.test.ts` 固定三条迁移的版本、名称和 SQL 字节 SHA-256（新增 record_keys，原来两条保持原值），另固定包含它们的
+`migrations.ts` 文件摘要。新增迁移仍只能追加：复核时更新文件摘要，已有版本的 SQL 摘要保持原值。
+这是仓库内已应用迁移的防改检查，不是对持久部署数据库的检查；本任务没有接触持久服务。
+
+`RecordStore.lock(key, tx)` 为调用方给定事务持有业务键锁，提交或回滚释放；它不新开事务，不改历史。键先加 record-store.business 类型前缀再取 PostgreSQL 哈希，采用独立具名常量 BUSINESS_LOCK_SPACE，与记录库其他 advisory 锁命名空间均不同；lock-namespaces.test.ts 静态检查全部调用点的具名常量和值互不冲突。多键调用方必须排序取锁。本次合并同时保留唯一业务键与事务锁接口；回注去重继续使用事务锁，是否改用唯一业务键由集成者另定，不改写已有迁移。
+
+唯一业务键锁使用独立的 `UNIQUE_KEY_LOCK_SPACE`，与来源去重和普通业务事务锁的命名空间均不同；合并保留三种用途，不让它们互相占用同一个锁空间。

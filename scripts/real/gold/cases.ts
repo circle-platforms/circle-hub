@@ -14,12 +14,18 @@
 //   node scripts/real/gold/cases.ts --map <file>:<documentId> [--map <file>:<documentId> ...] [--case-rule tagged|marked] --out <gold.json>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { GoldRefusal } from './refusal.ts';
+import { rawIdAt } from './id-text.ts';
 
 export interface GoldNode {
   index: number;
   id: string;
   text: string;
   resource: string[];
+  /** The raw tag entries as text (blank strings kept, finite numbers and booleans as text) — what the index keeps. */
+  rawTags: string[];
+  /** The pack's isTagged: a non-empty resource array, whatever the entries are (null and object entries included). */
+  tagged: boolean;
   priority: number | null;
   /** The text labels of the ancestors of this node, outermost (the root) first. */
   ancestors: string[];
@@ -44,11 +50,13 @@ export function parseMindMap(value: unknown): GoldMap {
     if (typeof record !== 'object' || record === null) throw new Error(`第 ${nodes.length + 1} 个节点的 data 不是对象`);
     const text = typeof record.text === 'string' ? record.text : record.text === null ? '' : String(record.text);
     const id = typeof record.id === 'string' ? record.id : typeof record.id === 'number' ? String(record.id) : '';
-    const resource = Array.isArray(record.resource) ? record.resource.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : [];
+    const resourceRaw = Array.isArray(record.resource) ? record.resource : [];
+    const resourceTags = resourceRaw.map((t) => (typeof t === 'string' ? t : (typeof t === 'number' && Number.isFinite(t)) || typeof t === 'boolean' ? String(t) : null)).filter((t): t is string => t !== null);
+    const resource = resourceTags.filter((t) => t.trim() !== '');
     const priority = typeof record.priority === 'number' && Number.isInteger(record.priority) ? record.priority : null;
     const childrenRaw = (raw as { children?: unknown }).children;
     const index = nodes.length;
-    nodes.push({ index, id, text, resource, priority, ancestors, children: [], parent });
+    nodes.push({ index, id, text, resource, rawTags: resourceTags, tagged: resourceRaw.length > 0, priority, ancestors, children: [], parent });
     const list = Array.isArray(childrenRaw) ? childrenRaw : [];
     for (const child of list.slice(0, 1000)) {
       nodes[index].children.push(walk(child, index, [...ancestors, text]));
@@ -86,22 +94,26 @@ const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', 
 
 const BUG_MARKERS =
   /(?<![A-Za-z])(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)/gi;
-const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9])/i;
-const NOT_ID = /^(?:19|20)[0-9]{2}/;
+const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{2})/i;
+
+
+/** A document with no case nodes: caught by type, never by matching the message text. */
+export class NoCaseNodes extends GoldRefusal {}
 
 /** Bug ids of one text: after each bug marker, digit runs 2..9 long, separated by , &、and. */
-export function bugIdsOf(text: string): string[] {
+export function bugIdsOf(raw: string): string[] {
   const ids: string[] = [];
-  for (const match of text.normalize('NFKC').matchAll(BUG_MARKERS)) {
+  // The pack's ids.ts normalizes once and works on the normalized text: a full-width colon or full-width digits are
+  // part of the id form it reads. Slicing the RAW text after matching on the normalized one lost both (closure 1).
+  const text = raw.normalize('NFKC');
+  for (const match of text.matchAll(BUG_MARKERS)) {
     let at = (match.index ?? 0) + match[0].length;
     at += /^[\s_\-–—:#.]*/.exec(text.slice(at))![0].length;
     for (let guard = 0; guard < 64; guard++) {
-      const found = /^\d{2,9}/.exec(text.slice(at));
+      const found = rawIdAt(text, at, 2, 9);
       if (found === null) break;
-      const id = found[0];
-      const next = text.slice(at + id.length, at + id.length + 2);
-      if (!(NOT_ID.test(id) && id.length === 8 && /^\d{2}$/.test(next)) && !/^\d{4}-\d{1,2}/.test(id + next)) ids.push(id);
-      at += id.length;
+      ids.push(found.id);
+      at = found.end;
       const separator = SEPARATOR.exec(text.slice(at, at + 12));
       if (separator === null) break;
       at += separator[0].length;
@@ -116,6 +128,7 @@ export interface GoldStep {
 }
 
 export interface GoldCase {
+  tags: string[];
   id: string;
   title: string;
   expected: string[];
@@ -165,7 +178,8 @@ export function caseNodesOf(
   const holds = new Uint8Array(n);
   for (let v = n - 1; v > 0; v--) {
     const node = nodes[v];
-    const isTagged = node.resource.length > 0;
+    // The same shared rule as the role pass (closure item 10): never the filtered non-blank list here.
+    const isTagged = node.tagged;
     if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
       if (node.parent !== null) holds[node.parent] = 1;
     }
@@ -178,7 +192,7 @@ export function caseNodesOf(
     const parent = node.parent;
     const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
     within[v] = inside;
-    if (node.resource.length > 0) {
+    if (node.tagged) {
       const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
       role[v] = isGroup ? GROUP : CASE;
     } else if (inside !== -1) {
@@ -213,7 +227,8 @@ export function caseGold(
     const holds = new Uint8Array(n);
     for (let v = n - 1; v > 0; v--) {
       const node = nodes[v];
-      const isTagged = node.resource.length > 0;
+      // One shared rule: the pack's isTagged is a non-empty resource array (closure item 10).
+      const isTagged = node.tagged;
       if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
         if (node.parent !== null) holds[node.parent] = 1;
       }
@@ -227,7 +242,7 @@ export function caseGold(
       const parent = node.parent;
       const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
       within[v] = inside;
-      if (node.resource.length > 0) {
+      if (node.tagged) {
         const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
         role[v] = isGroup ? GROUP : CASE;
       } else if (inside !== -1) {
@@ -254,13 +269,15 @@ export function caseGold(
         const c: GoldCase = {
           id: node.id === '' ? `@${node.index}` : node.id,
           title: node.text,
+          tags: [...node.rawTags],
           expected: [],
           steps: [],
           hasExpected: false,
           vagueExpected: false,
           negative,
           group,
-          defects: bugIdsOf([node.text, ...node.ancestors].join(' ')),
+          // Per text, as the pack does (the case title and each label above it), then unioned.
+          defects: [...new Set([node.text, ...node.ancestors].flatMap((label) => bugIdsOf(label)))].sort(),
         };
         caseIndexMap[v] = cases.length;
         cases.push(c);
@@ -296,7 +313,7 @@ export function caseGold(
       c.vagueExpected = nonBlank.length > 0 && nonBlank.every((t) => VAGUE_KEYS.has(foldKey(t)));
     }
 
-    if (cases.length === 0) throw new Error(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
+    if (cases.length === 0) throw new NoCaseNodes(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
 
     const groupCounts: Record<string, number> = {};
     for (const c of cases) groupCounts[c.group] = (groupCounts[c.group] ?? 0) + 1;

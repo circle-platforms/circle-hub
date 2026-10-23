@@ -37,3 +37,6 @@ Lease actions appended by this version store the RFC 8785 canonical body text us
 All new lease actions now go through `RecordStore.put` inside the lease transaction, including record byte limits, canonicalization and indexes. `ServiceOptions.records` accepts the deployment's configured store; otherwise a store over the same database uses the standard record limit. The public records factory `createRecordStore` supplies this boundary. A record-store refusal rolls back the lease row change. Action replay also uses integrity-checked record reads, including unindexed historical rows. This changes neither lease ownership nor fencing semantics.
 
 Snapshots reject fences outside JavaScript's safe integer range rather than round two distinct database tokens into the same value. The service signatures use the generated LeaseOp type. Additional regressions cover configured UTF-8 audit limits and rollback of an oversized Unicode force-release reason; ordinary ownership, expiry and fencing transitions remain unchanged.
+
+租约动作的取值类型统一来自生成词表 `LeaseOp`；内部续租/释放共用路径使用其 `Extract` 子集，
+不另写租约操作轴。

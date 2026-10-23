@@ -172,6 +172,25 @@
     },
     "notes": {
       "type": "string"
+    },
+    "task_outputs": {
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "value": {}
+        },
+        "required": [
+          "output",
+          "value"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

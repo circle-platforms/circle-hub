@@ -11,8 +11,15 @@ export interface Scenario {
   respond: Respond;
   /** Decides the checks from what the model was shown. */
   check(turns: LoggedTurn[]): Check[];
+  /** Writes scenario files into the Circle work directory before the client starts (after writeHome, before
+   * startCircle); the scratch directory is still removed whole at the end. */
+  prepare?(workdir: string): void | Promise<void>;
+  /** Extra report limits of this scenario, appended after the two fixed ones. */
+  limits?: string[];
   /** Extra sections for the report, if any (not counted in pass/fail). */
   sections?: ReportSection[];
+  /** Anonymous count lines safe for the terminal; absent keeps existing scenarios unchanged. */
+  countLines?: string[];
 }
 
 export interface LoggedTurn {

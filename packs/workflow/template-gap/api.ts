@@ -96,6 +96,9 @@ export async function stagePack(target: string, dir: string = PACK_DIR): Promise
 
 export { projectDocuments, documentIdOf, LIMITS, SUBJECT_SLOT } from './functions/project.ts';
 export type { ProjectOptions } from './functions/project.ts';
+export { commandOutcomes } from './functions/command-check.ts';
+export { commandSubject } from './functions/command-subject.ts';
+export { commandCoverage, caseCategories } from './functions/commands.ts';
 export { coverageSubject } from './functions/subject.ts';
 export { categoryFacts, keywordForm, matchForm, readTemplate, MAX_EVIDENCE, TEMPLATE_SCHEMA } from './functions/template.ts';
 export { casePath, casesOf, CASE_LIMITS, PRIORITIES } from './functions/cases.ts';

@@ -247,6 +247,34 @@ describe('the producers', () => {
     assert.ok(out.warnings.includes('没有应用手册'));
   });
 
+  it('manual: hangs signatures at /commands only when the command exists, and records the literals as written', () => {
+    const model = markdown(fixtureBytes('manual.md'));
+    const tree = slot('xml@1', xml(fixtureBytes('command-tree.xml')));
+    const out = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null, tree }, params: {} });
+    // Only commands the tree has keep their /commands paths; the others hang at their section node.
+    assert.ok(!out.entries.some((e) => e.path === '/commands/demo/probe' || e.path === '/commands/enable' || e.path === '/commands/?'));
+    const probe = out.entries.find((e) => e.data.form === 'signature' && typeof e.statement === 'string' && e.statement.startsWith('demo probe'));
+    assert.equal(probe?.path, '/manual/cli/基本配置');
+    // Literals are recorded as written, never resolved to a path at production time.
+    const example = out.entries.find((e) => e.fragments[0].selector === 'b/13/基本配置');
+    assert.deepEqual(example?.data.command_literals, ['demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent']);
+    const mention = out.entries.find((e) => e.fragments[0].selector === 'b/1/引言');
+    assert.deepEqual(mention?.data.command_literals, ['demo pool mode']);
+    const note = out.entries.find((e) => e.fragments[0].selector === 'b/7/基本配置');
+    assert.deepEqual(note?.data.command_literals, ['demo pool create']);
+    // The production warnings list the literals the tree cannot resolve, as drift candidates (the exact list; the
+    // rejected signature's bold span is one of them: it names a command the tree lacks).
+    assert.ok(
+      out.warnings.includes('cli：有 5 个命令字面在本构建的命令树里解析不到，是漂移候选：?、demo broken、demo pool create、demo probe、enable'),
+      out.warnings.join('\n'),
+    );
+    // Without the tree slot no /commands path is created: signatures stay at their section nodes, the warning
+    // names the missing fact and the next action, and no drift list is computed.
+    const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
+    assert.ok(without.warnings.some((w) => w.includes('命令树不可用') && w.includes('签名留在章节节点') && w.includes('xml@1')), without.warnings.join('\n'));
+    assert.ok(without.entries.every((e) => (e.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
+  });
+
   it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {
     const page = html('<html><body><table><tr><th>Bug ID</th><th>Summary</th></tr><tr><td><a href=x?id=61001>61001</a></td><td>HA 切换后状态不对</td></tr><tr><td>61002</td><td>权重为 0 时调度异常</td></tr></table><p>61003: 拼写错误</p></body></html>');
     const fromPage = releaseNotes({ build: knownBuild, slots: { notes: slot('html@1', page) }, params: {} });
@@ -274,7 +302,7 @@ describe('the version lines of documents', () => {
     assert.equal(folderLine('rel_apv_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_nsae_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
-    assert.equal(folderLine('rel_other_10_5'), null);
+    assert.equal(folderLine('rel_other_10_9'), null);
     assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
     assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
     assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);
@@ -298,3 +326,26 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     });
   }
 });
+
+  it('aggregates many command-tree warnings so the manual drift text stays in the kept list (closure finding 10)', () => {
+    const args = Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe" help_string="h"/>`).join('');
+    const treeXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${args}</arguments></item></menu></scope></commands>`;
+    const slots = { tree: slot('xml@1', xml(treeXml)), cli: slot('markdown@1', markdown('**demo gone** *\\<x\\>*\n\n说明。\n')) };
+    const out = manual({ build: knownBuild, slots: { ...slots, app: null }, params: {} });
+    const drift = out.warnings.filter((w) => w.includes('漂移候选'));
+    assert.ok(drift.length > 0, out.warnings.slice(0, 3).join('\n'));
+    const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
+    assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
+    assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));
+    // The aggregation lives in the commandTree producer itself, keyed on the note KIND: distinct unreadable values
+    // fold too, so the drift warning never lands past the capped list (closure c3 item 8).
+    const treeOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(treeXml)) } });
+    const treePerArg = treeOut.warnings.filter((w) => w.includes('optional 取值'));
+    assert.equal(treePerArg.length, 1, JSON.stringify(treeOut.warnings));
+    assert.ok(treePerArg[0]!.includes('同类 210 处'), treePerArg[0]);
+    const distinctXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe${i}" help_string="h"/>`).join('')}</arguments></item></menu></scope></commands>`;
+    const distinctOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(distinctXml)) } });
+    const distinctPerArg = distinctOut.warnings.filter((w) => w.includes('optional 取值'));
+    assert.equal(distinctPerArg.length, 1, JSON.stringify(distinctOut.warnings.slice(0, 3)));
+    assert.ok(distinctPerArg[0]!.includes('同类 210 处'), distinctPerArg[0]);
+  });

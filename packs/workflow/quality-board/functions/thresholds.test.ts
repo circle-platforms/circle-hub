@@ -8,7 +8,7 @@ import { boardOutcomes } from './board.ts';
 import { projectItems } from './project.ts';
 import { buildSubject } from './subject.ts';
 import { readThresholds, thresholdOutcomes } from './thresholds.ts';
-import { boundView, facetRow, facetViewOf } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from './test-support.ts';
 import type { BoardSubject, CheckOutcome } from './types.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
@@ -16,7 +16,7 @@ const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: nul
 /** Projects a hand-built facet view and builds the checks' subject, as a run does. */
 function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { parameters?: Record<string, unknown>; overrides?: Parameters<typeof facetViewOf>[1]; edit?: (fields: Record<string, unknown>) => void } = {}): BoardSubject {
   const parameters = options.parameters ?? {};
-  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
+  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
   assert.ok(!('error' in projected), 'projected');
   const items = projected.items.map((it) => {
     const fields = it.fields as Record<string, unknown>;
@@ -31,18 +31,18 @@ const byId = (outcomes: CheckOutcome[], id: string): CheckOutcome[] => outcomes.
 describe('boardOutcomes', () => {
   it('always supports with the metrics as claim data (advisory)', () => {
     const subject = subjectOf([
-      facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18),
+      facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23),
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2),
     ]);
     const outcomes = boardOutcomes(subject);
     assert.equal(outcomes.length, 1);
     const [outcome] = outcomes;
     assert.deepEqual([outcome.verdict, outcome.tier, outcome.item, outcome.pointer], ['support', 'advisory', '10.6.1/SSL', '/items/0/fields']);
-    assert.equal(outcome.statement, '用例 20 个；无期望结果 10.0%；含糊期望 0.0%；负面用例 10.0%');
+    assert.equal(outcome.statement, '用例 25 个；无期望结果 2 个（8.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（8.0%）');
     const data = outcome.data as { counts: { cases: number; missing: number }; ratios: { missing: { num: number; den: number } }; display: { missing: number } };
-    assert.deepEqual(data.counts, { cases: 20, missing: 2, vague: 0, negative: 2 });
-    assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });
-    assert.equal(data.display.missing, 0.1);
+    assert.deepEqual(data.counts, { cases: 25, missing: 2, vague: 0, negative: 2 });
+    assert.deepEqual(data.ratios.missing, { num: 2, den: 25 });
+    assert.equal(data.display.missing, 0.08);
     assert.deepEqual(outcome.grounds, [subject.items[0].location]);
   });
 
@@ -101,16 +101,16 @@ describe('thresholdOutcomes', () => {
       at.map((o) => o.verdict),
       ['support'],
     );
-    // 20 cases, 2 missing = 10.0% > 5.0%: a missing_expected violation.
-    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 18)]));
+    // 25 cases, 2 missing = 8.0% > 5.0%: a missing_expected violation.
+    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23)]));
     assert.deepEqual(
       over.map((o) => [o.verdict, o.code ?? null]),
       [['refute', 'quality-board.missing_expected']],
     );
-    assert.match(over[0].statement, /10\.0%/);
+    assert.match(over[0].statement, /8\.0%/);
     assert.match(over[0].statement, /5\.0%/);
     const data = over[0].data as { metric: string; ratio: { num: number; den: number }; threshold: number };
-    assert.deepEqual([data.metric, data.ratio, data.threshold], ['missing', { num: 2, den: 20 }, 0.05]);
+    assert.deepEqual([data.metric, data.ratio, data.threshold], ['missing', { num: 2, den: 25 }, 0.05]);
   });
 
   it('the negative share below its minimum is a violation; exactly at it is not', () => {
