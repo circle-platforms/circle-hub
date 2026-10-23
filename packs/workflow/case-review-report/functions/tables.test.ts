@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {kityminderParser} from '../../../../hub/refs/api.ts';
-import {projectItems} from '../../case-review/functions/project.ts';
+import {projectItems} from '../../case-review/api.ts';
 import {fixtureBytes,largeDocument,compactText} from '../../../../tests/fixtures/mindmaps/index.ts';
 import {reviewTables,escapeTableText,caseText,type TableBlock,type TableInput} from './tables.ts';
 const SHA='a'.repeat(64);

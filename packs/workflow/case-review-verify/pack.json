@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "141e87612b4a9f5388c3dc97483bbfddebb352e951848c5cd67a0c28144b1381",
-      "size": 8991
+      "sha256": "95d549dcc95396edb8651b596550afdbdecdf4bdc6a6cb910d8e66065ff873cd",
+      "size": 9622
     },
     {
       "path": "checks.json",
-      "sha256": "4e371dcc2303c99e9768263c07c454607475b23bbfd44fc48e69d4c5c8a577ba",
-      "size": 1596
+      "sha256": "aa44e9d6c3a8fb052447a4f266207024ec7370511dcfddac2e4a35e177f03c5c",
+      "size": 2223
     },
     {
       "path": "examples/start-run.json",
@@ -28,8 +28,8 @@
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "1fd26dcaa1370acfe98c9d2b2254d21205998a5df902da0ad4dca3104bdb23da",
-      "size": 2240
+      "sha256": "52b53d5ce969f960fa703b3870f919ba360a9ced7341af54b2d050dd7b05c338",
+      "size": 2389
     },
     {
       "path": "functions/common.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "11f64891d60820408ca405ac2c0b579855d66ffd51c7dd7a0fcec5bf2f88202b",
-      "size": 15535
+      "sha256": "632f5984e76d7530236b3979beccf7f3f0956ecece9c3641e2c0f342b443da7f",
+      "size": 16358
     },
     {
       "path": "functions/subjects.ts",
@@ -68,13 +68,13 @@
     },
     {
       "path": "functions/verify.ts",
-      "sha256": "556c1d7d9774f6439e571f1f7adb7ba81ea6cce2969c583fe2f6a1a5d278cc25",
-      "size": 14556
+      "sha256": "b3bf3d74759d06c56288c1f043882f7271475cc63cc91d9b4271d6f8f7796b87",
+      "size": 17437
     },
     {
       "path": "requirements.json",
-      "sha256": "95dc8f2a9b9e4547a472c19e31defb390d743708717a803881f4826b43ae5788",
-      "size": 3739
+      "sha256": "62d1bf93dfd4f7ce0d7122ba9e278e61421a6dce1c84e20d61e3a95e8c6ed327",
+      "size": 4804
     },
     {
       "path": "samples/negative/claims_contradicted.json",
@@ -90,6 +90,26 @@
       "path": "samples/negative/dispositions_twice.json",
       "sha256": "a415ee867ac76ff44054b0e5e08ef380e26b3130df3d627de1e919f4c4db406f",
       "size": 2967
+    },
+    {
+      "path": "samples/negative/suggestion_empty_part.json",
+      "sha256": "50577d13572ae336df8fd672fe08d99ed7f81381433681511d8440205d132996",
+      "size": 1455
+    },
+    {
+      "path": "samples/negative/suggestion_expected_only.json",
+      "sha256": "d3a8d97bc7fbfbf79f0d4e8ad8c7b24a09cfc84156d43887db28089c5b5e277b",
+      "size": 1478
+    },
+    {
+      "path": "samples/negative/suggestion_no_expected.json",
+      "sha256": "9b595e2fa56fc80ad1124a9b962d53edeec676b265af39c14bd9bed87f86b4dd",
+      "size": 1441
+    },
+    {
+      "path": "samples/negative/suggestion_no_target.json",
+      "sha256": "3cb1affc87b6281329170408ddfe0c13a8e94921236f5ce77146210776c06bb9",
+      "size": 1362
     },
     {
       "path": "samples/negative/verdict_fail_without_refutation.json",
@@ -142,6 +162,21 @@
       "size": 974
     },
     {
+      "path": "samples/positive/suggestion_case.json",
+      "sha256": "5866590254229e9d1d9fc189e71076185b41c86ae326ae390fe9e7df30d21154",
+      "size": 1413
+    },
+    {
+      "path": "samples/positive/suggestion_none.json",
+      "sha256": "6fc9f247e446b2029ba462e87cc236b704fb9eb3a0e24a6047dd0ff262b00664",
+      "size": 1104
+    },
+    {
+      "path": "samples/positive/suggestion_subitem.json",
+      "sha256": "b27e39795481e5069e8cc23d1b5568c33ce4de514b21abed0f0894d381beb420",
+      "size": 1407
+    },
+    {
       "path": "samples/positive/verdict_fail.json",
       "sha256": "78c044c04240fea9bb7c7a696b9ed824605eed08506cfd0e7974824e46ecdbea",
       "size": 2704
@@ -163,13 +198,13 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "af3c4d4326122f7a670181e179acb76487fd21a462fbba9096ab47f3089e5cc7",
-      "size": 3156
+      "sha256": "eab1d066064210d263d6add99ac53aa9ebbdbbb495dfa045fe3e320d698fd76a",
+      "size": 4034
     },
     {
       "path": "tables/codes.json",
-      "sha256": "42498e036a03246bf7c82e4dcd57dcfbc206e1a94fcb8a93fc377ca7404317e2",
-      "size": 6608
+      "sha256": "b234007b19ec9c6ff90466896f16bb4dbeb69fe12c2b2c9f687cda3a63a514df",
+      "size": 7174
     },
     {
       "path": "tables/command-claims.json",

@@ -13,7 +13,7 @@ import { DOCUMENTS } from '../fixtures/agile/index.ts';
 import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
-import { startReview, draft, finding, level, VERIFIER, type SlotClaim } from './support/review.ts';
+import { startReview, draft, finding, level, VERIFIER, readProjectedText, oracleCases, type SlotClaim } from './support/review.ts';
 
 const REPORTER = 'omega-reporter 1.0 (scripted, temperature 0)';
 let postgres: TemporaryPostgres;
@@ -34,9 +34,8 @@ after(async () => {
 
 /** The stored validation-result digest of a run (what a rec: reference names). */
 const receiptOf = async (run: string): Promise<string> => {
-  const stored = await bed.hub.records.store.find({ key: 'runs.result.run', value: run });
-  assert.equal(stored.items.length, 1);
-  return stored.items[0]!.digest;
+  const detail=await bed.hub.deps.runs.getRun(bed.reviewer.principal,run);
+  assert.ok(detail?.latest);return detail.latest.record;
 };
 
 /** Independently locate an expected-result child in the synthetic target, distinct from the draft's title quote. */
@@ -70,8 +69,12 @@ const verifyBlock = async (options: {
   level: string;
   session: string;
   dispositionOf?: (findingRef: string, itemId: string) => 'verified' | 'refuted' | 'partial';
+  suggestions?:(run:RunSummary)=>Record<string,unknown>[];
+  freshText?:string;
+  repairSuggestion?:boolean;
 }): Promise<RunSummary> => {
-  const started = await client.call('start_run', {
+  const verifier=await bed.connect(bed.reviewer,options.session);
+  const started = await verifier.call('start_run', {
     pack: 'case-review-verify',
     product: bed.product.names[0],
     version: bed.site.LINE,
@@ -104,28 +107,46 @@ const verifyBlock = async (options: {
       },
     };
   });
-  const answer = await client.call('submit_result', { run: run.run, model: VERIFIER, items, cross_item: [{ nature: 'judgment', statement: `结论 ${options.verdict}`, grounds: [], code: options.verdict, rank: options.level }] });
+  if(options.freshText&&items[0])items[0].slots.verification.push({text:options.freshText,code:'new_finding',rank:'minor',location:run.items[0].location,quotes:[{reference:run.items[0].location,text:run.items[0].label}],data:{probe:'edge_case_gap'}});
+  const cross:Record<string,unknown>[]=[{nature:'judgment',statement:'结论 '+options.verdict,grounds:[],code:options.verdict,rank:options.level},...(options.suggestions?.(run)??[])];
+  const payload={run:run.run,model:VERIFIER,items,cross_item:cross};
+  if(options.repairSuggestion){
+    const bad=structuredClone(payload);bad.cross_item[1].grounds=[];
+    const repair=await verifier.call('submit_result',bad);
+    assert.equal(repair.out.acceptance,'accepted');
+    const missing=repair.out.errors.find(error=>error.code==='case-review-verify.suggestion_target_missing'&&error.requirement==='verification');
+    assert.ok(missing);assert.equal(missing.item,items[0].item);assert.ok((missing.rounds_left??0)>=1);
+    const result=repair.out.result!;
+    const facts=[...result.cross_item,...Object.values(result.partitions).flatMap(entries=>entries.flatMap(entry=>entry.requirements.flatMap(requirement=>requirement.claims)))];
+    assert.ok(facts.some(claim=>claim.statement.code==='case-review-verify.suggestion_target_missing'&&claim.item===items[0].item&&claim.pointer==='/cross_item/1'),'the stored check fact names the exact suggestion, separately from the receipt item path');
+  }
+  const answer=await verifier.call('submit_result',payload);
   assert.equal(answer.isError, false, answer.text.slice(0, 500));
   assert.equal(answer.out.acceptance, 'accepted', answer.text.slice(0, 500));
   const finalFacts = answer.out.result!.cross_item.filter(c => c.requirement === 'final' && c.statement.verdict !== undefined);
   assert.ok(finalFacts.length > 0);
   assert.ok(finalFacts.every(c => c.statement.verdict === 'support'), JSON.stringify(finalFacts.map(c => ({pointer:c.pointer,statement:c.statement}))));
-  void options.session;
   return run;
 };
 
 /** Starts the report run on the given verification receipts. */
 const startReport = (references: string[]) => client.call('start_run', {
   pack: 'case-review-report',
-  inputs: { verifications: references.map((reference) => ({ reference: `rec:${reference}` })) },
+  inputs:{verifications:references.map(reference=>({reference:'rec:'+reference})),target:{external:'agile:mindmap:'+DOCUMENTS.review}},
 });
 
 /** The refute codes the checks produced, from the run's latest stored result. */
 const refutesOf = async (run: string): Promise<string[]> => {
-  const stored = await bed.hub.records.store.find({ key: 'runs.result.run', value: run });
-  assert.ok(stored.items.length >= 1);
-  const result = stored.items[stored.items.length - 1]!.body as { cross_item?: Array<{ statement?: { code?: string } }> };
-  return (result.cross_item ?? []).map((c) => c.statement?.code ?? '').filter((c) => c.startsWith('case-review-report.'));
+  const detail=await bed.hub.deps.runs.getRun(bed.reviewer.principal,run);
+  assert.ok(detail?.latest);
+  return detail.latest.result.cross_item.flatMap(claim=>typeof claim.statement.code==='string'&&claim.statement.code.startsWith('case-review-report.')?[claim.statement.code]:[]);
+
+};
+
+const recordReferenceOf=(text:string):string=>{
+  const line=text.split('\n').find(line=>line.startsWith('完整的槽位模式'));
+  assert.ok(line,'the response names its stored run record');
+  const reference=/rec:[a-f0-9]{64}/.exec(line)?.[0];assert.ok(reference);return reference;
 };
 
 /** The report item of a started run. */
@@ -167,11 +188,19 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const started = await startReport([await receiptOf(blockA.run), await receiptOf(blockB.run)]);
     assert.equal(started.isError, false, started.text.slice(0, 500));
     reportRun = started.out.run as RunSummary;
+    assert.equal(reportRun.items[0].id,'report');
+    const badSuggestion=await client.call('submit_result',{run:reportRun.run,model:REPORTER,
+      items:reportRun.items.map(item=>({item:item.id,handling:'handled',slots:{}})),
+      cross_item:[{nature:'judgment',statement:'简短总体意见',grounds:[],code:'PARTIAL',rank:'P5'},{nature:'judgment',statement:'补：用例；因为：缺口；期望：成功',grounds:[],code:'suggestion',rank:'P5'}]});
+    assert.equal(badSuggestion.isError,true);assert.equal(badSuggestion.out.acceptance,'not_accepted');
+    assert.ok(badSuggestion.out.errors.some(error=>error.code==='SUBMISSION_SCHEMA_VIOLATION'));
+
     const report = reportItemOf(reportRun);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5', reference: await finalReferenceOf(blockB.run,'PARTIAL','P5') }, 'the worst of the blocks with its level');
-    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P5（最差那块的，照抄）');
+    assert.match(report.summary??'',/^整体结论码 PARTIAL、等级 P5（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P5（最差那块的，照抄）/);
-    assert.match(started.text, /证实 rec:[0-9a-f]{64}#.+；推翻 0 条/);
+    assert.match(started.text,/复核发现 1 条；推翻 0 条/);
+    assert.match(started.text,/#\/items\/0\/fields\/review_tables/);
   });
 
   test('a report claiming PASS is refused with the computed verdict in the fix', async () => {
@@ -190,7 +219,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.ok(answer.out.result!.cross_item.some(claim => claim.statement.code === 'case-review-report.verdict_mismatch' && /PARTIAL/.test(String(claim.statement.data?.fix))),'the receipt carries the computed verdict in the final check fact repair');
   });
 
-  test('a report missing one verified finding, or citing a refuted one, is refused; a consistent report is accepted', async () => {
+  test('a single-block report needs no per-finding citation and excludes refuted findings from its table', async () => {
     // A fresh block pair with one refuted finding: block C has the finding, block D refutes it (PARTIAL).
     const draftC = await startReview(client, {
       product: bed.product.names[0],
@@ -239,17 +268,16 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.equal(started.isError, false, started.text.slice(0, 500));
     const run = started.out.run as RunSummary;
     assert.deepEqual(reportItemOf(run).fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: await finalReferenceOf(runD.run,'PARTIAL','P4') });
-    assert.equal(reportItemOf(run).summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+    assert.match(reportItemOf(run).summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
-    assert.match(started.text, /没有要引用的发现；推翻 1 条/);
+    assert.match(started.text,/复核发现 0 条；推翻 1 条/);
     // The refuted finding's reference as this run sees it (from its own projected fields, bound to this run).
     const projected = reportItemOf(run).fields.findings as Array<{ kind: string; reference: string }>;
     const refutedReference = projected.find((f) => f.kind === 'refuted')?.reference;
     assert.ok(refutedReference !== undefined, 'the projected findings carry the refuted one');
     void draftFindings;
 
-    // Missing: cite nothing → finding_missing (the refuted one must NOT be cited, so this also proves refuted findings
-    // are not demanded; then citing the refuted one → finding_refuted).
+    // The report now needs no per-finding transcription. Its table omits the refuted statement and keeps the count.
     const submitWith = async (findings: string[]): Promise<void> => {
       const answer = await client.call('submit_result', {
         run: run.run,
@@ -263,13 +291,12 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     await submitWith([]);
     let refutes = await refutesOf(run.run);
     assert.equal(refutes.filter((c) => c === 'case-review-report.finding_refuted').length, 0, `no refute when nothing is cited: ${refutes.join(', ')}`);
-    // Citing the refuted finding is refused.
-    await submitWith([refutedReference]);
-    refutes = await refutesOf(run.run);
-    assert.ok(refutes.includes('case-review-report.finding_refuted'), `citing a refuted finding is refused: ${refutes.join(', ')}`);
+    // Optional valid references remain groundable; no retired per-finding citation rule is reintroduced.
+    const read=await readProjectedText(client,recordReferenceOf(started.text)+'#/items/0/fields/review_tables');
+    assert.ok(!read.text.includes('核实后推翻初评发现'));
   });
 
-  test('real shape (two blocks, 45 findings, 1 refuted): started run exposes citations and overall, copied report accepted on first attempt', async () => {
+  test('two blocks retain all 44 findings in the table while a concise uncited report is accepted', async () => {
     // Block E: 23 cases (slice 10..32), 23 findings (1 partial, 22 verified), verified PARTIAL P4
     const draftE = await startReview(client, {
       product: bed.product.names[0],
@@ -320,18 +347,19 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
 
     // 1. Overall verdict and level in started.text and reportItem.summary
     assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: await finalReferenceOf(blockE.run,'PARTIAL','P4') });
-    assert.equal(reportItem.summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+    assert.match(reportItem.summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
 
-    const overallMatch = /-\s*report\s*\|\s*评审终稿\s*\|\s*整体结论码\s+(\w+)、等级\s+(\w+)/.exec(started.text);
+    const overallMatch=/整体结论码\s+(\w+)、等级\s+(\w+)/.exec(started.text);
     assert.ok(overallMatch !== null, 'answer text contains overall verdict and level in report item line');
     const [, overallVerdict, overallLevel] = overallMatch;
     assert.equal(overallVerdict, 'PARTIAL');
     assert.equal(overallLevel, 'P4');
 
-    // 2. Finding references in started.text: all 44 citable references present, refuted finding not cited
+    // 2. All 44 findings remain in the deterministic table; individual references are not retranscribed.
     const citableMatches = [...started.text.matchAll(/(?:证实|部分正确|新增)\s+(rec:[0-9a-f]{64}#[^\s；、|]+)/g)].map((m) => m[1]!);
-    assert.equal(citableMatches.length, 44, 'all 44 citable references can be found in started.text');
+    assert.equal(citableMatches.length,0,'the reporter reads tables instead of retranscribing references');
+    const counts=reportItem.fields.review_counts as {total:{findings:number;refuted:number}};assert.equal(counts.total.findings,44);assert.equal(counts.total.refuted,1);
     assert.match(started.text, /推翻 1 条/);
 
     const allFindings = reportItem.fields.findings as Array<{ kind: string; reference: string }>;
@@ -386,4 +414,55 @@ describe('scenario 26: the overlap shape from the real data', () => {
     assert.match(refused.text, /重叠|overlap/);
     assert.match(refused.text, /重新分块|交付/);
   });
+});
+
+test('IPv4 subitem tables preserve original cells, dispositions, suggestions and every MCP page',async()=>{
+  const find=(node:Node,predicate:(node:Node)=>boolean):Node|undefined=>predicate(node)?node:node.children?.map(child=>find(child,predicate)).find(Boolean);
+  const group=find(document.root,node=>node.data.text==='IPv4');assert.ok(group);
+  const cases=oracleCases(document).filter(item=>item.path.at(-1)==='IPv4');assert.ok(cases.length>=2);
+  const half=Math.floor(cases.length/2);
+  const startPart=async(from:number,to:number)=>{
+    const run=await startReview(client,{product:bed.product.names[0],version:bed.site.LINE,inputs:{subject:{external:'agile:mindmap:'+DOCUMENTS.review}},
+      parameters:{block:group.data.id,slice:{from,to}}});
+    const submitted=await client.call('submit_result',passDraftOf(run));assert.equal(submitted.out.acceptance,'accepted');return run;
+  };
+  const first=await startPart(1,half),second=await startPart(half+1,cases.length);
+  const suggestionText='补：补充 IPv4 边界用例；因为：只覆盖了正常值；期望：非法输入被拒绝';
+  const blockA=await verifyBlock({draftRun:first,verdict:'PARTIAL',level:'P4',session:'synthetic-tables-a',
+    dispositionOf:(_reference,id)=>id===first.items[0].id?'partial':'verified',
+    suggestions:run=>[{nature:'judgment',code:'suggestion',rank:'minor',statement:suggestionText,grounds:[run.items[0].location]}],
+    repairSuggestion:true});
+  // A deliberately long accepted model statement forces the raw-table continuation to split a row.
+  const longFinding='合成新增判断'.repeat(8000);
+  const blockB=await verifyBlock({draftRun:second,verdict:'PARTIAL',level:'P5',session:'synthetic-tables-b',freshText:longFinding,
+    suggestions:run=>[{nature:'judgment',code:'suggestion',rank:'minor',statement:'补：子项的新用例；因为：覆盖缺口；期望：结果可观察',
+      grounds:[run.items[0].location.replace(/n\/[^/]+$/,'n/'+encodeURIComponent(group.data.id))]}]});
+  const started=await startReport([await receiptOf(blockA.run),await receiptOf(blockB.run)]);
+  assert.equal(started.isError,false,started.text.slice(0,1000));
+  const run=started.out.run as RunSummary,report=reportItemOf(run);
+  assert.equal(run.items[0].id,'report');assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
+  const actual=await readProjectedText(client,recordReferenceOf(started.text)+'#/items/0/fields/review_tables');
+  assert.equal(actual.text,report.fields.review_tables);
+  assert.ok(actual.pages.length>1,'the public continuation reads every piece of the long row');
+  assert.match(actual.text,/^## 用例评审结果：/);assert.match(actual.text,/### 1\..*IPv4/);
+  const rows=actual.text.split('\n').filter(line=>/^\| \d+ \|/u.test(line));
+  assert.equal(rows.length,cases.length);
+  const cells=rows[0].split(/(?<!\\)(?:\\\\)*\|/u).slice(1,-1).map(cell=>cell.trim());
+  const decode=(value:string)=>value.replace(/\\([\s\S])|↵/gu,(_all,escaped:string|undefined)=>escaped??'\n');
+  const raw=find(document.root,node=>node.data.id===cases[0].nodeId)!;
+  const data=raw.data as Record<string,unknown>,tags=Array.isArray(data.resource)?data.resource as string[]:[];
+  let expected=raw.data.text+(tags.length?'；标签：'+tags.join('，'):'');let step=0;
+  const caseIds=new Set(oracleCases(document).map(item=>item.nodeId));
+  const descendantText=(node:Node):string[]=>caseIds.has(node.data.id)?[]:[node.data.text,...(node.children??[]).flatMap(descendantText)];
+  for(const child of raw.children??[]){
+    if(caseIds.has(child.data.id))continue;
+    if(!child.children?.length)expected+='；'+((child.data as Record<string,unknown>).priority===3?'前置：':'期望：')+child.data.text;
+    else expected+='；步骤 '+(++step)+'：'+descendantText(child).join(' → ');
+  }
+  assert.equal(decode(cells[1]),expected);
+  assert.ok(decode(cells[4]).includes(suggestionText));
+  assert.ok(actual.text.includes(longFinding));assert.match(actual.text,/子项上的建议：.*补：子项的新用例/);
+  assert.match(actual.text,/【部分正确·次要】/);assert.match(actual.text,/【新增·次要·边界用例缺口】/);
+  const counts=report.fields.review_counts as {total:{cases:number;findings:number;suggestions:number};subitems:unknown[]};
+  assert.equal(counts.total.cases,cases.length);assert.equal(counts.total.findings,cases.length+1);assert.equal(counts.total.suggestions,2);assert.equal(counts.subitems.length,1);
 });
