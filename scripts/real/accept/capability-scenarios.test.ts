@@ -261,7 +261,7 @@ test('a one-group board with the appended location column parses the types cover
   ].join('\n');
   const parsed = parseGroups(text);
   const summary = parsed.get('10.6/SSL') ?? '';
-  const missing = /没有用例带这些类型的标签：([^；\n]+)/.exec(summary)?.[1];
+  const missing = /没有用例带这些类型的标签：([^；|\n]+)/.exec(summary)?.[1]?.trim();
   assert.equal(missing, '压力测试、兼容性测试', 'the location column must not be captured into the summary');
   void scenario;
 });
