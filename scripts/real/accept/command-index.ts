@@ -19,6 +19,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   const ignored = new Set<string>();
   const dataMismatches = new Set<string>();
   const excludedGold = new Set(gold.cases.filter((c) => !c.comparable).map((c) => c.key));
+  const allHub = new Map<string, Set<string>>();
   const declared = new Map<string, Set<string>>();
   const requested = new Set<string>();
   let full = false;
@@ -48,6 +49,9 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
       const doc = documentKey(entry.data.document); const node = entry.data.node; const key = `${doc}:${node}`;
       if (!Array.isArray(raw.keys[entry.data.document]) || !(raw.keys[entry.data.document] as unknown[]).includes(digest)) { incomplete.push('条目文档与索引键不符'); continue; }
       hubDocs.add(doc);
+      const allPaths = allHub.get(key) ?? new Set<string>();
+      if (match[2] !== '/') allPaths.add(match[2]);
+      allHub.set(key, allPaths);
       if (!comparableNode(node) || excludedGold.has(key)) { ignored.add(key); continue; }
       const paths = hub.get(key) ?? new Set<string>();
       if (match[2] !== '/') paths.add(match[2]);
@@ -82,7 +86,8 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     paths_gold_abbreviated: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.abbreviated).length,
     paths_gold_via_no: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.via_no).length,
     paths_gold_single_word: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.words === 1).length,
-    unplaced_gold: goldUnplaced.size, unplaced_hub: hubUnplaced.size,
+    unplaced_gold: gold.cases.filter((c) => !c.paths.length).length, unplaced_hub: [...allHub.values()].filter((paths) => !paths.size).length,
+    unplaced_gold_comparable: goldUnplaced.size, unplaced_hub_comparable: hubUnplaced.size,
     unplaced_both: [...goldUnplaced].filter((key) => hubUnplaced.has(key)).length,
     unplaced_gold_only: difference(goldUnplaced, hubUnplaced).length, unplaced_hub_only: difference(hubUnplaced, goldUnplaced).length,
     steps_placed_in_hub_unplaced: [...hubUnplaced].filter((key) => (goldCases.get(key)?.steps.length ?? 0) > 0).length,
@@ -93,7 +98,14 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     details: { documents_gold_only: difference(gold.documents, hubDocs), documents_hub_only: difference(hubDocs, new Set(gold.documents)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
 }
 export function renderIndexReport(report: IndexReport): string {
-  return [...Object.entries(report.counts).map(([name, count]) => `${name}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incomplete.length}`, `判定：${report.verdict}`].join('\n');
+  const labels: Record<string, string> = {
+    documents_both: '两边共有文档', documents_gold_only: '只在 gold 的文档', documents_hub_only: '只在 Hub 的文档',
+    cases_both: '两边共有用例', cases_gold_only: '只在 gold 的用例', cases_hub_only: '只在 Hub 的用例', excluded_gold: 'gold 不比较用例', excluded_hub: 'Hub 不比较用例',
+    commands_equal: '命令集合相等用例', commands_different: '命令集合不等用例', paths_gold_only: '只在 gold 的路径', paths_hub_only: '只在 Hub 的路径', paths_gold_abbreviated: '只在 gold 的路径中经缩写识别', paths_gold_via_no: '只在 gold 的路径中经 no 识别', paths_gold_single_word: '只在 gold 的路径中单词命令',
+    unplaced_gold: 'gold 全部未归位用例', unplaced_hub: 'Hub 全部未归位用例', unplaced_gold_comparable: 'gold 可比较未归位用例', unplaced_hub_comparable: 'Hub 可比较未归位用例',
+    unplaced_both: '可比较用例中两边都未归位', unplaced_gold_only: '可比较用例中只有 gold 未归位', unplaced_hub_only: '可比较用例中只有 Hub 未归位', steps_placed_in_hub_unplaced: 'Hub 可比较未归位用例中步骤有命令', entry_data_mismatches: '条目与数据命令集合不符用例',
+  };
+  return [...Object.entries(report.counts).map(([name, count]) => `${labels[name]}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incomplete.length}`, `判定：${report.verdict}`].join('\n');
 }
 export function main(argv: string[]): number {
   try {

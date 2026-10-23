@@ -46,3 +46,13 @@ test('complete only partitions and one view have identical comparisons', () => {
   assert.deepEqual(compareCommandIndex(gold, [part, part]), compareCommandIndex(gold, [full]));
   assert.equal(compareCommandIndex(gold, [{ ...part, only: ['other'] }]).verdict, '输入不全');
 });
+
+test('unplaced totals include excluded ids but set comparisons exclude them', () => {
+  const input = structuredClone(gold);
+  input.cases.push({ key: 'synthetic-doc:', document: 'synthetic-doc', node: '', comparable: false, paths: [], steps: [] });
+  const raw = view(); const digest = sha256('excluded');
+  raw.entries[digest] = { entry: digest, kind: 'case', reference: `tree:${raw.build.root}/@${digest}`, data: { document: 'synthetic-doc', node: '@3', commands: [] } };
+  raw.keys['synthetic-doc'].push(digest);
+  const report = compareCommandIndex(input, [raw]);
+  assert.equal(report.verdict, '相等'); assert.equal(report.counts.unplaced_gold, 2); assert.equal(report.counts.unplaced_hub, 2); assert.equal(report.counts.unplaced_both, 1);
+});
