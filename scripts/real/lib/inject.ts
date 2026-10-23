@@ -2,6 +2,7 @@
 // can be scored against an answer that is independent of the Hub (brief section 6b, review). The source is never changed; the
 // copy and the gold hold real content and belong outside Git.
 import { createHash, randomUUID } from 'node:crypto';
+import { goldQuoteContains } from '../gold/quote-widths.ts';
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '../gold/cases.ts';
@@ -223,7 +224,6 @@ const vague = (text: string): boolean => new Set(VAGUE_EXPECTED.map(foldKey)).ha
 const vagueCasesOf = (tree: MindTree, caseRule: 'marked' | 'tagged'): Set<string> =>
   new Set(caseGold([{ document: 'x', map: tree }], { caseRule }).documents[0]!.vagueCases);
 
-const noWhiteSpace = (text: string): string => text.replace(/\s+/gu, '');
 
 /** Applies the planned defects to a copy of the tree, in order; returns the copy and what was done. */
 export function inject(tree: MindTree, plan: readonly Planned[], options: InjectOptions = {}): { tree: MindTree; gold: GoldEntry[] } {
@@ -260,8 +260,8 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       if ([op.from, op.to, op.quote].some(text => typeof text !== 'string' || !text.trim())) throw new InjectionConditionError('empty_operand', 'from、to、quote 必须是非空文本');
       if (seen_by !== 'judgment') throw new InjectionConditionError('seen_by', 'contradict_manual 只有模型判断才看得见，seen_by 必须是 judgment');
       if (options.manual === undefined) throw new InjectionConditionError('missing_manual', '计划里有 contradict_manual，却没有给手册片段（inject-defects.ts 的 --manual）');
-      if (!noWhiteSpace(options.manual.text).includes(noWhiteSpace(op.quote))) {
-        throw new InjectionConditionError('quote_not_verbatim', `quote 不是逐字出自手册片段（只忽略空白）：${op.quote}`);
+      if (!goldQuoteContains(options.manual.text, op.quote)) {
+        throw new InjectionConditionError('quote_not_verbatim', `quote 不是逐字出自手册片段（按决定 37 对齐空白）：${op.quote}`);
       }
       if (op.quote.includes(op.to)) throw new InjectionConditionError('to_in_quote', `to（${op.to}）出现在 quote 里，矛盾不成立`);
       if (!caseIdsOf(copy, options.caseRule ?? 'marked').has(op.node)) {

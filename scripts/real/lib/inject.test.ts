@@ -295,3 +295,17 @@ test('closure blank tags: ambiguous targets and keep boundaries refuse without r
  const outer=kase('outer','outer','outer expected');outer.children!.push(blank);
  assert.throws(()=>inject({root:group('root','synthetic',outer)},[{label:'synthetic',seen_by:'judgment',op:{kind:'vague_expected',node:'outer',text:'正常'}}]),e=>e instanceof Error && 'reason' in e && e.reason==='blank_tags');
 });
+
+test('decision 37 injection guard preserves Latin word, numeric and symbol boundaries', () => {
+  const plan = (quote: string): Planned[] => [{ label: 'synthetic', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: '3600', to: '99999', quote } }];
+  for (const [text, quote] of [['set 10 0', 'set 100'], ['two words', 'twowords'], ['a + b', 'a+b'], ['α β', 'αβ'], ['ｱ A', 'ｱA'], ['中文', '\u0085\u3000'], ['🙂', '\ude42']]) {
+    assert.throws(() => inject(manualDoc(), plan(quote), { manual: fragmentOf(text) }), error => error instanceof Error && 'reason' in error && error.reason === 'quote_not_verbatim');
+  }
+});
+
+test('decision 37 injection guard accepts wide adjacent wraps and narrow space folding', () => {
+  for (const [text, quote] of [['返回\n成功', '返回成功'], ['Ａ\tB', 'ＡB'], ['A\r\n中文', 'A中文'], ['𠀀\nA', '𠀀A'], ['set\t10\n0', 'set 10 0'], ['a\u0085b', 'a b']]) {
+    const plan: Planned[] = [{ label: 'synthetic', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: '3600', to: '99999', quote } }];
+    assert.equal(inject(manualDoc(), plan, { manual: fragmentOf(text) }).gold.length, 1);
+  }
+});
