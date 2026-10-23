@@ -27,6 +27,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   const allHub = new Map<string, Set<string>>();
   const declared = new Map<string, Set<string>>();
   const requested = new Set<string>();
+  const cutDocuments = new Set<string>();
   let full = false;
   let root: string | undefined;
   let product: string | undefined;
@@ -34,7 +35,10 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     if (!record(raw) || raw.schema !== 'index-view@1' || raw.kind !== 'case' || raw.key !== 'document' || !record(raw.build) || typeof raw.build.root !== 'string' || !/^[a-f0-9]{64}$/.test(raw.build.root) || !record(raw.entries) || !record(raw.keys) || typeof raw.truncated !== 'boolean') { hubDefects.push('索引视图格式不对'); continue; }
     if (root !== undefined && (root !== raw.build.root || product !== raw.product)) incomplete.push('索引根或产品不同');
     root = raw.build.root; product = String(raw.product);
-    if (raw.truncated || (Array.isArray(raw.cut_keys) && raw.cut_keys.length)) incomplete.push('索引分片仍被截断：重新按 only= 分成更小的导出');
+    const cut = Array.isArray(raw.cut_keys) ? raw.cut_keys : [];
+    for (const key of cut) if (typeof key === 'string') cutDocuments.add(key); else hubDefects.push('cut_keys 含有不是文档键的值');
+    if (raw.cut_keys !== undefined && !Array.isArray(raw.cut_keys)) hubDefects.push('cut_keys 不是数组');
+    if (raw.truncated && !cut.length) incomplete.push('索引分片仍被截断：重新按 only= 分成更小的导出');
     if (!Number.isSafeInteger(raw.skipped) || (raw.skipped as number) < 0) hubDefects.push('索引缺少合式的 skipped 元数据');
     else if (raw.skipped !== 0) incomplete.push('索引有未读来源：修复来源后重新导出');
     if (Array.isArray(raw.only)) for (const key of raw.only) requested.add(documentKey(String(key)));
@@ -68,6 +72,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
       declared.set(key, commands);
     }
   }
+  if (cutDocuments.size) incomplete.push(`单键截断 ${cutDocuments.size} 个文档：缺少完整条目；only= 无法拆开同一文档键，交集成者协调提高单键上限后重导`);
   if (!views.length) incomplete.push('没有索引视图');
   if (!full && expectedDocuments.some((doc) => !requested.has(documentKey(doc)))) incomplete.push('分片没有请求全部金标准文档：补导出缺少的 only= 文档');
   for (const [key, paths] of hub) if (JSON.stringify(sorted(paths)) !== JSON.stringify(sorted(declared.get(key) ?? []))) dataMismatches.add(key);
@@ -144,7 +149,9 @@ export function summarizeIncomplete(reasons: readonly string[]): IncompleteCateg
   const grouped = new Map<string, IncompleteCategory>();
   for (const reason of reasons) {
     let category = '其他输入缺项', missing = '可核验的本轮完整输入', action = '检查报告并重新导出所需证据';
-    if (reason.includes('截断')) { category = '分片截断'; missing = '完整索引分片'; action = '按 only= 分成更小分片后重新导出'; }
+    let increment = 1;
+    if (reason.startsWith('单键截断')) { category = '单键截断'; missing = '文档键下被截掉的完整条目'; action = '交集成者协调提高单键上限后重导；only= 不能拆开同一键'; increment = Number(/^单键截断 (\d+)/.exec(reason)?.[1] ?? 1); }
+    else if (reason.includes('截断')) { category = '分片截断'; missing = '完整索引分片'; action = '按 only= 分成更小分片后重新导出'; }
     else if (reason.includes('未读来源')) { category = '未读来源'; missing = '来源完整性'; action = '修复来源并重新生产根，再导出索引'; }
     else if (reason.includes('索引根')) { category = '根不一致'; missing = '同一产品同一构建根的分片'; action = '重新导出同一产品及构建根的全部分片'; }
     else if (reason.includes('请求全部')) { category = '缺少分片'; missing = '金标准文档对应的全部分片'; action = '补齐对应 only= 分片再比较'; }
@@ -153,7 +160,7 @@ export function summarizeIncomplete(reasons: readonly string[]): IncompleteCateg
     else if (reason.includes('data') || reason.includes('document') || reason.includes('node')) { category = '条目字段缺失'; missing = '完整用例字段'; action = '重新导出含 data.document 和 data.node 的节点页'; }
     else if (reason.includes('JSON') || reason.includes('应答为出错')) { category = '应答无效'; missing = '有效节点应答'; action = '修复读取失败并重新导出有效 JSONL'; }
     else if (reason.includes('必须同时给') || reason.includes('不能混用')) { category = '输入方式不完整'; missing = '前后构建一致的输入方式'; action = '前后同时提供 gold 或同时提供 nodes，不混用'; }
-    const old = grouped.get(category); if (old) old.count++; else grouped.set(category, { category, count: 1, missing, action });
+    const old = grouped.get(category); if (old) old.count += increment; else grouped.set(category, { category, count: increment, missing, action });
   }
   return [...grouped.values()].sort((a, b) => a.category < b.category ? -1 : a.category > b.category ? 1 : 0);
 }

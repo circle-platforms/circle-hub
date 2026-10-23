@@ -100,3 +100,9 @@ test('index CLI refuses missing inputs before reading any data', () => {
     const out = spawnSync(process.execPath, ['scripts/real/accept/command-index.ts', ...args], { encoding: 'utf8' }); assert.equal(out.status, 2); assert.match(out.stderr, /用法.*--gold.*--index/);
   }
 });
+test('per-document cuts name a remedy that does not pretend only shards can split a key', () => {
+  const raw = view(); raw.truncated = true; raw.cut_keys = ['synthetic-doc', 'other-private-doc'];
+  const result = compareCommandIndex(gold, [raw, raw]); const output = renderIndexReport(result);
+  assert.equal(result.verdict, '输入不全'); assert.match(output, /单键截断 2 项/); assert.match(output, /提高单键上限/); assert.match(output, /only= 不能拆开同一键/);
+  assert.ok(!output.includes('other-private-doc')); assert.ok(!output.includes('分成更小分片'));
+});
