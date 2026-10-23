@@ -303,3 +303,25 @@ test('content types reject duplicate declarations without inventing their own me
   ]) badWorkbook({ types: `<Types xmlns="${TYPES}">${declarations}</Types>` }, /内容类型.*重复/);
   assert.equal(parseWorkbook().model.members.find((member) => member.name === '[Content_Types].xml')!.contentType, null);
 });
+
+function zip64Directory(base: Buffer, extra = Buffer.alloc(0)): Buffer {
+  const end = Buffer.from(base.subarray(-22)); const at = base.length - 22;
+  const record = Buffer.alloc(56 + extra.length); record.writeUInt32LE(0x06064b50); record.writeBigUInt64LE(BigInt(44 + extra.length), 4); record.writeUInt16LE(45, 14);
+  record.writeBigUInt64LE(BigInt(end.readUInt16LE(10)), 24); record.writeBigUInt64LE(BigInt(end.readUInt16LE(10)), 32);
+  record.writeBigUInt64LE(BigInt(end.readUInt32LE(12)), 40); record.writeBigUInt64LE(BigInt(end.readUInt32LE(16)), 48); extra.copy(record, 56);
+  const locator = Buffer.alloc(20); locator.writeUInt32LE(0x07064b50); locator.writeBigUInt64LE(BigInt(at), 8); locator.writeUInt32LE(1, 16);
+  return Buffer.concat([base.subarray(0, -22), record, locator, end]);
+}
+test('ZIP64 agrees with all non-sentinel EOCD fields and permits bounded extensible data', () => {
+  const base = zip64Directory(zip([{ name: 'a.xml' }, { name: 'b.xml' }]));
+  for (const field of [8, 10, 12, 16]) {
+    const changed = Buffer.from(base); const at = changed.length - 22 + field;
+    if (field < 12) changed.writeUInt16LE(1, at); else changed.writeUInt32LE(1, at);
+    refuses(changed, /ZIP64.*不一致/);
+  }
+  const mixedSentinel = Buffer.from(base); mixedSentinel.writeUInt16LE(0xffff, mixedSentinel.length - 14);
+  assert.equal(readXlsxArchive(mixedSentinel).size, 2);
+  const extension = Buffer.alloc(8); extension.writeUInt32LE(2, 2);
+  assert.equal(readXlsxArchive(zip64Directory(zip([{ name: 'a.xml' }]), extension)).size, 1);
+  refuses(zip64Directory(zip([{ name: 'a.xml' }]), Buffer.alloc(1)), /越界|不完整/);
+});

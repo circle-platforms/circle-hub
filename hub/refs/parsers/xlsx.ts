@@ -42,7 +42,8 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
   let directorySize = bytes.readUInt32LE(end + 12);
   let directoryAt = bytes.readUInt32LE(end + 16);
   let directoryEnd = end;
-  if (end >= 20 && bytes.readUInt32LE(end - 20) === 0x07064b50) {
+  const hasZip64 = end >= 20 && bytes.readUInt32LE(end - 20) === 0x07064b50;
+  if (hasZip64) {
     if (bytes.readUInt32LE(end - 16) !== 0 || bytes.readUInt32LE(end - 4) !== 1)
       forbidden('不接受分卷 ZIP64');
     const at = u64(end - 12, end);
@@ -56,11 +57,22 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP64 成员数不一致');
     directorySize = u64(at + 40, end - 20);
     directoryAt = u64(at + 48, end - 20);
+    for (const [offset, sentinel, actual] of [[8, 0xffff, count], [10, 0xffff, count], [12, 0xffffffff, directorySize], [16, 0xffffffff, directoryAt]]) {
+      const declared = offset < 12 ? bytes.readUInt16LE(end + offset) : bytes.readUInt32LE(end + offset);
+      if (declared !== sentinel && declared !== actual) syntax('ZIP64 与 ZIP 结束记录的声明不一致');
+    }
+    let extensionAt = at + 56;
+    while (extensionAt < end - 20) {
+      fits(extensionAt, 6, end - 20);
+      const size = bytes.readUInt32LE(extensionAt + 2);
+      fits(extensionAt + 6, size, end - 20);
+      extensionAt += 6 + size;
+    }
     directoryEnd = at;
   }
   else if (count === 0xffff || directorySize === 0xffffffff || directoryAt === 0xffffffff)
     syntax('ZIP64 目录记录缺失');
-  if (bytes.readUInt16LE(end + 8) !== bytes.readUInt16LE(end + 10))
+  if (!hasZip64 && bytes.readUInt16LE(end + 8) !== bytes.readUInt16LE(end + 10))
     syntax('ZIP 分卷成员数不一致');
   if (count > limits.maxMembers)
     forbidden(`ZIP 成员数超过上限 ${limits.maxMembers}`);

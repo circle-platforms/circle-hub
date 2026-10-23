@@ -385,3 +385,6 @@ cap. A small dictionary referenced many times cannot defer a huge-model failure 
 
 For xlsx@1, nulRemoved counts escaped U+0000 removed once per decoded source string (including shared-string entries,
 sheet names and defined names), rather than once per shared-string use. Raw NUL in XML still refuses as repaired XML.
+
+ZIP64 compares each non-sentinel EOCD count, size and offset with the ZIP64 record. Bounded extensible data remains
+accepted with its header/length framing checked, as defined by APPNOTE 4.3.14; a size above 44 alone is not malformed.
