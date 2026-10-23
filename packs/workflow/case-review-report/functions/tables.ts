@@ -168,6 +168,7 @@ export function reviewTables(input:TableInput):{markdown:string;counts:ReviewCou
       lines.push('| '+(row+1)+' | '+escapeTableText(caseText(model,index,cases,input.preconditionPriority))+' | '+list(ownRow,'hub')+' | '+list(ownRow,'finding')+' | '+list(ownRow,'suggestion')+' |');
     }
     const sub=own.filter(note=>note.row===null);
+    if(sub.some(note=>note.kind!=='refuted'))lines.push('');
     if(sub.some(note=>note.kind==='finding'))lines.push('子项上的发现：'+list(sub,'finding'));
     if(sub.some(note=>note.kind==='hub'))lines.push('子项上的 Hub 核对：'+list(sub,'hub'));
     if(sub.some(note=>note.kind==='suggestion'))lines.push('子项上的建议：'+list(sub,'suggestion'));

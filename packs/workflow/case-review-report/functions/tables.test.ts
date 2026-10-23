@@ -157,3 +157,9 @@ test('a mixed requirement never turns its expected refutation into a Hub source 
   requirement.claims.push(expected,unexpected,{qualifier:{nature:'fact'},warrant:{producer:'function'},statement:{verdict:'support',data:{source_facts:[{location:ref('c1'),reference:'rec:'+SHA,layer:requirement.layers[0],claim:expected}]}}});
   const result=reviewTables(input(small(),[b]));assert.equal(result.counts.total.hubChecks,1);assert.ok(!result.markdown.includes('合成期望越界'));assert.ok(result.markdown.includes('合成未知命令'));
 });
+
+test('subitem notes begin after a blank line outside the GFM case table',()=>{
+  const b=block(['c1'],[[claim('new_finding','合成子项发现','minor',ref('sub'))]]);
+  const lines=reviewTables(input(small(),[b])).markdown.split('\n');const at=lines.findIndex(line=>line.startsWith('子项上的发现：'));
+  assert.ok(at>1);assert.equal(lines[at-1],'');assert.match(lines[at-2],/^\| 1 \|/);
+});
