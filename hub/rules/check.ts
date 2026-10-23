@@ -9,13 +9,10 @@ import type { CheckTier, Reason, SourceRole } from '../../contracts/generated/vo
 import { CheckOutcome as CheckOutcomeShape, type CatalogEntry, type CheckOutcome } from '../../contracts/src/tables.ts';
 import type { CatalogView } from './catalog/view.ts';
 import { getInterpreter } from './interpreters/registry.ts';
-import { hasBasis, unknown as coreUnknown, type OutcomeBase } from './outcome.ts';
+import { hasBasis, unknown, type OutcomeBase } from './outcome.ts';
 import { SandboxError } from './sandbox/errors.ts';
 import { callPackFunction, type SandboxLimits, type SandboxOptions } from './sandbox/sandbox.ts';
 import type { CheckContext, SourceView } from './types.ts';
-
-/** Trusted Hub failures name the missing check result; pack outcomes must supply their own top-level missing. */
-const unknown: typeof coreUnknown = (base, reason, detail, extra) => ({ ...coreUnknown(base, reason, detail, extra), missing: detail });
 
 export interface CheckDeclaration {
   /** Check id inside the pack (checks.json), used in statements. */

@@ -71,7 +71,7 @@ export function refuteProtocol(base: OutcomeBase, code: ProtocolCode, detail: st
 
 /** Unknown with its reason (V01 R[2]); the statement starts with the reason label. */
 export function unknown(base: OutcomeBase, reason: Reason, detail: string, extra: Extra = {}): CheckOutcome {
-  return shape(base, { verdict: 'unknown', reason, statement: `${labelOf('verdict', 'unknown')}（${labelOf('reason', reason)}）：${detail}` }, extra);
+  return shape(base, { verdict: 'unknown', reason, missing: detail, statement: `${labelOf('verdict', 'unknown')}（${labelOf('reason', reason)}）：${detail}` }, extra);
 }
 
 /** Code-point quoted value for statements. */

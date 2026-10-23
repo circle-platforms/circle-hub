@@ -617,3 +617,7 @@ Console product/diff arrays use snapshot-bound cursors (500 builds or 1000 paths
 whole-list counts. Changed snapshots refuse stale cursors rather than silently skipping. Run call logs pass the existing
 stored cursor through `call_cursor`. Historical transitional layers show “出口未写” without backfilling an actor or due date;
 new exits and every retained gap remain visible as escaped read-only text.
+
+The shared core outcome constructor copies the existing concrete detail verbatim into top-level `missing`, without
+changing any interpreter verdict. trunk-fixes-4 may carry the same constructor fix; keep one equivalent version when
+merging. Pack functions still must declare their own missing fact and do not receive this trusted-core normalization.

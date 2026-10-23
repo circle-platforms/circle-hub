@@ -14,3 +14,9 @@ test('Hub-side check failures include their missing fact without a pack exit',as
   const result=await runCheck({id:'demo'},bindings);
   assert.ok(result[0].missing?.includes('demo'));
 });
+
+test('the shared core unknown constructor records exactly the existing concrete detail',async()=>{
+  const {unknown}=await import('./outcome.ts');
+  const detail='合成条目 A 缺少运行输入 /original';
+  assert.equal(unknown({tier:'advisory',grounds:[]},'missing_input',detail).missing,detail);
+});
