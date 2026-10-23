@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import manual, { canonicalSignature, parseAnchor, produceManualEntries } from './manual.ts';
 import { commandCatalog } from './cases-commands.ts';
+import { canonicalJson } from './util.ts';
 import type { ManualCatalog, ManualResult, MarkdownModel } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, jsonDocument, markdown, markdownDocument, seeded, sliceBytes, utf8, xml } from '../testing/test-support.ts';
 
@@ -472,7 +473,7 @@ describe('command tables split by row', () => {
     '| **demo pool add** 与 **demo probe** | 一成一缺 |',
   ].join('\n');
 
-  it('hangs one-signature rows at the command node when it exists, and splits the rest out', () => {
+  it('splits every signature row decided by the manual alone; the tree only chooses the path', () => {
     const result = produceManualEntries(markdown(TABLE), null, { catalog });
     const placed = result.entries.filter((entry) => entry.path?.startsWith('/commands/'));
     assert.deepEqual(
@@ -486,14 +487,54 @@ describe('command tables split by row', () => {
         ['text', '/commands/demo/pool', '**demo pool add** 与 **demo pool mode** | 配合使用'],
       ],
     );
-    // The rows that stay: a missing command, a pair whose common ancestor is /commands itself (not a placement),
-    // and a pair of which only one command exists.
-    const rest = result.entries.filter((entry) => entry.path?.startsWith('/manual/'));
-    assert.equal(rest.length, 1);
-    assert.equal(rest[0].path, '/manual/manual/命令一览');
-    assert.equal(rest[0].data.block, 'table');
-    assert.ok(rest[0].statement.includes('demo probe') && rest[0].statement.includes('跨分支') && rest[0].statement.includes('一成一缺'));
-    assert.ok(!rest[0].statement.includes('配合使用'), 'the row placed at the ancestor is not repeated');
+    // The rows that stay at the section node: a missing command (still split out as a signature), a pair whose common
+    // ancestor is /commands itself (not a placement), and a pair of which only one command exists.
+    const sectioned = result.entries.filter((entry) => entry.path?.startsWith('/manual/'));
+    assert.deepEqual(
+      sectioned.map((entry) => [entry.data.form, entry.path, entry.statement]),
+      [
+        ['signature', '/manual/manual/命令一览', 'demo probe <name>'],
+        ['text', '/manual/manual/命令一览', '探测（本构建没有）'],
+        ['text', '/manual/manual/命令一览', '**demo pool add** 与 **show demo status** | 跨分支'],
+        ['text', '/manual/manual/命令一览', '**demo pool add** 与 **demo probe** | 一成一缺'],
+      ],
+    );
+  });
+
+  it('splits the same rows with another tree or none: the entries’ content never depends on the tree (K01 R[1])', () => {
+    const bare = produceManualEntries(markdown(TABLE));
+    const other = produceManualEntries(markdown(TABLE), null, { catalog: commandCatalog(xml('<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments></arguments></item></menu></scope></commands>')).catalog });
+    const content = (result: ManualResult) => result.entries.map((entry) => canonicalJson({ kind: entry.kind, statement: entry.statement, data: entry.data, applicability: entry.applicability }));
+    assert.deepEqual(content(bare), content(other));
+  });
+
+  it('hangs a signature row of a table under an anchor at the section node when the command is missing', () => {
+    const text = '**demo pool add** *\\<name\\>*\n\n| 命令 | 说明 |\n| --- | --- |\n| **demo probe** *\\<name\\>* | 本构建没有 |\n| name | 成员名 |\n';
+    const result = produceManualEntries(markdown(text), null, { catalog });
+    assert.deepEqual(
+      result.entries.map((entry) => [entry.data.form, entry.path, entry.statement]),
+      [
+        ['signature', '/commands/demo/pool/add', 'demo pool add <name>'],
+        ['signature', '/manual/manual', 'demo probe <name>'],
+        ['text', '/manual/manual', '本构建没有'],
+        ['text', '/commands/demo/pool/add', '| 命令 | 说明 |\n| name | 成员名 |'],
+      ],
+    );
+  });
+
+  it('never takes a bold span inside a prose cell for a signature (a mention is a literal only)', () => {
+    const text = '| 命令 | 说明 |\n| --- | --- |\n| 成员名 | 先用 **demo pool create** 创建 |\n| **demo pool add** *\\<name\\>* | 添加成员 |\n';
+    const result = produceManualEntries(markdown(`# 章\n\n${text}`), null, { catalog });
+    assert.deepEqual(
+      result.entries.map((entry) => [entry.data.form, entry.path, entry.statement]),
+      [
+        ['signature', '/commands/demo/pool/add', 'demo pool add <name>'],
+        ['text', '/commands/demo/pool/add', '添加成员'],
+        ['text', '/manual/manual/章', '| 命令 | 说明 |\n| 成员名 | 先用 **demo pool create** 创建 |'],
+      ],
+    );
+    const rest = result.entries[2];
+    assert.deepEqual(rest.data.command_literals, ['demo pool create'], 'the mention is recorded as a literal');
   });
 
   it('cites the row lines of the table block, locatable by the parser', () => {
@@ -542,23 +583,25 @@ describe('applicability from explicit conditions', () => {
     );
     const [own, model, mixed, builds] = result.entries;
     assert.deepEqual(own.applicability, { platforms: ['hg-k'] });
-    // The conditions of a section opening count for every entry of the section's own blocks (a union; the condition
-    // sentences themselves stay in the entries' texts).
-    const section = { platforms: ['hg-k', 'zx-neokylin'], models: ['X9000'] };
-    assert.deepEqual(model.applicability, section);
-    assert.deepEqual(mixed.applicability, section, 'a start build ("自…起") is not a manual-entry condition');
-    assert.deepEqual(builds.applicability, section, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
+    assert.deepEqual(model.applicability, { models: ['X9000'] });
+    assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'a start build ("自…起") is not a manual-entry condition');
+    assert.equal(builds.applicability, null, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
   });
 
-  it('counts a condition of the section opening for the section’s own entries, never for a subsection', () => {
+  it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n适用于 ft-kylinv10 平台的功能。\n\n本节的另一段。\n\n### 小节\n\n子节的一段。\n'));
     const [own, other, sub] = result.entries;
-    assert.deepEqual(own.applicability, { platforms: ['ft-kylinv10', 'hg-k'] }, 'the union of the heading and the opening blocks');
-    assert.deepEqual(other.applicability, { platforms: ['ft-kylinv10', 'hg-k'] });
-    assert.equal(sub.applicability, null, 'no inheritance into a subsection (owner to confirm)');
+    assert.deepEqual(own.applicability, { platforms: ['ft-kylinv10'] });
+    assert.equal(other.applicability, null, 'a sibling block states nothing');
+    assert.equal(sub.applicability, null, 'a subsection states nothing');
   });
 
-  it('keeps a block-level condition on its own entry when the opening has ended', () => {
+  it('does not read a condition of a bare heading (a heading is no entry’s own text)', () => {
+    const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n'));
+    assert.ok(result.entries.every((entry) => entry.applicability === null));
+  });
+
+  it('keeps a command block’s condition on its own entry and lets nothing leak to a sibling command', () => {
     const result = produceManualEntries(markdown('## 命令\n\n**demo pool add** *\\<name\\>*\n\n该命令仅适用于 hg-k 平台。\n\n**demo pool mode** *\\<name\\>*\n\n该命令用于设置算法。\n'));
     const [add, addText, mode, modeText] = result.entries;
     assert.equal(add.applicability, null, 'the opening ended at the first anchor');

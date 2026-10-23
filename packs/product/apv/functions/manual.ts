@@ -320,6 +320,12 @@ function resolves(catalog: CommandCatalog, literal: string): boolean {
   return false;
 }
 
+/** The tree path of an anchor: the exact key words when the command exists; without a tree the literal decides. */
+function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null): string | null {
+  if (catalog === null) return commandPath(anchor.words);
+  return existingPath(catalog, anchor.words);
+}
+
 /** The longest common prefix of the word lists (case-insensitive), spelled as the first list writes it. */
 function commonPrefix(lists: readonly string[][]): string[] {
   if (lists.length === 0) return [];
@@ -372,15 +378,6 @@ function conditionsOf(text: string): Conditions {
   return out;
 }
 
-function mergeConditions(base: Conditions, add: Conditions): Conditions {
-  const out: Conditions = {};
-  for (const field of ['platforms', 'models'] as const) {
-    const both = [...(base[field] ?? []), ...(add[field] ?? [])];
-    if (both.length > 0) out[field] = [...new Set(both)].sort(compareText);
-  }
-  return out;
-}
-
 /** The applicability of an entry, or null (未声明) when nothing declares a condition. */
 function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
   return conditions.platforms === undefined && conditions.models === undefined ? null : conditions;
@@ -405,11 +402,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     return titles.reverse();
   });
-  // The opening of every section: the texts of its direct blocks before the first paragraph anchor (a heading anchor
-  // does not end it); a section's conditions are read from its title and its opening.
-  const openings: Array<{ texts: string[]; closed: boolean }> = sections.map(() => ({ texts: [], closed: false }));
-  // The entries whose applicability is fixed after the loop, when every opening is complete.
-  const scoped: Array<{ entry: ProducedEntry; section: number; own: string }> = [];
+  const sectionText = (index: number): string => (index >= 0 && index < titleChains.length ? titleChains[index] : []).join(' / ');
   let missingSection = 0;
   let unwritable = 0;
   let manualRoot = pathText([MANUAL_NS, name]);
@@ -462,6 +455,18 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     entry.data.command_literals = unique.slice(0, MAX_LITERALS);
     if (unique.length > MAX_LITERALS) entry.data.command_literals_cut = true;
   };
+  /**
+   * A behaviour entry. `data` has the same shape whatever the tree says (K01 R[1]): `words` whenever the block follows
+   * an anchor, `section` always; the tree only chooses the path. Applicability comes from the entry's own text alone
+   * (K02 F[6]): no condition is inherited from a heading, a sibling block or another row.
+   */
+  const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[] }): ProducedEntry => {
+    const data: { [key: string]: unknown } = { form: 'text', block: init.block, section: sectionText(init.section) };
+    if (init.words !== undefined) data.words = init.words;
+    const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability: toApplicability(conditionsOf(init.statement)) };
+    putLiterals(entry, init.block, init.statement);
+    return entry;
+  };
   /** Byte ranges of the lines of a block's text (the fragment text the selectors name). */
   const lineRanges = (text: string): Array<[number, number]> => {
     const offsets = utf8Offsets(text);
@@ -477,28 +482,41 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   };
 
   // Heading anchors: a heading whose text (after its numbering) is a bold command signature.
-  const headingAnchors = new Map<number, { anchor: Anchor; path: string | null }>();
+  const headingAnchors = new Map<number, { anchor: Anchor; path: string }>();
   sections.forEach((section, index) => {
     if (index === 0 || section.selector === null) return;
     const title = section.title.replace(/^\s*[0-9]+(?:\.[0-9]+)*[.．、]?\s+/, '');
     if (!title.trimStart().startsWith('**')) return;
     const anchor = parseAnchor(title, heads);
     if (anchor === null) return;
-    // Only a node the build's command tree has; without a tree the literal decides, unchecked.
-    const path = catalog === null ? commandPath(anchor.words) : existingPath(catalog, anchor.words);
-    headingAnchors.set(index, { anchor, path });
-    const entry = signatureEntry(anchor, path ?? sectionEntryPath(index), { parser: MARKDOWN, selector: section.selector as string });
+    // Only a node the build's command tree has; without a tree the literal decides, unchecked. A signature whose
+    // command is missing stays a definition entry at its section node.
+    const placed = anchorPathOf(anchor, catalog) ?? sectionEntryPath(index);
+    headingAnchors.set(index, { anchor, path: placed });
+    const entry = signatureEntry(anchor, placed, { parser: MARKDOWN, selector: section.selector as string });
+    entry.applicability = toApplicability(conditionsOf(section.title));
     entries.push(entry);
-    scoped.push({ entry, section: index, own: '' });
   });
 
-  /** The signatures of one table cell: each maximal part between CJK text that parses as an anchor. */
+  /**
+   * The signatures of one table cell: the whole cell is one signature, or a list of signatures joined by bare
+   * connectives (与/和/及/或、顿号、逗号、斜线). A bold span inside prose is not a signature (a mention: it is recorded
+   * in command_literals only).
+   */
   const cellAnchors = (cell: string): Anchor[] => {
     if (!cell.includes('**')) return [];
+    const parts = cell.split(new RegExp(`(${CJK.source}+)`, 'u'));
     const out: Anchor[] = [];
-    for (const part of cell.split(new RegExp(`${CJK.source}+`, 'u'))) {
-      const anchor = parseAnchor(part, heads);
-      if (anchor !== null) out.push(anchor);
+    for (let k = 0; k < parts.length; k++) {
+      if (k % 2 === 1) {
+        if (!/^[与和及或、,，/\s]*$/.test(parts[k])) return [];
+        continue;
+      }
+      const piece = parts[k].trim();
+      if (piece === '') continue;
+      const anchor = parseAnchor(piece, heads);
+      if (anchor === null) return [];
+      out.push(anchor);
     }
     return out;
   };
@@ -545,97 +563,70 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
     const fragment: FragmentRef = { parser: MARKDOWN, selector: block.selector };
-    const opening = block.section >= 0 && block.section < openings.length ? openings[block.section] : null;
     const anchor = block.kind === 'paragraph' ? parseAnchor(text, heads) : null;
-    const anchorPath = anchor === null ? null : catalog === null ? commandPath(anchor.words) : existingPath(catalog, anchor.words);
     if (anchor !== null) {
-      // A signature whose command is not in the build's tree is still a signature: it hangs at its section node.
-      const placed = anchorPath ?? sectionPath(value, block.section);
+      // A signature whose command is not in the build's tree is still a signature: it hangs at its section node, and
+      // the blocks after it follow it there (same data as at a command node: the tree only chooses the path).
+      const placed = anchorPathOf(anchor, catalog) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
+      entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
-      scoped.push({ entry, section: block.section, own: text });
-      current = anchorPath === null ? null : { path: anchorPath, words: anchor.words };
-      if (opening !== null) opening.closed = true;
+      current = { path: placed, words: anchor.words };
       continue;
     }
-    // A command table is split by row: a one-signature row hangs at its command when the command exists; a row with
-    // several commands at their nearest common ancestor when that is at least one word deeper than /commands (the
-    // namespace root itself is not a placement); every other row stays at the section node.
+    // A command table is split by row, decided by the manual alone: every row that carries a signature becomes its own
+    // entries. The tree only chooses the path: a one-signature row hangs at its command when the command exists; a row
+    // with several commands at their nearest common ancestor over ALL of them when every one exists and the ancestor is
+    // at least one word deeper than /commands (the namespace root itself is not a placement); otherwise the row hangs at
+    // its section node. Rows without a signature (parameter rows) keep the table's remainder at the current command,
+    // or at the section node.
     if (block.kind === 'table') {
       const table = pipeRows(block.text);
       if (table !== null) {
         const ranges = lineRanges(block.text);
-        let anchorsSeen = false;
-        const split: Array<{ entry: ProducedEntry; own: string }> = [];
+        const split: ProducedEntry[] = [];
         const remainder: number[] = [];
+        let signatureRows = 0;
         for (const row of table.rows) {
-          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell).map((anchor) => ({ cell: cellIndex, anchor })));
+          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell).map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
             remainder.push(row.line);
             continue;
           }
-          anchorsSeen = true;
-          const range: [number, number] = ranges[row.line];
-          const rowFragment: FragmentRef = { parser: MARKDOWN, selector: block.selector, range };
+          signatureRows++;
+          const rowFragment: FragmentRef = { parser: MARKDOWN, selector: block.selector, range: ranges[row.line] };
+          const rowText = table.lines[row.line].trimEnd();
           if (found.length === 1) {
             const { cell, anchor: one } = found[0];
-            const path = catalog === null ? commandPath(one.words) : existingPath(catalog, one.words);
-            if (path !== null) {
-              const signature = signatureEntry(one, path, rowFragment);
-              split.push({ entry: signature, own: table.lines[row.line] });
-              const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
-              if (described.length > 0) {
-                split.push({
-                  entry: { kind: TEXT, path, statement: described.join('；'), data: { words: one.words, form: 'text', block: 'table' }, fragments: [rowFragment], applicability: null },
-                  own: described.join('\n'),
-                });
-              }
-              continue;
-            }
-            remainder.push(row.line);
+            const path = anchorPathOf(one, catalog) ?? sectionPath(value, block.section);
+            const signature = signatureEntry(one, path, rowFragment);
+            signature.applicability = toApplicability(conditionsOf(rowText));
+            split.push(signature);
+            const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
+            if (described.length > 0) split.push(textEntry({ path, statement: described.join('；'), block: 'table', section: block.section, words: one.words, fragments: [rowFragment] }));
             continue;
           }
-          const existing = catalog === null ? found : found.filter(({ anchor: some }) => existingPath(catalog, some.words) !== null);
-          if (existing.length >= 2) {
-            const lca = commonPrefix(existing.map(({ anchor: some }) => some.words));
-            if (lca.length >= 1) {
-              // The ancestor's path is spelled as the tree spells it: the prefix of an existing command under it.
-              const firstPath = catalog === null ? null : existingPath(catalog, existing[0].anchor.words);
-              const path = firstPath === null ? pathText(['commands', ...lca]) : firstPath.split('/').slice(0, 2 + lca.length).join('/');
-              if (path !== null) {
-                split.push({
-                  entry: { kind: TEXT, path, statement: row.cells.join(' | '), data: { form: 'text', block: 'table' }, fragments: [rowFragment], applicability: null },
-                  own: row.cells.join('\n'),
-                });
-                continue;
-              }
-            }
+          let placed: string | null = null;
+          const paths = found.map(({ anchor: some }) => anchorPathOf(some, catalog));
+          if (paths.every((path) => path !== null)) {
+            const lca = commonPrefix(found.map(({ anchor: some }) => some.words));
+            if (lca.length >= 1) placed = (paths[0] as string).split('/').slice(0, 2 + lca.length).join('/');
           }
-          remainder.push(row.line);
+          split.push(textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment] }));
         }
-        if (split.length > 0) {
-          for (const { entry, own } of split) {
-            putLiterals(entry, 'table', own);
-            entries.push(entry);
-            scoped.push({ entry, section: block.section, own });
-          }
+        if (signatureRows > 0) {
+          entries.push(...split);
           if (remainder.length > 0) {
             const lines = [table.lines[0], ...remainder.map((line) => table.lines[line])].map((line) => line.trimEnd());
-            const rest: ProducedEntry = {
-              kind: TEXT,
-              path: current !== null ? current.path : sectionPath(value, block.section as number),
-              statement: lines.join('\n'),
-              data: { form: 'text', block: 'table', section: (titleChains[block.section as number] ?? []).join(' / ') },
-              fragments: [0, ...remainder].map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
-              applicability: null,
-            };
-            putLiterals(rest, 'table', rest.statement);
-            entries.push(rest);
-            scoped.push({ entry: rest, section: block.section, own: rest.statement });
-          }
-          if (opening !== null) {
-            if (!opening.closed) opening.texts.push(text);
-            if (anchorsSeen) opening.closed = true;
+            entries.push(
+              textEntry({
+                path: current !== null ? current.path : sectionPath(value, block.section),
+                statement: lines.join('\n'),
+                block: 'table',
+                section: block.section,
+                fragments: [0, ...remainder].map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
+              }),
+            );
           }
           continue;
         }
@@ -647,37 +638,13 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       current = null;
     }
     if (current !== null && !rejectedSignature) {
-      const entry: ProducedEntry = { kind: TEXT, path: current.path, statement: text, data: { words: current.words, form: 'text', block: block.kind }, fragments: [fragment], applicability: null };
-      putLiterals(entry, block.kind, text);
-      entries.push(entry);
-      scoped.push({ entry, section: block.section, own: text });
-      if (opening !== null && !opening.closed) opening.texts.push(text);
+      entries.push(textEntry({ path: current.path, statement: text, block: block.kind, section: block.section, words: current.words, fragments: [fragment] }));
       continue;
     }
     // Every other block hangs at its section node.
-    const chain = block.section >= 0 && block.section < titleChains.length ? titleChains[block.section] : [];
-    const data: { [key: string]: unknown } = { form: 'text', block: block.kind, section: chain.join(' / ') };
-    if (rejectedSignature) data.signature_rejected = true;
-    const entry: ProducedEntry = { kind: TEXT, path: sectionPath(value, block.section), statement: text, data, fragments: [fragment], applicability: null };
-    putLiterals(entry, block.kind, text);
+    const entry = textEntry({ path: sectionPath(value, block.section), statement: text, block: block.kind, section: block.section, fragments: [fragment] });
+    if (rejectedSignature) entry.data.signature_rejected = true;
     entries.push(entry);
-    scoped.push({ entry, section: block.section, own: text });
-    if (opening !== null && !opening.closed) opening.texts.push(text);
-  }
-
-  // Applicability, once every opening is complete: the section's scope plus the entry's own text.
-  const sectionScopes = new Map<number, Conditions>();
-  for (const { entry, section: at, own } of scoped) {
-    if (at < 0 || at >= sections.length) {
-      entry.applicability = toApplicability(conditionsOf(own));
-      continue;
-    }
-    let scope = sectionScopes.get(at);
-    if (scope === undefined) {
-      scope = conditionsOf([sections[at].title, ...openings[at].texts].join('\n'));
-      sectionScopes.set(at, scope);
-    }
-    entry.applicability = toApplicability(mergeConditions(scope, conditionsOf(own)));
   }
 
   // The literals the build's tree cannot resolve are drift candidates of the production (never nodes of their own).
