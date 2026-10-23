@@ -267,7 +267,9 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   for (const [node, s] of seen) {
     if (touched.has(node)) continue;
     if (s.literalUnscored) { literalUnscored += 1; continue; }
+    const structureCodes = new Set<string>();
     for (const code of s.marks) {
+      if (isStructure(code)) { if (structureCodes.has(code)) continue; structureCodes.add(code); }
       if (!isStructure(code)) {
         const inBaseline = (before.get(node)?.marks ?? []).includes(code);
         otherMarks.total += 1;

@@ -256,3 +256,9 @@ test('review 4: incomplete literal entries are counted but never supported false
   const scored = score([], result([], [item('c1', req('literal', [refute('core.structure.required_empty')], { terminal: 'incomplete', attribution: 'unattributed' }))]), { literal: answer });
   assert.equal(scored.literalUnscored, 1); assert.deepEqual(scored.structure, { supported: [], falsePositives: [], missed: [] });
 });
+
+test('review 9: structure is scored once per case and code while raw claims remain available', () => {
+  const answer = { cases: [{ id: 'c1', codes: ['core.structure.required_empty'] }], noUniqueId: [] };
+  const scored = score([], result([item('c1', req('literal', [refute('core.structure.required_empty'), refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' }))]), { literal: answer });
+  assert.equal(scored.structure.supported.length, 1);
+});
