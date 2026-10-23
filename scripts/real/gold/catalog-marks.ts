@@ -5,10 +5,11 @@
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
 import { SaxesParser } from 'saxes';
 import { isIP } from 'node:net';
+import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import type { CoreViolationCode } from '../../../contracts/generated/protocol.ts';
 
 export interface Position { input: string; pointer: string; line?: number; column?: number }
-export interface EvidenceRequest extends Position { fact: string; next_action: string }
+export interface EvidenceRequest extends Position { fact: string; next_action: string; item?: string; command?: string; related?: Position[] }
 interface Argument { name: string; type: string; limit?: string; length?: string; optional: boolean; optionalRaw?: string; help: string; at: Position }
 interface Signature { args: Argument[]; at: Position }
 interface Command { words: string[]; signatures: Signature[]; at: Position }
@@ -182,3 +183,122 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   if (failedCodes.size === 1) return { in_scope: true, code: [...failedCodes][0], requests: [] };
   return { in_scope: true, code: null, requests: [request(command.at, '多个参数或签名失败时错误码的选择规则', '请集成者明确这些签名及参数位置之间的错误码选择规则，补充规则和样例后重跑；不照抄被核实现的优先级')] };
 }
+
+export interface Mark { item: string; node: string; command: string; code: string; pointer: string }
+export interface CatalogComparison {
+  expected: Mark[]; observed: Mark[]; supported: Mark[]; missed: Mark[]; extra: Mark[];
+  negative_expected: Mark[]; negative_observed: Mark[]; requests: EvidenceRequest[];
+  summary: { cases: number; cited: number; not_quoted: number; unresolved_heads: number; ignored_hub_claims: number; supported: number; missed: number; extra: number; design_gaps: number };
+}
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+const displayCommand = (value: string): string => fold((tokenize(value.normalize('NFKC')) ?? [value]).join(' '));
+const markKey = (mark: Mark): string => JSON.stringify([mark.item, mark.pointer, displayCommand(mark.command), mark.code]);
+
+/** Comparison uses the submitted phrases as its population, never the Hub's refutations as the oracle. */
+export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged' }): CatalogComparison {
+  const report: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
+  const catalog = readCatalog(input.treeXml), parsed = parseMindMap(input.source);
+  const cases = caseNodesOf(parsed, { caseRule: input.caseRule }), indices = new Set(cases.map(c => c.index));
+  const unique = new Map<string, number>(); parsed.nodes.forEach(node => unique.set(node.id, (unique.get(node.id) ?? 0) + 1));
+  const reading = caseGold([{ document: 'source', map: input.source }], { caseRule: input.caseRule }).documents[0].items;
+  const excluded = new Set(input.excludeNodes ?? []);
+  const sourcePointers: string[] = [];
+  const walk = (value: unknown, path: string): void => {
+    sourcePointers.push(path);
+    if (object(value)) array(value.children).slice(0, 1000).forEach((child, i) => walk(child, `${path}/children/${i}`));
+  };
+  walk(object(input.source) ? input.source.root : null, '/root');
+  type Own = { id: string; negative: boolean; lines: string[]; at: Position };
+  const own = new Map<string, Own>();
+  for (const node of cases) {
+    if (excluded.has(node.id)) continue;
+    const at = { input: 'source', pointer: `${sourcePointers[node.index]}/data/id` };
+    if (!node.id || unique.get(node.id) !== 1) { report.requests.push(request(at, '可唯一对应本用例的 data.id', '请集成者补取此位置与运行条目的唯一身份映射，再重跑；不靠末尾相似的编号硬配')); continue; }
+    const item = reading.find(r => r.id === node.id)!;
+    const preconditions: string[] = [];
+    const visit = (index: number): void => { for (const child of parsed.nodes[index].children) { if (indices.has(child)) continue; const n = parsed.nodes[child]; if (!n.children.length && n.priority === 3) preconditions.push(n.text); visit(child); } };
+    visit(node.index);
+    own.set(node.id, { id: node.id, negative: item.negative, lines: [...item.title.split('\n'), ...item.steps.flatMap(step => step.text.split('\n')), ...item.expected, ...preconditions], at });
+  }
+  report.summary.cases = own.size;
+  const run = object(input.run) ? input.run : {}, runRecord = object(run.run) ? run.run : {};
+  const projections = array(runRecord.items);
+  const mapped = new Map<string, Own | null>();
+  const identify = (item: string, at: Position): Own | null => {
+    if (mapped.has(item)) return mapped.get(item)!;
+    const projection = projections.find(p => object(p) && (p.id === item || p.item === item));
+    const declared = object(projection) && object(projection.fields) ? projection.fields.nodeId : undefined;
+    const matches = typeof declared === 'string' ? [...own.values()].filter(o => o.id === declared) : [...own.values()].filter(o => o.id === item || item.endsWith(':' + o.id));
+    if (matches.length === 1) { mapped.set(item, matches[0]); return matches[0]; }
+    if ([...excluded].some(node => node === item || item.endsWith(':' + node))) { mapped.set(item, null); return null; }
+    report.requests.push(request(at, '运行条目与原件用例的唯一对应', '请集成者补该条目的 fields.nodeId 和原件 data.id 映射，再重跑')); mapped.set(item, null); return null;
+  };
+  const phrases = new Map<string, string[]>(), blocked = new Set<string>();
+  const submitted = object(input.submission) ? input.submission : {};
+  array(submitted.items).forEach((entry, i) => {
+    if (!object(entry) || typeof entry.item !== 'string') { report.requests.push(request({ input: 'submission', pointer: `/items/${i}` }, '条目身份', '补取原始提交里这一项的 item 字段后重跑')); return; }
+    const at = { input: 'submission', pointer: `/items/${i}` }, target = identify(entry.item, at);
+    if (!target || entry.handling === 'skipped' || entry.reuse !== undefined) return;
+    if (!object(entry.slots) || !Array.isArray(entry.slots.findings)) { report.requests.push(request({ ...at, pointer: at.pointer + '/slots/findings' }, '本条目明确的发现列表（可为空数组）', '导出本次最新受理提交的完整 slots.findings 后重跑；缺字段不能当空列表')); return; }
+    const owned: Array<{ command: string; at: Position }> = [];
+    entry.slots.findings.forEach((finding, j) => {
+      if (!object(finding) || finding.commands === undefined) return;
+      if (!Array.isArray(finding.commands)) { report.requests.push(request({ ...at, pointer: `${at.pointer}/slots/findings/${j}/commands` }, '命令引用数组', '补取该发现完整的 commands 数组后重跑')); return; }
+      finding.commands.forEach((value, k) => {
+        const location = { input: 'submission', pointer: `${at.pointer}/slots/findings/${j}/commands/${k}` };
+        if (!object(value) || typeof value.command !== 'string') { report.requests.push(request(location, '模型原样引用的完整命令行', '按本位置补原始提交，不从 Hub 的标记反推命令行')); return; }
+        if (typeof value.present === 'boolean') return; // These are model membership statements, not cited lines.
+        if (value.present !== undefined) { report.requests.push(request({ ...location, pointer: location.pointer + '/present' }, '该命令是原样引用还是存在性陈述', '补取原始布尔值或确认未声明 present 后重跑')); return; }
+        if (!quoteFromCase(value.command, target.lines)) { report.summary.not_quoted++; return; }
+        owned.push({ command: value.command, at: location });
+      });
+    });
+    phrases.set(entry.item as string, owned.map(p => p.command));
+    owned.forEach((phrase, index) => {
+      report.summary.cited++;
+      const judged = judgeCommand(catalog, phrase.command), pointer = `/phrases/${index}`;
+      if (judged.requests.length) {
+        blocked.add(JSON.stringify([entry.item, pointer]));
+        report.requests.push(...judged.requests.map(r => ({ ...r, item: entry.item as string, command: phrase.command, related: [phrase.at, target.at] })));
+      } else if (!judged.in_scope) report.summary.unresolved_heads++;
+      else if (judged.code !== null) {
+        const mark = { item: entry.item as string, node: target.id, command: phrase.command, code: judged.code, pointer };
+        (target.negative ? report.negative_expected : report.expected).push(mark);
+      }
+    });
+  });
+  const latest = object(run.latest) ? run.latest : {}, result = object(latest.result) ? latest.result : {};
+  if (!object(result.partitions)) report.requests.push(request({ input: 'run', pointer: '/latest/result/partitions' }, '最新结构化评审结果', '重新执行 circle-hub run show <本次运行> --json 导出完整结果后重跑'));
+  for (const [partition, values] of Object.entries(object(result.partitions) ? result.partitions : {})) array(values).forEach((value, i) => {
+    if (!object(value) || typeof value.item !== 'string') return;
+    const target = identify(value.item, { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/item` });
+    if (!target) return;
+    array(value.requirements).forEach((requirement, j) => {
+      if (!object(requirement) || requirement.requirement !== 'catalog') return;
+      const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === 'static');
+      const attributed = object(staticLayer) && typeof staticLayer.attribution === 'string' && staticLayer.attribution !== 'unattributed';
+      array(requirement.claims).forEach((claim, k) => {
+        if (!object(claim) || !object(claim.statement) || !object(claim.qualifier)) return;
+        const statement = claim.statement, qualifier = claim.qualifier;
+        if (statement.verdict !== 'refute' || typeof statement.code !== 'string' || !statement.code.startsWith('core.catalog.') || qualifier.nature !== 'fact' || qualifier.source_role !== 'subject') { report.summary.ignored_hub_claims++; return; }
+        const at = { input: 'run', pointer: `/latest/result/partitions/${partition}/${i}/requirements/${j}/claims/${k}` };
+        if (typeof claim.pointer !== 'string') { report.requests.push(request({ ...at, pointer: at.pointer + '/pointer' }, '反驳来自 cited_commands 的局部指针', '补该主张的检查身份或 /phrases/<序号> 指针；不能只按码名猜检查来源')); return; }
+        if (!/^\/phrases\/[0-9]+$/.test(claim.pointer)) { report.summary.ignored_hub_claims++; return; }
+        if (!object(statement.data) || typeof statement.data.command !== 'string') { report.requests.push(request({ ...at, pointer: at.pointer + '/statement/data/command' }, '这条反驳实际判定的命令行', '补取该位置完整的命令行 data.command 后重跑，不拿金标准填充 Hub 输出')); return; }
+        if (blocked.has(JSON.stringify([value.item, claim.pointer]))) return;
+        const original = phrases.get(value.item as string)?.[Number(claim.pointer.slice('/phrases/'.length))];
+        const command = original !== undefined && displayCommand(original) === fold(statement.data.command) ? original : statement.data.command;
+        const mark = { item: value.item as string, node: target.id, command, code: statement.code, pointer: claim.pointer };
+        if (attributed) report.observed.push(mark);
+        else if (target.negative) report.negative_observed.push(mark);
+      });
+    });
+  });
+  const remaining = [...report.observed];
+  for (const expected of report.expected) { const index = remaining.findIndex(actual => markKey(actual) === markKey(expected)); if (index < 0) report.missed.push(expected); else { report.supported.push(expected); remaining.splice(index, 1); } }
+  report.extra = remaining;
+  Object.assign(report.summary, { supported: report.supported.length, missed: report.missed.length, extra: report.extra.length, design_gaps: report.requests.length });
+  return report;
+}
+
