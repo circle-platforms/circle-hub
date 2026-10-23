@@ -132,6 +132,22 @@ export function uncertainStarts(captures: Capture[]): Map<string, { args: unknow
   return pending;
 }
 
+/** An accepted run reference without a complete readable capture is an unobserved result, not an empty result. */
+export function unreadResults(captures: Capture[]): Map<string,{reference:string;session:string|null}> {
+  const readable = new Set<string>();
+  for(const capture of captures) if(!transportFailure(capture) && capturedResult(capture)!==null && object(capture.request.args) && typeof capture.request.args.reference==='string') readable.add(capture.request.args.reference);
+  const pending = new Map<string,{reference:string;session:string|null}>();
+  for(const capture of captures) {
+    if(capture.request.tool!=='start_run' || transportFailure(capture) || capture.response.isError)continue;
+    const answer=capture.response.structured;
+    if(!object(answer) || answer.call_result!=='ok' || !object(answer.result) || typeof answer.result.reference!=='string')continue;
+    const reference=answer.result.reference;
+    for(const document of requestedDocuments(capture)) {if(readable.has(reference))pending.delete(document);else pending.set(document,{reference,session:capture.session ?? null});}
+  }
+  return pending;
+}
+export const unreadResultAction = (reference:string):string => '结果未读到；在原会话重读 get_nodes '+JSON.stringify({reference})+' 的完整结果，逐页跟随 next/cursor，保存原始应答后重新比较，保持本运行';
+
 export function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
   const refused = new Map<string, string>();
   for (const capture of captures) {
@@ -264,7 +280,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
   const summary = {
     documents: gold.length, equal: 0, not_equal: 0, fields: { line: 0, train: 0, module: 0 },
     reasons: { version_nodes: 0, prefix_codes: 0, other: 0 },
-    missing: { start_refused: 0, start_uncertain: 0, no_item: 0, no_location_data: 0 }, only_result: 0,
+    missing: { start_refused: 0, start_uncertain: 0, result_unread: 0, no_item: 0, no_location_data: 0 }, only_result: 0,
     candidates: { equal: 0, not_equal: 0, not_run: 0 },
     facets: undefined as undefined | { only_tree: number; only_view: number; truncated: boolean | null; skipped: number | null; reasons: { no_cases: number; not_mindmap: number; retain_only: number; unknown: number } },
   };
@@ -281,7 +297,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
       if (object(capture.request.args) && typeof capture.request.args.reference === 'string') resultReferences.set(item.document, capture.request.args.reference);
     }
   }
-  const refused = refusedDocuments(captures, true), uncertain = uncertainStarts(captures);
+  const refused = refusedDocuments(captures, true), uncertain = uncertainStarts(captures), unread = unreadResults(captures);
   const builds = new Map<string, BuildCandidate[]>();
   for (const value of buildGold) {
     if (!validBuildGold(value)) throw new Error('构建独立答案输入形状无效；下一步：用 builds.ts 重新导出');
@@ -292,9 +308,16 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
   for (const expected of gold) {
     const rows = byDocument.get(expected.document) ?? [];
     const actual = rows.length === 1 ? rows[0] : null;
-    const category = rows.length === 0 ? (uncertain.has(expected.document) ? 'start_uncertain' : refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['line', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
+    const category = rows.length === 0 ? (uncertain.has(expected.document) ? 'start_uncertain' : unread.has(expected.document) ? 'result_unread' : refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['line', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
     if (category) {
       summary.missing[category]++;
+      if (category === 'result_unread') {
+        const pending=unread.get(expected.document)!;const next_action=unreadResultAction(pending.reference);
+        summary.candidates.not_run++;
+        details.missing.push({document:expected.document,reason:'结果未读到',next_action});
+        details.not_run.push({document:expected.document,fact:'已受理运行的完整定位与候选结果',next_action,recovery:{tool:'get_nodes',args:{reference:pending.reference},session:pending.session}});
+        continue;
+      }
       if (category === 'start_uncertain') {
         const recovery = uncertain.get(expected.document)!;
         const next_action = '原调用超时或断开，不能认定运行没有开始；在幂等窗口内保持原树、原会话与 --batch，使用新 --out 运行 --collect，以派生保存的同一 client_key 和相同请求取回同一运行。若原 key 缺失或幂等窗口已过，先由集成者查已有运行，不能生成新 key 重试';
@@ -426,8 +449,8 @@ export async function main(argv: string[], deps: { call?: typeof callTools; prin
     const target = join(out, 'details.json'), content = JSON.stringify(details, null, 2) + '\n';
     if (existsSync(target)) { if (readFileSync(privatePath(target), 'utf8') !== content) throw new Error('输出已存在'); }
     else writePrivateJson(target, details);
-    const s = report.summary, definiteMissing = s.missing.start_refused + s.missing.no_item + s.missing.no_location_data, missing = definiteMissing + s.missing.start_uncertain;
-    print(`树里的文档 ${s.documents} 份；相等 ${s.equal}，不等 ${s.not_equal}（版本线 ${s.fields.line}、火车 ${s.fields.train}、模块 ${s.fields.module}）；缺 ${missing}（开始被拒 ${s.missing.start_refused}、开始状态待取回 ${s.missing.start_uncertain}、没有条目 ${s.missing.no_item}、没有定位数据 ${s.missing.no_location_data}）；只在结果里 ${s.only_result}`);
+    const s = report.summary, definiteMissing = s.missing.start_refused + s.missing.no_item + s.missing.no_location_data, missing = definiteMissing + s.missing.start_uncertain + s.missing.result_unread;
+    print(`树里的文档 ${s.documents} 份；相等 ${s.equal}，不等 ${s.not_equal}（版本线 ${s.fields.line}、火车 ${s.fields.train}、模块 ${s.fields.module}）；缺 ${missing}（开始被拒 ${s.missing.start_refused}、开始状态待取回 ${s.missing.start_uncertain}、结果未读到 ${s.missing.result_unread}、没有条目 ${s.missing.no_item}、没有定位数据 ${s.missing.no_location_data}）；只在结果里 ${s.only_result}`);
     print(`不等原因：版本线节点取法 ${s.reasons.version_nodes}、前缀代码 ${s.reasons.prefix_codes}、其他 ${s.reasons.other}`);
     print(`候选：相等 ${s.candidates.equal}，不等 ${s.candidates.not_equal}，没跑 ${s.candidates.not_run}；发布日期不是包的数据字段，不在核对范围`);
     if (s.facets) print(`视图：树有视图无 ${s.facets.only_tree}，视图有树无 ${s.facets.only_view}；truncated=${s.facets.truncated === null ? '没跑' : s.facets.truncated}，skipped=${s.facets.skipped ?? '没跑'}；原因：没有用例节点 ${s.facets.reasons.no_cases}、不是脑图 ${s.facets.reasons.not_mindmap}、凭据只保留 ${s.facets.reasons.retain_only}、原因不明 ${s.facets.reasons.unknown}`);

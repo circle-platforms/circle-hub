@@ -98,3 +98,12 @@ test('location review 6: refused documents are excluded with codes while availab
   const record = JSON.parse(readFileSync(w.record, 'utf8')); assert.equal(record.entries.length, 5); assert.equal(record.excluded[0].document, '950802'); assert.match(record.excluded[0].reason, /SOURCE_UNAVAILABLE/);
   assert.ok(screen.some(l => l.includes('排除 1')));
 });
+
+test('closure unread accepted result pauses sampling and uses the saved get_nodes reference', async t => {
+ const w=world(t), reference='rec:'+'b'.repeat(64);
+ writeFileSync(join(w.results,'runs/000002.start_run.json'),JSON.stringify({request:{tool:'start_run',args:{inputs:{documents:[{external:'agile:mindmap:950802'}]}}},response:{isError:false,text:'',structured:{call_result:'ok',result:{reference}}}}));
+ writeFileSync(join(w.results,'runs/000003.get_nodes.json'),JSON.stringify({transport_error:true,request:{tool:'get_nodes',args:{reference}},response:{isError:true,text:'',structured:{call_result:'error',errors:[]}}}));
+ assert.equal(await main(['sample','--results',w.results,'--record',w.record],()=>{}),2);
+ const record=JSON.parse(readFileSync(w.record,'utf8'));assert.equal(record.entries.length,0);
+ assert.ok(record.not_run.some((r:any)=>r.document==='950802' && r.next_action.includes('重读 get_nodes') && r.next_action.includes(reference)));
+});

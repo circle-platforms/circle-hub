@@ -248,3 +248,12 @@ test('closure collect recovery into a fresh output reuses the same original batc
  assert.equal(await main(args(join(root,'second')),{call:fake,print:()=>{}}),0);
  assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);assert.equal(created.size,1);
 });
+
+test('closure unread result after an accepted start is transient and only asks to reread its saved reference', async t => {
+ const root=mkdtempSync(join(tmpdir(),'result-read-'));t.after(()=>rmSync(root,{recursive:true,force:true}));writeFileSync(join(root,'tree.json'),JSON.stringify(tree()));writeFileSync(join(root,'token'),'synthetic');writeFileSync(join(root,'builds.json'),JSON.stringify(emptyBuilds[0]));
+ const reference='rec:'+'e'.repeat(64);
+ const code=await main(['--tree',join(root,'tree.json'),'--builds',join(root,'builds.json'),'--out',join(root,'out'),'--collect','--token-file',join(root,'token')],{call:async(_options,calls)=>{if(calls[0].tool==='start_run')return[{isError:false,text:'',structured:{call_result:'ok',result:{reference}}}];throw new Error('synthetic read timeout');},print:()=>{}});
+ assert.equal(code,2);const report=JSON.parse(readFileSync(join(root,'out/details.json'),'utf8'));
+ assert.equal(report.summary.missing.no_item,0);assert.equal(report.summary.missing.result_unread,1);
+ assert.ok(report.details.not_run.some((r:any)=>r.next_action.includes('重读 get_nodes') && r.next_action.includes(reference) && r.recovery.tool==='get_nodes'));
+});
