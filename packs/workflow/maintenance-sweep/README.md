@@ -24,7 +24,7 @@ The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Re
 
 ## The answer
 
-Version 1.7.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<earlier build>?kind=case&by=commands`, matching the impact product and starting root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. The client reads the bound facet source and relays a hint disclosure: N cases have no parsed command and were excluded from the sweep. This does not change the items, reasons or detail tables. The client skill continues by listing those cases for the user to establish command ownership.
+Version 1.8.0 requires a `hint` input `facets`: `knowledge:facets:<product>:<earlier build>?kind=case&by=commands`, matching the impact product and starting root. The null commands row counts unplaced cases; no row in a complete view means zero. The projection retains only `note.unplaced` and `note.unplaced_build` plus a sentence, never the facet rows. The client reads the bound facet source and relays a hint disclosure: N cases have no parsed command and were excluded from the sweep. This does not change the items, reasons or detail tables. The client skill shows at most one sample page with a continuation reference; bulk review goes to an integrator export.
 
 
 Each item is one case of the earlier build, id `<document>:<node>`, sorted by id. A case on several maintenance paths is
@@ -84,7 +84,7 @@ A skip is not a pass. The real knowledge reader test uses synthetic cases includ
 
 ## Limits
 
-- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count and a re-read action. Unplaced cases are a hint disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client lists unplaced cases for user review.
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count, the view notes and root reference for integrator repair; no automatic retry of the same root. Unplaced cases are a hint disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client shows at most one page of examples with a continuation reference; bulk review uses an integrator export.
 
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.
@@ -114,14 +114,18 @@ maintenance-sweep@1.6.1 改用生成词表的类型及包内运行时快照。�
 
 The integration owner clarified that positive unplaced counts are hint disclosures with no support or refutation claims and truncated facets refuse startup; this supersedes the task page's earlier unknown outcomes. No vocabulary axis was added. Facet tests cover required binding, zero and positive counts, wrong roots and fields, and truncation refusal. The real knowledge reader test uses a synthetic producer with one unplaced case in the earlier build.
 
-The bound facets are hints (A03 R[6]): zero and positive counts produce no support or refutation claim. Because run summaries omit projection groups, the skill explicitly reads the bound facet source before answering, then reads root entries page by page to list unplaced cases. No core rendering change is needed.
+The bound facets are hints (A03 R[6]): zero and positive counts produce no support or refutation claim. Because run summaries omit projection groups, the skill explicitly reads the bound facet source before answering, then shows at most one sample page and its continuation reference; bulk review uses an integrator export. No core rendering change is needed.
 
 ## Client acceptance boundary
 
-The scenario requires `caseCommandsUnplaced`: copy `totals.unplaced` from the independent `case-commands.ts` gold for the selected build (later for regression scope, earlier for maintenance sweep). After `start_run`, it reads the **bound** facets source via MCP `get_nodes`, follows every source page and automatically compares its null-row count with that independent count. Missing pages, skipped sources and truncated views fail this mandatory check. Optional `unplaced` separately checks the disclosure sentence in replays containing client text. Numeric correctness is checked automatically; whether the real client follows SKILL, reads the hint and discloses it to the user is accepted by the integrator. No real-client run was performed in this worktree.
+The scenario requires `caseCommandsUnplaced`: copy `totals.unplaced` from the independent `case-commands.ts` gold for the selected build (later for regression scope, earlier for maintenance sweep). After `start_run`, it reads the **bound** facets source via MCP `get_nodes`, follows every source page and automatically compares its null-row count with that independent count. Missing pages, skipped sources and truncated views fail this mandatory check. The live scenario rejects unplaced and unplacedRun because an export prepared before startup cannot describe the run under test. Numeric correctness is checked automatically; whether the real client follows SKILL, reads the hint and discloses it to the user is accepted by the integrator. No real-client run was performed in this worktree.
 
 Review fix 1: binding a count hint never removes the standing index-coverage missing_input claim. It names the missing command-ownership facts and a bounded review/proposal action; with/without hint metadata yields identical claims.
 
-Review fix 7: scenario() validates caseCommandsUnplaced before client work; copy the earlier build's case-commands.ts totals.unplaced. The live numeric check reads bound facets over MCP. Optional unplaced is only a stored-note replay and requires unplacedRun (original run-show JSON with maintenance-sweep groups). Omit both for live scripted runs; client-visible disclosure is accepted by the integrator. Filling unplaced alone is refused before startup, replacing the older task-page procedure.
+Review fix 7, superseded by closure review: live scenarios validate caseCommandsUnplaced before startup, read this run's bound facets via MCP, and reject unplaced/unplacedRun. Integrator acceptance separately verifies the actual client disclosure.
 
 Review fix 13: truncated facets retain their notes and request integrator diagnosis of deterministic row/byte/source-exclusion limits. Re-reading the same root is not a repair and the skill does not auto-retry it. The current implementation still reads the existing null commands row only; the future truncation-proof totals.empty interface is not invented or adopted in this branch.
+
+收尾复核：客户端最多展示一页未归位样例，附继续引用；样例数不能与 N 比到相等，批量审阅交集成者导出。分面被截断时把 notes 及根引用交集成者定位原因，同一根不自动重试；修复实际预算或排除问题、取得完整视图后才重新启动。
+
+skipped 非零不会仅因分面线索阻止运行；它必须与影响视图所选同根的计数一致。披露写“至少 N 个用例没有解析出命令（未归位）”，另有 K 份来源未读、其中用例不知道。既有未读来源的未知结论及补取动作保留；计数不一致时重新导出同一根的两份输入。零或正数都不产生支持或反驳主张。
