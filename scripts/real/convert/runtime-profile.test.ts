@@ -79,3 +79,9 @@ test('zero parameter methods wait for an explicit allowed or unopened operator d
   assert.doesNotThrow(() => checkCoverage({ ...original.profile, unopened: [...original.profile.unopened, decision] }, parsed.contract));
   assert.throws(() => checkCoverage({ ...original.profile, unopened: [...original.profile.unopened, { ...decision, next: '' }] }, parsed.contract));
 });
+
+
+test('profile parser refusals disclose safe field pointers and corrective actions', () => {
+  const { profile, manifest, contract } = setup(); const bad = { ...profile, workbook: { ...profile.workbook, header: ['synthetic-private-value'] } };
+  assert.throws(() => checkProfile(bad, manifest, contract), error => error instanceof Error && /\/workbook\/header/.test(error.message) && /--check/.test(error.message) && !error.message.includes('synthetic-private-value'));
+});

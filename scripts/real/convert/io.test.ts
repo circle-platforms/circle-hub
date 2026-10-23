@@ -72,3 +72,17 @@ test('original mind map CLI reports normalization hashes and retains the exact u
     assert.deepEqual(JSON.parse(readFileSync(join(dir, 'out/case-source.normalized.json'), 'utf8')), { root: map });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('parser diagnostics and explicit bed mapping retain private provenance without exposing source values', async () => {
+  const { topology } = await import('./testing.ts'); const { definition } = await import('../../../hub/dispatch/testing/definition.ts'); const { readJson } = await import('./io.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'convert-diagnostics-'));
+  try {
+    const raw = topology(); raw.topology._bed.conf = 'Synthetic_Private_Bed.conf';
+    output(dir, 'answer.json', JSON.stringify({ jsonrpc: '2.0', id: 1, result: { structuredContent: { snapshot: raw } } })); output(dir, 'executor.json', JSON.stringify({ ...definition('http://127.0.0.1/mcp'), capture_pointers: ['/snapshot'] }));
+    const command = ['scripts/real/convert/bed-topology.ts', join(dir, 'answer.json'), '--definition', join(dir, 'executor.json'), '--out', join(dir, 'out')];
+    const rejected = spawnSync(process.execPath, command, { encoding: 'utf8' }); assert.equal(rejected.status, 1); assert.match(rejected.stderr, /\/beds\/0\/name.*--bed-name/); assert.ok(!rejected.stderr.includes('Synthetic_Private_Bed.conf'));
+    const accepted = spawnSync(process.execPath, [...command, '--bed-name', 'bed-mapped'], { encoding: 'utf8' }); assert.equal(accepted.status, 0, accepted.stderr); assert.ok(!accepted.stdout.includes('Synthetic_Private_Bed.conf'));
+    const receipt = JSON.parse(readFileSync(join(dir, 'out/topology-accounting.json'), 'utf8')); assert.deepEqual(receipt.name_mapping, { source: 'Synthetic_Private_Bed.conf', manifest: 'bed-mapped', explicit: true });
+    output(dir, 'bad.json', '{synthetic-private-value'); assert.throws(() => readJson(join(dir, 'bad.json'), '合成输入'), error => error instanceof Error && /合成输入.*JSON.*重跑/.test(error.message) && !error.message.includes('synthetic-private-value'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

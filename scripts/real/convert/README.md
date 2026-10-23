@@ -11,7 +11,7 @@ node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网
 真实动作由集成者运行。本分支只有下述合成全链路和离线管理脚本测试，没有真实联机或上机结果。
 
 ```
-node scripts/real/convert/bed-topology.ts <网关原始 RPC 回答> --definition <执行器定义> --out <暂存目录> [--read-index 0] [--capture-index 0]
+node scripts/real/convert/bed-topology.ts <网关原始 RPC 回答> --definition <执行器定义> --out <暂存目录> [--read-index 0] [--capture-index 0] [--bed-name <明确台架标识>]
 ```
 
 从执行器定义读取 capture_pointers；read-index 0 是主只读核对，1 起对应 precheck_reads，capture-index 选择其中的指针（默认均为 0）。不猜字段名。原始 JSON-RPC/流式回答先用派发公开的同一解码器读取，再按该指针取值、调用核心 RFC 8785 摘要函数；标准输出同时打印指针、原件字节摘要和规范内容摘要。请求号变化只影响原件摘要，内容没有变化时规范摘要不变。指针下必须包含拓扑、服务和观察，派发核对同一指针才覆盖这三者。管理员把打印出的内容摘要登记进对应只读核对条件；已有常量摘要不符则拒绝转换，要求重新采证并更新定义。
@@ -84,3 +84,5 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 用例选择与计划运行同一抽取规则：任何抽取用例含不精确数值编号即拒绝；每个入选编号必须在全部抽取用例中只出现一次，不只比五个 YES。传 --profile 时按同份配置的 workbook.autoid_pattern 核对入选编号；未提供配置时不声称核过网关的编号位数，集成者在计划前应带同份配置重跑。
 
 原脑图先走同一份 normalize-mindmap.ts 的公开规整：仅去掉头部两个 U+FFFF、转换单元素数组包装。选用例的就是 case-source.normalized.json 那份字节，可交给 Circle 上传；另存变换说明及规整前后摘要。屏幕只加变换条数和规整摘要，不显示原件内容；无法规整时明确要求补取原件并重跑该工具。
+
+解析器拒绝时逐项打印安全字段指针、固定问题类别和下一步，原始问题消息里的源值不进屏幕。源台架标识仅转小写仍不合清单格式时，管理员可显式给 --bed-name（1–64 位小写字母、数字、连字符）；不自动删扩展名或改符号。topology-accounting.json 私有保存原标识、清单标识及是否显式映射，供管理员核对执行器和清单；原观察的两个摘要不受映射影响。输入文件不可读、JSON 损坏和暂存输出已存在也分别指明补件、重导出或更换新目录的动作。

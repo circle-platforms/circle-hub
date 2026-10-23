@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { convertTopology } from './bed-topology.ts';
+import { convertTopology, topologyReport } from './bed-topology.ts';
 import { topology } from './testing.ts';
 
 test('topology preserves interface addresses and services and derives only observed singleton reservations', () => {
@@ -30,4 +30,16 @@ test('service protocol translation accepts only the declared source table', () =
   raw.services[0].proto = 'https'; assert.equal(convertTopology(raw).beds[0].services[0].proto, 'tcp');
   raw.services[0].proto = 'dns'; assert.equal(convertTopology(raw).beds[0].services[0].proto, 'udp');
   raw.services[0].proto = 'synthetic-unknown'; assert.throws(() => convertTopology(raw), /services\/0\/proto/);
+});
+
+test('invalid source bed identifiers disclose the exact safe pointer and accept explicit mapping only', () => {
+  const raw = topology(); raw.topology._bed.conf = 'Synthetic_Bed.conf';
+  assert.throws(() => convertTopology(raw), error => error instanceof Error && /\/beds\/0\/name.*标识.*--bed-name/.test(error.message) && !error.message.includes('Synthetic_Bed.conf'));
+  const converted = topologyReport(raw, 'bed-mapped'); assert.equal(converted.manifest.beds[0].name, 'bed-mapped');
+  assert.deepEqual(converted.name_mapping, { source: 'Synthetic_Bed.conf', manifest: 'bed-mapped', explicit: true });
+  assert.throws(() => convertTopology(raw, 'INVALID_Name'), /\/beds\/0\/name/);
+});
+test('manifest refusals keep each parser pointer without printing source values', () => {
+  const raw = topology(); raw.topology.devices[1].name = 'dut0';
+  assert.throws(() => convertTopology(raw), error => error instanceof Error && /test-bed.*\/beds\/0\/devices\/1\/name/.test(error.message) && /case-compile/.test(error.message) && !error.message.includes('dut0'));
 });

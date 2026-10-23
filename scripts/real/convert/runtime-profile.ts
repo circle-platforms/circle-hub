@@ -2,7 +2,7 @@ import FORMAT from '../../../packs/workflow/case-compile/tables/runtime-profile-
 import { parseManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
 import { parseProfile } from '../../../packs/workflow/case-compile/functions/profile.ts';
 import { parseRuntimeContract, type RuntimeContract } from '../../../packs/workflow/case-compile/functions/runtime-contract.ts';
-import { argumentsOf, jsonBytes, main, output, readJson, record, requireFact, summary } from './io.ts';
+import { argumentsOf, jsonBytes, main, output, parserDiagnostics, readJson, record, requireFact, summary } from './io.ts';
 const pair = (v: { object: unknown; method: unknown }) => JSON.stringify([v.object, v.method]);
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 interface Unopened { object: string; method: string; parameters: Array<{ name: string; missing: string; reason: string; next: string }> }
@@ -16,7 +16,9 @@ function unsupplied(method: Method, value: Record<string, unknown>): Set<string>
 const blockedCredentials = (method: Method) => method.parameters.some(p => p.required && p.redacted) || method.parameters.length > 0 && method.parameters.every(p => p.redacted);
 export function draftProfile(environment: unknown, manifest: unknown, rawContract: unknown, decisions?: unknown) {
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
-  requireFact(contract.ok && beds.ok && beds.beds.length === 1, '合约或单台架清单无效；先核验原合约并转换完整清单');
+  requireFact(contract.ok, contract.ok ? '' : parserDiagnostics('runtime-contract', contract.problems, '集成者重新只读取得网关钉住的合约原件后重跑'));
+  requireFact(beds.ok, beds.ok ? '' : parserDiagnostics('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换完整清单后重跑'));
+  requireFact(beds.beds.length === 1, '清单 /beds 缺少唯一台架；集成者明确本轮单台架输入后重跑');
   requireFact(record(environment) && environment.ready === true && Number.isSafeInteger(environment.device_count) && (environment.device_count as number) > 0, '缺少成功预检及 device_count；集成者重新只读取得环境预检回答');
   const wanted = contract.contract;
   requireFact(decisions === undefined || record(decisions) && Array.isArray(decisions.allowed) && Array.isArray(decisions.unopened), '角色决定文件须有 allowed 和 unopened 列表；按 README 填写');
@@ -82,11 +84,12 @@ export function checkCoverage(profile: unknown, contract: RuntimeContract): void
 }
 export function checkProfile(profile: unknown, manifest: unknown, rawContract: unknown) {
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
-  requireFact(contract.ok && beds.ok, '合约或清单无效；先重新核验接入文档');
+  requireFact(contract.ok, contract.ok ? '' : parserDiagnostics('runtime-contract', contract.problems, '集成者重新只读取得网关钉住的合约原件后重跑 --check'));
+  requireFact(beds.ok, beds.ok ? '' : parserDiagnostics('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换清单后重跑 --check'));
   checkCoverage(profile, contract.contract);
   requireFact(record(profile) && Array.isArray(profile.pending) && profile.pending.length === 0, '仍有待填事实；集成者填写并逐项清除 pending 后重跑 --check');
   const parsed = parseProfile(profile, contract.contract, beds.beds);
-  requireFact(parsed.ok, '配置未通过包解析器；核对角色、身份、座位、主机、等待上限、拒绝表和工作簿字段后重跑 --check');
+  requireFact(parsed.ok, parsed.ok ? '' : parserDiagnostics('runtime-profile', parsed.problems, '集成者从只读预检和合约补齐该字段，使用同一清单重跑 --check'));
   requireFact(record(profile) && profile.synthetic === false, '部署配置的 synthetic 必须是 false；集成者核对真实接入事实后设为 false 并重跑 --check');
   for (const [role, key, classes] of [['device_cli', 'device', '重启、清配置、升级、HA'], ['host_shell', 'host', '重启、关机、格式化']] as const) {
     requireFact(!parsed.profile.allowed.some(call => Object.values(call.parameters).includes(role)) || parsed.profile.denied[key].length > 0, `denied/${key} 缺少${classes}类命令的部署文字；请集成者从运行器接入规则补取并填写拒绝表后重跑 --check`);
@@ -98,8 +101,8 @@ export function run(args: string[]): void {
   const checking = args.includes('--check'); const normalized = args.filter((arg) => arg !== '--check');
   const { files, options } = argumentsOf(normalized, 3, ['--out', '--decisions']);
   requireFact(!checking || !options['--decisions'], '--check 不接收角色决定草稿；直接核验填写后的配置');
-  const source = readJson(files[0]!); const manifest = readJson(files[1]!); const contract = readJson(files[2]!);
-  const profile = checking ? (checkProfile(source, manifest, contract), source) : draftProfile(source, manifest, contract, options['--decisions'] ? readJson(options['--decisions']) : undefined);
+  const source = readJson(files[0]!, checking ? '运行环境配置' : '环境预检'); const manifest = readJson(files[1]!, '台架清单'); const contract = readJson(files[2]!, '运行器合约');
+  const profile = checking ? (checkProfile(source, manifest, contract), source) : draftProfile(source, manifest, contract, options['--decisions'] ? readJson(options['--decisions'], '角色决定') : undefined);
   const bytes = jsonBytes(profile); const filename = checking ? 'runtime-profile.json' : 'runtime-profile.draft.json';
   output(options['--out'] ?? '', filename, bytes);
   summary(record(profile) && Array.isArray(profile.allowed) ? profile.allowed.length : 0, bytes, checking ? { name: 'runtime-profile', file: filename } : undefined);
