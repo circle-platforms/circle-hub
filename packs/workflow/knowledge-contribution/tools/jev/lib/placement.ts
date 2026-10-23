@@ -24,4 +24,3 @@ export function optionNames(children: readonly PlacementChild[]): Map<string, st
   });
   return out;
 }
-

@@ -183,8 +183,8 @@
     },
     {
       "path": "tools/jev/lib/placement.ts",
-      "sha256": "f484b17d7b8ba03619eab8435af84fa812fc311ddfd131e86efc043a68601d8a",
-      "size": 1445
+      "sha256": "cc40e4b38b7c2f476d1c128465c0be54cc25bffacc34d5775d16d59a7a5bfc79",
+      "size": 1444
     },
     {
       "path": "tools/jev/lib/record.ts",
