@@ -7,7 +7,7 @@
 // under a prefix; this module names no device, bench or product.
 import { recordDigest } from '../records/digest.ts';
 import { isId, newId } from '../records/ids.ts';
-import type { ActionBody } from '../records/api.ts';
+import { canonicalize, type ActionBody } from '../records/api.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
@@ -336,10 +336,10 @@ export class LeaseService {
       detail: { ...(detail as unknown as Record<string, unknown>), ...extra },
     };
     const digest = recordDigest({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body });
-    const bodyText = JSON.stringify(body);
+    const bodyText = canonicalize(body);
     await this.#db.query(
       `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size) VALUES ($1, $2, 'action', $3, 'observed', $4, $5, $6)`,
-      [newId('rcd'), digest, RECORD_SCHEMAS.action, startedAt, bodyText, bodyText.length],
+      [newId('rcd'), digest, RECORD_SCHEMAS.action, startedAt, bodyText, Buffer.byteLength(bodyText, 'utf8')],
       tx,
     );
   }

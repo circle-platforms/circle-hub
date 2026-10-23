@@ -31,3 +31,5 @@ A projection's `lease_requests` carry an operation: `acquire` (the default, the 
 ## Trusted holder snapshots
 
 `LeaseService.holderSnapshot(keys)` returns current rows with key, lease identity, fencing token, holder user/run, release state and expiry. It is read-only, deduplicates and sorts keys, and omits absent keys. Tokens are for trusted enforcement code only, never client or model output. Existing acquire, extend, release and force-release semantics are unchanged; callers still check expiry against their trusted clock and re-read at the effect boundary. A returned array is a snapshot, not a held database lock. Tests: `node --test --test-concurrency=1 hub/leases/*.test.ts`.
+
+Lease actions appended by this version store the RFC 8785 canonical body text used for their digest, with a UTF-8 byte size. A regression reads acquire/release actions back through the ordinary integrity-checked records API. Historical records and applied migrations are not rewritten, and integrity verification is not relaxed; the integrator audits any historical noncanonical lease rows separately.

@@ -24,3 +24,15 @@ test('holder snapshots expose current fences read-only, including release and ta
   assert.notEqual((await leases.holderSnapshot(['synthetic/a']))[0].lease, before[0].lease);
   assert.equal(before[0].released, false);
 });
+
+test('new lease actions round-trip through records integrity checks', async t => {
+  const kit = await openTestRecords(); t.after(() => kit.close());
+  const db = new Database(createPool(kit.database, 2)); t.after(() => db.end());
+  const leases = new LeaseService(db, { now: async () => new Date('2026-10-23T00:00:00.000Z') });
+  const holder = { user: newId('usr'), run: newId('run') };
+  assert.ok((await leases.acquire({ keys: ['synthetic/audit'], holder, prefix: 'synthetic/', ttlSeconds: 300, maxTtlSeconds: 600 })).ok);
+  assert.ok((await leases.release({ keys: ['synthetic/audit'], holder })).ok);
+  const records = await kit.store.list({ kind: 'action', limit: 500 });
+  assert.equal(records.items.length, 2);
+  for (const record of records.items) assert.deepEqual(await kit.store.get(record.digest), record);
+});
