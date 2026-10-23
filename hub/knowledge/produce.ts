@@ -1365,7 +1365,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     { key: INDEX.produce, value: buildKey(input.product, input.build.name) },
     { key: INDEX.produceProduct, value: input.product },
     ...(input.root===null?[{key:INDEX.buildFailure,value:input.product},{key:INDEX.buildFailureName,value:buildKey(input.product,input.build.name)},{key:INDEX.buildFailureRoot,value:`${input.product}/none`}]:[]),
-    ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root }]),
+    ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root },...(input.composition?[{key:'knowledge.produce.composition',value:input.composition}]:[])]),
     ...(input.sync === null ? [] : [{ key: INDEX.sync, value: input.sync }]),
   ];
   const record = await context.store.putAction(body, index, tx ?? undefined);

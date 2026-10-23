@@ -55,8 +55,25 @@ export const Placement = z.strictObject({
 });
 export type Placement = z.infer<typeof Placement>;
 
+/** Complete document lists live in immutable, independently readable chunks. */
+export const ScopeRoot=z.strictObject({root:Sha256,composition:Sha256,build:z.string()});
+export const ScopedDocument=z.strictObject({external:z.string().nullable(),sha256:Sha256.optional(),at:z.array(Sha256).optional(),uses:z.array(z.strictObject({producer:z.string(),slot:z.string()})).optional(),producer:z.string().optional(),slot:z.string().optional(),reason:ReasonSchema.optional(),explanation:z.string().optional(),observation:z.string().optional(),next_action:z.string().optional()});
+export type ScopedDocument=z.infer<typeof ScopedDocument>;
+export const ScopeCollection=z.strictObject({total:z.number().int().nonnegative().describe('source observations; versions of one external id are distinguished by composition and byte digest'),parts:z.array(z.strictObject({reference:z.string(),sha256:Sha256,rows:z.number().int().positive()}))});
+export const KnowledgeViewScope=z.strictObject({
+  note:z.string().optional().describe('Explicit extent of the document observations, not a claim about every enterprise document'),
+  roots:z.array(ScopeRoot),additional_roots:z.array(ScopeRoot),additional_roots_declared:z.boolean(),
+  complete:z.boolean().describe('document membership and omissions are fully enumerated; omitted inputs are outside the computed data'),
+  not_in_roots:ScopeCollection.optional().describe('Per-composition source exclusions, even when another declared root covers the same document'),
+  listed_documents:ScopeCollection,elsewhere_documents:ScopeCollection,omitted_documents:ScopeCollection.nullable(),pending_documents:ScopeCollection,missing_optional_sources:ScopeCollection,
+  unplaced_entries:z.number().int().nonnegative(),unplaced_cases:z.strictObject({from:z.number().int().nonnegative(),to:z.number().int().nonnegative()}).optional(),
+  request:z.strictObject({reference:z.string(),audience_user:z.string(),deadline:z.string(),action:z.string()}).optional(),
+});
+export type KnowledgeViewScope=z.infer<typeof KnowledgeViewScope>;
+
 export const ImpactView = z.strictObject({
   schema: z.literal('impact-view@1'),
+  scope:KnowledgeViewScope.optional(),
   next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   from: z.strictObject({ build: z.string().min(1), root: Sha256 }),
@@ -97,6 +114,7 @@ const FacetValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
 export const FacetView = z.strictObject({
   schema: z.literal('facet-view@1'),
+  scope:KnowledgeViewScope.optional(),
   next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
@@ -135,6 +153,7 @@ export const MAX_INDEX_PER_KEY = 2000;
 
 export const IndexView = z.strictObject({
   schema: z.literal('index-view@1'),
+  scope:KnowledgeViewScope.optional(),
   next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),

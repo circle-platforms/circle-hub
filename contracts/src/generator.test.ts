@@ -146,11 +146,13 @@ describe('on a temporary copy', () => {
     const link = `${root}-link`;
     symlinkSync(root, link, 'dir');
     try {
+      const output = join(root, 'linked-generated.json');
       const code = `import { generate } from ${JSON.stringify(join(repo, 'tools', 'gen-contracts.ts'))};
-        process.stdout.write(JSON.stringify(await generate(process.argv[1])));`;
-      const result = evaluate(code, [link]);
+        import {writeFileSync} from 'node:fs';
+        writeFileSync(process.argv[2],JSON.stringify(await generate(process.argv[1])));`;
+      const result = evaluate(code, [link,output]);
       assert.equal(result.status, 0, result.stderr);
-      assert.deepEqual(JSON.parse(result.stdout), expected);
+      assert.deepEqual(JSON.parse(readFileSync(output,'utf8')), expected);
     } finally {
       unlinkSync(link);
     }

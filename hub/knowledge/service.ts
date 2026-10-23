@@ -25,6 +25,8 @@ import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
 
 export interface KnowledgeOptions {
+  /** Additional declared scope (for example unversioned knowledge); roots and compositions must belong to this product. */
+  additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   parsers: ParserRegistry;
   packs: PacksPort;
@@ -103,6 +105,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const calibration = new CalibrationStore(store, options.records.principals);
   const context: KnowledgeContext = {
     records: options.records,
+    additionalScopeRoots:options.additionalScopeRoots,
     store,
     parsers: options.parsers,
     packs: options.packs,
