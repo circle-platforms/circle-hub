@@ -1,3 +1,4 @@
+import { GENERATED } from './pieces.ts';
 import { Refusal, need, record, secureUrl, type LocalStore } from './local.ts';
 export interface Piece { id: string; reference: string; kind: string; text: string; sha256: string; bytes: number }
 export class Hub {
@@ -12,7 +13,7 @@ export class Hub {
     need(reply.id === id && reply.jsonrpc === '2.0' && record(reply.result), 'Hub RPC 未成功；核对参数和权限后重跑'); return reply.result;
   }
   async call(name: string, args: unknown): Promise<any> {
-    if (!this.initialized) { await this.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'jev-skill', version: '1.1.0' } }); this.initialized = true; }
+    if (!this.initialized) { await this.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'jev-skill', version: GENERATED.version } }); this.initialized = true; }
     const result = await this.rpc('tools/call', { name, arguments: args }); this.lastText=(result.content??[]).filter((v:any)=>v.type==='text'&&typeof v.text==='string').map((v:any)=>v.text); const value = result.structuredContent;
     need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); if(value.call_result==='error')throw new Refusal(`${name}：${JSON.stringify(value.errors)}`); return value;
   }

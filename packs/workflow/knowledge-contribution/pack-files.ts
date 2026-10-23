@@ -23,7 +23,7 @@ export function slots() {
     run: {},
   };
 }
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 export function generated() {
   const axis = (name: string, values: readonly string[]) => values.map(code => ({code,label:labelOf(name as 'entry_kind',code as never)}));
   return {id:'knowledge-contribution',version:VERSION, model_readable:READ_TIER.find(code=>code==='model_readable'), axes: {entry_kind:axis('entry_kind',ENTRY_KIND),document_output_kind:axis('document_output_kind',DOCUMENT_OUTPUT_KIND),relation_kind:axis('relation_kind',RELATION_KIND),read_tier:axis('read_tier',READ_TIER)}};

@@ -11,6 +11,7 @@ import { productSite, twoNameProduct } from './support/env.ts';
 import { fakeJev, MODEL, JEV_KEY } from '../../packs/workflow/knowledge-contribution/testing/servers.ts';
 import { inputDigest } from '../../hub/jev/api.ts';
 import { sha256Hex } from '../../hub/records/api.ts';
+import { PACK_REF } from '../../packs/workflow/knowledge-contribution/tools/jev/lib/pieces.ts';
 import { Hub as SkillHub } from '../../packs/workflow/knowledge-contribution/tools/jev/lib/hub.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 
@@ -35,7 +36,7 @@ test('scenario 28: Circle skill calibrates places and submits proposals while Hu
  const run=async(action:string,args:string[]=[])=>new Promise<{code:number|null;out:string;err:string}>((done,reject)=>{const judging=action==='calibrate'||action==='place';const child=spawn(process.execPath,[join(dir,'skill/jev.ts'),action,'--hub',bed.hub.mcpUrl,...(judging?['--model',MODEL,'--base-url',service.url]:[]),'--out','result',...args],{cwd:dir,env:{PATH:process.env.PATH}});let out='',err='';child.stdout.on('data',v=>out+=v);child.stderr.on('data',v=>err+=v);child.on('error',reject);child.on('exit',code=>done({code,out,err}));child.stdin.end((judging?JEV_KEY+'\n':'')+bed.reviewer.token+'\n');});
  const product=bed.product.names[0]!;
  const missingBuild=await run('lock',['--product',product,'--build','synthetic-missing-build']);assert.equal(missingBuild.code,1);assert.match(missingBuild.err,/REFERENCE_UNRESOLVED/);assert.match(missingBuild.err,/options/);assert.match(missingBuild.err,/fix/);
- const unassigned=await bed.user('合成未分配用户',[]);const unassignedHub=new SkillHub(bed.hub.mcpUrl,unassigned.token,()=>{});await assert.rejects(()=>unassignedHub.call('start_run',{pack:'knowledge-contribution@1.1.0',product,build:site.RELEASED,inputs:{}}),/SOURCE_UNAVAILABLE/);
+ const unassigned=await bed.user('合成未分配用户',[]);const unassignedHub=new SkillHub(bed.hub.mcpUrl,unassigned.token,()=>{});await assert.rejects(()=>unassignedHub.call('start_run',{pack:PACK_REF,product,build:site.RELEASED,inputs:{}}),/SOURCE_UNAVAILABLE/);
  const realHub=new SkillHub(bed.hub.mcpUrl,bed.reviewer.token,()=>{});await assert.rejects(()=>realHub.nodes('f'.repeat(64),['/']),/SOURCE_UNAVAILABLE/);
  const lock=await run('lock',['--product',product,'--build',site.RELEASED]);assert.equal(lock.code,0,lock.err);const locked=JSON.parse(await readFile(join(dir,'result/lock.json'),'utf8'));
  const client=await bed.connect(bed.reviewer);const response=await client.call('get_nodes',{root:locked.root,paths:[path],depth:0});const nodes=response.out.nodes as any[];assert.ok(nodes?.[0]);const entries=nodes[0].entries as any[];assert.ok(entries.length>=90,'synthetic paragraphs produced enough distinct code-placed entries');
