@@ -12,6 +12,8 @@ export interface ScopeCaseGold {
 }
 
 export interface ScopeGold {
+  /** Optional independently measured count of cases without parsed commands. */
+  unplaced?: number;
   product: string;
   earlier: string;
   later: string;
@@ -36,7 +38,7 @@ export default function scenario(gold: ScopeGold): Scenario {
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，给出回归范围。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.later}?kind=case&by=commands` } } } }]
         : [{ text: '对比完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
@@ -66,7 +68,14 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
         ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
       }));
-      return [runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      return [...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
+}
+
+/** Only the measured numbers enter this check; no case identifiers or paths. */
+function unplacedChecks(area: string, expected: number | undefined, text: string): Check[] {
+  if (expected === undefined) return [];
+  const actual = [...new Set([...text.matchAll(/(\d+) 个用例没有解析出命令/g)].map((m) => Number(m[1])))];
+  return [{ area, name: '未归位用例数', expected: String(expected), actual: actual.length ? actual.join('、') : '未给出', ok: Number.isSafeInteger(expected) && expected >= 0 && actual.length === 1 && actual[0] === expected }];
 }

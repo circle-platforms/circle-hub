@@ -12,6 +12,8 @@ export interface SweepCaseGold {
 }
 
 export interface SweepGold {
+  /** Optional independently measured count of cases without parsed commands. */
+  unplaced?: number;
   product: string;
   earlier: string;
   later: string;
@@ -28,11 +30,11 @@ export default function scenario(gold: SweepGold): Scenario {
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，找出需要维护的用例。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.earlier}?kind=case&by=commands` } } } }]
         : [{ text: '巡检完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
-      const checks: Check[] = [runStarted(area, turns)];
+      const checks: Check[] = [...unplacedChecks(area, gold.unplaced, text), runStarted(area, turns)];
       for (const c of gold.cases) {
         const at = text.indexOf(c.id);
         const near = at >= 0 ? text.slice(Math.max(0, at - 400), at + 400) : '';
@@ -61,4 +63,11 @@ export default function scenario(gold: SweepGold): Scenario {
       return checks;
     },
   };
+}
+
+/** Only the measured numbers enter this check; no case identifiers or paths. */
+function unplacedChecks(area: string, expected: number | undefined, text: string): Check[] {
+  if (expected === undefined) return [];
+  const actual = [...new Set([...text.matchAll(/(\d+) 个用例没有解析出命令/g)].map((m) => Number(m[1])))];
+  return [{ area, name: '未归位用例数', expected: String(expected), actual: actual.length ? actual.join('、') : '未给出', ok: Number.isSafeInteger(expected) && expected >= 0 && actual.length === 1 && actual[0] === expected }];
 }

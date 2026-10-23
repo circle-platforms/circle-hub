@@ -41,7 +41,7 @@ describe('regression-scope scenario', () => {
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' } } } },
+      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' }, facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=commands' } } } },
     ]);
     assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
   });
@@ -71,7 +71,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' } } } },
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' }, facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_56?kind=case&by=commands' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {
@@ -237,3 +237,15 @@ describe('unversioned pack names in start_run inputs', () => {
     }
   });
 });
+
+for (const [name, scenario] of [
+  ['regression-scope', regressionScope({ product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], unplaced: 4 })],
+  ['maintenance-sweep', maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [], unplaced: 4 })],
+] as const) {
+  test(`${name} checks only the expected and actual unplaced numbers`, () => {
+    const check = (n: number) => scenario.check(turnsOf(`运行 run_synthetic 完成。有 ${n} 个用例没有解析出命令（未归位），没算进范围。`)).find((c) => c.name === '未归位用例数')!;
+    assert.equal(check(4).ok, true); assert.equal(check(7).ok, false);
+    assert.equal(check(4).expected, '4'); assert.equal(check(4).actual, '4');
+    assert.equal(scenario.check(turnsOf('运行 run_synthetic 完成。')).find((c) => c.name === '未归位用例数')?.ok, false);
+  });
+}
