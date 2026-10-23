@@ -13,7 +13,7 @@ const products = [
   { id: 410, name: 'Synthetic / Alternate' }, { id: '411', name: 'Empty' },
   { id: 412, name: 'Both / Shared' }, { id: 413, name: 'Shared / Both' },
 ];
-const builds = [{ id: 810, name: 'Synthetic_10_7_A', synthetic_links: [910001, '00910002'] }];
+const builds = [{ id: 810, name: 'Synthetic_10_7_A', synthetic_links: [910001, ' 00910002 ' ] }];
 const reply = (json: unknown) => ({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(json) });
 before(async () => {
   postgres = await startPostgres(); kit = await openSystemKit(postgres, ['plm']);

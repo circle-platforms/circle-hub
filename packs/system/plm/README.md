@@ -52,3 +52,5 @@ Batch story fields `status` and `stage` preserve JSON scalar values (including n
 The unreleased package stays at 1.2.0; story projection fixes only require re-signing this manifest.
 
 复核 3：构建 content 每条新增 fields，逐字保留原始记录的全部 JSON 标量字段（含数字 id、name、布尔、null）；数组和对象不混作标量。顶层 id/name/stories 维持已有接口，原始 name 不 trim、不另取字段兜底。原件不变，workflow 通过 name 与绑定视图和可信构建上下文核对同构建、同根，再在条目 data/陈述中指明选中记录。
+
+复核 8：构建需求数组每个值先由 idText 去首尾空白，再按正整数规则验证，并用同一份文字去前导零、去重、数值排序。不会把已通过验证的值再按未去空白的原串输出；空白、纯零和非整数仍不是有效需求编号。原始应答和原数组不变。
