@@ -165,7 +165,7 @@ export class DispatchService {
         if (!gate.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = attempt === 1 ? await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx) : { created: true };
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { intent_key: key, verification_result:currentProof.result, request_id: context.request_id, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'validate', 'completed', { intent_key: key, verification_result:currentProof.result, request_id: context.request_id, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, effect_class: 'job', retry_safety: d.retry_safety, signing: 'service_on_behalf', on_behalf_of: input.user,
           before_state_bound: false, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
@@ -422,7 +422,7 @@ export class DispatchService {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
       const captured = await this.journal.raw(binding, bytes, operation, complete);
       const source = captured.reference;
-      await this.journal.append(binding, `${operation}.response`, operation === 'submit' ? 'dispatch' : 'read', complete ? 'completed' : 'error', { http_status: status, complete, source_record: captured.record, ...metadata }, [source, captured.record]);
+      await this.journal.append(binding, `${operation}.response`, operation === 'submit' ? 'dispatch' : 'read', complete ? 'completed' : operation==='submit' ? 'unknown' : 'error', { http_status: status, complete, source_record: captured.record, ...metadata }, [source, captured.record]);
       return source;
     }, this.now);
   }
@@ -515,7 +515,7 @@ export class DispatchService {
     catch { await this.journal.append(binding, 'release', 'read', 'error', { next_action: '目标租约释放未核实；请管理员只读核对，不能重交' }); }
   }
   private async unknown(binding: JobBinding, reason: string, sources: string[] = [], observation: Record<string, unknown> = {}): Promise<void> {
-    await this.journal.append(binding, 'unknown', 'read_back', 'unknown', { ...observation, uncertain: true, outcome: 'unknown', missing_fact: reason,
+    await this.journal.append(binding, 'unknown', 'validate', 'unknown', { ...observation, uncertain: true, outcome: 'unknown', missing_fact: reason,
       request_kind: 'disposition', audience_role: 'admin', next_action: typeof observation.next_action==='string' ? observation.next_action : `管理员读取目标审计取得原作业身份后运行 circle-hub job dispose ${binding.job} --reconcile <远端作业编号>；不得重交` }, sources);
   }
   private async observe(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[], stopHeartbeat: () => Promise<void> = async () => {}): Promise<JobStatus> {

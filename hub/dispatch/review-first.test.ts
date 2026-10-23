@@ -55,3 +55,11 @@ test('R04 a local post-intent fence refusal proves no submission rather than inv
   assert.equal(result.outcome,'not_dispatched');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.ok((await c.service.journal.events(result.job)).some(e=>e.body.detail.submit_invoked===false && e.body.detail.done===true));
 });
+
+test('R05 action records separate an intent from a submission with no trustworthy reply',async t=>{
+  const c=await setup({mode:'disconnect'});t.after(()=>c.close());
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const events=await c.service.journal.events(state.job);
+  const intent=events.find(e=>e.body.detail.phase==='intent')!;assert.equal(intent.body.action,'validate');assert.equal(intent.body.acceptance,'accepted');
+  const reply=events.find(e=>e.body.detail.phase==='submit.response')!;assert.equal(reply.body.action,'dispatch');assert.equal(reply.body.result,'unknown');assert.equal(reply.body.error_code,null);
+  const unknown=events.find(e=>e.body.detail.phase==='unknown')!;assert.equal(unknown.body.action,'validate');
+});
