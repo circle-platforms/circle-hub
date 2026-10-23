@@ -9,7 +9,7 @@ import type { FragmentRef, ProducedEntry, Unplaced } from '../../../../../contra
 import { produceManualEntries } from '../manual.ts';
 import type { CommandCatalog } from '../cases-commands.ts';
 import { isRecord } from '../util.ts';
-import { citationFor, type Mapped } from './k1-model.ts';
+import { citesExample, citationFor, type Mapped } from './k1-model.ts';
 
 /** The parser of every fragment an adoc production cites: the chapter files as numbered lines. */
 export const ADOC_PARSER = 'text@1';
@@ -94,7 +94,11 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
       if (rewritten === null) return;
       fragments.push(rewritten);
     }
-    entries.push({ ...entry, fragments });
+    // An example is reference only and takes no part in judgment (task item 6). K1 places its text like any other block
+    // — under the command before it, with that command's words in `data` — so the mark rides on the entry: a reader, a
+    // drift count or a review can tell example content from what the manual states.
+    const reference = entry.fragments.length > 0 && entry.fragments.every((fragment) => citesExample(mapped.model, fragment.selector));
+    entries.push(reference ? { ...entry, fragments, data: { ...entry.data, reference_only: true } } : { ...entry, fragments });
   });
   const unplaced: Unplaced[] = [];
   placed.unplaced.forEach((span, index) => {

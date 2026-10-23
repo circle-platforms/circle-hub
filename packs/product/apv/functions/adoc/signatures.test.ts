@@ -342,3 +342,49 @@ test('a signature line keeps the characters of its command words: only paired ma
   assert.ok(words.includes('demo health_check add') && words.includes('demo health_check show'), JSON.stringify(words));
   assert.ok(!words.some((word) => word.includes('healthcheck') || word.includes('maxconn') || word.includes('aes128sha')), JSON.stringify(words));
 });
+
+test('example content is marked reference only, so a reader does not take it for a behaviour of the command before it', async () => {
+  const result = await entriesOf({
+    'book.adoc': [
+      '= Book',                          // 1
+      '',                                // 2
+      '== 命令',                          // 3
+      '',                                // 4
+      '*demo probe* _<target>_',         // 5
+      '',                                // 6
+      '探测目标。',                        // 7
+      '',                                // 8
+      '.示例',                            // 9
+      '====',                            // 10
+      '*demo probe* _192.0.2.1_',        // 11
+      '',                                // 12
+      '输出如下。',                        // 13
+      '====',                            // 14
+      '',                                // 15
+      '[role=example]',                   // 16
+      '----',                             // 17
+      'demo probe <target>',              // 18
+      '----',                             // 19
+      '',                                // 20
+      '后面的普通段落。',                   // 21
+      '',                                // 22
+    ].join('\n'),
+  });
+  const marked = result.entries.filter((entry) => entry.data.reference_only === true).map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]);
+  assert.deepEqual(
+    marked,
+    [
+      ['**demo probe** *192.0.2.1*', '/commands/demo/probe', 'l/11'],
+      ['输出如下。', '/commands/demo/probe', 'l/13'],
+      ['demo probe <target>', '/commands/demo/probe', 'l/18'],
+    ],
+    JSON.stringify(result.entries.map((entry) => [entry.statement, entry.data])),
+  );
+  // The real behaviour, the signature and the paragraph after the example carry no such mark.
+  for (const statement of ['探测目标。', 'demo probe <target>', '后面的普通段落。']) {
+    const entry = result.entries.find((one) => String(one.statement) === statement && one.data.reference_only === undefined);
+    assert.ok(entry !== undefined, `${statement} is not marked as an example`);
+  }
+  const signature = result.entries.find((entry) => entry.data.form === 'signature');
+  assert.ok(signature !== undefined && signature.data.reference_only === undefined, JSON.stringify(signature?.data));
+});

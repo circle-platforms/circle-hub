@@ -45,6 +45,12 @@ export function citationFor(model: AdocModel, selector: string, range?: [number,
   return null;
 }
 
+/** Whether a fragment of the mapped model cites example content (a block that is an example or sits inside one). */
+export function citesExample(model: AdocModel, selector: string): boolean {
+  const key = CITE_KEY.exec(selector);
+  return key !== null && model.blocks[Number(key[1])]?.example === true;
+}
+
 /** One row of a mapped table: the byte range K1 computes inside the block's text, and the row's own citation. */
 export interface RowCite {
   range: [number, number];
@@ -61,6 +67,8 @@ export interface RowCite {
 export interface AdocBlock extends MarkdownBlock {
   cite: Citation;
   rowCites?: RowCite[];
+  /** True for example content: reference only, so the producer marks the entries it warrants (task item 6). */
+  example: boolean;
 }
 
 /** A section of the mapped model: `cite` is the heading's own verified source line, null when it has none. */
@@ -530,6 +538,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       selector: citeKey(blocks.length),
       path: pathOf(section),
       cite,
+      example: block.example,
       ...(rowCites === undefined ? {} : { rowCites }),
     });
   };

@@ -557,7 +557,11 @@ accepted.
   K1 such a block as reference content: never as a paragraph, the one kind K1 reads anchors from, and never as a table,
   which K1 would split into row signatures. A listing stays code, which K1 never anchors either, so a `[role=signature]`
   block inside an example stays the reference text it is and the paragraph after the example follows no command from
-  inside it.
+  inside it. K1 still places that text where it places any other block — under the command before it, with that command's
+  words in `data` — so `produceAdocEntries` marks every entry whose fragments all cite example content with
+  `data.reference_only: true`: an example takes no part in judgment, and a reader, a drift count or a review can tell
+  example content from what the manual states. The command literals K1 records on such an entry ride along with the mark
+  (K1's own code is unchanged); a read-time view that counts drift candidates skips entries marked this way.
 - A version line with an adoc source stops the transitional `catalog.json` reading (task item 6), and the adoc producer is
   where that is known: `catalogOnAdocLine(slot)` in `entries.ts` reads the slot's parser and schema, and `catalogRefusal()`
   is the typed failure (`apv.adoc.catalog_reading_off`) the wired producer returns for it, naming the family, how the
