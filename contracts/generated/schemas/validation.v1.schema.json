@@ -476,7 +476,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -642,7 +644,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -1032,7 +1035,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -1198,7 +1203,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -1601,7 +1607,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -1767,7 +1775,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -2170,7 +2179,9 @@
                                     "conditional_on_judgment",
                                     "independence_declared",
                                     "not_realtime",
-                                    "partial"
+                                    "partial",
+                                    "intermittent",
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -2336,7 +2347,8 @@
                                   "credential_unreadable",
                                   "premise_failed",
                                   "expired",
-                                  "contradicted"
+                                  "contradicted",
+                                  "not_evaluated"
                                 ]
                               },
                               "bound": {
@@ -2541,7 +2553,9 @@
                     "conditional_on_judgment",
                     "independence_declared",
                     "not_realtime",
-                    "partial"
+                    "partial",
+                    "intermittent",
+                    "decision_shape_unruled"
                   ]
                 }
               },
@@ -2707,7 +2721,8 @@
                   "credential_unreadable",
                   "premise_failed",
                   "expired",
-                  "contradicted"
+                  "contradicted",
+                  "not_evaluated"
                 ]
               },
               "bound": {

@@ -14,6 +14,7 @@ test('fragment grades and provenance implement integrator decision 36', () => {
     { code: 'too_large', label: '超过大小上限' },
     { code: 'retain_only', label: '只保留、不可读' },
     { code: 'unavailable', label: '暂时读不到' },
+    { code: 'integrity_unproven', label: '完整性未证明' },
   ]);
   const model = readFileSync(new URL('../contracts/model.json', import.meta.url), 'utf8');
   assert.match(model, /fragment_read[^\n]*决定 36/);
