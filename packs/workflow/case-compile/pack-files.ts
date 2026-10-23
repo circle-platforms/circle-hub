@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '2.3.3',
+  version: '2.3.4',
   kind: 'workflow',
   title: '用例编译',
   description: '按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通',
@@ -22,7 +22,7 @@ export const IDENTITY = {
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'tables', 'samples', 'examples', 'scripts'];
+const FOLDERS = ['functions', 'tables', 'samples', 'examples', 'tools'];
 /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 
@@ -43,16 +43,14 @@ async function walk(relative: string): Promise<string[]> {
 export async function packFiles(): Promise<string[]> {
   const paths = [...TOP];
   for (const folder of FOLDERS) paths.push(...(await walk(folder)));
-  return paths.map((path) => path.startsWith('scripts/') ? 'tools/' + path.slice('scripts/'.length) : path).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return paths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-// The existing pack contract permits tools/, not scripts/. Publication preserves source bytes under that namespace.
-const sourcePath = (path: string): string => path.startsWith('tools/') ? 'scripts/' + path.slice('tools/'.length) : path;
 
 export async function computeManifest(): Promise<Manifest> {
   const files: ManifestEntry[] = [];
   for (const path of await packFiles()) {
-    const bytes = await readFile(join(PACK_DIR, sourcePath(path)));
+    const bytes = await readFile(join(PACK_DIR, path));
     files.push({ path, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.byteLength });
   }
   return { ...IDENTITY, files };
@@ -66,7 +64,7 @@ export async function stage(target: string): Promise<string> {
   for (const path of await packFiles()) {
     const to = join(target, path);
     await mkdir(dirname(to), { recursive: true });
-    await copyFile(join(PACK_DIR, sourcePath(path)), to);
+    await copyFile(join(PACK_DIR, path), to);
   }
   await writeFile(join(target, 'pack.json'), manifestText(manifest));
   return target;
