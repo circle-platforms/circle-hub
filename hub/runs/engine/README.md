@@ -485,3 +485,6 @@ and an administrator acceptance/re-evaluation request. Other withheld bytes rema
 Exhausted exact reads write validate actions as error with the registered internal reason and null acceptance.
 The action retains the Hub-side message and administrator recovery/resubmit instruction; getRun shows it as not validated.
 The existing protocol code remains until the model owner supplies a dedicated Hub error code; it no longer implies reader permission failure.
+
+Exact-read retry also covers command quotation candidates, bound record reads, predecessor result scope and locked
+catalog construction. Exhausted function-side failures use the same HubReadFailure receipt and do not charge a repair round.

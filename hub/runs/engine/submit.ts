@@ -393,8 +393,8 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
 async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const structure = slotProblems(workflow, run.items, submission);
-  const scope = await buildScope(ctx, run, workflow, user, 'function');
   const exactAttempts: Array<Record<string, unknown>> = [];
+  const scope = await buildScope(ctx, run, workflow, user, 'function', exactAttempts);
   const resolver = createResolver(ctx, scope, 'function', exactAttempts);
   const carried = await carriedItems(ctx, scope, resolver, workflow, run, submission);
   for (const p of carried.problems) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', p.message, { path: p.path, item: p.item }));

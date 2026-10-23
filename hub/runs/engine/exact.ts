@@ -57,8 +57,18 @@ export function recordBytes(record: { kind: string; schema: string; provenance: 
 }
 
 /** The scope of a run for one reader. `consumer` decides what text a reader is given (functions for the boundary, model for previews). */
-export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: 'function' | 'model'): Promise<RunScope> {
+export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: 'function' | 'model', attempts: Array<Record<string, unknown>> = []): Promise<RunScope> {
   const { store, artifacts } = ctx.deps.records;
+  const readScope = async <T>(reference: string, read: () => Promise<T>): Promise<T> => {
+    try {
+      return await retryRead(read, () => null, attempt => {
+        if (attempt.retry || attempt.attempt > 1) attempts.push({operation:'exact_source', reference, ...attempt});
+      });
+    } catch (error) {
+      if (consumer === 'function') throw new HubReadFailure(reference, 'check_error', attempts);
+      throw error;
+    }
+  };
   const sources = new Map<string, SourceRole>();
   const records = new Map<string, SourceRole | null>();
   const subject = { shas: new Set<string>(), records: new Set<string>() };
@@ -76,7 +86,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
     } else if (ref.scheme === 'rec') {
       records.set(ref.record, binding.role);
       if (judged) subject.records.add(ref.record);
-      const record = await store.get(ref.record);
+      const record = await readScope(binding.reference, () => store.get(ref.record));
       const bytes = record === null ? null : recordBytes(record, ref.pointer);
       if (bytes !== null) {
         const sha = sha256Hex(bytes);
@@ -94,12 +104,12 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       // the run record was checked when it was stored
     }
   }
-  if (run.predecessor !== undefined) for (const result of await resultsOf(store, run.predecessor)) if (!records.has(result.digest)) records.set(result.digest, null);
+  if (run.predecessor !== undefined) for (const result of await readScope(`run:${run.predecessor}`, () => resultsOf(store, run.predecessor!))) if (!records.has(result.digest)) records.set(result.digest, null);
   const catalogs: CatalogView[] = [];
   if (run.root !== undefined) {
     const ids = new Set<string>([...workflow.workflow.product.catalogs, ...workflow.checks.flatMap((c) => (c.catalog ? [c.catalog] : []))]);
     for (const id of ids) {
-      const view = await ctx.deps.knowledge.catalog(run.root, id);
+      const view = await readScope(`tree:${run.root}/${id}`, () => ctx.deps.knowledge.catalog(run.root!, id));
       if (view !== null) catalogs.push(view);
     }
   }
@@ -116,7 +126,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await artifacts.source(reader, sha, { consumer });
+          const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const found = recognize(ctx.parsers, source.bytes, source.mediaType);
           if (found === null) continue;
