@@ -15,3 +15,14 @@ node scripts/real/convert/bed-topology.ts <网关拓扑回答副本> --out <暂�
 ```
 
 输入是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自邻居观察，逐项变成单地址范围，重复观察合并。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。标准输出摘要是完整源回答的原字节摘要。
+
+```
+node scripts/real/convert/runtime-profile.ts <环境预检回答> <清单> <合约副本> --out <暂存目录> [--decisions <角色决定文件>]
+node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合约副本> --check --out <新暂存目录>
+```
+
+预检须明确 `ready: true` 和正整数 `device_count`。草稿的版本、合约摘要、台架名、设备数来自输入；所有合约启用组合都会列出，候选、内部和禁用组合不加入。参数角色、工作簿字面量、座位顺序、主机映射、等待上限、折叠名单和拒绝表不能从签名推出，用 `null` 与 `pending` 的缺失事实和补取动作表示。集成者填写后清空已经落实的 `pending`，再次 `--check`。发布用通过检查的 `runtime-profile.json`；不要发布 `.draft.json`。
+
+可选角色决定文件为 `{ "allowed": […], "unopened": […] }`。`allowed` 每项沿用包的 `{object, method, parameters: {参数名: 角色}}`，角色只读包格式表，不按函数名猜。无法归入现有角色的组合放 `unopened`，每项 `{object, method, parameters: [{name, missing, reason, next}]}`，写明哪个签名参数缺什么事实、为什么现有检查无法覆盖、下一步怎样另开包角色和检查任务。脱敏参数不能定角色。未决定的组合仍列在草稿里，参数角色为 null，不会自动启用。
+
+检查先证明全部启用组合恰好落在 allowed 或 unopened 一边，不重不漏、无禁用组合；allowed 每个参数都有包表角色，再调用包的配置解析器核身份及形状。额外核对座位序号小于预检设备数。只说明已启用组合的覆盖情况，不以草稿代替部署事实核对；拒绝命令文本由集成者填写，不在脚本预设。

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { convertTopology } from './bed-topology.ts';
-export function topology() { return { topology: { _bed: { conf: 'Bed-A' }, devices: [{ name: 'Dut0', type: '负载均衡', ipv4: ['192.0.2.10/24'], ipv6: ['2001:db8::10/64'] }, { name: 'Client0', type: '客户端', ipv4: ['192.0.2.11/24'], ipv6: [] }] }, services: [{ host: 'CLIENT0', ip: '192.0.2.11', proto: 'tcp', port: 80 }], observation: { unregistered_neighbours: { eth0: ['192.0.2.20', '192.0.2.21'] } } }; }
+import { topology } from './testing.ts';
+
 test('topology preserves interface addresses and services and derives only observed singleton reservations', () => {
   const result = convertTopology(topology()).beds[0]!;
   assert.equal(result.name, 'bed-a'); assert.equal(result.devices[0]!.name, 'dut0');
