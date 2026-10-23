@@ -31,7 +31,7 @@ test('entry paths and data commands must agree', () => {
   const raw = view(); Object.values(raw.entries)[0].data.commands = ['/commands/other'];
   assert.equal(compareCommandIndex(gold, [raw]).counts.entry_data_mismatches, 1);
 });
-for (const kind of ['truncated', 'cut', 'root', 'missing', 'skipped']) test(`incomplete ${kind}`, () => {
+for (const kind of ['truncated', 'cut', 'root', 'skipped']) test(`incomplete ${kind}`, () => {
   const raw = view(); const extra = view();
   if (kind === 'truncated') raw.truncated = true;
   if (kind === 'cut') raw.cut_keys = ['synthetic-doc'];
@@ -60,7 +60,7 @@ test('unplaced totals include excluded ids but set comparisons exclude them', ()
 test('a missing key with skipped sources is incomplete, never evidence of absence', () => {
   const raw = view(); raw.entries = {}; raw.keys = {}; raw.skipped = 1;
   assert.equal(compareCommandIndex(gold, [raw]).verdict, '输入不全');
-  for (const skipped of [undefined, -1]) assert.equal(compareCommandIndex(gold, [{ ...view(), skipped }]).verdict, '输入不全');
+  for (const skipped of [undefined, -1]) assert.equal(compareCommandIndex(gold, [{ ...view(), skipped }]).verdict, '不相等');
 });
 import { computeScopeCases } from './scope-cases.ts';
 test('mixed-case definition paths survive independent extraction and both consumers', () => {
@@ -78,4 +78,15 @@ test('listed zero-case documents are measured separately and do not invent missi
   const raw = { ...view(), entries: {}, keys: {}, only: [] };
   const result = compareCommandIndex(empty, [raw]); assert.equal(result.verdict, '相等'); assert.equal(result.counts.documents_zero_case, 1); assert.equal(result.counts.documents_gold_only, 0);
   assert.deepEqual(result.details.documents_zero_case, ['empty-doc']); assert.ok(!renderIndexReport(result).includes('empty-doc'));
+});
+
+for (const [name, mutate] of Object.entries({
+  commands: (v: any) => { delete (Object.values(v.entries).find((e: any) => e.data.commands.length) as any).data.commands; },
+  node: (v: any) => { delete (Object.values(v.entries)[0] as any).data.node; },
+  document: (v: any) => { delete (Object.values(v.entries)[0] as any).data.document; },
+  reference: (v: any) => { (Object.values(v.entries)[0] as any).reference = `tree:${'b'.repeat(64)}/@${'c'.repeat(64)}`; },
+  dangling: (v: any) => { v.keys['synthetic-doc'].push('c'.repeat(64)); },
+  key: (v: any) => { (Object.values(v.entries)[0] as any).data.document = 'other'; },
+})) test(`malformed Hub output is a mismatch rather than incomplete input: ${name}`, () => {
+  const raw = view(); mutate(raw); const result = compareCommandIndex(gold, [raw]); assert.equal(result.verdict, '不相等'); assert.ok(result.counts.hub_entry_defects > 0); assert.deepEqual(result.incomplete, []);
 });

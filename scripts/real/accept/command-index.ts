@@ -17,6 +17,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   const caseCounts = new Map(gold.documents.map((doc) => [doc, gold.document_cases?.[doc] ?? gold.cases.filter((c) => c.document === doc).length]));
   const expectedDocuments = gold.documents.filter((doc) => (caseCounts.get(doc) ?? 0) > 0);
   const zeroDocuments = gold.documents.filter((doc) => caseCounts.get(doc) === 0);
+  const hubDefects: string[] = [];
   const hub = new Map<string, Set<string>>();
   const hubDocs = new Set<string>();
   const ignored = new Set<string>();
@@ -29,28 +30,29 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   let root: string | undefined;
   let product: string | undefined;
   for (const raw of views) {
-    if (!record(raw) || raw.schema !== 'index-view@1' || raw.kind !== 'case' || raw.key !== 'document' || !record(raw.build) || typeof raw.build.root !== 'string' || !/^[a-f0-9]{64}$/.test(raw.build.root) || !record(raw.entries) || !record(raw.keys) || typeof raw.truncated !== 'boolean') { incomplete.push('索引视图格式不对'); continue; }
+    if (!record(raw) || raw.schema !== 'index-view@1' || raw.kind !== 'case' || raw.key !== 'document' || !record(raw.build) || typeof raw.build.root !== 'string' || !/^[a-f0-9]{64}$/.test(raw.build.root) || !record(raw.entries) || !record(raw.keys) || typeof raw.truncated !== 'boolean') { hubDefects.push('索引视图格式不对'); continue; }
     if (root !== undefined && (root !== raw.build.root || product !== raw.product)) incomplete.push('索引根或产品不同');
     root = raw.build.root; product = String(raw.product);
     if (raw.truncated || (Array.isArray(raw.cut_keys) && raw.cut_keys.length)) incomplete.push('索引分片仍被截断：重新按 only= 分成更小的导出');
-    if (raw.skipped !== 0) incomplete.push('索引有未读来源：修复来源后重新导出');
+    if (!Number.isSafeInteger(raw.skipped) || (raw.skipped as number) < 0) hubDefects.push('索引缺少合式的 skipped 元数据');
+    else if (raw.skipped !== 0) incomplete.push('索引有未读来源：修复来源后重新导出');
     if (Array.isArray(raw.only)) for (const key of raw.only) requested.add(documentKey(String(key)));
     else full = true;
     const listed = new Set<string>();
     for (const [doc, digests] of Object.entries(raw.keys)) {
       hubDocs.add(documentKey(doc));
-      if (!Array.isArray(digests)) { incomplete.push('索引键的条目表无效'); continue; }
+      if (!Array.isArray(digests)) { hubDefects.push('索引键的条目表无效'); continue; }
       for (const digest of digests) {
-        if (typeof digest !== 'string' || !Object.hasOwn(raw.entries, digest)) incomplete.push('索引键指向缺失条目');
+        if (typeof digest !== 'string' || !Object.hasOwn(raw.entries, digest)) hubDefects.push('索引键指向缺失条目');
         else listed.add(digest);
       }
     }
     for (const [digest, entry] of Object.entries(raw.entries)) {
-      if (!listed.has(digest) || !record(entry) || entry.kind !== 'case' || !record(entry.data) || typeof entry.data.document !== 'string' || typeof entry.data.node !== 'string' || !Array.isArray(entry.data.commands) || entry.data.commands.some((v) => typeof v !== 'string') || typeof entry.reference !== 'string') { incomplete.push('索引条目缺少必要事实'); continue; }
+      if (!listed.has(digest) || !record(entry) || entry.kind !== 'case' || !record(entry.data) || typeof entry.data.document !== 'string' || typeof entry.data.node !== 'string' || !Array.isArray(entry.data.commands) || entry.data.commands.some((v) => typeof v !== 'string') || typeof entry.reference !== 'string') { hubDefects.push('索引条目缺少必要事实'); continue; }
       const match = /^tree:([a-f0-9]{64})(\/[^@]*)@([a-f0-9]{64})$/.exec(entry.reference);
-      if (!match || match[1] !== root || match[3] !== digest || entry.entry !== digest) { incomplete.push('条目引用与索引根或摘要不符'); continue; }
+      if (!match || match[1] !== root || match[3] !== digest || entry.entry !== digest) { hubDefects.push('条目引用与索引根或摘要不符'); continue; }
       const doc = documentKey(entry.data.document); const node = entry.data.node; const key = `${doc}:${node}`;
-      if (!Array.isArray(raw.keys[entry.data.document]) || !(raw.keys[entry.data.document] as unknown[]).includes(digest)) { incomplete.push('条目文档与索引键不符'); continue; }
+      if (!Array.isArray(raw.keys[entry.data.document]) || !(raw.keys[entry.data.document] as unknown[]).includes(digest)) { hubDefects.push('条目文档与索引键不符'); continue; }
       hubDocs.add(doc);
       const allPaths = allHub.get(key) ?? new Set<string>();
       if (match[2] !== '/') allPaths.add(match[2]);
@@ -95,11 +97,11 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     unplaced_both: [...goldUnplaced].filter((key) => hubUnplaced.has(key)).length,
     unplaced_gold_only: difference(goldUnplaced, hubUnplaced).length, unplaced_hub_only: difference(hubUnplaced, goldUnplaced).length,
     steps_placed_in_hub_unplaced: [...hubUnplaced].filter((key) => (goldCases.get(key)?.steps.length ?? 0) > 0).length,
-    entry_data_mismatches: dataMismatches.size,
+    entry_data_mismatches: dataMismatches.size, hub_entry_defects: hubDefects.length,
   };
-  const equal = !onlyGold.length && !onlyHub.length && !different.length && !dataMismatches.size && !counts.documents_gold_only && !counts.documents_hub_only;
+  const equal = !hubDefects.length && !onlyGold.length && !onlyHub.length && !different.length && !dataMismatches.size && !counts.documents_gold_only && !counts.documents_hub_only;
   return { verdict: incomplete.length ? '输入不全' : equal ? '相等' : '不相等', counts, hashes: { gold: sha256(JSON.stringify(table(goldMap))), hub: sha256(JSON.stringify(table(hub))) },
-    details: { documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
+    details: { hub_entry_defects: hubDefects, documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
 }
 export function renderIndexReport(report: IndexReport): string {
   const labels: Record<string, string> = {
@@ -107,7 +109,7 @@ export function renderIndexReport(report: IndexReport): string {
     cases_both: '两边共有用例', cases_gold_only: '只在 gold 的用例', cases_hub_only: '只在 Hub 的用例', excluded_gold: 'gold 不比较用例', excluded_hub: 'Hub 不比较用例',
     commands_equal: '命令集合相等用例', commands_different: '命令集合不等用例', paths_gold_only: '只在 gold 的路径', paths_hub_only: '只在 Hub 的路径', paths_gold_abbreviated: '只在 gold 的路径中经缩写识别', paths_gold_via_no: '只在 gold 的路径中经 no 识别', paths_gold_single_word: '只在 gold 的路径中单词命令',
     unplaced_gold: 'gold 全部未归位用例', unplaced_hub: 'Hub 全部未归位用例', unplaced_gold_comparable: 'gold 可比较未归位用例', unplaced_hub_comparable: 'Hub 可比较未归位用例',
-    unplaced_both: '可比较用例中两边都未归位', unplaced_gold_only: '可比较用例中只有 gold 未归位', unplaced_hub_only: '可比较用例中只有 Hub 未归位', steps_placed_in_hub_unplaced: 'Hub 可比较未归位用例中步骤有命令', entry_data_mismatches: '条目与数据命令集合不符用例',
+    unplaced_both: '可比较用例中两边都未归位', unplaced_gold_only: '可比较用例中只有 gold 未归位', unplaced_hub_only: '可比较用例中只有 Hub 未归位', steps_placed_in_hub_unplaced: 'Hub 可比较未归位用例中步骤有命令', entry_data_mismatches: '条目与数据命令集合不符用例', hub_entry_defects: 'Hub 输出条目缺陷',
   };
   return [...Object.entries(report.counts).map(([name, count]) => `${labels[name]}：${count}`), `gold SHA-256：${report.hashes.gold}`, `Hub SHA-256：${report.hashes.hub}`, `输入缺项：${report.incomplete.length}`, `判定：${report.verdict}`].join('\n');
 }
