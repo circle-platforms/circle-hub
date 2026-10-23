@@ -2,7 +2,7 @@
 // real client, no real model, no real Hub. The fixtures are synthetic mind maps and run details.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -237,4 +237,21 @@ test('review 6: accepted evidence survives a nonzero client exit and failed retr
 
 test('review 10: endpoint session arguments cannot override driver prompt or output flags', () => {
   for (const flag of ['--prompt', '--out', '--name']) assert.throws(() => parseSession(JSON.stringify({ args: [flag, 'private-value'], prompt: 'synthetic' }), 'draft'), /驱动/);
+});
+
+test('review 11: invalid or empty baselines refuse startup and valid rounds are unioned', () => {
+  const f = fixtures(document(2), []), baseline = fixtures(document(2), []).out;
+  writeFileSync(join(baseline, 'mutated.json'), JSON.stringify(document(2)));
+  const sha = createHash('sha256').update(readFileSync(join(baseline, 'mutated.json'))).digest('hex');
+  const before = [
+    [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }],
+    [{ item: 'doc:c2', requirements: [{ requirement: 'findings', layers: [], claims: [{ statement: { code: 'synthetic-finding' }, qualifier: { nature: 'judgment' } }] }] }],
+  ];
+  before.forEach((delivered, i) => { const dir = join(baseline, `r${i + 1}`); mkdirSync(dir); writeFileSync(join(dir, 'score.json'), '{}'); writeFileSync(join(dir, 'draft.run.json'), runDetail({ items: 2, sources: [{ reference: `src:${sha}` }], delivered })); });
+  const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_current', 'accepted'), run: () => runDetail({ run: 'rn_current', items: 2, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: before.flat() }) }] });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, baseline }, drivers, () => {}), 0);
+  const scored = JSON.parse(readFileSync(join(f.out, 'r1/score.json'), 'utf8')); assert.equal(scored.otherMarks.fresh, 0); assert.equal(scored.extras[0].inBaseline, true);
+  const empty = fixtures(document(1), []); const lines: string[] = [];
+  assert.equal(measureReview({ ...options(empty.out), source: empty.source, plan: empty.plan, baseline: fixtures(document(1), []).out }, fakeDrivers({ drafts: [] }), l => lines.push(l)), 2);
+  assert.ok(lines.some(l => l.includes('--baseline') && l.includes('空计划基线')));
 });

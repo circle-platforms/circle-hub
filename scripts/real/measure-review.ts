@@ -185,14 +185,24 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
   // 2. The baseline rounds (an earlier empty-plan --out): their draft results mark what the unchanged review already had.
   const baselineResults: ResultLike[] = [];
   if (options.baseline !== undefined) {
+    const copy = join(options.baseline, 'mutated.json');
+    if (!existsSync(copy)) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
+    const baselineSha = createHash('sha256').update(readFileSync(copy)).digest('hex');
+    const baselineCount = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule }).cases.length;
     for (const entry of readdirSync(options.baseline, { withFileTypes: true }).filter((e) => e.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const file = join(options.baseline, entry.name, 'draft.run.json');
-      if (!existsSync(file)) continue;
+      if (!existsSync(file) || !existsSync(join(options.baseline, entry.name, 'score.json'))) continue;
       const detail = JSON.parse(readFileSync(file, 'utf8')) as RunLike;
-      if (detail.latest !== null) baselineResults.push(detail.latest.result as unknown as ResultLike);
+      if (detail.latest?.result.acceptance === 'accepted' && detail.run.pack.startsWith('case-review@') && detail.run.items.length === baselineCount && detail.run.sources.some(s => s.reference?.startsWith('src:' + baselineSha))) baselineResults.push(detail.latest.result as unknown as ResultLike);
     }
   }
-  const baseline = baselineResults.at(-1);
+  if (options.baseline !== undefined && !baselineResults.length) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
+  const baselineItems = new Map<string, ResultLike['partitions'][string][number]>();
+  for (const result of baselineResults) for (const items of Object.values(result.partitions)) for (const item of items) {
+    const previous = baselineItems.get(item.item);
+    baselineItems.set(item.item, { ...item, requirements: [...(previous?.requirements ?? []), ...item.requirements] });
+  }
+  const baseline: ResultLike | undefined = baselineResults.length ? { partitions: { delivered: [...baselineItems.values()] } } : undefined;
 
   // 3. The rounds.
   const gold = injected.gold;
@@ -203,7 +213,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     const draftPrompt = options.draft.prompt.replaceAll('{copy}', join(options.out, 'mutated.json'));
     const draft = drivers.review(options.draft, draftPrompt, dir, 'draft');
     writeFileSync(join(dir, 'draft.client-status.json'), JSON.stringify({ code: draft.code }), { mode: 0o600 });
-    const draftJudged = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    const draftJudged: ReturnType<typeof judgeRun> = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
     let round: RoundOutcome;
     if (draftJudged.ok) {
       writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
@@ -214,7 +224,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
         const verifyPrompt = options.verify.prompt.replaceAll('{copy}', join(options.out, 'mutated.json')).replaceAll('{draft_run}', draftJudged.run);
         const verifyRun = drivers.review(options.verify, verifyPrompt, dir, 'verify');
         writeFileSync(join(dir, 'verify.client-status.json'), JSON.stringify({ code: verifyRun.code }), { mode: 0o600 });
-        const verifyJudged = verifyRun.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
+        const verifyJudged: ReturnType<typeof judgeRun> = verifyRun.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
         if (verifyJudged.ok) {
           writeFileSync(join(dir, 'verify.run.json'), JSON.stringify(verifyJudged.detail, null, 2));
           round = { n, draftPack: packOf(draftJudged.detail), draftValid: true, draftRun: draftJudged.run, verifyPack: packOf(verifyJudged.detail), verifyValid: true, verifyRun: verifyJudged.run };
