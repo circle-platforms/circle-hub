@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
+import { ROOTS } from './testing/knowledge.ts';
 import { standardDocument, toyMap, ITEM } from './testing/mindmap.ts';
 
 let postgres: TemporaryPostgres;
@@ -145,6 +146,55 @@ test('two quote rows over one reference evaluate in one pass (parsed once)', { s
     const quoteSupports = findings.claims.filter((c) => c.statement.verdict === 'support' && (c.statement.text ?? '').includes('逐字一致'));
     assert.equal(quoteSupports.length, 4, JSON.stringify(findings.claims.map((c) => c.statement)));
     assert.ok(findings.claims.every((c) => c.statement.verdict !== 'refute' && c.statement.verdict !== 'unknown'));
+  } finally {
+    await h.close();
+  }
+});
+
+test('a tree reference whose root is the run\'s locked root is checked: verbatim passes, wrong quote refutes', { skip }, async () => {
+  const h = await openHarness(postgres, { review: { dynamicFindings: true }, dataQuotes: true });
+  try {
+    const map = await h.upload(h.alice, toyMap(standardDocument()));
+    // The harness locks line 3.2: its newest build's root (FakeKnowledge ROOTS.meadow329).
+    const lockedRoot = ROOTS.meadow329;
+    const treeRef = `tree:${lockedRoot}/zone/set`;
+    // The fake tree reader answers the text 命令 zone set for a catalog path; quote it verbatim.
+    const findings = await quoteRun(h, map, { text: '命令 zone set', reference: treeRef });
+    assert.ok(findings.claims.some((c) => c.statement.verdict === 'support' && (c.statement.text ?? '').includes('逐字一致')), JSON.stringify(findings.claims.map((c) => c.statement)));
+    const bad = await quoteRun(h, map, { text: '命令 zone set？', reference: treeRef });
+    assert.ok(bad.claims.some((c) => c.statement.verdict === 'refute' && (c.statement as { code?: string }).code === 'QUOTE_MISMATCH'), JSON.stringify(bad.claims.map((c) => c.statement)));
+  } finally {
+    await h.close();
+  }
+});
+
+test('a tree reference whose root is not the run\'s locked root is refuted as not an input', { skip }, async () => {
+  const h = await openHarness(postgres, { review: { dynamicFindings: true }, dataQuotes: true });
+  try {
+    const map = await h.upload(h.alice, toyMap(standardDocument()));
+    const otherRoot = ROOTS.grove105;
+    const findings = await quoteRun(h, map, { text: '随便什么文字', reference: `tree:${otherRoot}/zone/set` });
+    const refute = findings.claims.find((c) => c.statement.verdict === 'refute');
+    assert.ok(refute !== undefined, JSON.stringify(findings.claims.map((c) => c.statement)));
+    assert.match(refute.statement.text, /不是这次运行的输入/);
+  } finally {
+    await h.close();
+  }
+});
+
+test('a rec reference that does not resolve stays unknown, never refuted', { skip }, async () => {
+  const h = await openHarness(postgres, { review: { dynamicFindings: true }, dataQuotes: true });
+  try {
+    const map = await h.upload(h.alice, toyMap(standardDocument()));
+    // An unresolvable rec: reference stays unknown (missing input), never a refutation.
+    const stranger = 'e'.repeat(64);
+    const findings = await quoteRun(h, map, { text: '随便什么文字', reference: `rec:${stranger}#/body/x` });
+    const layer = findings.layers.find((l) => l.layer === 'static')!;
+    assert.equal(layer.terminal, 'unchecked', JSON.stringify(findings.layers));
+    assert.equal(layer.reason, 'missing_input');
+    assert.ok(!findings.claims.some((c) => c.statement.verdict === 'refute'), JSON.stringify(findings.claims.map((c) => c.statement)));
+    const unknown = findings.claims.find((c) => c.statement.verdict === 'unknown');
+    assert.ok(unknown !== undefined && /取不回|不可读|没有绑定/.test(unknown.statement.text), JSON.stringify(unknown?.statement));
   } finally {
     await h.close();
   }

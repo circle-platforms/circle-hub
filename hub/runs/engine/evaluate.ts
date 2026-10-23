@@ -372,23 +372,31 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         try {
           ref = parseReference(reference);
         } catch {
-          return { why: 'not_bound' };
+          return { why: 'unavailable' };
         }
-        if (ref.scheme !== 'src') return { why: 'not_bound' };
-        // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
-        const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
-        if (!bound) return { why: 'not_bound' };
-        const result = await resolveReference(ref, resolveCtx);
-        if (!result.resolved) {
-          // The source is bound (checked above): an unresolved reference now means the selector finds nothing in it
-          // (the resolver's 找不到 wording) — the model can fix the selector or the quote. Anything else (the read
-          // failed, the bytes do not hash) is genuinely unreadable.
-          return { why: result.message.includes('找不到') ? 'no_fragment' : 'unavailable' };
+        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: string }> => {
+          if (!r.resolved) {
+            // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
+            // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
+            // the read genuinely failed. For a reference that is not src or a locked tree, unresolved also lands here
+            // as unavailable: an honest unknown, never a refutation.
+            return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
+          }
+          if (r.readTier === 'retain_only') return { why: 'retain_only' };
+          if (r.text === null) return { why: r.fragment === null ? 'no_fragment' : 'unavailable' };
+          if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
+          return { text: r.text, why: 'bound' };
+        };
+        if (ref.scheme === 'src') {
+          // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
+          const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
+          if (!bound) return { why: 'not_bound' };
+        } else if (ref.scheme === 'tree') {
+          // A tree reference is bound exactly when its root is the root this run locked.
+          if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
         }
-        if (result.readTier === 'retain_only') return { why: 'retain_only' };
-        if (result.text === null) return { why: result.fragment === null ? 'no_fragment' : 'unavailable' };
-        if (Buffer.byteLength(result.text, 'utf8') > capBytes) return { why: 'too_large' };
-        return { text: result.text, why: 'bound' };
+        // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
+        return finish(await resolveReference(ref, resolveCtx));
       })();
       fragmentCache.set(reference, pending);
     }
@@ -397,7 +405,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const quotedReferences = new Set<string>();
   /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
   const collectQuotedReferences = (value: unknown): void => {
-    if (typeof value === 'string' && value.length < 600 && (value.startsWith('src:') || value.startsWith('tree:'))) {
+    if (typeof value === 'string' && value.length < 600 && (value.startsWith('src:') || value.startsWith('tree:') || value.startsWith('rec:'))) {
       quotedReferences.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) collectQuotedReferences(item);
@@ -409,7 +417,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const warmedWhy = new Map<string, string>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
-    why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'not_bound'),
+    // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
+    // unknown, never a refutation.
+    why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
   });
   /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
   const warmQuoted = async (value: unknown, capBytes: number = MAX_CHECK_READ_BYTES): Promise<void> => {

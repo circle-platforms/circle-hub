@@ -286,8 +286,8 @@ A quote that sits only in slot data is checked against the bound source anyway. 
 array remains useful: the boundary resolves those at submit and refuses a wrong reference earlier (a whole-submission
 refusal with the exact position), before any check runs.
 
-### Pending (vocabulary gap)
+### The refutation code (settled)
 
-「引用的源文件不是这次运行的输入」和「片段不存在」currently refute with QUOTE_MISMATCH. The protocol vocabulary has no
-code for either; contracts/src is outside this task's paths. Proposal: two new codes (QUOTE_SOURCE_NOT_BOUND,
-QUOTE_FRAGMENT_MISSING) — awaiting a decision.
+「引用的源文件不是这次运行的输入」和「片段不存在」refute with QUOTE_MISMATCH — the message names the reason and
+`data.why` distinguishes them. Settled: no new vocabulary codes. Every pack's repair rows already ride QUOTE_MISMATCH
+and the model's fix has the same shape either way.
