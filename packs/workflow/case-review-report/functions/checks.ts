@@ -48,7 +48,10 @@ export function overallCheck(input: unknown): CheckOutcome[] {
     return [{ verdict: 'refute', code: CODES.reportMissing, statement: `提交里没有结论主张（cross_item 里码为 ${VERDICTS.join('、')} 的一条）`, grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条结论主张（code 写整体结论、rank 写整体等级、statement 写报告全文）' } }];
   }
   if (computed === null) {
-    return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: '有块没有可读的结论，整体是未知：先补齐缺的块再出终稿', grounds: [], tier: TIER, data: { fix: '把缺的块复核完成并重新开始终稿运行' } }];
+    // 缺了块结论（或条目没交付）时是未知（缺输入），不是驳回：终稿现在判不出来，先补齐再来。
+    const missing = Array.isArray(fields.missing_items) ? fields.missing_items.filter((x): x is string => typeof x === 'string') : [];
+    const why = missing.length > 0 ? `有 ${missing.length} 个条目任何一块都没交付（${missing.slice(0, 10).join('、')}），覆盖不完整` : '有块没有可读的结论';
+    return [{ verdict: 'unknown', reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: '把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
   }
   if (claim.code !== computed.verdict) {
     return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: `整体结论应是 ${computed.verdict}（各块取最差），主张写的是 ${String(claim.code)}`, grounds: [], tier: TIER, data: { fix: `把结论主张的码改成 ${computed.verdict}` } }];
