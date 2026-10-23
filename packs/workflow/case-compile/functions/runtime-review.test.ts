@@ -64,3 +64,13 @@ test('review 11 replacement chains and phantom source mappings cannot be disclos
   assert.ok(codes(checkAddresses(subjectOf(chain))).includes('case-compile.replacement_invalid'));
   const phantom = goodData(); phantom.replacements = [{ case: '192.0.2.251', bed: '192.0.2.90' }]; assert.ok(codes(checkAddresses(subjectOf(phantom))).includes('case-compile.replacement_invalid'));
 });
+import { readFileSync } from 'node:fs';
+import { runCheck } from '../../../../hub/rules/api.ts';
+test('review 12 unreadable inputs retain document pointers and cannot become vacuous interpreter support', async () => {
+  const bad = subjectOf(goodData(), { contractDoc: {} }); const result = checkContractShape(bad)[0]; assert.equal(result.verdict, 'unknown'); assert.match(result.statement, /contract.*\/schema/); assert.ok(Array.isArray(result.data?.problems));
+  const data = { ...goodData(), extra: true }; const raw = { item: 'fixture', slots: { plan: [{ data }] }, context: { groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC }] } };
+  const command = commandSubject(raw) as Record<string, unknown>; assert.ok(!Object.hasOwn(command, 'phrases'));
+  const quotes = quoteSubject(raw) as { quotes: unknown[] }; assert.ok(quotes.quotes.length > 0);
+  const table = JSON.parse(readFileSync(new URL('../tables/quotes.json', import.meta.url), 'utf8'));
+  const out = await runCheck({ interpreter: 'quote@1' }, { subject: quotes, table, context: { pack: 'case-compile' } }); assert.ok(out.every((v) => v.verdict !== 'support'));
+});

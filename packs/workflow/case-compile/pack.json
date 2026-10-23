@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "70a2f82f15fc0217790dd2ea5b911bfef942671ba459702c2361e4e919ca0119",
-      "size": 12602
+      "sha256": "fd5dbbca829b5e21ab97275d88143ad62e9c8b17cafc98d8e7c947a144830a4d",
+      "size": 13320
     },
     {
       "path": "functions/manifest.ts",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "7ecbe7babf8562faae14c6685ddc54e70684aafd3f2327ebb95e07937f2c77e4",
-      "size": 3855
+      "sha256": "533743f9cd2ba5ec2ae7445603efa1142f4d00f7882bbca721a9731d078a495a",
+      "size": 4603
     },
     {
       "path": "functions/text.ts",
@@ -383,8 +383,8 @@
     },
     {
       "path": "tables/commands.json",
-      "sha256": "e38853ff1a2d63b836269f8cfd398ab4fc247887f0fbb172fd46912c257477c4",
-      "size": 839
+      "sha256": "b072a75eef2e71e647f79d96c7e5687b45dc4492edd59140361f5f768168d8e0",
+      "size": 838
     },
     {
       "path": "tables/quotes.json",

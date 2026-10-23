@@ -25,18 +25,24 @@ export function planSubject(input: unknown): PlanSubject {
 export function commandSubject(input: unknown): unknown {
   const subject = planSubject(input); const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
+  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, location: subject.location };
   const phrases: string[] = [];
   if (read.ok && contract.ok && profile?.ok) for (const step of read.slots.steps) {
     const allowed = allowedCall(profile.profile, step.object, step.method);
     const method = contract.contract.enabled.find((v) => v.object === step.object && v.method === step.method);
     if (!allowed || !method) continue;
-    for (const v of bindArguments(method, step, '').values) if (allowed.parameters[v.name] === 'device_cli') { if (!hasBalancedCommandText(v.value.normalize('NFKC'))) return { item: subject.item, location: subject.location }; phrases.push(v.value); }
+    const bound = bindArguments(method, step, '');
+    if (bound.problems.length || bound.values.some((v) => !Object.hasOwn(allowed.parameters, v.name))) return { item: subject.item, location: subject.location };
+    for (const v of bound.values) if (allowed.parameters[v.name] === 'device_cli') { if (!hasBalancedCommandText(v.value.normalize('NFKC'))) return { item: subject.item, location: subject.location }; phrases.push(v.value); }
   }
   return { item: subject.item, location: subject.location, phrases, negative: false };
 }
 export function quoteSubject(input: unknown): unknown {
-  const subject = planSubject(input); const read = readSlots(subject.data);
-  return { item: subject.item, quotes: read.ok ? read.slots.expects.map((v) => v.quote) : [] };
+  const subject = planSubject(input); const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+  const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
+  // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
+  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };
+  return { item: subject.item, quotes: read.slots.expects.map((v) => v.quote) };
 }
 
 /** Authored source text is distinct from the model's final step values. */
