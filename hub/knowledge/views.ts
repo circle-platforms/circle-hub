@@ -861,13 +861,15 @@ export class KnowledgeViews {
     } else view = JSON.parse(Buffer.from(originalBytes).toString('utf8')) as ImpactView | FacetView | IndexView;
     const flagged = flaggedParts(view,coverage);
     if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
-    const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number): void => {
+    const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number, fallback = 0): void => {
       const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
       if (covered > 0) value.notes.push(`有 ${covered} 个${unit}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
       if (limited > 0) value.notes.push(`有 ${limited} 个${unit}因整份扫描的命中上限没有留下；截断扫描不能被覆盖`);
+      if (fallback > 0) value.notes.push(`有 ${fallback} 个${unit}原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉`);
     };
     const finalKeys = partKeys(view);
-    annotate(view,[...flagged.kept].filter(key => finalKeys.has(key)).length,flagged.limited.size);
+    const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
+    annotate(view,covered,flagged.limited.size);
     let bytes = canonicalBytes(view);
     let large = tooLarge(bytes);
     if (large !== null) return {ok:false,id:bare,reason:large};
@@ -876,7 +878,7 @@ export class KnowledgeViews {
     // Fall back once to the previous safe omission behavior, never scan every prefix.
     if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
       view = await compute(flagged.allHits);
-      annotate(view,0,flagged.eligible.size);
+      annotate(view,0,flagged.limited.size,covered);
       bytes = canonicalBytes(view);
       large = tooLarge(bytes);
       if (large !== null) return {ok:false,id:bare,reason:large};

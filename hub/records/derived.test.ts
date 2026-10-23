@@ -1,6 +1,8 @@
 // Derived acceptance uses synthetic documents and randomly generated fake credentials only.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { before, after, test } from 'node:test';
 import pg from 'pg';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
@@ -86,9 +88,15 @@ test('truncated scans cannot be sources or derived targets', async t => {
   assert.equal((await kit.artifacts.ingest(derived(Buffer.from(`target\n${line(secret)}`),[held.body.sha256]))).body.read_tier,'retain_only');
 });
 test('coverage metadata, database rows and call logs contain neither matches nor their digests', async t => {
-  const {kit,admitted} = await world(t); const secret = fake();
+  const {kit,admin,admitted} = await world(t); const secret = fake();
   const source = await admitted(Buffer.from(line(secret)));
   const artifact = await kit.artifacts.ingest(derived(canonicalBytes({body:line(secret)}),[source.body.sha256]));
+  await kit.callLog.append({at:'2026-10-23T00:00:00.000Z',traceId:'a'.repeat(32),spanId:'b'.repeat(16),userId:admin.id,sessionId:null,tool:'synthetic.derive',runId:null,arguments:{text:line(secret),source:source.body.sha256,output:artifact.body.sha256},callResult:'ok',acceptance:null,errorCode:null,durationMs:1});
+  const files = (await readdir(kit.config.logDir)).filter(name => /^calls-.*\.jsonl$/.test(name));
+  assert.equal(files.length,1,'the assertion must inspect a written call log');
+  const logs = (await Promise.all(files.map(name => readFile(join(kit.config.logDir,name),'utf8')))).join('\n');
+  assert.equal(logs.trim().split('\n').length,1);
+  for (const forbidden of [secret,line(secret),sha256Hex(Buffer.from(secret))]) assert.equal(logs.includes(forbidden),false);
   const client = new pg.Client({...kit.database,ssl:false}); await client.connect();
   try {
     const rows: unknown[] = [];
@@ -180,6 +188,31 @@ test('read operations over admitted multi-megabyte bytes use stored scan facts w
   assert.ok(await counted.artifacts.readable(admin,held.body.sha256));
   assert.deepEqual({scans,bytes},{scans:0,bytes:0});
   assert.equal(objectReads,2,'only source() and text() fetch the requested bytes; metadata checks never fetch bytes');
+});
+test('derived reads validate stored coverage and live withdrawal without scanning bytes', async t => {
+  const {kit,admin,admitted}=await world(t);
+  const source=await admitted(Buffer.from(line(fake())));
+  const original=await kit.artifacts.trustedBytes(source.body.sha256); assert.ok(original);
+  const input=derived(Buffer.concat([Buffer.from('synthetic derived text\n'.repeat(100_000)),Buffer.from(original)]),[source.body.sha256]);
+  const output=await kit.artifacts.ingest(input);
+  assert.equal(output.body.scan.accepted,undefined);
+  assert.ok(output.body.scan.derived);
+  const {openRecords}=await import('./index.ts');
+  let scans=0,bytes=0;
+  const counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:length=>{scans++;bytes+=length;}});
+  t.after(()=>counted.close());
+  const read=await counted.artifacts.source(admin,output.body.sha256,{record:output.digest});
+  assert.equal(read?.acceptance?.kind,'derived');
+  assert.deepEqual(read?.bytes,input.bytes);
+  assert.equal((await counted.artifacts.text(admin,output.body.sha256))?.readable,true);
+  assert.ok(await counted.artifacts.readable(admin,output.body.sha256));
+  assert.deepEqual({scans,bytes},{scans:0,bytes:0});
+  await kit.artifacts.revokeFindings(admin,source.body.sha256);
+  const withdrawn=await counted.artifacts.source(admin,output.body.sha256,{record:output.digest});
+  assert.equal(withdrawn?.bytes,null);
+  assert.equal((await counted.artifacts.text(admin,output.body.sha256))?.readable,false);
+  assert.equal((await counted.artifacts.readable(admin,output.body.sha256))?.digest,output.digest,'metadata remains visible after byte access is withdrawn');
+  assert.deepEqual({scans,bytes},{scans:0,bytes:0});
 });
 test('public matcher methods and returned evidence cannot be altered to forge coverage', async t => {
   const {kit,admin,admitted}=await world(t); const first=fake(),second=fake();

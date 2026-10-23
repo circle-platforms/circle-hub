@@ -700,8 +700,8 @@ Milestone 2:
   coverage or delivery format requires a separate decision.
 - **records**: (1) **Done** (records decision 19): `derivedSources`, exact in-memory coverage and source/decision-only
   receipts carry an administrator's acceptance through verified Hub-owned ancestry. Views pin the actual root
-  compositions and their source records, check each flagged entry/row through `coverDerived`, and recheck the complete
-  artifact on ingest and every read. Preparation is shared across the view, and reads validate immutable scan facts and
+  compositions and their source records, prepare one shared matcher with `prepareDerived`, and assess each entry/row
+  through that matcher in memory. Ingest checks the complete artifact; reads validate immutable scan facts and
   live decisions without re-scanning source bytes. No matched-text fingerprint is used or stored. (2) **Bulk APIs now available:** coverage uses `findMany`/`getMany`; adoption in the other per-entry existence checks
   of a first production (184,000 queries on the measured corpus) and stored-read lookups remains a separate follow-up.
 - **platform**: consider starting the persistent Hub with `--max-old-space-size=1024` (or 1536): on the measured corpus
