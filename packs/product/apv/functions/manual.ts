@@ -231,8 +231,8 @@ const MANUAL_NS = 'manual';
 const DEFAULT_MANUAL_NAME = 'manual';
 /** An entry's author-marked command literals are capped so a padded block cannot bloat a stored entry. */
 const MAX_LITERALS = 100;
-/** The drift warning lists the first so many unresolvable literals. */
-const MAX_DRIFT_SHOWN = 50;
+/** The drift warning's list of names fits one stored warning (the count before it stays exact). */
+const MAX_DRIFT_TEXT = 800;
 
 const LITERAL_FIRST = /^[a-z?][a-z0-9_.?-]{0,63}$/;
 const MAX_LITERAL = 200;
@@ -311,8 +311,11 @@ function existingPath(catalog: CommandCatalog, words: readonly string[]): string
 
 /** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
 function resolves(catalog: CommandCatalog, literal: string): boolean {
+  let words = literal.split(' ');
+  // A leading optional or required group ([no], {no|clear}) is not a word of the tree.
+  if (words.length > 0 && /^(?:\[.*\]|\{.*\})$/.test(words[0])) words = words.slice(1);
   let node = catalog.root;
-  for (const word of literal.split(' ')) {
+  for (const word of words) {
     const next = node.children.get(word.toLowerCase());
     if (next === undefined) return false;
     node = next;
@@ -321,10 +324,24 @@ function resolves(catalog: CommandCatalog, literal: string): boolean {
   return false;
 }
 
-/** The tree path of an anchor: the exact key words when the command exists; without a tree the literal decides. */
+/**
+ * The tree path of an anchor: the exact key words when the command exists; for a signature with head alternatives, the
+ * key node (the nearest common node of the variants, K01 R[3]) when EVERY variant exists in the tree (the tree models
+ * the alternatives as items below it), spelled from a variant's path; without a tree the literal decides, unchecked.
+ * Null when the tree lacks the command.
+ */
 function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null): string | null {
   if (catalog === null) return commandPath(anchor.words);
-  return existingPath(catalog, anchor.words);
+  const direct = existingPath(catalog, anchor.words);
+  if (direct !== null) return direct;
+  if (anchor.variants === null) return null;
+  const variantPaths = anchor.variants.map((variant) => existingPath(catalog, variant));
+  if (variantPaths.some((path) => path === null)) return null;
+  const key = anchor.words.map((word) => word.toLowerCase());
+  const at = anchor.variants.findIndex((variant) => variant.length > key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
+  if (at < 0) return null;
+  // The key node exists: it is an ancestor of every variant's node, and the builder stores every ancestor.
+  return (variantPaths[at] as string).split('/').slice(0, 2 + key.length).join('/');
 }
 
 /** The longest common prefix of the word lists (case-insensitive), spelled as the first list writes it. */
@@ -473,9 +490,20 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     return path;
   };
+  // Every literal found, past the per-entry cap: the drift total counts them all.
+  const allLiterals = new Set<string>();
+  // The literals of the signatures placed at /commands resolve by the placement check itself (variants included).
+  const placedSignatureLiterals = new Set<string>();
+  const noteSignature = (entry: ProducedEntry): void => {
+    for (const literal of asStrings(entry.data.command_literals)) {
+      allLiterals.add(literal);
+      if (entry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
+    }
+  };
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
     const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
     const unique = [...new Set(found)].sort(compareText);
+    for (const literal of unique) allLiterals.add(literal);
     if (unique.length === 0) return;
     entry.data.command_literals = unique.slice(0, MAX_LITERALS);
     if (unique.length > MAX_LITERALS) entry.data.command_literals_cut = true;
@@ -519,6 +547,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const placed = anchorPathOf(anchor, catalog) ?? sectionEntryPath(index);
     headingAnchors.set(index, { anchor, path: placed });
     const entry = signatureEntry(anchor, placed, { parser: MARKDOWN, selector: section.selector as string });
+    noteSignature(entry);
     entry.applicability = toApplicability(conditionsOf(section.title));
     entries.push(entry);
   });
@@ -594,6 +623,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       // the blocks after it follow it there (same data as at a command node: the tree only chooses the path).
       const placed = anchorPathOf(anchor, catalog) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
+      noteSignature(entry);
       entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
       current = { path: placed, words: anchor.words };
@@ -625,6 +655,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const { cell, anchor: one } = found[0];
             const path = anchorPathOf(one, catalog) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
+            noteSignature(signature);
             signature.applicability = toApplicability(conditionsOf(rowText));
             split.push(signature);
             const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
@@ -673,16 +704,26 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   }
 
   // The literals the build's tree cannot resolve are drift candidates of the production (never nodes of their own).
+  // A signature placed at /commands resolves by the placement check itself (its variants included); every other literal
+  // resolves when a leading run of its words is a complete command. The count covers every literal found, past the
+  // per-entry cap; the listed names are cut to fit one stored warning (the core keeps 1000 characters per warning).
   if (catalog !== null) {
     const unresolved = new Set<string>();
-    for (const entry of entries) {
-      for (const literal of asStrings(entry.data.command_literals)) {
-        if (!resolves(catalog, literal)) unresolved.add(literal);
-      }
+    for (const literal of allLiterals) {
+      if (placedSignatureLiterals.has(literal)) continue;
+      if (!resolves(catalog, literal)) unresolved.add(literal);
     }
     if (unresolved.size > 0) {
       const sorted = [...unresolved].sort(compareText);
-      warnings.push(`有 ${sorted.length} 个命令字面在本构建的命令树里解析不到，是漂移候选：${sorted.slice(0, MAX_DRIFT_SHOWN).join('、')}${sorted.length > MAX_DRIFT_SHOWN ? ' 等' : ''}`);
+      let shown = '';
+      let counted = 0;
+      for (const literal of sorted) {
+        const next = shown === '' ? literal : `${shown}、${literal}`;
+        if (next.length > MAX_DRIFT_TEXT) break;
+        shown = next;
+        counted++;
+      }
+      warnings.push(`有 ${sorted.length} 个命令字面在本构建的命令树里解析不到，是漂移候选：${shown}${counted < sorted.length ? ' 等' : ''}`);
     }
   }
 
@@ -695,8 +736,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   return { entries, unplaced: [], warnings };
 }
 
+/** A signature's literals are its command words and variants (never the parameters): what read time can match. */
 function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): ProducedEntry {
-  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, command_literals: [anchor.signature] };
+  const literals = [...new Set([anchor.words, ...(anchor.variants ?? [])].map((words) => words.join(' ')))].sort(compareText);
+  const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, command_literals: literals };
   if (anchor.variants !== null) data.variants = anchor.variants;
   return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
 }

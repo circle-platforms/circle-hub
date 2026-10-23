@@ -173,7 +173,7 @@ describe('entries from the converted manual', () => {
       words: ['demo', 'route', 'static'],
       form: 'signature',
       signature: '[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]',
-      command_literals: ['[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]'],
+      command_literals: ['demo route static', 'no demo route static'],
       params: [
         { name: 'network', required: true },
         { name: 'netmask|prefix', required: true },
@@ -396,7 +396,7 @@ describe('author-marked command literals', () => {
   it('records the command lines of code blocks (after the prompt) and the signature of a signature entry', () => {
     const result = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n示例：\n\n    Box(config)#demo pool add p1 192.0.2.5\n    成员添加成功\n'));
     const [signature, , code] = result.entries;
-    assert.deepEqual(signature.data.command_literals, ['demo pool add <name>']);
+    assert.deepEqual(signature.data.command_literals, ['demo pool add']);
     assert.deepEqual(code.data.command_literals, ['demo pool add p1 192.0.2.5'], 'the output line is not a command line');
   });
 
@@ -412,6 +412,20 @@ describe('author-marked command literals', () => {
     assert.equal(literals.length, 100);
     assert.equal(literals[0], 'demo c0');
     assert.equal(result.entries[0].data.command_literals_cut, true);
+  });
+
+  it('counts every literal in the drift total, past the per-entry cap, and keeps the list inside one stored warning', () => {
+    const mention = Array.from({ length: 150 }, (_, k) => `**demo missing${k}**`).join('，');
+    const catalog = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><item name="present" help_string="p"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`), null, { catalog });
+    const entry = result.entries[0];
+    assert.equal((entry.data.command_literals as string[]).length, 100);
+    assert.equal(entry.data.command_literals_cut, true);
+    const drift = result.warnings.find((warning) => warning.includes('漂移候选'));
+    assert.ok(drift, result.warnings.join('\n'));
+    assert.ok(drift.includes('有 150 个命令字面'), drift);
+    assert.ok(drift.endsWith(' 等'), drift);
+    assert.ok(drift.length < 1000, `${drift.length} characters`);
   });
 });
 
@@ -440,13 +454,50 @@ describe('placement against the build’s command tree', () => {
     assert.ok(without.entries.every((entry) => entry.path?.startsWith('/commands/')), 'without a tree the literal decides (unchecked)');
   });
 
+  it('hangs a variant signature at the common node of its variants when every variant exists', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +
+      '<menu name="route"><item name="add" help_string="b"><arguments></arguments></item></menu></menu></scope></commands>';
+    const variants = commandCatalog(xml(tree)).catalog;
+    const result = produceManualEntries(markdown('**demo {pool\\|route} add** *\\<name\\>*\n\n该命令用于添加。\n'), null, { catalog: variants });
+    assert.deepEqual(
+      result.entries.map((entry) => [entry.data.form, entry.path]),
+      [
+        ['signature', '/commands/demo'],
+        ['text', '/commands/demo'],
+      ],
+    );
+    // One variant missing: the signature stays at its section node.
+    const partial = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const missing = produceManualEntries(markdown('**demo {pool\\|route} add** *\\<name\\>*\n\n该命令用于添加。\n'), null, { catalog: partial });
+    assert.deepEqual(
+      missing.entries.map((entry) => [entry.data.form, entry.path]),
+      [
+        ['signature', '/manual/manual'],
+        ['text', '/manual/manual'],
+      ],
+    );
+  });
+
+  it('hangs a signature at the key node when the tree models the alternatives as items below it', () => {
+    const tree =
+      '<commands><scope type="global"><menu name="demo"><menu name="acl"><menu name="permit">' +
+      '<item name="tcp" help_string="t"><arguments></arguments></item>' +
+      '<item name="udp" help_string="u"><arguments></arguments></item>' +
+      '</menu></menu></menu></scope></commands>';
+    const catalog = commandCatalog(xml(tree)).catalog;
+    const result = produceManualEntries(markdown('**demo acl permit {tcp\\|udp}** *\\<source_ip\\>*\n\n该命令用于放行。\n'), null, { catalog });
+    assert.deepEqual(result.entries[0].path, '/commands/demo/acl/permit');
+    assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), 'no false drift entry for a placed signature');
+  });
+
   it('lists the literals the tree cannot resolve as drift candidates in the warnings', () => {
     const text = '**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n\n**demo probe** *\\<name\\>*\n\n该命令用于探测，先执行 “demo pool create”。\n';
     const result = produceManualEntries(markdown(text), null, { catalog });
     const drift = result.warnings.find((warning) => warning.includes('漂移候选'));
     assert.ok(drift, result.warnings.join('\n'));
-    assert.ok(drift.includes('demo probe <name>') && drift.includes('demo pool create'), drift);
-    assert.ok(!drift.includes('demo pool add <name>'), 'resolvable literals are not drift');
+    assert.ok(drift.includes('有 2 个命令字面') && drift.includes('demo probe') && drift.includes('demo pool create'), drift);
+    assert.ok(!drift.includes('demo pool add'), 'resolvable literals are not drift');
   });
 });
 

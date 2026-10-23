@@ -262,11 +262,12 @@ describe('the producers', () => {
     assert.deepEqual(mention?.data.command_literals, ['demo pool mode']);
     const note = out.entries.find((e) => e.fragments[0].selector === 'b/7/基本配置');
     assert.deepEqual(note?.data.command_literals, ['demo pool create']);
-    // The production warnings list the literals the tree cannot resolve, as drift candidates.
-    const drift = out.warnings.find((w) => w.includes('漂移候选'));
-    assert.ok(drift, out.warnings.join('\n'));
-    for (const literal of ['?', 'demo pool create', 'demo probe', 'enable']) assert.ok(drift.includes(literal), literal);
-    assert.ok(!drift.includes('demo pool add'), drift);
+    // The production warnings list the literals the tree cannot resolve, as drift candidates (the exact list; the
+    // rejected signature's bold span is one of them: it names a command the tree lacks).
+    assert.ok(
+      out.warnings.includes('cli：有 5 个命令字面在本构建的命令树里解析不到，是漂移候选：?、demo broken、demo pool create、demo probe、enable'),
+      out.warnings.join('\n'),
+    );
     // Without the tree slot the anchors are placed unchecked, and no drift list is computed.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
     assert.ok(without.warnings.some((w) => w.includes('没有命令树')), without.warnings.join('\n'));
