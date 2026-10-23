@@ -147,3 +147,12 @@ test('an expected negative-case refutation without source-error attribution is n
     statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'反向用例的预期越界',data:{negative_case:true,expected:true}}});
   const out=reviewTables(input(small(),[b]));assert.equal(out.counts.total.hubChecks,0);assert.ok(!out.markdown.includes('反向用例的预期越界'));
 });
+
+test('a mixed requirement never turns its expected refutation into a Hub source defect',()=>{
+  const b=block(['c1']);const requirement=b.result.partitions.delivered[0].requirements[0];
+  requirement.layers=[{layer:'static',terminal:'violation',code:'core.catalog.not_member',attribution:'author_input'}];
+  const expected={qualifier:{nature:'fact',source_role:'subject'},warrant:{producer:'function'},statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'合成期望越界',data:{expected:true}}};
+  const unexpected={...expected,statement:{verdict:'refute',code:'core.catalog.not_member',text:'合成未知命令',data:{expected:false}}};
+  requirement.claims.push(expected,unexpected,{qualifier:{nature:'fact'},warrant:{producer:'function'},statement:{verdict:'support',data:{source_facts:[{location:ref('c1'),reference:'rec:'+SHA,layer:requirement.layers[0],claim:expected}]}}});
+  const result=reviewTables(input(small(),[b]));assert.equal(result.counts.total.hubChecks,1);assert.ok(!result.markdown.includes('合成期望越界'));assert.ok(result.markdown.includes('合成未知命令'));
+});

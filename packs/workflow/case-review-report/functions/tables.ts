@@ -107,12 +107,12 @@ export function reviewTables(input:TableInput):{markdown:string;counts:ReviewCou
           add({...common,kind:code===labels.dispositions.find(row=>row.display==='推翻')?.code?'refuted':'finding',disposition:code,probe:typeof data.probe==='string'?data.probe:null},place(common.node));
         }
         if(claim.qualifier?.nature===FACT&&claim.warrant?.producer===FUNCTION){
-          if(claim.qualifier?.source_role===SUBJECT&&attributed&&statement.verdict==='refute'&&code!==null)add({...common,kind:'hub'},place(common.node));
+          if(claim.qualifier?.source_role===SUBJECT&&attributed&&statement.verdict==='refute'&&data.expected!==true&&code!==null)add({...common,kind:'hub'},place(common.node));
           // The verifier's source-facts check carries original claims and their original record references as data.
           if(statement.verdict==='support')for(const original of records(data.source_facts)){
             const fact=isRecord(original.claim)?original.claim:{},factStatement=isRecord(fact.statement)?fact.statement:{};
             const qualifier=isRecord(fact.qualifier)?fact.qualifier:{},warrant=isRecord(fact.warrant)?fact.warrant:{};
-            if(!isRecord(original.layer)||original.layer.attribution!==SOURCE_ERROR||qualifier.nature!==FACT||qualifier.source_role!==SUBJECT||warrant.producer!==FUNCTION||factStatement.verdict!=='refute'||typeof factStatement.code!=='string')continue;
+            if(!isRecord(original.layer)||original.layer.attribution!==SOURCE_ERROR||qualifier.nature!==FACT||qualifier.source_role!==SUBJECT||warrant.producer!==FUNCTION||factStatement.verdict!=='refute'||isRecord(factStatement.data)&&factStatement.data.expected===true||typeof factStatement.code!=='string')continue;
             const at=sourceLocation(fact,nodeOf(original.location)??owner);
             add({...common,node:at,kind:'hub',code:factStatement.code,text:text(factStatement.text),record:text(original.reference),order:order++},place(at));
           }

@@ -485,3 +485,13 @@ it('an expected catalog refutation is not preserved as an attributed source defe
   const result=projected(projection(input([target(),draft(record(source))])));
   assert.deepEqual(result.items.find(item=>item.id.endsWith(':c2'))!.fields.draft_source_facts,[]);
 });
+
+it('mixed expected and author-input catalog refutations preserve only the unexpected claim',()=>{
+  const source=draftResult(),entry=source.partitions.delivered[0];
+  const unexpected={...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.not_member',text:'合成未知命令',data:{expected:false}}};
+  entry.requirements.push({requirement:'catalog',layers:[{layer:'static',terminal:'violation',code:'core.catalog.not_member',attribution:'author_input'}],status:'unsatisfied',claims:[
+    {...fact('catalog'),statement:{verdict:'refute',code:'core.catalog.param_out_of_range',text:'合成期望越界',data:{expected:true,negative_case:true}}},unexpected]} as any);
+  const result=projected(projection(input([target(),draft(record(source))])));
+  const snapshots=result.items.find(item=>item.id.endsWith(':c2'))!.fields.draft_source_facts as Array<{claim:unknown}>;
+  assert.deepEqual(snapshots.map(row=>row.claim),[unexpected]);
+});

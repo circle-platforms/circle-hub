@@ -62,3 +62,5 @@ target 必填；按原始子项分表，模型判断与源文件归责事实分�
 ## 测试
 
 `functions/report.test.ts` 覆盖投影（最差、合并交付、重叠拒绝、缺条目、缺结论未知）和两个检查；`tests/acceptance/26-review-report.test.ts` 走真 Hub。
+
+每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。

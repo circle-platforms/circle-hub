@@ -142,7 +142,7 @@ export function projection(input: unknown): ProjectionOutput {
           const reference=recReference(record,base,['partitions',partition,n,'requirements',r,'claims',c]);
           if(requirement.requirement===FINDINGS&&isModelJudgment(claim))findings.push(findingOf(claim,reference));
           const attributed=Array.isArray(requirement.layers)?requirement.layers.find(layer=>isRecord(layer)&&layer.layer==='static'&&layer.attribution===SOURCE_ERROR):undefined;
-          if(attributed&&isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&claim.qualifier.source_role==='subject'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='refute'){
+          if(attributed&&isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&claim.qualifier.source_role==='subject'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='refute'&&!(isRecord(claim.statement.data)&&claim.statement.data.expected===true)){
             sourceFacts.push({reference,location:entry.location,layer:attributed,claim});
           }
         });

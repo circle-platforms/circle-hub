@@ -172,3 +172,5 @@ verification 路由两轮修复，suggestions 同时列出这项检查。
 以完整原声明、原层结果和原 rec: 引用放进投影的 draft_source_facts。处置检查的支持事实把它们原样保存在
 data.source_facts 并列原引用为根据；不重判、不改生产者或归责。终稿据此单列“Hub 核对”。
 没有这样的反驳时明确保存空列表；缺少此字段的旧复核结果不能当作“没有 Hub 问题”，需用新版复核后重开终稿。
+
+每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。
