@@ -123,3 +123,11 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
   });
   it('keeps the pack unavailable to an unassigned user', async () => { const result = await hub.service.startRunDetailed(hub.bob, start(), call()); assert.equal(result.answer.call_result, 'error'); });
 });
+it('closure 02 prerequisite pointers survive both requirements and repaired submissions resume catalog and quote checks',{skip},async()=>{
+ const started=await hub.service.startRunDetailed(hub.alice,start(),call());assert.ok(started.answer.run);const id=started.answer.run.run;
+ const blocked=await hub.service.submitResult(hub.alice,submission(id,data=>{data.steps[0].args=['widget health interval "60'];}),call());
+ const requirements=Object.values(blocked.result!.partitions).flat().flatMap(item=>item.requirements);
+ for(const key of ['commands_known','workbook_verified'])assert.ok(requirements.find(r=>r.requirement===key)!.claims.some(c=>c.statement.reason==='awaiting_step'&&c.statement.text.includes('contract_shape/data/steps/0/args/0')&&c.statement.text.includes('自动重核')));
+ const fixed=await hub.service.submitResult(hub.alice,submission(id),call());const claims=Object.values(fixed.result!.partitions).flat().flatMap(item=>item.requirements).flatMap(r=>r.claims);
+ for(const interpreter of ['catalog@1','quote@1'])assert.ok(claims.some(c=>c.warrant.id===interpreter&&c.statement.verdict==='support'));
+});

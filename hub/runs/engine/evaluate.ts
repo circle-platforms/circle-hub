@@ -6,7 +6,7 @@ import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
 import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import { MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
+import { SubjectBlocked, MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
@@ -458,6 +458,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     if (check.subject === undefined) return { subject: fallback() };
     try {
       const out = await callPackFunction({ packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export }, builderInput, ctx.deps.sandboxLimits, ctx.deps.sandbox);
+      const blocked=SubjectBlocked.safeParse(out.output);
+      if(blocked.success){const rows=blocked.data.blocked;return {failure:{verdict:'unknown',reason:'awaiting_step',code:rows[0].code,pointer:rows[0].pointer,statement:`前置驳回：${rows.map(row=>`${row.check}${row.pointer}（${row.code}）`).join('；')}。下一步：修正这些驳回后自动重核`,grounds:[],tier:check.tier??'blocking',data:{blocked:rows}}};}
       return { subject: out.output };
     } catch (error) {
       onError(error, `${check.id} subject`);

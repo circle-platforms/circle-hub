@@ -34,12 +34,11 @@ export function checkContractShape(input: unknown): Outcome[] {
   const read = slotsOf(s); if (read.errors) return read.errors;
   const out: Outcome[] = [];
   for (const [i, step] of read.slots.steps.entries()) {
-    const at = `/data/steps/${i}`;
+    const at = `/data/steps/${i}`; const beforeStep=out.length;
     const method = runtimeMethod(s.contract!, step.object, step.method);
     if (!method) { out.push(refute(s, 'method_forbidden', `第 ${i + 1} 步不是合约启用的组合`, at)); continue; }
     const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
     if (Object.values(allowed.parameters).some((role) => role === 'literal_assertion')) { out.push(refute(s, 'assertion_in_steps', '断言写进 expects，带引文和 after', at)); continue; }
-    try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
@@ -53,6 +52,7 @@ export function checkContractShape(input: unknown): Outcome[] {
       if (role === 'host_shell' && /[$`*?\[\]{}~;|&<>]/.test(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
       if (role === 'host_shell' && deniedCommand(String(v.value), s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
+    if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
   return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
 }
