@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "functions/adoc/README.md",
-      "sha256": "1f8a651408cfe85b3bee758559ed79101b748e00ca0984ae331297a306610956",
-      "size": 7786
+      "sha256": "026a48b36308a4ca9d681d176ff0e7299eec6a9957604b48e7f41cb653002b9a",
+      "size": 10211
     },
     {
       "path": "functions/adoc/engine.ts",
@@ -123,8 +123,8 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "9287ba8ffe855ea2f5c6db9751a93259b0b5764866502fd85c70f759a45302ba",
-      "size": 55623
+      "sha256": "d4a374afe951df223456e299c4ad8aefafc125cbbbe2581a2fdd70b074dd3611",
+      "size": 56035
     },
     {
       "path": "functions/naming.ts",
@@ -168,8 +168,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "1a258f1b95d3e814fa7ec5a22e15489aa71f0a73c00bd2e8633c6777a2358c90",
-      "size": 13501
+      "sha256": "61b2866557d525d9c5373e70511fb8fed9f4088310a479a8aadacd00e32e016b",
+      "size": 13630
     },
     {
       "path": "functions/util.ts",
