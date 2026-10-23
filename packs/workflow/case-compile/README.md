@@ -72,3 +72,7 @@ The repository vocabulary scan currently has eight existing matches in six files
 ## Local verification receipt
 
 2026-10-23: `node --test --test-concurrency=1 'packs/workflow/case-compile/**/*.test.ts'` ran 119 tests: 119 passed, zero failures and zero skips. The real temporary-registry check passed all 52 author samples. The real-engine tests proved predecessor address visibility, the unrelated-run negative control, complete-schema repair messages and two-round repair exhaustion using only synthetic resources. `npx tsc --noEmit`, `npm run verify:contracts` (68 generated files), `pack-files.ts --check` and `git diff --check` passed. The whole-repository vocabulary command ran 16 tests: 15 passed and the scan failed on the eight pre-existing out-of-package matches described above; case-compile had zero matches. No real runner, device, deployment, model endpoint or owner environment was used.
+
+## Workbook extension in progress
+
+The existing core xlsx@1 parser remains the sole ZIP/XML reader. This pack declares a local structural model contract and will apply the generator subset in its independent semantic reader. The subset's member paths, external cell type values, bounds and generator identity live in tables/workbook-format.json. Parsed container bytes are never reparsed here; recomputed bytes will be compared with the integrity-checked bound original's SHA-256.
