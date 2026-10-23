@@ -3,6 +3,7 @@
 import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
 import type { CatalogSignature } from '../../../../contracts/src/tables.ts';
 import type { EntryKind, ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import type { CommandCatalog } from './cases-commands.ts';
 
 export type { EntryKind, HtmlModel, MarkdownModel, XmlModel };
 
@@ -94,7 +95,7 @@ export type SelectBuildResult = {
 export type PageKind = 'mainline' | 'platform' | 'customer' | 'patch';
 
 export type ListingPage = {
-  /** Page name without the extension, as written: rel_apv_10_4_2. */
+  /** Page name without the extension, as written: rel_apv_10_6_4. */
   page: string;
   /** The link exactly as written on the linking page; the caller resolves it against that page's URL. */
   href: string;
@@ -106,7 +107,7 @@ export type ListingPage = {
   kind: PageKind;
 };
 
-/** A hub page linked from the index (apv_10_5, apv_10_4_6, apv_trunk ...): it links the listing pages of a line. */
+/** A hub page linked from the index (apv_10_7, apv_10_6_4, apv_trunk ...): it links the listing pages of a line. */
 export type HubPage = {
   page: string;
   /** The link exactly as written on the index page; the caller resolves it against the index URL. */
@@ -236,7 +237,26 @@ export type ManualCatalog = {
   worked_examples?: Array<{ lines: string[]; src?: string }>;
 };
 
-export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[] };
+export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string };
+
+/**
+ * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
+ * cli or app); `catalog` is the build's command catalog (cases-commands `commandCatalog` of the command tree) — with it,
+ * signatures and command-table rows hang at /commands only at nodes the tree has, and the warnings list the literals the
+ * tree cannot resolve as drift candidates. What an entry's digest covers never depends on the tree; placement does
+ * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
+ */
+export type ManualOptions = {
+  name?: string;
+  catalog?: CommandCatalog | null;
+  /** A production whose tree slot is unusable: signatures stay at their section nodes (no synthetic paths). */
+  noTree?: boolean;
+  /** The fragment parser key of the input model (K1 item: only a document model with section paths is depended on;
+   * the adoc producer passes its own key, default markdown@1 — the placement code needs no change then). */
+  fragmentParser?: string;
+  /** The section-selector scheme of the input model ('h/' path selectors by default; text@1 uses l/<a>-<b>). */
+  sectionSelector?: (path: readonly string[]) => string;
+};
 
 /**
  * A span the code could not place; it stays citable by its selector and goes to the typed-judgment model later. `kind` is

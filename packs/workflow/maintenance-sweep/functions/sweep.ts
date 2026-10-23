@@ -1,3 +1,5 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Maintenance sweep (capability 4b). A case of the earlier build needs maintenance when it sits on a removed path, or
 // on a modified path whose definition data differ. A behaviour-only change is not an item. An added path is not an
 // item. One case on several such paths is one item. Output order follows ids and paths, never the order of the view.
@@ -14,7 +16,7 @@ export interface Parameters {
 export interface Reason {
   /** The index of the path in the run-level details table (note.details); the path string is there, once. */
   detail: number;
-  change: 'removed' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
 }
 
 /** One row per changed path at the run level: the change kind, the field differences (the check reads 字段差异 N 处
@@ -22,7 +24,7 @@ export interface Reason {
  * never repeat it. */
 export interface PathDetail {
   path: string;
-  change: 'removed' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
   fields: FieldDiff[];
   references: string[];
 }
@@ -59,7 +61,7 @@ export interface SweepNote {
   details: PathDetail[];
   /** The whole command diff, one row per changed path with the earlier-build case count on it; the command-diff
    * summary reads this (details covers only the maintenance paths, this table never drops one). */
-  diff: { path: string; change: 'added' | 'removed' | 'modified'; cases: number }[];
+  diff: { path: string; change: ChangeKind; cases: number }[];
 }
 
 export interface SweepResult {
@@ -69,7 +71,7 @@ export interface SweepResult {
 }
 
 interface Side {
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
   before: string[];
   after: string[];
 }
@@ -81,7 +83,7 @@ interface Acc {
   priority: number | null;
   negative: boolean;
   chosen: string;
-  reasons: Map<string, 'removed' | 'modified'>;
+  reasons: Map<string, Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>>;
 }
 
 const MAX_ID = 200;
@@ -148,7 +150,7 @@ function definitionData(view: NormView, digests: readonly string[], warnings: Wa
 
 /** What the run note says about cases the index does not hold. */
 export function indexNote(skippedFrom: number): string {
-  const base = '索引没有收录的用例，这里不作结论。';
+  const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
   if (skippedFrom > 0) return `较早构建的索引缺少 ${skippedFrom} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}`;
   return base;
 }
@@ -163,7 +165,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
     const prior = byPath.get(change.path);
     const before = uniqueSorted([...(prior?.before ?? []), ...change.before]);
     const after = uniqueSorted([...(prior?.after ?? []), ...change.after]);
-    let kind: Side['change'] = change.change === 'added' || change.change === 'removed' || change.change === 'modified' ? change.change : 'modified';
+    let kind: Side['change'] = (CHANGE_KIND as readonly string[]).includes(change.change) ? change.change as ChangeKind : 'modified';
     if (prior !== undefined && prior.change !== kind) {
       if (before.length === 0 && after.length > 0) kind = 'added';
       else if (after.length === 0 && before.length > 0) kind = 'removed';

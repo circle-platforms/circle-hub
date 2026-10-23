@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { extractCases } from './cases.ts';
 import { projectItems } from './project.ts';
-import { CONTRACT_DOC, MANIFEST_DOC, MINDMAP_MODEL } from './test-support.ts';
+import { CONTRACT_DOC, PROFILE_DOC, AUTOID, MANIFEST_DOC, MINDMAP_MODEL } from './test-support.ts';
 
 const SHA = 'f'.repeat(64);
 
@@ -14,9 +14,10 @@ function input(model: unknown, options: { contract?: unknown; manifest?: unknown
     inputs: [
       { slot: 'subject', external: options.external ?? 'agile:mindmap:doc-1', sha256: SHA, parser: options.parser === undefined ? 'kityminder@1' : options.parser, model },
       { slot: 'contract', external: 'doc:doc:compile-contract', sha256: 'c'.repeat(64), parser: 'json@1', model: options.contract === undefined ? CONTRACT_DOC : options.contract },
+      { slot: 'profile', model: PROFILE_DOC },
       { slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'd'.repeat(64), parser: 'json@1', model: options.manifest === undefined ? MANIFEST_DOC : options.manifest },
     ],
-    parameters: options.parameters ?? {},
+    parameters: options.parameters ?? { autoid: AUTOID },
     context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } },
   };
 }
@@ -51,7 +52,7 @@ describe('投影', () => {
     const out = projectItems(input(MINDMAP_MODEL)) as { items: Array<{ id: string; label: string; fields: Record<string, unknown>; location: { selector: string } }>; groups: Array<Record<string, unknown>>; warnings: Array<{ code: string }> };
     assert.deepEqual(
       out.items.map((item) => item.id),
-      ['doc-1:c-1', 'doc-1:c-2'],
+      ['doc-1:c-1'],
     );
     assert.equal(out.items[0].label, '健康检查间隔配置测试');
     assert.equal(out.items[0].location.selector, 's/c-1');
@@ -59,14 +60,14 @@ describe('投影', () => {
     assert.equal(out.items[0].fields.case_rule, 'marked');
     const group = out.groups[0];
     assert.equal(group.kind, 'case-compile');
-    assert.equal((group.contract as Record<string, unknown>).schema, 'compile-contract@1');
+    assert.equal((group.contract as Record<string, unknown>).schema, 'ist.excel.function-contract');
     assert.equal((group.manifest as Record<string, unknown>).schema, 'test-bed-manifest@1');
     assert.equal(group.rule_summary, '用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）');
     assert.deepEqual(out.warnings, []);
   });
 
   it('tagged 参数：只靠标记的节点给警告，不投影', () => {
-    const out = projectItems(input(MINDMAP_MODEL, { parameters: { case_rule: 'tagged' } })) as { items: unknown[]; warnings: Array<{ code: string; message: string }> };
+    const out = projectItems(input(MINDMAP_MODEL, { parameters: { case_rule: 'tagged', autoid: AUTOID } })) as { items: unknown[]; warnings: Array<{ code: string; message: string }> };
     assert.equal(out.items.length, 1);
     assert.deepEqual(out.warnings.map((w) => w.code), ['case-compile.candidate_only']);
   });
@@ -93,9 +94,8 @@ describe('投影', () => {
     assert.equal(code(projectItems(input(MINDMAP_MODEL, { parameters: { case_rule: 'strict' } }))), 'case-compile.invalid_parameter');
   });
 
-  it('取不到用例是合法的空结果，给一条警告', () => {
-    const out = projectItems(input({ meta: {}, nodes: [{ text: '空文档', data: { id: 'empty' }, children: [] }] })) as { items: unknown[]; warnings: Array<{ code: string }> };
-    assert.deepEqual(out.items, []);
-    assert.deepEqual(out.warnings.map((w) => w.code), ['case-compile.no_cases']);
+  it('没有目标用例时拒绝启动而不是产生空计划', () => {
+    const out = projectItems(input({ meta: {}, nodes: [{ text: '空文档', data: { id: 'empty' }, children: [] }] })) as { error: { code: string; fix: string } };
+    assert.equal(out.error.code, 'case-compile.autoid_not_found'); assert.ok(out.error.fix);
   });
 });

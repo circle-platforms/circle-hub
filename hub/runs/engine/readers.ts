@@ -1,4 +1,5 @@
 import type { ContributionLayer } from '../../knowledge/api.ts';
+import { isKnowledgeContributionSchema } from '../../../contracts/src/contributions.ts';
 // Visibility (R02) and the readers hub/refs resolves references with. A user sees their own runs; an admin sees every run;
 // a run the Hub executes itself is shown to admins only (W06 R[3]). Records reach a reader only through the run they belong
 // to; absent and forbidden give the same null.
@@ -23,12 +24,12 @@ export function principalOf(reader: ReaderIdentity): Principal {
   return { id: reader.user, name: reader.user, role: reader.role };
 }
 
-/** Stored bytes through the records' tier-aware read; withheld bytes (retain_only) are unavailable. */
+/** Preserve retained metadata and unexpected function-read failures; model-only byte withholding stays neutral. */
 export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): SourceReader {
   return {
     async read(sha256, reader) {
       const source = await artifacts.source(principalOf(reader), sha256, { consumer });
-      if (source === null || source.bytes === null) return null;
+      if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },
   };
@@ -55,7 +56,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if (record.kind === 'claim' && record.schema === 'knowledge-contribution@1') {
+      if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) {
         if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
       } else if (reader.role !== 'admin') {
         const run = runOfRecord(record);

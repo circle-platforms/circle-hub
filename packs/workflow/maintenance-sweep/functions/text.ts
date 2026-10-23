@@ -1,8 +1,10 @@
-// Small pure helpers. No imports: pack functions may load only modules inside the pack.
+// Small pure helpers; runtime imports stay inside the pack.
+import { CHANGE_KIND_LABEL } from './generated/vocabulary.ts';
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 
 export const PACK = 'maintenance-sweep';
 
-export const CHANGE_LABEL = { added: '新增', removed: '删除', modified: '修改' } as const;
+export const CHANGE_LABEL = CHANGE_KIND_LABEL;
 
 export const FIX = '按替代命令改写这条用例，或者停用它';
 

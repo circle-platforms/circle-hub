@@ -1,4 +1,4 @@
-// Synthetic fixtures only. The pack is read through public examples, never imported/executed.
+// Frozen synthetic v1 fixtures only; no Hub or pack implementation is imported/executed.
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,7 +12,7 @@ import {
   type CompileContract, type RawBedManifest, type Submission, type RunShowExport, type StepVerdict,
 } from './compile-check.ts';
 
-export const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`../../../packs/workflow/case-compile/examples/${name}.json`,import.meta.url),'utf8'));
+export const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/compile-contract-v1/${name}.json`,import.meta.url),'utf8'));
 const contract = example('compile-contract') as CompileContract;
 const bed = example('bed-topology') as RawBedManifest;
 const commandTreeXml = `<commands><scope><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="seconds" type="U16" limit="[1 - 120]"/></arguments></item></menu><menu name="session"><item name="persistence"><arguments><arg name="mode" type="STRING" limit="{cookie|source}"/></arguments></item></menu></menu></scope></commands>`;
@@ -37,7 +37,7 @@ export const data = (f: ReturnType<typeof fixture>) => f.submission.items[0].slo
 export const rebind = (f: ReturnType<typeof fixture>) => { f.run.latest!.result!.submission = digest(f.submission); };
 const has = (f: ReturnType<typeof fixture>, type: StepVerdict['checkType'], verdict: StepVerdict['verdict']) => compileCheck(f).stepVerdicts.some(v => v.checkType === type && v.verdict === verdict);
 
-test('public examples pass independent checks including the published plan bytes and digest', () => {
+test('frozen synthetic v1 inputs pass independent checks including fixed plan bytes and digest', () => {
   const r = compileCheck(fixture());
   assert.equal(r.allPassed,true,JSON.stringify(r));
   assert.equal(r.plans.length,2);
@@ -346,4 +346,30 @@ test('an unknown interpreter check does not compare positions inside an otherwis
   refutes(f,3,['/data/expects/0']);
   f.run.latest!.result!.partitions.delivered![0].requirements[3].claims.push({pointer:'/quotes/999/text',statement:{text:'未知',verdict:'unknown'}});
   assert.equal(compileCheck(f).comparison.equal,true);
+});
+
+test('expected-text containment and source quotation both align Chinese hard wraps under decision 37', () => {
+  const f = fixture();
+  const e = data(f).expects[0];
+  e.text = '健康检查间隔设置成功'; e.quote.text = '健康检查间隔\n设置成功';
+  f.sources.set(e.quote.reference, '健康检查间隔\r\n设置成功');
+  const judgments = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation');
+  assert.ok(judgments.length > 0);
+  assert.ok(judgments.every(v => v.verdict === 'pass'), JSON.stringify(judgments));
+  assert.equal(checkVerbatimQuote(f.sources, e.quote.reference, e.text).verdict, 'pass');
+});
+
+for (const [quote, expected, verdict] of [
+  ['返回\n成功', '返回成功', 'pass'], ['A\n中文', 'A中文', 'pass'], ['中文\nA', '中文A', 'pass'],
+  ['Ａ\nB', 'ＡB', 'pass'], ['𠀀\nA', '𠀀A', 'pass'], ['🙂\nA', '🙂A', 'pass'],
+  ['set\t10\n0', 'set 10 0', 'pass'], ['a\u0085b', 'a b', 'pass'],
+  ['set 10 0', 'set 100', 'fail'], ['a + b', 'a+b', 'fail'], ['α β', 'αβ', 'fail'],
+  ['ｱ A', 'ｱA', 'fail'], ['中\ufeff文', '中文', 'fail'], ['é', 'e\u0301', 'fail'],
+] as const) test(`decision 37 expected containment ${JSON.stringify([quote, expected])}`, () => {
+  const f = fixture(), e = data(f).expects[0]; e.text = expected; e.quote.text = quote;
+  f.sources.set(e.quote.reference, quote);
+  const rows = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation' && v.stepIndex === 1 && v.item === f.submission.items[0].item);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find(v => v.check !== 'quote')!.verdict, verdict);
+  assert.equal(rows.find(v => v.check === 'quote')!.verdict, 'pass');
 });

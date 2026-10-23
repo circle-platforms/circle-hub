@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5fd27205dacc84d0a37d570858df1b24c29b22611538c5a29693f1e14c061952",
-      "size": 1663
+      "sha256": "b36e2c4696f1a06036aa21be9113cb75a96e288835c2aa60133fb0827d9597a1",
+      "size": 2568
     },
     {
       "path": "checks.json",
@@ -23,13 +23,13 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "2e4aecd5b837c4bb8be6ca68fa842659cd53e600bdb6b475a2f64167573559f6",
-      "size": 335
+      "sha256": "2fa20ac7db3485272a24b88124460be8b96f7674d967b9ddf5e31e090dcb7ee1",
+      "size": 219
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "35afa93918f38959937b10c1b5479351237c231738642f5155cdc4441f35535f",
-      "size": 707
+      "sha256": "f42066cd81843d2a170f4d51fbbf33ef7a88a5e38f85476e3d46e30e99d46716",
+      "size": 724
     },
     {
       "path": "functions/project.ts",
@@ -47,6 +47,11 @@
       "size": 818
     },
     {
+      "path": "samples/negative/relation_bad.json",
+      "sha256": "24f5279e40b50d83ca06a3e0e6a0fc60ebbca9d410aacfd7e5730e42921acf7b",
+      "size": 1255
+    },
+    {
       "path": "samples/negative/shape_bad.json",
       "sha256": "8be71faced0b1ee23ed33b40c0429441b79381ec32a6ecf05772cbd012f3a4c1",
       "size": 684
@@ -55,6 +60,11 @@
       "path": "samples/positive/quotes_good.json",
       "sha256": "711913a2e1400b6088a5722cab533c130cb93465ce89153414802bb2e49c4474",
       "size": 790
+    },
+    {
+      "path": "samples/positive/relation_good.json",
+      "sha256": "6efe6a5f7f1ba6494331349efd382086bd01ce25cde43e1c1470411914f81b92",
+      "size": 1228
     },
     {
       "path": "samples/positive/shape_good.json",
@@ -77,9 +87,119 @@
       "size": 900
     },
     {
+      "path": "tools/jev/SKILL.md",
+      "sha256": "a2a598a61f5a618ddffdb6479a5c47ec8b60fe574cd62287dafb0b9f53ebe062",
+      "size": 5972
+    },
+    {
+      "path": "tools/jev/egress.json",
+      "sha256": "f52697c6e959913c053e61df368ec792543f7a2f399a5468a4a4248022e95183",
+      "size": 158
+    },
+    {
+      "path": "tools/jev/examples/ask.json",
+      "sha256": "12b7c50c8fc3b9dcc58d5295d562acdddbd3cac874cdd0168d272fb51473f281",
+      "size": 648
+    },
+    {
+      "path": "tools/jev/examples/proposals.json",
+      "sha256": "866bb5561bb1cb0a41cc8ca7c7f1bf1da6bea3ddc66f2804d115b3ff121e5124",
+      "size": 949
+    },
+    {
+      "path": "tools/jev/generated.json",
+      "sha256": "dbf25610b450c00f08884a563bd0fdc6ad212b56581904f4d99d361e1bc3569b",
+      "size": 1327
+    },
+    {
+      "path": "tools/jev/hooks.json",
+      "sha256": "eea571812944787cbfebefd602cc0b9f6f92e1bf683df0bc6aa7fade275006e6",
+      "size": 718
+    },
+    {
+      "path": "tools/jev/jev.ts",
+      "sha256": "42bcf024376b119cf091efa3d71f85fe965743ee4545f4b4f21a82efb5527857",
+      "size": 5697
+    },
+    {
+      "path": "tools/jev/lib/api.ts",
+      "sha256": "d105f21a8d7cc9ce6cd70003a646ac7f8174e2d0eebdb90b0d8c3af1f983e641",
+      "size": 3854
+    },
+    {
+      "path": "tools/jev/lib/calibration.ts",
+      "sha256": "b38508541fbefc7a4fbfd28c6636c2f552cfd79505b74de3cd85768e0eda0247",
+      "size": 3900
+    },
+    {
+      "path": "tools/jev/lib/canonical.ts",
+      "sha256": "41bd37810817e11cc01c4d4e790d611ee4da78b658d03db6ad3638b6cb02fdda",
+      "size": 3722
+    },
+    {
+      "path": "tools/jev/lib/decide.ts",
+      "sha256": "8b9c44a4ceb843fc73c80ea5324e08a77525f0d8ec5ced6c85d673d085ba8c9f",
+      "size": 3062
+    },
+    {
+      "path": "tools/jev/lib/errors.ts",
+      "sha256": "09ed2af9814d1dd77191571a7c623d258ba6f34a2352b93e15fceaf46752d4f2",
+      "size": 2056
+    },
+    {
+      "path": "tools/jev/lib/http.ts",
+      "sha256": "01a9ebfdab42b29e4a600f0fc7b13a151e6acf1ac4e928277e02d2a42554a94c",
+      "size": 23645
+    },
+    {
+      "path": "tools/jev/lib/hub.ts",
+      "sha256": "dda61b030bc5fbce1cce1e670b333ec42903360927e5c7ca78bc7c0331883a35",
+      "size": 4507
+    },
+    {
+      "path": "tools/jev/lib/judge.ts",
+      "sha256": "3001deafaf967a0a597f8ab441d1984c9de62c45a5ca3534c6a809e4e9d93de0",
+      "size": 12190
+    },
+    {
+      "path": "tools/jev/lib/local.ts",
+      "sha256": "ef368999eb7b0d5ef136a39ff3aeb3dffa881a6a20a2f1f69303c6f8b2277c88",
+      "size": 6640
+    },
+    {
+      "path": "tools/jev/lib/pieces.ts",
+      "sha256": "299ffc41c818bbab938b8ca7ebb53de9ae8abb56e0f432660948aac0b5fdb3ae",
+      "size": 2887
+    },
+    {
+      "path": "tools/jev/lib/placement.ts",
+      "sha256": "cc40e4b38b7c2f476d1c128465c0be54cc25bffacc34d5775d16d59a7a5bfc79",
+      "size": 1444
+    },
+    {
+      "path": "tools/jev/lib/record.ts",
+      "sha256": "65faf9d010e1cba6101cd6af79754ac1363d8d0ebd296a8271a780c8b7987aa6",
+      "size": 7213
+    },
+    {
+      "path": "tools/jev/lib/tokens.ts",
+      "sha256": "079b80c78f3435ef5e2a87fc5d3508f557a37e320f89a0d7109f378e4ec95436",
+      "size": 1479
+    },
+    {
+      "path": "tools/jev/lib/validate.ts",
+      "sha256": "7777fabb8efdac145b2ecc9dbc3a3aa81b8903c44d46dfc864c64d7c8f6594ca",
+      "size": 19515
+    },
+    {
+      "path": "tools/jev/lib/workflow.ts",
+      "sha256": "d0015f492214eb633d5a8a60b4573cccff2a4468614e47deffa0a75a8b6f899b",
+      "size": 24262
+    },
+    {
       "path": "workflow.json",
-      "sha256": "513c860ed6418e3b075ed3662695b7a9f7e9c75fd781a88bfe79f85c3912ade9",
-      "size": 887
+      "sha256": "17330de391d5b3845e6a2263b9fec9d5c97560163c0a99dd702499c1a7483ed5",
+      "size": 1013
     }
   ]
 }

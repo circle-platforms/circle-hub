@@ -1,6 +1,7 @@
 // Rules the docs keep, applied by docs.test.ts: links the docs site can serve, vocabulary tables equal to the generated
 // vocabulary, the model's decided and deferred counts, a source for every recorded decision, and no local paths.
 import { posix } from 'node:path';
+import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 
 export const REPOSITORY = 'https://github.com/circle-platforms/circle-hub';
 
@@ -169,14 +170,78 @@ export function decisionSourceProblems(markdown: string): string[] {
   return entries.filter((e) => !e.includes('来源：')).map((e) => `decision ${/^(\d+)/.exec(e)?.[1]} names no source (来源：…)`);
 }
 
-// Built from pieces so that this file does not match itself.
-const LOCAL_PATH = new RegExp(['/' + 'Users/[^/\\s`)]+', '/' + 'home/[^/\\s`)]+', '~' + '/(?=[A-Za-z0-9])', '[A-Z]:\\\\' + 'Users\\\\'].join('|'), 'g');
+// Build sensitive shapes from pieces so the checker does not match its own source.
+const ROOT_BOUNDARY = '(?:(?<=file://)|(?<![A-Za-z0-9_./\\-]))';
+const LOCAL_PATH = new RegExp([
+  '/' + 'Users/[^/\\s`"\'<>),;:]+',
+  '/' + 'home/[^/\\s`"\'<>),;:]+',
+  ROOT_BOUNDARY + '(?:/' + 'root/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+|(?:/private)?/' + 'var/(?=[A-Za-z0-9_.-])[^\\s`"\'<>),;:]+)',
+  ROOT_BOUNDARY + '~' + '/(?=[A-Za-z0-9])',
+  "[A-Za-z]:\\\\{1,2}" + "[Uu][Ss][Ee][Rr][Ss](?:\\\\{1,2}|/)",
+  "(?<![A-Za-z0-9_.+-])[A-Za-z]:/" + "[Uu][Ss][Ee][Rr][Ss](?:\\\\{1,2}|/)",
+].join('|'), 'g');
 
-/** Paths that show the layout of someone's machine: home directories and paths below them. */
+// Exact synthetic home roots are permitted only in the named test files. No directory-wide exemptions.
+const SYNTHETIC_PATHS: Readonly<Record<string, readonly string[]>> = {
+  'hub/platform/layout.test.ts': ['/' + 'Users/someone', '/' + 'Users/x'],
+  'hub/platform/launchd.test.ts': ['/' + 'Users/someone'],
+  'hub/platform/environment.test.ts': ['/' + 'Users/x'],
+  'contracts/src/tool-shapes.test.ts': ['/' + 'Users/alice'],
+  'hub/records/scan.test.ts': ['/' + 'home/synthetic', '/' + 'home/user'],
+  'hub/config/config.test.ts': ['/' + 'var/log/hub'],
+};
+
+function archived(file: string): boolean {
+  return file.startsWith('foundation/') || file.startsWith('references/');
+}
+
+/** Only normalized network hosts qualify; malformed and machine-local URLs remain checked. */
+function networkPathURL(token:string):boolean {
+  try{
+    const url=new URL(token),host=url.hostname.toLowerCase().replace(/\.+$/,'');
+    if(!host||host==='localhost'||host.endsWith('.localhost')||host==='0.0.0.0'||/^127(?:\.\d{1,3}){3}$/.test(host)||host==='[::1]'||host==='[::]')return false;
+    const mapped=/^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(host);
+    if(mapped){const high=parseInt(mapped[1],16),low=parseInt(mapped[2],16);if(high>>>8===127||high===0&&low===0)return false;}
+    if(/\/@fs$/i.test(decodeURIComponent(url.pathname)))return false;
+    return true;
+  }catch{return false;}
+}
+
+/** Machine paths anywhere in tracked text, with explicit file-scoped synthetic fixtures. */
 export function localPathProblems(file: string, text: string): string[] {
+  if (archived(file)) return [];
   const problems: string[] = [];
   text.split('\n').forEach((line, index) => {
-    for (const m of line.matchAll(LOCAL_PATH)) problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
+    for (const m of line.matchAll(LOCAL_PATH)) {
+      // A path segment inside a network URL is not a machine path; file URLs still are.
+      const before = line.slice(0, m.index);
+      const token=/(?<![A-Za-z0-9+.-])(?:https?|ftps?):\/\/[^\s"'`<>()|*,?#=\u0080-\uffff]*$/i.exec(before)?.[0];
+      if(token&&networkPathURL(token))continue;
+      // ~/Library is an OS layout template, not a personal absolute path.
+      if (m[0] === '~/' && /^~\/Library(?:[\/\s`"',;)]|$)/.test(line.slice(m.index))) continue;
+      if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0])) continue;
+      problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
+    }
   });
   return problems;
+}
+
+const BUILD_NAME = new RegExp('(?:Rel' + '|Beta)_[A-Za-z][A-Za-z0-9_-]*_10_[0-5](?:_|\\b)[A-Za-z0-9_.-]*', 'gi');
+
+/** Build names from protected version lines belong in deployment data, not repository content. */
+export function buildNameProblems(file: string, text: string): string[] {
+  if (archived(file)) return [];
+  const problems: string[] = [];
+  text.split('\n').forEach((line, index) => {
+    for (const m of line.matchAll(BUILD_NAME)) problems.push(`${file}:${index + 1}: protected build name ${JSON.stringify(m[0])}`);
+  });
+  return problems;
+}
+
+/** Scan regular file contents and Git's symlink target text; never follow a symlink or discard a NUL-bearing blob. */
+export function trackedFileText(path: string): string | null {
+  const info = lstatSync(path);
+  if (info.isSymbolicLink()) return readlinkSync(path).replaceAll('\0', '');
+  if (info.isFile()) return readFileSync(path).toString('utf8').replaceAll('\0', '');
+  return null;
 }

@@ -43,7 +43,7 @@
    - 这套步骤写进 `hub/platform/README.md` 292 行一带和 `hub/server/assemble/README.md` 的 Secrets 一段（117 行）：停服务、移开 `vault/`、`key init`、`operator-token reissue`、`secret import`、起服务。`vault.ts` 11 行的提示加一句：找不回原来的钥匙串项时照这套步骤。
 
 4. **PLM 系统包按名字读构建列表**（`packs/system/plm/system.json` 125–131 行）。
-   - `plm:builds` 的键多一种写法：这条线的各个名字，各自 URI 编码后用 `+` 连接。改成规划函数（`functions/plm.ts` 加 `buildsPlan`、`buildsProject`，`max_requests: 2`）：数字键照旧只读这个产品的构建列表；名字键先读产品列表，产品名按 `/` 拆开（NFKC、去首尾空白、大小写折叠）后含有每个名字的产品正好一个，才读它的构建列表，没有或不止一个就不读。依据：这条线的产品记录名字里列出两族名字（`docs/hub-r4-architecture.md` 156 行；合成桩照这样写，`hub/connectors/testing/plm.ts` 19 行）。
+   - `plm:builds` 的键多一种写法：这条线的各个名字，各自 URI 编码后用 `+` 连接。改成规划函数（`functions/plm.ts` 加 `buildsPlan`、`buildsProject`，`max_requests: 2`）：数字键照旧只读这个产品的构建列表；名字键先读产品列表，产品名整串先 NFKC（全角 `／` 也就成了 `/`），再按 `/` 拆开，每段去首尾空白、转小写，含有每个名字的产品正好一个，才读它的构建列表，没有或不止一个就不读。依据：这条线的产品记录名字里列出两族名字（`docs/hub-r4-architecture.md` 156 行；合成桩照这样写，`hub/connectors/testing/plm.ts` 19 行）。
    - content：`{ product: {id, name} | null, product_resolution, builds: [{ name }] }`。`product_resolution` 用词表轴 `resolution` 的值（`contracts/generated/vocabulary.ts` 12 行：已解析、有歧义、未解析）；构建名取每项的 `name`（合成夹具的形状，`tests/fixtures/plm/index.ts` 43–49 行）。
    - 升小版本（gold-trace 第 5 条也升这个包，版本号接在先合并的那件后面），改 README，`node packs/workflow/case-review/packaging.ts sign plm`。
    - 测试（`plm.test.ts`，合成应答写在测试里，不改 `tests/fixtures/plm` 现有的值）：数字键；名字解析到一个产品；一个也没有；两个产品都列出这些名字；构建列表为空。
@@ -117,3 +117,11 @@
 7. 重新导入那一半写成服务端测试，照页面。另外做：`key init` 遇到非空的 `vault/` 就拒绝，并给出把它移开的选项。
 8. 真实服务上的切换失败回滚和重启恢复，由集成者放在下一次部署时演练。
 9. 冒烟改为核对命令输出（连接器事件）和服务日志，照页面。
+
+## 第 44 项注：hub-variables 第一步合并以后的做法
+
+这一件照现在的写，到时由 hub-variables 第 3 条改：
+
+- 第 1 条的 `secret import` 改成写到名字：`--key <键名>=<密钥名>`、`--basic <用户键>:<密码键>=<密钥名>`，加 `--digest <密钥名>=sha512_base64`、`--short <密钥名>` 和必填的 `--reason`；“一个键写进两个资源”改成“两个资源引用同一个密钥”；`--basic` 的核对改成核引用这个名字的各凭据项。
+- 第 3 条的恢复步骤里，`secret import` 照到时的写法；导入之前 `secret list` 写“登记了第 n 版，密钥库里没有它的条目”。
+- “集成者之后跑”第 1 条：hub-variables 第一步部署以前照现在的命令；部署以后先 `resource update <资源> --credential <凭据项>=<名字>` 迁移原值，以后再导入就写进 `PORTAL_USERNAME`、`PORTAL_PASSWORD`（`--digest PORTAL_PASSWORD=sha512_base64`）、`SVN_AUTHORIZATION` 这些名字。

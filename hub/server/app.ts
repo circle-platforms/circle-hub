@@ -11,6 +11,7 @@ import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
 import { SessionStore } from './console/session.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import { handleMcp } from './mcp.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
@@ -87,6 +88,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       return sendText(response, 400, BAD_TARGET, { connection: 'close' });
     }
     const url = target.url;
+    if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (url.pathname === '/healthz') {
       request.resume();
       if (request.method !== 'GET' && request.method !== 'HEAD') return sendText(response, 405, '只接受 GET', { allow: 'GET, HEAD' });

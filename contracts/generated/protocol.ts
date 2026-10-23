@@ -5,14 +5,24 @@ export const PROTOCOL_CODES = {
   REFERENCE_UNRESOLVED: { when: '精确值解析不出（T03 整份不受理之一）', fix: '改用能解析的原文，或先调用 resolve_reference' },
   REFERENCE_AMBIGUOUS: { when: '精确值有歧义（T03 整份不受理之一）', fix: '从诊断给出的可能所指里选一个' },
   QUOTE_MISMATCH: { when: '原文与引用对不上（T03 整份不受理之一）', fix: '按原文逐字引用，或先调用 resolve_reference' },
-  SOURCE_UNAVAILABLE: { when: '缺失或无权，对读者一律显示“对你不可用”（D05）', fix: '无；真实原因只在管理员日志里' },
+  SOURCE_UNPARSEABLE: { when: '所有候选解析器拒收来源，保留最后确定的解析原因', fix: '按解析器在抛出处给出的修正说明修改后重传' },
+  SOURCE_UNAVAILABLE: { when: '无权或权限未定的读者面前，缺失与无权同形（D05 R[3]）', fix: '核对引用；需要读权时请管理员分享或分配任务包；真实原因只进管理员记录' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
   RUN_SUPERSEDED: { when: '运行已被新修订取代（W06）', fix: '对新运行提交' },
   CREDENTIAL_IN_UPLOAD: { when: '上传里扫出明文凭据（B02）', fix: '去掉凭据后重传' },
-  LEASE_UNAVAILABLE: { when: '要取得的租约键上有未到期的占用（D04 R[0]）；详情带最早空闲时刻', fix: '等最早空闲时刻后再试，或改用别的键' },
+  LEASE_UNAVAILABLE: { when: '请求的租约键已占用或不可取得（D04 R[0]、R[10]）；有期限占用可给确定到期或空闲时刻，无期限预订只说明持有到释放', fix: '有确定空闲时刻的可等候后重试；无期限预订可改用别的键，或请主人、管理员按既有带理由释放规则处理，不补造到期时刻' },
   LEASE_EXPIRED: { when: '持有的租约已过到期时刻，同一租约的约束失效（D04 R[0]）', fix: '重新取得租约并重新证明基线' },
   FENCING_STALE: { when: '效果写入携带的围栏令牌落后于目标当前持有的租约令牌（D04 R[0]、R[3]）', fix: '用当前租约的围栏令牌重试该效果' },
+  SOURCE_ABSENT: { when: '有权读者面前，外部系统确定答没有，附系统、对象、读取时刻', fix: '核对编号或名称，按这条确定观察处理' },
+  EFFECT_NOT_ALLOWED: { when: 'P11 R[3] 第 1 款：动作不在冻结的允许效果表', fix: '使用已声明的动作，或发布包后以新修订重跑' },
+  EFFECT_PARAMETER_OUT_OF_RANGE: { when: 'P11 R[3] 第 2 款：参数超出该行范围', fix: '按声明范围改参数并重新核验产物' },
+  EFFECT_RELEASE_UNMET: { when: 'P11 R[3] 第 3 款：放行条件未满足', fix: '先完成声明的核验要求项，再派发其已核验产物' },
+  EFFECT_BUDGET_EXHAUSTED: { when: 'P11 R[3] 第 4 款：效果次数或时长预算用完', fix: '指出该行预算，以新修订调整声明或缩小工作范围' },
+  BOUNDARY_POLICY_DENIED: { when: 'P11 R[3] 第 6 款：全局边界政策表拒绝', fix: '按当前政策调整动作或环境，重新核验后开新修订' },
+  PACK_POLICY_DENIED: { when: 'P11 R[3] 第 7 款：任务包政策表重跑未通过', fix: '按政策表结论修正输入，重跑核验' },
+  EFFECT_CONTENT_UNVERIFIED: { when: 'P11 R[3] 第 8 款：外发字节不是核验后的产物或未过凭据核对', fix: '重新核验要外发的确切字节，按凭据规则受理后再派发' },
+  AUDIENCE_VISIBILITY_EXCEEDED: { when: 'P11 R[3] 第 9 款：内容可见范围不覆盖受众或身份未映射', fix: '收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -31,6 +41,16 @@ export const CORE_VIOLATION_CODES = {
   'core.pattern.no_match': { interpreter: 'pattern', when: '取值不符合声明的模式', fix: '按声明的写法重写' },
   'core.range.out_of_bounds': { interpreter: 'range', when: '数值、前缀或阈值检验不通过', fix: '让取值落在声明的界限内' },
   'core.coverage.shortfall': { interpreter: 'coverage', when: '覆盖到的集合没有包含表要求的全部成员', fix: '补上缺的成员，或写明跳过的理由' },
+  'core.contribution.product_unavailable': { interpreter: 'contribution', when: '缺少当前产品的有效读取权限', fix: '请管理员恢复产品读取权限后用新摘要申请核验；当前本条可标为 skipped，其余条目照常提交' },
+  'core.contribution.signature_required': { interpreter: 'contribution', when: '来源是会话声明、脱敏或缺少可追溯 Hub 原件，需要负责人署名', fix: '缺少负责人署名；本版保留在 Circle，本条标为 skipped（待负责人署名），其余条目照常提交' },
+  'core.contribution.personal_source': { interpreter: 'contribution', when: '所引个人来源不能放宽为产品可见', fix: '改引锁定根中的非个人 Hub 原件；本条先标为 skipped，其余条目照常提交' },
+  'core.contribution.source_unavailable': { interpreter: 'contribution', when: '所引原文当前不具备模型可读条件', fix: '请管理员核查并恢复原文读取条件后用新摘要重交；本条也可先标为 skipped' },
+  'core.contribution.lineage_unproven': { interpreter: 'contribution', when: '来源血缘成环、过长或缺少可追溯的 Hub 原件', fix: '补齐或修复生成记录的输入与原件引用后重新生成资料；本条先标为 skipped' },
+  'core.contribution.source_outside_root': { interpreter: 'contribution', when: '所引原文不属于本次锁定根的组成快照', fix: '缺少锁定根中的原文；本条标为 skipped（来源未入锁定根），其余条目照常提交；来源入根后重新开回注运行' },
+  'core.contribution.source_not_original': { interpreter: 'contribution', when: '所引节点只有子节点名单而没有可回注的原文片段', fix: '改引 get_nodes 返回的叶节点条目或锁定根中的原文引用；本条先标为 skipped' },
+  'core.contribution.record_not_original': { interpreter: 'contribution', when: '记录转述或已有回注不能作为新的回注原文根据', fix: '改引锁定根里 get_nodes 返回的原文 tree: 引用；本条先标为 skipped' },
+  'core.contribution.self_relation': { interpreter: 'contribution', when: '关系双方是同一片段或重叠引文而非两个独立端点', fix: '改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped' },
+  'core.contribution.composition_missing': { interpreter: 'contribution', when: '缺少与运行锁定产品和根一致的组成快照', fix: '恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped' },
 } as const;
 
 export type CoreViolationCode = keyof typeof CORE_VIOLATION_CODES;
@@ -45,8 +65,8 @@ export const REFERENCE_FORMS = {
 export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
-export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json'] as const;
+export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json'] as const;
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 9;
+export const MODEL_VERSION = 10;

@@ -1,3 +1,5 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Regression scope (capability 4a). A case is in scope when the later build places it on an added or modified path.
 // One case on several such paths is one item. Removed paths are neither in scope nor uncovered. A changed path with no
 // case in the later build is uncovered: unknown, never a failure. The priority filter does not create uncovered paths.
@@ -15,7 +17,7 @@ export interface Parameters {
 export interface Reason {
   /** The index of the path in the run-level details table (note.details); the path string is there, once. */
   detail: number;
-  change: 'added' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>;
 }
 
 /** One row per changed path at the run level: the kind, the definition change, a short line for a person, the first 3
@@ -23,8 +25,8 @@ export interface Reason {
  * the items cite the row by its index, never repeating it. */
 export interface PathDetail {
   path: string;
-  change: 'added' | 'removed' | 'modified';
-  definition_change: 'added' | 'removed' | 'modified' | 'none';
+  change: ChangeKind;
+  definition_change: ChangeKind | 'none';
   conclusion: string;
   differences: string[];
   references: string[];
@@ -48,7 +50,7 @@ export interface ScopeItem {
 
 export interface PathNote {
   path: string;
-  change: 'added' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>;
 }
 
 export interface Warning {
@@ -79,7 +81,7 @@ export interface ScopeResult {
 }
 
 interface Side {
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
   before: string[];
   after: string[];
 }
@@ -163,7 +165,7 @@ function definitionChangeOf(before: Cited[], after: Cited[]): PathDetail['defini
 /** The person-readable line of one reason: what happened to the command, not to the path's entries. */
 /** The per-path change detail, computed once: the definition change kind, the person line, the tree references to the
  * changed entries, and the first 3 field differences (signatures and data fields of both sides' definitions). */
-function detailsOf(path: string, side: Side, view: NormView, warnings: Warning[], missing: Set<string>): { definitionChange: 'added' | 'removed' | 'modified' | 'none'; references: string[]; differences: string[]; conclusion: string; change: Side['change'] } {
+function detailsOf(path: string, side: Side, view: NormView, warnings: Warning[], missing: Set<string>): { definitionChange: ChangeKind | 'none'; references: string[]; differences: string[]; conclusion: string; change: Side['change'] } {
   const before = cited(view, side.before, warnings, missing, path);
   const after = cited(view, side.after, warnings, missing, path);
   const definitionChange = definitionChangeOf(before, after);
@@ -206,7 +208,7 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
     const prior = byPath.get(change.path);
     const before = uniqueSorted([...(prior?.before ?? []), ...change.before]);
     const after = uniqueSorted([...(prior?.after ?? []), ...change.after]);
-    let kind: Side['change'] = change.change === 'added' || change.change === 'removed' || change.change === 'modified' ? change.change : 'modified';
+    let kind: Side['change'] = (CHANGE_KIND as readonly string[]).includes(change.change) ? change.change as ChangeKind : 'modified';
     if (prior !== undefined && prior.change !== kind) {
       if (before.length === 0 && after.length > 0) kind = 'added';
       else if (after.length === 0 && before.length > 0) kind = 'removed';

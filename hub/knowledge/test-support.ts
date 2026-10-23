@@ -392,7 +392,7 @@ export class FakePacks implements PacksPort {
 }
 
 export type FakeObject =
-  | { bytes: string | Uint8Array; mediaType: string; readTier?: Exclude<ReadTier, 'retain_only'>; personal?: boolean }
+  | { bytes: string | Uint8Array; mediaType: string; readTier?: Extract<ReadTier, 'model_readable' | 'function_bytes_only'>; personal?: boolean }
   | { fail: string };
 
 /** An external reader over in-memory objects: a read stores the bytes as a connector read with a shared credential. */

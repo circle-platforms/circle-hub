@@ -393,3 +393,155 @@ read; results, run records and production results over the record limit; queries
 只有显式标记 nature=fact、verdict=support 的组会升格，且每条 grounds 都按本次运行的读取范围核验。说明对象只接收 nature、verdict、message、grounds 和可选 data；considered、details、view 等附加元数据必须显式放在 data 内，不静默丢弃额外键。message 和 grounds 分别进入主张文字和根据，data 原样进入 statement.data。pointer 保留 /groups/<序号> 以回读冻结输出；投影输出不合格的拒绝不伪造调用参数 path，而在消息和包维护人的修正动作中说明位置与规则。
 
 投影说明统一是 cross_item 的提示用途事实，没有 requirement，不参与要求项满足或分区计数。Claim 不承载检查 tier，构造时也不传这个无效字段；回答按上述结构化位置和函数凭据标出“投影说明（提示，不参与要求项）”，不把它和条目检查事实混为同一用途，也不改变根据等级。
+
+### Standing obligations and current read tiers
+
+A standing obligation reads source bytes as its configuring administrator through
+`artifacts.source(..., { consumer: 'function' })`, just as an ordinary run uses the effective-tier source reader.
+It never uses `trustedBytes` or the first original's historical tier for pack checks. A withdrawn acceptance or a new
+credential finding therefore withholds the bytes on re-evaluation and makes the dependent check unknown.
+`standing-sources.test.ts` exercises an original from an earlier scanner, its accepted current scan and withdrawal with
+real temporary records, including the bytes actually delivered to the sandboxed check.
+
+## Concurrent submission subject construction
+
+Checks that use the same pure subject builder previously started another isolated process for each check, even when
+its function and JSON input were identical. The bounded sandbox pool then spent slots rebuilding the same item or run
+subject. The run-keyed submission lock remains unchanged: different runs enter independently, and identical submissions
+of one run still return the existing receipt without another validation action.
+
+Each evaluation of one submission and locked pack version now creates a separate subject-builder scope for the whole run
+and a short-lived scope for each item. A scope keys by function identity and SHA-256 of the exact JSON input bytes. It
+shares successful construction and in-flight construction, gives each check an independent JSON.parse of the cached JSON text, and drops failures so a later check can retry. It never shares across items, submissions, versions or changed
+inputs, and never shares check outcomes. Item scopes are discarded when that item's checks finish. Sandbox isolation,
+limits, concurrency, MCP timeouts and existing acceptance assertions are unchanged.
+
+Synthetic measurements on two concurrent 67-item submissions, excluding setup and start_run: before, 410 isolated pack
+function starts and 11344 ms; after, 272 starts and 6794 ms. These are observed samples, not wall-clock test thresholds.
+The repeated item builder drops from 268 to 134 starts, the repeated whole-run builder from 6 to 2; the 134 item check-function calls
+and 2 run check-function calls still execute, as do the core interpreter checks. Auxiliary memory-poller processes are excluded from function counts. Tests use two runs,
+one item and two checks, separately for item and whole-run subjects: the original starts four builders instead of two.
+They also verify both checks execute, every submission receives its receipt, concurrent identical repeats return identical
+receipt bytes, and only one submission, result and validate action is stored per run. Unit tests cover input/function/scope
+separation, byte-preserving result copies, mutation isolation, an input snapshot and retries after construction failure.
+
+## Retry evidence before the unknown-exit contract
+
+Transient check-function and subject-builder attempts run through the sandbox's bounded retry policy. Validation actions
+store their retry_attempts, including the first transient failure and the recovery or final failure, with a generated action_kind operation and component@version,
+module and item where applicable, generated reasons, durations and 50/100 ms backoff. Successful first calls do not enlarge this
+retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache
+shares successful construction and exhausted transient failures, and replay of a completed identical submission creates no new attempt or action.
+Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
+
+Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
+action retains read retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
+use registered check_error or integrity_unproven, an unresolved selector REFERENCE_UNRESOLVED. Text that cannot be provided
+uses missing_input; a pinned text exceeding reads.max_bytes uses budget_exhausted. Deterministic no-text/size limits do not
+repeat identical reads. Free-text diagnostics go only to the admin log. Every affected check outcome carries the actual
+unread list into its fact claim's statement.data.unread_sources even if the pack omits it. This is not a new top-level
+validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Exit ownership,
+requests, deadlines and whether unread_sources belongs at top level await hub-unknown-model.
+
+Exact-value resolution retries only SOURCE_UNAVAILABLE carrying an internal check_error or integrity_unproven reason
+(and thrown read failures), using the same three-attempt 50/100 ms policy. Genuine absent/forbidden references and invalid
+selectors keep their existing model-side treatment; source bounds and integrity checks are never bypassed. On exhausted
+Hub failure, validation records a validate action with hub_error, the fixed source reason, retry_attempts, repair: [] and
+no validation result. The protocol code stays SOURCE_UNAVAILABLE pending the model-owned code; the message identifies the Hub read failure, with an administrator-restore fix and no
+requirement/rounds_left. The raw submission is still stored once. Hub-failure actions do not mark the digest as a consumed
+repair attempt, so the identical body can be checked after restoration; genuine errors then consume their normal round.
+A completed result still replays idempotently. The model-facing resolver keeps its neutral return rather than throwing.
+
+Pending hub-unknown-model: explicit exit/request ownership and deadlines after retry exhaustion; automatic routing to a
+named administrator or pack author; top-level unread_sources and a storage location on not-accepted results that have no
+fact claims. This change adds no exit field, request contract, split, automatic re-evaluation or interpreter policy change.
+
+
+Subject-copy review: a successful build is serialized once as JSON text, and every check parses an independent value.
+The serializer is the same JSON.stringify used by the isolated function's result boundary; JSON.parse preserves deep
+JSON without structuredClone's lower recursion ceiling. Only non-exhausted build failures evict a cache entry. A host serialization
+or parse failure retains the successful build/text and is identified as subject_copy / Hub copy failure, never as
+FUNCTION_THREW. Tests exercise 4000 levels through real isolated builders and both item/run checks, plus an injected copy
+failure, independent mutation, retained launch count and byte-identical completed receipt replay. JSON-wire numeric zero
+is used in fixtures because a child's JSON serialization has already normalized negative zero before the parent sees it.
+
+
+## Scenario 19 submission latency under load
+
+The earlier two-call 67-item sample measured reduced launches, not a structural fix for ten concurrent MCP deadlines.
+The committed hub/server/submit-load.test.ts now exercises the exact scenario-19 shape through the real MCP client:
+ten distinct runs, 67 items each, default 60000 ms request timeout, all accepted receipts and one stored result per run.
+Eight bounded synthetic CPU workers run throughout the submission phase. Setup/start_run time is excluded. It asserts
+40 physical sandbox launches: per evaluation, one run subject, one run check, one item-subject batch and one item-check
+batch. Every item/check still has its own validation, JSON copy, outcome and failure; completed replay remains unchanged.
+
+Observed submission-phase samples on this branch, with the same eight synthetic workers (other terminal load varied):
+- Before evaluation batching: 1360 launches, ten receipts at 47452..48968 ms; loadavg before 66.77/40.00/31.14.
+- After batching: 40 launches, ten receipts at 3504..4154 ms; loadavg before 33.90/44.64/38.99.
+- Final-code repeat: 40 launches, ten receipts at 2957..3577 ms; loadavg before 23.27/26.10/28.31.
+These are observations, not a claim that arbitrary background loads or arbitrary pack functions have a universal SLA.
+The test itself enforces the existing 60-second MCP deadline, rather than raising it; diagnostics report each completion,
+launch count, worker count and loadavg. It drains observed server work even after a failing baseline so abandoned work
+cannot poison the next case. Owned load workers have a watchdog and are always terminated during cleanup.
+
+Batches never span evaluations, users, pack versions, modules or check declarations. A pure module is loaded once in its
+isolated process and each eligible input is invoked and serialized independently, with per-item diagnostics and errors.
+All namespace, tier, output and source checks still run through runCheck. OS/permission/import policy, memory, time,
+input/output and global child-slot caps stay unchanged. Boundary violations invalidate the physical batch; aggregate
+limits, timeout or violation trigger bounded individual fallback under the old caps, so one bad item cannot hide others.
+Stopping/cancellation is never revived by fallback. Ordinary per-item throws remain per-item outcomes. Skipped checks and
+failed subject construction explicitly complete their collector slot to avoid deadlock. The parent may stage item calls
+concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.
+
+Retain-only bound sources preserve their read tier through both runner and Hub readers. They are read once, never
+retried as transient faults, and are passed/stored as credential_unreadable with the missing administrator acceptance
+and an administrator acceptance/re-evaluation request. Other withheld bytes remain an internal read failure, not a credential fact.
+
+Exhausted exact reads write validate actions as error with the registered internal reason and null acceptance.
+The action retains the Hub-side message and administrator recovery/resubmit instruction; getRun shows it as not validated.
+The existing protocol code remains until the model owner supplies a dedicated Hub error code; it no longer implies reader permission failure.
+
+Exact-read retry also covers command quotation candidates, bound record reads, predecessor result scope and locked
+catalog construction. Exhausted function-side failures use the same HubReadFailure receipt and do not charge a repair round.
+
+Exhausted sandbox failures are marked by parent-only object identity and retained in the subject scope for the rest of
+one evaluation. Checks sharing that exact input/module reuse the same bounded failure cycle; a new input or evaluation
+gets a fresh cycle. Ordinary build failures and Hub-copy failures keep their separate existing policies.
+
+Resolver diagnostics from both runner and Hub evaluation contexts, exact references and exhausted scope reads retain
+the actual cause only in the administrator log. Caller answers, stored unread_sources and retry evidence contain no raw error text.
+
+Retry evidence uses action_kind read/validate and the actual versioned pack or engine component; module/item/reference
+identify the operation without a new classification axis. Sandbox control codes and queue_full/spawn_failed/stopping
+remain parent-only diagnostics; persisted reasons map to timeout, budget_exhausted or check_error.
+
+Data-only quoted fragments use the same bounded internal-fault reread policy as exact values, once per reference per
+evaluation. A recovered read proceeds to quote checking; exhaustion produces a Hub error action and administrator
+recovery/resubmit instruction, without a model repair charge or an accepted result frozen on a temporary read unknown.
+Retain-only and neutral absent/forbidden reads are not transient retry targets in this path.
+
+Retain-only data quotes preserve structured credential_unreadable evidence in data.unread_sources with the bound reference,
+missing administrator acceptance and the administrator acceptance/re-evaluation next action. quote@1 uses awaiting_step
+from the generated Reason axis; credential_unreadable belongs to ValidityStatus and is not a legal CheckOutcome.reason.
+No contract axis is widened. Legacy retain_only views receive the same evidence, and source reads remain single-attempt
+for this deterministic state. Request dispatch and automatic re-evaluation still await the model-owned exit contract.
+
+Startup-failure diagnostics retain the actual host errno/message for check and subject onError logging after retry
+exhaustion. Neither the submitted-result receipt nor persisted retry evidence carries those private causes; fixed
+check_error evidence and receipt idempotence are unchanged.
+
+部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。
+
+整份提交因其他条目被拒绝时，回注 not_stored 优先保留该条目自身的准入拒绝及 skipped/补件动作，不用一般重交文案覆盖它。
+
+## Integration with hub-redesign dd65afbc
+
+The generated FragmentRead grades and decision-37 quote normalization are retained. Permanent syntax, scope,
+groundability, selector and size defects refute with the mainline remedies; transient internal reads retain bounded
+retry and a Hub error receipt on exhaustion. Retained quotes also keep structured administrator-acceptance evidence.
+Exact resolution caches targets and grounds separately: recovery may therefore read the same reference once more for
+its other use, while each permanent absence is read only once per purpose. Standing obligations use the configurer's
+effective read permissions, not a trusted byte bypass. Unexpected function-read null-byte metadata still reaches refs for diagnostics; intentional model withholding stays neutral.
+K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
+contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
+retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.

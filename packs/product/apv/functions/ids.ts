@@ -36,17 +36,18 @@ function idAt(text: string, at: number, min: number, max: number): { id: string;
   // option28, 3a: short numbers glued to a word are not ids; long ones are (bug to case 123456showtech).
   if (short && /[A-Za-z]/.test(next)) return null;
   if (id.length === 8 && validDate(Number(id.slice(0, 4)), Number(id.slice(4, 6)), Number(id.slice(6, 8)))) return null;
-  return { id, end };
+  const normalized = normalizeId(id);
+  return normalized === null ? null : { id: normalized, end };
 }
 
 /** Ids from `at` on: one, then more after separators. */
-function idList(text: string, at: number, min: number, max: number): string[] {
-  const ids: string[] = [];
+function idList(text: string, at: number, min: number, max: number): Array<{ id: string; start: number; end: number }> {
+  const ids: Array<{ id: string; start: number; end: number }> = [];
   let position = at;
   for (let guard = 0; guard < 64; guard++) {
     const found = idAt(text, position, min, max);
     if (found === null) break;
-    ids.push(found.id);
+    ids.push({ ...found, start: position });
     position = found.end;
     const separator = SEPARATOR.exec(text.slice(position, position + 12));
     if (separator === null) break;
@@ -82,15 +83,19 @@ function leadingStart(text: string): number {
   return at;
 }
 
-export function idsFromTitle(title: string): IdsResult {
-  const out: IdsResult = { stories: [], bugs: [], plm: [], unclassified: [], warnings: [] };
+export type TitleIds = IdsResult & { spellings?: Array<{ kind: 'story' | 'bug' | 'plm' | null; id: string; raw: string }> };
+
+export function idsFromTitle(title: string): TitleIds {
+  const out: TitleIds = { stories: [], bugs: [], plm: [], unclassified: [], warnings: [] };
+  const rawIds: NonNullable<TitleIds['spellings']> = [];
   try {
     if (typeof title !== 'string') {
       out.warnings.push('标题不是字符串');
       return out;
     }
-    let text = title.normalize('NFKC');
-    if (text.length > MAX_TITLE) {
+    const frame = scanText(title.slice(0, MAX_TITLE));
+    let text = frame.text;
+    if (title.length > MAX_TITLE || text.length > MAX_TITLE) {
       out.warnings.push(`标题超过 ${MAX_TITLE} 个字符，只看前 ${MAX_TITLE} 个`);
       text = text.slice(0, MAX_TITLE);
     }
@@ -99,16 +104,26 @@ export function idsFromTitle(title: string): IdsResult {
       const start = (match.index ?? 0) + match[0].length;
       const glue = GLUE.exec(text.slice(start, start + 16));
       const target = match[1] !== undefined ? out.bugs : match[2] !== undefined ? out.stories : out.plm;
-      for (const id of idList(text, start + (glue ? glue[0].length : 0), 2, 9)) {
-        target.push(id);
-        classified.add(id);
+      for (const found of idList(text, start + (glue ? glue[0].length : 0), 2, 9)) {
+        const { id } = found; target.push(id); classified.add(id);
+        const raw = frame.spelling(found.start, found.end);
+        const kind = match[1] !== undefined ? 'bug' : match[2] !== undefined ? 'story' : 'plm';
+        rawIds.push({ kind, id, raw });
       }
     }
     const bare = idList(text, leadingStart(text), 4, 7);
     // A leading four-digit year (2025 ...) is not an id, and neither is anything listed after it.
-    if (!(bare.length > 0 && bare[0].length === 4 && Number(bare[0]) >= 1900 && Number(bare[0]) <= 2099)) {
-      for (const id of bare) if (!classified.has(id)) out.unclassified.push(id);
+    if (!(bare.length > 0 && bare[0].end - bare[0].start === 4 && Number(bare[0].id) >= 1900 && Number(bare[0].id) <= 2099)) {
+      for (const found of bare) if (!classified.has(found.id)) {
+        out.unclassified.push(found.id);
+        const raw = frame.spelling(found.start, found.end);
+        rawIds.push({ kind: null, id: found.id, raw });
+      }
     }
+    const changed = new Set(rawIds.filter(entry => entry.raw !== entry.id).map(entry => `${entry.kind}:${entry.id}`));
+    const originals = rawIds.filter((entry, index) => changed.has(`${entry.kind}:${entry.id}`)
+      && rawIds.findIndex(other => other.kind === entry.kind && other.id === entry.id && other.raw === entry.raw) === index);
+    if (originals.length) out.spellings = originals;
     out.stories = unique(out.stories);
     out.bugs = unique(out.bugs);
     out.plm = unique(out.plm);
@@ -121,9 +136,33 @@ export function idsFromTitle(title: string): IdsResult {
 }
 
 /** Pack function entry: the title, or `{ title }`. */
-export default function ids(input: unknown): IdsResult {
+export default function ids(input: unknown): TitleIds {
   return guarded(
     () => (isRecord(input) && typeof input.title === 'string' ? idsFromTitle(input.title) : idsFromTitle(input as string)),
     (warning) => ({ stories: [], bugs: [], plm: [], unclassified: [], warnings: [warning] }),
   );
+}
+
+/** Canonical nonzero decimal identity; all-zero text is not an identifier. Original spelling is retained separately. */
+export function normalizeId(raw: string): string | null {
+  const digits = raw.normalize('NFKC');
+  return /^0+$/.test(digits) ? null : digits.replace(/^0+(?=\d)/, '');
+}
+
+/** Matching text with source offsets, so compatibility normalization never rewrites a displayed identifier. */
+function scanText(raw: string, squeeze = false, lower = false): { text: string; spelling: (start: number, end: number) => string } {
+  let text = '';
+  const starts: number[] = []; const ends: number[] = [];
+  for (const part of new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(raw.toWellFormed())) {
+    let piece = part.segment.normalize('NFKC');
+    if (lower) piece = piece.toLowerCase();
+    for (const unit of piece.split('')) {
+      if (squeeze && unit === '\u0000') continue;
+      const char = squeeze && /\s/u.test(unit) ? ' ' : unit;
+      if (squeeze && char === ' ' && (!text || text.endsWith(' '))) continue;
+      text += char; starts.push(part.index); ends.push(part.index + part.segment.length);
+    }
+  }
+  if (squeeze && text.endsWith(' ')) { text = text.slice(0, -1); starts.pop(); ends.pop(); }
+  return { text, spelling: (start, end) => raw.slice(starts[start], ends[end - 1]) };
 }

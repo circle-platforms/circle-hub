@@ -26,6 +26,8 @@ const urlHref = call.bind((Object.getOwnPropertyDescriptor(URL.prototype, 'href'
 const urlProtocol = call.bind((Object.getOwnPropertyDescriptor(URL.prototype, 'protocol') as PropertyDescriptor).get as () => string) as unknown as (url: URL) => string;
 const regexExec = call.bind(RegExp.prototype.exec) as unknown as (re: RegExp, s: string) => RegExpExecArray | null;
 const stringify = JSON.stringify;
+const arrayIsArray = Array.isArray;
+const clockNow = performance.now.bind(performance);
 const objectKeys = Object.keys;
 const hasOwn = Object.hasOwn;
 const byteLength = Buffer.byteLength;
@@ -45,6 +47,7 @@ interface Dependency {
 
 interface Request {
   nonce: string;
+  batch?: boolean;
   /** File URL of the extracted pack directory, with a trailing slash. */
   pack: string;
   entry: string;
@@ -200,7 +203,7 @@ function describe(error: unknown): Record<string, Scalar> {
 }
 
 /** Reading the thrown value runs pack code (getters): an attempt it makes on the way is still the result. */
-function failFromError(error: unknown, phase: string, extra: Record<string, Scalar> = {}): never {
+function errorFrame(error: unknown, phase: string, extra: Record<string, Scalar> = {}): Extract<Frame, { status: 'error' }> {
   if (violations.length > 0) failViolation();
   let code: unknown;
   try {
@@ -211,7 +214,11 @@ function failFromError(error: unknown, phase: string, extra: Record<string, Scal
   const described = describe(error);
   if (violations.length > 0) failViolation();
   if (code === 'ERR_ACCESS_DENIED') finish({ status: 'error', code: 'SANDBOX_VIOLATION', detail: { phase, ...extra, ...described } });
-  finish({ status: 'error', code: 'FUNCTION_THREW', detail: { phase, ...extra, ...described } });
+  return { status: 'error', code: 'FUNCTION_THREW', detail: { phase, ...extra, ...described } };
+}
+
+function failFromError(error: unknown, phase: string, extra: Record<string, Scalar> = {}): never {
+  finish(errorFrame(error, phase, extra));
 }
 
 function failViolation(): never {
@@ -389,22 +396,36 @@ try {
 if (violations.length > 0) failViolation();
 if (typeof fn !== 'function') finish({ status: 'error', code: 'FUNCTION_NOT_FOUND', detail: { export: request.exportName } });
 
-let output: unknown;
-try {
-  output = await (fn as (input: unknown) => unknown)(request.input);
-} catch (error) {
-  failFromError(error, 'call');
+async function invoke(input: unknown): Promise<Frame> {
+  let output: unknown;
+  try { output = await (fn as (input: unknown) => unknown)(input); }
+  catch (error) { return errorFrame(error, 'call'); }
+  if (violations.length > 0) failViolation();
+  let text: unknown;
+  try { text = stringify(output); }
+  catch (error) { return errorFrame(error, 'output', { reason: 'output_not_json' }); }
+  if (violations.length > 0) failViolation();
+  if (typeof text !== 'string') return { status: 'error', code: 'FUNCTION_THREW', detail: { phase: 'output', reason: 'output_not_json' } };
+  if (byteLength(text) > request.outputBytes) return { status: 'error', code: 'SANDBOX_OUTPUT_TOO_LARGE', detail: { limit: 'output', stream: 'result' } };
+  return { status: 'ok', output: text };
 }
-if (violations.length > 0) failViolation();
 
-let text: unknown;
-try {
-  // Runs the output's toJSON methods and getters, which are pack code.
-  text = stringify(output);
-} catch (error) {
-  failFromError(error, 'output', { reason: 'output_not_json' });
+if (request.batch === true) {
+  if (!arrayIsArray(request.input)) finish({ status: 'error', code: 'SANDBOX_VIOLATION', detail: { reason: 'invalid_batch_input' } });
+  const inputs = request.input as unknown[];
+  let packet = '['; let size = 2;
+  for (let index = 0; index < inputs.length; index++) {
+    if (index > 0) { out.text = ''; out.kept = 0; out.total = 0; out.truncated = false; err.text = ''; err.kept = 0; err.total = 0; err.truncated = false; }
+    const started = clockNow();
+    const result = await invoke(inputs[index]);
+    const logs = { stdout: out.text, stderr: err.text, truncated: out.truncated || err.truncated, durationMs: clockNow() - started };
+    const chunk = result.status === 'ok'
+      ? `{"ok":true,"output":${result.output},"stdout":${scalar(logs.stdout)},"stderr":${scalar(logs.stderr)},"truncated":${scalar(logs.truncated)},"durationMs":${scalar(logs.durationMs)}}`
+      : encode({ ok: false, code: result.code, detail: result.detail, ...logs });
+    size += byteLength(chunk) + (index > 0 ? 1 : 0);
+    if (size > request.outputBytes) finish({ status: 'error', code: 'SANDBOX_OUTPUT_TOO_LARGE', detail: { limit: 'output', stream: 'result', scope: 'batch' } });
+    packet += (index > 0 ? ',' : '') + chunk;
+  }
+  finish({ status: 'ok', output: packet + ']' });
 }
-if (violations.length > 0) failViolation();
-if (typeof text !== 'string') finish({ status: 'error', code: 'FUNCTION_THREW', detail: { phase: 'output', reason: 'output_not_json' } });
-if (byteLength(text) > request.outputBytes) finish({ status: 'error', code: 'SANDBOX_OUTPUT_TOO_LARGE', detail: { limit: 'output', stream: 'result' } });
-finish({ status: 'ok', output: text });
+finish(await invoke(request.input));

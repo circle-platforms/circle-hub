@@ -10,7 +10,7 @@ import project from './project.ts';
 import subject from './subject.ts';
 import thresholds from './thresholds.ts';
 import totals from './totals.ts';
-import { boundView, facetRow, facetViewOf } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from './test-support.ts';
 import type { ProjectedItem } from './types.ts';
 
 const packDir = fileURLToPath(new URL('../', import.meta.url));
@@ -22,7 +22,7 @@ const view = facetViewOf([
   facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: true }, 19),
   facetRow({ line: '10.6.1', module: null, has_expected: true, vague_expected: true, negative: false }, 2),
 ]);
-const projection = { inputs: [boundView('facets', view)], parameters: {}, context: CONTEXT };
+const projection = { inputs: [boundView('facets', view), placementFor(view)], parameters: {}, context: CONTEXT };
 const projected = project(projection) as { items: ProjectedItem[]; groups: Record<string, unknown>[] };
 const runSubject = {
   applies: 'run',

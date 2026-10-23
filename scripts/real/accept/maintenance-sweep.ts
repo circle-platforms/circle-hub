@@ -3,6 +3,7 @@
 // marked command-changed sits on a modified path, and the changed ones show a field difference.
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
+import { facetReader, facetCountCheck, withoutFacetPages, validateScopeGold } from './regression-scope.ts';
 import { lengthBounded, runStarted } from './checks.ts';
 
 export interface SweepCaseGold {
@@ -12,6 +13,8 @@ export interface SweepCaseGold {
 }
 
 export interface SweepGold {
+  /** Required totals.unplaced from independent case-commands gold for the earlier build. */
+  caseCommandsUnplaced: number;
   product: string;
   earlier: string;
   later: string;
@@ -20,19 +23,22 @@ export interface SweepGold {
 }
 
 export default function scenario(gold: SweepGold): Scenario {
+  validateScopeGold(gold, 'maintenance-sweep');
   const area = '维护巡检';
   const pack = 'maintenance-sweep';
+  const readFacets = facetReader();
   return {
     name: 'maintenance-sweep',
     area,
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，找出需要维护的用例。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` } } } }]
-        : [{ text: '巡检完成。' }],
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.earlier}?kind=case&by=commands` } } } }]
+        : readFacets(turn, '巡检完成。'),
     check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
-      const checks: Check[] = [runStarted(area, turns)];
+      const answerTurns = withoutFacetPages(turns);
+      const text = resultTexts(answerTurns).join('\n');
+      const checks: Check[] = [facetCountCheck(area, gold.caseCommandsUnplaced, turns), runStarted(area, answerTurns)];
       for (const c of gold.cases) {
         const at = text.indexOf(c.id);
         const near = at >= 0 ? text.slice(Math.max(0, at - 400), at + 400) : '';

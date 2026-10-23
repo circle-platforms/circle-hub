@@ -31,7 +31,7 @@ describe('the read functions', () => {
     assert.equal(pageFile('index', { index_page: 'builds.htm' }), 'builds.htm');
     assert.equal(pageFile('index', { index_page: '../etc/passwd' }), 'index.html', 'a configured page with a slash is not used');
     assert.equal(pageFile('rel_orbit_7_1', {}), 'rel_orbit_7_1.html');
-    assert.equal(pageFile('apv_10_5.htm', {}), 'apv_10_5.htm');
+    assert.equal(pageFile('apv_10_7.htm', {}), 'apv_10_7.htm');
     for (const bad of ['', '../x', 'a/b', 'a b', '.hidden', 'x'.repeat(300)]) assert.equal(pageFile(bad, {}), null, bad);
     assert.deepEqual(listingPlan({ round: 1, external: { key: 'rel_orbit_7_1' }, settings: {} }), { requests: [{ key: 'page', route: 'page', params: { page: 'rel_orbit_7_1.html' } }], done: true });
     assert.deepEqual(listingPlan({ round: 1, external: { key: 'a/b' } }), { requests: [], done: true });

@@ -1,3 +1,4 @@
+import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
 // project the items, bind the expected sources, offer carry-overs, freeze everything in a run record and, for a pack whose
 // requirements are all facts, compute the validation result at once (a production run; the same path serves runs the Hub
@@ -64,7 +65,7 @@ export interface StartRunDetail {
 
 export interface StartMode {
   /** local_circle for a caller's session; hub for a standing obligation the Hub executes (W06 F[1], W09 R[3]). */
-  host: 'local_circle' | 'hub';
+  host: Extract<ExecutionHost, 'local_circle' | 'hub'>;
 }
 
 /** A pack whose requirements are all facts needs no model input: start_run computes its result (production run). */
@@ -383,6 +384,10 @@ async function authorizedStart(
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  const contribution=workflow.workflow.contribution;
+  if(contribution!==undefined&&(!workflow.slots.item[contribution.slot]||!workflow.requirements.some(r=>r.key===contribution.requirement&&r.target==='item'&&r.accepted_producer==='fact'))){
+    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包缺少回注槽位或对应的逐条目事实核验要求项',{path:'/pack',fix:'请任务包维护人修正 workflow.contribution 的 slot 和 requirement 声明，再重开运行'})]);
+  }
   if (mode.host === 'hub' && !isProduction(workflow)) {
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '含模型槽位的任务包不能由 Hub 执行（W09 R[3]：常设义务只许确定性函数）', { path: '/pack', fix: '改用只含事实要求项的任务包' })]);
   }
@@ -693,7 +698,7 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
     endedAt,
     acceptance: null,
     codes: [],
-    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true },
+    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true, retry_attempts: production.evaluation.retryAttempts },
   });
   return { reference: recReference(result.digest), record: result.digest, result: result.body, counts: partitionCountsOf(result.body.partitions) };
 }

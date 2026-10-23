@@ -282,7 +282,7 @@ async function storedOutcome(context: KnowledgeContext, key: string): Promise<St
   }
 }
 
-function memoAction(ctx: ListCallContext, startedAt: string, elements: readonly ParsedSource[], result: ActionResult, detail: MemoDetail | MemoFailureDetail): ActionBody {
+function memoAction(ctx: ListCallContext, startedAt: string, elements: readonly ParsedSource[], result: Extract<ActionResult, 'completed' | 'error'>, detail: MemoDetail | MemoFailureDetail): ActionBody {
   const inputs = [...new Set([...elements.map((e) => `src:${e.sha256}`), ...[...ctx.slots.values()].flatMap((s) => (s === null ? [] : [`src:${s.sha256}`]))])];
   return {
     action: ACTION.generate,

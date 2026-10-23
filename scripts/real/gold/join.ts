@@ -9,6 +9,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+/** Read the declaration, rejecting malformed tables instead of silently defaulting. */
+export function parseClosedStatuses(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : raw !== null && typeof raw === 'object' && 'statuses' in raw ? raw.statuses : null;
+  if (!Array.isArray(values) || !values.every((v) => typeof v === 'string' && v.trim() !== '')) throw new Error('关闭状态表必须是字符串数组或 {statuses: 字符串数组}');
+  return values;
+}
+
 export function normalizeId(id: string): string {
   return /^[0-9]+$/.test(id) ? id.replace(/^0+/, '') || '0' : id;
 }
@@ -240,9 +247,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (closedPath) {
       const rawClosed: unknown = JSON.parse(readFileSync(resolve(closedPath), 'utf8'));
-      if (Array.isArray(rawClosed)) {
-        closedStatuses = rawClosed.filter((s): s is string => typeof s === 'string');
-      }
+      closedStatuses = parseClosedStatuses(rawClosed);
     }
   } catch (error) {
     process.stderr.write(`读不了输入：${(error as Error).message.split('\n')[0]}\n`);

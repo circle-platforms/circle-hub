@@ -5,7 +5,7 @@ import type { SourceView } from './types.ts';
 export type { CatalogEntry, CatalogParam, CatalogParamType, CatalogSignature, CheckOutcome, TableKind } from '../../contracts/src/tables.ts';
 export { TABLE_SCHEMAS } from '../../contracts/src/tables.ts';
 
-export type { CheckContext, CheckRequest, Interpreter, SourceView, TableIssue } from './types.ts';
+export type { CheckContext, CheckRequest, Interpreter, SourceView, FragmentReadFailure, TableIssue } from './types.ts';
 export { INTERPRETERS, getInterpreter } from './interpreters/registry.ts';
 
 export type { CatalogLookupOptions, CatalogMatch, CatalogSpec, CatalogView, CatalogViewOptions } from './catalog/view.ts';
@@ -14,9 +14,9 @@ export { buildCatalog, createCatalogView } from './catalog/view.ts';
 export type { CheckBindings, CheckDeclaration, PackCheckInput, UnreadSource } from './check.ts';
 export { runCheck } from './check.ts';
 
-export type { PackFunctionTarget, SandboxLimits, SandboxOptions, SandboxResult } from './sandbox/sandbox.ts';
+export type { SandboxBatchItem, PackFunctionTarget, SandboxLimits, SandboxOptions, SandboxResult } from './sandbox/sandbox.ts';
 /** stopAll: call from the server's SIGTERM and SIGINT handlers before exiting (it also runs on process exit). */
-export { callPackFunction, DEFAULT_LIMITS, stopAll } from './sandbox/sandbox.ts';
+export { callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, stopAll } from './sandbox/sandbox.ts';
 export type { SandboxErrorCode } from './sandbox/errors.ts';
 export { SANDBOX_ERRORS, SandboxError } from './sandbox/errors.ts';
 export { osIsolationAvailable, osIsolationFailure } from './sandbox/isolation.ts';
@@ -34,3 +34,5 @@ export function sourcesFrom(texts: Readonly<Record<string, string>> | ReadonlyMa
   const record = texts as Readonly<Record<string, string>>;
   return { text: (reference) => (Object.hasOwn(record, reference) ? record[reference] : undefined) };
 }
+
+export { isExhaustedFunctionFailure } from './sandbox/retry.ts';

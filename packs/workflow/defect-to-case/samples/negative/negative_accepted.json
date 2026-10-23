@@ -27,7 +27,7 @@
               {
                 "text": "健康检查间隔设置成功",
                 "quote": {
-                  "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
+                  "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
                   "text": "健康检查间隔设置成功"
                 }
               }
@@ -64,6 +64,13 @@
           []
         ],
         "summary": "查看健康检查状态"
+      },
+      {
+        "head": "show health detail",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查详细信息"
       },
       {
         "head": "service http port",

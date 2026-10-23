@@ -2,6 +2,7 @@
 // counts and the exact ratios frozen in the item fields and the view facts frozen in the run's groups for the totals check.
 // The grouping itself is board.ts; both the summary here and the checks read the same groups. A run too large is a refusal
 // with a fix, not a cut answer.
+import { attachCoverage, coverageSummary } from './coverage.ts';
 import { groupBoard, summaryOf } from './board.ts';
 import { readThresholds } from './thresholds.ts';
 import { PACK, guarded, isRecord, utf8Length } from './text.ts';
@@ -36,11 +37,31 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
   const bound = (input.inputs as unknown[]).filter(isRecord);
   const inputs = bound.filter((b) => b.slot === SLOT);
-  if (inputs.length !== 1) return refusal('invalid_input', `需要输入槽 ${SLOT} 绑定一个知识计数视图`, `在 inputs.${SLOT} 里给出 knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative`);
-
-  const read = readFacetView(inputs[0] as unknown as BoundInput, SLOT);
+  const fix = 'inputs.facets 绑定一个 by=line,module,has_expected,vague_expected,negative 计数视图，可再绑一个 by=line,module,tags 标签视图；inputs.placement 必填，绑定 by=commands 未归位视图，三个视图同产品同知识根';
+  if (inputs.length < 1 || inputs.length > 2) return refusal('invalid_input', 'facets 需要一个计数视图和可选的一个标签视图', fix);
+  const countInputs = inputs.filter((b) => isRecord(b.model) && Array.isArray(b.model.by) && b.model.by.includes('has_expected'));
+  const tagInputs = inputs.filter((b) => { const model = b.model; if (!isRecord(model) || !Array.isArray(model.by)) return false; const by = model.by; return by.length === 3 && ['line', 'module', 'tags'].every((key) => by.includes(key)); });
+  if (countInputs.length !== 1 || (inputs.length === 2 && tagInputs.length !== 1)) return refusal('wrong_view', '计数视图和标签视图的组合不正确', fix);
+  const read = readFacetView(countInputs[0] as unknown as BoundInput, SLOT);
   if (!read.ok) return refusal(read.code, `输入槽 ${SLOT}：${read.message}`, read.fix);
   const view = read.view;
+  if (view.by.includes('tags') || view.by.includes('commands')) return refusal('wrong_view', '计数视图不能混入列表字段 tags 或 commands，否则同一用例重复计数', fix);
+  let tags: typeof view | undefined;
+  if (tagInputs.length) {
+    const tagRead = readFacetView(tagInputs[0] as unknown as BoundInput, SLOT, ['line', 'module', 'tags']);
+    if (!tagRead.ok) return refusal(tagRead.code, tagRead.message, tagRead.fix);
+    tags = tagRead.view;
+    if (tags.product !== view.product || tags.root !== view.root || tags.total !== view.total) return refusal('view_mismatch', '标签和计数视图必须同产品同知识根，且 total 相同', fix);
+  }
+  const placements = bound.filter((b) => b.slot === 'placement');
+  if (placements.length !== 1) return refusal('invalid_input', '缺少未归位数来源：placement 必须绑定一个视图', fix);
+  const placeRead = readFacetView(placements[0] as unknown as BoundInput, 'placement', ['commands']);
+  if (!placeRead.ok) return refusal(placeRead.code, placeRead.message, placeRead.fix);
+  const placement = placeRead.view;
+  if (placement.by.length !== 1 || placement.product !== view.product || placement.root !== view.root || placement.total !== view.total) return refusal('view_mismatch', '未归位视图必须是同产品同知识根的 by=commands 视图，且 total 相同', fix);
+  const nullRows = placement.rows.filter((row) => row.values.commands === null);
+  if (placement.truncated && nullRows.length === 0) return refusal('wrong_view', '缺少事实：未归位数；视图截断且没有读到空组', '自动重新读取同根未截断的 by=commands 视图并重试；当前分面接口不能分页或按 only= 补读，若仍被截断，报告知识包的汇总能力缺口，请集成者补取不可截断的未归位汇总字段，不能结束为未知');
+  const unplaced = nullRows.reduce((sum, row) => sum + row.count, 0);
   const warnings: PackWarning[] = [];
 
   const context = isRecord(input.context) ? input.context : {};
@@ -50,6 +71,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
 
   const groups = groupBoard(view);
+  if (tags) attachCoverage(groups, tags);
   if (groups.length === 0) {
     return refusal('no_cases', `构建 ${view.build} 的根里没有用例条目（视图的 total 是 ${view.total}），看板没有条目可算`, '确认这个构建的用例索引已经同步（knowledge sync），再开始运行', warnings);
   }
@@ -68,11 +90,11 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const items: ProjectedItem[] = groups.map((group) => ({
     id: group.id,
     label: group.id,
-    summary: summaryOf(group.counts),
+    summary: summaryOf(group.counts) + coverageSummary(group.coverage),
     location: { slot: SLOT, source, parser: PARSER, selector: 'p/rows' },
     fields: group as unknown as Record<string, unknown>,
   }));
-  const facts: RunFacts = { product: view.product, build: view.build, root: view.root, view: { source: view.source, total: view.total, truncated: view.truncated, skipped: view.skipped, listed_rows: view.rows.length } };
+  const facts: RunFacts = { ...(tags ? { types: true } : {}), placement: { unplaced, source: placement.source, skipped: placement.skipped, truncated: placement.truncated }, product: view.product, build: view.build, root: view.root, view: { source: view.source, total: view.total, truncated: view.truncated, skipped: view.skipped, listed_rows: view.rows.length } };
   const result = { items, groups: [facts as unknown as Record<string, unknown>], warnings };
   const bytes = utf8Length(JSON.stringify(result));
   if (bytes > budget.outputBytes) {

@@ -1,11 +1,13 @@
-// Small pure helpers. No imports: pack functions may load only modules inside the pack.
+// Small pure helpers; runtime imports stay inside the pack.
+import { CHANGE_KIND_LABEL } from './generated/vocabulary.ts';
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 
 export const PACK = 'regression-scope';
 
-export const CHANGE_LABEL = { added: '新增', removed: '删除', modified: '修改' } as const;
+export const CHANGE_LABEL = CHANGE_KIND_LABEL;
 
 /** What a reason's conclusion says, by the command definition's change (a new command is not called modified). */
-export const DEFINITION_CHANGE_LABEL = { added: '新增命令', removed: '删除命令', modified: '命令定义有变更', none: '仅说明文字有变更' } as const;
+export const DEFINITION_CHANGE_LABEL = { added: '新增命令', removed: '删除命令', modified: '命令定义有变更', none: '仅说明文字有变更' } as const satisfies Record<ChangeKind | 'none', string>;
 
 export function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

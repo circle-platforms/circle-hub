@@ -2,7 +2,7 @@
   "id": "duplicate_none",
   "source": "author",
   "check": "duplicate_check",
-  "note": "起草用例在已有索引中无重复项；草稿的命令行先按目录解析出命令头，再按命令头集合查重",
+  "note": "起草用例在已有索引中无重复项",
   "subject": {
     "item": "74001",
     "drafts": [
@@ -70,12 +70,6 @@
       "notes": []
     }
   },
-  "expect": [
-    {
-      "verdict": "support",
-      "item": "74001"
-    }
-  ],
   "catalog": {
     "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "complete": true,
@@ -123,5 +117,11 @@
         "summary": "设置HTTP服务端口"
       }
     ]
-  }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "74001"
+    }
+  ]
 }

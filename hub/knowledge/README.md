@@ -418,7 +418,7 @@ catalogs, grounds and provenance.
 - `diffRoots`, `diffEntries` and `builds` take no reader (the port); callers check the reader first.
 - Stored producer outputs are shared within a build only: another build, or a changed list of the same build, runs every
   batch again, because the build (its list included) is part of what a list producer receives (decision 18; measured:
-  the second build of the scale corpus makes all 61 calls in 10.1 s instead of 1 in 8.8 s). Batches stay consecutive
+  the second build of the scale corpus makes all 61 calls in 10,100 ms instead of 1 in 8.8 s). Batches stay consecutive
   slices of the listed ids; content-defined batch boundaries would help only once list calls receive no build (Needs,
   contracts), since until then any change of the list changes every key.
 - A list producer's entries must depend only on their own document: the Hub calls it on parts of a batch to isolate a
@@ -619,7 +619,7 @@ repository; the batches of the second build are no longer shared with the first,
 | Step | Wall time | What happened |
 | --- | --- | --- |
 | first build | 41.6 s | 3,000 reads, 61 producer calls, 184,000 entries, 4,042 nodes, 336 part records |
-| second build | 10.1 s | 3,000 loads used again, 61 of 61 calls made (another build), 442 new nodes |
+| second build | 10,100 ms | 3,000 loads used again, 61 of 61 calls made (another build), 442 new nodes |
 | the second build again | 5.6 s | 60 of 61 calls from stored outputs, the same root |
 | impact view A..B | 2.3 s | 400 changed paths, 18,000 attached cases, 13.05 MB, not cut |
 | facets (case by module, has_expected) | 1.3 s | 20 rows over 180,000 cases |
@@ -722,7 +722,6 @@ Milestone 2:
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
 
-
 ## 有效条件状态（B01 R[2]）：解析时计算，矛盾只打标
 
 读知识树条目和解析记录引用时，有效条件状态按可机器检查的规则计算（`TreeReading.read`、`hub/refs/resolve.ts`），不由写入方声明。**几种条件同时成立时全部列出**（`validity.conditions`，各带来源），`status` 按固定次序取第一条：**规则已撤回 > 被引片段已变 > 出现矛盾主张**；后算的不覆盖先算的。
@@ -743,3 +742,11 @@ Milestone 2:
 一条矛盾关系是一条 `claim` 记录：`body.relation = 'contradicts'`、`body.at`（关系成立时间）、`body.other`（对方的树地址）、`body.claim`（本方的树地址），索引键 `knowledge.claim.contradiction` 上按**两个**条目摘要各写一行（双方都能按自己的摘要查到）。候选层的关系提议（另一终端的通道）最终也落成这个形状；确定性的规则可以直接写。谁能看由 `claim` 记录本身的权限规则决定（和观察层一致）。
 
 读条目时按条目摘要查这个键：命中的关系进 `validity.contradictions`（每条带 `source`（关系记录的 rec: 引用）、`at`、`other`），状态标 `contradicted`。**不裁决**：矛盾双方都原样返回（`hub/knowledge/validity.test.ts` 钉住：另一方不被隐藏、任何一方的文字与依据等级不变、双方状态同为 contradicted 各带自己的来源和时间）。
+
+回注公开文字的完整凭据扫描包括客户端 model 声明；准入时明确拒绝敏感模型声明，追加边界也复核，避免该声明随共享回注交给产品读者。测试只用合成凭据。
+
+回注分页的字节预算是软上限：已有条目时才延后下一条；空页若放不下完整回注，立即给出引用标记并消费该记录，即使首个标记超过剩余预算也前进。客户端沿 next 必达末页；较大正文按标记中的 rec: 引用分段读取，不以不可用或不存在的管理员设置阻断续读。
+
+回注去重在同一事务里按内容身份键排序取得 records 的业务锁，随后查询、追加与回执一起提交；跨运行、跨模型同时提交相同内容只保留首份归属。单条 append 也取同一锁；多条可信调用方先 lockIdentities，再逐条 append。不同内容键不共用全局锁。以后是否改用 hub-job-dispatch 的唯一业务键 37577e99 由集成者在合并后决定。
+
+K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交上下文中的会话标识，追加阶段重新扫描实际写入的会话标识，和模型声明一样拒收凭据命中。拒收前不追加公开回注，普通会话标识照常保留。
