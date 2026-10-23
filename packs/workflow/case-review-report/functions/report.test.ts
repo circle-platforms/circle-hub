@@ -404,3 +404,8 @@ it('modern missing disposition support asks for the current receipt instead of a
   const report=reportItemOf(run([{result}]));assert.equal(report.fields.overall,null);assert.match(report.summary??'',/^下一步：.*处置.*重交/);assert.doesNotMatch(report.summary??'',/新版|升级/);
   const checked=overallCheck({subject:{items:[{id:'report',fields:report.fields}],cross_item:[{code:'PARTIAL',rank:'P5'}]}});assert.ok(checked[0].verdict==='unknown');assert.doesNotMatch(checked[0].statement,/新版|升级/);
 });
+
+it('records the authorization provenance of the generic core string field renderer',()=>{
+  const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');assert.match(readme,/决定 42/);assert.match(readme,/7010ab84/);assert.match(readme,/ea5328d1/);
+  const source=readFileSync(new URL('../../../../hub/server/console/pages.ts',import.meta.url),'utf8');assert.doesNotMatch(source,/review_tables|case-review-report/);
+});
