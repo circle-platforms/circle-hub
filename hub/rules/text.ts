@@ -68,7 +68,7 @@ export function codePoints(text: string): number {
 }
 
 /** Rules-local quote form; the ordinary table collapseWhitespace function above is unchanged. */
-function quotationForm(text: string): string {
+export function quotationForm(text: string): string {
   return text.replace(/\p{White_Space}+/gu, (run: string, at: number) => {
     const end = at + run.length;
     if (at === 0 || end === text.length) return '';
@@ -87,5 +87,7 @@ export function quoteMatches(fragmentText: string, quote: string): boolean {
 
 /** A fragment already collapsed by the table cache retains the information needed for contextual quotation matching. */
 export function quoteInCollapsed(collapsedFragment: string, quote: string): boolean {
-  return quoteMatches(collapsedFragment, quote);
+  if (typeof quote !== 'string' || !quote.isWellFormed()) return false;
+  const pattern = quotationForm(quote);
+  return pattern.length > 0 && collapsedFragment.includes(pattern);
 }
