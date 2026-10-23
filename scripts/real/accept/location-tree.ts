@@ -316,7 +316,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
       }
     }
     if (unequal) summary.not_equal++; else summary.equal++;
-    const candidates = expected.line === null ? undefined : builds.get(lineKey(expected.line));
+    const candidates = expected.line === null ? [] : builds.get(lineKey(expected.line));
     const resultReference = resultReferences.get(expected.document) ?? '<本份结果引用>';
     const readAction = '重读 get_nodes ' + JSON.stringify({ reference: resultReference }) + ' 的完整候选数据；仍缺则同步构建列表后单独重跑本份文档';
     if (candidates === undefined) {
@@ -328,7 +328,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
     const actualCandidates = actual!.candidates!;
     const ordered = candidates;
     const before = details.candidates.length;
-    if (actualCandidates.length !== ordered.length) details.candidates.push({ document: expected.document, field: 'count', gold: ordered.length, actual: actualCandidates.length, reason: '候选数不等' });
+    if (actualCandidates.length !== ordered.length) details.candidates.push({ document: expected.document, field: 'count', gold: ordered.length, actual: actualCandidates.length, reason: expected.line === null && actualCandidates.length > 0 ? '目录没有版本线却给出候选' : '候选数不等' });
     ordered.forEach((g, index) => {
       const value = actualCandidates[index];
       if (!object(value)) { details.candidates.push({ document: expected.document, field: 'candidates/' + index, gold: g, actual: null, reason: '结果缺候选条目', next_action: readAction }); return; }

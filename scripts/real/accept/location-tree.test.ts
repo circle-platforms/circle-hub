@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -221,4 +221,16 @@ test('location review 9: transport loss preserves a client key and never claims 
   assert.ok(typeof (requests[0] as { client_key: unknown }).client_key === 'string');
   const pending = details.details.not_run[0]; assert.ok(pending.next_action.includes('同一 client_key')); assert.deepEqual(pending.recovery.args, requests[0]);
   assert.ok(!screen.join('').includes((requests[0] as { client_key: string }).client_key));
+});
+
+test('closure null line is a definite empty candidate answer and can pass the full tree CLI', async t => {
+ const input={root:{id:'r',label:'合成产品'},children:[{id:'generic',label:'通用用例',children:[{id:'940801',label:'合成文档',children:[]}]}]};
+ const raw=result(['940801'],{version:null,line:null,train:null,module:null});
+ const report=compareLocationTree(input,captures(raw));
+ assert.equal(report.summary.candidates.equal,1);assert.equal(report.summary.candidates.not_run,0);
+ const bad=structuredClone(raw);bad.partitions.delivered[0].requirements[1].claims[0].statement.data={candidates:[{}]};
+ assert.ok(compareLocationTree(input,captures(bad)).details.candidates.some(d=>d.reason==='目录没有版本线却给出候选'));
+ const root=mkdtempSync(join(tmpdir(),'null-line-'));t.after(()=>rmSync(root,{recursive:true,force:true}));mkdirSync(join(root,'out/runs'),{recursive:true});
+ writeFileSync(join(root,'tree.json'),JSON.stringify(input));writeFileSync(join(root,'out/runs/000001.json'),JSON.stringify(captures(raw)[0]));
+ const screen:string[]=[];assert.equal(await main(['--tree',join(root,'tree.json'),'--out',join(root,'out')],{print:l=>screen.push(l)}),0);assert.ok(screen.includes('判定：通过'));
 });
