@@ -446,3 +446,24 @@ test('core emitter usage follows the configured contribution requirement rather 
   const catalog=await accepted(requirements(value=>{value.requirements[0].error_handling.push({code:'core.catalog.not_member',action:'repair',max_rounds:2});}));
   assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
 });
+
+function narrowedPack(): PackDescription {
+  let pack = editJson<Json>(workflowPack(), 'workflow.json', f => {
+    f.inputs.push({ slot: 'lookup', role: 'expected', description: '索引视图', accepts: ['knowledge:index'], required: true, many: false });
+  });
+  return editJson<Json>(pack, 'checks.json', f => {
+    f.checks[0].applies = 'item';
+    f.checks[0].reads = { roles: ['expected'], types: ['knowledge:index'], narrow: { slot: 'lookup', key_path: '/keys', into: '/lookup', max_keys: 10, max_entries: 100 } };
+  });
+}
+test('publishes an optional item-key bounded index read', async () => { await accepted(narrowedPack()); });
+for (const [name, edit] of [
+  ['run', (f: Json) => { f.checks[0].applies = 'run'; }],
+  ['slot', (f: Json) => { f.checks[0].reads.narrow.slot = 'absent'; }],
+  ['role', (f: Json) => { f.checks[0].reads.roles = ['subject']; }],
+  ['type', (f: Json) => { f.checks[0].reads.types = ['toy:document']; }],
+] as const) {
+  test(`refuses narrowed reads without an exact item/index binding: ${name}`, async () => {
+    await refused(editJson<Json>(narrowedPack(), 'checks.json', edit), 'checks.narrow_binding', { file: 'checks.json' });
+  });
+}

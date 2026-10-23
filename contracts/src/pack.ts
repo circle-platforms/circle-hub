@@ -261,13 +261,30 @@ export const ItemSubjectInput = z.strictObject({
   slots: z.record(z.string(), z.unknown()).nullable(),
   evidence: z.array(ResolvedEvidence),
   context: RunContext,
+  catalog: z.array(z.unknown()).optional().describe('locked catalog entries for an item-key narrowed read subject builder'),
 });
 export type RunSubjectInput = z.infer<typeof RunSubjectInput>;
 export type ItemSubjectInput = z.infer<typeof ItemSubjectInput>;
 
 export const MAX_CHECK_READ_BYTES = 1024 * 1024; // 1 MiB
 
+export const MAX_CHECK_READ_KEYS = 1000;
+export const MAX_CHECK_READ_ENTRIES = 10000;
+const SafeSubjectPointer = z.string().min(2).max(512).refine(value =>
+  value.startsWith('/') && value.split('/').slice(1).every(part =>
+    part.length > 0 && !/~(?:[^01]|$)/.test(part) && !['__proto__', 'prototype', 'constructor'].includes(part.replace(/~1/g, '/').replace(/~0/g, '~'))),
+  'an own-property JSON pointer without prototype keys is required');
+export const NarrowCheckRead = z.strictObject({
+  slot: Key.describe('exact bound input slot containing a knowledge:index view'),
+  key_path: SafeSubjectPointer.describe('JSON pointer into the built subject selecting an array of string index keys'),
+  into: SafeSubjectPointer.describe('JSON pointer receiving the narrowed index view in the built subject'),
+  max_keys: z.number().int().positive().max(MAX_CHECK_READ_KEYS),
+  max_entries: z.number().int().positive().max(MAX_CHECK_READ_ENTRIES),
+});
+export type NarrowCheckRead = z.infer<typeof NarrowCheckRead>;
+
 export const CheckReads = z.strictObject({
+  narrow: NarrowCheckRead.optional().describe('item-key narrowed read of one bound index view, replacing whole-source reads for this check'),
   roles: z.array(SourceRoleSchema).min(1).describe('source roles whose bound sources are read into sources for this check'),
   types: z
     .array(ExternalType)

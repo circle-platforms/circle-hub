@@ -19,6 +19,8 @@ import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
+import { narrowSubjectRead, type NarrowReadResult } from './narrow-reads.ts';
+import { putAction } from './store.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
@@ -332,7 +334,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   };
 
   const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
-    if (check.reads === undefined) {
+    if (check.reads === undefined || check.reads.narrow !== undefined) {
       return { boundSources: {}, unreadSources: [] };
     }
     const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
@@ -472,6 +474,49 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
+    let readReceipt: string | undefined;
+    if (check.reads?.narrow !== undefined) {
+      const declaration = check.reads.narrow;
+      const sources = run.sources.filter(source => source.slot === declaration.slot && check.reads!.roles.includes(source.role) && source.external?.startsWith('knowledge:index:') && (check.reads!.types === undefined || check.reads!.types.includes('knowledge:index')));
+      const startedAt = ctx.now().toISOString();
+      let narrowed: NarrowReadResult;
+      if (sources.length !== 1) {
+        narrowed = { subject: null, keys: [], unread: [{ reference: sources[0]?.reference ?? `rec:${input.submissionDigest}`, slot: declaration.slot, reason: 'missing_input', missing_fact: `输入 ${declaration.slot} 缺少唯一已绑定索引`, next_action: '绑定该槽位的唯一索引视图后重新核验' }] };
+      } else {
+        const source = sources[0];
+        const bound = await resolveBoundSource(source.reference);
+        narrowed = await narrowSubjectRead(declaration, subject, check.reads.max_bytes ?? MAX_CHECK_READ_BYTES, {
+          binding: source, boundText: bound.text,
+          read: async external => {
+            const principal = principalOf(resolveCtx.reader);
+            const read = await ctx.deps.external.read(external, { principal, run: run.run, purpose: `检查 ${check.id} 条目 ${item ?? ''} 收窄读取`, ...(run.build ? { build: run.build } : {}) });
+            if (!read.ok) { onError(new Error(read.reason), check.id); throw new Error('narrow read unavailable'); }
+            const chosen = read.artifacts.find(a => a.name === 'content') ?? read.artifacts.find(a => a.name === 'original');
+            if (!chosen) throw new Error('narrow read has no content');
+            const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function' });
+            if (!content) throw new Error('narrow read unavailable');
+            return { text: content.bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(content.bytes), reference: `src:${chosen.artifact.body.sha256}`, revision: read.revision, manifest: read.manifest };
+          },
+        });
+      }
+      subject = narrowed.subject;
+      unreadSources.push(...narrowed.unread);
+      if (narrowed.text && narrowed.reference) boundSources[narrowed.reference] = narrowed.text;
+      const receipt = await putAction(ctx.deps.records.store, {
+        action: 'read', run: run.run, inputs: [...sources.map(source => source.reference), ...(narrowed.reference ? [narrowed.reference] : []), ...(narrowed.manifest && /^[a-f0-9]{64}$/.test(narrowed.manifest) ? [`rec:${narrowed.manifest}`] : [])], startedAt, endedAt: ctx.now().toISOString(),
+        result: narrowed.unread.length ? 'unknown' : 'completed', acceptance: null, codes: [],
+        detail: { check: check.id, item: item ?? null, slot: declaration.slot, key_path: declaration.key_path, keys: narrowed.keys,
+          max_keys: declaration.max_keys, max_entries: declaration.max_entries, max_bytes: check.reads.max_bytes ?? MAX_CHECK_READ_BYTES,
+          external: narrowed.external ?? null, source: narrowed.reference ?? null, provider_manifest: narrowed.manifest ?? null, unread_sources: narrowed.unread },
+      });
+      readReceipt = `rec:${receipt.digest}`;
+      // Without any readable narrowed bytes the function cannot establish a refutation either.
+      if (narrowed.text === undefined) return [bounded(check, {
+        verdict: 'unknown', reason: 'missing_input', grounds: [], tier: check.tier ?? 'blocking',
+        statement: narrowed.unread.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；'),
+        data: { unread_sources: unreadSources, read_manifest: readReceipt },
+      })];
+    }
     await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
     const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
@@ -499,7 +544,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         onError,
       },
     );
-    return outcomes.map((o) => bounded(check, unreadSources.length ? { ...o, data: { ...o.data, unread_sources: unreadSources } } : o));
+    return outcomes.map((o) => {
+      const outcome = check.reads?.narrow && unreadSources.length && o.verdict === 'support'
+        ? { ...o, verdict: 'unknown' as const, reason: 'missing_input' as const, statement: `读取不完整：${unreadSources.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；')}` }
+        : o;
+      return bounded(check, { ...outcome, ...((unreadSources.length || readReceipt) ? { data: { ...outcome.data, ...(unreadSources.length ? { unread_sources: unreadSources } : {}), ...(readReceipt ? { read_manifest: readReceipt } : {}) } } : {}) });
+    });
   };
   const prepared = new Map<string, SandboxBatchItem>();
   let subjectCancelled = false; let subjectCancellation: unknown;
@@ -572,9 +622,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const perItem = used.filter((c) => c.applies === 'item');
   const eligible = (check: CheckEntry, id: string): boolean => !deniedArtifact(check,id) && !(artifactCheck(check) && missingItemArtifact(id))
     && !(judgmentOnly(check) && (handlingOf(id) !== 'handled' || exclude.has(id) || submission === null));
-  const builderInput = (it: ItemProjection) => {
+  const builderInput = (it: ItemProjection, check: CheckEntry) => {
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
-    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context };
+    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context, ...(check.reads?.narrow && check.catalog ? { catalog: views.get(check.catalog)?.entries() ?? [] } : {}) };
   };
   const builders = new Map<string, { target: PackFunctionTarget; entries: Map<string, unknown> }>();
   for (const check of perItem) {
@@ -585,7 +635,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const identity = JSON.stringify([target.module, target.export ?? 'default']);
     const group = builders.get(identity) ?? { target, entries: new Map<string, unknown>() }; builders.set(identity, group);
     for (const it of items) if (eligible(check, it.id)) {
-      const value = builderInput(it); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
+      const value = builderInput(it, check); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
     }
   }
   for (const group of builders.values()) {
@@ -607,7 +657,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       for (const check of perItem) {
         if (!eligible(check, it.id)) continue;
         try {
-          const itemInput = builderInput(it);
+          const itemInput = builderInput(it, check);
           const built = await buildSubject(itemSubjects, check, itemInput, () => ({
             item: it.id, label: it.label, location: it.location, fields: it.fields,
             slots: itemInput.slots, evidence: itemInput.evidence,

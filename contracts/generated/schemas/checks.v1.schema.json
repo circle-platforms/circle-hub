@@ -107,6 +107,47 @@
             "description": "bound sources of these roles are read into sources for this check",
             "type": "object",
             "properties": {
+              "narrow": {
+                "description": "item-key narrowed read of one bound index view, replacing whole-source reads for this check",
+                "type": "object",
+                "properties": {
+                  "slot": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "description": "exact bound input slot containing a knowledge:index view"
+                  },
+                  "key_path": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 512,
+                    "description": "JSON pointer into the built subject selecting an array of string index keys"
+                  },
+                  "into": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 512,
+                    "description": "JSON pointer receiving the narrowed index view in the built subject"
+                  },
+                  "max_keys": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000
+                  },
+                  "max_entries": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "slot",
+                  "key_path",
+                  "into",
+                  "max_keys",
+                  "max_entries"
+                ],
+                "additionalProperties": false
+              },
               "roles": {
                 "minItems": 1,
                 "type": "array",
