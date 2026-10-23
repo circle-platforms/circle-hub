@@ -54,3 +54,10 @@ for (const label of ['802.1Q VLAN', 'NSAE_10.9.1.37_专项']) test(`a version me
   assert.match(judgment.statement, /缺少.*目录里的版本层/);
   assert.match(judgment.statement, /下一步.*整理.*目录.*参数 line/);
 });
+
+test('zero-padded identifiers use normalized identity and original display text', () => {
+  const { answer, judgment } = locateItem({ ...context, ancestors: ['060：10.6.1'], title: 'bug 001234 合成标题' });
+  assert.deepEqual(answer.defects, ['1234']);
+  assert.deepEqual(answer.id_sources[0].spellings, ['001234']);
+  assert.match(judgment.statement, /缺陷 001234/);
+});

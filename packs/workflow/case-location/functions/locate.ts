@@ -170,9 +170,10 @@ function idsOf(reads: readonly IdRead[], ranges: IdRanges | null | undefined, no
         const key = found.kind ?? 'unmarked';
         if (counts[key] >= LIMITS.maxIds) continue;
         counts[key] += 1;
-        entry = { id: found.id, kind: found.kind, from: [] };
+        entry = { id: found.id, kind: found.kind, from: [], ...(found.spellings ? { spellings: [...found.spellings] } : {}) };
         sources.push(entry);
       }
+      if (entry.spellings || found.spellings) entry.spellings = unique([...(entry.spellings ?? [entry.id]), ...(found.spellings ?? [found.id])]);
       if (!entry.from.includes(read.from)) entry.from.push(read.from);
     }
   }
@@ -182,20 +183,24 @@ function idsOf(reads: readonly IdRead[], ranges: IdRanges | null | undefined, no
   for (const s of sources) {
     const named = s.kind === null ? marked.filter((m) => m.id === s.id) : [];
     if (named.length === 0) kept.push(s);
-    else for (const m of named) for (const from of s.from) if (!m.from.includes(from)) m.from.push(from);
+    else for (const m of named) {
+      for (const from of s.from) if (!m.from.includes(from)) m.from.push(from);
+      if (m.spellings || s.spellings) m.spellings = unique([...(m.spellings ?? [m.id]), ...(s.spellings ?? [s.id])]);
+    }
   }
   const unclassified = kept.filter((s) => s.kind === null).map((s) => s.id);
   const ranged = {
     requirements: unclassified.filter((id) => kindByRange(id, ranges) === 'story'),
     defects: unclassified.filter((id) => kindByRange(id, ranges) === 'bug'),
   };
+  const display = (ids: string[]) => ids.map(id => kept.find(entry => entry.id === id)?.spellings?.join('、') ?? id);
   const open = unclassified.filter((id) => !ranged.requirements.includes(id) && !ranged.defects.includes(id));
   if (ranged.requirements.length + ranged.defects.length > 0) {
-    const parts = [ranged.requirements.length > 0 ? `需求 ${listOf(ranged.requirements)}` : '', ranged.defects.length > 0 ? `缺陷 ${listOf(ranged.defects)}` : ''].filter(Boolean);
+    const parts = [ranged.requirements.length > 0 ? `需求 ${listOf(display(ranged.requirements))}` : '', ranged.defects.length > 0 ? `缺陷 ${listOf(display(ranged.defects))}` : ''].filter(Boolean);
     note(notes, `按调用方声明的编号范围（参数 id_ranges）分出${parts.join('，')}：这是声明，不是目录树给出的`);
   }
   if (open.length > 0) {
-    note(notes, `编号 ${listOf(open)} 没有标明是需求还是缺陷${ranges ? '，声明的编号范围也分不出' : '（参数 id_ranges 给出缺陷系统的编号范围可以分开）'}`);
+    note(notes, `编号 ${listOf(display(open))} 没有标明是需求还是缺陷${ranges ? '，声明的编号范围也分不出' : '（参数 id_ranges 给出缺陷系统的编号范围可以分开）'}`);
   }
   return {
     requirements: kept.filter((s) => s.kind === 'story').map((s) => s.id),
@@ -472,7 +477,8 @@ export function described(answer: LocateAnswer): string {
     const marks = from.includes('title') ? [] : [from.map((f) => ID_SOURCE_LABEL[f]).join('、')];
     if (kind === null && answer.ranged.requirements.includes(id)) marks.push('声明的范围：需求');
     if (kind === null && answer.ranged.defects.includes(id)) marks.push('声明的范围：缺陷');
-    return marks.length === 0 ? id : `${id}（${marks.join('；')}）`;
+    const original = displayId(answer, id, kind);
+    return marks.length === 0 ? original : `${original}（${marks.join('；')}）`;
   };
   parts.push(...groupedIds(answer, shownId));
   return parts.join('；');
@@ -545,4 +551,9 @@ export default function locateFunction(input: unknown): unknown {
       judgment: { verdict: 'unknown', reason: 'check_error', statement: `定位出错（任务包缺陷）：${message}`, brief: '定位出错' },
     }),
   );
+}
+
+/** Raw identifier spellings for display; arrays used for identity and external reads remain normalized. */
+export function displayId(answer: LocateAnswer, id: string, kind: LinkedId['kind']): string {
+  return answer.id_sources.find(entry => entry.id === id && entry.kind === kind)?.spellings?.join('、') ?? id;
 }

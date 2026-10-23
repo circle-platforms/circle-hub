@@ -96,12 +96,27 @@ describe('ids on bad input', () => {
       assert.deepEqual(internalWarnings(result), []);
       const normalized = title.normalize('NFKC');
       for (const id of [...result.bugs, ...result.stories, ...result.plm, ...result.unclassified]) {
-        assert.match(id, /^[0-9]{2,9}$/);
-        assert.ok(new RegExp(`(?<![0-9])${id}(?![0-9])`).test(normalized), `${id} is not a digit run of ${title}`);
+        assert.match(id, /^[0-9]{1,9}$/);
+        assert.ok(new RegExp(`(?<![0-9])0*${id}(?![0-9])`).test(normalized), `${id} is not a digit run of ${title}`);
       }
       for (const id of result.unclassified) assert.ok(![...result.bugs, ...result.stories, ...result.plm].includes(id));
     }
     const long = idsFromTitle(`bug ${'1'.repeat(10)} ${'x'.repeat(10000)}`);
     assert.ok(long.warnings.some((warning) => warning.includes('只看前 4096 个')));
   });
+});
+
+it('normalizes zero-padded identities and preserves original spellings', () => {
+  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+    const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+    const found = idsFromTitle(`bug ${raw}`);
+    assert.deepEqual(found.bugs, [id]);
+    assert.deepEqual(found.spellings?.filter(entry => entry.kind === 'bug').map(entry => entry.raw) ?? found.bugs, [raw]);
+  }
+});
+
+it('keeps every raw spelling when a normalized identity repeats', () => {
+  const found = idsFromTitle('bug 0123 and 123 and 00123');
+  assert.deepEqual(found.bugs, ['123']);
+  assert.deepEqual(found.spellings?.map(entry => entry.raw), ['0123', '123', '00123']);
 });

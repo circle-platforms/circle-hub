@@ -67,8 +67,6 @@ describe('ids in titles', () => {
       'option28 参数',
       'debug 61001',
       'history 61001',
-      'bug 0612',
-      'bug 1',
       '需求 1234567890',
       'SSL 证书 3a',
       '',
@@ -102,3 +100,22 @@ describe('ids in titles', () => {
 });
 
 it('PLM remains unmarked', () => { assert.deepEqual(ids('PLM90101-导出'), ['?:90101']); });
+
+it('normalizes identifier identity while retaining every original zero-padded spelling', () => {
+  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+    const id = raw.normalize('NFKC').replace(/^0+(?=\d)/, '');
+    const found = extractIds(`bug ${raw}`);
+    assert.equal(found.length, 1); assert.equal(found[0].id, id);
+    assert.deepEqual(found[0].spellings ?? [found[0].id], [raw]);
+  }
+  const found = extractIds('bug 0123 and 123 and 00123');
+  assert.equal(found.length, 1); assert.equal(found[0].id, '123');
+  assert.deepEqual(found[0].spellings, ['0123', '123', '00123']);
+});
+
+it('uses the same decimal identity rule as the product pack', async () => {
+  const product = await import('../../../product/apv/functions/ids.ts');
+  for (const raw of ['0', '00', '0123', '001234', '００１２３４']) {
+    assert.deepEqual(extractIds(`bug ${raw}`).map(found => found.id), product.idsFromTitle(`bug ${raw}`).bugs);
+  }
+});

@@ -83,3 +83,9 @@ it('binds bug-to-case identifiers as defects and states the convention without u
   assert.match(out.sources[0].reason, /标题里“bug to case”后面的编号.*按缺陷号读/);
   assert.deepEqual(out.warnings.map(warning => warning.data?.ids), [['90102']]);
 });
+
+it('reads normalized identities while its reasons retain zero-padded original spellings', () => {
+  const out = sourcesFor(['bug 001234 合成标题', 'bug 00 合成标题']);
+  assert.deepEqual(out.sources.map(source => source.external), ['plm:bug:1234', 'plm:bug:0']);
+  assert.match(out.sources[0].reason, /001234/); assert.match(out.sources[1].reason, /00/);
+});
