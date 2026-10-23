@@ -1,6 +1,6 @@
 # 需求追溯矩阵
 
-独立工作流包 story-traceability 1.0.5。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
+独立工作流包 story-traceability 1.0.6。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
 
 可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
@@ -43,7 +43,7 @@
 
 核心依赖（集成者确认）：需要给不绑定产品线的工作流提供按名字查构建别名的只读接口，证明对应的构建和知识根。当前核心拒绝这类工作流的 product/build 参数，无法取得可用的 context.builds；接口完成后，本包再改成按别名核对。在此之前不同名称必须拒绝，不能临时按字符串形状、名称族替换或调用方提供的别名表认定相同。
 
-每个观察范围条目的 selected_build 保留选中记录的规范化编号、原始 name、原始标量字段、JSON 引用以及 cases 的构建名和根；逐条事实 data 同样保留，陈述前缀写明 PLM 构建记录编号、name 节选和完整引用，避免被尾部裁剪吞掉身份。只用 cases.build 填行标题不足以证明 PLM 构建身份，此前的缺口已拒绝。
+选中的构建身份只在 groups[0].selected_build 冻结一次：编号、原始 name、JSON 引用、cases 构建与根。每行和主张只保留 {id,name}；其他原始标量留在 plm:builds content，不复制到派生结果。陈述前缀只写构建编号及 name 前 40 字，完整引用留在 grounds。详情未读到时，修复动作位于用例明细之前，不被明细裁剪吞掉。
 
 Closure review 1: projection refusals carry warnings: [] as projection-output@1 requires. Known input refusals are typed at their throw sites with their own corrective action; unexpected exceptions are pack defects, never guessed from message text. Production-start coverage verifies the original pack code, message and fix survive the engine boundary. Version 1.0.2 is re-signed.
 
@@ -79,3 +79,5 @@ A long-state regression checks that the non-scalar counts remain in the first 50
 gold and its checker use the same rule; a missing counter or an invented null group fails verification. Version 1.0.4.
 
 Merged artifact 1.0.5 combines plm-fields selected-build identity verification with story-trace closure fixes; it is signed separately from the standalone story-trace 1.0.4 artifact.
+
+1.0.6: compact build identity fixes the 1500-story/long-field amplification; a build-derived oversize refusal names its build and offers explicit declared ids or a maintainer-provided scoped split, never an impossible implicit batch.

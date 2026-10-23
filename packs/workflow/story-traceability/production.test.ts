@@ -67,10 +67,10 @@ describe('synthetic story production run', { skip }, () => {
     assert.ok(right.production);
     const item = Object.values(right.production.result.partitions).flat().find((i) => i.item === '21')!;
     const claim = item.requirements.find((r) => r.requirement === 'traced')!.claims[0];
-    const selection = claim.statement.data!.selected_build as { id: string; name: string; reference: string; fields: unknown };
+    const selection = claim.statement.data!.selected_build as { id: string; name: string };
     assert.equal(selection.id, '7'); assert.equal(selection.name, BUILD.name);
-    assert.deepEqual(selection.fields, { id: 7, name: BUILD.name, custom: false });
-    assert.match(claim.statement.text, /PLM 构建记录 7/); assert.ok(claim.statement.text.includes(selection.reference));
+    assert.deepEqual(selection, { id: '7', name: BUILD.name });
+    assert.match(claim.statement.text, /PLM 构建记录 7/); assert.ok(!claim.statement.text.includes('/json@1/p/builds/0')); assert.ok(claim.grounds.some(reference => reference.endsWith('/json@1/p/builds/0')));
   });
 
 });

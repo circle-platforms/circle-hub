@@ -70,3 +70,5 @@ explicit null remain unchanged. A non-scalar field is listed in fields_nonscalar
 placeholder; fields_absent remains separate. Its original raw JSON is retained in the original response artifact. The
 consumer reports status_nonscalar and stage_nonscalar as observed counts, excluding these fields from scalar grouping;
 this is a known observation, not an unknown lifecycle state. Other stories in the same batch remain readable.
+
+Version 1.3.1 closes the counted external-id entry path with the connector core and retains pack-specific name/id advice only here. The paired story-traceability 1.0.6 stores build identity once and keeps the raw scalar fields in this content. Both manifests are re-signed; no live deployment is part of this change.
