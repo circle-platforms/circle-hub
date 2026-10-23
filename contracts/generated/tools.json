@@ -281,6 +281,11 @@
                         "independent_judgment"
                       ]
                     },
+                    "observation": {
+                      "description": "The declared P07 observation contract for the dynamic layer",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    },
                     "repair_rounds": {
                       "type": "integer",
                       "minimum": 0,
@@ -621,6 +626,12 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "submission_due": {
+          "description": "Requested absolute submission deadline; the service binds its actual finite policy before writing the run",
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
         },
         "predecessor": {
           "description": "Earlier run this one continues",
@@ -1207,6 +1218,11 @@
                       "independent_judgment"
                     ]
                   },
+                  "observation": {
+                    "description": "The declared P07 observation contract for the dynamic layer",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                  },
                   "repair_rounds": {
                     "type": "integer",
                     "minimum": 0,
@@ -1352,6 +1368,12 @@
               "type": "string"
             },
             "started_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "submission_due": {
+              "description": "Absolute submission deadline; absent only on historical runs, never inferred by readers",
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"

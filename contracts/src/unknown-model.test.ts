@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {AjvJsonSchemaValidator} from '@modelcontextprotocol/sdk/validation/ajv';
-import {accepted,copy} from './fixtures.ts';
+import {RunRecord,RunSummary} from './run.ts';
+import * as runContracts from './run.ts';
+import {StartRunInput} from './tools.ts';
+import {accepted,copy,runRecord,summary} from './fixtures.ts';
 import * as pack from './pack.ts';
 import {CheckEntry,ErrorHandlingRow,RequirementTemplate} from './pack.ts';
 import {SkippedItem} from './submission.ts';
@@ -110,4 +113,23 @@ test('item 5 contract capacities match the independent sandbox protocol capaciti
   const body=/const MAX_LIMITS: SandboxLimits = \{([\s\S]*?)\};/.exec(text)?.[1];assert.ok(body);
   const values=Object.fromEntries([...body.matchAll(/([A-Za-z]+):\s*([0-9_* ]+)/g)].map(match=>[match[1],match[2].split('*').reduce((value,part)=>value*Number(part.replaceAll('_','').trim()),1)]));
   assert.deepEqual(pack.CHECK_LIMITS_MAX,values);
+});
+
+
+test('item 8 freezes an absolute submission deadline and declares a required predecessor',()=>{
+  assert.ok(StartRunInput.safeParse({pack:'synthetic',inputs:{},submission_due:due}).success);
+  assert.ok(RunSummary.safeParse({...summary,submission_due:due}).success);
+  assert.ok(RunRecord.safeParse({...runRecord,submission_due:due}).success);
+  assert.equal(runContracts.NewRunRecord.safeParse(runRecord).success,false);
+  assert.ok(runContracts.NewRunRecord.safeParse({...runRecord,submission_due:due}).success);
+  assert.equal(runContracts.NewRunRecord.safeParse({...runRecord,submission_due:'2026-01-01T00:00:00.000Z'}).success,false);
+  const workflow={schema:'workflow@1',inputs:[{slot:'subject',role:'subject',description:'合成主体',accepts:['application/json'],required:true,many:false}],parameters:[],product:{catalogs:[]},subject:'subject',projection:{module:'functions/project.ts'},predecessor:'required'};
+  assert.ok(pack.WorkflowFile.safeParse(workflow).success);assert.equal(pack.WorkflowFile.safeParse({...workflow,predecessor:'optional'}).success,false);
+});
+test('item 8 allows only fact-producing automatic successors with a named runner',()=>{
+  const value={...runRecord,host:'hub',trigger:'event_or_schedule',configurer:'usr_01m5h9zh07x7amhg4bwmye5yhw',predecessor:'run_01m5h9zh07x7amhg4bwmye5yhw',submission_due:due};
+  assert.ok(RunRecord.safeParse(value).success);
+  assert.equal(RunRecord.safeParse({...value,predecessor:undefined}).success,false);
+  assert.equal(RunRecord.safeParse({...value,runner:undefined}).success,false);
+  assert.equal(RunRecord.safeParse({...value,requirements:value.requirements.map(requirement=>({...requirement,accepted_producer:'judgment'}))}).success,false);
 });

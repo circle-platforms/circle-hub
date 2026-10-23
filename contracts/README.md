@@ -220,3 +220,16 @@ hub-unknown-exits is tasked to wire it. These guards do not claim that a referen
 Bounds are refused, not silently clamped; omission inherits service defaults. A source-only cross-check test anchors the
 contract's capacities to the runtime sandbox constants without importing/executing the sandbox. These are check-work limits,
 not P11 effect counts/durations. hub-retry-split must pass them into execution, split/retry work and attach actual recovery.
+
+### Submission deadline and successor declarations (task item 8)
+
+`StartRunInput.submission_due` carries a requested absolute deadline; `RunSummary` and the readable `RunRecord` preserve it
+when recorded, with omission retained on history. `NewRunRecord` is the strict write boundary: a deadline is mandatory and
+later than creation. It never derives a deadline from wall time on a historical read. The engine must bind policy/defaults
+before that write and implement expiry/requests; adding this field alone schedules nothing.
+
+`workflow@1.predecessor: required` is an explicit start constraint, separate from independent judgment. A Hub-hosted
+event successor must name its predecessor and runner and contain only fact requirements; the original standing-obligation
+reader remains supported. The service must prove the same runner and actual root-update event from records, not merely
+trust these shape fields. `RequirementSummary.observation` exposes the declared dynamic observation identity when copied.
+run.ts also changes in hub-read-absence; the integrator must retain both sets of optional historical fields when merging.

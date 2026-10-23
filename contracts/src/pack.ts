@@ -426,6 +426,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    predecessor:z.literal('required').optional().describe('The service must reject start_run without an explicit predecessor; not an independent_of inference'),
     inputs: z.array(WorkflowInput).min(1),
     parameters: z.array(WorkflowParameter),
     product: z
