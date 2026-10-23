@@ -373,3 +373,8 @@ xlsx@1. Runtime registration was appended so the existing parser preference orde
 XLSX workbook sheet relationships are resolved through an id map. A second sheet targeting an already-used internal
 part refuses the package before any row/cell model is built; XML caching cannot multiply one worksheet's cells by the
 number of sheet entries. This is a structural identity and bounded-work rule, independent of workbook policy.
+
+ZIP member identity always comes from the raw central filename (UTF-8 with bit 11, CP437 otherwise), with the same raw
+name required in the local header. A version-1 Info-ZIP Unicode Path field is accepted only with a matching raw-name
+CRC and the exact same decoded name, in either header; it never renames a member. Unsafe or duplicate raw names are
+refused before optional metadata can hide them. Invalid or contradictory path metadata is a generic ZIP refusal.

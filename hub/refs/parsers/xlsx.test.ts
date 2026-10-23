@@ -5,19 +5,19 @@ import { test } from 'node:test';
 import { ParseError, ParseLimitError } from '../parser.ts';
 import { readXlsxArchive, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
-type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; attributes?: number; descriptor?: boolean; compressed?: Buffer };
+type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
   const local: Buffer[] = []; const central: Buffer[] = []; let offset = 0;
   for (const member of members) {
-    const name = Buffer.from(member.name); const bytes = member.bytes ?? Buffer.from(member.text ?? '<synthetic/>');
-    const method = member.method ?? 0; const flags = member.flags ?? 0x800; const extra = member.extra ?? Buffer.alloc(0);
+    const name = member.nameBytes ?? Buffer.from(member.name); const bytes = member.bytes ?? Buffer.from(member.text ?? '<synthetic/>');
+    const method = member.method ?? 0; const flags = member.flags ?? 0x800; const extra = member.extra ?? Buffer.alloc(0); const localExtra = member.localExtra ?? extra;
     const compressed = member.compressed ?? (method === 8 ? deflateRawSync(bytes) : bytes);
     const crc = member.crc ?? crc32(bytes); const size = member.size ?? bytes.length;
-    const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(flags, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc, 14); header.writeUInt32LE(compressed.length, 18); header.writeUInt32LE(size, 22); header.writeUInt16LE(name.length, 26); header.writeUInt16LE(extra.length, 28);
+    const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(flags, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc, 14); header.writeUInt32LE(compressed.length, 18); header.writeUInt32LE(size, 22); header.writeUInt16LE(name.length, 26); header.writeUInt16LE(localExtra.length, 28);
     const directory = Buffer.alloc(46); directory.writeUInt32LE(0x02014b50); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(flags, 8); directory.writeUInt16LE(method, 10); directory.writeUInt32LE(crc, 16); directory.writeUInt32LE(compressed.length, 20); directory.writeUInt32LE(size, 24); directory.writeUInt16LE(name.length, 28); directory.writeUInt16LE(extra.length, 30); directory.writeUInt32LE(member.attributes ?? 0, 38); directory.writeUInt32LE(offset, 42);
     const descriptor = member.descriptor ? Buffer.alloc(16) : Buffer.alloc(0);
     if (member.descriptor) { descriptor.writeUInt32LE(0x08074b50); descriptor.writeUInt32LE(crc, 4); descriptor.writeUInt32LE(compressed.length, 8); descriptor.writeUInt32LE(size, 12); header.fill(0, 14, 26); }
-    local.push(header, name, extra, compressed, descriptor); central.push(directory, name, extra); offset += 30 + name.length + extra.length + compressed.length + descriptor.length;
+    local.push(header, name, localExtra, compressed, descriptor); central.push(directory, name, extra); offset += 30 + name.length + localExtra.length + compressed.length + descriptor.length;
   }
   const directory = Buffer.concat(central); const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(members.length, 8); end.writeUInt16LE(members.length, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...local, directory, end]);
@@ -261,4 +261,17 @@ test('five thousand sheets sharing one part are refused within a bounded parse t
   const started = performance.now();
   badWorkbook({ book }, /工作表.*同一个部件/);
   assert.ok(performance.now() - started < 2000);
+});
+
+function unicodePath(name: Buffer | string, replacement: string): Buffer {
+  const path = Buffer.from(replacement); const field = Buffer.alloc(9 + path.length);
+  field.writeUInt16LE(0x7075); field.writeUInt16LE(5 + path.length, 2); field[4] = 1;
+  field.writeUInt32LE(crc32(typeof name === 'string' ? Buffer.from(name) : name), 5); path.copy(field, 9); return field;
+}
+test('Unicode path metadata cannot conceal raw unsafe names, duplicates or a different local-header identity', () => {
+  const unsafe = '..\\..\\evil.xml';
+  refuses(zip([{ name: unsafe, extra: unicodePath(unsafe, 'safe.xml') }]), /路径/);
+  refuses(zip([{ name: 'a.xml' }, { name: 'a.xml', extra: unicodePath('a.xml', 'b.xml') }]), /重复|路径.*不一致/);
+  refuses(zip([{ name: 'a.xml', localExtra: unicodePath('a.xml', 'b.xml') }]), /路径.*不一致/);
+  assert.equal(readXlsxArchive(zip([{ name: 'a.xml', extra: unicodePath('a.xml', 'a.xml') }])).size, 1);
 });

@@ -104,6 +104,16 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       forbidden('不接受加密 ZIP');
     return output;
   };
+  const verifyUnicodePath = (fields: Map<number, Buffer>, entry: Entry): void => {
+    const unicode = fields.get(0x7075);
+    if (!unicode) return;
+    if (unicode.length < 5 || unicode[0] !== 1) syntax('ZIP Unicode 路径扩展字段格式或版本无效');
+    if (unicode.readUInt32LE(1) !== crc32(entry.nameBytes)) syntax('ZIP Unicode 路径扩展 CRC 与原始成员名不一致');
+    let name: string;
+    try { name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unicode.subarray(5)); }
+    catch { return syntax('ZIP Unicode 路径扩展不是 UTF-8'); }
+    if (name !== entry.name) syntax('ZIP Unicode 路径扩展与原始成员名不一致');
+  };
   for (let i = 0; i < count; i++) {
     fits(position, 46, directoryEnd);
     if (bytes.readUInt32LE(position) !== 0x02014b50)
@@ -141,21 +151,13 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     catch {
       syntax('ZIP 成员路径不是 UTF-8');
     }
-    const unicode = fields.get(0x7075);
-    if (unicode && unicode.length >= 5 && unicode[0] === 1 && unicode.readUInt32LE(1) === crc32(entry.nameBytes)) {
-      try {
-        entry.name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unicode.subarray(5));
-      }
-      catch {
-        syntax('ZIP Unicode 成员路径无效');
-      }
-    }
     const path = entry.name.endsWith('/') ? entry.name.slice(0, -1) : entry.name;
     if (!path || entry.name.length > 512 || /[\\:\u0000-\u001f\u007f]/.test(entry.name) || path.split('/').some((part) => part === '' || part === '.' || part === '..'))
       forbidden('ZIP 成员路径不安全或过长');
     if (seen.has(entry.name))
       syntax('ZIP 成员路径重复');
     seen.add(entry.name);
+    verifyUnicodePath(fields, entry);
     expanded += entry.size;
     if (expanded > limits.maxExpandedBytes)
       forbidden(`ZIP 解压后的总量超过上限 ${limits.maxExpandedBytes}`);
@@ -182,14 +184,15 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     const extra = bytes.readUInt16LE(at + 28);
     flagsOk(bytes.readUInt16LE(at + 6));
     fits(at + 30, nameLength + extra + entry.compressed, directoryAt);
-    extras(at + 30 + nameLength, extra);
+    const localFields = extras(at + 30 + nameLength, extra);
     if (bytes.readUInt16LE(at + 4) !== entry.version || bytes.readUInt16LE(at + 6) !== entry.flags || bytes.readUInt16LE(at + 8) !== entry.method || !bytes.subarray(at + 30, at + 30 + nameLength).equals(entry.nameBytes))
       syntax('ZIP 本地头与中央目录不一致');
+    verifyUnicodePath(localFields, entry);
     const descriptor = (entry.flags & 8) !== 0;
     let localSize = bytes.readUInt32LE(at + 22);
     let localCompressed = bytes.readUInt32LE(at + 18);
     if (localSize === 0xffffffff || localCompressed === 0xffffffff) {
-      const data = extras(at + 30 + nameLength, extra).get(1);
+      const data = localFields.get(1);
       let p = 0;
       for (const field of ['size', 'compressed'] as const)
         if ((field === 'size' ? localSize : localCompressed) === 0xffffffff) {
