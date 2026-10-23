@@ -74,3 +74,8 @@ test('review 12 unreadable inputs retain document pointers and cannot become vac
   const table = JSON.parse(readFileSync(new URL('../tables/quotes.json', import.meta.url), 'utf8'));
   const out = await runCheck({ interpreter: 'quote@1' }, { subject: quotes, table, context: { pack: 'case-compile' } }); assert.ok(out.every((v) => v.verdict !== 'support'));
 });
+test('review 13 a profile determines exactly one fully specified literal assertion call', () => {
+  const none = structuredClone(PROFILE_DOC); none.allowed = none.allowed.filter((v) => v.method !== 'literal'); assert.equal(parseProfile(none, contractOf(), bedsOf()).ok, false);
+  const more = structuredClone(CONTRACT_DOC); const literal = more.entries.find((v) => v.e === 'widget-check' && v.f === 'literal')!; literal.signature.parameters.push({ name: 'other', kind: 'positional_or_keyword', required: true, default: null }); literal.signature.required.push('other'); const signed = signRuntime(more);
+  assert.equal(parseProfile(profileDocument(signed), contractOf(signed), bedsOf()).ok, false);
+});

@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "0849ec41f3c3637b88d88fe7115bbd148f55c70f7ff32d0e644de75f5e5ac9b7",
-      "size": 9010
+      "sha256": "efd824882421fee01bd26c234986d5e4cc3fca19b3214b1c1d7e3485d352bf39",
+      "size": 9673
     },
     {
       "path": "functions/project.ts",

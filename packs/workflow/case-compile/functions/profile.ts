@@ -85,6 +85,13 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     }
     allowed.push({ object: String(raw.object), method: String(raw.method), parameters });
   }
+  const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
+  if (assertions.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
+  for (const call of assertions) {
+    const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');
+    const method = runtimeMethod(contract, call.object, call.method);
+    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0])) issue('/allowed', '字面断言只能有一个期望参数，不能缺少其他必填参数');
+  }
   const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   const denied = isRecord(value.denied) ? value.denied : {};
