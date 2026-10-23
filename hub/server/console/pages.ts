@@ -185,6 +185,12 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
   return html`<details class="unverified"><summary>提交内容（未经平台验证）</summary>${note ? html`<p class="notice">${note}</p>` : ''}${pre(shown)}</details>`;
 }
 
+/** A missing stored production result is a definite record gap, not an in-progress computation. */
+export function missingProductionResult(detail:RunDetail):Html {
+  return html`<p class="notice">这次生产运行没有 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。下一步：用同样的输入重新开始一次新运行，使用新的 client_key，避免返回这次旧运行。</p>
+${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${code(detail.latest.record)}；运行页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
+}
+
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
   const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId);
@@ -239,7 +245,7 @@ ${partitionGroups(result, run)}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : html`${result.cross_item.map(claimBlock)}`)}
 ${section('错误与修正', errorsTable(result.errors))}`;
   };
-  const results=primary===null?html`<p class="empty">还没有校验结果</p>`:renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
+  const results=primary===null?(factOnly?missingProductionResult(detail):html`<p class="empty">还没有校验结果</p>`):renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
   const commentary=factOnly&&detail.latest!==null&&detail.latest.record!==primary?.record
     ? section('模型评论（判断）',html`<p class="notice">后续受理的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录')}`):'';
   // Display rule 3: what was submitted, unverified, side by side with the platform's receipt and result.

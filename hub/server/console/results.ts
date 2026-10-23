@@ -5,7 +5,7 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { NOT_APPLICABLE, coverageText, statusText, terminalKind, terminalText } from '../claims.ts';
 import { countsLine } from '../text.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
-import { claimBlock, neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { claimBlock, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
 
 const production = (run: RunRecord): boolean => run.requirements.length > 0 && run.requirements.every((r) => r.accepted_producer === 'fact');
 const param = (ctx: PageContext, key: string): string | undefined => ctx.url.searchParams.get(key) || undefined;
@@ -36,7 +36,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
     return { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">筛选终态或分页位置不对</p>`) };
   }
   const authority = html`<p>${link(`/console/runs/${runId}`, '查看运行（权威视图）')}</p>`;
-  if (detail.production === null) return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}<p class="empty">还没有校验结果</p>`) };
+  if (detail.production === null) return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${authority}${missingProductionResult(detail)}`) };
   const commentary=detail.latest!==null&&detail.latest.record!==detail.production.record
     ? html`<p class="notice">另有后续受理的模型评论，结果记录 ${code(detail.latest.record)}；运行页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
   const result = detail.production.result;

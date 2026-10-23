@@ -238,7 +238,10 @@ links are fixed paths with encoded query parameters).
   it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
   record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
   The authoritative run page uses that same production result as its partition list and displays the latest later accepted
-  result separately as 模型评论（判断）; the results page identifies that commentary record when present. It shows partition counts via
+  result separately as 模型评论（判断）; the results page identifies that commentary record when present.
+  If the production record is absent, both pages name the missing start_run result explicitly, distinguish any accepted
+  commentary, and direct the reader to start a new run with the same inputs and a new client_key; replaying the old key
+  would return the old run. Neither page starts or repairs a run. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
   status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
   both layers and the satisfaction reason even though the task brief requested static terminals only. The table also
