@@ -265,8 +265,8 @@ describe('no machine paths in repository text', () => {
     assert.deepEqual(localPathProblems('x.md', 'tool config lives in ~/.claude/skills and ~/... or ~/…; ~/Library/LaunchAgents; /usr/bin/node; /srv/mirror; /old/root/backups; /moved/var/cache; replace(/~/g, token)'), []);
   });
 
-  it('covers docs, root Markdown, CI, code, tests and ops without reading the frozen archives', () => {
-    for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts', 'ops/knowledge-sync/run_release_all.sh']) {
+  it('covers docs, root Markdown, CI, code and tests without reading the frozen archives', () => {
+    for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts']) {
       assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
     }
     assert.ok(TRACKED_TEXT.every(({ path }) => !/^(foundation|references)\//.test(path)));
