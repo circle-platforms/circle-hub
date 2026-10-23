@@ -84,7 +84,7 @@ and never manufacture observed cases.
 - All cases match but none has a parsed command: refute `template-gap.no_commands`, with the case count and the action
   to put commands into titles/ancestors, sync and rerun.
 - No bound index: transitional unknown, data.missing includes case_index, with the binding/rerun action.
-- skipped sources, truncation/cut keys, unmatched case revisions, or index keys orphaned by deleted cases: known command supports survive; potential
+- skipped sources, truncation/cut keys, unmatched case revisions: known command supports survive; potential
   shortfalls become missing-input unknowns. Only matched current cases contribute command paths. An additional document conclusion discloses orphaned keys, unmatched count/ids, skipped
   sources, truncation and the view's verbatim unplaced notes, because more commands may be unread. It never says full coverage.
 
@@ -260,3 +260,6 @@ Unresolved core requests remain handoffs; this package does not claim to have im
    case_rule is unified to marked across all packs (template-gap, case-review, case-review-verify), counting untagged candidate
    nodes as cases with `tags: []`; `tagged` remains available as a restrictive parameter.
 7. Is 20 evidence ids per category enough for the console?
+
+Deletion-only stale rows are disclosed as orphaned keys, excluded from current command membership and never treated as missing facts.
+Command skips on orphan-only commands refuse; skips on unmatched current revisions remain visible as pending_skips until sync and rerun.

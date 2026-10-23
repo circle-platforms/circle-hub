@@ -151,7 +151,7 @@ function summaryOf(fields: DocumentFields, template: Template): string {
     const parts = [`用例 ${fields.caseCount} 个`];
     const command = fields.command_coverage;
     if (command) {
-      const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0 || command.orphaned.length > 0;
+      const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0;
       const missing = command.commands.filter(row => row.missing.length > 0).length;
       if (command.uploaded) parts.push('按命令：上传文件不在索引里');
       else if (command.rule_mismatch) parts.push('按命令：规则不一致，用默认 marked 重跑');

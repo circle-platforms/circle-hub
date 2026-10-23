@@ -12,19 +12,17 @@ const records = ['kept', 'deleted'].map(node => ({ document, node, title: node, 
 const cases = [{ id: `${document}:kept`, visit: 1, categories: [] }];
 const nodes = { texts: ['root', 'kept'], parents: [-1, 0] };
 const subject = (index: unknown) => ({ document, item: document, uploaded: false, case_rule: 'marked', cases, case_count: 1, nodes, index, scope: [document], lock: LOCK });
-test('deleted cases cannot contribute commands and stale rows require synchronization', () => {
-  const stale = indexView(records);
-  const coverage = commandCoverage(template as Exclude<typeof template, string>, document, cases, stale, [], false, LOCK, 'marked', nodes);
-  assert.deepEqual(coverage.commands.map(row => row.command), ['CLI/widget/kept']);
-  const outcomes = commandOutcomes(subject(stale));
-  assert.ok(outcomes.every(row => row.verdict !== 'refute'));
-  const gap = outcomes.find(row => row.data?.scope === 'document')!;
-  assert.equal(gap.verdict, 'unknown');
-  assert.deepEqual(gap.data?.orphaned_keys, ['deleted']);
-  assert.match(String(gap.data?.next_action), /知识同步.*重跑/);
-  const fresh = commandOutcomes(subject(indexView(records.slice(0, 1))));
-  assert.ok(fresh.every(row => row.verdict === 'refute'));
-  assert.ok(fresh.every(row => row.data?.command === 'CLI/widget/kept'));
+test('deletion-only stale indices give the same conclusions as fresh indices with shared or exclusive commands', () => {
+  for (const shared of [false, true]) {
+    const rows = records.map(row => ({ ...row, commands: shared ? ['CLI/widget/kept'] : row.commands }));
+    const stale = commandOutcomes(subject(indexView(rows)));
+    const fresh = commandOutcomes(subject(indexView(rows.slice(0, 1))));
+    const conclusions = (outcomes: ReturnType<typeof commandOutcomes>) => outcomes.map(o => ({ verdict: o.verdict, code: o.code, command: o.data?.command, missing: o.data?.missing }));
+    assert.deepEqual(conclusions(stale), conclusions(fresh));
+    assert.ok(stale.every(o => o.verdict === 'refute'));
+    assert.deepEqual(stale[0]!.data?.orphaned_keys, ['deleted']);
+    assert.deepEqual(commandCoverage(template as Exclude<typeof template, string>, document, cases, indexView(rows), [], false, LOCK, 'tagged', nodes).orphaned, []);
+  }
 });
 test('missing index recovery names the locked build, exact scope and all revision fields', () => {
   const gap = commandOutcomes(subject(null))[0]!;

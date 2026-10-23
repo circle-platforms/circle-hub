@@ -50,7 +50,7 @@ export function commandCoverage(template: Template, document: string, cases: Cas
     return [{ fact, row }];
   });
   const currentKeys = new Set(cases.map(fact => fact.id.slice(document.length + 1)));
-  const orphaned = [...rows.keys()].filter(key => !currentKeys.has(key)).sort(compareText);
+  const orphaned = caseRule === 'marked' ? [...rows.keys()].filter(key => !currentKeys.has(key)).sort(compareText) : [];
   const matchedCommands = new Set(matched.flatMap(m => [...m.row.commands]));
   const pending_commands = [...new Set(unmatched.flatMap(id => [...(rows.get(id.slice(document.length + 1))?.commands ?? [])]))].sort(compareText);
   const pending_skips = skips.filter(s => s.command !== undefined && !matchedCommands.has(s.command) && pending_commands.includes(s.command));
