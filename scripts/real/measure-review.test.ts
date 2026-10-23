@@ -3,7 +3,7 @@ import type { Attribution, StaticTerminal, Reason } from '../../contracts/genera
 // real client, no real model, no real Hub. The fixtures are synthetic mind maps and run details.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -271,4 +271,12 @@ test('review 15: no valid rounds cannot claim that checks passed vacuously', () 
   const pass = lines.find(line => line.startsWith('通过：'))!;
   assert.ok(!pass.includes('全部查出 是')); assert.ok(!pass.includes('没有误报和漏标 是')); assert.match(pass, /没有有效.*重跑/);
   assert.ok(lines.some(line => line.includes('有效运行少于 2') && line.includes('补足')));
+});
+
+test('closure baseline: a valid empty-plan baseline includes positional duplicate-id cases', t => {
+ const tree=document(3); tree.root.children![0].children![0].data.id='same';tree.root.children![0].children![1].data.id='same';
+ const b=fixtures(tree,[]), f=fixtures(tree,[]);t.after(()=>{rmSync(b.out,{recursive:true,force:true});rmSync(f.out,{recursive:true,force:true});});
+ const driverFor=(out:string)=>fakeDrivers({drafts:[{calls:callLine('rn_baseline','accepted'),run:()=>runDetail({items:3,sources:[{reference:`src:${copyShaOf(out)}`} ]})}]});
+ assert.equal(measureReview({...options(b.out),source:b.source,plan:b.plan},driverFor(b.out),()=>{}),0);
+ assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,baseline:b.out},driverFor(f.out),()=>{}),0);
 });

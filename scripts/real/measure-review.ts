@@ -188,7 +188,8 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     const copy = join(options.baseline, 'mutated.json');
     if (!existsSync(copy)) { say('--baseline 里没有有效的初评：先跑空计划基线'); return 2; }
     const baselineSha = createHash('sha256').update(readFileSync(copy)).digest('hex');
-    const baselineCount = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule }).cases.length;
+    const baselineAnswer = literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: options.caseRule });
+    const baselineCount = baselineAnswer.cases.length + baselineAnswer.noUniqueId.length;
     for (const entry of readdirSync(options.baseline, { withFileTypes: true }).filter((e) => e.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const file = join(options.baseline, entry.name, 'draft.run.json');
       if (!existsSync(file) || !existsSync(join(options.baseline, entry.name, 'score.json'))) continue;
