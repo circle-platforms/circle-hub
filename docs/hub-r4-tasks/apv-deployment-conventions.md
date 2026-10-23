@@ -30,7 +30,7 @@
   - kb-applicability、kb-unversioned、hub-view-scope 也改 `contracts/src/product.ts`、hub/knowledge 或 APV 包，合并排在这一件后面。
 - 可以改的路径：
   - 第一步：`contracts/src/product.ts`（产品声明里可由部署给的值、部署定义的形状，注册 schema），`contracts/src/knowledge.ts`（组成记录写下所用的部署定义），照生成器重新生成 `contracts/generated/**`；`hub/knowledge/**`（`cli.ts` 的管理员命令，`sync.ts`、`produce.ts`、`lists.ts`、`service.ts`、`context.ts`）；对应测试和 README。
-  - 第二步：`packs/product/apv/**`；对应测试。
+  - 第二步：`packs/product/apv/**`；`tests/fixtures/case-index/corpus.ts`；`.github/checks/docs-rules.ts` 和它的测试（第 7 条）；对应测试。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；`git commit -s`）。所有者的规矩：
   - 真实值不进 Git，终端也不写真实值：测试和包里的默认值都用合成的，真实取值由集成者写进持久部署的部署数据；
   - 未知只能是过渡状态：没有部署数据时给确定的说明（按包里的默认值），写明下一步是管理员写部署数据；
@@ -71,11 +71,15 @@
    - `cases-rules.ts` 的 DEFAULT_MIN_LINE、`naming.ts` 的 MAINLINE_TOKENS 改成读选项；提示文字里的例子换成合成的版本线。
 
    测试：默认值下两个约定的行为；给了合成的 min_line 和主线页的词以后，列出的文档和页面的分类照变。
-5. **注释、README 和测试**里 10.0 到 10.5 的版本线，全部换成 10.6 以后的合成线或说明性文字。测试要测的情形不变，比如“按发布火车的日期排，不按点号大小”那组，用合成线照样造出来。hygiene-2 剩的 6 处一并改。
+5. **注释、README 和测试**里比合成线早的版本线，全部换成 10.6 以后的合成线或说明性文字。测试要测的情形不变，比如“按发布火车的日期排，不按点号大小”那组，用合成线照样造出来。hygiene-2 剩的 6 处一并改。
 
    测试：改过的测试照过，测的情形和改前一样多。
 6. **真实值**：README 写明 min_line 和主线页的词的真实取值是部署数据，由集成者照合并前包里的值写进持久部署，再升包版本发布；终端只用合成值。
-7. **检查**：在 `packs/product/apv/**` 上查 10.0 到 10.5 的版本线（点号和下划线两种写法），结果为零，命令和结果写进回报。要不要把这条加进 `.github/checks/docs-rules.ts`（hygiene-2 加的只查构建名的形状），回报给集成者。
+7. **检查**：
+   - `tests/fixtures/case-index/corpus.ts` 的 `MIN_LINE` 和那几行版本线跟着包的默认值走，也在这一步换成合成线。
+   - 加一条全仓检查（`.github/checks/docs-rules.ts` 和它的测试）：除了 `foundation/`、`references/` 和锁文件，任何跟踪的文件里都不许出现比合成线早的版本线，点号和下划线两种写法都查，正则照上面 `git grep` 那一条。不留例外表；百分数、耗时这类误报照 hygiene-2 的做法改写。
+   - hygiene-2 第三轮先清掉包外的其余各处，这一步合并时全仓应当正好清零，检查从这一步起生效。
+   - 命令和结果写进回报。
 8. 包升小版本，README 同步，`node packs/product/apv/api.ts sign`。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

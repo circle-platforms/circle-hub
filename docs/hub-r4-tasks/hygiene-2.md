@@ -24,7 +24,7 @@
    - README 表格里的真实版本线和真实目录名，一并换成说明性文字。
 5. 仓库检查加宽（`.github/checks/docs-rules.ts`、`docs.test.ts`）：
    - 本机绝对路径的检查，从 docs、根目录的 md 和 .github 扩到代码、测试、ops。除了 `/Users/`，也查 `/root/`、`/var/` 和 `/home/` 下的个人目录；测试里允许的合成路径写成规则里的明确例外。
-   - 新加一条：真实版本线 10.0 到 10.5 的构建名形状不能出现在仓库里，`foundation/` 和 `references/` 除外。形状是 `Rel_` 或 `Beta_`，加名称族，加 `_10_0_` 到 `_10_5_`。
+   - 新加一条：比合成线（10.6 以后）早的真实版本线，它们的构建名形状不能出现在仓库里，`foundation/` 和 `references/` 除外。形状是 `Rel_` 或 `Beta_`，加名称族，加主版本 10、次版本小于 6 的下划线写法。
    - 两条规则各有正例和反例的测试。
    - 加完在整个仓库上跑一遍，把还剩的命中列给我；不在这一件里改。
 6. 只报不改：`packs/product/apv/README.md` 和 `product.json` 里有真实版本线，例如 `min_line` 的默认值、哪几条线有自己的命令树。这些是产品包的约定，要不要挪进部署数据由所有者定。把出现的位置列给我。
@@ -34,3 +34,16 @@
    - 发布由集成者做。
 
 完成后在终端里回报：提交号、测试数量、第 5 条跑出来还剩的命中、第 6 条的位置。
+
+## 第三轮（集成者 10-23 晚加）
+
+比合成线（10.6 以后）早的版本线，包外还有约 60 处：拿真实版本线当例子的测试和注释、生成的 schema 说明，加上百分数、耗时这类误报和规则文字本身。
+
+1. 换掉下面这些，`packs/product/apv/**` 和 `tests/fixtures/case-index/corpus.ts` 除外（它们跟 APV 的默认值绑着，归 apv-deployment-conventions 第二步）：
+   - 测试和注释里当例子的版本线换成 10.6 以后的合成线，测的情形不变；openkm 和手册库两份 `webdav.ts` 照它们的一致性测试一起改；
+   - `contracts/src/product.ts` 说明里的例子换掉，照生成器重新生成 schema；
+   - 百分数、耗时、包版本号这类误报改写，例如让测试算出别的百分数；
+   - 文档里提到这个范围的规则文字改说法，不写出具体的数，例如“比合成线早的版本线”。
+2. 删掉 `ops/knowledge-sync/`（决定 35 知识库第 10 项：它和 Hub 无关，从仓库里移出去；文档主机上不动）。
+3. 检查命令：`git grep -nE '(^|[^0-9.])10[._][0-5]([._][0-9]+)*([^0-9]|$)' -- . ':!foundation/**' ':!references/**' ':!package-lock.json' ':!packs/product/apv/**' ':!tests/fixtures/case-index/corpus.ts'` 结果为零，写进回报。全仓检查本身由 apv-deployment-conventions 第二步加。
+
