@@ -248,6 +248,23 @@ describe('no machine paths in repository text', () => {
     assert.equal(localPathProblems('docs/example.md', 'https://example.com/home/docs ' + '/' + 'home/operator/x').length, 1);
   });
 
+  it('rejects local homes hidden behind non-network and loopback URL forms', () => {
+    const home='/'+'Users/synthetic/project';
+    const probes=[
+      'http://127.0.0.1:7521/open?path='+home,
+      'pip install git+file://'+'/'+'home/synthetic/repo',
+      'txmt://open?url=file://'+home,
+      'open vscode://file'+home,
+      'at http://localhost:5173/@fs'+home,
+      'http://[::1]:7521'+home,
+      'https://example.com/open?path='+home,
+      'https://example.com/#'+home,
+      'https://example.com/@fs'+home,
+    ];
+    for(const value of probes)assert.equal(localPathProblems('docs/example.md',value).length,1,value);
+    for(const scheme of ['http','https','ftp','ftps'])assert.deepEqual(localPathProblems('docs/example.md',scheme+'://example.com'+'/'+'home/docs'),[]);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
