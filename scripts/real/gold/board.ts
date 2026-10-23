@@ -85,7 +85,18 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const loaded = new Set(maps.map((m) => m.document));
     const missing = [...listed].filter((docId) => !loaded.has(docId) && !loaded.has(docId.replace(/^agile:case:/, '')) && !loaded.has(docId.replace(/^.*:/, '')));
     if (missing.length > 0) { process.stderr.write(`清单 ${listed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑\n`); return 1; }
-    const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: JSON.parse(readFileSync(tree!, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+      const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: JSON.parse(readFileSync(tree!, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+    // --case-commands: the unplaced count from the independent case-to-command gold of the gold-case-commands work
+    // item (its out JSON: comparable cases with no parsed path; only cases of THIS build's documents count).
+    const caseCommandsPath = value('case-commands');
+    if (caseCommandsPath !== undefined) {
+      const commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: Array<{ document: string; comparable: boolean; paths: unknown[]; steps: unknown[] }> };
+      const listed2 = new Set([...listed].map((d) => d.replace(/^.*:/, '')));
+      const casesOfBuild = (commands.cases ?? []).filter((c) => listed2.has(c.document.replace(/^.*:/, '')));
+      const unplaced = casesOfBuild.filter((c) => c.comparable && c.paths.length === 0 && c.steps.length === 0).length;
+      (gold as { unplaced?: number }).unplaced = unplaced;
+      (gold as { placement?: boolean }).placement = true;
+    }
     writeFileSync(out!, `${JSON.stringify(gold, null, 2)}\n`);
     print(`清单 ${listed.size} 份，导出的脑图 ${gold.documents.count} 份，其中不在树里 ${gold.documents.not_in_tree} 份，没有用例 ${gold.documents.no_cases} 份`);
     print(`分组 ${gold.groups!.length} 组；用例 ${gold.totals!.cases}；无期望 ${gold.totals!.missing}；含糊 ${gold.totals!.vague}；负面 ${gold.totals!.negative}`);

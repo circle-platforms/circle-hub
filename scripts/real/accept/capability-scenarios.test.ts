@@ -265,3 +265,23 @@ test('a one-group board with the appended location column parses the types cover
   assert.equal(missing, '压力测试、兼容性测试', 'the location column must not be captured into the summary');
   void scenario;
 });
+
+test('when placement is bound the unplaced-count sentence is always checked, gold number or not', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Rel_APV_10_6_1_57', types: true });
+  const withSentence = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。2 个用例没有解析出命令。',
+  ].join('\n')));
+  const unplacedWith = withSentence.find((c) => c.name.includes('未归位'));
+  assert.ok(unplacedWith !== undefined && unplacedWith.ok, JSON.stringify(unplacedWith));
+  const withoutSentence = scenario.check(turnsOf([
+    '运行 run_5 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。',
+  ].join('\n')));
+  const unplaced = withoutSentence.find((c) => c.name.includes('未归位'));
+  assert.ok(unplaced !== undefined, 'the check exists whenever placement is bound');
+  assert.ok(!unplaced.ok, 'a missing sentence is a mismatch, not a skip');
+});

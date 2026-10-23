@@ -112,3 +112,25 @@ test('a docs list naming documents with no exported map refuses to start and say
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('--case-commands writes the independent unplaced count into the gold', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-board-cc-'));
+  try {
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
+    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
+    writeFileSync(join(dir, 'cc.json'), JSON.stringify({ schema: 'case-commands-gold@1', tree_sha256: '0'.repeat(64), documents: ['doc-a'], totals: { cases: 3, comparable: 2, excluded: 1, unplaced: 1, step_placed: 0 }, cases: [
+      { key: 'doc-a#c1', document: 'doc-a', node: 'c1', comparable: true, paths: [], steps: [] },
+      { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }], steps: [] },
+      { key: 'doc-b#c3', document: 'doc-b', node: 'c3', comparable: true, paths: [], steps: [] },
+    ] }));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F', '--case-commands', join(dir, 'cc.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
+    assert.equal(report.unplaced, 1, 'doc-a has one comparable case with no parsed path; doc-b is not in this build');
+    assert.equal(report.placement, true, 'the gold asks the scenario to bind placement');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

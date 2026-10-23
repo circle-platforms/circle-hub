@@ -162,9 +162,13 @@ export default function scenario(gold: BoardGold): Scenario {
         checks.push({ area, name: `#${index + 1} 分组指标一致`, expected: `${group.cases} 个；${group.missing}、${group.vague}、${group.negative}`, actual: ok ? '一致' : '缺组或计数、比例不一致', ok });
       }
 
-      if (gold.unplaced !== undefined) {
+      // Whenever placement is bound the Hub states the unplaced count; without a gold number a missing sentence is
+      // a mismatch (a Hub output never given is 不符), with one the numbers must agree.
+      if (gold.placement === true || gold.unplaced !== undefined || gold.types === true) {
         const count = /(\d+) 个用例没有解析出命令/.exec(text);
-        checks.push({ area, name: '未归位用例数与独立依据一致', expected: `${gold.unplaced}`, actual: count ? count[1] : '未读到', ok: count !== null && Number(count[1]) === gold.unplaced });
+        const bound = gold.placement === true || gold.unplaced !== undefined || gold.types === true;
+        const ok = bound && count !== null && (gold.unplaced === undefined || Number(count[1]) === gold.unplaced);
+        checks.push({ area, name: gold.unplaced === undefined ? 'Hub 写出未归位用例数' : '未归位用例数与独立依据一致', expected: gold.unplaced === undefined ? '摘要里有“N 个用例没有解析出命令”' : `${gold.unplaced}`, actual: count ? `${count[1]}` : '未读到', ok });
       }
 
       checks.push({
