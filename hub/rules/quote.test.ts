@@ -87,3 +87,10 @@ it('quotation normalization has no runtime dependency on refs', async () => {
   const ast = ts.createSourceFile('text.ts', source, ts.ScriptTarget.Latest, true);
   for (const statement of ast.statements) if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text.includes('refs/')) assert.ok(statement.importClause?.isTypeOnly, 'rules may import only refs types');
 });
+
+it('records the stale quote contract wording as an integrator regeneration need', () => {
+  const refs = readFileSync(new URL('../refs/README.md', import.meta.url), 'utf8');
+  const rules = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  assert.match(refs, /QuoteTable[^\n]*description/); assert.match(refs, /quote\.v1\.schema\.json/);
+  assert.match(rules, /stale[^\n]*contract/i);
+});

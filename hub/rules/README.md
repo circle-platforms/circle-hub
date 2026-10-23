@@ -303,3 +303,7 @@ check outcome, not `check_error`: the requirement's static layer is incomplete a
 partition. Other model/submission-only reasons remain invalid as check outcomes.
 
 Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.
+
+Stale contract wording: QuoteTable in contracts/src/tables.ts and generated quote.v1.schema.json still describe every
+whitespace run as one space. The independent decision-37 implementations are authoritative for this owner-approved
+change; the integrator/rules contract owner must update the description and regenerate the schemas.

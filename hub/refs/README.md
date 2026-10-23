@@ -334,6 +334,11 @@ or worktree was changed and no real-system script was run; only synthetic tests 
 
 ## Needs from other packages
 
+- **contracts / rules owner**: update the QuoteTable description in contracts/src/tables.ts to decision 37: remove
+  W/F-adjacent whitespace, collapse other interior runs and trim ends. Regenerate
+  contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
+  These contract files are outside this task's paths; no contract edit is claimed here.
+
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
 
