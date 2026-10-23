@@ -4,7 +4,7 @@
 // (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
 // through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
-import { EntryKindSchema, type ChangeKind, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { EntryKindSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
@@ -15,6 +15,7 @@ import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReferen
 import type { JsonValue, ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import { createCatalogView, type CatalogEntry, type CatalogView } from '../rules/api.ts';
 import { CompositionView, type ReadRow } from './composition.ts';
+import { CONTRADICTION, pointerName } from './store.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
@@ -408,11 +409,110 @@ export class TreeReading {
       });
       return { grounds, tagged };
     };
+    // The machine-checkable validity of what is read (B01 R[2], K03 R[5]). Every condition that holds is listed with
+    // its source; the status is the first of them in the fixed order rule_withdrawn > cited_fragment_changed >
+    // contradicted (README). grounds_withdrawn and premise_failed have no data source today; tree entries carry no
+    // expiry (record claims: hub/refs). cited_fragment_changed compares the cited root X with the reader's root Y —
+    // the root of the composition the reader's lock names: X ≠ Y and Y's entry at the same path differs or is absent
+    // (K03 R[5]). The same root never flags (roots are content-addressed); without a lock there is no reader root to
+    // compare against, and nothing is claimed, honestly.
+    // The reader's root Y (K01 R[6], K03 R[5]): in a run, the root of the composition the lock names; outside a run,
+    // the CURRENT-ROOT POINTER of the product line the cited root belongs to. When the pointer cannot be taken (the
+    // line has no root yet) there is no Y and nothing is claimed, honestly (README).
+    const readerRoot = bound !== null
+      ? (await this.#context.store.composition(bound))?.root ?? null
+      : await (async () => {
+          const body = all[0]?.body;
+          if (body === undefined) return null;
+          const pointer = await this.#context.records.pointers.get(pointerName(body.product, body.version.line));
+          return pointer?.target ?? null;
+        })();
+    // Pack lookups of one read are cached (a withdrawn version is asked once, not once per row).
+    const packCache = new Map<string, Promise<boolean>>();
+    const withdrawn = (ref: string): Promise<boolean> => {
+      let hit = packCache.get(ref);
+      if (hit === undefined) {
+        hit = this.#context.packs.pack(ref).then((pack) => pack === null);
+        packCache.set(ref, hit);
+      }
+      return hit;
+    };
+    type Condition = 'rule_withdrawn' | 'cited_fragment_changed' | 'contradicted';
+    const ORDER: readonly Condition[] = ['rule_withdrawn', 'cited_fragment_changed', 'contradicted'];
+    type Relation = { digest: string; source: string; at: string; other: string; by: string; provenance: string };
+    /** Every contradiction relation of these digests: ONE findMany per read (all digests at once — the query count
+     * never grows with the entry count); findMany pages internally until exhausted, so nothing is silently capped. */
+    const relationsOf = async (digests: readonly string[]): Promise<Relation[]> => {
+      const out: Relation[] = [];
+      if (digests.length === 0) return out;
+      const records = await this.#context.store.records.findMany<{ relation?: string; at?: string; other?: string; by?: string; claim?: string }>({ key: CONTRADICTION, values: [...digests], kind: 'claim' });
+      for (const record of records) {
+        const body = record.body as { relation?: string; at?: string; other?: string; by?: string; claim?: string };
+        if (body.relation !== 'contradicts') continue;
+        // The claim address names the digest this relation flags (tree:<root>/<path>@<digest>).
+        const digest = /@([0-9a-f]{64})$/.exec(body.claim ?? '')?.[1] ?? digests[0]!;
+        out.push({ digest, source: `rec:${record.digest}`, at: body.at ?? record.created_at, other: body.other ?? '', by: body.by ?? '', provenance: record.provenance });
+      }
+      return out;
+    };
+
+    const validityOfRows = async (digests: readonly string[]): Promise<{
+      status: ValidityStatus;
+      bound: string[];
+      conditions: Array<{ condition: Condition; source: string }>;
+      contradictions: Array<{ source: string; at: string; other: string }>;
+      cited_root?: string;
+      reader_root?: string;
+    }> => {
+      const conditions: Array<{ condition: Condition; source: string }> = [];
+      // rule_withdrawn: the pack version that decided a row is no longer published.
+      const decidedBy = new Set<string>();
+      for (const [i, c] of compositions.entries()) for (const digest of digests) {
+        const row = rowsOf[i].get(digest);
+        if (row !== undefined) decidedBy.add(row.decided_by);
+      }
+      for (const ref of [...decidedBy].sort()) if (await withdrawn(ref)) conditions.push({ condition: 'rule_withdrawn', source: ref });
+      // cited_fragment_changed: X ≠ Y, and Y's entry at the same path differs or the path is absent in Y.
+      if (digests.length === 1 && readerRoot !== null && readerRoot !== root) {
+        const view = (await this.compositionsOf(readerRoot))[0];
+        const yRows = view === undefined ? null : await view.rowsAt(canonical);
+        if (yRows === null || !yRows.has(digests[0]!)) {
+          conditions.push({ condition: 'cited_fragment_changed', source: `引用根 ${root}，读者根 ${readerRoot}；主张在 ${root} 上仍成立` });
+        }
+      }
+      // contradicted: relations this reader may see — their own candidate relations and the Hub's deterministic ones
+      // (K05 R[4]: someone else's private candidate relation never flags another reader, an admin included).
+      const contradictions: Array<{ source: string; at: string; other: string }> = [];
+      const relations = await relationsOf(digests);
+      for (const relation of relations) {
+        if (!digests.includes(relation.digest)) continue;
+        const visible = relation.provenance !== 'candidate' || relation.by === reader.user;
+        if (visible) contradictions.push({ source: relation.source, at: relation.at, other: relation.other });
+      }
+      if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
+      let status: ValidityStatus = 'valid';
+      for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }
+      const result: {
+        status: ValidityStatus;
+        bound: string[];
+        conditions: Array<{ condition: Condition; source: string }>;
+        contradictions: Array<{ source: string; at: string; other: string }>;
+        cited_root?: string;
+        reader_root?: string;
+      } = { status, bound: [root, ...digests], conditions, contradictions };
+      if (digests.length === 1 && readerRoot !== null && readerRoot !== root) {
+        result.cited_root = root;
+        result.reader_root = readerRoot;
+      }
+      return result;
+    };
+
     if (entry !== null) {
       if (!found.node.entries.includes(entry)) return null;
       const content = await this.#contentOf(rowsOf[0] ?? null, entry);
       if (content === null) return null;
       const { grounds, tagged } = groundsOf([entry]);
+      const validity = await validityOfRows([entry]);
       return {
         text: content.statement,
         mediaType: 'text/plain',
@@ -420,15 +520,15 @@ export class TreeReading {
         data: { kind: content.kind, data: content.data, applicability: content.applicability } as JsonValue,
         grounds,
         validity: {
-          status: 'valid',
-          bound: [root, entry],
+          ...validity,
           premises: content.applicability === null ? [...premises, `适用条件：${UNDECLARED}`] : premises,
           compositions: tagged,
-        },
+        } as JsonValue,
       };
     }
     const entries = await this.#entriesAt(rowsOf[0] ?? null, found.node.entries);
     const { grounds, tagged } = groundsOf(entries.map((e) => e.digest));
+    const validity = await validityOfRows(entries.map((e) => e.digest));
     const text = entries.length > 0 ? entries.map((e) => e.content.statement).join('\n\n') : found.node.children.map((c) => c.name).join('\n');
     return {
       text,
@@ -436,7 +536,7 @@ export class TreeReading {
       readTier: 'model_readable',
       data: { name: found.node.name, level: found.node.level, children: found.node.children.map((c) => c.name), entries: [...found.node.entries] },
       grounds,
-      validity: { status: 'valid', bound: [root], premises, compositions: tagged },
+      validity: { ...validity, premises, compositions: tagged } as JsonValue,
     };
   }
 
