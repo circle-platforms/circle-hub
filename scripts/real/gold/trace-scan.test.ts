@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -39,6 +40,7 @@ test('scan recommends the sole closed traced build and prints only hashes and co
     assert.equal(run.status, 0, run.stderr);
     assert.match(run.stdout, /建议用 #2/);
     assert.doesNotMatch(run.stdout, /Synthetic|91000|合成/);
+    for (const build of ['Synthetic_10_7_A', 'Synthetic_10_7_B', 'Synthetic_10_7_C']) assert.ok(!run.stdout.includes(createHash('sha256').update(build).digest('hex').slice(0, 12)));
     const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
     assert.equal(report.builds[1].closed_traced, 1);
     writeFileSync(join(dir, 'docs/Synthetic_10_7_B.json'), '[]');
@@ -46,5 +48,15 @@ test('scan recommends the sole closed traced build and prints only hashes and co
     const filtered = spawnSync(process.execPath, args, { encoding: 'utf8' });
     assert.equal(filtered.status, 0, filtered.stderr);
     assert.match(filtered.stdout, /没有找到已追溯的已关闭缺陷/);
+    const allDocsArgs = args.filter((_, i) => i !== args.indexOf('--docs-dir') && i !== args.indexOf('--docs-dir') + 1);
+    assert.equal(spawnSync(process.execPath, allDocsArgs, { encoding: 'utf8' }).status, 0);
+    assert.match(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')).document_filter, /没有按构建/);
+    writeFileSync(join(dir, 'closed.json'), JSON.stringify({ statuses: ['closed'] }));
+    assert.equal(spawnSync(process.execPath, [...allDocsArgs, '--closed-statuses', join(dir, 'closed.json')], { encoding: 'utf8' }).status, 0);
+    writeFileSync(join(dir, 'closed.json'), '{}');
+    const malformed = spawnSync(process.execPath, [...allDocsArgs, '--closed-statuses', join(dir, 'closed.json')], { encoding: 'utf8' });
+    assert.equal(malformed.status, 1);
+    assert.doesNotMatch(malformed.stderr, /Synthetic|91000|合成/);
+
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

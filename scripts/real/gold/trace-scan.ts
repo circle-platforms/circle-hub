@@ -29,7 +29,7 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const ranked = [...builds].sort((a, b) => b.closed_traced - a.closed_traced || b.traced - a.traced || a.index - b.index);
     const recommendation = ranked[0]?.traced ? ranked[0].index : null;
     writeFileSync(resolve(out), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds, recommendation }, null, 2)}\n`);
-    for (const b of builds) print(`#${b.index} ${b.digest}：缺陷 ${b.defects}；已追溯 ${b.traced}；已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`);
+    for (const b of builds) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`);
     if (recommendation !== null) print(`建议用 #${recommendation}`);
     if (!ranked[0]?.closed_traced) print('没有找到已追溯的已关闭缺陷');
     return 0;

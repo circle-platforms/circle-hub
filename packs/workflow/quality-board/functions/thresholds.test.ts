@@ -8,7 +8,7 @@ import { boardOutcomes } from './board.ts';
 import { projectItems } from './project.ts';
 import { buildSubject } from './subject.ts';
 import { readThresholds, thresholdOutcomes } from './thresholds.ts';
-import { boundView, facetRow, facetViewOf } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from './test-support.ts';
 import type { BoardSubject, CheckOutcome } from './types.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
@@ -16,7 +16,7 @@ const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: nul
 /** Projects a hand-built facet view and builds the checks' subject, as a run does. */
 function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { parameters?: Record<string, unknown>; overrides?: Parameters<typeof facetViewOf>[1]; edit?: (fields: Record<string, unknown>) => void } = {}): BoardSubject {
   const parameters = options.parameters ?? {};
-  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
+  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, parameters } });
   assert.ok(!('error' in projected), 'projected');
   const items = projected.items.map((it) => {
     const fields = it.fields as Record<string, unknown>;

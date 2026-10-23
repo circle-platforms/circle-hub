@@ -33,8 +33,9 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
   }
   const { counts, facts } = read_;
   const view = facts.view;
-  const grounds = [view.source];
+  const grounds = [view.source, ...(facts.placement ? [facts.placement.source] : [])];
   const data: Record<string, unknown> = {
+    ...(facts.placement ? { placement: facts.placement } : {}),
     cases: counts.cases,
     missing: counts.missing,
     vague: counts.vague,
@@ -72,6 +73,8 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
     };
   }
   let statement = `合计：用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）。看板覆盖已索引文档的每一个用例（没有解析出命令的用例是未归位条目，也计入合计）；没有读到的来源不在其中，所以它描述的是已索引的用例，不是整套测试`;
+  if (facts.types) statement += '；只按标签观察六种测试类型，其余 18 个模板类别需要路径、标题、步骤和期望原文，这些视图看不到，另用模板查缺读取原文';
+  if (facts.placement) statement += `；${facts.placement.unplaced} 个用例没有解析出命令（未归位），计入合计` + (facts.placement.skipped > 0 ? `；未归位数只覆盖已索引的来源，另有 ${facts.placement.skipped} 份来源未读，下一步同步这些来源后重跑` : '');
   if (view.skipped > 0) statement += `；有 ${view.skipped} 份列出的来源没有读取，其中的用例不在计数里`;
   if (view.truncated) statement += '；视图被截断，合计只覆盖列出的部分';
   return { verdict: 'support', statement, grounds, tier: TIER, data };

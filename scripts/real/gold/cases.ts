@@ -116,6 +116,7 @@ export interface GoldStep {
 }
 
 export interface GoldCase {
+  tags: string[];
   id: string;
   title: string;
   expected: string[];
@@ -254,6 +255,7 @@ export function caseGold(
         const c: GoldCase = {
           id: node.id === '' ? `@${node.index}` : node.id,
           title: node.text,
+          tags: [...node.resource],
           expected: [],
           steps: [],
           hasExpected: false,

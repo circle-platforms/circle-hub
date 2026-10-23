@@ -8,7 +8,33 @@ import { caseGold } from './cases.ts';
 import { locationsGold, lineKey } from './locations.ts';
 import { cleanDocId, loadCaseMaps, parseDocumentList } from './trace.ts';
 
-export function boardGold(options: { product: string; build: string; tree: unknown; maps: Array<{ document: string; map: unknown }>; caseRule?: 'marked' | 'tagged' }): BoardGold & { documents: { count: number; not_in_tree: number; no_cases: number } } {
+// Independent normalization over a copied declaration, never a pack-computed result.
+// Declaration source: packs/workflow/template-gap/functions/tags.ts and tables/template-v3.json; no computed results copied.
+export const TAG_SPELLINGS = {
+  Functional: ['functional', 'function', 'functions', 'functionality', 'func', '功能', '功能性', '基本功能'],
+  Configuration: ['configuration', 'configurations', 'config', 'configs', 'configure', 'cfg', '配置'],
+  Integration: ['integration', 'integrations', 'integrated', 'integrate', '集成'],
+  Compatibility: ['compatibility', 'compatible', 'compat', '兼容', '兼容性'],
+  Negative: ['negative', 'neg', '负向', '负面', '反向', '逆向', '异常'],
+  Stress: ['stress', 'pressure', '压力', '压测'],
+} as const;
+export const TYPE_LABELS = { Functional: '功能测试', Configuration: '配置测试', Integration: '集成测试', Compatibility: '兼容性测试', Negative: '反向测试', Stress: '压力测试' } as const;
+
+export function testType(raw: string): string | null {
+  // Independently strip edge punctuation and fold aliases, then try declared suffixes.
+  let key = raw.normalize('NFKC').replace(/\p{White_Space}+/gu, ' ').replace(/^ | $/g, '').toLowerCase();
+  if (raw.length > 200) return null;
+  const edges = '[]【】()（）{}<>《》「」『』"\'“”‘’`#*.,;:!?。，；：！？、 ';
+  while (key.length && edges.includes(key[0])) key = key.slice(1);
+  while (key.length && edges.includes(key[key.length - 1])) key = key.slice(0, -1);
+  key = key.replace(/[\s_-]/g, '');
+  const candidates = [key];
+  for (const suffix of ['测试用例', 'testing', 'tests', 'cases', '测试', '用例', 'test', 'case']) if (key.endsWith(suffix)) candidates.push(key.slice(0, -suffix.length));
+  for (const candidate of candidates) for (const [type, aliases] of Object.entries(TAG_SPELLINGS)) if ((aliases as readonly string[]).includes(candidate)) return TYPE_LABELS[type as keyof typeof TYPE_LABELS];
+  return null;
+}
+
+export function boardGold(options: { product: string; build: string; tree: unknown; maps: Array<{ document: string; map: unknown }>; caseRule?: 'marked' | 'tagged'; types?: boolean }): BoardGold & { documents: { count: number; not_in_tree: number; no_cases: number } } {
   const locations = locationsGold(options.tree).all ?? [];
   const groups = new Map<string, BoardGroupGold>();
   let notInTree = 0, noCases = 0;
@@ -21,6 +47,11 @@ export function boardGold(options: { product: string; build: string; tree: unkno
     const label = `${location?.line ? lineKey(location.line) : 'unplaced'}/${location?.module || 'unplaced'}`;
     const held = groups.get(label) ?? { label, cases: 0, missing: 0, vague: 0, negative: 0 };
     for (const c of doc.items) {
+      if (options.types) {
+        held.coverage ??= { present: [], missing: [], untagged: 0 };
+        if (c.tags.length === 0) held.coverage.untagged++;
+        for (const raw of c.tags) { const label = testType(raw); if (label && !held.coverage.present.includes(label)) held.coverage.present.push(label); }
+      }
       held.cases++;
       if (!c.hasExpected) held.missing++;
       if (c.vagueExpected) held.vague++;
@@ -28,19 +59,23 @@ export function boardGold(options: { product: string; build: string; tree: unkno
     }
     groups.set(label, held);
   }
+  for (const group of groups.values()) if (group.coverage) {
+    group.coverage.present = Object.values(TYPE_LABELS).filter((label) => group.coverage!.present.includes(label));
+    group.coverage.missing = Object.values(TYPE_LABELS).filter((label) => !group.coverage!.present.includes(label));
+  }
   const sorted = [...groups.values()].sort((a, b) => a.label < b.label ? -1 : a.label > b.label ? 1 : 0);
-  return { product: options.product, build: options.build, groups: sorted, totals: sorted.reduce((sum, g) => ({ cases: sum.cases + g.cases, missing: sum.missing + g.missing, vague: sum.vague + g.vague, negative: sum.negative + g.negative }), { cases: 0, missing: 0, vague: 0, negative: 0 }), documents: { count: options.maps.length, not_in_tree: notInTree, no_cases: noCases } };
+  return { types: options.types ?? false, product: options.product, build: options.build, groups: sorted, totals: sorted.reduce((sum, g) => ({ cases: sum.cases + g.cases, missing: sum.missing + g.missing, vague: sum.vague + g.vague, negative: sum.negative + g.negative }), { cases: 0, missing: 0, vague: 0, negative: 0 }), documents: { count: options.maps.length, not_in_tree: notInTree, no_cases: noCases } };
 }
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const tree = value('tree'), cases = value('cases-dir'), docs = value('docs'), product = value('product'), build = value('build'), out = value('out');
   if (!tree || !cases || !docs || !product || !build || !out) return 2;
   try {
-    const gold = boardGold({ product, build, tree: JSON.parse(readFileSync(tree, 'utf8')), maps: loadCaseMaps(cases, parseDocumentList(readFileSync(docs, 'utf8'))), caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+    const gold = boardGold({ types: argv.includes('--types'), product, build, tree: JSON.parse(readFileSync(tree, 'utf8')), maps: loadCaseMaps(cases, parseDocumentList(readFileSync(docs, 'utf8'))), caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
     writeFileSync(out, `${JSON.stringify(gold, null, 2)}\n`);
     print(`文档 ${gold.documents.count} 份，其中不在树里 ${gold.documents.not_in_tree} 份，没有用例 ${gold.documents.no_cases} 份`);
     print(`分组 ${gold.groups!.length} 组；用例 ${gold.totals!.cases}；无期望 ${gold.totals!.missing}；含糊 ${gold.totals!.vague}；负面 ${gold.totals!.negative}`);
-    print(`分组表 SHA-256 ${createHash('sha256').update(JSON.stringify(gold.groups)).digest('hex').slice(0, 12)}`);
+    print(`指标计数 SHA-256 ${createHash('sha256').update(JSON.stringify(gold.groups!.map(({ cases, missing, vague, negative }) => ({ cases, missing, vague, negative })).sort((a, b) => a.cases - b.cases || a.missing - b.missing || a.vague - b.vague || a.negative - b.negative))).digest('hex').slice(0, 12)}`);
     return 0;
   } catch { process.stderr.write('生成看板独立答案失败：检查原始文件与文档清单\n'); return 1; }
 }

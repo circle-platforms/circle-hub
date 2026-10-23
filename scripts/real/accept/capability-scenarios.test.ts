@@ -93,7 +93,7 @@ describe('traceability scenario', () => {
     product: 'apv',
     build: 'Rel_APV_10_6_1_57',
     defects: [
-      { bug: '7300', status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }, { id: '9001:c-2', title: '证书查看' }] },
+      { bug: '7300', closed: true, status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }, { id: '9001:c-2', title: '证书查看' }] },
       { bug: '7402', status: 'known', cases: [] },
     ],
   };
@@ -138,7 +138,7 @@ describe('quality-board scenario', () => {
 
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
+      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' }, placement: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=commands' } } } },
     ]);
   });
 

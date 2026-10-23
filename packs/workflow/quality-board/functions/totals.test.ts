@@ -6,12 +6,12 @@ import { describe, it } from 'node:test';
 import { projectItems } from './project.ts';
 import { buildSubject } from './subject.ts';
 import { totalsOutcome } from './totals.ts';
-import { boundView, facetRow, facetViewOf } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from './test-support.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
 
 function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { overrides?: Parameters<typeof facetViewOf>[1] } = {}) {
-  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters: {}, context: CONTEXT });
+  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters: {}, context: CONTEXT });
   assert.ok(!('error' in projected));
   const items = projected.items.map((it) => ({ id: it.id, label: it.label, location: `src:${it.location.source}/json@1/${it.location.selector}`, fields: it.fields }));
   return { subject: buildSubject({ applies: 'run', items, context: { ...CONTEXT, groups: projected.groups ?? [] } }), projected };
@@ -36,8 +36,8 @@ describe('totalsOutcome', () => {
     assert.match(outcome.statement, /没有解析出命令的用例是未归位条目/);
     assert.match(outcome.statement, /计入合计/);
     assert.match(outcome.statement, /不是整套测试/);
-    const groups = projected.groups as Array<{ view: { source: string } }>;
-    assert.deepEqual(outcome.grounds, [groups[0].view.source]);
+    const groups = projected.groups as Array<{ view: { source: string }; placement: { source: string } }>;
+    assert.deepEqual(outcome.grounds, [groups[0].view.source, groups[0].placement.source]);
   });
 
   it('names the listed sources that were not read', () => {

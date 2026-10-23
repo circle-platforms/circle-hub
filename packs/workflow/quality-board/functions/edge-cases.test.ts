@@ -7,12 +7,12 @@ import { boardOutcomes } from './board.ts';
 import { projectItems } from './project.ts';
 import { buildSubject } from './subject.ts';
 import { totalsOutcome } from './totals.ts';
-import { boundView, facetRow, facetViewOf } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf } from './test-support.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
 
 function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { overrides?: Parameters<typeof facetViewOf>[1]; edit?: (fields: Record<string, unknown>) => void } = {}) {
-  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters: {}, context: CONTEXT });
+  const projected = projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters: {}, context: CONTEXT });
   assert.ok(!('error' in projected), 'projected');
   const items = projected.items.map((it) => {
     const fields = it.fields as Record<string, unknown>;

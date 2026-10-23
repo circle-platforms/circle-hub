@@ -21,10 +21,53 @@ test('scenario detects redistributed counts despite unchanged total, missing and
   assert.ok(check(text.replace(/^- 10.8[^\n]+\n/m, '')).some((c) => !c.ok));
   assert.ok(check(text + '\n- 10.9/额外 | 用例 1 个；无期望结果 0.0%；含糊期望 0.0%；负面用例 0.0%').some((c) => !c.ok));
   assert.doesNotMatch(JSON.stringify(check(text)), /甲|乙|合成文档/);
+  assert.ok(check(text).filter((c) => c.name.includes('分组指标')).every((c) => /^#\d+ 分组指标一致$/.test(c.name)));
 });
 
 test('group count summaries compare counts as well as ratios', () => {
   const counted = text.replace('无期望结果 50.0%', '无期望结果 1 个（50.0%）').replace('含糊期望 0.0%', '含糊期望 0 个（0.0%）').replace('负面用例 0.0%', '负面用例 0 个（0.0%）');
   assert.ok(scenario(gold).check(turns(counted)).every((c) => c.ok));
   assert.ok(scenario(gold).check(turns(counted.replace('无期望结果 1 个（50.0%）', '无期望结果 2 个（50.0%）'))).some((c) => !c.ok));
+});
+
+test('raw tags remain intact and independent type coverage drives scenario comparisons', () => {
+  const typedMap = { root: { data: { text: '合成文档标题' }, children: [
+    { data: { id: 'c1', text: '合成用例一', resource: ['function', '[Functional]', '未知标签'] } },
+    { data: { id: 'c2', text: '合成用例二', priority: 2 }, children: [{ data: { text: '期望' } }] },
+  ] } };
+  const typed = boardGold({ product: 'synthetic', build: 'Synthetic_10_7', tree: [branch('10.7', '甲', 'a')], maps: [{ document: 'a', map: typedMap }], types: true });
+  assert.deepEqual(typed.groups![0].coverage, { present: ['功能测试'], missing: ['配置测试', '集成测试', '兼容性测试', '反向测试', '压力测试'], untagged: 1 });
+  const group = typed.groups![0];
+  const line = `运行 run_1 完成\n- ${group.label} | 用例 2 个；无期望结果 1 个（50.0%）；含糊期望 0 个（0.0%）；负面用例 0 个（0.0%）；未打标签 1 个；没有用例带这些类型的标签：配置测试、集成测试、兼容性测试、反向测试、压力测试\n合计：用例 2 个；无期望结果 1 个（50.0%）；含糊期望 0 个（0.0%）；负面用例 0 个（0.0%）。已索引的用例；1 个用例没有解析出命令`;
+  const s = scenario({ ...typed, unplaced: 1 });
+  assert.ok(s.check(turns(line)).every((c) => c.ok), JSON.stringify(s.check(turns(line))));
+  assert.ok(s.check(turns(line.replace('未打标签 1', '未打标签 0'))).some((c) => !c.ok));
+  assert.ok(s.check(turns(line.replace('压力测试', '功能测试'))).some((c) => !c.ok));
+  assert.ok(s.check(turns(line.replace('1 个用例没有解析出命令', '0 个用例没有解析出命令'))).some((c) => !c.ok));
+});
+
+test('board CLI discloses document gaps and only counts and hashes on screen', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'board-gold-'));
+  try {
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([branch('10.7', '合成模块', 'a')]));
+    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['a', 'b', 'c']));
+    writeFileSync(join(dir, 'cases/a.json'), JSON.stringify(map));
+    writeFileSync(join(dir, 'cases/b.json'), JSON.stringify(map));
+    writeFileSync(join(dir, 'cases/c.json'), JSON.stringify({ root: { data: { text: '没有用例的合成文档' } } }));
+    const args = ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'synthetic', '--build', 'Synthetic_10_7', '--types', '--out', join(dir, 'gold.json')];
+    const run = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.doesNotMatch(run.stdout, /合成|Synthetic|Negative|10\.7/);
+    assert.match(run.stdout, /文档 3 份，其中不在树里 2 份，没有用例 1 份/);
+    const result = JSON.parse(readFileSync(join(dir, 'gold.json'), 'utf8'));
+    assert.equal(result.types, true);
+    assert.equal(result.totals.cases, 2);
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify([branch('10.8', '另一个合成模块', 'a')]));
+    assert.equal(spawnSync(process.execPath, args, { encoding: 'utf8' }).stdout, run.stdout, 'renaming line/module must not change the screen digest');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

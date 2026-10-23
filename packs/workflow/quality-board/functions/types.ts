@@ -36,7 +36,10 @@ export type Fraction = { num: number; den: number };
 export type GroupCounts = { cases: number; missing: number; vague: number; negative: number };
 
 /** One group of the board: an item's fields. */
+export type TypeCoverage = { present: string[]; missing: string[]; untagged: number | null; partial: boolean; source: string };
+
 export type GroupBoard = {
+  coverage?: TypeCoverage;
   line: string | null;
   module: string | null;
   /** '<line|unplaced>/<module|unplaced>' — the item id. */
@@ -52,6 +55,8 @@ export type Thresholds = { max_missing_ratio: number; max_vague_ratio: number; m
 
 /** What the totals check needs of the bound view, frozen in the run's groups (groups[0]). */
 export type RunFacts = {
+  types?: boolean;
+  placement?: { unplaced: number; source: string; skipped: number; truncated: boolean };
   product: string;
   build: string;
   root: string;

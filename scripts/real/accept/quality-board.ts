@@ -1,5 +1,4 @@
 // Independently compare every (version line, module) group from agile tree locations and mindmap counts.
-import { createHash } from 'node:crypto';
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
@@ -13,6 +12,7 @@ export interface BoardTotalsGold {
 }
 
 export interface BoardGroupGold {
+  coverage?: { present: string[]; missing: string[]; untagged: number };
   /** The group label: '版本线/模块'（模块 unplaced when the module is null）. */
   label: string;
   cases: number;
@@ -22,6 +22,8 @@ export interface BoardGroupGold {
 }
 
 export interface BoardGold {
+  types?: boolean;
+  unplaced?: number;
   product: string;
   build: string;
   totals?: BoardTotalsGold;
@@ -86,7 +88,13 @@ export default function scenario(gold: BoardGold): Scenario {
     name: 'quality-board',
     area,
     prompt: `请对构建 ${gold.build} 出用例质量看板。`,
-    respond: (turn) => pagedRespond(turn, pager, () => [{ tool: 'hub_start_run', input: { pack, inputs: { facets: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` } } } }], '看板完成。'),
+    respond: (turn) => pagedRespond(turn, pager, () => [{ tool: 'hub_start_run', input: { pack, inputs: {
+      facets: gold.types ? [
+        { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
+        { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,tags` },
+      ] : { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
+      placement: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=commands` },
+    } } }], '看板完成。'),
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
       const checks: Check[] = [runStarted(area, turns)];
@@ -140,7 +148,18 @@ export default function scenario(gold: BoardGold): Scenario {
           const match = new RegExp(`${name}\\s*(?:(\\d+)\\s*个（)?([0-9.]+)%`).exec(summary);
           ok = ok && match !== null && `${match[2]}%` === percentOf(group[key], group.cases) && (match[1] === undefined || Number(match[1]) === group[key]);
         }
-        checks.push({ area, name: `#${index + 1} ${createHash('sha256').update(group.label).digest('hex').slice(0, 12)} 分组指标一致`, expected: `${group.cases} 个；${group.missing}、${group.vague}、${group.negative}`, actual: ok ? '一致' : '缺组或计数、比例不一致', ok });
+        if (gold.types && group.coverage) {
+          const untagged = /未打标签 (\d+) 个/.exec(summary);
+          const missing = /没有用例带这些类型的标签：([^；\n]+)/.exec(summary);
+          const reportedMissing = missing?.[1] === '无' ? [] : missing?.[1].split('、').sort();
+          ok = ok && untagged !== null && Number(untagged[1]) === group.coverage.untagged && JSON.stringify(reportedMissing) === JSON.stringify([...group.coverage.missing].sort()) && !summary.includes('部分');
+        }
+        checks.push({ area, name: `#${index + 1} 分组指标一致`, expected: `${group.cases} 个；${group.missing}、${group.vague}、${group.negative}`, actual: ok ? '一致' : '缺组或计数、比例不一致', ok });
+      }
+
+      if (gold.unplaced !== undefined) {
+        const count = /(\d+) 个用例没有解析出命令/.exec(text);
+        checks.push({ area, name: '未归位用例数与独立依据一致', expected: `${gold.unplaced}`, actual: count ? count[1] : '未读到', ok: count !== null && Number(count[1]) === gold.unplaced });
       }
 
       checks.push({

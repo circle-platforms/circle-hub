@@ -4,6 +4,7 @@
 // has_expected true and vague_expected true; the negative share is negative true over all cases. Ratios are exact fractions
 // {num, den}, rounded only for display. The board check always supports with the metrics as claim data — unless the frozen
 // counts contradict the definitions (counts_inconsistent, advisory), which the pack's own projection never produces.
+import { coverageSummary } from './coverage.ts';
 import { clip, compareText, guarded, internalError, isRecord } from './text.ts';
 import type { CheckOutcome, FacetViewData, Fraction, GroupBoard, GroupCounts } from './types.ts';
 
@@ -128,12 +129,12 @@ export function boardOutcomes(subject: unknown): CheckOutcome[] {
       }
       out.push({
         verdict: 'support',
-        statement: summaryOf(fields.counts),
-        grounds,
+        statement: summaryOf(fields.counts) + coverageSummary(fields.coverage) + (fields.coverage ? `；出现的类型：${fields.coverage.present.join('、') || '无'}` : '') + (fields.coverage?.partial ? '；补取动作：同步未读来源并重新读取同根标签视图，若仍截断则报告分面补读能力缺口' : ''),
+        grounds: [...grounds, ...(fields.coverage ? [fields.coverage.source] : [])],
         tier: TIER,
         item: id,
         pointer,
-        data: { line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
+        data: { ...(fields.coverage ? { coverage: fields.coverage } : {}), line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
       });
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });

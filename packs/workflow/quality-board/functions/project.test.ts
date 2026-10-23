@@ -4,13 +4,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { projectItems, PROJECT_LIMITS, type ProjectLimits } from './project.ts';
-import { boundView, facetRow, facetViewOf, reversed } from './test-support.ts';
+import { placementFor, boundView, facetRow, facetViewOf, reversed } from './test-support.ts';
 
 const CONTEXT = { product: 'apv', names: ['APV', 'NSAE'], line: null, build: null, root: null, parameters: {}, groups: [] };
 
 function project(rows: Parameters<typeof facetViewOf>[0], options: { parameters?: Record<string, unknown>; overrides?: Parameters<typeof facetViewOf>[1]; context?: Record<string, unknown> } = {}, limits?: Partial<ProjectLimits>) {
   const parameters = options.parameters ?? {};
-  return projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, ...options.context, parameters } }, limits);
+  return projectItems({ inputs: [boundView('facets', facetViewOf(rows, options.overrides)), placementFor(facetViewOf(rows, options.overrides))], parameters, context: { ...CONTEXT, ...options.context, parameters } }, limits);
 }
 
 type Items = { items: Array<{ id: string; label: string; summary?: string; location: { slot: string; source: string; parser: string; selector: string }; fields: Record<string, unknown> }>; groups?: Array<Record<string, unknown>>; warnings: Array<{ code: string; message: string }> };
@@ -98,7 +98,7 @@ describe('projectItems', () => {
     ];
     const one = asItems(project(rows));
     const view = facetViewOf(rows);
-    const flipped = projectItems({ inputs: [{ ...boundView('facets', view), model: reversed(view) }], parameters: {}, context: CONTEXT });
+    const flipped = projectItems({ inputs: [{ ...boundView('facets', view), model: reversed(view) }, placementFor(view)], parameters: {}, context: CONTEXT });
     const two = asItems(flipped);
     // The flipped input keeps the original digest (as the Hub's canonical storage would): the outputs are identical.
     assert.deepEqual(two, one);
