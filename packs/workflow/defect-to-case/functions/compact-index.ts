@@ -113,7 +113,7 @@ export function buildCompactIndex(
   const returnedKeys = new Set(isRecord(model.keys) ? Object.keys(model.keys).map(normalizeCommand) : []);
   const sourceSkipped = typeof model.skipped === 'number' ? model.skipped : 0;
   // Complete views omit requested keys with no cases; only incomplete coverage makes absence unknown.
-  const missingKeys = sourceTruncated || sourceSkipped > 0
+  const missingKeys = sourceTruncated
     ? only?.filter(key => !returnedKeys.has(normalizeCommand(key))) ?? []
     : [];
 

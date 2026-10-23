@@ -625,13 +625,14 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     const heads = headSets.get(draft) ?? [];
     const missing = missingKeys.filter(k => heads.some(h => normalizeCommand(h) === normalizeCommand(k)));
     let gap = '';
-    if (undecidable.has(draft)) gap = '索引没有收窄到它用的命令（' + heads.join('、') + '），请重新读取这些命令的完整索引';
-    else if (missing.length > 0) gap = '源视图缺少请求的键：' + missing.join('、') + '，请重新读取这些键';
-    else if (cappedOnly.has(draft)) gap = '命令所在键受每键上限影响，已截断或无法证明未截断，请提高预算重新读取这些键';
-    else if (compactIndex.sourceTruncated) gap = '源视图已截断，请提高预算重新读取这些命令的未截断视图';
+    if ((compactIndex.sourceSkipped ?? 0) > 0) gap = '锁定根缺少 ' + compactIndex.sourceSkipped + ' 份文档，请修复或确认接纳被跳过的来源，重新同步生成新根并重跑；重读旧根不能补齐';
+    else if (undecidable.has(draft)) gap = '索引没有收窄到草稿命令（' + heads.join('、') + '），请按本草稿命令收窄 only 和查重所需 fields 后补读一次；仍不全则向集成者报告能力缺口';
+    else if (missing.length > 0) gap = '源视图缺少请求的键：' + missing.join('、') + '，请按草稿命令收窄 only 和查重所需 fields 后补读一次；仍缺失则向集成者报告截断或凭据排除能力缺口';
+    else if (cappedOnly.has(draft)) gap = '命令所在键受每键上限影响，任何重读都不能提高此上限；请向集成者报告分键补读能力缺口，补齐后重跑';
+    else if (compactIndex.sourceTruncated) gap = '源视图已截断，请按草稿命令收窄 only 和查重所需 fields 后补读一次；仍截断则向集成者报告预算或凭据排除能力缺口，补齐后重跑';
     else if ((compactIndex.unplacedCommands ?? 0) > 0) gap = '索引有条目没有带 commands 字段，请重新生产带 commands 的索引';
-    else if (compactIndex.dropped > 0) gap = '紧凑索引超出大小上限丢弃了 ' + compactIndex.dropped + ' 个用例，请提高预算重新读取这些命令的完整索引';
-    else if (!compactIndex.complete) gap = '索引不完整或缺少 ' + (compactIndex.sourceSkipped ?? (isRecord(subject.indexed_cases) ? subject.indexed_cases.skipped ?? 0 : 0)) + ' 份文档，请补取跳过的文档并提高预算重新读取索引';
+    else if (compactIndex.dropped > 0) gap = '紧凑索引超出大小上限丢弃了 ' + compactIndex.dropped + ' 个用例，请按草稿命令收窄 only 和查重所需 fields 后补读一次；仍丢弃则向集成者报告紧凑索引容量缺口，补齐后重跑';
+    else if (!compactIndex.complete) gap = '索引不完整，请修复缺失来源后重新同步生成新根并重跑';
     outcomes.push(gap ? {
       verdict: 'unknown', reason: undecidable.has(draft) ? 'missing_input' : 'integrity_unproven',
       statement: '起草用例“' + title + '”未能证明没有重复：' + gap, grounds: [], tier: 'advisory', ...own,
