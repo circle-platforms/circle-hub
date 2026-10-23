@@ -93,3 +93,15 @@ test('conformance CLI exports evidence without printing deployment data or submi
   assert.doesNotMatch(s.lines.join('\n'),/synthetic-secret|synthetic-bed|synthetic-remote|127\.0\.0\.1/);
   assert.ok(s.lines.some(line=>line.includes('结果引用 src:')));
 });
+
+test('precheck exports every seat response with its operation and selector without printing raw values',async t=>{
+  const {probes}=await import('./testing/probes.ts');
+  const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>name==='inspect_seat'?{output:'version: synthetic-build\naddress: 192.0.2.1/24'}:value});t.after(()=>c.close());const s=session(c);
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
+  const save=join(c.kit.dataDir,'seat-observations');
+  assert.equal(await jobCommand(s,['precheck','--executor',c.executor.id,'--save',save]),1);
+  const meta=JSON.parse(await readFile(join(save,'checksums.json'),'utf8'));
+  const seats=meta.observations.filter((o:any)=>o.operation?.startsWith('probe.'));
+  assert.equal(seats.length,4);assert.ok(seats.every((o:any)=>o.pointer==='/output' && /^[a-f0-9]{64}$/.test(o.original_sha256)));
+  assert.doesNotMatch(s.lines.join('\n'),/192\.0\.2\.1|synthetic-build|synthetic-secret/);
+});

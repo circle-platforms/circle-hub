@@ -102,3 +102,12 @@ test('a different function cannot substitute for the declared verification funct
   await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /核验事实/);
   assert.equal(c.calls.includes('send_blob'), false);
 });
+
+test('verification support expiring during prechecks is rechecked before committing any intent',async t=>{
+  let c:Awaited<ReturnType<typeof setup>>;
+  c=await setup({alter:(name,value)=>{if(name==='inspect_slot')c.clock.ms+=2000;return value;}});t.after(()=>c.close());
+  c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].validity.expires_at=new Date(c.clock.ms+1000).toISOString();
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+  assert.equal((await c.service.journal.events(state.job)).some(e=>e.body.detail.phase==='intent'),false);
+});

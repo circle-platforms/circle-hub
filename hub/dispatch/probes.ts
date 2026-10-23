@@ -4,7 +4,8 @@ import { canonicalBytes, parseStrictJson, sha256Hex, type RecordsKit } from '../
 import type { KnowledgePort } from '../ports.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
 import type { JobBinding, Journal } from './journal.ts';
-import { RpcClient, type Exchange } from './transport.ts';
+import { canRetryRead } from './read-policy.ts';
+import { RpcClient, ToolReplyError, type Exchange } from './transport.ts';
 export type BuildKnowledge = Pick<KnowledgePort,'builds'|'resolveBuild'> & Partial<Pick<KnowledgePort,'rootInfo'>>;
 function addresses(values: unknown[]): string[] {
   return [...new Set(values.map(value=>{
@@ -25,36 +26,34 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   if(knowledge) {
     if(typeof context.product!=='string')throw new Error('缺少产品绑定，不能核对知识库构建别名；请绑定产品后重跑');
     const current=await knowledge.resolveBuild(context.product,context.build);
-    let base=current;
-    if(typeof context.root==='string' && current?.root!==context.root && knowledge.rootInfo) {
-      const history=await knowledge.rootInfo(context.root);
-      const locked=history.find(r=>r.product===context.product && (r.build.name===context.build || r.build.base===context.build || r.build.base===current?.base));
-      base=locked ? {...locked.build,root:locked.root} : null;
-    }
-    if(!base || typeof context.root!=='string' || base.root!==context.root)throw new Error('锁定构建的知识根不可核对；请恢复该根与构建绑定后重跑');
-    names.add(base.base); names.add(base.name);
-    for(const alias of await knowledge.builds(context.product)) if(alias.base===base.base && (alias.root===base.root || current?.base===base.base && alias.root===current.root))names.add(alias.name);
+    const base=typeof context.build_base==='string' ? context.build_base : current?.base;
+    if(!base)throw new Error('知识库没有锁定构建的身份记录；同步构建名字与基础名后重跑预检');
+    names.add(base);
+    if(current?.base===base)names.add(current.name);
+    for(const alias of await knowledge.builds(context.product))if(alias.base===base)names.add(alias.name);
   }
   let verified=true; const assessments:string[]=[];
-  for(const seat of spec.seats)for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {
-    let response:Exchange|undefined;
+  probeLoop: for(const seat of spec.seats)for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {
+    let response:Exchange|undefined;let refused=false;let failedSource:string|undefined;
     for(let attempt=1;attempt<=3;attempt++) {
       try{ response=await client.declaredRead(spec.call,{...context,command:check.command,seat_index:seat.index},`probe.${seat.index}.${key}`);break; }
-      catch { await journal.append(binding,'probe.retry','read','error',{seat:seat.seat,check:key,attempt,next_action:attempt<3?'自动重读本座位，不提交':'恢复只读连接后重跑 precheck，未提交'}); if(attempt<3)await sleep(d.poll_ms); }
+      catch(error) {const retry=canRetryRead(error,d,context);if(error instanceof ToolReplyError)failedSource=error.source; await journal.append(binding,'probe.retry','read','error',{seat:seat.seat,check:key,attempt,next_action:retry && attempt<3?'自动重读本座位，不提交':'目标拒绝或原件不可保存，修复后重跑 precheck，未提交'});if(!retry){refused=true;break;} if(attempt<3)await sleep(d.poll_ms); }
     }
     let matched=false,actual:string[]=[],expected:string[]=[],reason='回显里没有所需字段';
     try {
       const text=response && at(response.value,spec.output);
-      if(typeof text==='string') actual=[...text.matchAll(new RegExp(check.pattern,'gm'))].flatMap(m=>Object.values(m.groups??{})).filter((v):v is string=>typeof v==='string' && !!v.trim()).map(v=>v.trim());
+      if(typeof text==='string') actual=[...text.matchAll(new RegExp(check.pattern,'gm'))].flatMap(m=>Object.values(m.groups??{})).filter((v):v is string=>typeof v==='string' && v.length>0);
       if(key==='version') {expected=[...names].sort();matched=actual.length===1 && names.has(actual[0]);}
       else { const entries=at(at(manifest,seat.manifest.device),seat.manifest.addresses); if(!Array.isArray(entries) || !entries.length)throw new Error('清单里没有座位接口地址'); expected=addresses(entries.map(e=>at(e,seat.manifest.address))); actual=addresses(actual); matched=JSON.stringify(actual)===JSON.stringify(expected); }
       if(actual.length)reason='回显值与锁定构建或绑定清单不符';
     }catch{reason='清单或回显中缺少有效接口地址；请核对提取规则和清单';}
-    if(!response)reason='只读应答连续三次不可用；恢复读取后重跑预检';
-    const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...(response?[response.source]:[])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+    if(!response)reason=refused?'目标明确拒绝或原件无法保存；停止后续设备登录，请负责人核对受限原件和读取配置':'只读应答连续三次不可用；恢复读取后重跑预检';
+    const refs=response?[response.source]:failedSource?[failedSource]:[];
+    const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
     assessments.push(`src:${artifact.body.sha256}`);
-    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:'读取受限核对原件，修正环境或声明后重跑预检'}:{})},[`src:${artifact.body.sha256}`,...(response?[response.source]:[])]);
+    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:'读取受限核对原件，修正环境或声明后重跑预检'}:{})},[`src:${artifact.body.sha256}`,...refs]);
     verified=verified && matched;
+    if(refused)break probeLoop;
   }
   const report=await records.artifacts.ingest({bytes:canonicalBytes({verified,assessments}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:assessments}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
   await journal.append(binding,'result','read_back','completed',{reference:`src:${report.body.sha256}`,probe_assessments:assessments.length},assessments);

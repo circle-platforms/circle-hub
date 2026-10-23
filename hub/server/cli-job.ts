@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
-import type { Principal, RecordsKit } from '../records/api.ts';
+import { sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { readSecret } from './assemble/secret-input.ts';
 import { UsageError } from './errors.ts';
@@ -24,6 +24,7 @@ async function service(s: JobCommandSession, requireKey = true): Promise<Dispatc
 }
 function output(s: JobCommandSession, state: JobStatus): void {
   s.out(`阶段 ${state.phase}；码 ${state.outcome}（${labelOf('effect_outcome', state.outcome)}）；作业摘要 ${state.job}；冻结 ${Number(state.frozen)}；动作 ${state.events}`);
+  if (state.reason) s.out(`说明：${state.reason}`);
   if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
   if (state.result) s.out(`结果引用 ${state.result}`);
   if (state.next_action) s.out(`下一步：${state.next_action}`);
@@ -74,21 +75,23 @@ async function exportPrecheck(s: JobCommandSession, dispatch: DispatchService, j
   if (!definitionBytes) throw new Error('冻结的执行器定义不可读取');
   const { ExecutorDefinition } = await import('../dispatch/api.ts');
   const definition = ExecutorDefinition.parse(JSON.parse(new TextDecoder().decode(definitionBytes)));
-  const refs = [...new Set(events.filter(e => /^(?:precheck(?:\.[0-9]+)?|query|submit)\.response$/.test(String(e.body.detail.phase))).flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
+  const refs = [...new Set(events.filter(e => /^(?:precheck(?:\.[0-9]+)?|query|submit|probe\.[0-9]+\.[^.]+)\.response$/.test(String(e.body.detail.phase))).flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
   const by = await s.admin(); const records = await s.records(); let count = 0; const hashes: Array<Record<string, unknown>> = [];
   for (const reference of refs) {
     const source = await records.artifacts.source(by, reference.slice(4), { consumer: 'function' });
     if (!source?.bytes) throw new Error('预检原件的读取策略未放行，不能导出');
     const file = `observation-${++count}.json`;
     await writeFile(join(target, file), source.bytes, { mode: 0o600, flag: 'wx' });
-    const phase = String(events.find(e => e.body.inputs.includes(reference) && /^(?:precheck(?:\.[0-9]+)?|query|submit)\.response$/.test(String(e.body.detail.phase)))?.body.detail.phase);
+    const phase = String(events.find(e => e.body.inputs.includes(reference) && /^(?:precheck(?:\.[0-9]+)?|query|submit|probe\.[0-9]+\.[^.]+)\.response$/.test(String(e.body.detail.phase)))?.body.detail.phase);
     const step = /^precheck\.([0-9]+)\.response$/.exec(phase);
     const config = step ? definition.precheck_reads[Number(step[1]) - 1] : definition;
-    const protocolPointers = phase === 'query.response' ? Object.values(definition.reconciliation ?? {}) : phase === 'submit.response' ? Object.values(definition.receipt) : [];
+    const probe = /^probe\.([0-9]+)\.([^.]+)\.response$/.exec(phase);
+    const tags = {operation:phase.replace(/\.response$/,''),...(probe?{seat_index:Number(probe[1]),seat:definition.probes?.seats.find(s=>s.index===Number(probe[1]))?.seat ?? null,check:probe[2]}:{})};
+    const protocolPointers = probe && definition.probes ? [definition.probes.output] : phase === 'query.response' ? Object.values(definition.reconciliation ?? {}) : phase === 'submit.response' ? Object.values(definition.receipt) : [];
     const pointers = [...new Set([...protocolPointers.filter((p): p is string => typeof p === 'string' && (p === '' || p.startsWith('/'))), ...(!protocolPointers.length ? [...(config?.capture_pointers ?? []), ...(config?.conditions ?? []).map(c => c.pointer)] : [])])];
     for (const pointer of pointers) {
-      try { hashes.push({ file, reference, ...observationHashes(source.bytes, pointer, phase === 'submit.response') }); }
-      catch { hashes.push({ file, reference, pointer, missing_fact: '该指针缺少有效工具回答或字段，不能计算内容摘要' }); }
+      try { hashes.push({ file, reference, ...tags, ...observationHashes(source.bytes, pointer, phase === 'submit.response') }); }
+      catch { hashes.push({ file, reference, ...tags, pointer, original_sha256:sha256Hex(source.bytes), missing_fact: '该指针缺少有效工具回答或字段，不能计算内容摘要' }); }
     }
   }
   await writeFile(join(target, 'checksums.json'), JSON.stringify({ definition_sha256: binding.executor_digest, observations: hashes }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });

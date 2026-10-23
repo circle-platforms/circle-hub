@@ -98,3 +98,11 @@ test('a process killed after journal admission resumes by request identity witho
   assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));
 });
+
+test('a compatible observation policy repair lets an administrator reconcile the original job without retransmission',async t=>{
+  const c=await setup({mode:'unmapped'});t.after(()=>c.close());
+  const original=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(original.frozen,true);
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,status:{...c.executor.definition.status,map:{...c.executor.definition.status.map,unmapped:{action_result:'completed',effect_outcome:'effective'}}}});
+  const result=await c.service.dispose(c.admin,original.job,{choice:'reconcile',remote_id:'synthetic-remote'});
+  assert.equal(result.outcome,'effective');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+});

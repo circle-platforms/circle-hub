@@ -61,3 +61,12 @@ test('capture-only cached sources can bootstrap expectations but never make disp
   assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.registration_ready === false));
   await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
 });
+
+test('overprivileged credentials produce a concrete reason in both precheck and dispatch without tool calls',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,refused_tools:['synthetic_admin_reset']});
+  for(const state of [await c.service.precheck(c.admin,c.executor.id),await c.service.dispatch(c.admin,c.run,c.executor.id)]) {
+    assert.equal(state.outcome,'not_dispatched');assert.match(state.reason!,/密钥权限超出运行权限/);
+  }
+  assert.equal(c.calls.length,0);
+});

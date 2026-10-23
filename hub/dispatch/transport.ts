@@ -10,6 +10,18 @@ export interface ResponseMetadata { received_sha256: string; redacted: boolean; 
 export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean, metadata?: ResponseMetadata) => Promise<string>;
 export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string; tool_error?: boolean };
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+export class InvocationDefinitionError extends Error {constructor(){super('调用参数名、必需字段或字节预算不符合目标公开声明；请修正执行器调用模板，尚未调用工具');}}
+export class ToolReplyError extends Error {
+  readonly value:unknown;readonly source:string;
+  constructor(value:unknown,source:string){super('目标明确拒绝只读调用；原件已保存，先核对权限、凭据或参数');this.value=value;this.source=source;}
+}
+export class HttpReplyError extends Error {
+  readonly status:number;
+  constructor(status:number){super('目标 HTTP 回答不成功；原文已保存，不跟随重定向');this.status=status;}
+}
+export class ResponseStorageError extends Error {constructor(){super('目标原件未能保存；先修复本地存储后重读');}}
+export class RpcReplyError extends Error {constructor(){super('目标的完整回答不符合 RPC 协议；修正接口后重读原作业');}}
+export class CapabilityPolicyError extends Error { constructor(){super('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');} }
 export class RpcClient {
   readonly definition: ExecutorDefinition;
   readonly #secret: string;
@@ -17,6 +29,7 @@ export class RpcClient {
   readonly #save: SaveResponse;
   readonly #now: () => Date;
   serverVersion: string | null = null;
+  #schemas = new Map<string,Record<string,unknown>>();
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
@@ -54,7 +67,9 @@ export class RpcClient {
       const page = await this.rpc('tools/list', cursor ? { cursor } : {});
       if (!Array.isArray(page.value.tools)) throw new Error('目标工具清单无效');
       for (const tool of page.value.tools) if (object(tool) && typeof tool.name === 'string') {
-        if (this.definition.refused_tools.includes(tool.name)) throw new Error('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');
+        if (this.definition.refused_tools.includes(tool.name)) throw new CapabilityPolicyError();
+        if(!object(tool.inputSchema))throw new Error('目标工具的参数声明无效；尚未调用工具');
+        this.#schemas.set(tool.name,tool.inputSchema);
         seen.add(tool.name);
       }
       const next = page.value.nextCursor;
@@ -62,6 +77,26 @@ export class RpcClient {
       cursor = typeof next === 'string' ? next : undefined; if (cursor) visited.add(cursor);
     } while (cursor);
     if (this.definition.allowed_tools.some(name => !seen.has(name))) throw new Error('目标缺少允许清单中的工具；未提交');
+  }
+  prepareSubmit(context:Readonly<Record<string,unknown>>):Record<string,unknown> {
+    return this.argumentsFor(this.definition.calls.submit,context);
+  }
+  private argumentsFor(declaration:ExecutorDefinition['calls']['submit'],context:Readonly<Record<string,unknown>>):Record<string,unknown> {
+    let args:unknown;
+    try{args=bind(declaration.arguments,context);}catch{throw new InvocationDefinitionError();}
+    if(!object(args))throw new InvocationDefinitionError();
+    const schema=this.#schemas.get(declaration.tool);
+    if(!schema)throw new InvocationDefinitionError();
+    const props=object(schema.properties)?schema.properties:{};
+    if(schema.required!==undefined && (!Array.isArray(schema.required) || schema.required.some(key=>typeof key!=='string' || !Object.hasOwn(args,key))))throw new InvocationDefinitionError();
+    if(schema.additionalProperties===false) {
+      const patterns=object(schema.patternProperties)?Object.keys(schema.patternProperties):[];
+      try{if(Object.keys(args).some(key=>!Object.hasOwn(props,key) && !patterns.some(pattern=>new RegExp(pattern).test(key))))throw new InvocationDefinitionError();}
+      catch{throw new InvocationDefinitionError();}
+    }
+    try{if(Buffer.byteLength(JSON.stringify({jsonrpc:'2.0',id:Number.MAX_SAFE_INTEGER,method:'tools/call',params:{name:declaration.tool,arguments:args}}))>this.definition.max_bytes*2)throw new InvocationDefinitionError();}
+    catch{throw new InvocationDefinitionError();}
+    return args;
   }
   async call(role: CallRole, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
     const declaration = this.definition.calls[role];
@@ -78,7 +113,11 @@ export class RpcClient {
   }
   private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
     if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
-    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false, timeout, operation);
+    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: this.argumentsFor(declaration,context) }, false, timeout, operation);
+    if(response.value.isError===true && operation!=='submit') {
+      let value:unknown;try{value=toolContent(response.value,true);}catch{}
+      throw new ToolReplyError(value,response.source);
+    }
     return { ...response,tool_error:response.value.isError===true, value: toolContent(response.value, operation === 'submit') };
   }
   private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
@@ -119,11 +158,14 @@ export class RpcClient {
     const safe = this.redact(textInput);
     const bytes = new TextEncoder().encode(safe);
     const received_at = this.#now().toISOString();
-    const source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response });
+    let source:string;
+    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response });}
+    catch {throw new ResponseStorageError();}
     if (!received.complete || !validEncoding) throw new Error('目标回答不完整、超时或超限；已有字节先保存，不重试');
-    if (received.status < 200 || received.status >= 300) throw new Error('目标 HTTP 回答不成功；原文已保存，不跟随重定向');
+    if (received.status < 200 || received.status >= 300) throw new HttpReplyError(received.status);
     if (received.session) { if (/[\r\n]/.test(received.session) || received.session.length > 512) throw new Error('目标会话标识无效'); this.#session = received.session; }
     if (notification) return { value: {}, source, received_at, started_at };
-    return { value: rpcResponse(new TextDecoder().decode(bytes), id), source, received_at, started_at };
+    try{return { value: rpcResponse(new TextDecoder().decode(bytes), id), source, received_at, started_at };}
+    catch{throw new RpcReplyError();}
   }
 }

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { isIP } from 'node:net';
 import { X509Certificate } from 'node:crypto';
-import { ActionResultSchema, AcceptanceSchema, EffectOutcomeSchema, DynamicTerminalSchema } from '../../contracts/generated/vocabulary.ts';
+import { ActionResultSchema, AcceptanceSchema, EffectOutcomeSchema, DynamicTerminalSchema, RetrySafetySchema } from '../../contracts/generated/vocabulary.ts';
 const valueRef = z.strictObject({ $value: z.string().min(1).max(100) });
 const pointer = z.string().max(500).refine(p => p === '' || /^\/(?:[^~]|~[01])*$/.test(p));
 const call = z.strictObject({ tool: z.string().min(1).max(128), arguments: z.record(z.string(), z.unknown()), timeout_ms: z.number().int().min(1).max(600000).default(30000) });
@@ -29,6 +29,7 @@ const probes = z.strictObject({command_pattern:z.string().min(1).max(2000).refin
 });
 export const ExecutorDefinition = z.strictObject({
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
+  retry_safety: RetrySafetySchema.refine(v=>v==='unsafe' || v==='dedup_window').default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
   premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
@@ -43,12 +44,13 @@ export const ExecutorDefinition = z.strictObject({
   calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call, status: call, result: call, query: call.optional() }),
   lease: z.strictObject({ id: pointer, token: pointer, ttl_ms: pointer, ttl_scale_ms: z.number().positive().default(1), acceptance: pointer, map: acceptance }),
   receipt: z.strictObject({ stage: pointer.optional(), reached_device: pointer.optional(), stages: z.record(z.string(), EffectOutcomeSchema).default({}), request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
-  conformance: z.strictObject({ payloads: z.array(z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]*={0,2}$/)).length(2).refine(p => p[0] !== p[1]) }).optional(),
-  reconciliation: z.strictObject({ found: pointer, state: pointer, request_id: pointer, sha256: pointer, id: pointer, stage: pointer, reached_device: pointer, gateway_time: pointer, gc_before: pointer, time_scale_ms: z.number().positive().optional(), map: z.record(z.string(),EffectOutcomeSchema) }).optional(),
+  conformance: z.strictObject({ expected_stage:z.string().min(1).max(200), payloads: z.array(z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]*={0,2}$/)).length(2).refine(p => p[0] !== p[1] && p.every(s=>Buffer.from(s,'base64').length>0 && Buffer.from(s,'base64').toString('base64')===s)) }).optional(),
+  reconciliation: z.strictObject({ pending_states:z.array(z.string().min(1).max(200)).max(100).default([]), found: pointer, state: pointer, request_id: pointer, sha256: pointer, id: pointer, stage: pointer, reached_device: pointer, gateway_time: pointer, gc_before: pointer, time_scale_ms: z.number().positive().optional(), map: z.record(z.string(),EffectOutcomeSchema) }).optional(),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ request_id:pointer.optional(), log_stale:pointer.optional(), closing_marker:z.string().min(1).max(2000).optional(), log:pointer.optional(), sessions:pointer.optional(), id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   probes: probes.optional(),
   side_effects: z.array(z.strictObject({message:z.string().min(1).max(2000),marker:z.string().min(1).max(2000).optional()})).max(100).default([]),
+  read_retry_when: conditions,
   conditions,
   capture_pointers: z.array(pointer).max(100).default([]),
   precheck_reads: z.array(call.extend({ conditions, capture_pointers: z.array(pointer).max(100).default([]) })).max(20).default([]),
@@ -81,6 +83,16 @@ export function at(value: unknown, pointer: string): unknown {
     current = (current as Record<string, unknown>)[segment];
   }
   return current;
+}
+/** Interpret only the declared time representation; never guess a date from a numeric-looking string. */
+export function readDeclaredTime(value:unknown,scale?:number):number {
+  if(scale!==undefined) {
+    const ms=typeof value==='number'?value*scale:NaN;
+    return Number.isFinite(ms) && Number.isFinite(new Date(ms).getTime()) ? ms : NaN;
+  }
+  if(typeof value!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value))return NaN;
+  const ms=Date.parse(value);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0,19)===value.slice(0,19) ? ms : NaN;
 }
 export function bind(value: unknown, context: Readonly<Record<string, unknown>>): unknown {
   if (Array.isArray(value)) return value.map(v => bind(v, context));

@@ -1,3 +1,5 @@
+import { after } from 'node:test';
+import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
 import { newId, sha256Hex, canonicalBytes } from '../../records/api.ts';
 import { createPool, Database } from '../../records/db.ts';
@@ -8,11 +10,16 @@ import { DispatchService } from '../service.ts';
 import { definition } from './definition.ts';
 import { startEndpoint } from './server.ts';
 
+let cluster:Promise<TemporaryPostgres>|undefined;
+after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
+
 export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[] } = {}) {
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);
-  const kit = await openTestRecords({ now });
+  const kit = await openTestRecords({ now, postgres: await (cluster ??= startPostgres()) });
   const db = new Database(createPool(kit.database, 4));
+  let endpoint: Awaited<ReturnType<typeof startEndpoint>> | undefined;
+  try {
   const leases = new LeaseService(db, { now: async () => now() });
   const admin = (await kit.principals.bootstrapAdmin('合成管理员')).user;
   const owner = await kit.principals.createUser(admin, '合成运行者');
@@ -32,7 +39,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     if (name === 'read_blob') return { request: submittedRequest, key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
     return { ok: true };
   };
-  const endpoint = await startEndpoint([...definition('x').allowed_tools, 'synthetic_admin_reset', ...(options.extraTools ?? [])], async (name, _args, res) => {
+  endpoint = await startEndpoint([...definition('x').allowed_tools, 'synthetic_admin_reset', ...(options.extraTools ?? [])], async (name, _args, res) => {
     calls.push(name);
     if (options.mode === 'fencing-result' && name === 'read_blob') await leases.forceRelease({ keys: definition('x').resources, by: admin.id, reason: '合成结果阶段强制释放' });
     if (!failedRead && ((options.mode === 'transient-status' && name === 'inspect_blob') || (options.mode === 'transient-result' && name === 'read_blob'))) { failedRead = true; res.destroy(); return {}; }
@@ -57,7 +64,9 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const runs = { getRun: async (_by: unknown, id: string) => id === run ? detail : id === plan ? { ...detail, run: { ...detail.run, run: plan, predecessor: undefined } } : null };
   await leases.acquire({ keys: d.resources, prefix: 'synthetic/', ttlSeconds: options.mode === 'expiry' ? 1 : 3600, maxTtlSeconds: 3600, holder: { user: owner.id, run: options.mode === 'lineage' ? newId('run') : run } });
   const service = new DispatchService({ records: kit, leases, runs, workflows, now });
-  return { kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint, payload,
+  const server=endpoint;let closing:Promise<void>|undefined;
+  return { kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
     get sawIntentAtSubmit() { return sawIntentAtSubmit; },
-    close: async () => { await endpoint.close(); await db.end(); await kit.close(); } };
+    close: () => (closing ??= (async () => { await server.close(); await db.end(); await kit.close(); })()) };
+  } catch(error) { await endpoint?.close().catch(()=>{});await db.end().catch(()=>{});await kit.close();throw error; }
 }
