@@ -11,6 +11,9 @@ export interface Scenario {
   respond: Respond;
   /** Decides the checks from what the model was shown. */
   check(turns: LoggedTurn[]): Check[];
+  /** Writes scenario files into the Circle work directory before the client starts (after writeHome, before
+   * startCircle); the scratch directory is still removed whole at the end. */
+  prepare?(workdir: string): void | Promise<void>;
   /** Extra sections for the report, if any (not counted in pass/fail). */
   sections?: ReportSection[];
 }

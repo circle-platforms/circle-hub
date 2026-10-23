@@ -50,7 +50,8 @@ export async function run(): Promise<number> {
   if (address === null || typeof address === 'string') throw new Error('the scripted model has no port');
   const endpoint: Endpoint = { protocol: 'anthropic', baseUrl: `http://127.0.0.1:${address.port}`, apiKey: 'scripted', model: 'scripted-model', sources: ['scripted'] };
   const home = join(scratch, 'home');
-  const written = writeHome({ envFile: 'environment', home, provider: 'qwen', hubUrl }, endpoint, token);
+  const written = writeHome({ envFile: 'environment', home, provider: 'qwen', hubUrl, contextWindow: 1_000_000 }, endpoint, token);
+  await scenario.prepare?.(written.workdir);
   const progress = (what: string): void => console.error(`[accept] ${what}`);
   progress(`脚本化模型在 127.0.0.1:${address.port}，专用 Circle 目录已写好`);
   const otty = createOtty();
