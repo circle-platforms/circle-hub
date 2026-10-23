@@ -29,7 +29,13 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
   }
   const pending: Array<{ pointer: string; missing: string; next: string }> = [];
   const add = (pointer: string, missing: string, next: string) => pending.push({ pointer, missing, next });
-  const allowed = wanted.enabled.filter((method) => !unopened.some((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method))).map((method, i) => {
+  const allowed = wanted.enabled.filter((method, index) => {
+    if (unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) return false;
+    if (method.parameters.length === 0 && !given.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) {
+      add(`/decisions/${index}`, '零参数方法缺少明确的开放决定', '集成者只读核对方法语义和效果后显式列入 allowed 或 unopened；没有命令文本可筛查，不能自动开放'); return false;
+    }
+    return true;
+  }).map((method, i) => {
     const found = given.find((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method));
     const roles = record(found) && record(found.parameters) ? found.parameters : {};
     const omitted = unsupplied(method, record(found) ? found : {});
@@ -68,7 +74,8 @@ export function checkCoverage(profile: unknown, contract: RuntimeContract): void
       const omitted = unsupplied(method, value);
       requireFact(record(value.parameters) && method.parameters.every(p => p.redacted && !p.required ? !Object.hasOwn(value.parameters as object, p.name) : omitted.has(p.name) || Object.hasOwn(value.parameters as object, p.name) && typeof (value.parameters as Record<string, unknown>)[p.name] === 'string' && FORMAT.parameter_roles.includes((value.parameters as Record<string, string>)[p.name]!)), '启用组合仍有可传参数无角色；定角色、显式列入 unsupplied 或列为未开');
     } else {
-      requireFact(Array.isArray(value.parameters) && value.parameters.length > 0 && value.parameters.every((p: unknown) => record(p) && method.parameters.some((parameter) => parameter.name === p.name) && text(p.missing) && text(p.reason) && text(p.next)), '未开项缺少参数、原因、缺失事实或下一步；补齐后另开包角色检查任务');
+      if (!method.parameters.length) requireFact(Array.isArray(value.parameters) && value.parameters.length === 0 && text(value.missing) && text(value.reason) && text(value.next), '零参数未开项缺少方法级事实、原因或下一步；集成者核对方法语义并明确决定后重跑 --check');
+      else requireFact(Array.isArray(value.parameters) && value.parameters.length > 0 && value.parameters.every((p: unknown) => record(p) && method.parameters.some((parameter) => parameter.name === p.name) && text(p.missing) && text(p.reason) && text(p.next)), '未开项缺少参数、原因、缺失事实或下一步；补齐后另开包角色检查任务');
     }
   }
   requireFact(seen.size === enabled.size, '启用组合有遗漏；逐项补入 allowed 或 unopened');

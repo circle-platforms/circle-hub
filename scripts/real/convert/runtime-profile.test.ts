@@ -66,3 +66,16 @@ test('optional ordinary parameters require either a role or an explicit never-su
   assert.ok(checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: { ...profile, allowed } })).some(outcome => outcome.code === 'case-compile.param_unassigned'));
   for (const unsupplied of [['command'], ['absent'], ['label', 'label']]) assert.throws(() => checkCoverage({ ...profile, allowed: profile.allowed.map(v => v.method === 'shell' ? { ...v, unsupplied } : v) }, parsed.contract));
 });
+
+test('zero parameter methods wait for an explicit allowed or unopened operator decision', () => {
+  const original = setup(); const contract = signRuntime({ ...original.contract, entries: [...original.contract.entries, entry('widget-seat', 'snapshot')] });
+  const draft = draftProfile({ ready: true, device_count: 2 }, original.manifest, contract);
+  assert.ok(!draft.allowed.some(v => v.method === 'snapshot'));
+  assert.ok(draft.pending.some(p => p.missing.includes('零参数') && p.next.includes('allowed') && p.next.includes('unopened')));
+  const allowed = [...original.profile.allowed, { object: 'widget-seat', method: 'snapshot', parameters: {} }];
+  const opened = draftProfile({ ready: true, device_count: 2 }, original.manifest, contract, { allowed, unopened: original.profile.unopened }); assert.ok(opened.allowed.some(v => v.method === 'snapshot'));
+  const decision = { object: 'widget-seat', method: 'snapshot', parameters: [], missing: '零参数效果未核实', reason: '没有命令文本可筛查', next: '集成者只读核对方法语义后决定' };
+  const parsed = parseRuntimeContract(contract); assert.ok(parsed.ok);
+  assert.doesNotThrow(() => checkCoverage({ ...original.profile, unopened: [...original.profile.unopened, decision] }, parsed.contract));
+  assert.throws(() => checkCoverage({ ...original.profile, unopened: [...original.profile.unopened, { ...decision, next: '' }] }, parsed.contract));
+});
