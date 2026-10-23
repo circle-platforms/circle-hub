@@ -1,8 +1,8 @@
 {
-  "id": "report_missing_finding",
+  "id": "report_wrong_verdict",
   "source": "author",
   "check": "report",
-  "note": "合成样例",
+  "note": "整体结论或等级与投影不一致",
   "subject": {
     "applies": "run",
     "items": [
@@ -54,19 +54,22 @@
       {
         "nature": "judgment",
         "statement": "终稿（中文全文略）：两块合成，发现逐条核对，B 块一条部分正确、一条新增",
-        "grounds": [
-          "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
-          "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0"
-        ],
-        "code": "PARTIAL",
+        "grounds": [],
+        "code": "PASS",
         "rank": "P5"
+      },
+      {
+        "nature": "judgment",
+        "statement": "补：合法值域外的反向用例；因为：B 块新增发现指出边界未覆盖；期望：非法输入被拒绝并提示原因",
+        "grounds": [],
+        "code": "suggestion"
       }
     ]
   },
   "expect": [
     {
       "verdict": "refute",
-      "code": "case-review-report.finding_missing",
+      "code": "case-review-report.verdict_mismatch",
       "tier": "blocking"
     }
   ]
