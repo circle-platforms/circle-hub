@@ -1,3 +1,4 @@
+import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
@@ -113,12 +114,12 @@ export interface ExternalArtifact {
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
- * while other failures show the neutral SOURCE_UNAVAILABLE.
+ * while read exhaustion carries retry metadata and permission failures remain neutral.
  */
 export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage }
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
   | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {

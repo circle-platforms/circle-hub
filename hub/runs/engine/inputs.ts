@@ -169,7 +169,17 @@ export async function bindInputs(
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
+      if(read.retry) {
+        errors.push(protocolError('SOURCE_RETRYABLE',`缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`,{path}));
+        notes.push(`${path}: ${read.reason}`);
+        return null;
+      }
       gone(path, read.reason);
+      return null;
+    }
+    if(read.absent) {
+      const observation=read.absent;
+      errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path}));
       return null;
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);

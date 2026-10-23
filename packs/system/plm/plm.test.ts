@@ -138,9 +138,10 @@ describe('reads through the connectors', () => {
     assert.equal(story.fields.spec, '健康检查支持 tcp 与 http 两种探测；探测间隔 1 到 60 秒，重试 1 到 10 次。\n连续失败达到重试次数后摘除后端 & 恢复后重新加入。');
   });
 
-  test('an id the service does not know is a failed read; the build list is a plain array', async () => {
-    assert.equal((await read('plm:bug:99999')).ok, false);
-    assert.equal((await read('plm:story:70412')).ok, false, 'a bug id is no story');
+  test('an id absent from the service is an observation; the build list is a plain array', async () => {
+    const missing=await read('plm:bug:99999');assert.ok(missing.ok && missing.absent?.code==='SOURCE_ABSENT');
+    assert.equal(((await artifact(missing,'content')) as {code:string}).code,'SOURCE_ABSENT');
+    const noStory=await read('plm:story:70412');assert.ok(noStory.ok && noStory.absent?.code==='SOURCE_ABSENT','a bug id is no story');
     const builds = (await artifact(await read('plm:builds:28'), 'original')) as unknown[];
     assert.equal(builds.length, 3);
     const products = (await artifact(await read('plm:products:all'), 'original')) as { data: unknown[] };

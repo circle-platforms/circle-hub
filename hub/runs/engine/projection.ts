@@ -182,8 +182,8 @@ export async function bindExpected(
   for (const wanted of parsed.data.sources) {
     if (seen.has(wanted.external)) continue;
     seen.add(wanted.external);
-    const miss = (reason: string): void => {
-      out.unavailable.push({ external: wanted.external, role: wanted.role, reason: '对你不可用' });
+    const miss = (reason: string, publicReason = '对你不可用'): void => {
+      out.unavailable.push({ external: wanted.external, role: wanted.role, reason: publicReason });
       ctx.log({ traceId, run: runId, what: `expected source ${wanted.external}`, detail: reason });
     };
     try {
@@ -193,6 +193,12 @@ export async function bindExpected(
       }
       const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源', ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
       if (!read.ok) {
+        if(read.retry) {
+          const message=`缺少期望来源 ${wanted.external} 的读取结果；下一次时间 ${read.retry.at}，按原对象重读后重新开始运行`;
+          out.warnings.push({code:'SOURCE_RETRYABLE',message});
+          miss(read.reason,message);
+          continue;
+        }
         miss(read.reason);
         continue;
       }
@@ -214,7 +220,7 @@ export async function bindExpected(
       }
       const reference = `src:${chosen.artifact.body.sha256}`;
       if (out.sources.some((s) => s.reference === reference)) continue;
-      out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: title ?? wanted.reason });
+      out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });
     } catch (error) {
       miss(describe(error));
     }

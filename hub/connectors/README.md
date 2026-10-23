@@ -303,8 +303,9 @@ a captured log, an adjustable clock). All content is invented; addresses are loo
    that content (canonical JSON), so it lives in the content-addressed store and the decision chain is the history.
 6. **Nested reads** are one level deep and cached per reader (the artifacts they store are the reader's), not shared across
    readers.
-7. **No automatic retry of a failed read** (D03 R[0] allows retries; the caller may read again). Nothing is recorded as
-   unknown for a failed read.
+7. **Bounded automatic read retry.** Transient transport failures retry within the shared attempt and wait budget.
+   Exhaustion exposes the missing read and its next eligible retry time; no successful read is invented. Login failures
+   retain their existing stop boundary pending the administrator-request integration listed under Needs.
 8. **Concurrency** is limited per resource (one HttpSource per resource), the interval between request starts too.
 9. **Determinism.** Responses, nested reads, manifest entries and generated inputs follow plan order.
 10. **Stop, not cool-down, after a judged or unknown login.** D01 R[9] ("再失败就停下来报告，不重试") and the brief ("never a
@@ -597,3 +598,5 @@ max_requests 继续约束规划请求槽位。每槽位最多三次传输尝试�
 ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实际发送仍受资源限流。敏捷包不再用五轮乘每轮四条的切片丢掉剩余根或页；所有配置根、所需页都列进计划后才答 done，同时声明 concurrency=4。请求、字节与轮数上限仍会拒绝超预算的读取。缺席/中性码、登录请求和第 9 条按运行授权读取器仍按任务依赖后接。
 
 读取出口接口 Needs：登录停止需要 hub-unknown-exits 的具名资源管理员请求记录（请求号、缺失事实、期限、处置后重读入口）。接口合并前保持登录停止，不虚构已发出的请求。
+
+缺席观察（hub-read-absence）：HTTP 404/410 的原件仍先保存；仅当它是本次对象的原件请求，才形成 SOURCE_ABSENT。系统包可在读取声明的 absent_codes 中列出表示整份对象缺席的投影错误码；代码不在声明里则仍是投影错误。ReadProjectionOutput.absent 也会核对系统、对象和应答键。支持应答必须本次已存且可读，401/403、凭据保留、超时或其他失败不能作缺席根据。Hub 以自己的读取时刻写规范 JSON 观察为 content，生成血缘指向支持应答，ReadOutcome/ExternalRead 同时带 absent；这类观察不进入嵌套缓存。必填输入直接答 SOURCE_ABSENT，期望来源则绑定该可读观察，供声明 reads 的检查读取。缺席不等同于对被测行为的通过或驳回。

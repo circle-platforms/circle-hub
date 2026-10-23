@@ -35,7 +35,7 @@ test('a Retry-After beyond the bounded wait budget is returned without an early 
   const w=await world(t,()=>new Response('{}',{status:429,headers:{'retry-after':'60'}}));const result=await w.read();
   assert.equal(result.ok,false);if(result.ok)return;assert.equal(w.calls(),1);assert.deepEqual(w.sleeps,[]);assert.equal(Date.parse(result.retry!.at)-w.now(),60000);
 });
-for(const status of [401,403,404,410])test(`HTTP ${status} is not a transient read retry`,async t=>{
+for(const status of [401,403])test(`HTTP ${status} is not a transient read retry`,async t=>{
   const w=await world(t,()=>new Response('{}',{status}));const result=await w.read();assert.equal(result.ok,false);assert.equal(w.calls(),1);assert.deepEqual(w.sleeps,[]);
 });
 

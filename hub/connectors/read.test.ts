@@ -342,7 +342,7 @@ test('executeRead by resource and read name; the reasons never name a host', asy
   const unknown = await w.k.connectors.executeRead('res_01jacd5z8q3w7v9h2k4m6n8p0t', 'products', { id: 'x' }, w.ctx);
   assert.equal(!unknown.ok && unknown.code, 'RESOURCE_UNAVAILABLE');
   const absent = await w.k.connectors.executeRead(w.resources.docstore.id, 'file', { id: 'spec/none.md' }, w.ctx);
-  assert.equal(!absent.ok && absent.code, 'SOURCE_ABSENT');
+  assert.ok(absent.ok && absent.absent?.code==='SOURCE_ABSENT');
   // No host or port in any manifest or log event.
   const reads: Page<StoredRecord> = await w.k.records.store.list({ kind: 'action', limit: 500 });
   for (const server of [w.agile, w.plm, w.site, w.dav]) {

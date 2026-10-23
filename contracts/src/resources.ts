@@ -485,6 +485,7 @@ export const ReadDeclaration = z
     plan: PackFunctionRef.optional().describe('ReadPlanInput -> ReadPlanOutput, called again with the responses so far, at most 5 rounds'),
     request: ReadRequestTemplate.optional().describe('one declared request instead of a planner'),
     project: PackFunctionRef.optional().describe('ReadProjectionInput -> ReadProjectionOutput: derived artifacts such as content and meta'),
+    absent_codes:z.array(z.string().min(1).max(100)).min(1).max(20).optional().describe('Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses'),
     max_requests: z.number().int().min(1).max(MAX_READ_REQUESTS).optional(),
     max_bytes: z.number().int().min(1).max(1024 * 1024 * 1024).optional().describe('all responses of one read together'),
   })

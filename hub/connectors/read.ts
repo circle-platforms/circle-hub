@@ -29,6 +29,7 @@ import {
   ReadManifest,
   ReadPlanOutput,
   ReadProjectionOutput,
+  SourceAbsent,
   type NestedRead,
   type PlannedRequest,
   type ReadDeclaration,
@@ -83,6 +84,7 @@ export type ReadOutcome =
       content: unknown;
       meta: unknown;
       coverage:Coverage;
+      absent?:SourceAbsent;
     }
   | { ok: false; external: string; code: ConnectorErrorCode; reason: string; manifest: string | null;retry?:ReadRetry };
 
@@ -282,6 +284,7 @@ export class ReadEngine {
     let content: unknown = null;
     let meta: unknown = null;
     let complete = false;
+    let absent:SourceAbsent|undefined;
     let note: string | undefined;
     let failure: ConnectorError | null = null;
 
@@ -608,9 +611,16 @@ export class ReadEngine {
       complete = [...responses.values()].every((state) => state.view.ok) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
         const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews());
+        if ('error' in projected && read.absent_codes?.includes(projected.error.code) && [...responses.values()].every(state=>state.view.ok || state.view.error?.code==='SOURCE_ABSENT')) {
+          throw new ConnectorError('SOURCE_ABSENT','投影按声明确认本对象缺席',{layer:'plugin',detail:{absence_responses:order}});
+        }
         if ('error' in projected) throw new ConnectorError('PROJECTION_FAILED', `投影函数报错 ${this.#o.redactor.text(projected.error.code)}：${this.#o.redactor.text(projected.error.message)}`, { layer: 'plugin' });
         for (const warning of projected.warnings ?? []) if (warnings.length < 50) warnings.push(this.#o.redactor.text(warning).slice(0, 500));
         if (projected.complete === false) complete = false;
+        if(projected.absent) {
+          if(projected.absent.system!==subject.system || projected.absent.object!==subject.id)throw new ConnectorError('PROJECTION_FAILED','缺席观察的系统或对象与本次读取不一致',{layer:'plugin'});
+          absent=projected.absent;
+        }
         note = projected.note;
         revision = projected.revision ?? null;
         if (revision !== null && !ExternalObjectId.safeParse(`${subject.id}@${revision}`).success) {
@@ -674,10 +684,31 @@ export class ReadEngine {
       }
     } catch (error) {
       failure = asConnectorError(error, 'STORE_FAILED');
+      absent=undefined;
+    }
+
+    // Whole-object absence is a determined observation, backed only by originals this read actually stored.
+    const firstState=original===null?undefined:responses.get(original);
+    const httpAbsent=failure?.code==='SOURCE_ABSENT' && firstState?.view.error?.code==='SOURCE_ABSENT' && (firstState.view.status===404 || firstState.view.status===410);
+    const declared=failure?.detail.absence_responses;
+    if(absent || httpAbsent || Array.isArray(declared)) {
+      const keys=absent?.responses ?? (Array.isArray(declared)?declared:[original!]);
+      try {
+        if(!keys.length || keys.some(key=>typeof key!=='string' || !responses.has(key)))throw new ConnectorError('PROJECTION_FAILED','缺席观察没有指向本次读取的应答',{layer:'plugin'});
+        const states=keys.map(key=>responses.get(key as string)!);
+        if(states.some(state=>!state.artifact || state.artifact.body.read_tier===RETAIN_ONLY || (!state.view.ok && !(state.view.error?.code==='SOURCE_ABSENT' && (state.view.status===404 || state.view.status===410)))))throw new ConnectorError('PROJECTION_FAILED','缺席根据未读到或不可读；恢复该来源后重读，不能把读不到算成没有',{layer:'plugin'});
+        absent=SourceAbsent.parse({code:'SOURCE_ABSENT',system:subject.system,object:subject.id,observed_at:this.#o.now().toISOString(),responses:keys});
+        content={...absent,message:`系统 ${subject.system} 里没有 ${subject.id}（读于 ${absent.observed_at}）`};
+        const inputs=[...new Set(states.map(state=>`src:${state.artifact!.body.sha256}`))];
+        const observation=await this.#o.artifacts.ingest({bytes:canonicalBytes(content),mediaType:'application/json',origin:{generated:{generator:'hub.source-absence@1',inputs,read_back:null}},derivedSources:inputs.map(ref=>ref.slice(4)),author:{user:null},provenanceType:'projected',visibility,name:'content',capturedAt:absent.observed_at});
+        if(observation.body.read_tier===RETAIN_ONLY)throw new ConnectorError('SOURCE_CREDENTIAL','缺席观察被凭据扫描保留；请管理员处理后重读');
+        artifacts=[{name:'original',artifact:states[0].artifact!},{name:'content',artifact:observation}];
+        meta=null;complete=true;failure=null;revision=null;
+      } catch(error) {absent=undefined;failure=asConnectorError(error,'PROJECTION_FAILED');}
     }
 
     entries.sort((a, b) => a.round - b.round || order.indexOf(a.key) - order.indexOf(b.key) || Number(a.after_login) - Number(b.after_login));
-    const examined = [...responses.values()].filter((state) => state.view.ok).length + [...nested.values()].filter(state=>state.view.ok).length;
+    const examined = [...responses.values()].filter((state) => state.view.ok || absent?.responses?.some(key=>responses.get(key)===state)).length + [...nested.values()].filter(state=>state.view.ok).length;
     const total = order.length + nestedOrder.length;
     const incompleteNested=[...nested].filter(([,state])=>!state.view.ok || state.view.coverage?.complete===false).map(([external])=>external);
     if(incompleteNested.length && !note)note=`嵌套来源尚未完整：${incompleteNested.slice(0,10).join('、')}；恢复失败来源后重读本对象，再确认完整范围`;
@@ -755,7 +786,7 @@ export class ReadEngine {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
       return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
-    return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage };
+    return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
   }
 
   /** A nested or top-level read of another object, from the cache unless refreshed or expired. */
@@ -809,7 +840,7 @@ export class ReadEngine {
   /** Keeps an outcome within the entry and byte bounds (sizes of its stored artifacts), oldest out first. */
   #remember(key: string, outcome: Extract<ReadOutcome, { ok: true }>): void {
     this.#forget(key);
-    if(!outcome.coverage.complete)return;
+    if(!outcome.coverage.complete || outcome.absent)return;
     const bytes = outcome.artifacts.reduce((sum, { artifact }) => sum + artifact.body.size, 0);
     const limit = this.#o.nestedCacheBytes ?? DEFAULT_CACHE_BYTES;
     if (bytes > limit) return;

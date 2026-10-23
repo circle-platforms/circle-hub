@@ -228,8 +228,8 @@ describe('reads through the connectors', () => {
     assert.equal(meta.folder, 'rel_comet_7_2');
     ok(await read('manual:app:7.1'));
     const missing = await read('manual:cli:9.9');
-    assert.equal(missing.ok, false);
-    assert.equal((await read('manual:app:7.2')).ok, false, 'no application manual for 7.2');
+    assert.ok(missing.ok && missing.absent?.code==='SOURCE_ABSENT');
+    const noApp=await read('manual:app:7.2');assert.ok(noApp.ok && noApp.absent?.code==='SOURCE_ABSENT','no application manual for 7.2');
   });
 
   test('the spec search finds the two files of the feature first and lists every file it read', async () => {
