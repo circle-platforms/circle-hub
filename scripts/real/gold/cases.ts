@@ -199,13 +199,6 @@ export function caseNodesOf(
   return out;
 }
 
-/** An explicitly classified notes-only document, not a malformed map or an arbitrary similarly worded exception. */
-export class NoCaseNodesError extends Error {
-  constructor(documentId: string, tagged: boolean) {
-    super(`文档 ${documentId} 里没有带${tagged ? '资源标签' : '用例标记或资源标签'}的用例节点`);
-  }
-}
-
 export function caseGold(
   maps: ReadonlyArray<{ document: string; map: unknown }>,
   options: { caseRule?: 'tagged' | 'marked' } = {},
@@ -303,7 +296,7 @@ export function caseGold(
       c.vagueExpected = nonBlank.length > 0 && nonBlank.every((t) => VAGUE_KEYS.has(foldKey(t)));
     }
 
-    if (cases.length === 0) throw new NoCaseNodesError(documentId, caseRule === 'tagged');
+    if (cases.length === 0) throw new Error(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
 
     const groupCounts: Record<string, number> = {};
     for (const c of cases) groupCounts[c.group] = (groupCounts[c.group] ?? 0) + 1;

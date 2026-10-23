@@ -24,11 +24,9 @@
 
 独立答案脚本 `scripts/real/gold/trace-stories.ts` 只读需求编号清单、PLM 原件、脑图、敏捷树和显式文档清单；不导入 Hub 或包的运行代码。参数为 `--stories <文件> --plm <文件>… --cases-dir <目录> --tree <文件> --docs <文件> --product <产品> --build <构建> --out <文件>`。空文档清单或漏导出的文档不作为通过。场景核对逐需求展示的用例、原样状态和阶段及运行计数，诊断只写序号、计数和摘要。
 
-临时差异：本分支基线的 `gold/locations.ts` 排除零前缀编号，但产品索引保留；独立答案只在标题和目录文本内将零前缀数字映射为无碰撞、等宽的数字占位值，交给共享提取器后还原并规范化；等宽保留日期和版本边界规则，文档编号不改动。集成者已通知 gold-trace 的 36455d4 修复了共享提取器；按集成者要求兼容先保留，待该分支合入并通知后再移除，不改共享文件。
+需求独立答案在 trace-stories.ts 内独立提取标题、目录中的需求号，保留非零编号的原文零前缀，再按编号身份规范化连接。它不改变共享 case-location 的提取规则，不使用数字占位。合法脑图的无用例节点状态用共享 caseNodesOf 在调用 caseGold 前确定，不依赖共享错误类或猜测错误消息。
 
-复核 4：兼容占位值从全部同宽非零前缀数值取，避开八位日期；只统计实际编码的标题和标签中的占用，不再让节点或文档标识挤占空间。空间确实不足时只报位宽及剩余个数，不打印原文或编号。
-
-复核 5：文档清单中没有用例节点的合法脑图计入 documents_without_cases，不影响其他文档连接；只有明确的“无用例节点”错误可跳过，坏脑图仍整份拒绝。终端只增加无用例文档个数。
+复核 5：文档清单中没有用例节点的合法脑图计入 documents_without_cases，不影响其他文档连接；先按解析后的节点规则确定没有用例再跳过，坏脑图仍整份拒绝。终端只增加无用例文档个数。
 
 复核 6：只有在成功应答的 unread 中列出的编号才计没返回；不可读或未绑定的详情批次单列 plm_unavailable，不能伪称已收到应答。构建路径已自动尝试详情读取，失败记录由客户端与管理员核对；验收拒绝详情来源未读到的运行。
 
@@ -66,7 +64,7 @@ The sibling workflow traceability must adopt the same bounded absence/positive-l
 uses missing_input for absent ids and is outside this task's edits. No package/runtime import crosses that boundary.
 Version 1.0.3 is re-signed with these per-id semantics.
 
-Closure review 3: adopted the shared raw-id extraction fix from gold-trace 36455d4 and removed the stand-in allocation entirely. Label numbers and dates no longer compete for a global or local numeric pool. The independent oracle still imports no Hub or pack runtime. Notes-only maps are classified by NoCaseNodesError at the throw site, never by matching exception messages.
+Closure B3: story-id extraction is local to trace-stories.ts; the shared locations/cases files are restored to their pre-story-change bytes. Leading-zero policy alignment for case-location remains with its integrator. Notes-only documents are classified from parsed case nodes before extraction, never from exception text.
 
 ## Non-scalar PLM observations
 
