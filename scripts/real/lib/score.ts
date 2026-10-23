@@ -170,9 +170,9 @@ export interface ScoreOptions {
 }
 
 export function score(gold: readonly GoldEntry[], result: ResultLike, options: ScoreOptions = {}): Score {
-  for (const entry of gold) {
+  for (const [index, entry] of gold.entries()) {
     if (typeof (entry as { kind?: unknown }).kind !== 'string') {
-      throw new Error(`标准答案里的“${entry.label}”没有 kind：用现在的 inject-defects.ts 重新注入`);
+      throw new Error(`标准答案第 ${index + 1} 条没有 kind：用现在的 inject-defects.ts 重新注入`);
     }
   }
   const seen = seenOn(result);

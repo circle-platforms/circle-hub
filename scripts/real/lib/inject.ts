@@ -2,6 +2,8 @@
 // can be scored against an answer that is independent of the Hub (brief section 6b, review). The source is never changed; the
 // copy and the gold hold real content and belong outside Git.
 import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '../gold/cases.ts';
 
 export interface MindNode {
@@ -174,7 +176,8 @@ const noWhiteSpace = (text: string): string => text.replace(/\s+/gu, '');
 export function inject(tree: MindTree, plan: readonly Planned[], options: InjectOptions = {}): { tree: MindTree; gold: GoldEntry[] } {
   const copy = clone(tree);
   const gold: GoldEntry[] = [];
-  for (const { label, seen_by, op } of plan) {
+  for (const [index, { label, seen_by, op }] of plan.entries()) {
+    try {
     const { node, parent } = locate(copy, op.node);
 
     if (op.kind === 'delete_negative_group') {
@@ -291,6 +294,30 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
       target.children = [...(target.children ?? []), node];
       gold.push({ label, seen_by, kind: 'move', node: op.node, note: `用例挪到了分组 ${op.to} 下` });
     }
+    } catch (error) { throw new InjectionRefusal(index + 1, op.kind, error); }
   }
   return { tree: copy, gold };
+}
+
+export class InjectionRefusal extends Error {
+  detail: string;
+  constructor(index: number, kind: string, error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const safeKind = ['delete_expected','replace_expected','duplicate','move','replace_command_word','delete_negative_group','contradict_manual','vague_expected'].includes(kind) ? kind : '未识别种类';
+    const reason = /quote/.test(detail) ? 'quote 不在片段里或格式不合法' : /seen_by/.test(detail) ? 'seen_by 不符合可见性' : /手册|manual/.test(detail) ? '缺少 --manual 输入' : /contains|from/.test(detail) ? '期望中找不到 from' : /to（|矛盾/.test(detail) ? 'to 不构成矛盾' : '目标或输入不满足注入条件';
+    super(`计划第 ${index} 条（${safeKind}）：${reason}`);
+    this.detail = detail;
+  }
+}
+export function refusalSummary(error: unknown): string { return error instanceof InjectionRefusal ? error.message : '输入或计分条件不满足；请按私有诊断补齐输入后重跑'; }
+export function recordRefusal(out: string | undefined, error: unknown): void {
+  if (!out) return;
+  const path = resolve(out);
+  const check = (start: string) => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new Error('拒绝写入 Git'); if (dirname(at) === at) break; } };
+  try {
+    check(path); let parent = path; while (!existsSync(parent)) parent = dirname(parent);
+    check(resolve(realpathSync(parent), relative(parent, path)));
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+    writeFileSync(join(path, 'refusal.txt'), error instanceof InjectionRefusal ? error.detail : error instanceof Error ? error.stack ?? error.message : String(error), { flag: 'wx', mode: 0o600 });
+  } catch { /* Never expose the original error when its private record cannot be written. */ }
 }

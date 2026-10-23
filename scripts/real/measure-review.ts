@@ -1,3 +1,4 @@
+import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Drives the whole injection measurement repeatedly (task gold-review step 4). One pass: write the copy and the gold
 // exactly the way inject-defects.ts does, compute the independent literal answer of the copy, then for each round run
 // a fresh draft session through scripts/real/review-circle.ts (the only reader of the endpoint and the keys), read the
@@ -305,7 +306,8 @@ function main(): number {
     );
     return code;
   } catch (error) {
-    console.error(`失败：${(error as Error).message.split('\n')[0]}`);
+    recordRefusal(out, error);
+    console.error('拒绝：' + refusalSummary(error));
     return 1;
   }
 }

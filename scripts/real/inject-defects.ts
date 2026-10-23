@@ -1,3 +1,4 @@
+import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Writes a copy of a KityMinder export with known defects injected, and the gold that names them.
 //   node scripts/real/inject-defects.ts --source <mindmap.json> --plan <plan.json> --out <dir> [--keep <n>]
 // The plan is a JSON list of { label, seen_by, op } (scripts/real/lib/inject.ts); --keep cuts the copy after its n-th case so a
@@ -40,4 +41,4 @@ function main(): number {
   return 0;
 }
 
-process.exitCode = main();
+if (import.meta.main) { try { process.exitCode = main(); } catch (error) { recordRefusal(arg('out'), error); console.error('拒绝：' + refusalSummary(error)); process.exitCode = 1; } }

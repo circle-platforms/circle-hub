@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Scores a review of an injected copy against the gold (task gold-review step 3).
 //   node bin/circle-hub run show <run> --json > run.json
 //   node scripts/real/score-injection.ts --gold <gold.json> --run <run.json> [--baseline <run.json of the untouched document>]
@@ -36,4 +38,4 @@ function main(): number {
   return scored.detections.every((d) => d.detected) ? 0 : 1;
 }
 
-process.exitCode = main();
+if (import.meta.main) { try { process.exitCode = main(); } catch (error) { recordRefusal(arg('details') ? dirname(arg('details')!) : arg('gold') ? dirname(arg('gold')!) : undefined, error); console.error('拒绝：' + refusalSummary(error)); process.exitCode = 1; } }
