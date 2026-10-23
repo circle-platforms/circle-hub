@@ -13,7 +13,7 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
@@ -255,19 +255,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     };
   } else {
     // Standing obligations read as their configuring admin through the same effective-tier gate as ordinary runs.
-    const systemRecords: RecordReader = {
-      async read(digest) {
-        const record = await ctx.deps.records.store.get(digest);
-        if (record === null) return null;
-        return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
-      },
-    };
+    const configurer = run.configurer ?? 'hub';
+    const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(configurer) : null;
     resolveCtx = {
-      reader: { user: run.configurer ?? 'hub', role: 'admin', run: run.run },
+      reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: systemRecords,
+      records: recordReader(ctx.deps.records.store),
       consumer: 'function',
       documents: ctx.documents,
     };
@@ -286,7 +281,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             return { resolved: false, text: null, reason: result.message };
           }
           if (result.text === null) {
-            return { resolved: true, text: null, reason: result.note ?? '内容没有文本' };
+            return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? '含凭据，原文不可读；缺管理员接受来源的事实，请请求管理员接受，接受后自动重评' : result.note ?? '内容没有文本' };
           }
           const byteLength = Buffer.byteLength(result.text, 'utf8');
           return { resolved: true, text: result.text, byteLength };
