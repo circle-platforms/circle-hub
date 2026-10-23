@@ -15,6 +15,7 @@ const RULES: Partial<Record<Reason, Rule>> = {
   check_error: { missing: '可用的检查判定结果；下一步：包主人修复声明、函数或解释器后发布，运行者以前驱重跑', request: 'repair', audience: 'owner' },
   timeout: { missing: "检查在上限内完成的判定；下一步：包主人修复或调整单条检查上限并发布后重跑", request: 'repair', audience: 'owner' },
   missing_input: { missing: "运行所需的已绑定输入事实；下一步：运行者澄清并补齐后以新修订重跑", request: 'clarification', audience: 'runner' },
+  declared_skip: { missing: "被跳过条目的提交产物；下一步：运行者补交该条目后自动重核", request: 'repair', audience: 'runner' },
 };
 
 export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome[], context: RecoveryContext): LayerResult {

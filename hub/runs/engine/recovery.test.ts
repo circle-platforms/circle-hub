@@ -30,3 +30,11 @@ test('missing_input carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('运行所需的已'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('declared_skip carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'declared_skip' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('被跳过条目的'));
+  assert.ok(LayerResult.safeParse(result).success);
+});
