@@ -374,3 +374,9 @@ test('review 16: invalid gold records a field-specific refusal before any tool c
     assert.ok(!JSON.stringify(checks).includes(dir));
   }
 });
+
+test('review 17: words and protocol code names inside a document label do not reject a successful run', () => {
+  const { gold } = goldOf();
+  for (const document of gold.documents) { const tree = JSON.parse(readFileSync(document.file, 'utf8')); tree.root.data.text = '合成出错处理 no_case CREDENTIAL_IN_UPLOAD'; writeFileSync(document.file, JSON.stringify(tree)); }
+  const result = drive(build(gold)); assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
+});

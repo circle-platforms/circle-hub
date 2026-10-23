@@ -6,6 +6,7 @@
 // refused upload or start, or a summary that cannot be read in full, is recorded as unknown with its fixed reason
 // and never counts as agreement. A request after the start with no tool results (Circle compacting the
 // conversation) gets one line of text; nothing restarts or advances, and the compaction check fails.
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -227,8 +228,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
     // Absorb the results of the calls this driver made last (same order).
     if (openRun !== null) {
       const text = turn.toolResults.map((r) => r.text).join('\n');
-      if (turn.toolResults.some((r) => r.isError) || /no_case|CREDENTIAL_IN_UPLOAD|出错/.test(text)) {
-        for (const { key } of openRun) unknown.set(key, /no_case/.test(text) ? 'no_case：整次运行被拒' : '开始运行被拒');
+      if (turn.toolResults.some((r) => r.isError)) {
+        const code = text.split(/\r?\n/).map(line => /^- ([A-Z_]+)：/.exec(line)?.[1]).find(code => code !== undefined && Object.hasOwn(PROTOCOL_CODES, code));
+        for (const { key } of openRun) unknown.set(key, `开始运行被拒${code ? `（${code}）` : ''}；需核对该次运行回执`);
       } else {
         const items = new Map<string, string>();
         for (const line of text.split('\n')) {
