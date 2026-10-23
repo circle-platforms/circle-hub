@@ -370,3 +370,20 @@ test('closure B4 unnamed menu descendants require a positioned path rule',()=>{
  const result=judgeCommand(readCatalog('<catalog><menu name=""><item name="ghost"><arguments><arg type="U16" limit="[1 - 5]"/></arguments></item></menu></catalog>'),'ghost 9');
  assert.equal(result.code,null);assert.ok(result.requests.some(r=>r.pointer==='/catalog[1]/menu[1]'));
 });
+
+test('closure B6 optional assignment paths retain one positioned request per unresolved mask',()=>{
+ const catalog=readCatalog('<catalog><item name="route"><arguments><arg type="IPMASK"/>'+Array.from({length:10},()=>'<arg type="STRING" optional="yes"/>').join('')+'</arguments></item></catalog>');
+ const result=judgeCommand(catalog,'route 200 a a a a a');assert.equal(result.code,null);assert.equal(result.requests.length,1);
+});
+
+test('closure B6 mask type failures and impossible arities need no ambiguous code rule',()=>{
+ const catalog=readCatalog('<catalog><item name="route"><arguments><arg type="DOTTEDIP"/><arg type="IPMASK"/><arg type="DOTTEDIP"/></arguments></item></catalog>');
+ for(const value of ['abc','255.0.255.0']) {
+  const type=judgeCommand(catalog,`route 192.0.2.0 ${value} 192.0.2.1`);assert.equal(type.code,'core.catalog.param_type_mismatch');assert.deepEqual(type.requests,[]);
+  for(const line of [`route 192.0.2.0 ${value}`,`route 192.0.2.0 ${value} 192.0.2.1 5`]){const arity=judgeCommand(catalog,line);assert.equal(arity.code,'core.catalog.arity_mismatch');assert.deepEqual(arity.requests,[]);}
+ }
+ for(const value of ['200','-1']) {
+  assert.ok(judgeCommand(catalog,`route 192.0.2.0 ${value} 192.0.2.1`).requests.length);
+  const arity=judgeCommand(catalog,`route 192.0.2.0 ${value}`);assert.equal(arity.code,'core.catalog.arity_mismatch');assert.deepEqual(arity.requests,[]);
+ }
+});

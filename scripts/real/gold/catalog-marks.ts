@@ -189,7 +189,7 @@ function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
   if (p.type === 'IPMASK') {
     const dotted = isIP(v) === 4 && /^1*0*$/.test(v.split('.').map(n => Number(n).toString(2).padStart(8, '0')).join(''));
     const prefix = /^[+-]?[0-9]+$/.test(v) && Number(v) >= 0 && Number(v) <= 128;
-    if (!dotted && !prefix) { p.ambiguities.push(request(p.raw.at, 'IPMASK 的两个分支均不符时采用的错误码', '请集成者声明掩码与前缀双分支失败的代码选择规则后重跑')); return TYPE; }
+    if (!dotted && !prefix) { if (/^[+-]?[0-9]+$/.test(v)) p.ambiguities.push(request(p.raw.at, 'IPMASK 的两个分支均不符时采用的错误码', '请集成者声明掩码与前缀双分支失败的代码选择规则后重跑')); return TYPE; }
   }
   if (numeric && (!Number.isSafeInteger(Number(v)) || Number(v) < 0 || Number(v) > (p.type === 'U16' ? 65535 : 4294967295))) return RANGE;
   const measured = numeric ? Number(v) : [...v].length;
@@ -224,28 +224,37 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   if (requests.length) return { in_scope: true, code: null, requests };
   let arityFits = false;
   const failedCodes = new Set<CoreViolationCode>();
+  const reachableAmbiguities: EvidenceRequest[] = [];
   for (const signature of signatures) {
     const params = signature.map(p => p.value);
     // Reachable assignments retain every possible failure code. Optional fields may precede required ones.
     let states = new Map<number, Set<CoreViolationCode>>([[0, new Set()]]);
     let validStates = new Set<number>([0]);
+    let gaps = new Map<number,EvidenceRequest[]>([[0,[]]]);
     for (const param of params) {
       const next = new Map<number, Set<CoreViolationCode>>(), validNext = new Set<number>();
+      const nextGaps = new Map<number,EvidenceRequest[]>();
+      const carryGaps = (from:number, to:number, pending:EvidenceRequest[]=[]):void => {
+        const merged=[...(nextGaps.get(to) ?? []),...(gaps.get(from) ?? []),...pending];
+        nextGaps.set(to,[...new Map(merged.map(r=>[JSON.stringify([r.input,r.pointer,r.fact]),r])).values()]);
+      };
       for (const [used, codes] of states) {
-        if (param.raw.optional) { const kept = next.get(used) ?? new Set<CoreViolationCode>(); codes.forEach(c => kept.add(c)); next.set(used, kept); if (validStates.has(used)) validNext.add(used); }
+        if (param.raw.optional) { carryGaps(used, used); const kept = next.get(used) ?? new Set<CoreViolationCode>(); codes.forEach(c => kept.add(c)); next.set(used, kept); if (validStates.has(used)) validNext.add(used); }
         if (used < args.length) {
+          param.ambiguities = [];
           const code = parameterCode(param, args[used]), kept = next.get(used + 1) ?? new Set<CoreViolationCode>();
+          carryGaps(used, used + 1, param.ambiguities);
           codes.forEach(c => kept.add(c)); if (code) kept.add(code); next.set(used + 1, kept);
           if (validStates.has(used) && code === null) validNext.add(used + 1);
         }
       }
-      states = next; validStates = validNext;
+      states = next; validStates = validNext; gaps = nextGaps;
     }
     if (validStates.has(args.length)) return { in_scope: true, code: null, requests: [] };
     const codes = states.get(args.length);
-    if (codes) { arityFits = true; codes.forEach(code => failedCodes.add(code)); }
+    if (codes) { arityFits = true; codes.forEach(code => failedCodes.add(code)); reachableAmbiguities.push(...(gaps.get(args.length) ?? [])); }
   }
-  const ambiguity = signatures.flatMap(signature => signature.flatMap(p => p.value.ambiguities));
+  const ambiguity = reachableAmbiguities;
   if (ambiguity.length) return { in_scope: true, code: null, requests: ambiguity };
   if (!arityFits) return { in_scope: true, code: ARITY, requests: [] };
   if (failedCodes.size === 1) return { in_scope: true, code: [...failedCodes][0], requests: [] };
