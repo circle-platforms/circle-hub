@@ -299,6 +299,8 @@ test('backlinks omit target-local sources and offer a callable composition-pinne
   assert.ok(view.includes('target=%2Fterms%2Falpha'));assert.ok(view.includes('composition='+f.first.composition));
   const reader=createKnowledgeReader(f.w.knowledge);
   const read=await reader.read(view,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(read.ok);
+  const complete=(await f.json(read)).view;assert.equal(complete.totals?.links,backlinks.total);assert.ok(complete.links.every(edge=>edge.path!=='/terms/alpha'));
+  const forward=(await f.json(await f.read())).view;assert.ok(forward.links.some(edge=>edge.path==='/terms/alpha'));
 });
 
 
@@ -330,4 +332,13 @@ test('a root current on multiple lines reports an ambiguous current composition 
   assert.ok((await f.w.knowledge.produceTree({product:f.w.product,build:other})).ok);await f.w.knowledge.reconcileLine('widget',other.line,f.w.admin);
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);assert.ok(page);
   assert.match(page.coverage.note??'',/没有唯一当前组成/);assert.doesNotMatch(page.coverage.note??'',/历史根/);
+});
+
+
+test('malformed relation source diagnostics occur once on the node page rather than once per target',async t=>{
+  const malformed={...content('/notes/bad','behaviour','Malformed synthetic field'),data:{mentions:17}};
+  const f=await fixture(t,[rule],undefined,[...entries,malformed]);
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.ok(page);assert.ok(page.nodes.length>2);
+  assert.equal((JSON.stringify(page).match(/有不合形状/g)??[]).length,1);
+  assert.match(page.coverage.note??'',/不合形状/);assert.ok(page.nodes.every(node=>!node.backlinks?.notes.some(note=>note.includes('不合形状'))));
 });

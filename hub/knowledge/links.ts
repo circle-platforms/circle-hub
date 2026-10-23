@@ -29,6 +29,7 @@ export class RelationReadError extends Error {
   readonly nextAction:string;
   constructor(reason:Reason,message:string,nextAction:string,cause?:unknown){super(message,{cause});this.name='RelationReadError';this.reason=reason;this.nextAction=nextAction;}
 }
+type PreparedBacklinks=((path:string)=>Promise<Backlinks|undefined>)&{pageNotes?:()=>Promise<string[]>};
 interface CompactRelations {targets:Map<string,{total:number;entries:Backlinks['entries']}>;notes:string[]}
 const summaryOf=(text:string)=>cutText(text.replace(/\s+/gu,' ').trim(),160);
 const beneath=(path:string,prefix:string)=>prefix==='/'||path===prefix||path.startsWith(prefix+'/');
@@ -181,7 +182,7 @@ export class LinkReading {
     const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:request.build??composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
     if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取']};
     if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new Error('这份组成没有请求的链接声明，请按声明编号重读');
-    const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target)&&(rule===null||edge.rule===rule));
+    const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target&&edge.path!==edge.target)&&(rule===null||edge.rule===rule));
     const drift=facts.drift.filter(g=>(target===null||g.attempted_path===target)&&(rule===null||g.rule===rule)).map(g=>({...g,occurrences:g.occurrences.filter(o=>beneath(o.path,prefix))})).filter(g=>g.occurrences.length).map(g=>({...g,total:g.occurrences.length}));
     const diagnostics=facts.diagnostics.filter(diagnostic=>beneath(diagnostic.path,prefix)&&(rule===null||diagnostic.rule===rule));
     const unchecked=facts.unchecked.filter(item=>beneath(item.path,prefix)&&(rule===null||item.rule===rule)),uncheckedCount=unchecked.reduce((sum,item)=>sum+item.literals,0);
@@ -210,7 +211,7 @@ export class LinkReading {
     if(at<flat.length){output.next=Buffer.from(JSON.stringify({q:key,o:at,c:composition.record})).toString('base64url');output.truncated=true;}
     return output;
   }
-  async prepareBacklinks(root:string,reader:Principal,composition?:string|null,selected?:CompositionView|null):Promise<(path:string)=>Promise<Backlinks|undefined>>{
+  async prepareBacklinks(root:string,reader:Principal,composition?:string|null,selected?:CompositionView|null):Promise<PreparedBacklinks>{
     const absent=(record:string|null,note:string):Backlinks=>({composition:record,configured:false,total:null,entries:[],truncated:false,notes:[note]});
     if(composition===null)return async()=>absent(null,'这个运行没有锁定组成快照；下一步：以同样的输入新开运行，锁定组成后再读关联');
     const view=selected===undefined?await this.compositionFor(root,reader,composition):selected;
@@ -237,17 +238,18 @@ export class LinkReading {
       const result={targets,notes:[...facts.rule_diagnostics.map(item=>item.message+'；下一步：'+item.next_action),...(facts.diagnostics.length?['有不合形状的来源字段未计入关联；修正生产器并重新生产后重读']:[])]};
       this.#compact.set(view.record,result,canonicalBytes([...targets]).byteLength);return result;
     })();
-    return async(path:string)=>{
+    const read=async(path:string):Promise<Backlinks|undefined>=>{
       if(!view.body.links!.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
       try{
         const index=await compact(),value=index.targets.get(path)??{total:0,entries:[]};
         const viewId="knowledge:links:"+encodeURIComponent(view.body.product)+":"+encodeURIComponent(view.body.version.build)+"?target="+encodeURIComponent(path)+"&composition="+view.record;
-        return {view_id:viewId,composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:[...index.notes,...(value.total>20?['还有未列出的反向引用；读取 '+viewId+' 并沿游标翻页']:[])]};
+        return {view_id:viewId,composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:value.total>20?['还有未列出的反向引用；读取 '+viewId+' 并沿游标翻页']:[]};
       }catch(error){
         const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请管理员或维护者修复关联索引，再重新执行本次计算',error);
         return absent(view.record,failure.message+'；下一步：'+failure.nextAction);
       }
     };
+    return Object.assign(read,{pageNotes:async()=>{try{return pending?[...(await pending).notes]:[];}catch{return [];}}});
   }
   async backlinks(root:string,path:string,reader:Principal,composition?:string|null):Promise<Backlinks|undefined>{
     return (await this.prepareBacklinks(root,reader,composition))(path);

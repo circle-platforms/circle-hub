@@ -344,6 +344,7 @@ export class TreeReading {
         relationRoom=Math.max(0,relationRoom-used);node.backlinks=backlinks;
       }
     }
+    for(const message of await relations?.pageNotes?.()??[])if(!notes.includes(message))notes.push(message);
     const note = notes.length === 0 ? undefined : notes.join('；');
     const cursor = walk.next === null ? null : encodeCursor({ ...walk.next, q: queryKey, ...(cursorComposition?{c:cursorComposition}:{}) });
     const examined = walk.position;
