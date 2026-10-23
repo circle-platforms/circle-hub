@@ -407,6 +407,7 @@ nav_order: 3
     - 回注层的准入核对在 `hub/knowledge` 里，是核心发出的，原因码登记进核心码表 `contracts/codes.json`，写成 `core.contribution.<规则>`，各带 when 和 fix，照生成器重新生成。不再挂在声明回注的那个包的名下。
     - 凭据命中照用已有的协议码 `CREDENTIAL_IN_UPLOAD`。
     - 回注包里那份没人核验的码表删掉，包升版、重签。码表的 `interpreter` 字段要是只认已安装的解释器，先回报集成者改登记表，不硬塞。
+    - 10-24 凌晨补（K2 合并后收尾核对第 4 条）：码表照旧不加字段，`interpreter` 写的是发出这个码的核心部件，`contribution` 是回注准入，不是可装的解释器（码表的 note 已这样写）。包校验判一行错误处理“用得上”时按发出部件分两种：解释器发出的码，看这个要求项的检查有没有用到那个解释器；回注准入发出的 `core.contribution.*`，看 `workflow.contribution.requirement` 是不是这个要求项。`docs/design/generic-model.md` 讲错误码登记的那段同改。
 39. **记录库加一个事务级锁**（来源：K2 收尾核对第三轮第 4 条，集成者 2026-10-23 晚答 codex-e）：
     - `RecordStore.lock(key, tx)`：事务级的 advisory lock，只在给定事务里持有，提交或回滚就释放；照 `artifacts.ingest` 内部已有的写法。键先按类型加前缀再取哈希，不和别的锁撞。不改迁移。
     - 第一个用处：内容相同的回注并发提交只存一份。几个条目按内容键排序依次取锁，免得互相等。
