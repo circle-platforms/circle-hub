@@ -209,6 +209,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
 }
 
 export function measureReview(options: MeasureOptions, drivers: Drivers, say: (line: string) => void = () => {}): number {
+  if (existsSync(options.out) && readdirSync(options.out).some(name => /^r[0-9]+$/.test(name) || ['catalog-preflight','mutated.json','gold.json','literal.json'].includes(name))) throw new CatalogOutputError('output_exists');
   // 1. The copy, the gold and the independent answer — always computed, never skipped.
   let tree = JSON.parse(readFileSync(options.source, 'utf8')) as MindTree;
   if (options.keep !== undefined) tree = firstCases(tree, options.keep, { caseRule: options.caseRule });
@@ -417,7 +418,7 @@ function main(): number {
     return code;
   } catch (error) {
     recordRefusal(out, error);
-    console.error('拒绝：' + refusalSummary(error));
+    console.error('拒绝：' + (error instanceof CatalogOutputError ? '输出目录已有证据或路径不可用，请改用 Git 外的新目录后重跑' : refusalSummary(error)));
     return 1;
   }
 }

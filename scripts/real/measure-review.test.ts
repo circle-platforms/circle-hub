@@ -363,3 +363,13 @@ test('catalog gaps remain unverified on screen and name the evidence follow up',
   assert.ok(screen.some(line=>line.includes('r1/catalog/evidence-requests.json') && line.includes('follow_up')));
   assert.ok(screen.some(line=>line.includes('未独立核对 1')));
 });
+
+test('existing measurement evidence is refused with a fixed reason before any session or overwrite', t => {
+ for(const collision of ['r1/catalog','catalog-preflight']) {
+  const f=catalogFixture(t); mkdirSync(join(f.out,collision),{recursive:true});
+  writeFileSync(join(f.out,'mutated.json'),'original sentinel');
+  let calls=0; const driver={...f.driver,review:()=>{calls++; throw new Error('must not start');}};
+  assert.throws(()=>measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes},driver,()=>{}),e=>typeof e==='object' && e!==null && 'reason' in e && e.reason==='output_exists');
+  assert.equal(calls,0); assert.equal(readFileSync(join(f.out,'mutated.json'),'utf8'),'original sentinel');
+ }
+});
