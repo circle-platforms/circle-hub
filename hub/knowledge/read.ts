@@ -33,6 +33,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 /** Binds a tree reader to the composition a run locked (RootInfo.composition): its grounds and premises come from it alone. */
 export interface TreeLock {
   composition?: string | null;
+  compositions?: string[];
 }
 
 /** Display text of an entry's applicability (K02 R[2]: undeclared is said, never hidden). */
@@ -409,7 +410,14 @@ export class TreeReading {
   treeReader(lock: TreeLock | null = null): TreeReader {
     const bound = typeof lock?.composition === 'string' && SHA256.test(lock.composition) ? lock.composition : null;
     return {
-      read: (root, path, entry, reader) => this.#read(root, path, entry, reader, bound),
+      read: async (root, path, entry, reader) => {
+        let selected = bound;
+        for (const digest of lock?.compositions ?? []) {
+          const body = await this.#context.store.composition(digest);
+          if (body?.root === root) { selected = digest; break; }
+        }
+        return this.#read(root, path, entry, reader, selected);
+      },
       readEntry: (entry, reader) => this.#readEntry(entry, reader),
       // A path or entry that `read` does not find in a root the reader may read is a mistake in the reference.
       hasRoot: async (root, reader) => (await this.mayReadRoot({ id: reader.user }, root)) && (await this.#context.store.node(root)) !== null,

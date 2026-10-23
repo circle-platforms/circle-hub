@@ -275,7 +275,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       reader: identityOf(runnerPrincipal, run.run),
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
-      trees: ctx.deps.knowledge.treeReader(),
+      trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
@@ -289,7 +289,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function'),
-      trees: ctx.deps.knowledge.treeReader(),
+      trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
       documents: ctx.documents,
@@ -886,7 +886,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       total: items.length,
       ...(submission !== null && hasItemJudgments ? { note: `提交处理了 ${handled} 个条目，共 ${items.length} 个` } : {}),
     },
-    locks: { pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
   return { result, errors, problems, uncovered, retryAttempts };

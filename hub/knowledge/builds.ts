@@ -158,7 +158,7 @@ export class Builds {
   }
 
   /** RootInfo of a production; its build without list roles (they are in the composition, by reference). */
-  rootInfoOf(production: ProduceAction, product: string): RootInfo {
+  rootInfoOf(production: ProduceAction, product: string): RootInfo<KnownBuild | null> {
     return {
       root: production.detail.root as string,
       composition: production.detail.composition as string,
@@ -178,7 +178,7 @@ export class Builds {
   }
 
   /** Every composition of a root digest (equal content from different builds or products shares one root). */
-  async rootInfo(root: string): Promise<RootInfo[]> {
+  async rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]> {
     if (!SHA256.test(root)) return [];
     const productions = await this.#store.productionsOfRoot(root);
     return productions.map((production) => this.rootInfoOf(production, production.detail.product));
@@ -196,9 +196,9 @@ export class Builds {
 
   /** The root the current-root pointer of a product line names. */
   async currentRoot(product: string, line: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
-  async currentRoot(product: string, line: null): Promise<RootInfo | null>;
-  async currentRoot(product: string, line: string | null): Promise<RootInfo | null>;
-  async currentRoot(product: string, line: string | null): Promise<RootInfo | null> {
+  async currentRoot(product: string, line: null): Promise<RootInfo<null> | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo<KnownBuild | null> | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo<KnownBuild | null> | null> {
     let name: string;
     try {
       name = pointerName(product, line);

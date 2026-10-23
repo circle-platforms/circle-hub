@@ -864,3 +864,9 @@ composition. An older port without this method means no product-wide root. `Root
 is nullable; build-specific `currentRoot` and `rootOfBuild` retain non-null build results.
 Reading by digest uses the same product permission checks, the product-wide pointer
 for currentness, and displays build provenance as “未声明”. The console labels it “构建未声明”.
+
+Runs lock both roots and their compositions in `target_basis`. The product-wide
+basis is projected by `runs.unversioned_root@1`; no root is a definite fact followed
+by the instruction to sync the product. Boundaries, check fragments, reuse and
+contribution admission recognize the locked set, never a newly moved pointer.
+A changed product-wide lock prevents predecessor reuse. Older ports remain compatible.

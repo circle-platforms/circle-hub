@@ -214,13 +214,13 @@ export interface ResourceCatalogPort {
 
 // ---------------------------------------------------------------- knowledge (provided by knowledge)
 
-export interface RootInfo {
+export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
   /** Root node digest: what a run locks and what tree references name. Equal content gives equal roots. */
   root: string;
   /** Digest of the tree_root record that composed it (the build it was produced for and what every entry rests on). */
   composition: string;
   product: string;
-  build: KnownBuild | null;
+  build: B;
   produced_at: string;
 }
 
@@ -269,24 +269,24 @@ export interface EntryDiff {
 
 export interface KnowledgePort {
   /** Current product-wide root; absent on older ports. */
-  unversionedRoot?(product: string): Promise<RootInfo | null>;
+  unversionedRoot?(product: string): Promise<RootInfo<null> | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */
   resolveBuild(product: string, name: string): Promise<KnownBuild | null>;
   /** The root of the newest produced build of a version line. */
-  currentRoot(product: string, line: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
+  currentRoot(product: string, line: string): Promise<RootInfo | null>;
   /** The root a build name of any family resolves to. This is what a run locks. */
-  rootOfBuild(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
+  rootOfBuild(product: string, name: string): Promise<RootInfo | null>;
   /** Every composition record of a root digest (equal content from different builds shares one root). */
-  rootInfo(root: string): Promise<RootInfo[]>;
+  rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
   catalog(root: string, catalogId: string): Promise<CatalogView | null>;
   /**
    * Reads nodes and entries for reference resolution; permission is enforced inside. `lock.composition` binds the reader to the
    * composition a run locked (RootInfo.composition): grounds and premises come from it alone.
    */
-  treeReader(lock?: { composition?: string | null } | null): TreeReader;
+  treeReader(lock?: { composition?: string | null; compositions?: string[] } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;
