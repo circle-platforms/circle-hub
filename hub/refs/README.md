@@ -388,3 +388,7 @@ sheet names and defined names), rather than once per shared-string use. Raw NUL 
 
 ZIP64 compares each non-sentinel EOCD count, size and offset with the ZIP64 record. Bounded extensible data remains
 accepted with its header/length framing checked, as defined by APPNOTE 4.3.14; a size above 44 alone is not malformed.
+
+Row `ht` retains the literal height or null, and `customHeight` retains the boolean flag. `hidden` means explicit
+hidden=true or customHeight=true with numeric height zero; hiddenRows uses that same definition. Column visibility
+is not interpreted by this model, so hiddenRows is not a statement about column visibility or whole-sheet rendering.

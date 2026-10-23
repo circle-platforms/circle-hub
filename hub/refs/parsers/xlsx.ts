@@ -289,6 +289,8 @@ export type XlsxCell = {
 export type XlsxRow = {
   number: number;
   hidden: boolean;
+  ht: string | null;
+  customHeight: boolean;
   cells: XlsxCell[];
 };
 export type XlsxSheet = {
@@ -662,7 +664,9 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
         if (cellTextBytes > XLSX_CELL_TEXT_LIMIT) forbidden(`XLSX 模型的单元格文本总量超过 UTF-8 字节上限 ${XLSX_CELL_TEXT_LIMIT}`);
         cells.push({ reference, type, text, formula: children(cell, 'f').length > 0, style: attribute(cell, 's') === undefined ? null : integer(attribute(cell, 's')!, '样式号') });
       }
-      rows.push({ number, hidden: bool(attribute(row, 'hidden')), cells });
+      const ht = attribute(row, 'ht') ?? null;
+      const customHeight = bool(attribute(row, 'customHeight'));
+      rows.push({ number, hidden: bool(attribute(row, 'hidden')) || (customHeight && ht !== null && ht.trim() !== '' && Number(ht) === 0), ht, customHeight, cells });
     }
     sheets.push({ name: xstring(required(sheet, 'name')), state: attribute(sheet, 'state') ?? 'visible', part: sheetPart, rows, lastRow });
   }

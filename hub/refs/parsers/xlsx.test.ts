@@ -325,3 +325,9 @@ test('ZIP64 agrees with all non-sentinel EOCD fields and permits bounded extensi
   assert.equal(readXlsxArchive(zip64Directory(zip([{ name: 'a.xml' }]), extension)).size, 1);
   refuses(zip64Directory(zip([{ name: 'a.xml' }]), Buffer.alloc(1)), /越界|不完整/);
 });
+
+test('zero custom height is hidden while preserving literal row height and flags', () => {
+  const document = parseWorkbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="1" ht="0" customHeight="1"><c r="A1"/></row><row r="2" ht="12.5" customHeight="1"/><row r="3" ht="0"/></sheetData></worksheet>` });
+  assert.deepEqual(document.model.sheets[0].rows.map((row) => [row.hidden, row.ht, row.customHeight]), [[true, '0', true], [false, '12.5', true], [false, '0', false]]);
+  assert.equal(document.summary().hiddenRows, 1);
+});
