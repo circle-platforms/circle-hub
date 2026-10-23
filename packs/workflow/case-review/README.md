@@ -397,57 +397,37 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 case-review@1.0.4 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
 
-### 全仓词表扫描的待完成项
+### 全仓词表扫描的收尾记录
 
-`packs.test.ts` 扫描 hub 与全部包，不设手写轴例外或临时债务基线。只把生成器明确列出的包内快照当生成物，且仍逐字核对生成结果。当前以下 K2 文件尚未修改；在这些命中清完前，全仓扫描失败，本项不能合并：
+02a0066e 已将原 K2 清单的 6 处命中全部改为生成词表约束，均已修复：
 
-| 文件 | 当前行 | 轴 | 处理方 |
-| --- | --- | --- | --- |
-| hub/knowledge/lists.ts | 284 | action_result | K2 |
-| hub/knowledge/test-support.ts | 179 | placement | K2 |
-| hub/knowledge/test-support.ts | 385 | read_tier | K2 |
-| hub/knowledge/views.ts | 47 | entry_kind | K2 |
-| hub/server/tools.ts | 508 | call_result | K2 |
-| hub/runs/engine/submit.ts | 179 | acceptance | K2，合并后由 core-fixes 补完剩余 |
+| 文件 | 原命中 | 修复依据 |
+| --- | --- | --- |
+| hub/knowledge/lists.ts | memoAction 的 action_result | 生成类型 |
+| hub/knowledge/test-support.ts | placement | 生成类型 |
+| hub/knowledge/test-support.ts | read_tier | 生成类型 |
+| hub/knowledge/views.ts | DEFAULT_CHANGED_KINDS 的 entry_kind | 从生成 ENTRY_KIND 派生 |
+| hub/runs/engine/submit.ts | action 的 acceptance | 生成类型 |
+| hub/server/tools.ts | call_result | 生成类型 |
 
-行号是本任务工作树的定位，不代表 K2 分支合并后的行号。第 4 项需要新增的轴只有由[进度页决定 36](../../../docs/hub-r4-progress.md)授权并细分的 T04 `fragment_read`；其他命中使用既有轴。
+原收尾记录的 1,188 项中 1 项扫描失败、1 项环境反向分支跳过，是上述修复前的历史结果，不能用作当前阻塞依据。
+02a0066e 后复核的 packs.test.ts 为 17/17 通过；本轮扩展扫描和自测后为 19/19 通过，全仓扫描通过且未增加债务基线。
+本轮还修复字符串标签表与无类型比较链的漏扫，边界见下节。编号范围的 min/max 是结构字段，不属于 measure 轴。
 
-### 本次验证记录（第 4 项尚未完成）
-
-类型检查 `npx tsc --noEmit` 和 `node tools/gen-contracts.ts --check` 通过；后者核对 63 份核心生成物及 5 份包内快照。
-
-以下串行命令共运行 1,439 项：1,436 通过，2 失败，1 跳过。失败之一为上表 6 处 K2 命中的全仓扫描；另一项是本包静态导入测试原本只允许平铺文件，尚未允许已获授权的包内生成文件。后者已改为只额外允许 `./generated/vocabulary.ts`，保持禁止包外运行时导入；其所在 `functions/tables.test.ts` 复测 11 项全部通过。`packs.test.ts` 最后复测为 16 项、15 通过、1 失败，唯一失败仍是 K2 清单。跳过的是 `without sandbox-exec the default refuses to run`，原因是本机具备 sandbox-exec，因此该反向环境分支不适用；没有把跳过计作通过。
+本轮验证命令均仅用合成数据，node --test 的并发为 1；真实系统未运行。类型检查 npx tsc --noEmit、
+node tools/gen-contracts.ts --check 通过，生成检查核对 65 份核心生成物和声明的包快照。
+本轮两组串行回归分别为 381/381 和 235/235 通过，均零失败、零跳过；两组重复包含 2 项片段词表测试。
+第一组覆盖四个改动包、全仓扫描、词表生成器、回答文本、片段解释器与真实引擎的合成引用；
+第二组覆盖全部 contracts 测试与本 README 的过期阻塞回归。这些结果不代替真实系统验收。
 
 ```sh
-node --test --test-concurrency=1 \
-  "hub/runs/**/*.test.ts" "hub/rules/**/*.test.ts" "hub/records/**/*.test.ts" \
-  hub/leases/service.test.ts \
-  "packs/workflow/case-review/**/*.test.ts" "packs/workflow/case-review-verify/**/*.test.ts" \
-  "packs/workflow/case-location/**/*.test.ts" "packs/workflow/case-compile/**/*.test.ts" \
+node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts tools/gen-contracts.pack-vocabulary.test.ts \
   "packs/workflow/maintenance-sweep/**/*.test.ts" "packs/workflow/regression-scope/**/*.test.ts" \
-  "packs/workflow/test-bed/**/*.test.ts" "packs/workflow/quality-board/**/*.test.ts" \
-  "packs/workflow/traceability/**/*.test.ts" \
-  tools/gen-contracts.pack-vocabulary.test.ts contracts/src/generator.test.ts
-node --test --test-concurrency=1 packs/workflow/case-review/functions/tables.test.ts
-node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
+  "packs/workflow/test-bed/**/*.test.ts" "packs/workflow/defect-to-case/**/*.test.ts" \
+  hub/server/text.test.ts hub/server/claims.test.ts hub/rules/interpreters/quote.grades.test.ts \
+  hub/runs/engine/quote-fragments.test.ts contracts/src/fragment-read.test.ts
+node --test --test-concurrency=1 "contracts/**/*.test.ts" packs/workflow/case-review/readme.test.ts
 ```
-
-生成器定向测试（`tools/gen-contracts.pack-vocabulary.test.ts` 与 `contracts/src/generator.test.ts`）22 项通过，覆盖包快照缺失、被改动、词表变化及 CLI 检查。第 3 项缺陷转用例的完整测试另运行 `node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"`，65 项通过。
-
-编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。
-
-终审复核第 9 项：全仓扫描改用 TypeScript 语法树，识别混合取值联合、混合数组，以及手写字面量与生成类型子集拼接；生成快照仍逐字核对。扫描不设例外。K2 的既有 6 处命中仍等待其合并：knowledge/lists.ts（action_result）、knowledge/test-support.ts（placement、read_tier）、knowledge/views.ts（entry_kind）、runs/engine/submit.ts（acceptance）、server/tools.ts（call_result）。新增命令名与 home 轴重名的命中，经集成者答复改为实际用于帮助信息的命令说明表，不依赖 home 轴。
-
-本轮 9 条复核的最终验证（全部合成，node --test --test-concurrency=1）：
-
-| 范围 | 测试 | 通过 | 失败 | 跳过 |
-| --- | ---: | ---: | ---: | ---: |
-| hub/runs、hub/rules、hub/records、defect-to-case | 659 | 658 | 0 | 1 |
-| 片段轴/生成器、case-location、两评审包 functions、CLI | 368 | 368 | 0 | 0 |
-| maintenance-sweep、test-bed | 144 | 144 | 0 | 0 |
-| case-review/packs.test.ts（含全仓扫描） | 17 | 16 | 1 | 0 |
-
-合计 1,188 项，1,186 通过、1 失败、1 跳过。唯一失败是上列 K2 的 6 处扫描命中，未加任何基线或例外，也未改 K2 文件；合并 K2 后仍需重跑。跳过项为本机没有 sandbox-exec 时默认拒绝运行的反向环境测试，本机具备 sandbox-exec，不能将它计作通过。npx tsc --noEmit、node tools/gen-contracts.ts --check 均通过；未做真实系统验收。每条问题的改前失败日志、全量测试日志留在 Git 外。
 
 ### 词表扫描语义边界（收尾复核）
 
