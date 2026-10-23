@@ -138,7 +138,7 @@ describe('quality-board scenario', () => {
 
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' }, placement: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=commands' } } } },
+      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
     ]);
   });
 
@@ -236,4 +236,17 @@ describe('unversioned pack names in start_run inputs', () => {
       assert.ok(!pack.includes('@'), `${s.name} 的 pack 不应包含 @ 版本号，实际为 ${pack}`);
     }
   });
+});
+
+test('a quality-board item-2 gold binds only the 1.0.1 facets slot (placement waits for the gold that asks for it)', async () => {
+  const { default: qualityBoard } = await import('./quality-board.ts');
+  const scenario = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z' });
+  const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start = reply.find((r) => r.tool === 'hub_start_run');
+  assert.ok(start !== undefined);
+  assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets'], 'no placement before items 3 and 4 are published');
+  const withTypes = qualityBoard({ product: 'apv', build: 'Synthetic_10_7_Z', types: true });
+  const reply2 = (await withTypes.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
+  const start2 = reply2.find((r) => r.tool === 'hub_start_run');
+  assert.deepEqual(Object.keys(start2!.input!.inputs ?? {}).sort(), ['facets', 'placement']);
 });

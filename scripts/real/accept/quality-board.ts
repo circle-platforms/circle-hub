@@ -23,6 +23,9 @@ export interface BoardGroupGold {
 
 export interface BoardGold {
   types?: boolean;
+  /** Bind the placement view (quality-board 1.1+): set by board.ts --types/--unplaced or by hand. Without it the
+   * scenario sends the 1.0.x request, which has no placement slot. */
+  placement?: boolean;
   unplaced?: number;
   product: string;
   build: string;
@@ -93,7 +96,9 @@ export default function scenario(gold: BoardGold): Scenario {
         { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
         { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,tags` },
       ] : { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
-      placement: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=commands` },
+      // Placement is bound only when the gold asks for it (board.ts --types/--unplaced or by hand): the deployed
+      // 1.0.1 pack has no placement slot and refuses the run (hub/runs/engine/inputs.ts).
+      ...(gold.placement === true || gold.unplaced !== undefined || gold.types === true ? { placement: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=commands` } } : {}),
     } } }], '看板完成。'),
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
