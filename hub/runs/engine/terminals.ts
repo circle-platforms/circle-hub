@@ -1,4 +1,4 @@
-import type { Verdict } from '../../../contracts/generated/vocabulary.ts';
+import type { Independence, ItemHandling, Verdict } from '../../../contracts/generated/vocabulary.ts';
 // Layer terminals, requirement status and attribution (V01, V03, V04, W02 R[4]-R[5], W07 R[2]-R[3], T03 R[4]). Pure: the
 // evaluation hands in the check outcomes of one (item, requirement) and what the submission said about the item; nothing
 // here reads records. Per-value behaviour is in tables typed against the vocabulary, so a new value does not compile until
@@ -66,7 +66,7 @@ function everyLayer(reason: Reason | undefined): reason is keyof typeof EVERY_LA
 }
 
 /** What a submission said about an item, for requirements that accept judgments. */
-export type Handling = 'handled' | 'skipped' | 'not_covered';
+export type Handling = ItemHandling | Extract<Reason, 'not_covered'>;
 
 /** What the check contract expects for one (item, requirement): support, or a refutation with one of some codes. */
 export interface Expectation {
@@ -315,7 +315,7 @@ export function dynamicLayer(statics?: Pick<RoutedStatic, 'terminal' | 'reason'>
 // ---------------------------------------------------------------- status
 
 /** Independence of a judgment from the predecessor run (A04), as far as the Hub can tell. */
-export type IndependenceFinding = 'independent' | 'not_independent' | 'unknown';
+export type IndependenceFinding = 'independent' | Extract<Independence, 'not_independent' | 'unknown'>;
 
 export interface StatusInput {
   layers: LayerResult[];

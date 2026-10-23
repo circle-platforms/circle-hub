@@ -60,7 +60,7 @@ export interface SweepNote {
   details: PathDetail[];
   /** The whole command diff, one row per changed path with the earlier-build case count on it; the command-diff
    * summary reads this (details covers only the maintenance paths, this table never drops one). */
-  diff: { path: string; change: 'added' | Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>; cases: number }[];
+  diff: { path: string; change: ChangeKind; cases: number }[];
 }
 
 export interface SweepResult {
@@ -70,7 +70,7 @@ export interface SweepResult {
 }
 
 interface Side {
-  change: 'added' | Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
+  change: ChangeKind;
   before: string[];
   after: string[];
 }

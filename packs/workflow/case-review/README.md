@@ -435,3 +435,16 @@ node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 生成器定向测试（`tools/gen-contracts.pack-vocabulary.test.ts` 与 `contracts/src/generator.test.ts`）22 项通过，覆盖包快照缺失、被改动、词表变化及 CLI 检查。第 3 项缺陷转用例的完整测试另运行 `node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"`，65 项通过。
 
 编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。
+
+终审复核第 9 项：全仓扫描改用 TypeScript 语法树，识别混合取值联合、混合数组，以及手写字面量与生成类型子集拼接；生成快照仍逐字核对。扫描不设例外。K2 的既有 6 处命中仍等待其合并：knowledge/lists.ts（action_result）、knowledge/test-support.ts（placement、read_tier）、knowledge/views.ts（entry_kind）、runs/engine/submit.ts（acceptance）、server/tools.ts（call_result）。新增命令名与 home 轴重名的命中，经集成者答复改为实际用于帮助信息的命令说明表，不依赖 home 轴。
+
+本轮 9 条复核的最终验证（全部合成，node --test --test-concurrency=1）：
+
+| 范围 | 测试 | 通过 | 失败 | 跳过 |
+| --- | ---: | ---: | ---: | ---: |
+| hub/runs、hub/rules、hub/records、defect-to-case | 659 | 658 | 0 | 1 |
+| 片段轴/生成器、case-location、两评审包 functions、CLI | 368 | 368 | 0 | 0 |
+| maintenance-sweep、test-bed | 144 | 144 | 0 | 0 |
+| case-review/packs.test.ts（含全仓扫描） | 17 | 16 | 1 | 0 |
+
+合计 1,188 项，1,186 通过、1 失败、1 跳过。唯一失败是上列 K2 的 6 处扫描命中，未加任何基线或例外，也未改 K2 文件；合并 K2 后仍需重跑。跳过项为本机没有 sandbox-exec 时默认拒绝运行的反向环境测试，本机具备 sandbox-exec，不能将它计作通过。npx tsc --noEmit、node tools/gen-contracts.ts --check 均通过；未做真实系统验收。每条问题的改前失败日志、全量测试日志留在 Git 外。

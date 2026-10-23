@@ -32,7 +32,15 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 }
 
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
-export const RESERVED_COMMANDS: readonly string[] = ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token'];
+const RESERVED_COMMAND_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  pack: '管理任务包',
+  resource: '管理资源声明',
+  secret: '管理密钥库条目',
+  knowledge: '读取和管理知识树',
+  'init-admin': '初始化管理员',
+  'operator-token': '管理操作令牌',
+};
+export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
 const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run']);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
@@ -64,7 +72,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
-    ...RESERVED_COMMANDS.filter((name) => !extra.some((command) => command.name === name)).map((name) => `  ${name.padEnd(44)} 由装配模块注册；这个装配模块没有注册它`),
+    ...RESERVED_COMMANDS.filter((name) => !extra.some((command) => command.name === name)).map((name) => `  ${name.padEnd(44)} ${RESERVED_COMMAND_DESCRIPTIONS[name]}；由装配模块注册；这个装配模块没有注册它`),
     '',
     `平台命令 ${PLATFORM_COMMANDS.join('、')} 由 hub/platform 执行（例如 circle-hub status），用法见 hub/platform/README.md。`,
     `改变状态的命令（建用户、停用、恢复、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用钥匙串里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,

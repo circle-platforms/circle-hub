@@ -36,7 +36,7 @@ export interface BedMatch {
   /** no_requirement | match | mismatch | unknown (unknown: no install record, never a mismatch). */
   buildOk: 'no_requirement' | 'match' | 'mismatch' | 'unknown';
   /** observed | declared | none (no install record of the deciding device). */
-  buildSource: 'observed' | 'declared' | 'none';
+  buildSource: Extract<ProvenanceType, 'observed' | 'declared'> | 'none';
   /** When the needed devices are all free (the maximum of their leases' ends), null when idle now. */
   earliestFree: string | null;
   /** How many devices of the needed types the bed has beyond the need (the ordering's third key). */
