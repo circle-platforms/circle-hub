@@ -302,7 +302,7 @@ describe('the version lines of documents', () => {
     assert.equal(folderLine('rel_apv_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_nsae_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
-    assert.equal(folderLine('rel_other_10_5'), null);
+    assert.equal(folderLine('rel_other_10_9'), null);
     assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
     assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
     assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);

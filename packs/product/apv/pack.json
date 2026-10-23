@@ -48,7 +48,7 @@
     },
     {
       "path": "functions/documents.ts",
-      "sha256": "ef084e1312bbc9a58743664275cfea2c9dbd8342bf6e6dc64c89aef937f1836a",
+      "sha256": "56a96048f95df722085f51a3f24389e1ee204628a1dd67b32d44613ca897c0af",
       "size": 3232
     },
     {
@@ -78,7 +78,7 @@
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "03198bacf74a2912a9834053fa4d5229f7174b98aea9e3093eddc048613885ee",
+      "sha256": "a3ebd8dad3e791598184440cf7caf168a30446bd1ec23a03f983a9da127c2eee",
       "size": 8645
     },
     {
@@ -118,7 +118,7 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "c699b88bb38a7b83fc610588008eb32e22dbab93cf627cb9a48f4d3763d9ab32",
+      "sha256": "1a258f1b95d3e814fa7ec5a22e15489aa71f0a73c00bd2e8633c6777a2358c90",
       "size": 13501
     },
     {

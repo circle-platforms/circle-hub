@@ -95,7 +95,7 @@ export type SelectBuildResult = {
 export type PageKind = 'mainline' | 'platform' | 'customer' | 'patch';
 
 export type ListingPage = {
-  /** Page name without the extension, as written: rel_apv_10_4_2. */
+  /** Page name without the extension, as written: rel_apv_10_6_4. */
   page: string;
   /** The link exactly as written on the linking page; the caller resolves it against that page's URL. */
   href: string;
@@ -107,7 +107,7 @@ export type ListingPage = {
   kind: PageKind;
 };
 
-/** A hub page linked from the index (apv_10_5, apv_10_4_6, apv_trunk ...): it links the listing pages of a line. */
+/** A hub page linked from the index (apv_10_7, apv_10_6_4, apv_trunk ...): it links the listing pages of a line. */
 export type HubPage = {
   page: string;
   /** The link exactly as written on the index page; the caller resolves it against the index URL. */

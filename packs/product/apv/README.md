@@ -108,7 +108,7 @@ Selection (K01 R[10], W03 R[0], W06 F[6])
 - `basis` is the provenance type: `declared` or `projected`.
 
 Sync plan
-- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_5`, `apv_10_4_6`) or by no version
+- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_7`, `apv_10_6_4`) or by no version
   (`apv_trunk`, `apv_10_x_patch`). Their content decides: a hub page read that lists builds is a listing page (warning).
   Hub pages linked from hub pages are beyond depth 2 and skipped with a reason.
 - Listing pages by name: `[rel_]<family>[_<platform>]_<n>_<n>[...]_<tokens>`. Mainline: only the version or a mainline
