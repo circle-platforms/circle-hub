@@ -180,7 +180,14 @@ test('--placement sends both facets and placement without needing --types or --c
     assert.equal(run.status, 0, run.stderr);
     const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
     assert.equal(report.placement, true, 'the gold asks the scenario to bind placement');
-    assert.equal(report.unplaced, 0, 'no independent measurement was supplied, so the count the Hub must state is 0');
+    assert.equal(Object.hasOwn(report,'unplaced'), false, 'binding placement does not invent an independent count');
+    const checked=scenario(report).check(turns('运行 run_synthetic\n1 个用例没有解析出命令'));
+    const count=checked.find(check=>check.name==='Hub 写出未归位用例数');
+    assert.ok(count);assert.equal(count.ok,true);
+    assert.equal(scenario(report).check(turns('运行 run_synthetic')).find(check=>check.name==='Hub 写出未归位用例数')?.ok,false);
+    const measured={...report,unplaced:0};
+    assert.equal(scenario(measured).check(turns('运行 run_synthetic\n0 个用例没有解析出命令')).find(check=>check.name==='未归位用例数与独立依据一致')?.ok,true);
+    assert.equal(scenario(measured).check(turns('运行 run_synthetic\n1 个用例没有解析出命令')).find(check=>check.name==='未归位用例数与独立依据一致')?.ok,false);
     assert.ok(!('types' in report) || report.types !== true, 'no --types was given');
   } finally {
     rmSync(dir, { recursive: true, force: true });

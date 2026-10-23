@@ -131,3 +131,7 @@ Privacy update (integrator, 2026-10-23): acceptance group names use ordinals onl
 Gold closure A: --case-commands validates the consumed measurement fields, document coverage and per-document counts against
 its case rows before counting paths. A listed document with zero case rows is an observed zero, not a missing export;
 contradictory metadata and malformed paths are refused with a fixed rerun instruction. No Hub/pack runtime is imported.
+
+Gold closure B: --placement only asks the scenario to bind placement and require the Hub count sentence; it omits
+unplaced unless --case-commands provided an independent measurement. An observed zero remains a strict comparison,
+while a count that was not measured is never invented as zero. Missing Hub output still fails the check.

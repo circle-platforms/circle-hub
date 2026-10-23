@@ -146,7 +146,6 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     // --placement (quality-board 1.1.0 requires the slot): bind it without an independent count. A run against
     // 1.1+ needs one of --placement, --case-commands or --types.
     if (argv.includes('--placement') && !('placement' in gold)) {
-      (gold as { unplaced?: number }).unplaced = 0;
       (gold as { placement?: boolean }).placement = true;
     }
     writeFileSync(out!, `${JSON.stringify(gold, null, 2)}\n`);
