@@ -4,7 +4,7 @@ import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import { readSlots } from './slots.ts';
-import { bindArguments } from './binding.ts';
+import { bindArguments, hasBalancedCommandText } from './binding.ts';
 import type { LeaseRow } from './bed.ts';
 export interface PlanSubject { item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string }
 export function planDataOf(record: Record<string, unknown>): unknown {
@@ -30,7 +30,7 @@ export function commandSubject(input: unknown): unknown {
     const allowed = allowedCall(profile.profile, step.object, step.method);
     const method = contract.contract.enabled.find((v) => v.object === step.object && v.method === step.method);
     if (!allowed || !method) continue;
-    for (const v of bindArguments(method, step, '').values) if (allowed.parameters[v.name] === 'device_cli') phrases.push(v.value);
+    for (const v of bindArguments(method, step, '').values) if (allowed.parameters[v.name] === 'device_cli') { if (!hasBalancedCommandText(v.value.normalize('NFKC'))) return { item: subject.item, location: subject.location }; phrases.push(v.value); }
   }
   return { item: subject.item, location: subject.location, phrases, negative: false };
 }

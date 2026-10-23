@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "955e2701a79c810313e6e215c9137c4e6d56018426c7d356ed37b5b6b8474c05",
-      "size": 10661
+      "sha256": "699b4fecaf315258135861c5b9fd631b168f75009846f2caa64f0e8f7b11fbf0",
+      "size": 10919
     },
     {
       "path": "functions/manifest.ts",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "37cb0b3ebe24ea1f56f4912985b783d6e02cfb298991023be9ef307a803d6125",
-      "size": 2990
+      "sha256": "905fda28ffaef6f717c0c69f1fcdff2a29e55b9abd1b7b8178fbafb11874fbde",
+      "size": 3133
     },
     {
       "path": "functions/text.ts",

@@ -35,3 +35,9 @@ test('review 04 address verification cannot report support for a roleless device
   const setup = extraParameter('widget-seat', 'configure', 'note'); const data = goodData(); data.steps[0].keywords.note = 'widget address 192.0.2.1';
   const result = checkAddresses(subjectOf(data, setup)); assert.ok(codes(result).includes('case-compile.param_unassigned')); assert.ok(result.every((v) => v.verdict !== 'support'));
 });
+test('review 05 catalog normalization cannot introduce an unrepaired quote error', () => {
+  const data = goodData(); data.steps[0].args = ['widget description ＂abc'];
+  assert.ok(codes(checkContractShape(subjectOf(data))).includes('case-compile.param_value'));
+  const value = commandSubject({ item: 'fixture', slots: { plan: [{ data }] }, context: { groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC }] } }) as Record<string, unknown>;
+  assert.ok(!Object.hasOwn(value, 'phrases'));
+});
