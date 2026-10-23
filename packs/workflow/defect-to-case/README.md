@@ -15,7 +15,7 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 14 个样例（`pack-sample@1`，positive 与 negative 各 7 个），覆盖所有 7 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.4`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.5`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
@@ -148,3 +148,9 @@ not_duplicate 的已实现判据是：相同的规范化命令头集合、相同
 收尾复核：manual_missing 由 expected_sources 从冻结条目发出，随 start_run 的 evidence gaps 返回，投影日志中的同名警告不再冒充客户端已见。条目摘要也明确未绑定手册；回执列出版本线、manual:cli 地址、配置修复字段和重开动作。
 
 收尾复核第二轮：manual_mismatch 的原因直接按绑定数量、实际外部身份和运行版本线确定。有版本线时允许改绑同线手册或保持未绑定；没有版本线时明确要求不绑定 manual，仅引用修复字段，不再给无法执行的占位手册地址。
+
+## 检查时按草稿命令收窄读取：接口待补
+
+当前 CheckReads 只有 roles、types、max_bytes，用于已有绑定来源；ItemSubjectInput 没有动态查询方法。动态派生 only 的接口仍待核心/契约提供，本分支不扩展 contracts 或 hub，也不把内存筛选说成重新读取。集成者已确认先记录依赖，接口合入后再完成第 5 条。
+
+临时客户端动作在 SKILL 中：解析草稿命令头，读取同一锁定构建的 only/fields 索引，以新输入重开后再交草稿；旧运行不会因重交而刷新冻结输入。数据内引文的预热和分级已经实现，删除旧的必须抄到顶层才能核验的绕行说法。
