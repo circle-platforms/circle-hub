@@ -3,7 +3,7 @@ import { recordRefusal, refusalSummary } from './lib/inject.ts';
 // Scores a review of an injected copy against the gold (task gold-review step 3).
 //   node bin/circle-hub run show <run> --json > run.json
 //   node scripts/real/score-injection.ts --gold <gold.json> --run <run.json> [--baseline <run.json of the untouched document>]
-//     [--verify <verify run.json>] [--copy <mutated.json>] [--details <file>]
+//     [--verify <verify run.json>] [--copy <mutated.json>] [--details <file>] [--case-rule marked|tagged]
 // The screen shows counts only; the per-node detail (ids, tags and codes) goes to --details.
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { GoldEntry } from './lib/inject.ts';
@@ -27,7 +27,9 @@ function main(): number {
   const verify = arg('verify');
   const copy = arg('copy');
   const details = arg('details');
-  const literal = copy === undefined ? undefined : literalGold(JSON.parse(readFileSync(copy, 'utf8')));
+  const rule = arg('case-rule') ?? 'marked';
+  if (rule !== 'marked' && rule !== 'tagged') { console.error('--case-rule 只认 marked 或 tagged'); return 2; }
+  const literal = copy === undefined ? undefined : literalGold(JSON.parse(readFileSync(copy, 'utf8')), { caseRule: rule });
   const scored = score(JSON.parse(readFileSync(gold, 'utf8')) as GoldEntry[], resultOf(run), {
     ...(baseline === undefined ? {} : { baseline: resultOf(baseline) }),
     ...(verify === undefined ? {} : { verify: resultOf(verify) }),
