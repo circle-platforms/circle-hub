@@ -40,9 +40,19 @@ test('malformed and unsupported condition syntax cannot silently remove content'
     assert.equal((await compileAdoc(group({ 'book.adoc': text }))).ok, false, text);
   }
 });
-test('source mapping rejects ambiguous matches and independently rereads original lines before citation', () => {
+test('source mapping cites one line only: the cursor decides between identical lines, and the reread of the original stays independent', () => {
   const input = group({ 'book.adoc': 'same\nsame\nactual' });
-  assert.deepEqual(verifyOrigin('same', 'paragraph', 1, [{ file: 'book.adoc', line: 1, text: 'same' }, { file: 'book.adoc', line: 2, text: 'same' }], new Set([0, 1]), input).origins, []);
+  const rows = [{ file: 'book.adoc', line: 1, text: 'same' }, { file: 'book.adoc', line: 2, text: 'same' }];
+  // Two lines hold this exact text: the engine's own cursor says which one the block came from, and the report says the
+  // choice was made among candidates.
+  const first = verifyOrigin('same', 'paragraph', 1, rows, new Set([0, 1]), input);
+  assert.deepEqual(first.origins.map((origin) => origin.selector), ['l/1']);
+  assert.equal(first.chosenAmong, 2);
+  assert.deepEqual(verifyOrigin('same', 'paragraph', 2, rows, new Set([0, 1]), input).origins.map((origin) => origin.selector), ['l/2']);
+  // A cursor that is none of the candidates leaves the choice open: identical text is not forced onto a line.
+  const open = verifyOrigin('same', 'paragraph', 3, rows, new Set([0, 1]), input);
+  assert.deepEqual(open.origins, []);
+  assert.notEqual(open.reason, '');
   const forged = verifyOrigin('forged', 'paragraph', 1, [{ file: 'book.adoc', line: 3, text: 'forged' }], new Set([0]), input);
   assert.deepEqual(forged.origins, []); assert.match(forged.reason, /原件/);
 });

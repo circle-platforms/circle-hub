@@ -382,10 +382,28 @@ line), and the verbatim text that text@1 would return is kept with it. Source li
 another file, become separate origins: no continuous range is invented. NUL removal and CR/LF splitting follow text@1,
 while the file digest stays over the original bytes.
 
+A match is tried in two passes. The first is the exact spelling: the source line as written, or that line with the
+structural marker of the context taken off (the equals signs of a heading, a list bullet, the `term::` separator of a
+description list, an admonition label, the cell separators of a table row, the `ifdef::name[...]` wrapper of a retained
+single-line branch, in any order). The second pass runs only when nothing matched exactly, and compares the words
+instead of the spelling: `text.ts plainText` drops tags, decodes character references, reduces an inline macro to its
+text, resolves escapes, drops inline markup marks, folds the engine's typographic replacements back to ASCII and
+collapses white space, while the engine itself expands the candidate line's attribute references. The engine's own text
+of a list item, a description-list item or a table cell is converted, so this fold is what lets those blocks be cited at
+all; the fold locates a line and never becomes a citation or a statement, and a block whose inline conversion the fold
+cannot invert (a menu path, a key cap, a footnote number) stays uncited and is reported.
+
+When several nearby lines hold this exact text, the one at the engine's own cursor is the block's line: the text is
+proven on every candidate, so only the position is chosen, and the choice is disclosed (`disambiguated`,
+`disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`). A cursor that is
+none of the candidates leaves the choice open and cites nothing.
+
 A block or cell that cannot be verified uniquely has no reference. `unverified_count` gives the total, `unverified` keeps
 the first 100 diagnostics and `unverified_examples_truncated` is true past that. The model keeps the empty `origins`
-explicitly: having a sourcemap is never taken for a proven position. A container with no source text of its own (a table
-container) gets no invented range either; its cells are verified one by one.
+explicitly, with the line the engine reported (`reportedLine`) and the reason (`unverifiedReason`): having a sourcemap is
+never taken for a proven position. A container with no text of its own (a list, an example, an open, sidebar or table
+container) is not reported at all — there is nothing to verify, its content is the blocks the engine gives for its
+children, each verified on its own — and it gets no invented range.
 
 Per file the report counts NUL, CRLF, LF and CR; a UTF-8 BOM is reported as 3 extra bytes and is dropped when lines are
 re-read, while the digest still covers it. A line with more equals signs than a legal heading is listed in
@@ -429,6 +447,13 @@ accepted.
   path, and the references are text@1 `l/<a>-<b>` line selectors (a table block's reference is the first verified source
   among its cells). K1's placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures
   hang at /commands, table rows split, text entries hang at their section node.
+- Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
+  each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,
+  and a description-list entry becomes one block for the term and the value of one source line, used only when the two
+  items really are that line. A block whose text step one could not verify stays out of the model and is returned in
+  `uncited` with its kind, file, line, reason and next action, plus one warning line for the production: it is never
+  handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
+  from the knowledge with only a count left behind.
 - A paragraph entry cites the RAW source line (the one step one verified verbatim), not the engine's inline HTML:
   `**cmd** *\<param\>*` as written is K1's signature grammar. A table's rows are rebuilt from the verified line numbers
   (the engine splits a multi-cell row into single-cell rows) and one delimiter row (`| --- | --- |`) is synthesized so the

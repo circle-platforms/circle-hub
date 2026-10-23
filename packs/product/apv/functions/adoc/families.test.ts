@@ -9,6 +9,14 @@ import { test } from 'node:test';
 import { compileFamilies, familyManualName } from './families.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
+import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
+
+/** The mapped model of one family, with the mapping's report checked (nothing left uncited). */
+const modelOf = (family: { model: Parameters<typeof toK1Model>[0]; composition: Parameters<typeof toK1Model>[1] }, name = 'cli'): MarkdownModel => {
+  const mapped = toK1Model(family.model, family.composition, name);
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  return mapped.model;
+};
 
 const filesOf = (brandLine: string) => ({
   'book.adoc': `= Book\n\n== 配置\n\nifdef::brand-apv[]\nAPV 品牌说明。\nendif::[]\n\nifdef::brand-nsae[]\nNSAE 品牌说明。\nendif::[]\n\n${brandLine}\n`,
@@ -33,8 +41,8 @@ test('each family produces with its own attribute set: brand lines and condition
   assert.ok(out.ok, JSON.stringify(out));
   const apv = out.families.APV!;
   const nsae = out.families.NSAE!;
-  const apvText = toK1Model(apv.model, apv.composition, 'cli').blocks.map((b) => b.text).join('\n');
-  const nsaeText = toK1Model(nsae.model, nsae.composition, 'cli').blocks.map((b) => b.text).join('\n');
+  const apvText = modelOf(apv).blocks.map((b) => b.text).join('\n');
+  const nsaeText = modelOf(nsae).blocks.map((b) => b.text).join('\n');
   assert.ok(apvText.includes('APV 品牌说明') && !apvText.includes('NSAE 品牌说明'), apvText);
   assert.ok(nsaeText.includes('NSAE 品牌说明') && !nsaeText.includes('APV 品牌说明'), nsaeText);
   assert.ok(apvText.includes('共用正文') && nsaeText.includes('共用正文'), 'the shared text is in both');
@@ -46,8 +54,8 @@ test('each family produces with its own attribute set: brand lines and condition
   // The manual names carry the family; the same text yields the same entry digests across the two models.
   assert.equal(familyManualName('APV', 'cli'), 'cli-apv');
   assert.equal(familyManualName('NSAE', 'cli'), 'cli-nsae');
-  const entriesA = produceManualEntries(toK1Model(apv.model, apv.composition, 'cli-apv'), null, { name: 'cli-apv' });
-  const entriesB = produceManualEntries(toK1Model(nsae.model, nsae.composition, 'cli-nsae'), null, { name: 'cli-nsae' });
+  const entriesA = produceManualEntries(modelOf(apv, 'cli-apv'), null, { name: 'cli-apv' });
+  const entriesB = produceManualEntries(modelOf(nsae, 'cli-nsae'), null, { name: 'cli-nsae' });
   const sharedA = entriesA.entries.find((e) => String(e.statement).includes('共用正文'));
   const sharedB = entriesB.entries.find((e) => String(e.statement).includes('共用正文'));
   assert.ok(sharedA !== undefined && sharedB !== undefined);
@@ -75,7 +83,7 @@ test('a family without a configured set produces with the default (all unset) an
   assert.equal(nsae.attributes_origin.configured, false);
   assert.match(nsae.attributes_origin.note, /这一族的属性集没有配置/);
   assert.match(nsae.attributes_origin.note, /管理员配上以后重新同步/);
-  const nsaeText = toK1Model(nsae.model, nsae.composition, 'cli').blocks.map((b) => b.text).join('\n');
+  const nsaeText = modelOf(nsae).blocks.map((b) => b.text).join('\n');
   assert.ok(!nsaeText.includes('APV 品牌说明') && !nsaeText.includes('NSAE 品牌说明'), 'no brand line without its attribute');
 });
 

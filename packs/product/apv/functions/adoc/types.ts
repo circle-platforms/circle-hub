@@ -8,6 +8,12 @@ export interface Section { level: number; title: string; id: string | null }
 export interface Block {
   kind: string; level: number; title: string | null; id: string | null; role: string | null;
   path: Section[]; raw: string; expanded: string; origin: VerifiedRange | null; origins: VerifiedRange[];
+  /** The line the engine reported for this block: a candidate only, `origins` is what was verified against the original. */
+  reportedLine: number | null;
+  /** Why this block has no verified origin ('' when it has one, or has no text of its own to verify). */
+  unverifiedReason: string;
+  /** For a list item, the index in `blocks` of the list container it belongs to; null for every other block. */
+  listAt: number | null;
   rows?: Record<string, Array<Array<{ raw: string; expanded: string; origins: VerifiedRange[] }>>>;
 }
 export interface SourceRange { file: string; from: number; to: number; lines: number }
@@ -20,6 +26,9 @@ export interface Report {
   unused_files: string[]; conditions: Condition[];
   unverified_count: number; unverified_examples_truncated: boolean;
   unverified: Array<{ block: number; kind: string; reported_line: number | null; reason: string; next_action: string }>;
+  /** Blocks and cells whose text sits on more than one candidate line: the engine's own cursor chose the cited line. */
+  disambiguated_count: number; disambiguated_examples_truncated: boolean;
+  disambiguated: Array<{ block: number; kind: string; reported_line: number | null; candidates: number }>;
   remapped: Array<{ block: number; reported_line: number; verified_line: number }>;
   engine_messages: Array<{ severity: string; text: string }>;
   invalid_headings: Array<{ file: string; line: number; text: string }>;
@@ -29,5 +38,11 @@ export interface Composition {
   files: Array<{ file: string; sha256: string }>; attributes: Record<string, string | boolean>;
   engine: { version: string; sha256: string }; policy: string; limits: Limits; sha256: string;
 }
-export type AdocResult = { ok: true; composition: Composition; model: { schema: 'apv-adoc-expanded@1'; expanded_text: string; line_map: Array<{ file: string; line: number }>; blocks: Block[] }; report: Report }
+export interface ExpandedModel {
+  schema: 'apv-adoc-expanded@1';
+  expanded_text: string;
+  line_map: Array<{ file: string; line: number }>;
+  blocks: Block[];
+}
+export type AdocResult = { ok: true; composition: Composition; model: ExpandedModel; report: Report }
   | { ok: false; error: { code: string; message: string; next_action: string; file?: string; line?: number } };

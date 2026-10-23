@@ -23,28 +23,33 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "c7bd009538e22641c3337505109145aace8f1bbe502c097060edaeb3c00de134",
-      "size": 8690
+      "sha256": "57f0daba03d7baa795da7a96f1e911135947e600d04c5a264104a13db21acb0d",
+      "size": 11271
     },
     {
       "path": "functions/adoc/input.ts",
-      "sha256": "a33f5b3199bf66427594992f4d0164662f46f494935aaabce1b9f0aa1ab7c254",
-      "size": 6082
+      "sha256": "d72617576e0c452988bba7b4c4798960631cccbb77f5797b769e3c2574f2a310",
+      "size": 6166
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "5bda98483341b7245244119f64a7120d4e5ead596d257a8ca8ea18d36dd7e702",
-      "size": 8930
+      "sha256": "f397c5854208e2c92fe1f9dc7ebdb09863bc08a3936e5e629d3ee2a0d09f630d",
+      "size": 12497
     },
     {
       "path": "functions/adoc/origins.ts",
-      "sha256": "4454767a5348c0a99435762148f3000728a1fb4e7ba0c319a8ed009cb7ef933e",
-      "size": 3146
+      "sha256": "89c926188cf456930c4579f150a5858ce8a52c406ee8e0b609aa75c100b449ec",
+      "size": 7825
+    },
+    {
+      "path": "functions/adoc/text.ts",
+      "sha256": "07d23cd53704ae5b226dfe00cd9900a38702c5e834ef78dba50625f0b1c2896c",
+      "size": 5486
     },
     {
       "path": "functions/adoc/types.ts",
-      "sha256": "13ba75f5b0d9cf4dd921f8bc813450ca3b0ee44d40cf147a3b4d0be6f117f04f",
-      "size": 2600
+      "sha256": "1b90be96d3e698e2f43b591e3accfdf318cb6a9a1dd195d91c5cb79c1ae38e87",
+      "size": 3384
     },
     {
       "path": "functions/adoc/vendor/LICENSE.txt",

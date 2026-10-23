@@ -16,6 +16,30 @@ function sourceRanges(rows: MappedLine[]): SourceRange[] {
   return out;
 }
 
+/** The contexts whose own content is the blocks the engine gives for their children. */
+const LISTS = new Set(['ulist', 'olist', 'dlist']);
+const IMAGE_LINE = /^image::{1,2}/;
+
+/**
+ * The text of a node to verify against the source lines: a heading's title (the engine keeps no source text for it), an
+ * image's own source line (the engine keeps only its attributes), otherwise what the engine keeps as the node's source
+ * or, for the contexts that have none (a list item), its converted text.
+ */
+function rawOf(node: AstNode, lines: MappedLine[]): string {
+  if (node.context === 'section' || node.context === 'floating_title') return node.title ?? '';
+  if (node.context === 'image') {
+    const at = node.sourceLocation?.lineno;
+    const line = at !== undefined && at >= 1 && at <= lines.length ? lines[at - 1] : undefined;
+    return line !== undefined && IMAGE_LINE.test(line.text) ? line.text : '';
+  }
+  return node.getSource?.() ?? node.text ?? '';
+}
+
+/** Whether a node carries text of its own, which a reader would lose when the block is not placed. */
+function hasOwnText(node: AstNode, raw: string): boolean {
+  return raw !== '' || node.context === 'image';
+}
+
 async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
   try {
     for (const [key, value] of Object.entries(overrides)) if (!Object.hasOwn(LIMITS, key) || !Number.isSafeInteger(value) || value < 1 || value > LIMITS[key as keyof Limits]) fail('invalid_budget', '测试预算只能收紧，不能提高生产策略上限');
@@ -24,6 +48,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
     const report = initialReport(input);
     const originals = new Map(Object.entries(input.files).map(([file, value]) => [file, sourceLines(file, value.text).map((row) => row.text)]));
     const noteUnverified = (note: typeof report.unverified[number]): void => { report.unverified_count++; if (report.unverified.length < 100) report.unverified.push(note); else report.unverified_examples_truncated = true; };
+    const noteDisambiguated = (note: typeof report.disambiguated[number]): void => { report.disambiguated_count++; if (report.disambiguated.length < 100) report.disambiguated.push(note); else report.disambiguated_examples_truncated = true; };
     const expanded = await expandIncludes(input, limits);
     const text = expanded.lines.map((row) => row.text).join('\n');
     report.unused_files = Object.keys(input.files).filter((file) => !expanded.used.has(file));
@@ -54,6 +79,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
     const visible = new Set(expanded.lines.map((_, i) => i).filter((i) => !excluded.has(i) && (!controls.has(i) || branchAt.get(i)?.inline === true)));
     const blocks: Block[] = [];
     const paths = new Map<AstNode, Section[]>();
+    const indexOf = new Map<AstNode, number>();
     const nodes = doc.findBy();
     if (nodes.length > limits.blocks) fail('block_budget', '结构节点数量超过限制');
     for (const node of nodes) {
@@ -64,20 +90,32 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const level = typeof node.level === 'number' ? node.level : parentPath.at(-1)?.level ?? 0;
       const path = node.context === 'section' ? [...parentPath, { level, title: title ?? '', id: node.getId() ?? null }] : parentPath;
       paths.set(node, path);
-      const raw = node.context === 'section' ? node.title ?? '' : node.getSource?.() ?? node.text ?? '';
-      const verified = verifyOrigin(raw, node.context, node.sourceLocation?.lineno, expanded.lines, visible, input, originals);
-      const block: Block = { kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw, expanded: node.subAttributes(raw), origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins };
-      if (!verified.origins.length) noteUnverified({ block: blocks.length, kind: node.context, reported_line: node.sourceLocation?.lineno ?? null, reason: verified.reason, next_action: '已自动尝试 sourcemap 邻近行逐字回读；仍不能唯一定位时不生成引用，交下一阶段定位器修复后重跑' });
-      else if (verified.flat !== node.sourceLocation?.lineno) report.remapped.push({ block: blocks.length, reported_line: node.sourceLocation!.lineno, verified_line: verified.flat! });
+      const at = blocks.length;
+      const raw = rawOf(node, expanded.lines);
+      const verify = { originals, expand: (text: string): string => doc.subAttributes(text) };
+      const verified = verifyOrigin(raw, node.context, node.sourceLocation?.lineno, expanded.lines, visible, input, verify);
+      const listAt = node.context === 'list_item' && node.parent !== null && node.parent !== undefined && LISTS.has(node.parent.context) ? indexOf.get(node.parent) ?? null : null;
+      const block: Block = {
+        kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw,
+        expanded: node.subAttributes(raw), origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
+        reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt,
+      };
+      // A container with no text of its own has nothing to verify: its content is carried by the blocks the engine gives
+      // for its children, each verified on its own. Reporting one as unverified would name a gap that is not there.
+      if (!verified.origins.length && hasOwnText(node, raw)) noteUnverified({ block: at, kind: node.context, reported_line: node.sourceLocation?.lineno ?? null, reason: verified.reason, next_action: '已自动尝试 sourcemap 邻近行逐字回读（含结构标记、属性展开和排版替换的归一比较）；仍不能唯一定位时不生成引用，交下一阶段定位器修复后重跑' });
+      else if (verified.flat !== null && verified.flat !== node.sourceLocation?.lineno) report.remapped.push({ block: at, reported_line: node.sourceLocation!.lineno, verified_line: verified.flat });
+      if (verified.chosenAmong > 1) noteDisambiguated({ block: at, kind: node.context, reported_line: node.sourceLocation?.lineno ?? null, candidates: verified.chosenAmong });
       if (node.rows) {
         block.rows = {};
         for (const part of ['head', 'body', 'foot'] as const) block.rows[part] = node.rows[part].map((row) => row.map((cell) => {
           const raw = cell.text ?? '';
-          const source = verifyOrigin(raw, 'table_cell', cell.sourceLocation?.lineno, expanded.lines, visible, input, originals);
-          if (!source.origins.length) noteUnverified({ block: blocks.length, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, reason: source.reason, next_action: '已自动回读候选行但不能逐字唯一核对；本单元格不生成引用，修复定位器后重跑' });
+          const source = verifyOrigin(raw, 'table_cell', cell.sourceLocation?.lineno, expanded.lines, visible, input, verify);
+          if (!source.origins.length) noteUnverified({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, reason: source.reason, next_action: '已自动回读候选行但不能逐字唯一核对；本单元格不生成引用，修复定位器后重跑' });
+          else if (source.chosenAmong > 1) noteDisambiguated({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, candidates: source.chosenAmong });
           return { raw, expanded: cell.subAttributes(raw), origins: source.origins };
         }));
       }
+      indexOf.set(node, at);
       blocks.push(block);
     }
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));

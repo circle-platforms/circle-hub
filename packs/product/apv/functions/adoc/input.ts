@@ -65,5 +65,5 @@ export function initialReport(input: AdocInput): Report {
     }
     return { file, nul_bytes, crlf, lf, cr, ...(value.text.startsWith('\ufeff') ? { utf8_bom_bytes: 3 } : {}) };
   });
-  return { files, unused_files: [], conditions: [], unverified_count: 0, unverified_examples_truncated: false, unverified: [], remapped: [], engine_messages: [], invalid_headings: [] };
+  return { files, unused_files: [], conditions: [], unverified_count: 0, unverified_examples_truncated: false, unverified: [], disambiguated_count: 0, disambiguated_examples_truncated: false, disambiguated: [], remapped: [], engine_messages: [], invalid_headings: [] };
 }

@@ -8,6 +8,14 @@ import { test } from 'node:test';
 import { compileAdoc } from './index.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
+import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
+
+/** The mapped model of one compile, with the mapping's report checked (nothing left uncited). */
+const modelOf = (out: Extract<Awaited<ReturnType<typeof compileAdoc>>, { ok: true }>, name = 'cli'): MarkdownModel => {
+  const mapped = toK1Model(out.model, out.composition, name);
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  return mapped.model;
+};
 
 const compile = async (files: Record<string, string>, attributes: Record<string, string | boolean> = {}): Promise<Extract<Awaited<ReturnType<typeof compileAdoc>>, { ok: true }>> => {
   const out = await compileAdoc({ main: 'book.adoc', revision: '42', attributes, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, { text, revision: '42', sha256: createHash('sha256').update(text).digest('hex') }])) });
@@ -17,7 +25,7 @@ const compile = async (files: Record<string, string>, attributes: Record<string,
 
 const entriesOf = async (files: Record<string, string>, attributes: Record<string, string | boolean> = {}) => {
   const out = await compile(files, attributes);
-  return produceManualEntries(toK1Model(out.model, out.composition, 'cli'), null, { name: 'cli' });
+  return produceManualEntries(modelOf(out), null, { name: 'cli' });
 };
 
 test('a [role=signature] listing block is a signature; its params ride along', async () => {
@@ -79,7 +87,7 @@ test('a source problem is reported, never guessed: a signature block that does n
   const out = await compile({ 'book.adoc': '= Book\n\n== 命令\n\n[role=signature]\n----\ndemo one\n----\n' });
   // A one-word unmarked line in a role=signature block: K1's isRowSignature keeps it (params absent, one word) only
   // under a command header; in a signature block the role itself is the explicit structure, so the entry exists.
-  const result = produceManualEntries(toK1Model(out.model, out.composition, 'cli'), null, { name: 'cli' });
+  const result = produceManualEntries(modelOf(out), null, { name: 'cli' });
   const signature = result.entries.find((entry) => entry.data.form === 'signature' && String(entry.statement).startsWith('demo one'));
   assert.ok(signature !== undefined, JSON.stringify(result.entries.map((e) => [e.data.form, String(e.statement).slice(0, 20)])));
 });

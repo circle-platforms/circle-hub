@@ -91,3 +91,67 @@ test('an attribute-based whole-file include inside a listing is not rejected by 
   assert.ok(out.ok, JSON.stringify(out));
   assert.equal(out.model.blocks.find((b) => b.kind === 'listing')?.raw, 'demo one');
 });
+
+test('list items, description-list items, an admonition and a retained single-line conditional verify on their own source line', async () => {
+  const files = {
+    'book.adoc': [
+      '= Synthetic',                          // 1
+      '',                                     // 2
+      '== 参数',                               // 3
+      '',                                     // 4
+      'name:: 成员名称',                        // 5
+      'weight:: 权重，取值 1 到 100',            // 6
+      '',                                     // 7
+      '* 使用 `demo pool add` 添加',            // 8
+      '* {product} 支持热备',                   // 9
+      "* Don't change it",                    // 10
+      '',                                     // 11
+      'NOTE: 需要管理员权限。',                  // 12
+      '',                                     // 13
+      'ifdef::brand-apv[APV 独有的一行说明。]',  // 14
+      '',                                     // 15
+    ].join('\n'),
+  };
+  const out = await compileAdoc(group(files, { product: 'APV', 'brand-apv': true }));
+  assert.ok(out.ok, JSON.stringify(out));
+  // The engine's own text of these blocks is converted (tags, expanded attributes, typographic replacements), so the
+  // locator compares the words of the source line, with its structural marker off, against the words of that text.
+  assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
+  const items = out.model.blocks.filter((b) => b.kind === 'list_item');
+  assert.deepEqual(items.map((b) => b.origins[0]?.selector ?? null), ['l/5', 'l/5', 'l/6', 'l/6', 'l/8', 'l/9', 'l/10']);
+  assert.deepEqual(items.map((b) => b.listAt !== null && out.model.blocks[b.listAt]?.kind), ['dlist', 'dlist', 'dlist', 'dlist', 'ulist', 'ulist', 'ulist']);
+  assert.equal(items[4]?.origins[0]?.verbatim, '* 使用 `demo pool add` 添加', 'the citation is the source line, not the converted text');
+  assert.equal(out.model.blocks.find((b) => b.kind === 'admonition')?.origins[0]?.selector, 'l/12');
+  assert.equal(out.model.blocks.find((b) => b.raw === 'APV 独有的一行说明。')?.origins[0]?.selector, 'l/14');
+});
+
+test('a container with no text of its own is not reported as unverified, and a repeated sentence is cited where the engine put it', async () => {
+  const files = {
+    'book.adoc': [
+      '= Synthetic',   // 1
+      '',              // 2
+      '== 说明',        // 3
+      '',              // 4
+      '* 甲',           // 5
+      '* 乙',           // 6
+      '',              // 7
+      '同一段说明文字。', // 8
+      '',              // 9
+      '同一段说明文字。', // 10
+      '',              // 11
+    ].join('\n'),
+  };
+  const out = await compileAdoc(group(files));
+  assert.ok(out.ok, JSON.stringify(out));
+  // The list container carries no text of its own: its items do, and both are cited. Reporting the container would name
+  // a gap that is not there.
+  assert.equal(out.report.unverified.filter((u) => u.kind === 'ulist').length, 0, JSON.stringify(out.report.unverified));
+  assert.deepEqual(out.model.blocks.filter((b) => b.kind === 'list_item').map((b) => b.origins[0]?.selector ?? null), ['l/5', 'l/6']);
+  // The sentence stands on two lines inside the locator's neighbourhood: each copy is cited at the line the engine
+  // reported for it, and the report says a choice was made among candidates.
+  const repeated = out.model.blocks.filter((b) => b.raw === '同一段说明文字。');
+  assert.deepEqual(repeated.map((b) => b.origins[0]?.selector ?? null), ['l/8', 'l/10']);
+  assert.equal(out.report.unverified_count, 0, JSON.stringify(out.report.unverified));
+  assert.deepEqual(out.report.disambiguated.map((d) => [d.kind, d.reported_line, d.candidates]), [['paragraph', 8, 2], ['paragraph', 10, 2]]);
+  assert.equal(out.report.disambiguated_count, 2);
+});
