@@ -46,10 +46,10 @@ function run(blocks: Array<{ result: Record<string, unknown> }>): { items?: Proj
   return projection({ inputs: blocks.map((b) => ({ slot: 'verifications', external: null, sha256: '0'.repeat(64), media_type: 'application/json', parser: 'json@1', model: { kind: 'validation_result', schema: 'record@1', body: b.result }, meta: { record: `${String(++n).repeat(64)}`.slice(0, 64) } })), parameters: {}, context: {} }) as { items?: ProjectedItem[]; error?: { code?: string; message?: string } };
 }
 
-const reportItemOf = (out: { items?: ProjectedItem[]; error?: { code?: string; message?: string } }): { fields: Record<string, unknown> } => {
+const reportItemOf = (out: { items?: ProjectedItem[]; error?: { code?: string; message?: string } }): { summary?: string; fields: Record<string, unknown> } => {
   const item = out.items?.find((i) => i.id === 'report');
   assert.ok(item !== undefined, 'the report item exists');
-  return item as unknown as { fields: Record<string, unknown> };
+  return item as unknown as { summary?: string; fields: Record<string, unknown> };
 };
 
 describe('the projection of case-review-report', () => {
@@ -60,7 +60,10 @@ describe('the projection of case-review-report', () => {
     ]);
     const report = reportItemOf(out);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5' });
+    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P5（最差那块的，照抄）');
     assert.deepEqual((out.items ?? []).filter((i) => i.id !== 'report').map((i) => i.id), ['c1', 'c2', 'c3']);
+    const c1 = out.items?.find((i) => i.id === 'c1');
+    assert.match(c1?.summary ?? '', /^证实 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
   });
 
   it('an item unfinished in one block and delivered in another counts as delivered (that block wins)', () => {
@@ -96,7 +99,78 @@ describe('the projection of case-review-report', () => {
       { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
       { result: block({ verdict: null, level: null, entries: [{ item: 'c2' }] }) },
     ]);
-    assert.equal(reportItemOf(out).fields.overall, null);
+    const report = reportItemOf(out);
+    assert.equal(report.fields.overall, null);
+    assert.equal(report.summary, '整体结论未知（各块没有可读结论）');
+  });
+
+  it('real shape (two blocks, 45 findings, 1 refuted): summaries expose all citable references and overall, checks pass on first attempt', () => {
+    const block1Entries: Entry[] = Array.from({ length: 23 }, (_, i) => ({
+      item: `case-1-${i + 1}`,
+      kind: 'verified',
+      text: `发现 1-${i + 1}`,
+      rank: 'minor',
+    }));
+    const block2Entries: Entry[] = Array.from({ length: 22 }, (_, i) => ({
+      item: `case-2-${i + 1}`,
+      kind: i === 0 ? 'refuted' : (i === 1 ? 'partial' : 'verified'),
+      text: `发现 2-${i + 1}`,
+      rank: 'minor',
+    }));
+
+    const out = run([
+      { result: block({ verdict: 'PARTIAL', level: 'P4', entries: block1Entries }) },
+      { result: block({ verdict: 'PASS', level: 'P2', entries: block2Entries }) },
+    ]);
+
+    const report = reportItemOf(out);
+    assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P4' });
+    assert.equal(report.summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
+
+    // Parse overall verdict and level from report summary
+    const overallMatch = /整体结论码\s+(\w+)、等级\s+(\w+)/.exec(report.summary ?? '');
+    assert.ok(overallMatch !== null, 'report summary contains verdict and level');
+    const [, parsedVerdict, parsedLevel] = overallMatch;
+
+    const items = (out.items ?? []).filter((i) => i.id !== 'report');
+    assert.equal(items.length, 45);
+
+    const refutedItem = items.find((i) => i.id === 'case-2-1');
+    assert.ok(refutedItem !== undefined);
+    assert.equal(refutedItem.summary, '没有要引用的发现；推翻 1 条');
+
+    const partialItem = items.find((i) => i.id === 'case-2-2');
+    assert.ok(partialItem !== undefined);
+    assert.match(partialItem.summary ?? '', /^部分正确 rec:[0-9a-f]{64}#.+；推翻 0 条$/);
+
+    // Extract all citable references from items' summaries
+    const citedRefs: string[] = [];
+    for (const it of items) {
+      const matches = it.summary?.match(/rec:[0-9a-f]{64}#[^\s；、]+/g) ?? [];
+      citedRefs.push(...matches);
+    }
+    // 45 findings total - 1 refuted = 44 citable references
+    assert.equal(citedRefs.length, 44);
+
+    // Verify against overallCheck and reportCheck: passes on first attempt!
+    const subject = {
+      applies: 'run',
+      items: out.items,
+      context: {},
+      cross_item: [{
+        nature: 'judgment',
+        statement: '终稿：两块合成，共 45 条处置，推翻 1 条，各块发现逐条核对一致',
+        grounds: citedRefs,
+        code: parsedVerdict,
+        rank: parsedLevel,
+      }],
+    };
+
+    const overallOut = overallCheck({ subject });
+    assert.equal(overallOut[0]?.verdict, 'support');
+
+    const reportOut = reportCheck({ subject });
+    assert.equal(reportOut[0]?.verdict, 'support');
   });
 
   it('blocks on two different sources refuse the run', () => {

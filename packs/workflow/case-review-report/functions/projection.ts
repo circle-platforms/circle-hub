@@ -49,6 +49,23 @@ export function finalOf(result: Record<string, unknown>): { verdict: Verdict; le
 
 export type BlockDisposition = { kind: Disposition; reference: string; itemId: string | null; text: string; rank: string | null };
 
+const KIND_LABEL: Record<Disposition, string> = {
+  verified: '证实',
+  partial: '部分正确',
+  new_finding: '新增',
+  refuted: '推翻',
+};
+
+/** One short line the model reads about the item: finding references to cite, and how many were refuted. */
+export function itemSummaryOf(dispositions: readonly BlockDisposition[]): string {
+  const citable = dispositions.filter((d) => d.kind === 'verified' || d.kind === 'partial' || d.kind === 'new_finding');
+  const refuted = dispositions.filter((d) => d.kind === 'refuted');
+  const citedText = citable.length > 0
+    ? citable.map((d) => `${KIND_LABEL[d.kind]} ${d.reference}`).join('、')
+    : '没有要引用的发现';
+  return `${citedText}；推翻 ${refuted.length} 条`;
+}
+
 /** One item claim of a block: a disposition (verified/refuted/partial, data.finding names the draft finding) or a new finding. */
 export function dispositionsOf(result: Record<string, unknown>, block: { record: string; base: string }): BlockDisposition[] {
   const out: BlockDisposition[] = [];
@@ -162,11 +179,14 @@ export default function project(input: unknown): unknown {
     // new findings with rec: references; plus one run item for the report.
     const items: ProjectedItem[] = [];
     for (let b = 0; b < blocks.length; b++) {
+      const blockAllDispositions = dispositionsOf(blocks[b]!.result, blocks[b]!);
       for (const entry of entriesOf(blocks[b].result)) {
         if (entry.partition !== 'delivered') continue;
+        const dispositions = blockAllDispositions.filter((d) => d.itemId === entry.item);
         items.push({
           id: entry.item,
           label: entry.label,
+          summary: itemSummaryOf(dispositions),
           location: {
             slot: VERIFICATIONS_SLOT,
             ...(blocks[b]!.sha256 !== '' ? { source: blocks[b]!.sha256 } : {}),
@@ -178,16 +198,20 @@ export default function project(input: unknown): unknown {
           },
           fields: {
             block: b,
-            dispositions: dispositionsOf(blocks[b]!.result, blocks[b]!).filter((d) => d.itemId === entry.item).map((d) => ({ kind: d.kind, reference: d.reference, text: d.text, rank: d.rank, block: b })),
+            dispositions: dispositions.map((d) => ({ kind: d.kind, reference: d.reference, text: d.text, rank: d.rank, block: b })),
           },
         });
       }
     }
 
     const unfinishedAnywhere = unfinishedIds.filter((u) => !deliveredIn.has(u.item));
+    const reportSummary = verdict === null
+      ? '整体结论未知（各块没有可读结论）'
+      : `整体结论码 ${verdict}、等级 ${level ?? '未给'}（最差那块的，照抄）`;
     const reportItem: ProjectedItem = {
       id: 'report',
       label: '评审终稿',
+      summary: reportSummary,
       location: items[0]?.location ?? { slot: VERIFICATIONS_SLOT, parser: 'json@1', selector: `p/${blocks[0]?.base ?? 'body'}/locks/pack` },
       fields: {
         blocks: blocks.length,
