@@ -39,7 +39,8 @@ export class DispatchService {
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
-    const missingReceipt = !events.some(e => e.body.detail.done === true && (['target_rejected','proven_not_executed'].includes(String(e.body.detail.outcome)) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!eventOf(events, 'intent') && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
+    const probeIntent=eventOf(events,'probe_intent');
+    const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || ['target_rejected','proven_not_executed'].includes(String(e.body.detail.outcome)) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
@@ -91,10 +92,10 @@ export class DispatchService {
     if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
     const d = registered.definition;
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
-    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:[],context:d.precheck_context};
-    await this.journal.append(binding,'reservation','validate','completed',{binding,read_only:true});
+    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
+    await this.reserve(binding);
     const client = this.session(binding,d,await this.secret(executor));
-    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;
+    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
     try {
       await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
       const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-d.conformance.expiry_margin_ms-1000).toISOString(),items:[]};
@@ -103,22 +104,58 @@ export class DispatchService {
       const wireTime = (v:unknown) => readDeclaredTime(v,r.time_scale_ms);
       const expectedIdentity=requestIdentity(missing.value,r.identity,r.time_scale_ms);
       checks.push(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms && !!expectedIdentity && at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))) && wireTime(at(missing.value,r.gc_before))>=expectedIdentity.since);
-      if(!checks[0]) {failure={missing_fact:'目标时刻未越过探测截止及声明余量，或缺少查空、日志身份及可靠记账边界；不能保证按过期拒收',next_action:'管理员先核对目标与 Hub 时钟、时区和日志身份声明，取得越过截止及余量的目标时刻后再运行 conformance；本次未提交'};throw new Error('探测过期前提不成立');}
+      if(!checks[0]) {const gaps=[...(at(missing.value,r.found)!==false?['探测编号没有取得查空回答']:[]),...(!expectedIdentity?['缺少日志身份、记账起点或完整主体']:[]),...(!(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms)?['目标时刻未越过探测截止及声明余量，不能保证按过期拒收']:[]),...(!Number.isFinite(wireTime(at(missing.value,r.gc_before))) || expectedIdentity && wireTime(at(missing.value,r.gc_before))<expectedIdentity.since?['缺少覆盖记账起点的有效保留边界']:[])];failure={missing_fact:gaps.join('；'),next_action:'管理员先核对目标与 Hub 时钟、时区和日志身份声明，取得越过截止及余量的目标时刻后再运行 conformance；本次未提交'};throw new Error('探测过期前提不成立');}
       context.request_id = `${binding.job}:1`;
       const first = Buffer.from(d.conformance.payloads[0],'base64'); const second = Buffer.from(d.conformance.payloads[1],'base64');
       const refused = (v:unknown) => sameRequestIdentity(expectedIdentity,requestIdentity(v,d.receipt.identity,r.time_scale_ms)) && at(v,d.receipt.stage!) === d.conformance!.expected_stage && mapped(d.receipt.map,at(v,d.receipt.acceptance)) === 'not_accepted' && mapped(d.receipt.stages,at(v,d.receipt.stage!)) === 'target_rejected' && at(v,d.receipt.reached_device!) === false;
+      await this.journal.append(binding,'probe_intent','validate','completed',{request_id:context.request_id,not_after:context.not_after,sha256:sha256Hex(first),remote_lease:lease,request_identity:expectedIdentity,request_protocol_version:client.serverVersion,request_protocol_verified:r.protocol_versions.includes(client.serverVersion??'')},[missing.source]);
       for (const payload of [first,second]) {
-        const reply = await client.call('submit',{...context,payload_base64:payload.toString('base64'),sha256:sha256Hex(payload)}); observations.push(reply); checks.push(refused(reply.value));
+        await this.journal.append(binding,'probe_attempt','validate','completed',{request_id:context.request_id,sha256:sha256Hex(payload)});
+        let reply:Exchange;
+        try{reply=await client.call('submit',{...context,payload_base64:payload.toString('base64'),sha256:sha256Hex(payload)});}
+        catch(error){checks.push(false);if(error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError){failure={missing_fact:'探测提交明确没有写出请求字节；未取得协议拒收事实',next_action:'管理员核对本地调用声明和连接后重新采证；本次没有调用效果'};break;}ambiguous=true;break;}
+        observations.push(reply);checks.push(refused(reply.value));
+        const remoteId=at(reply.value,d.receipt.id);
+        const safe=mapped(d.receipt.map,at(reply.value,d.receipt.acceptance))==='not_accepted' && mapped(d.receipt.stages,at(reply.value,d.receipt.stage!))==='target_rejected' && at(reply.value,d.receipt.reached_device!)===false && (remoteId===undefined || remoteId===null) && sameRequestIdentity(expectedIdentity,requestIdentity(reply.value,d.receipt.identity,r.time_scale_ms));
+        if(!safe){ambiguous=true;break;}
+        if(!checks.at(-1)){failure={missing_fact:'探测虽明确拒收，但没有取得预期受理阶段的过期拒收事实',next_action:'管理员核对拒收阶段原件及映射，确认截止检查位置；不得仅靠重跑补证'};break;}
       }
+      if(ambiguous)await this.probeFollowup(by,binding,d,client);
+      else if(checks.length===3) {
       const recorded = await this.read(binding,client,'query',context); observations.push(recorded);
       checks.push(sameRequestIdentity(expectedIdentity,requestIdentity(recorded.value,r.identity,r.time_scale_ms)) && at(recorded.value,r.found) === true && at(recorded.value,r.request_id) === context.request_id && at(recorded.value,r.sha256) === sha256Hex(first) && mapped(r.map,at(recorded.value,r.state)) === 'target_rejected' && at(recorded.value,r.reached_device) === false && at(recorded.value,r.stage) === d.conformance.expected_stage && mapped(d.receipt.stages,at(recorded.value,r.stage)) === 'target_rejected');
-    } catch { checks.push(false); }
+      }
+    } catch { checks.push(false);failure??={missing_fact:'探测所需的连接、租约或请求记录未完整取得；未确认四项协议事实',next_action:'管理员检查受限调用原件、目标连接和租约配置，恢复缺失的读取事实后再采证'}; }
     finally { if (lease) await this.release(binding,client,lease); }
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
     await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
-    await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'not_dispatched',conformance_verified:checks.length === 4 && checks.every(Boolean),...(failure??{}),next_action:failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
+    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:!ambiguous && checks.length === 4 && checks.every(Boolean),...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
     return this.status(by,binding.job);
+  }
+
+  private async probeFollowup(by:Principal,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,allowResolution=false):Promise<void> {
+    const intent=eventOf(await this.journal.events(binding.job),'probe_intent')!;
+    const lease=intent.body.detail.remote_lease as unknown as RemoteLease;
+    const r=d.reconciliation;let sources:string[]=[];
+    let fact='探测提交可能已被受理或请求字节已发出，但缺少原请求的开始及收尾事实';
+    try {
+      if(!r || !d.calls.query)throw new Error('缺少请求查询声明');
+      const response=await this.retryRead(binding,client,'query',{...this.context(binding),request_id:intent.body.detail.request_id,lease_id:lease.id,lease_token:lease.token},Infinity);sources=[response.source];
+      const found=at(response.value,r.found),identity=at(response.value,r.request_id)===intent.body.detail.request_id && at(response.value,r.sha256)===intent.body.detail.sha256 && sameRequestIdentity(intent.body.detail.request_identity,requestIdentity(response.value,r.identity,r.time_scale_ms));
+      const remote=at(response.value,r.id);
+      await this.journal.append(binding,'probe_read_back','read_back','completed',{request_id:intent.body.detail.request_id,found:found===true,identity_matched:identity,...(this.opaque(remote)?{remote_id:remote}:{})},sources);
+      const clock=readDeclaredTime(at(response.value,r.gateway_time),r.time_scale_ms),floor=readDeclaredTime(at(response.value,r.gc_before),r.time_scale_ms),deadline=Date.parse(String(intent.body.detail.not_after));
+      const snapshot=requestIdentity(response.value,r.identity,r.time_scale_ms);
+      const bound=intent.body.detail.request_protocol_verified===true && sameRequestIdentity(intent.body.detail.request_identity,snapshot);
+      const negative=found===true && identity && at(response.value,r.reached_device)===false && (mapped(r.map,at(response.value,r.state))==='proven_not_executed' || mapped(r.map,at(response.value,r.state))==='target_rejected' && mapped(d.receipt.stages,at(response.value,r.stage))==='target_rejected');
+      const absent=found===false && !!snapshot && clock>deadline && deadline>floor && floor>=snapshot.since;
+      if(allowResolution && bound && (negative || absent) && await this.certified(binding,d,client,'request_journal')) {
+        await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'proven_not_executed',unfreeze:true,effect_accounted:true,next_action:'原探测请求的未执行事实已按认证协议回读；管理员核对探测前提后才可重新采证'},sources);return;
+      }
+      fact=found===true && identity && at(response.value,r.reached_device)===true?'原探测请求已有开始标记；缺少本次探测收尾及设备现场恢复事实':'探测提交的原请求尚缺相符的开始、拒收或未执行事实，不能证明没有设备效果';
+    } catch {fact='探测提交可能已有设备效果；原请求只读对账未取得可用应答，缺开始及收尾事实';}
+    await this.unknown(binding,fact,sources,{request_id:intent.body.detail.request_id,next_action:`请管理员 ${by.id} 核对该请求的审计、收尾和设备现场；读取通道需修复时先修复后运行 circle-hub job resume ${binding.job}，再用 circle-hub job dispose ${binding.job} 具名处置；不得重跑 conformance 或重交`});
   }
 
   async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void): Promise<JobStatus> {
@@ -244,6 +281,7 @@ export class DispatchService {
     await this.registry.admin(by);
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
     if (isDone(events) && !isFrozen(events)) return this.status(by, job);
+    if(eventOf(events,'probe_intent')) {const d=await this.readingDefinition(binding);const client=this.session(binding,d,await this.secret(binding.executor));await client.connect();await this.probeFollowup(by,binding,d,client,true);return this.status(by,job);}
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     if (!intent) {
       const gate = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: false }, [], `dispatch.gate:${job}`);
@@ -268,7 +306,7 @@ export class DispatchService {
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
     if (isDone(events) && !isFrozen(events)) return this.status(by, job);
     const requestRefs=openRequests(events).map(e=>`rec:${e.digest}`);
-    const intent = eventOf(events, 'intent');
+    const intent = eventOf(events, 'intent') ?? eventOf(events,'probe_intent');
     if (!intent) throw new Error('没有派发意图；请用 resume 核对未发出的作业');
     if(!isFrozen(events))throw new Error(`没有待回答的效果未知处置请求；已受理作业须先运行 circle-hub job resume ${job}`);
     if (options.choice === 'keep_unknown') {
@@ -286,6 +324,7 @@ export class DispatchService {
         original_outcome: receiptOf(events) && !isFrozen(events) ? 'issued' : 'unknown', effect_mark: 'disposed', ...(confirmed ? {} : { next_action: '仍冻结；需要管理员对账或显式确认接受可能重复执行的副作用' }) },[],requestRefs);
       return this.status(by, job);
     }
+    if(eventOf(events,'probe_intent'))return this.resume(by,job);
     const known=receiptOf(events)?.body.detail.remote_id;
     const remoteId=options.remote_id ?? known;
     if(known!==undefined && options.remote_id!==undefined && !same(known,remoteId))throw new Error('已有原回执，不得改绑为其他远端编号；请按原作业对账');
@@ -585,7 +624,7 @@ export class DispatchService {
   }
   private async unknown(binding: JobBinding, reason: string, sources: string[] = [], observation: Record<string, unknown> = {}): Promise<void> {
     const history=await this.journal.events(binding.job);
-    const intent=eventOf(history,'intent');const d=await this.pinned(binding);
+    const intent=eventOf(history,'intent') ?? eventOf(history,'probe_intent');const d=await this.pinned(binding);
     const requestKind:RequestKind='disposition';
     const question_sha256=digestOfValue({job:binding.job,run:binding.input?.run ?? null,item:binding.input?.item ?? null,intent_key:intent?.body.detail.intent_key ?? null,question:reason});
     const deadline=new Date(Date.parse(String(intent?.body.detail.not_after ?? this.now().toISOString()))+d.max_run_ms).toISOString();

@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number } = {}) {
+export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean } = {}) {
   let queries = 0;
   const rows = new Map<string, Record<string, unknown>>();
   let c!: Awaited<ReturnType<typeof setup>>;
@@ -12,7 +12,7 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     const id = String(args.request); const digest = sha256Hex(Buffer.from(String(args.blob),'base64'));
     const previous = rows.get(id);
     if (previous) return previous.digest === digest ? previous.reply as Record<string, unknown> : {...identity(),ok:false,phase:'admission',touched:false};
-    const expired = Date.parse(String(args.until)) <= c.clock.ms-(options.clockLagMs??0);
+    const expired = !options.admitExpired && Date.parse(String(args.until)) <= c.clock.ms-(options.clockLagMs??0);
     const phase=options.deadlinePrecheck?'precheck':'admission';
     const reply = {...identity(),...(options.receiptChange?{epoch:'replacement-journal'}:{}),ok:!expired,request:id,...(expired ? {phase,touched:false} : {key:'synthetic-remote',digest,ids:args.ids})};
     rows.set(id,{found:true,state:expired ? 'rejected' : 'started',request:id,digest,...(expired ? {phase,touched:false} : {key:'synthetic-remote',touched:true}),reply});

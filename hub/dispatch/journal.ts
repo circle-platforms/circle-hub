@@ -18,8 +18,9 @@ export class Journal {
     for(const event of events){const job=String(event.body.detail.job);const list=jobs.get(job)??[];list.push(event);jobs.set(job,list);}
     const blocked:string[]=[];
     for(const [job,history] of jobs) {
-      const b=history.find(e=>e.body.detail.phase==='reservation')?.body.detail.binding as JobBinding|undefined;
-      if(!b?.resources.length || isDone(history) && !isFrozen(history))continue;
+      const reservation=history.find(e=>e.body.detail.phase==='reservation');
+      const b=reservation?.body.detail.binding as JobBinding|undefined;
+      if(!b || reservation?.body.detail.read_only===true || isDone(history) && !isFrozen(history))continue;
       let matches=b.executor===executor || b.resources.some(key=>resources.includes(key)) || (b.scope?.target ?? b.input?.target)===target || b.scope?.origin===origin;
       if(!matches && !b.scope){const bytes=await this.records.objects.get(b.executor_digest);if(!bytes)matches=true;else{const d=JSON.parse(new TextDecoder().decode(bytes));matches=d.target===target || new URL(d.endpoint).origin===origin;}}
       if(matches)blocked.push(job);
