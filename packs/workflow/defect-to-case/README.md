@@ -6,7 +6,7 @@
 
 | 文件 | 内容与职责 |
 | --- | --- |
-| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative`）及 `manual`（期望角色，必填，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
+| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative`）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
 | `requirements.json` | 声明五项要求项：`cases`（用例起草，判定，条目级）、`shape`（用例结构，事实，条目级）、`commands`（命令与参数，事实，条目级）、`grounded`（期望结果依据，事实，条目级）、`not_duplicate`（用例去重，事实，条目级），以及各代码的修复重试规则（最多 2 轮） |
 | `checks.json` | 声明七项检查：`draft_shape`（结构合规）、`commands_catalog`（目录解析与参数校验）、`commands_refutation`（反向用例预期反驳校验）、`grounded_quotes`（逐字引文核对）、`grounded_sources`（来源范围核验）、`grounded_reading`（期望文字逐字核对）、`duplicate_check`（已索引用例去重检查） |
 | `slots.schema.json` | 声明条目插槽 `cases`：包含起草用例的结构模式（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与逐字引文、标签） |
@@ -21,7 +21,7 @@
 
 ## 版本说明
 
-- **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。引文来源受配置修复字段和必填同版本线手册限制；样例采用 PLM 真实字段结构；公开标题规范化规则，查重要求项只承诺实际执行的标题比较。
+- **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。引文来源受配置修复字段和可选同版本线手册限制；样例采用 PLM 真实字段结构；公开标题规范化规则，查重要求项只承诺实际执行的标题比较。
 
 - **1.5.1**：收窄索引缺少请求键或源视图截断时，查重记未知并列出重读要求；区分缺失键和明确的空键列表。
 - **1.5.0**：
@@ -102,7 +102,7 @@ npx tsc --noEmit
 
 PLM 部署设置为 `settings.bug_fix_field`，系统包须在缺陷 `content.fix_field` 回传字段名；未配置时回传 null 并说明缺失设置。本包不直接读取资源设置、不猜 fix 等默认字段，缺少 content.fix_field 就拒绝启动并要求集成者配置后重新读缺陷。
 
-新增必填 `manual` 输入（expected 角色，接受 `manual:cli`），必须恰好一份且 external 等于运行版本线的 `manual:cli:<版本线>`。手册不再由 expected_sources 在投影之后自动绑定。投影将本条缺陷摘要、fix_field 和手册摘要冻结为条目字段 allowed_quote_sources，提交中的同名字段不起作用。grounded_sources 是阻断检查，违规给出修正说明并计入最多两轮修复。
+`manual` 为可选输入（expected 角色，接受 `manual:cli`），绑定时必须恰好一份且 external 等于运行版本线的 `manual:cli:<版本线>`。手册不再由 expected_sources 在投影之后自动绑定。投影将本条缺陷摘要、fix_field 和手册摘要冻结为条目字段 allowed_quote_sources，提交中的同名字段不起作用。grounded_sources 是阻断检查，违规给出修正说明并计入最多两轮修复。
 
 只接受本条缺陷 `src:<摘要>/json@1/p/fields/<fix_field>`（可带该字段内的字节范围），或绑定手册的 src 片段。字段名按选择器的独立段解码后精确比较，不收父对象、其他字段、其他缺陷、其他来源。当前接口不能把 tree:/rec: 证明为这两份原件；按集成者决定拒绝这些引用形式，要求改引已绑定原件的 src 片段。
 
@@ -121,3 +121,5 @@ not_duplicate 的已实现判据是：相同的规范化命令头集合、相同
 待集成者排期：若要支持“期望结果相同”的独立分支，产品包须先在用例索引提供期望原文及其来源，再扩展本包并做独立核对。这是产品包和工作流的后续变更，本次未实现。
 
 复核修正：紧凑索引增加完整规范化标题的 SHA-256 比较键 title_key；最多 80 UTF-16 单元的 title 只供展示，且不截断代理对。比较不对完整标题截短，80 单元前缀不会冒充相同标题。
+
+复核确认：没有手册的版本线可不绑定 manual，投影冻结 manual:null 并明确警告仅修复字段可引。先按锁定构建确定版本线并核实手册可读；有手册再补绑重开。集成者需同步 gold-d2c 批跑提示（模板目前只有 defect/product/build），让客户端执行这个动作；Hub 不替客户端生成内容或选择默认版本线。

@@ -1,6 +1,7 @@
 // Projection function for defect-to-case: turns bound defects into run items.
 import type {
   BoundInput,
+  PackWarning,
   ProjectedItem,
   ProjectionInput,
   ProjectionOutput,
@@ -55,10 +56,11 @@ export function projectDefects(input: unknown): ProjectionOutput {
   const context = isRecord(input.context) ? input.context : {};
   const line = typeof context.line === 'string' ? context.line : null;
   const manuals = inputs.filter((b) => b.slot === 'manual');
-  if (manuals.length !== 1 || line === null || manuals[0].external?.split('@')[0] !== `manual:cli:${line}`) {
+  if (manuals.length > 1 || (manuals.length === 1 && (line === null || manuals[0].external?.split('@')[0] !== `manual:cli:${line}`))) {
     return { error: { code: `${PACK}.manual_mismatch`, message: '缺少本次版本线的唯一手册输入', fix: `在 inputs.manual 绑定 manual:cli:${line ?? '<运行版本线>'}，不要绑定其他版本线或上传来源；重新开始运行` }, warnings: [] };
   }
-  const manual = manuals[0];
+  const manual = manuals[0] ?? null;
+  const warnings: PackWarning[] = [];
 
   const indexInput = inputs.find((i) => i.slot === INDEXED_CASES_SLOT);
   const groups: Record<string, unknown>[] = [];
@@ -102,6 +104,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
     const fixField = typeof model.fix_field === 'string' && model.fix_field.trim() !== '' ? model.fix_field : null;
     if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: '缺少设置 settings.bug_fix_field：缺陷内容没有 fix_field', fix: '请集成者在 PLM 资源中配置 settings.bug_fix_field，并让 PLM 系统包在缺陷 content 回传 fix_field；自动重新读取缺陷后重试，不得猜字段名' }, warnings: [] };
 
+    if (manual === null) warnings.push({ code: `${PACK}.manual_missing`, item: id, message: `版本线 ${line ?? '未确定'} 没有绑定手册 manual:cli:${line ?? '<版本线>'}：本次期望结果只能引用缺陷 ${id} 的修复说明字段 ${fixField}；自动先核实该版本线的手册是否可读，存在时在 inputs.manual 绑定后重开运行，不存在则保留本条来源限制` });
     const title = typeof model.title === 'string' && model.title.trim() !== '' ? model.title.trim() : (b.meta && typeof b.meta.title === 'string' ? b.meta.title : `缺陷 ${id}`);
     const status = (isRecord(model.fields) && typeof model.fields.status === 'string' ? model.fields.status : (b.meta && typeof b.meta.status === 'string' ? b.meta.status : '未知'));
 
@@ -128,7 +131,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
         id,
         title,
         status,
-        allowed_quote_sources: { defect: b.sha256, fix_field: fixField, manual: manual.sha256 },
+        allowed_quote_sources: { defect: b.sha256, fix_field: fixField, manual: manual?.sha256 ?? null },
         fields: isRecord(model.fields) ? model.fields : {},
         html_fields: htmlFields,
       },
@@ -138,7 +141,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
   return {
     items,
     ...(groups.length > 0 ? { groups } : {}),
-    warnings: [],
+    warnings,
   };
 }
 

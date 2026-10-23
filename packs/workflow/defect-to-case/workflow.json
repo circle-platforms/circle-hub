@@ -24,11 +24,11 @@
     {
       "slot": "manual",
       "role": "expected",
-      "description": "运行版本线的手册 manual:cli:<版本线>，投影冻结其原件身份供引文来源核验",
+      "description": "可选的同版本线手册 manual:cli:<版本线>；未绑定时仅允许修复字段引文，并给出补取动作",
       "accepts": [
         "manual:cli"
       ],
-      "required": true,
+      "required": false,
       "many": false
     }
   ],

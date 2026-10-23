@@ -26,8 +26,8 @@ test('projection freezes configured field and both original digests, and fails c
     assert.match(out.error.message + out.error.fix, /settings\.bug_fix_field/);
   }
 });
-test('manual is mandatory, exactly one, and on the selected version line', () => {
-  for (const inputs of [[], [manualInput, manualInput], [{ ...manualInput, external: 'manual:cli:10.8' }]]) {
+test('a supplied manual must be unique and on the selected version line', () => {
+  for (const inputs of [[manualInput, manualInput], [{ ...manualInput, external: 'manual:cli:10.8' }]]) {
     const out = projected(bug, inputs); assert.ok('error' in out); assert.match(out.error.fix, /manual/);
   }
 });
