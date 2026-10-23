@@ -1,8 +1,20 @@
 {
-  "description": "Shared test vectors for verbatim quotation matching (T04 R[1]). hub/rules (quote@1, quoteMatches in text.ts) and hub/refs (quoteMatches in quote.ts) must both pass every vector; each package reads this file in its tests instead of importing the other.",
-  "rule": "Every run of Unicode White_Space (U+0009-U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) collapses to one space and both ends are trimmed, in the fragment and in the quote; then the quote must be a non-empty substring of the fragment. Case, punctuation, character width and Unicode normalization form stay significant.",
+  "description": "Shared test vectors for verbatim quotation matching (T04 R[1]). hub/rules (quote@1, quoteMatches in text.ts) and hub/refs (quoteMatches in quote.ts) must both pass every vector; each package reads this file in its tests and both use the refs quotation boundary.",
+  "rule": "Interior whitespace adjacent to any Unicode East_Asian_Width W/F code point is removed; every other run of Unicode White_Space (U+0009-U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) collapses to one space and both ends are trimmed, in the fragment and in the quote; then the quote must be a non-empty substring of the fragment. Case, punctuation, character width and Unicode normalization form stay significant.",
   "signature": "quoteMatches(fragmentText, quote) -> boolean",
   "vectors": [
+    {
+      "note": "Latin word boundaries retain collapsed whitespace",
+      "fragment": "set 10 0",
+      "quote": "set 100",
+      "match": false
+    },
+    {
+      "note": "an extra space between Latin symbols still differs",
+      "fragment": "a+b",
+      "quote": "a +b",
+      "match": false
+    },
     {
       "note": "plain substring",
       "fragment": "点击登录按钮后，页面跳转到首页。",
@@ -52,16 +64,16 @@
       "match": true
     },
     {
-      "note": "white space is collapsed, not removed: the missing break still differs",
+      "note": "Chinese line breaks are removed beside wide characters",
       "fragment": "页面跳转到\n首页",
       "quote": "页面跳转到首页",
-      "match": false
+      "match": true
     },
     {
-      "note": "an extra space in the quote differs",
+      "note": "an extra space beside a wide character is removed",
       "fragment": "页面跳转到首页",
       "quote": "页面跳转到 首页",
-      "match": false
+      "match": true
     },
     {
       "note": "case stays significant",

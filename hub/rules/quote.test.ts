@@ -73,3 +73,10 @@ describe('shared quotation vectors', () => {
     );
   });
 });
+
+it('quotation whitespace uses East Asian width while ordinary table normalization keeps spaces', () => {
+  assert.equal(collapseWhitespace('中 \n A'), '中 A');
+  assert.equal(quoteMatches('中 \n A', '中A'), true);
+  assert.equal(quoteInCollapsed(collapseWhitespace('中 \n A'), '中A'), true);
+  assert.equal(quoteInCollapsed(collapseWhitespace('set 10 0'), 'set 100'), false);
+});

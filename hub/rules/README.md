@@ -98,10 +98,11 @@ import only `hub/rules/api.ts`.
 - `coverage@1`: required members by value, by reference, by pack set name or selected from the subject; a declared skip
   counts only with a non-empty reason.
 - `membership@1` and `coverage@1` sets by reference: the bound fragment's text must be a JSON array of scalars.
-- `quote@1` uses `quoteMatches(fragmentText, quote)` from `text.ts`: every run of Unicode White_Space collapses to one space and
-  both ends are trimmed; case, punctuation, width and normalization form stay significant; an empty quote never matches. This
-  is the rule `hub/refs/quote.ts` chose; `quote-vectors.json` (27 vectors) pins it. Both implementations were checked against
-  the vectors by a scratch script outside the repository (0 disagreements); the packages do not import each other.
+- `quote@1` uses the public refs quotation API through `text.ts` (decision 37). A whitespace run adjacent to an
+  East_Asian_Width W/F code point disappears; other interior runs collapse to one space and both ends are trimmed.
+  Case, punctuation, character width and normalization form remain significant; empty quotations never match. The
+  29 shared vectors test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
+  representations retain their original whitespace normalization; this change affects quotation checking only.
 
 ### Catalog view (C07)
 

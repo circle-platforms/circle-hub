@@ -1,5 +1,6 @@
 // Text normalization shared by the interpreters: the match representation a table declares (C04 R[2]) and the white space
-// rule of verbatim quotation, which must agree with hub/refs quoteMatches (checked by quote-vectors.json, not by importing).
+// rule of verbatim quotation, which uses hub/refs through its public API. Ordinary table normalization retains its separate whitespace rule.
+import { quoteMatches as matchQuote } from '../refs/api.ts';
 import type { MatchRepresentation } from '../../contracts/src/tables.ts';
 
 /** Unicode White_Space: tabs and line breaks (U+0009-U+000D, NEL, LS, PS), spaces, NBSP and the ideographic space U+3000. */
@@ -66,13 +67,12 @@ export function codePoints(text: string): number {
   return n;
 }
 
-/** Verbatim quotation: the quote, white space collapsed, occurs in the fragment, white space collapsed. Empty never matches. */
+/** Verbatim quotation uses the shared contextual whitespace rule. Empty never matches. */
 export function quoteMatches(fragmentText: string, quote: string): boolean {
-  return quoteInCollapsed(collapseWhitespace(fragmentText), quote);
+  return matchQuote(fragmentText, quote);
 }
 
-/** quoteMatches with the fragment already collapsed (collapseWhitespace), for many quotes into one large fragment. */
+/** A fragment already collapsed by the table cache retains the information needed for contextual quotation matching. */
 export function quoteInCollapsed(collapsedFragment: string, quote: string): boolean {
-  const q = collapseWhitespace(quote);
-  return q !== '' && collapsedFragment.includes(q);
+  return matchQuote(collapsedFragment, quote);
 }

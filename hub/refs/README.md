@@ -103,7 +103,8 @@ Parser details:
   `{tag: 'font', attributes: {color: 'red'}}`. Runs inside the same wrappers share one wrapper list. `href` is the
   attribute value as parsed (quoted or not, entities decoded, never resolved against a base). Charset: BOM, then the
   media type parameter, then a `<meta>` charset, then UTF-8 if the bytes are valid UTF-8, else windows-1252. ISO-8859-1
-  and ASCII labels mean windows-1252 (WHATWG). Other legacy charsets decode without byte ranges.
+  and ASCII labels mean windows-1252 (WHATWG). BOM-marked UTF-16 and declared GB18030/GBK/Big5 retain byte
+  ranges; other legacy charsets keep the existing decoder behavior without byte ranges.
 - **markdown@1** is line based and linear time (heading clean-up included: closing `#` runs, trimming and pandoc
   attribute blocks are found by scanning back from the end of the line). ATX and setext headings make the tree; blocks
   are paragraphs, lists, block quotes, fenced and indented code, HTML blocks, thematic breaks, a leading YAML metadata
@@ -150,15 +151,12 @@ of tags with 500 attributes each takes about 2 s; every hostile input in the tes
 
 ## Quotations (T04 R[1])
 
-`quoteMatches(fragmentText, quote)`: every run of Unicode `White_Space` (spaces, tabs, CR, LF, NEL, NBSP, U+3000 and the
-other space separators) counts as one space, both ends are trimmed, then the quote must be contained verbatim. How long
-a white-space run is does not matter; whether there is one does (a line break between two Chinese characters must be
-quoted as a space; an open question below). Case, punctuation, character width, zero-width characters and the Unicode
-normalization form stay significant. An empty quote never matches, nor does one with an unpaired surrogate (it could
-match half of a character). One matcher implements this everywhere: KMP over the text with each white-space run read as
-one symbol, linear and without a collapsed copy. The 27 vectors of `hub/rules/quote-vectors.json` run in the refs
-tests, so this check and the rules package's `quote@1` stay equal. `locateQuote` maps the match back to UTF-8 byte
-offsets of the original text.
+`quoteMatches(fragmentText, quote)` uses decision 37: a Unicode White_Space run adjacent to a W/F code point is
+removed; other interior runs count as one space and both ends are trimmed. The normalized quote must be a non-empty
+verbatim substring. Case, punctuation, character width, zero-width characters and Unicode normalization form stay
+significant. An unpaired surrogate never matches half a character. The same contextual function serves normalization
+and the streaming KMP matcher, without a collapsed copy per candidate. The 29 shared vectors run on both refs and
+rules; `locateQuote` maps matches back to UTF-8 byte offsets in the original unmodified fragment text.
 
 `findQuote(candidates, quote)` returns the resolution (`resolved`, `ambiguous`, `unresolved`, from the vocabulary) over
 candidate fragments. Every occurrence belongs to the innermost candidate around it, and the places are the candidates
@@ -290,18 +288,25 @@ fragments, links, mind-map fields, JSON values, cross-line and cross-block quota
 (tiers, retain-only probing, indistinguishable unavailability with the internal reason, visible and invisible tree
 roots, digest re-verification, ranges, unwritable canonical selectors, cache); canonical JSON refusals.
 
-## Open questions
+## Quotation whitespace (decision 37)
 
-- **White space presence in quotations** (owner decision needed; T04 R[1], brief section 6). Today a quotation must
-  have white space wherever the source has it, only the length of a run is free. A Chinese manual hard-wrapped between
-  two characters (`会话保持超时\n时间`) therefore needs the quote `会话保持超时 时间`, and `设为0时` does not match
-  `设为 0 时`. The not-found diagnostic now says so (it used to claim white space never matters). A proposal: also drop a
-  white-space run when a character on either side is East Asian wide or fullwidth (CJK text has no word spaces);
-  Latin tokens stay separated (`set 10 0` still differs from `set 100`). It would flip two vectors of
-  `hub/rules/quote-vectors.json` ("white space is collapsed, not removed" and "an extra space in the quote differs"),
-  so hub/rules and hub/refs must change together, after the owner decides.
+A run of Unicode White_Space is removed when either adjacent code point has East_Asian_Width W or F. Other interior
+runs collapse to one ASCII space; leading/trailing whitespace is trimmed. Case, punctuation, character width and
+normalization form remain significant: `set 10 0` differs from `set 100`, while `超时\n时间` matches `超时时间`.
+Classification is the frozen [Unicode 17.0.0 W/F data](https://www.unicode.org/Public/17.0.0/ucd/EastAsianWidth.txt)
+in quote-whitespace.ts, including supplementary characters and wide emoji; ambiguous-width and halfwidth characters
+are not treated as W/F. The Unicode license is included in unicode-license.txt.
+
+One contextual function decides whitespace for normalization and streaming search. Matching, occurrence counts,
+byte-range pinning and the not-found diagnostic use that rule; ranges still point into the unmodified fragment.
+Rules quotation checking uses the public refs API; ordinary rules table matching retains its original whitespace
+normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
 
 ## Needs from other packages
+
+- **real acceptance / gold**: the current `scripts/real/gold/compile-check.ts` checkVerbatimQuote still uses ordinary
+  whitespace collapse. Schedule an independent update to decision 37 before using it to judge the new quotation rule;
+  that script is outside this task's paths and was not modified or run.
 
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
