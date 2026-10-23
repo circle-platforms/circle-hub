@@ -46,7 +46,7 @@ export class DispatchService {
     const decision=eventOf(events,'dispose');const choice=decision?.body.detail.disposition;
     const riskDisposed=choice==='mark_failed' && decision?.body.detail.risk_confirmed===true;
     const marks:EffectMark[]=decision?.body.detail.effect_mark==='disposed' && (riskDisposed || choice==='reconcile' && decision.body.detail.identity_matched===true)?['disposed']:[];
-    const missingFact = riskDisposed ? '原效果是否完成仍未证明；管理员已具名接受风险并完成处置，不把它当作未执行' : unknown || missingReceipt ? String(uncertainty?.body.detail.missing_fact ?? '已写意图但缺少可信提交回执；不能证明未执行') : end?.body.detail.registration_ready === false ? `登记缺事实：${(end.body.detail.registration_missing as string[] ?? []).join('、')}` : undefined;
+    const missingFact = riskDisposed ? '原效果是否完成仍未证明；管理员已具名接受风险并完成处置，不把它当作未执行' : unknown || missingReceipt ? String(uncertainty?.body.detail.missing_fact ?? '已写意图但缺少可信提交回执；不能证明未执行') : end?.body.detail.registration_ready === false ? `登记缺事实：${(end.body.detail.registration_missing as string[] ?? []).join('、')}` : typeof end?.body.detail.missing_fact==='string'?end.body.detail.missing_fact:undefined;
     const failedConditions=events.flatMap(e=>Array.isArray(e.body.detail.conditions)?e.body.detail.conditions.filter(object).filter(c=>c.matched===false && typeof c.pointer==='string' && typeof c.operator==='string').map(c=>({pointer:String(c.pointer),operator:String(c.operator)})):[]);
     return { job,...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && ['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
@@ -94,15 +94,16 @@ export class DispatchService {
     const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:[],context:d.precheck_context};
     await this.journal.append(binding,'reservation','validate','completed',{binding,read_only:true});
     const client = this.session(binding,d,await this.secret(executor));
-    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];
+    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;
     try {
       await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
-      const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-1000).toISOString(),items:[]};
+      const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-d.conformance.expiry_margin_ms-1000).toISOString(),items:[]};
       const missing = await this.read(binding,client,'query',context); observations.push(missing);
       const r = d.reconciliation;
       const wireTime = (v:unknown) => readDeclaredTime(v,r.time_scale_ms);
       const expectedIdentity=requestIdentity(missing.value,r.identity,r.time_scale_ms);
-      checks.push(!!expectedIdentity && at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))) && wireTime(at(missing.value,r.gc_before))>=expectedIdentity.since);
+      checks.push(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms && !!expectedIdentity && at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))) && wireTime(at(missing.value,r.gc_before))>=expectedIdentity.since);
+      if(!checks[0]) {failure={missing_fact:'目标时刻未越过探测截止及声明余量，或缺少查空、日志身份及可靠记账边界；不能保证按过期拒收',next_action:'管理员先核对目标与 Hub 时钟、时区和日志身份声明，取得越过截止及余量的目标时刻后再运行 conformance；本次未提交'};throw new Error('探测过期前提不成立');}
       context.request_id = `${binding.job}:1`;
       const first = Buffer.from(d.conformance.payloads[0],'base64'); const second = Buffer.from(d.conformance.payloads[1],'base64');
       const refused = (v:unknown) => sameRequestIdentity(expectedIdentity,requestIdentity(v,d.receipt.identity,r.time_scale_ms)) && at(v,d.receipt.stage!) === d.conformance!.expected_stage && mapped(d.receipt.map,at(v,d.receipt.acceptance)) === 'not_accepted' && mapped(d.receipt.stages,at(v,d.receipt.stage!)) === 'target_rejected' && at(v,d.receipt.reached_device!) === false;
@@ -116,7 +117,7 @@ export class DispatchService {
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
     await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
-    await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'not_dispatched',conformance_verified:checks.length === 4 && checks.every(Boolean),next_action:checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance'});
+    await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'not_dispatched',conformance_verified:checks.length === 4 && checks.every(Boolean),...(failure??{}),next_action:failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
     return this.status(by,binding.job);
   }
 
