@@ -270,6 +270,12 @@ describe('no machine paths in repository text', () => {
     for(const prefix of ['[x](https://example.com)','参见https://example.com，'])assert.equal(localPathProblems('docs/example.md',prefix+'/'+'home/synthetic/project').length,1,prefix);
   });
 
+  it('requires a drive-letter boundary while keeping file URL and quoted Windows homes checked', () => {
+    for(const value of ["router.on('GET:/users/:id', h)",'method=GET path:/users/42 status=200','rsync -a backup:/users/shared/ .'])assert.deepEqual(localPathProblems('code/example.ts',value),[],value);
+    const slash=String.fromCharCode(92);
+    for(const value of ['file:///c:'+'/'+'users/synthetic','"C:'+slash+'users'+slash+'synthetic"'])assert.equal(localPathProblems('code/example.ts',value).length,1,value);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
