@@ -14,11 +14,6 @@
       "fix": "只用合约启用且非内部、非认证候选的组合"
     },
     {
-      "code": "case-compile.method_not_allowed",
-      "when": "组合没有被本轮配置允许",
-      "fix": "换成本轮配置允许的组合，不通过工作簿或计划申请授权"
-    },
-    {
       "code": "case-compile.param_arity",
       "when": "多余、缺失或重复参数",
       "fix": "按原始签名给齐必填参数，删去未声明或重复参数，不补默认值"
@@ -36,7 +31,7 @@
     {
       "code": "case-compile.param_value",
       "when": "参数不是单行最终文字、含占位符、首尾空白或以等号开头",
-      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀"
+      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀；引号必须成对，不以反斜杠结尾"
     },
     {
       "code": "case-compile.device_command_denied",
@@ -56,12 +51,7 @@
     {
       "code": "case-compile.address_off_bed",
       "when": "字面地址或替换目标不在台架或本血缘分配中",
-      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行"
-    },
-    {
-      "code": "case-compile.address_wrong_device",
-      "when": "设备命令使用了其他非服务器设备地址",
-      "fix": "换成该座位设备的接口地址、本血缘分配地址或服务器地址"
+      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行；用例原文的台架外地址应加入 replacements 并在槽位写替换后的最终文字"
     },
     {
       "code": "case-compile.replacement_invalid",
@@ -94,9 +84,29 @@
       "fix": "断言写进 expects，带引文和 after"
     },
     {
-      "code": "case-compile.workbook_invalid",
-      "when": "上传工作簿不是与已核验槽位、原合约、配置和本运行生成器一致的原字节",
-      "fix": "先修正计划并取得满足结果，用同版客户端脚本重新生成上传；冻结输入不能在旧运行替换，须开始新的后继运行"
+      "code": "case-compile.param_unassigned",
+      "when": "提供的参数没有配置角色",
+      "fix": "先在运行环境配置里给该参数定角色，再按角色核对，不推断其用途"
+    },
+    {
+      "code": "case-compile.wait_value",
+      "when": "等待不是配置秒数上限内的正整数",
+      "fix": "写 ASCII 正整数秒数，且不超过配置 max_wait_seconds"
+    },
+    {
+      "code": "case-compile.expect_value",
+      "when": "断言文字不符合工作簿 G 取值规则",
+      "fix": "断言写成单行原文片段，去掉首尾空白、等号前缀和 {} 或 {0} 占位符"
+    },
+    {
+      "code": "case-compile.host_shell_dynamic",
+      "when": "主机 shell 含扩展、命令分隔或重定向语法",
+      "fix": "改成单一显式命令，不用变量、命令替换、glob、管道、分号或重定向绕开文字核对"
+    },
+    {
+      "code": "case-compile.address_notation",
+      "when": "主机命令包含非标准 IPv4 数字记法，目标不能唯一核对",
+      "fix": "地址写标准点分四段；十六进制、八进制、短点分或长整数形式不用于主机网络目标；非地址数据需拆出明确用途"
     }
   ],
   "refusals": [
@@ -166,14 +176,9 @@
       "fix": "将输入交给任务包维护人，修复后重新开始运行"
     },
     {
-      "code": "case-compile.workbook_input",
-      "when": "绑定文件不是完整的 xlsx@1 原件或超出单例模型预算",
-      "fix": "上传客户端脚本生成的原始 xlsx 字节并绑定其引用"
-    },
-    {
-      "code": "case-compile.workbook_context",
-      "when": "绑定工作簿却未提供计划运行号",
-      "fix": "复制已满足计划运行号作为 plan_run 和 predecessor"
+      "code": "case-compile.autoid_imprecise",
+      "when": "case autoid 是超出安全整数范围的 JSON 数值",
+      "fix": "从原文以文本重新导出编号或请求核心的无损数字解析，不从已舍入数值猜编号"
     }
   ],
   "warnings": [
@@ -201,6 +206,11 @@
       "code": "case-compile.profile_problem",
       "when": "运行环境配置逐条问题",
       "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.autoid_problem",
+      "when": "一个用例的数字 autoid 无法保证原始精度",
+      "fix": "按节点指针从原件取得文本编号或请求核心无损解析"
     }
   ]
 }

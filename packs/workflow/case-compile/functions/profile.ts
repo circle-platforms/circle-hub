@@ -6,6 +6,7 @@ import type { ManifestBed } from './manifest.ts';
 export interface AllowedCall { object: string; method: string; parameters: Record<string, string> }
 export interface RuntimeProfile {
   synthetic: boolean;
+  max_wait_seconds: number | null;
   runtimeVersion: string;
   digest: string;
   bed: string;
@@ -29,7 +30,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
   if (runtime.contract_sha256 !== contract.digest) issue('/runtime/contract_sha256', '期望合约摘要与重算身份不符');
-  if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少从只读预检取得的正整数设备数');
+  if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少只读预检的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的台架不在清单里');
   const workbook = isRecord(value.workbook) ? value.workbook : {};
@@ -72,9 +73,8 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (!isRecord(raw)) { issue(at, '允许组合不是对象'); continue; }
     const method = runtimeMethod(contract, String(raw.object), String(raw.method));
     if (!method) issue(at, '允许组合不在合约启用集合里');
-    else if (FORMAT.closed_dispatches.includes(method.dispatch)) issue(at, '本轮不开放该派发方式');
     const pair = JSON.stringify([raw.object, raw.method]); if (pairs.has(pair)) issue(at, '允许组合重复'); pairs.add(pair);
-    if (!isRecord(raw.parameters) || !Object.keys(raw.parameters).length) issue(`${at}/parameters`, '没有参数角色映射');
+    if (!isRecord(raw.parameters)) issue(`${at}/parameters`, '没有参数角色映射对象');
     const parameters = Object.create(null) as Record<string, string>;
     for (const [name, role] of Object.entries(isRecord(raw.parameters) ? raw.parameters : {})) {
       const pat = `${at}/parameters/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;
@@ -87,6 +87,13 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     }
     allowed.push({ object: String(raw.object), method: String(raw.method), parameters });
   }
+  const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
+  if (assertions.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
+  for (const call of assertions) {
+    const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');
+    const method = runtimeMethod(contract, call.object, call.method);
+    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0])) issue('/allowed', '字面断言只能有一个期望参数，不能缺少其他必填参数');
+  }
   const fold_newlines: RuntimeProfile['fold_newlines'] = [];
   if (value.fold_newlines !== undefined && !Array.isArray(value.fold_newlines)) issue('/fold_newlines', '折叠换行名单必须是对象和方法组合列表');
   const folded = new Set<string>();
@@ -95,7 +102,9 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     const key = JSON.stringify([raw.object, raw.method]); if (folded.has(key)) issue(`/fold_newlines/${i}`, '折叠换行组合重复'); folded.add(key);
     fold_newlines.push({ object: raw.object, method: raw.method });
   }
+  const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
+  if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   const denied = isRecord(value.denied) ? value.denied : {};
   for (const key of ['device', 'host']) if (!Array.isArray(denied[key]) || (denied[key] as unknown[]).some((v) => !oneLine(v))) issue(`/denied/${key}`, '拒绝表必须是单行非空文字列表（没有条目写 []）');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
 }

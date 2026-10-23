@@ -7,10 +7,6 @@
     "literal_assertion",
     "wait"
   ],
-  "closed_dispatches": [
-    "execute_registry",
-    "checkpoint_v2_three_argument"
-  ],
   "header_columns": 9,
   "manifest_device_types": [
     "load-balancer",

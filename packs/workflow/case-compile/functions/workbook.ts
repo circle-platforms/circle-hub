@@ -66,10 +66,10 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   for (const [number, cells] of values) if (number > 2 && cells.slice(4).some(Boolean)) {
     const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4);
     const entry = runtimeMethod(recipe.contract, object, method); const allowed = allowedCall(profile, object, method);
-    if (!object || !method || !g || !entry || !allowed || h || variable) { issue('execution', at, 'E/F/G 必须给出启用且允许的调用，H/I 必须为空'); continue; }
+    if (!object || !method || !g || !entry || !allowed || h || variable) { issue('execution', at, 'E/F/G 必须是启用且角色配置完整的调用，H/I 必须为空'); continue; }
     const seat = profile.seats.find((v) => v.object === object); if (seat && seat.ordinal >= profile.device_count) issue('seat', at, '座位序号不小于预检设备数');
     const assertion = Object.values(allowed.parameters).some((role) => role === 'literal_assertion');
-    const wait = Object.values(allowed.parameters).some((role) => role === 'wait');
+    const wait = Object.values(allowed.parameters).length > 0 && Object.values(allowed.parameters).every((role) => role === 'wait');
     if (!assertion && (/[\r\n\v\f\u0085\u2028\u2029]/.test(g) || g.trim() !== g || /\{(?:0)?\}/.test(g))) issue('execution', at, '普通调用 G 必须是单行最终文字，没有占位符或首尾空白');
     try {
       const decoded = decodeG(g, { literalAssertion: assertion, wait, foldNewlines: profile.fold_newlines.some((v) => v.object === object && v.method === method) });

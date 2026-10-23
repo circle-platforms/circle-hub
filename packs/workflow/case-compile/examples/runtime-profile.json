@@ -96,5 +96,6 @@
     ]
   },
   "device_count": 2,
-  "fold_newlines": []
+  "fold_newlines": [],
+  "max_wait_seconds": 300
 }

@@ -5,7 +5,7 @@ import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import { readSlots, type PlanSlots } from './slots.ts';
 import { allowedCall, type RuntimeProfile } from './profile.ts';
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
-import { bindArguments } from './binding.ts';
+import { bindArguments, hasSingleLineValue } from './binding.ts';
 import { encodeG, type GOptions } from './g-syntax.ts';
 import { zipStore } from './zip-store.ts';
 export const GENERATOR = FORMAT.generator;
@@ -15,7 +15,7 @@ export class GenerationError extends Error { readonly pointer: string; construct
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
 export function gOptions(object: string, method: string, contract: RuntimeContract, profile: RuntimeProfile): GOptions {
   const entry = runtimeMethod(contract, object, method); const allowed = allowedCall(profile, object, method);
-  return { keywordNames: entry?.parameters.filter((p) => p.kind === 'positional_or_keyword' || p.kind === 'keyword_only').map((p) => p.name) ?? [], foldNewlines: profile.fold_newlines.some((v) => v.object === object && v.method === method), wait: Object.values(allowed?.parameters ?? {}).some((v) => v === 'wait') };
+  return { keywordNames: entry?.parameters.filter((p) => p.kind === 'positional_or_keyword' || p.kind === 'keyword_only').map((p) => p.name) ?? [], foldNewlines: profile.fold_newlines.some((v) => v.object === object && v.method === method), wait: Object.values(allowed?.parameters ?? {}).length > 0 && Object.values(allowed?.parameters ?? {}).every((v) => v === 'wait') };
 }
 const NS = 'http://schemas.openxmlformats.org/';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -47,14 +47,21 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   ];
   for (const [i, step] of slots.steps.entries()) {
     const method = runtimeMethod(contract, step.object, step.method); const allowed = allowedCall(profile, step.object, step.method);
-    if (!method || !allowed || Object.values(allowed.parameters).some((v) => v === 'literal_assertion')) reject(`/steps/${i}`, '步骤必须是已启用且允许的非断言调用，断言只来自 expects');
+    if (!method) reject(`/steps/${i}`, '步骤必须是合约启用的调用');
+    if (!allowed) reject(`/steps/${i}`, '启用调用缺少参数角色配置，请先在配置里给参数定角色');
+    if (Object.values(allowed!.parameters).some((v) => v === 'literal_assertion')) reject(`/steps/${i}`, '断言只写进 expects，不能直接写在 steps');
     const bound = bindArguments(method!, step, `/steps/${i}`); if (bound.problems.length) reject(bound.problems[0].pointer, bound.problems[0].message);
+    for (const value of bound.values) {
+      if (!Object.hasOwn(allowed!.parameters, value.name)) reject(value.pointer, '参数没有角色，请在配置里给它定角色');
+      if (allowed!.parameters[value.name] === 'wait' && (!/^[0-9]+$/.test(String(value.value)) || Number(value.value) < 1 || profile.max_wait_seconds === null || Number(value.value) > profile.max_wait_seconds || value.pointer.includes('/keywords/') && Object.values(allowed!.parameters).every((role) => role === 'wait'))) reject(value.pointer, '等待必须是配置上限内的正整数位置参数');
+    }
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(`/steps/${i}`, '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(`/steps/${i}/G`, e instanceof Error ? e.message : 'G 无法往返'); }
     rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.steps[i]?.text ?? fields.title, step.object, step.method, g]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
       if (!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(`/expects/${k}/after`, '期望不能跟在等待或断言之后');
+      if (!hasSingleLineValue(expect.text)) reject(`/expects/${k}/text`, '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');
       const text = encodeG({ args: [expect.text], keywords: {} }, { literalAssertion: true });
       rows.push(['', '', FORMAT.statement_type, expect.text, assertions[0].object, assertions[0].method, text]);
     }

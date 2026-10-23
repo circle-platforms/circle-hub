@@ -1,9 +1,14 @@
 {
-  "id": "address_router_positive",
+  "id": "expect_value_negative",
   "source": "author",
-  "check": "bed_addresses",
-  "note": "合成正例：address-router",
+  "check": "expected_sources",
+  "note": "合成反例：expect-value",
   "subject": {
+    "case_texts": [
+      "健康检查间隔配置测试",
+      "widget health interval 60",
+      "健康检查间隔设置成功"
+    ],
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "data": {
@@ -38,10 +43,10 @@
       ],
       "expects": [
         {
-          "text": "健康检查间隔设置成功",
+          "text": "{}",
           "quote": {
             "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
-            "text": "健康检查间隔设置成功"
+            "text": "{}"
           },
           "after": 1
         }
@@ -334,6 +339,7 @@
     "profile": {
       "schema": "runtime-profile@1",
       "synthetic": true,
+      "max_wait_seconds": 300,
       "runtime": {
         "minimum_version": "synthetic-runtime-v2",
         "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
@@ -520,7 +526,8 @@
   },
   "expect": [
     {
-      "verdict": "support",
+      "verdict": "refute",
+      "code": "case-compile.expect_value",
       "item": "doc-1:c-1",
       "tier": "blocking"
     }

@@ -4,6 +4,11 @@
   "check": "workbook_verified",
   "note": "合成正例：workbook-bytes",
   "subject": {
+    "case_texts": [
+      "健康检查间隔配置测试",
+      "widget health interval 60",
+      "健康检查间隔设置成功"
+    ],
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "data": {
@@ -334,6 +339,7 @@
     "profile": {
       "schema": "runtime-profile@1",
       "synthetic": true,
+      "max_wait_seconds": 300,
       "runtime": {
         "minimum_version": "synthetic-runtime-v2",
         "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
@@ -631,7 +637,7 @@
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "7856ec330a7384e2f84c704f4748ed76f9373c9f5b823c33da34642794c39d42",
+                    "text": "5e1a010bdccaf8df598b5bdd4f78661e17fb14aeba30d378bb71f648696f57aa",
                     "formula": false,
                     "style": null
                   }
@@ -949,7 +955,7 @@
           }
         ]
       },
-      "sha256": "2e57a070f05742b9a95c328e68fab77d40cb12eac708255cea5f7a984be52eda"
+      "sha256": "f3f0043f478a3bb3ebee2d251b10aa4728c1579a79245d6d42154cb3be8b738d"
     }
   },
   "expect": [

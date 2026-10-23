@@ -2,6 +2,8 @@
 import { readdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { signRuntime, profileDocument } from './runtime.ts';
+import { CONTRACT_DOC } from '../functions/test-support.ts';
 import { goodData, subjectOf, QUOTE, CATALOG_SPEC } from '../functions/test-support.ts';
 import { generateWorkbook } from '../functions/generate.ts';
 import { generationFixture } from './workbook.ts';
@@ -9,10 +11,17 @@ import { workbookCheckInput } from './workbook-model.ts';
 import type { PlanSlots } from '../functions/slots.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const rules: Array<{ name: string; check: string; code: string; change: (value: PlanSlots) => void }> = [
+  { name: 'quote-unpaired', check: 'contract_shape', code: 'param_value', change: (v) => { v.steps[0].args = ['widget health interval "60']; } },
+  { name: 'wait-limit', check: 'contract_shape', code: 'wait_value', change: (v) => { v.steps[2].args = ['99999999']; } },
+  { name: 'host-expansion', check: 'contract_shape', code: 'host_shell_dynamic', change: (v) => { v.steps[1].args = ['/sbin/re*boot']; } },
+  { name: 'nonstandard-host-target', check: 'bed_addresses', code: 'address_notation', change: (v) => { v.steps[1].args = ['ping 3221226234']; } },
+  { name: 'expect-value', check: 'expected_sources', code: 'expect_value', change: (v) => { v.expects[0].text = '{}'; v.expects[0].quote.text = '{}'; } },
+  { name: 'replacement-phantom', check: 'bed_addresses', code: 'replacement_invalid', change: (v) => { v.replacements = [{ case: '192.0.2.251', bed: '192.0.2.90' }]; } },
+  { name: 'replacement-chain', check: 'bed_addresses', code: 'replacement_invalid', change: (v) => { v.replacements = [{ case: '192.0.2.250', bed: '192.0.2.10' }, { case: '192.0.2.10', bed: '192.0.2.90' }]; v.expects[0].quote.text = '原文 192.0.2.250 与 192.0.2.10 健康检查间隔设置成功'; } },
   { name: 'assertion-in-steps', check: 'contract_shape', code: 'assertion_in_steps', change: (v) => { v.steps.push({ object: 'widget-check', method: 'literal', args: ['未经溯源的断言'], keywords: {} }); } },
   { name: 'blocks-nonempty', check: 'contract_shape', code: 'slots_invalid', change: (v) => { (v as unknown as { blocks: string[] }).blocks = ['setup']; } },
   { name: 'method-forbidden', check: 'contract_shape', code: 'method_forbidden', change: (v) => { v.steps[0].object = 'widget-disabled'; v.steps[0].method = 'cycle'; } },
-  { name: 'method-not-allowed', check: 'contract_shape', code: 'method_not_allowed', change: (v) => { v.steps[0].method = 'credential'; v.steps[0].args = []; } },
+  { name: 'empty-call', check: 'contract_shape', code: 'param_arity', change: (v) => { v.steps[0].method = 'credential'; v.steps[0].args = []; } },
   { name: 'extra-keyword', check: 'contract_shape', code: 'param_arity', change: (v) => { v.steps[0].keywords.extra = 'x'; } },
   { name: 'missing-required', check: 'contract_shape', code: 'param_arity', change: (v) => { v.steps[0].args = []; } },
   { name: 'positional-keyword', check: 'contract_shape', code: 'param_keyword', change: (v) => { v.steps[0].keywords.line = v.steps[0].args[0]; v.steps[0].args = []; } },
@@ -25,9 +34,8 @@ const rules: Array<{ name: string; check: string; code: string; change: (value: 
   { name: 'device-denied', check: 'contract_shape', code: 'device_command_denied', change: (v) => { v.steps[0].args = ['system cycle']; } },
   { name: 'host-denied', check: 'contract_shape', code: 'host_command_denied', change: (v) => { v.steps[1].args = ['sudo reboot']; } },
   { name: 'address-off-bed', check: 'bed_addresses', code: 'address_off_bed', change: (v) => { v.steps[0].args = ['widget address 192.0.2.250']; } },
-  { name: 'address-router', check: 'bed_addresses', code: 'address_wrong_device', change: (v) => { v.steps[0].args = ['widget address 192.0.2.1']; } },
-  { name: 'replacement-not-bijective', check: 'bed_addresses', code: 'replacement_invalid', change: (v) => { v.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }, { case: '192.0.2.201', bed: '192.0.2.90' }]; } },
-  { name: 'replacement-missing', check: 'bed_addresses', code: 'replacement_missing', change: (v) => { v.replacements = [{ case: '192.0.2.10', bed: '192.0.2.90' }]; v.steps[0].args = ['widget address 192.0.2.10']; } },
+  { name: 'replacement-not-bijective', check: 'bed_addresses', code: 'replacement_invalid', change: (v) => { v.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }, { case: '192.0.2.201', bed: '192.0.2.90' }]; v.expects[0].quote.text = '原地址 192.0.2.200 和 192.0.2.201 健康检查间隔设置成功'; } },
+  { name: 'replacement-missing', check: 'bed_addresses', code: 'replacement_missing', change: (v) => { v.replacements = [{ case: '192.0.2.10', bed: '192.0.2.90' }]; v.expects[0].quote.text = '原地址 192.0.2.10 健康检查间隔设置成功'; v.steps[0].args = ['widget address 192.0.2.10']; } },
   { name: 'expect-not-in-quote', check: 'expected_sources', code: 'expect_not_in_quote', change: (v) => { v.expects[0].text = '模型新写的结论'; } },
   { name: 'expect-after-wait', check: 'expected_sources', code: 'expect_after', change: (v) => { v.expects[0].after = 3; } },
   { name: 'expect-without-source', check: 'expected_sources', code: 'expect_without_source', change: (v) => { v.expects[0].quote.reference = ''; } },
@@ -44,6 +52,13 @@ export function writeSamples(): void {
     save('positive', rule.name, rule.check, subjectOf(goodData()).subject);
     const bad = goodData(); rule.change(bad); save('negative', rule.name, rule.check, subjectOf(bad).subject, `case-compile.${rule.code}`);
   }
+  const extra = structuredClone(CONTRACT_DOC); const method = extra.entries.find((v) => v.e === 'widget-host' && v.f === 'shell')!;
+  method.signature.parameters.push({ name: 'then', kind: 'positional_or_keyword', required: false, default: null }); method.signature.optional.push('then');
+  const signed = signRuntime(extra); const missing = profileDocument(signed); const assigned = structuredClone(missing); Object.assign(assigned.allowed[1].parameters, { then: 'host_shell' });
+  const yes = goodData(); yes.steps[1].keywords.then = 'echo ready';
+  save('positive', 'unassigned-parameter', 'contract_shape', subjectOf(yes, { contractDoc: signed, profileDoc: assigned }).subject);
+  const no = goodData(); no.steps[1].keywords.then = 'reboot';
+  save('negative', 'unassigned-parameter', 'contract_shape', subjectOf(no, { contractDoc: signed, profileDoc: missing }).subject, 'case-compile.param_unassigned');
   for (const [name, phrase, code] of [['commands-not-member', 'widget unknown 60', 'core.catalog.not_member'], ['commands-out-of-range', 'widget health interval 500', 'core.catalog.param_out_of_range']] as const) {
     save('positive', name, 'commands_catalog', { item: 'doc-1:c-1', location: QUOTE.reference, phrases: ['widget health interval 60'], negative: false }, undefined, { catalog: CATALOG_SPEC });
     save('negative', name, 'commands_catalog', { item: 'doc-1:c-1', location: QUOTE.reference, phrases: [phrase], negative: false }, code, { catalog: CATALOG_SPEC });

@@ -92,7 +92,8 @@ export function bedFacts(bed: ManifestBed): BedFacts {
 export type AddressReading =
   | { kind: 'interface'; device: string; type: string; subnet: string }
   | { kind: 'allocated' }
-  | { kind: 'off_bed' };
+  | { kind: 'off_bed' }
+  | { kind: 'not_address' };
 
 export interface LeaseRow {
   key: string;
@@ -107,7 +108,7 @@ export interface LeaseRow {
  */
 export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: string, address: string): AddressReading {
   const key = addressKey(address);
-  if (key === null) return { kind: 'off_bed' };
+  if (key === null) return { kind: 'not_address' };
   for (const device of bed.devices) {
     for (const iface of [...device.ipv4, ...device.ipv6]) {
       if (addressKey(iface.address) === key) return { kind: 'interface', device: device.name, type: device.type, subnet: iface.subnet };
