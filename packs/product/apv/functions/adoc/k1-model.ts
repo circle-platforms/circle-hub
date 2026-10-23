@@ -10,7 +10,7 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, Section, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { decodeReferences, inlineMarkdown, plainConverted, plainText, signatureWords, squeeze, stripMarks } from './text.ts';
+import { decodeReferences, dropPairedMarks, inlineMarkdown, plainConverted, plainText, signatureWords, squeeze } from './text.ts';
 import { selectorText, utf8Offsets } from '../util.ts';
 import { parseAnchor } from '../manual.ts';
 
@@ -472,10 +472,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     const parent = sectionOf(path.slice(0, -1));
     const block = headings.get(last.at) ?? null;
     // The segment comes from the heading's own source line — the author's words, with the attribute references of this
-    // family expanded and the inline marks off — never from the engine's converted title, which carries tags and
-    // character references into the path. A title with no marks can also never be read as a signature (task item 6).
+    // family expanded — never from the engine's converted title, which carries tags and character references into the
+    // path. Only the paired marks at token edges go, so `health_check`, `C++` and `步骤 #1` keep every character they were
+    // written with; a title whose marks are gone can also never be read as a signature (task item 6).
     const fromSource = block !== null && block.heading !== null;
-    const title = squeeze(stripMarks(decodeReferences(fromSource ? (block as Block).heading as string : inlineMarkdown(last.title))));
+    const title = squeeze(dropPairedMarks(decodeReferences(fromSource ? (block as Block).heading as string : inlineMarkdown(last.title))));
     if (!fromSource) {
       unverifiedHeadings.push(`${block === null ? `章节「${title}」` : `${placeOf(model, block)} 的标题「${title}」`}回核不到源行，段用引擎标题的纯文本形式`);
     }

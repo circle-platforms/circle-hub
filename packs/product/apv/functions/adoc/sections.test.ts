@@ -236,3 +236,70 @@ test('an empty section and a section whose content is all uncited still take the
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(produced.entries.map((entry) => [String(entry.statement), entry.path]), [['第二节正文。', '/manual/cli/示例[2]']]);
 });
+
+test('a heading segment keeps the characters of its title: only paired marks at token edges go', async () => {
+  const { mapped, produced } = await place({
+    'book.adoc': [
+      '= Synthetic',                 // 1
+      '',                            // 2
+      '== health_check 配置',         // 3
+      '',                            // 4
+      '甲。',                         // 5
+      '',                            // 6
+      '== C++ 接口',                  // 7
+      '',                            // 8
+      '乙。',                         // 9
+      '',                            // 10
+      '== C# 接口',                   // 11
+      '',                            // 12
+      '丙。',                         // 13
+      '',                            // 14
+      '== max_conn 与 min_conn',      // 15
+      '',                            // 16
+      '丁。',                         // 17
+      '',                            // 18
+      '== 步骤 #1',                   // 19
+      '',                            // 20
+      '戊。',                         // 21
+      '',                            // 22
+      '== *配置* _成员池_',            // 23
+      '',                            // 24
+      '己。',                         // 25
+      '',                            // 26
+      '== **demo pool add** *<name>*', // 27
+      '',                            // 28
+      '庚。',                         // 29
+      '',                            // 30
+    ].join('\n'),
+  });
+  assert.deepEqual(
+    mapped.model.sections.slice(1).map((section) => [section.title, section.selector, section.ordinal]),
+    [
+      ['health_check 配置', 'h/health_check%20配置', 1],
+      ['C++ 接口', 'h/C++%20接口', 1],
+      ['C# 接口', 'h/C#%20接口', 1],
+      ['max_conn 与 min_conn', 'h/max_conn%20与%20min_conn', 1],
+      ['步骤 #1', 'h/步骤%20#1', 1],
+      ['配置 成员池', 'h/配置%20成员池', 1],
+      ['demo pool add <name>', 'h/demo%20pool%20add%20<name>', 1],
+    ],
+    JSON.stringify(mapped.model.sections.slice(1)),
+  );
+  // Two titles that differ only by a character the marks rule used to eat are two paths, told apart by their own text
+  // and not by an ordinal.
+  assert.deepEqual(
+    produced.entries.map((entry) => [String(entry.statement), entry.path]),
+    [
+      ['甲。', '/manual/cli/health_check%20配置'],
+      ['乙。', '/manual/cli/C++%20接口'],
+      ['丙。', '/manual/cli/C#%20接口'],
+      ['丁。', '/manual/cli/max_conn%20与%20min_conn'],
+      ['戊。', '/manual/cli/步骤%20#1'],
+      ['己。', '/manual/cli/配置%20成员池'],
+      ['庚。', '/manual/cli/demo%20pool%20add%20<name>'],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.path])),
+  );
+  // A title is still never a signature, now that its marks are gone rather than merely eaten.
+  assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), []);
+});

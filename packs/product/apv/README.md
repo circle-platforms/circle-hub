@@ -480,8 +480,11 @@ accepted.
 - Section paths follow K1 and have the same shape as markdown@1's. A section is keyed by the node the engine gave for it
   (the index of its own block, carried by every path element), never by its title text, so two sections with the same title
   stay two sections and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`. The segment is the heading's own source text:
-  the attribute references of this family expanded, character references decoded and the inline marks off — never the
-  engine's converted title, which would carry `<code>` and `&#8217;` into the path. Repeated sibling keys are numbered
+  the attribute references of this family expanded, character references decoded, and the paired inline marks at token
+  edges off — never the engine's converted title, which would carry `<code>` and `&#8217;` into the path. Every other
+  character of the title stays, because a `_`, `+` or `#` inside a word is part of the word, not markup: `health_check`,
+  `C++`, `C#` and `步骤 #1` keep their paths, and two titles that differ only by such a character are told apart by their
+  own text rather than by an ordinal. Repeated sibling keys are numbered
   `[k]` from 1, as markdown@1 numbers them (also when a key is empty or already ends in `[digits]`), and the selector is
   the encoded `h/` path, null past 4096 characters: such a section cannot be cited and its blocks hang at the manual
   namespace root, which K1 counts in its own warning. Every section of the expanded model is created before any block is

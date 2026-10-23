@@ -174,21 +174,6 @@ export function dropPairedMarks(text: string): string {
   return out;
 }
 
-/** Every markup mark character dropped and escapes resolved (comparison and, for now, heading segments). */
-export function stripMarks(text: string): string {
-  let out = '';
-  for (let at = 0; at < text.length; at++) {
-    const ch = text[at] as string;
-    if (ch === '\\' && at + 1 < text.length) {
-      out += text[++at];
-      continue;
-    }
-    if (MARKS.includes(ch)) continue;
-    out += ch;
-  }
-  return out;
-}
-
 /** Backslash escapes resolved: `\<name\>` is the parameter `<name>`, `\*` a literal asterisk. */
 export function resolveEscapes(text: string): string {
   if (!text.includes('\\')) return text;
