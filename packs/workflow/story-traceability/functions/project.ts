@@ -7,7 +7,7 @@ import { readIndexView } from './views.ts';
 
 export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
-export type Row = Story & { plm_returned: boolean; cases: Case[]; references: string[]; build: string; scope: string };
+export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: string };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
 const fail = (message: string, fix: string) => ({ error: { code: 'story-traceability.invalid_input', message, fix } });
 
@@ -32,9 +32,9 @@ export function projectItems(input: unknown): unknown {
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
       status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
-      plm_returned: r !== null, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
+      plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
-    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title]) !== JSON.stringify([next.status, next.stage, next.title])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');
+    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');
     if (!previous || (!previous.plm_returned && next.plm_returned)) { rows.set(id, next); locations.set(id, { source: source.sha256, selector, slot: source.slot }); }
   }
   if (storyInputs.length > 0) {

@@ -129,3 +129,21 @@ test('absent PLM fields are observed absence, scalar values are raw, and unread 
   assert.deepEqual(total.data.statuses, [{ status: 4, count: 1 }]); assert.equal(total.data.status_absent, 1);
   assert.doesNotMatch(total.statement, /未知/);
 });
+
+test('failed detail sources are distinct from a successful PLM response without an id', () => {
+  const cases = input().inputs.filter(i => i.slot === 'cases');
+  const build = boundView('build', { builds: [{ id: '7', stories: ['21', '23'] }] }, 'plm:builds:5');
+  const s = projected({ inputs: [...cases, build], parameters: { build_id: '7' } });
+  const unavailable = check({ subject: s, sources: {}, unread_sources: ['src:missing'] }) as any[];
+  assert.match(unavailable[0].statement, /详情没有读到（来源不可用）/); assert.doesNotMatch(unavailable[0].statement, /应答里没有编号/);
+  const [total] = counts({ subject: s, sources: {} }) as any[];
+  assert.equal(total.data.plm_unread, 0); assert.equal(total.data.plm_unavailable, 2);
+  const reference = 'src:' + 'b'.repeat(64);
+  const sources = { [reference]: JSON.stringify({ stories: [{ id: '21', stage: 3 }], unread: ['23'] }) };
+  const [read] = counts({ subject: s, sources }) as any[];
+  assert.equal(read.data.plm_unread, 1); assert.equal(read.data.plm_unavailable, 0);
+  const outcomes = check({ subject: s, sources }) as any[];
+  assert.match(outcomes[1].statement, /应答里没有编号 23/); assert.ok(outcomes[1].grounds.includes(reference));
+  const ignored = counts({ subject: s, sources, unread_sources: [reference] }) as any[];
+  assert.equal(ignored[0].data.plm_unavailable, 2);
+});

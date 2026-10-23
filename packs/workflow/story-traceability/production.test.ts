@@ -37,4 +37,15 @@ describe('synthetic story production run', { skip }, () => {
     assert.equal(total.statement.data?.plm_unread, 1);
   });
 
+  test('an expected batch read failure is counted as unavailable rather than as a missing id', async () => {
+    const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', stories: ['31', '32'] }] });
+    const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
+    assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
+    const total = result.production!.result.cross_item.find(c => c.requirement === 'counts')!;
+    assert.equal(total.statement.data?.plm_unread, 0); assert.equal(total.statement.data?.plm_unavailable, 2);
+    assert.equal(result.production!.counts.unknown, 0);
+    assert.ok(hub.views.reads.includes('plm:stories:31+32'));
+  });
+
 });
