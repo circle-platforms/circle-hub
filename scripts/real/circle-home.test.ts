@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome } from './circle-home.ts';
+import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
@@ -501,4 +501,16 @@ test('glob wildcard directory checks include names containing a newline', async 
     symlinkSync(outside, join(f.workdir, 'line\nbreak'), 'dir');
     assert.equal(f.decide(f.input('glob', { pattern: '*/*.txt', path: f.workdir }, [f.workdir])).decision, 'deny');
   } finally { f.close(); }
+});
+
+test('writeHome without contextWindow writes settings.json exactly as before, and with it writes the model window', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chub-home-'));
+  const endpoint: Endpoint = { protocol: 'anthropic', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'scripted-model', sources: ['scripted'] };
+  writeHome({ envFile: 'f', home: join(dir, 'a'), provider: 'qwen', hubUrl: 'http://127.0.0.1:7420/mcp' }, endpoint, 't');
+  const plainSettings = JSON.parse(readFileSync(join(dir, 'a', 'settings.json'), 'utf8'));
+  assert.equal(plainSettings.models, undefined, 'no models key without the option');
+  const big = writeHome({ envFile: 'f', home: join(dir, 'b'), provider: 'qwen', hubUrl: 'http://127.0.0.1:7420/mcp', contextWindow: 1_000_000 }, endpoint, 't');
+  void big;
+  const bigSettings = JSON.parse(readFileSync(join(dir, 'b', 'settings.json'), 'utf8'));
+  assert.deepEqual(bigSettings.models, { 'scripted-model': { context_window: 1_000_000 } });
 });

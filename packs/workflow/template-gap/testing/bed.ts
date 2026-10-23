@@ -1,9 +1,9 @@
 // A test bed for the template-gap pack on the real Hub packages (not part of the pack): a records kit in a temporary
 // PostgreSQL database, an admin, the pack owner (with a publish right), a user the pack is assigned to and one it is not, the
-// real pack registry publishing a staged copy of the pack, and the real run engine on the registry's ports. The pack binds no
-// product, so the knowledge port is a stub that knows nothing; the agile platform is a fake reader that stores what it reads
+// real registry/run engine, a synthetic product line with a commands@1 root and a frozen knowledge:index reader; the agile platform is a fake reader that stores what it reads
 // the way a connector does (the answer as received, the inner document as content, title and folders as meta). Synthetic only.
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
 import type { Artifacts, Principal, SourceArtifact } from '../../../../hub/records/api.ts';
 import type { CallContext, ExternalRead, ExternalReadContext, ExternalReaderPort, KnowledgePort } from '../../../../hub/ports.ts';
@@ -13,6 +13,7 @@ import {
   createRunsService,
   createWorkflowStore,
   temporaryDirectory,
+  writePack,
   type AdminLogEntry,
   type PackRegistry,
   type PublishOutcome,
@@ -20,23 +21,22 @@ import {
 } from '../../../../hub/runs/api.ts';
 import type { TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
-import { PACK_ID, signManifest, stagePack } from '../api.ts';
+import { buildCatalog } from '../../../../hub/rules/api.ts';
+import type { KnownBuild } from '../../../../contracts/src/product.ts';
+import { ROOT, BUILD, PRODUCT, digest } from './index.ts';
+import { PACK_DIR, PACK_ID, signManifest, readManifest, packFiles } from '../api.ts';
 
-// A named object rather than a literal typed as the port, so that it also compiles while the port gains methods.
-const knowsNothing = {
-  builds: async () => [],
-  resolveBuild: async () => null,
-  currentRoot: async () => null,
-  rootOfBuild: async () => null,
-  rootInfo: async () => [],
-  catalog: async () => null,
+const knownBuild: KnownBuild = { name: BUILD, family: 'MEADOW', line: '10.6', base: BUILD, platform: null, built_at: '2026-10-01T00:00:00.000Z', released_at: '2026-10-02T00:00:00.000Z', sources: {}, root: ROOT };
+export const SYNTHETIC_KNOWLEDGE: KnowledgePort = {
+  builds: async product => product === PRODUCT ? [knownBuild] : [],
+  resolveBuild: async (product, name) => product === PRODUCT && name === BUILD ? knownBuild : null,
+  currentRoot: async (product, line) => product === PRODUCT && line === knownBuild.line ? { root: ROOT, composition: digest('synthetic composition'), product, build: knownBuild, produced_at: '2026-10-03T00:00:00.000Z' } : null,
+  rootOfBuild: async (product, name) => product === PRODUCT && name === BUILD ? { root: ROOT, composition: digest('synthetic composition'), product, build: knownBuild, produced_at: '2026-10-03T00:00:00.000Z' } : null,
+  rootInfo: async root => root === ROOT ? [{ root: ROOT, composition: digest('synthetic composition'), product: PRODUCT, build: knownBuild, produced_at: '2026-10-03T00:00:00.000Z' }] : [],
+  catalog: async (root, catalog) => root === ROOT && catalog === 'commands@1' ? buildCatalog({ root: ROOT, complete: true, entries: [{ head: 'widget probe', reference: `tree:${ROOT}/CLI/widget/probe`, signatures: [[]] }] }) : null,
   treeReader: () => ({ read: () => null, readEntry: () => null }),
-  getNodes: async () => null,
-  diffRoots: async () => null,
-  diffEntries: async () => null,
+  getNodes: async () => null, diffRoots: async () => null, diffEntries: async () => null,
 };
-/** The knowledge base is never consulted by a pack without a product binding. */
-export const NO_KNOWLEDGE: KnowledgePort = knowsNothing;
 
 export interface AgileDocument {
   bytes: Uint8Array;
@@ -60,11 +60,17 @@ export class FakeAgile implements ExternalReaderPort {
   }
 
   async accepts(id: string): Promise<boolean> {
-    return id.startsWith('agile:mindmap:');
+    return id.startsWith('agile:mindmap:') || id.startsWith('knowledge:index:');
   }
 
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);
+    if (id.startsWith('knowledge:index:')) {
+      const source = this.documents.get(id);
+      if (!source) return { ok: false, id, reason: 'synthetic index is missing' };
+      const artifact = await this.#artifacts.ingest({ bytes: source.bytes, mediaType: 'application/json', origin: { generated: { generator: 'knowledge.views@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [context.principal.id], admins: true, packs: [], shareable: false }, name: 'synthetic-index.json' });
+      return { ok: true, id, revision: ROOT, artifacts: [{ name: 'original', artifact }], manifest: 'synthetic' };
+    }
     const document = this.documents.get(id.slice('agile:mindmap:'.length));
     if (document === undefined) return { ok: false, id, reason: `synthetic agile platform answered code 1004 for ${id}` };
     const visibility = { readers: [context.principal.id], admins: true, packs: [], shareable: false };
@@ -142,11 +148,17 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
     const stranger = principal(await kit.principals.createUser(admin, '旁人'));
     await kit.authorizations.grantPublishRight(admin, owner.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now });
-    const staged = await stagePack(join(temp.path, 'staged'));
+    const staged = join(temp.path, 'staged');
+    for (const file of await packFiles()) { await mkdir(dirname(join(staged, file.path)), { recursive: true }); await copyFile(join(PACK_DIR, file.path), join(staged, file.path)); }
+    await writeFile(join(staged, 'pack.json'), `${JSON.stringify({ ...await readManifest(), files: await packFiles() }, null, 2)}\n`);
     if (options.edit !== undefined) {
       await options.edit(staged);
       await signManifest(staged);
     }
+    const productDir = (await writePack(join(temp.path, 'synthetic-product'), { id: PRODUCT, version: '1.0.0', kind: 'product', title: '合成模板产品线', description: '只用于包测试的合成产品线和命令目录', files: { 'product.json': { schema: 'product@1', id: PRODUCT, title: '合成模板产品线', names: ['Synthetic Template', 'MEADOW'], catalogs: [{ id: 'commands@1', entry_kind: 'definition', complete: true, case_sensitive: false }], producers: [] } } })).dir;
+    const product = await registry.publish(owner, productDir);
+    if (!product.ok) throw new Error(JSON.stringify(product.problems));
+    await registry.activate(admin, PRODUCT);
     const publication = await registry.publish(owner, staged);
     if (publication.ok) await registry.assign(admin, runner.id, PACK_ID);
     const agile = new FakeAgile(kit.artifacts);
@@ -155,7 +167,7 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
-      knowledge: NO_KNOWLEDGE,
+      knowledge: SYNTHETIC_KNOWLEDGE,
       external: agile,
       now,
       adminLog: (entry) => logs.push(entry),

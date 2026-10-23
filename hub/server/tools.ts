@@ -1,3 +1,4 @@
+import type { ContributionLayer } from '../knowledge/api.ts';
 // The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
 // and delegation to RunsService for the rest. Every answer is validated against the tool's output schema before it is sent;
 // one that does not conform is an internal error and never reaches the caller (D05). isError is true only when the answer is
@@ -26,12 +27,12 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
-import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, structureOf } from './upload.ts';
+import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
 
@@ -266,7 +267,28 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   if (name !== undefined && (!NAME.test(name) || !name.isWellFormed())) {
     return errorAnswer('upload_file', [violation('upload_file', '/name', '文件名是 1 到 300 个字符，不含控制字符')]);
   }
-  const mediaType = mediaTypeFor(bytes, given, name);
+  let mediaType = mediaTypeFor(bytes, given, name);
+  const authoritative = mediaTypeIsAuthoritative(given, name);
+  let refusal: ProtocolError | null = null;
+  let suggestMediaType = false;
+  let structure: Record<string, unknown> | null = null;
+  try {
+    structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
+      suggestMediaType = mediaType !== 'text/plain' && !(error instanceof ParseLimitError) && (error instanceof ParseSyntaxError || error instanceof ParseEncodingError);
+      refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: error.fix };
+    });
+  } catch (error) {
+    call.context.adminNote(`structure summary failed: ${describeError(error)}`);
+    throw error;
+  }
+  if (refusal && authoritative) return errorAnswer('upload_file', [refusal]);
+  if (refusal) {
+    const rejected = refusal as ProtocolError;
+    const guessed = mediaType;
+    const fallback = structureOf(deps.parsers, bytes, 'text/plain');
+    if (fallback !== null) { mediaType = 'text/plain'; structure = fallback; }
+    structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, guessed_refusal: rejected, note: `媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；${rejected.message}；修正：${rejected.fix}${suggestMediaType ? '；若类型猜测有误，请用 media_type 明确指定实际格式后重传' : ''}` };
+  }
   let artifact;
   try {
     artifact = await deps.records.artifacts.ingest({
@@ -289,12 +311,6 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       });
     }
     throw error;
-  }
-  let structure: Record<string, unknown> | null = null;
-  try {
-    structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
-  } catch (error) {
-    call.context.adminNote(`structure summary failed: ${describeError(error)}`);
   }
   const sha256 = artifact.body.sha256;
   return {
@@ -430,6 +446,15 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     if (!(error instanceof ReferenceSyntaxError)) throw error;
     return { answer: errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]) };
   }
+  if(parsed.scheme==='rec'){
+    const layer=(deps.knowledge as typeof deps.knowledge&{layers?:{contributions:ContributionLayer}}).layers?.contributions;
+    const view=await layer?.readView(parsed.record,call.principal);
+    if(view?.status==='credential_unreadable'){
+      if(cursor!==null){const problem=pageCursorProblem(reference,cursor);if(problem!==null)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/cursor',problem,CURSOR_FIX)])};}
+      // A dynamic access marker is not a rewritten record. Never send a redacted body under the original digest.
+      return {answer:{call_result:'ok',errors:[],content:{reference,read_tier:'retain_only',readable:false,sha256:parsed.record,note:view.note,structure:{status:view.status,record:view.record}}}};
+    }
+  }
   // A withheld source (retain_only) comes back from the reader with null bytes; refs answers it with the note and without
   // evaluating the selector, so absent and withheld follow refs' one rule.
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
@@ -439,7 +464,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     parsers: deps.parsers,
     sources,
     trees: deps.knowledge.treeReader(),
-    records: recordReaderFor(deps.records, deps.runs, call.principal, note),
+    records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
   });
@@ -505,7 +530,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.context.adminNote(`the answer of ${name} does not conform to its output schema and was not sent: ${issues.join('; ')}`);
     throw internalError(call.context.traceId);
   }
-  const value = checked.data as Answer & { call_result: 'ok' | 'error'; errors: ProtocolError[]; acceptance?: Acceptance };
+  const value = checked.data as Answer & { call_result: CallResult; errors: ProtocolError[]; acceptance?: Acceptance };
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;

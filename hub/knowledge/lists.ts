@@ -1,3 +1,4 @@
+import type { ActionResult } from '../../contracts/generated/vocabulary.ts';
 // List slots (product@1 ProducerSource many): every external object a build lists in one role, read through the
 // ExternalReaderPort with bounded concurrency in the admin's context, checked and parsed like any source, handed to the
 // producer in batches. Loading has two steps: a read gives the stored record and its size without its bytes, so a batch is
@@ -281,7 +282,7 @@ async function storedOutcome(context: KnowledgeContext, key: string): Promise<St
   }
 }
 
-function memoAction(ctx: ListCallContext, startedAt: string, elements: readonly ParsedSource[], result: 'completed' | 'error', detail: MemoDetail | MemoFailureDetail): ActionBody {
+function memoAction(ctx: ListCallContext, startedAt: string, elements: readonly ParsedSource[], result: Extract<ActionResult, 'completed' | 'error'>, detail: MemoDetail | MemoFailureDetail): ActionBody {
   const inputs = [...new Set([...elements.map((e) => `src:${e.sha256}`), ...[...ctx.slots.values()].flatMap((s) => (s === null ? [] : [`src:${s.sha256}`]))])];
   return {
     action: ACTION.generate,

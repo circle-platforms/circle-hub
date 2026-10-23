@@ -1,26 +1,16 @@
-// The checks of the review report (checks.json), pure functions over the default subjects the Hub builds. The report
-// requirement is a run-level judgment: its claims sit in the subject's cross_item (flattened: code, rank, statement,
-// grounds — a run-level claim carries no data, so the findings are its grounds). The verdict claim is the one whose code
-// is PASS, PARTIAL or FAIL (the closed set the slot declares, the same shape as the verification pack's own final):
-// - overall (run, fact): the verdict claim's code equals the computed worst verdict and its rank the computed level — a
-//   direct comparison, never text matching; with no readable final in some block the computed overall is unknown and no
-//   verdict can be honestly stated, so the claim is refused with the fix naming the missing block.
-// - report (run): every verified, partial and new finding of the blocks is cited among the verdict claim's grounds (none
-//   missing, none refuted, none invented), and every suggestion claim carries the three labeled parts.
+// The final prose only declares the computed overall verdict and level. Individual dispositions and suggestions are
+// already shown verbatim by the deterministic table; the reporter must not transcribe them into another claim list.
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { PACK, isRecord } from './common.ts';
+import labels from '../tables/labels.json' with {type:'json'};
 
-const VERDICTS = ['PASS', 'PARTIAL', 'FAIL'] as const;
-type Verdict = (typeof VERDICTS)[number];
+const VERDICTS=labels.finalCodes.map(row=>row.code);
+type Verdict=string;
 const TIER = 'blocking';
 const CODES = {
   verdictMismatch: `${PACK}.verdict_mismatch`,
   levelMismatch: `${PACK}.level_mismatch`,
   reportMissing: `${PACK}.report_missing`,
-  findingMissing: `${PACK}.finding_missing`,
-  findingRefuted: `${PACK}.finding_refuted`,
-  findingUnknown: `${PACK}.finding_unknown`,
-  suggestionIncomplete: `${PACK}.suggestion_incomplete`,
 };
 
 const cross = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
@@ -50,8 +40,13 @@ export function overallCheck(input: unknown): CheckOutcome[] {
   if (computed === null) {
     // 缺了块结论（或条目没交付）时是未知（缺输入），不是驳回：终稿现在判不出来，先补齐再来。
     const missing = Array.isArray(fields.missing_items) ? fields.missing_items.filter((x): x is string => typeof x === 'string') : [];
-    const why = missing.length > 0 ? `有 ${missing.length} 个条目任何一块都没交付（${missing.slice(0, 10).join('、')}），覆盖不完整` : '有块没有可读的结论';
-    return [{ verdict: 'unknown', reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: '把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
+    const sourceGaps=Array.isArray(fields.missing_source_facts)?fields.missing_source_facts.filter(isRecord):[];
+    const blocks=Array.isArray(fields.missing_blocks)?fields.missing_blocks:[];
+    const why=missing.length>0?'有 '+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'），覆盖不完整'
+      :sourceGaps.length>0?'缺少初评 Hub 核对支持事实；'+(typeof fields.source_gap_fix==='string'?fields.source_gap_fix:'下一步：按原回执补齐处置支持事实并重交复核后重开终稿')+'（'+sourceGaps.slice(0,3).map(gap=>String(gap.item).slice(0,50)).join('、')+'）'
+      :'第 '+blocks.join('、')+' 块没有可读结论或等级';
+
+    return [{ verdict: 'unknown', reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: sourceGaps.length>0&&typeof fields.source_gap_fix==='string'?fields.source_gap_fix:'把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
   }
   if (claim.code !== computed.verdict) {
     return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: `整体结论应是 ${computed.verdict}（各块取最差），主张写的是 ${String(claim.code)}`, grounds: [], tier: TIER, data: { fix: `把结论主张的码改成 ${computed.verdict}` } }];
@@ -63,39 +58,9 @@ export function overallCheck(input: unknown): CheckOutcome[] {
   return [{ verdict: 'support', statement: `整体结论 ${computed.verdict}、等级 ${computed.level ?? '未给'}：各块取最差，终稿主张照写`, grounds: [], tier: TIER }];
 }
 
-export function reportCheck(input: unknown): CheckOutcome[] {
-  const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
-  const reportItem = itemsOf(subject).find((i) => i.id === 'report');
-  const fields = isRecord(reportItem?.fields) ? reportItem?.fields : {};
-  const findings = Array.isArray(fields.findings) ? (fields.findings as unknown[]).filter(isRecord) : [];
-  const known = new Set(findings.map((f) => String(f.reference ?? '')).filter((r) => r !== ''));
-  const refuted = new Set(findings.filter((f) => f.kind === 'refuted').map((f) => String(f.reference ?? '')));
-  const claims = claimsOf(subject);
-  const verdict = verdictClaimOf(subject);
-  if (verdict === null) {
-    return [{ verdict: 'refute', code: CODES.reportMissing, statement: `提交里没有结论主张（cross_item 里码为 ${VERDICTS.join('、')} 的一条）`, grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条结论主张（code 写整体结论、rank 写整体等级、statement 写报告全文）' } }];
-  }
-  const cited = new Set((Array.isArray(verdict.grounds) ? verdict.grounds : []).filter((g): g is string => typeof g === 'string'));
-  const out: CheckOutcome[] = [];
-  for (const f of findings) {
-    const reference = String(f.reference ?? '');
-    if (reference === '') continue;
-    if (f.kind === 'refuted') {
-      if (cited.has(reference)) out.push({ verdict: 'refute', code: CODES.findingRefuted, statement: `引用了被推翻的发现 ${reference}：推翻的发现不能进报告`, grounds: [], tier: TIER, data: { fix: '删掉这条 grounds 引用，把推翻写进终稿的文字里而不是发现清单' } });
-      continue;
-    }
-    if (!cited.has(reference)) {
-      out.push({ verdict: 'refute', code: CODES.findingMissing, statement: `发现 ${reference}（${f.kind === 'new_finding' ? '新增' : f.kind === 'partial' ? '部分正确' : '证实'}）没有在结论主张的 grounds 里引用`, grounds: [], tier: TIER, data: { fix: '把这条发现的 rec: 引用补进结论主张的 grounds' } });
-    }
-  }
-  for (const reference of cited) {
-    if (!known.has(reference)) out.push({ verdict: 'refute', code: CODES.findingUnknown, statement: `引用 ${reference} 不在任何一块的复核结果里`, grounds: [], tier: TIER, data: { fix: '只引用各块复核结果里的发现' } });
-  }
-  for (const claim of claims.filter((c) => c.code === 'suggestion')) {
-    const statement = typeof claim.statement === 'string' ? claim.statement : '';
-    if (!(statement.includes('补：') && statement.includes('因为：') && statement.includes('期望：'))) {
-      out.push({ verdict: 'refute', code: CODES.suggestionIncomplete, statement: '一条建议缺了三段（补：…；因为：…；期望：…）', grounds: [], tier: TIER, data: { fix: '每条建议按“补：<用例>；因为：<原因>；期望：<结果>”三段写全' } });
-    }
-  }
-  return out.length === 0 ? [{ verdict: 'support', statement: '终稿与各块复核材料一致：发现一条不漏，没有引用推翻的发现，建议三段齐全', grounds: [], tier: TIER }] : out;
+/** The table already contains each accepted disposition; the final prose only declares the computed overall and level. */
+export function reportCheck(input:unknown):CheckOutcome[] {
+  return overallCheck(input).map(outcome=>outcome.verdict==='support'
+    ? {...outcome,statement:'终稿的整体结论和等级与各块最差一致；发现和建议已在确定性评审表中列出，不要求逐条引用'}
+    : outcome);
 }

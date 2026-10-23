@@ -1,32 +1,27 @@
-// Verbatim quotation check (T04 R[1]): white space runs collapse to one space and the ends are trimmed, then the quote
+// Verbatim quotation check (T04 R[1], decision 37): W/F-adjacent whitespace disappears; other runs collapse, then the quote
 // must be contained verbatim; case, punctuation, character width and Unicode normalization form all stay significant.
-// One matcher serves every check: KMP over the text with each white-space run read as one space, so a search is linear
+// One matcher serves every check: KMP over the contextually normalized text, so a search is linear
 // in the text and allocates nothing per candidate.
 import type { Resolution, SourceRole } from '../../contracts/generated/vocabulary.ts';
 import { QUOTATION_UNITS, type ByteRange, type ParsedDocument, type QuotationSource, type QuotationUnits } from './parser.ts';
 import { ReferenceSyntaxError, parseReference, srcFragment, withRange } from './reference.ts';
 import { isWhiteSpace, utf8Length } from './text-decoding.ts';
+import { dropQuoteWhitespace } from './quote-whitespace.ts';
 
-/** Collapses every run of white space to one space and trims both ends. */
+/** Normalizes quotation whitespace: W/F-adjacent runs disappear, other interior runs become one space. */
 export function collapseWhitespace(text: string): string {
-  let out = '';
-  let pendingSpace = false;
+  const parts: string[] = [];
   let start = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (!isWhiteSpace(text.charCodeAt(i))) continue;
-    if (i > start) {
-      if (pendingSpace && out !== '') out += ' ';
-      out += text.slice(start, i);
-      pendingSpace = false;
-    }
-    pendingSpace = true;
-    start = i + 1;
+  for (let i = 0; i < text.length;) {
+    if (!isWhiteSpace(text.charCodeAt(i))) { i++; continue; }
+    if (i > start) parts.push(text.slice(start, i));
+    const runStart = i;
+    while (i < text.length && isWhiteSpace(text.charCodeAt(i))) i++;
+    if (!dropQuoteWhitespace(text, runStart, i)) parts.push(' ');
+    start = i;
   }
-  if (start < text.length) {
-    if (pendingSpace && out !== '') out += ' ';
-    out += text.slice(start);
-  }
-  return out;
+  if (start < text.length) parts.push(text.slice(start));
+  return parts.join('');
 }
 
 /** A collapsed, non-empty quotation compiled for search. Not reentrant: one scan at a time. */
@@ -51,7 +46,7 @@ class Matcher {
 
   /**
    * Calls `visit(start, end)` with the UTF-16 bounds of every occurrence in `text[from, to)`, in order and overlaps
-   * included; a white-space run of the text reads as one space. Stops when `visit` returns false. Occurrences start and
+   * included; whitespace follows the same contextual rule as quotation normalization. Stops when `visit` returns false. Occurrences start and
    * end on characters that are not white space, and later occurrences end later.
    */
   scan(text: string, from: number, to: number, visit: (start: number, end: number) => boolean): void {
@@ -67,6 +62,7 @@ class Matcher {
       let code = text.charCodeAt(i++);
       if (isWhiteSpace(code)) {
         while (i < to && isWhiteSpace(text.charCodeAt(i))) i++;
+        if (dropQuoteWhitespace(text, start, i, from, to)) continue;
         code = 0x20;
       }
       starts[symbol % m] = start;
@@ -179,7 +175,7 @@ export interface QuoteSearch {
 
 const EMPTY_QUOTE = '原文为空，没有可核对的内容';
 const ILL_FORMED_QUOTE = '原文里有不成对的 UTF-16 代理字符，不是完整的文字，无法核对';
-const NOT_FOUND = '在已绑定的来源里找不到这段原文。请逐字引用：连续的空白算作一个空格，空白多少不影响核对，但原文里有空白的地方引文也要有，原文没有空白的地方引文不能加';
+const NOT_FOUND = '在已绑定的来源里找不到这段原文。请逐字引用：空白两侧任意一边为东亚宽字符或全角字符时去掉空白，其余连续空白折成一个空格；大小写、标点和字符宽度仍须逐字相同';
 
 type Place = {
   candidate: QuoteCandidate;

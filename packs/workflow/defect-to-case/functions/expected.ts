@@ -1,34 +1,20 @@
-// Expected sources function for defect-to-case.
-import type { ExpectedSource, ExpectedSourcesOutput } from '../../../../contracts/src/pack.ts';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
+// Bound manual identities are frozen by projection. Expected-source warnings are also returned to the caller as gaps.
+import type { ExpectedSourcesOutput, PackWarning } from '../../../../contracts/src/pack.ts';
+const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 export function expectedSources(input: unknown): ExpectedSourcesOutput {
-  if (!isRecord(input)) return { sources: [], warnings: [] };
-  const context = isRecord(input.context) ? input.context : {};
-  const product = typeof context.product === 'string' ? context.product : null;
-  const build = typeof context.build === 'string' ? context.build : null;
-  const line = typeof context.line === 'string' ? context.line : null;
-
-  const sources: ExpectedSource[] = [];
-
-  // The dedup index is bound by the run's own inputs (indexed_cases), narrowed with only=<commands> by the model; the
-  // automatic un-narrowed binding doubled the byte budget for nothing and is gone.
-
-  // Bind CLI manual if line is known
-  if (line) {
-    sources.push({
-      external: `manual:cli:${line}`,
-      role: 'expected',
-      reason: '版本线的命令行手册，作为期望结果和命令依据',
-    });
+  const raw = record(input) ? input : {};
+  const context = record(raw.context) ? raw.context : {};
+  const line = typeof context.line === 'string' && context.line.trim() ? context.line : null;
+  const warnings: PackWarning[] = [];
+  for (const item of Array.isArray(raw.items) ? raw.items : []) {
+    if (!record(item) || !record(item.fields) || !record(item.fields.allowed_quote_sources)) continue;
+    const allowed = item.fields.allowed_quote_sources;
+    if (allowed.manual !== null) continue;
+    const id = typeof item.id === 'string' ? item.id : '本条缺陷';
+    const field = typeof allowed.fix_field === 'string' ? allowed.fix_field : '已配置修复说明字段';
+    const next = line === null ? '运行没有版本线，manual 保持未绑定；若需要手册，先选有明确版本线的构建后重开运行' : `先核实 manual:cli:${line} 是否可读，存在时在 inputs.manual 绑定后重开运行；这条线没有手册则保持未绑定并保留来源限制`;
+    warnings.push({ code: 'defect-to-case.manual_missing', item: id, message: `版本线 ${line ?? '未声明'} 未绑定手册${line === null ? '' : ` manual:cli:${line}`}；本次期望结果只能引用缺陷 ${id} 的修复说明字段 ${field}。下一步：${next}` });
   }
-
-  return { sources, warnings: [] };
+  return { sources: [], warnings };
 }
-
-export default function (input: unknown): unknown {
-  return expectedSources(input);
-}
+export default expectedSources;

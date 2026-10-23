@@ -123,7 +123,7 @@ type Searchable = { id: string; parent: number; tags: Set<CanonicalTag>; texts: 
 const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** What the cases show of every category, in template order; evidence sorted, at most MAX_EVIDENCE ids. */
-export function categoryFacts(template: Template, document: Pick<DocumentCases, 'cases' | 'nodes'>): CategoryFact[] {
+export function categoryFacts(template: Template, document: Pick<DocumentCases, 'cases' | 'nodes'>, options: { evidenceLimit?: number } = {}): CategoryFact[] {
   const { cases, nodes } = document;
   const forms = nodes.texts.map(matchForm);
   const items: Searchable[] = cases.map((record) => ({
@@ -157,7 +157,7 @@ export function categoryFacts(template: Template, document: Pick<DocumentCases, 
       return false;
     };
     const ids = items.filter(shows).map((item) => item.id);
-    const evidence = ids.sort(byCodeUnits).slice(0, MAX_EVIDENCE);
+    const evidence = ids.sort(byCodeUnits).slice(0, options.evidenceLimit ?? MAX_EVIDENCE);
     return { id: category.id, label: category.label, group: category.group, required: category.required, present: ids.length > 0, count: ids.length, evidence };
   });
 }

@@ -2,7 +2,7 @@
 // 带 catalog=commands@1 的视图没有这句。视图的 catalog 字段也照名字@主版本号核验。
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 import { buildImpact, SOURCE } from './test-support.ts';
 
 const input = (model: unknown): unknown => ({ slot: 'impact', external: null, sha256: SOURCE, media_type: 'application/json', parser: 'json@1', model, meta: null });

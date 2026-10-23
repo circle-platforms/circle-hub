@@ -239,15 +239,17 @@ function idList(value: unknown, name: string, warnings: WarningSink): string[] |
 }
 
 /** One kind's range: absent (null), or `{ min?, max? }` with non-negative integer bounds, min <= max. */
+const ID_RANGE_FIELDS = {min:true,max:true} satisfies Record<keyof IdRange,boolean>;
+
 function readRange(value: unknown): IdRange | null | undefined {
   if (value === undefined) return null;
-  if (!isRecord(value) || Object.keys(value).some((key) => key !== 'min' && key !== 'max')) return undefined;
+  if (!isRecord(value) || Object.keys(value).some(key=>!Object.hasOwn(ID_RANGE_FIELDS,key))) return undefined;
   const range: IdRange = {};
-  for (const key of ['min', 'max'] as const) {
-    const bound = value[key];
+  for (const [key, bound] of Object.entries(value)) {
     if (bound === undefined) continue;
     if (typeof bound !== 'number' || !Number.isSafeInteger(bound) || bound < 0) return undefined;
-    range[key] = bound;
+    if (key === 'min') range.min = bound;
+    else range.max = bound;
   }
   if (range.min !== undefined && range.max !== undefined && range.min > range.max) return undefined;
   return range;

@@ -1,0 +1,26 @@
+{
+  "run": "run_01arz3ndektsv4rrffq69g5fav",
+  "model": "integration-example@1",
+  "items": [
+    {
+      "item": "fact_1",
+      "handling": "handled",
+      "slots": {
+        "contribution": [
+          {
+            "code": "assertion",
+            "text": "状态命令打印当前状态",
+            "data": {
+              "root": "3333333333333333333333333333333333333333333333333333333333333333",
+              "path": "/commands/status",
+              "source": {
+                "reference": "tree:3333333333333333333333333333333333333333333333333333333333333333/commands/status",
+                "quote": "status prints the current state"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

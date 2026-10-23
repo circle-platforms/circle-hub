@@ -1,100 +1,95 @@
-// The case-compile pack as files: the manifest matches the listed files, the declarations hang together (inputs,
-// product catalogs, checks and requirements), every code the functions give is declared in codes.json, the samples
-// cover every check in both polarities, and the examples parse.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it } from 'node:test';
-import { PackManifest } from '../../../contracts/src/pack.ts';
+import { test } from 'node:test';
+import ts from 'typescript';
+import {createHash} from 'node:crypto';
+import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
 import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
+import { parseRuntimeContract } from './functions/runtime-contract.ts';
+import { parseProfile } from './functions/profile.ts';
+import { parseManifest } from './functions/manifest.ts';
+const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
+const json = (path: string): any => JSON.parse(read(path));
+test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.3.4'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
+  assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
+  assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
+});
+test('workflow binds the published profile and exposes reservation addresses under bed/', () => {
+  const workflow = WorkflowFile.parse(json('workflow.json'));
+  assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false]]);
+  assert.equal(workflow.parameters.find((v) => v.name === 'autoid')?.required, true);
+  assert.equal(workflow.leases?.prefix, 'bed/'); assert.deepEqual(workflow.context, ['leases']); assert.deepEqual(workflow.product.catalogs, ['commands@1']);
+});
+test('every check serves one requirement and repairable codes have exactly two rounds', () => {
+  const checks = json('checks.json').checks as Array<{ id: string; tier: string }>;
+  const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
+  assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'workbook_verified']);
+  assert.ok(checks.every((v) => v.tier === 'blocking'));
+  assert.deepEqual([...new Set(requirements.flatMap((v) => v.checks))].sort(), checks.map((v) => v.id).sort());
+  assert.ok(!requirements.some((v) => v.key === 'plan_deterministic'));
+  const declared = new Set(json('tables/codes.json').violations.map((v: any) => v.code));
+  const repairs = requirements.flatMap((v) => v.error_handling);
+  for (const code of declared) assert.ok(repairs.some((v) => v.code === code && v.action === 'repair' && v.max_rounds === 2), String(code));
+});
+test('complete slot schema rejects legacy data and nonempty blocks', () => {
+  SlotsFile.parse(json('slots.schema.json'));
+  const shape = json('slots.schema.json').item.plan.data;
+  assert.deepEqual(shape.required, ['bucket', 'blocks', 'steps', 'expects', 'replacements']); assert.equal(shape.additionalProperties, false);
+  assert.equal(shape.properties.blocks.maxItems, 0); assert.deepEqual(shape.properties.steps.items.required, ['object', 'method', 'args', 'keywords']);
+  assert.deepEqual(shape.properties.expects.items.required, ['text', 'quote', 'after']);
+});
+test('each runtime plan rule has paired positive and negative author samples', () => {
+  const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 47);
+  const coverage = new Set<string>();
+  for (const name of positive) {
+    const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);
+    assert.equal(yes.check, no.check); coverage.add(yes.check); assert.ok(yes.expect.every((v: any) => v.verdict === 'support')); assert.ok(no.expect.some((v: any) => v.verdict === 'refute' && v.code));
+  }
+  assert.deepEqual([...coverage].sort(), json('checks.json').checks.map((v: any) => v.id).sort());
+});
+test('the examples use the original synthetic contract, matching profile and final-text slots', () => {
+  const contract = parseRuntimeContract(json('examples/runtime-contract.json')); const manifest = parseManifest(json('examples/bed-topology.json'));
+  assert.ok(contract.ok && manifest.ok); if (!contract.ok || !manifest.ok) return;
+  const profile = parseProfile(json('examples/runtime-profile.json'), contract.contract, manifest.beds); assert.ok(profile.ok); if (profile.ok) assert.equal(profile.profile.synthetic, true);
+  assert.equal(profile.ok && profile.profile.workbook.header.length, 9);
+  const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
+  const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
+});
+test('the client skill specifies verification and continuation without a Hub content generator', () => {
+  const skill = read('SKILL.md'); assert.ok(skill.length <= 8000); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
+});
 
-const read = (path: string): string => readFileSync(join(PACK_DIR, path), 'utf8');
-const json = (path: string): unknown => JSON.parse(read(path));
+function emittedCodes():Set<string>{
+ const used=new Set<string>();
+ for(const name of readdirSync(join(PACK_DIR,'functions')).filter(name=>name.endsWith('.ts')&&!name.endsWith('.test.ts')&&name!=='test-support.ts')){
+  const file=ts.createSourceFile(name,read('functions/'+name),ts.ScriptTarget.Latest,true);
+  const addArgument=(node:ts.Node):void=>{if(ts.isStringLiteralLike(node)&&/^[a-z][a-z0-9_]*$/.test(node.text))used.add('case-compile.'+node.text);else if(ts.isConditionalExpression(node)){addArgument(node.whenTrue);addArgument(node.whenFalse);}};
+  const visit=(node:ts.Node):void=>{
+   if(ts.isStringLiteralLike(node)&&/^case-compile\.[a-z0-9_]+$/.test(node.text))used.add(node.text);
+   // binding.issue emits pack codes; workbook.issue records internal reader rules under workbook_invalid.
+   if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)){const kind=node.expression.text;if(kind==='refusal'||kind==='issue'&&name==='binding.ts'){if(node.arguments[0])addArgument(node.arguments[0]);}else if(kind==='refute'&&node.arguments[1])addArgument(node.arguments[1]);}
+   ts.forEachChild(node,visit);
+  };visit(file);
+ }return used;
+}
+test('every emitted pack code and every pack repair code is declared',()=>{
+ const table=json('tables/codes.json');const declared=new Set<string>([...table.violations,...table.refusals,...table.warnings].map(v=>v.code));
+ const used=emittedCodes();assert.ok(used.size>20);for(const code of used)assert.ok(declared.has(code),`emitted code missing from tables/codes.json: ${code}`);
+ for(const row of json('requirements.json').requirements.flatMap((r:any)=>r.error_handling))if(row.code.startsWith('case-compile.'))assert.ok(declared.has(row.code),`repair code missing from tables/codes.json: ${row.code}`);
+});
 
-describe('the case-compile pack files', () => {
-  it('pack.json is the fresh manifest of exactly the pack files', async () => {
-    const manifest = await computeManifest();
-    assert.ok(PackManifest.safeParse(manifest).success);
-    assert.deepEqual(JSON.parse(read('pack.json')), JSON.parse(JSON.stringify(manifest)));
-    const files = await packFiles();
-    for (const top of ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md']) assert.ok(files.includes(top), top);
-    assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')), 'tests and the harness stay out');
-  });
+test('published skill heading never advertises a stale pack version',()=>{
+ const heading=read('SKILL.md').split('\n')[0];const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
+});
 
-  it('declares the inputs, the catalog binding and the checks', () => {
-    const workflow = json('workflow.json') as { inputs: Array<{ slot: string; accepts: string[]; required: boolean }>; product: { catalogs: string[] }; context: string[] };
-    assert.deepEqual(
-      workflow.inputs.map((input) => [input.slot, input.accepts, input.required]),
-      [
-        ['subject', ['agile:mindmap', 'application/json'], true],
-        ['contract', ['doc:doc'], true],
-        ['inventory', ['doc:doc'], true],
-      ],
-    );
-    assert.deepEqual(workflow.product.catalogs, ['commands@1']);
-    assert.deepEqual(workflow.context, ['leases']);
-    const checks = json('checks.json') as { checks: Array<{ id: string; tier: string; basis?: string }> };
-    assert.deepEqual(
-      checks.checks.map((check) => check.id),
-      ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'deterministic_plan'],
-    );
-    for (const check of checks.checks) {
-      assert.equal(check.tier, 'blocking', check.id);
-      assert.ok(typeof check.basis === 'string' && check.basis.length > 0, `blocking check ${check.id} names its basis`);
-    }
-    const requirements = json('requirements.json') as { requirements: Array<{ key: string; checks: string[] }> };
-    const byChecks = requirements.requirements.flatMap((requirement) => requirement.checks);
-    assert.deepEqual([...byChecks].sort(), [...checks.checks.map((check) => check.id)].sort(), 'every check serves a requirement');
-  });
-
-  it('declares every code the functions give', () => {
-    const codes = json('tables/codes.json') as { violations: Array<{ code: string }>; refusals: Array<{ code: string }>; warnings: Array<{ code: string }> };
-    const declared = new Set([...codes.violations, ...codes.refusals, ...codes.warnings].map((entry) => entry.code));
-    const used = new Set<string>();
-    for (const file of ['functions/checks.ts', 'functions/plan.ts', 'functions/project.ts']) {
-      for (const match of read(file).matchAll(/case-compile\.([a-z_]+)/g)) used.add(`case-compile.${match[1]}`);
-    }
-    for (const code of used) assert.ok(declared.has(code), `${code} 没有在 codes.json 里声明`);
-  });
-
-  it('has a positive and a negative sample of each check', () => {
-    const checks = (json('checks.json') as { checks: Array<{ id: string }> }).checks.map((check) => check.id);
-    const files: Record<string, string[]> = {
-      positive: ['contract-valid.json', 'addresses-valid.json', 'commands-valid.json', 'expects-sourced.json', 'quotes-verbatim.json', 'plan-deterministic.json'],
-      negative: ['method-forbidden.json', 'listen-blind.json', 'backend-not-server.json', 'commands-out-of-range.json', 'commands-not-member.json', 'expect-without-source.json', 'expect-not-in-quote.json', 'quote-mismatch.json', 'plan-in-slots.json'],
-    };
-    for (const [polarity, names] of Object.entries(files)) {
-      const seen = new Set<string>();
-      for (const file of names) {
-        const sample = json(`samples/${polarity}/${file}`) as { check: string; expect: Array<{ verdict: string; code?: string; reason?: string }> };
-        seen.add(sample.check);
-        if (polarity === 'positive') assert.ok(sample.expect.every((outcome) => outcome.verdict === 'support'), `${file} 正例要全是支持`);
-        else assert.ok(sample.expect.some((outcome) => outcome.verdict === 'refute' && outcome.code === sample.expect[0].code), `${file} 负例要有反驳码`);
-      }
-      for (const check of checks) assert.ok(seen.has(check), `${polarity} 缺少 ${check} 的样例`);
-    }
-  });
-
-  it('the examples parse and carry the synthetic declaration', () => {
-    const contract = json('examples/compile-contract.json') as { schema: string; synthetic: boolean };
-    assert.equal(contract.schema, 'compile-contract@1');
-    assert.equal(contract.synthetic, true);
-    const manifest = json('examples/bed-topology.json') as { schema: string };
-    assert.equal(manifest.schema, 'test-bed-manifest@1');
-    const start = json('examples/start-run.json') as { inputs: { contract: { external: string }; inventory: { external: string } } };
-    assert.equal(start.inputs.contract.external, 'doc:doc:compile-contract');
-    assert.equal(start.inputs.inventory.external, 'doc:doc:bed-topology');
-    const submission = read('examples/submit-result.json');
-    assert.ok(!submission.includes('plan_json'), '执行计划由 Hub 从槽位生成，提交里没有 plan_json');
-    assert.match(submission, /"bucket": "bed-a"/);
-    assert.match(submission, /"quotes": \[/);
-  });
-
-  it('SKILL.md is short, Chinese, and carries the two markers', () => {
-    const skill = read('SKILL.md');
-    assert.ok(skill.length <= 8000, `${skill.length} 字符`);
-    assert.match(skill, /按合成合约核对/);
-    assert.match(skill, /不证明在真实设备上跑得通/);
-    assert.match(skill, /受限结构/);
-  });
+test('repository manifest paths directly name ordinary files with their declared bytes',()=>{
+  for(const file of json('pack.json').files) {
+    const path=join(PACK_DIR,file.path);assert.equal(lstatSync(path).isFile(),true,file.path);
+    const bytes=readFileSync(path);assert.equal(bytes.byteLength,file.size,file.path);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
+  }
 });

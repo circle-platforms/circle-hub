@@ -19,7 +19,7 @@ Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 | `functions/projection.ts`, `expected.ts`, `verify.ts`, `subjects.ts` | this pack's functions |
 | `functions/expected-sources.ts`, `text.ts`, `types.ts`, `common.ts` | copies of the draft pack's modules (a pack imports only inside itself); `common.ts` differs only in the pack name; a test keeps them equal |
 | `tables/codes.json`, `tables/command-claims.json` | every code the functions give, with Chinese when and fix; the catalog table of the verifier's command statements |
-| `samples/` | 17 samples (7 positive, 10 negative) written by `testing/samples.ts`; every check has positive and negative ones |
+| `samples/` | 24 samples (10 positive, 14 negative) written by `testing/samples.ts`; every check has positive and negative ones |
 | `examples/` | a start_run and a submit_result, synthetic, with placeholders |
 
 Not published: `api.ts`, this README, the tests and `testing/` (the samples generator and the end-to-end bed).
@@ -142,7 +142,7 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
 - Only drafts of `case-review` are understood (requirement keys `findings` and `level`, kityminder locations); a result of
   another pack is refused (`draft_invalid`).
 - A block of a large document is verified as its own pair of runs; the overall verdict across blocks (the worst one) and
-  the Chinese report are computed and checked by `case-review-report` (the third step after every block is verified).
+  the Chinese report are computed and checked by `case-review-report` after every review, including a single block.
 - The verifier reads the full draft findings through `get_nodes` on the run record's item fields or `resolve_reference` on
   their references; the item lines show only codes and ranks.
 
@@ -154,3 +154,23 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
 - **runs-engine**: the run context (with `groups`) in the input of check functions, not only of subject builders; and the
   slot records and cross-item entries in `RunSubjectInput`, so a run subject builder can see what it judges.
 - **contracts**: `data` on cross-item entries (see the draft pack's README).
+
+## 生成词表与包版本
+
+case-review-verify@1.0.4 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。
+
+## 1.1.0：建议落点和终稿视图
+
+每次评审最后都开终稿运行，单块也一样。建议的三段式检查由终稿包移到本包：
+补、因为、期望三段都有内容，至少一条根据指向目标脑图中的用例或测试子项；不能只引期望来源。
+suggestion_targets 是判待判定产物的运行级阻断检查，挂在第一个已处理条目，保留 /cross_item/<k> 指针；
+verification 路由两轮修复，suggestions 同时列出这项检查。
+
+初评已受理结果中，qualifier 为 fact、source_role 为 subject、warrant 为 function，且静态层明确归责 author_input 的反驳，
+以完整原声明、原层结果和原 rec: 引用放进投影的 draft_source_facts。处置检查的支持事实把它们原样保存在
+data.source_facts 并列原引用为根据；不重判、不改生产者或归责。终稿据此单列“Hub 核对”。
+没有这样的反驳时明确保存空列表；缺少此字段的旧复核结果不能当作“没有 Hub 问题”，需用新版复核后重开终稿。
+
+每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。

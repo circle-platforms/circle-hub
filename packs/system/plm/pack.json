@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "plm",
-  "version": "1.0.1",
+  "version": "1.3.2",
   "kind": "system",
   "title": "PLM 查询服务（系统包）",
   "description": "PLM 查询服务的只读系统包：缺陷、需求、产品和构建；读路由逐条列出，没有写路由",
   "files": [
     {
       "path": "functions/plm.ts",
-      "sha256": "47d9dc56adbbcde1ff11e24b374ee26c870e64382c04addc16b8100743d37ee8",
-      "size": 8206
+      "sha256": "531e0d3fa66da2bd2fb7698e6937c8981d9e15b2670e5969d30bcb38b4408ca6",
+      "size": 18466
     },
     {
       "path": "system.json",
-      "sha256": "66bd57bf23bdc0ac7ea24d2b3a342c985f397eb294a50c2b3b66f47d5afe4e45",
-      "size": 5474
+      "sha256": "b4fc855edadf0d50441bb1dc038cebbd29417965fdd5c0b27746bcf59a057537",
+      "size": 8105
     }
   ]
 }

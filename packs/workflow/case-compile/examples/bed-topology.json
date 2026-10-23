@@ -70,6 +70,12 @@
           "ip": "192.0.2.90",
           "proto": "tcp",
           "port": 80
+        },
+        {
+          "host": "client0",
+          "ip": "192.0.2.80",
+          "proto": "tcp",
+          "port": 9000
         }
       ],
       "reserved": []

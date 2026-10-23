@@ -19,6 +19,10 @@ export interface Options {
   workdir?: string;
   profile?: 'review' | 'skills';
   jevModel?: string;
+  /** Written into settings.json as models.<model>.context_window: Circle compacts the conversation at 85% of the
+   * window (its src/context_middleware.ts), and a scripted model cannot write the summary compaction asks for. Only
+   * accept-circle.ts passes this. */
+  contextWindow?: number;
 }
 
 export const SERVER_NAME = 'hub';
@@ -394,6 +398,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
           { name: SERVER_NAME, url: options.hubUrl, transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } },
         ],
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
+        ...(options.contextWindow === undefined ? {} : { models: { [endpoint.model]: { context_window: options.contextWindow } } }),
         update_check: false,
         ...(profile === 'skills' ? { variables: { HUB_URL: options.hubUrl, ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }) } } : {}),
       },

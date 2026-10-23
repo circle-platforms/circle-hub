@@ -15,6 +15,8 @@ export interface CallOptions {
   url: string;
   token: string;
   session: string;
+  /** Optional timeout of each tool request; omitted preserves the SDK default. */
+  timeoutMs?: number;
   /** Appends each call's structured result as a JSON line to this file in order. */
   structuredFile?: string;
 }
@@ -46,6 +48,7 @@ export function formatStructured(item: { isError: boolean; structured: unknown; 
 
 /** Connects once and runs the calls in order; the session id is sent on every call like Circle does (Circle-Session-Id). */
 export async function callTools(options: CallOptions, calls: Array<{ tool: string; args: unknown }>): Promise<ToolText[]> {
+  if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1)) throw new Error('单次超时参数无效');
   const transport = new StreamableHTTPClientTransport(new URL(options.url), {
     requestInit: { headers: { authorization: `Bearer ${options.token}`, 'circle-session-id': options.session } },
   });
@@ -58,7 +61,7 @@ export async function callTools(options: CallOptions, calls: Array<{ tool: strin
       let text = '';
       let structured: unknown = undefined;
       try {
-        const result = await client.callTool({ name: call.tool, arguments: call.args as Record<string, unknown> });
+        const result = await client.callTool({ name: call.tool, arguments: call.args as Record<string, unknown> }, undefined, options.timeoutMs === undefined ? undefined : { timeout: options.timeoutMs });
         isError = result.isError === true;
         const content = Array.isArray(result.content) ? result.content : [];
         text = content.map((block) => (block && typeof block === 'object' && 'text' in block ? String((block as { text: unknown }).text) : '')).join('\n');
@@ -93,7 +96,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     console.error('用法：--token-file <文件>（或 --token-env <变量名>）<工具> \'<JSON 参数>\' …');
     return 2;
   }
-  const flags = new Set(['--token-file', '--token-env', '--url', '--session', '--max', '--structured']);
+  const flags = new Set(['--token-file', '--token-env', '--url', '--session', '--max', '--structured', '--timeout-ms']);
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (flags.has(argv[i])) i += 1;
@@ -105,6 +108,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     token,
     session: arg('session', argv) ?? randomUUID(),
     structuredFile,
+    ...(arg('timeout-ms', argv) === undefined ? {} : { timeoutMs: Number(arg('timeout-ms', argv)) }),
   };
   const max = Number(arg('max', argv) ?? 6000);
   if (rest[0] === 'list') {

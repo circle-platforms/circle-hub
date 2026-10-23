@@ -1,0 +1,33 @@
+{
+  "id": "quotes_good",
+  "source": "author",
+  "check": "quotes",
+  "note": "合成正例",
+  "subject": {
+    "item": "one",
+    "slots": {
+      "contribution": [
+        {
+          "code": "assertion",
+          "text": "合成回注",
+          "data": {
+            "root": "1111111111111111111111111111111111111111111111111111111111111111",
+            "path": "/commands/status",
+            "source": {
+              "reference": "src:2222222222222222222222222222222222222222222222222222222222222222",
+              "quote": "status prints state"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:2222222222222222222222222222222222222222222222222222222222222222": "status prints state"
+  },
+  "expect": [
+    {
+      "verdict": "support"
+    }
+  ]
+}

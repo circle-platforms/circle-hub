@@ -1,0 +1,34 @@
+{
+  "id": "quotes_bad",
+  "source": "author",
+  "check": "quotes",
+  "note": "合成反例",
+  "subject": {
+    "item": "one",
+    "slots": {
+      "contribution": [
+        {
+          "code": "assertion",
+          "text": "合成回注",
+          "data": {
+            "root": "1111111111111111111111111111111111111111111111111111111111111111",
+            "path": "/commands/status",
+            "source": {
+              "reference": "src:2222222222222222222222222222222222222222222222222222222222222222",
+              "quote": "not in the source"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:2222222222222222222222222222222222222222222222222222222222222222": "status prints state"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "QUOTE_MISMATCH"
+    }
+  ]
+}

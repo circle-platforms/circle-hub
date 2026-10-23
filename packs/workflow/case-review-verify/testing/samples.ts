@@ -206,6 +206,18 @@ export function samples(): Entry[] {
       runSubject([{ node: 'c1', findings: [f2], claims: [disposition('refuted', draftRef(0, 1), 'c1', { rank: 'major' })] }], [final('FAIL', 'P4')]),
       [{ verdict: 'refute', code: 'case-review-verify.fail_without_major_refutation', item: 'sample:c1' }],
     ),
+
+    ...[
+      {folder:'positive',id:'suggestion_case',grounds:[loc('c1')],statement:'补：间隔为 0 的用例；因为：只测上界；期望：拒绝非法值'},
+      {folder:'positive',id:'suggestion_subitem',grounds:[loc('g1')],statement:'补：反向用例；因为：边界缺口；期望：拒绝非法值'},
+      {folder:'positive',id:'suggestion_none',grounds:null,statement:''},
+      {folder:'negative',id:'suggestion_no_target',grounds:[],statement:'补：反向用例；因为：边界缺口；期望：拒绝非法值',code:'suggestion_target_missing'},
+      {folder:'negative',id:'suggestion_expected_only',grounds:[specQuote[0].reference],statement:'补：反向用例；因为：边界缺口；期望：拒绝非法值',code:'suggestion_target_missing'},
+      {folder:'negative',id:'suggestion_no_expected',grounds:[loc('c1')],statement:'补：反向用例；因为：边界缺口',code:'suggestion_incomplete'},
+      {folder:'negative',id:'suggestion_empty_part',grounds:[loc('c1')],statement:'补：；因为：边界缺口；期望：拒绝非法值',code:'suggestion_incomplete'},
+    ].map(spec=>sample(spec.folder as Entry['folder'],spec.id,'suggestion_targets','建议落点和三段式的合成正反例',
+      runSubject([{node:'c1',findings:[],claims:[]}],spec.grounds===null?[]:[{code:'suggestion',statement:spec.statement,grounds:spec.grounds,rank:'minor'}]),
+      [{verdict:spec.code?'refute':'support',...(spec.code?{code:'case-review-verify.'+spec.code}:{}),item:'sample:c1',tier:'blocking'}])),
   ];
 }
 

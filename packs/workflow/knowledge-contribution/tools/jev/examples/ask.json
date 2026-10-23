@@ -1,0 +1,9 @@
+{
+  "schema": "jev-ask@1",
+  "pieces": [{ "id": "p1", "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/manual@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }],
+  "questions": {
+    "meaning": { "type": "noul", "instructions": "Does `p1` describe a synthetic state observation?" },
+    "category": { "type": "choice", "instructions": "Which category describes `p1`?", "criteria": { "reading": "Reading state", "none": "Neither category" } },
+    "clarity": { "type": "score", "instructions": "How specific is `p1`?", "criteria": ["No concrete behavior", "Specific observable behavior"] }
+  }
+}

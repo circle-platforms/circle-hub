@@ -1,820 +1,178 @@
-// Tests of the case-location scenario (synthetic tool results):
-// Verifies case-location checks against scripted turns:
-// - Without buildCandidates: previous checks behave unchanged
-// - With buildCandidates:
-//   - Equal set of candidates, alias carries base, written classification matches -> passes
-//   - Missing candidate -> fails
-//   - Extra candidate -> fails
-//   - Alias does not bring out its base build -> fails
-//   - Written build classification mismatch -> fails
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+// Synthetic renderer-shaped answers exercise document ownership, candidate fields, IDs, paging and redacted reports.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import type { LoggedTurn } from '../lib/accept.ts';
 import { renderReport } from '../lib/report.ts';
 import type { Turn } from '../scripted-model.ts';
-import caseLocation, {
-  parseNextCall,
-  parseReportedCandidates,
-  type LocationGold,
-  type LocationListGold,
-} from './case-location.ts';
+import caseLocation, { MAX_PAGES, orderGoldCandidates, parseNextCall, parseReportedCandidates, type BuildCandidateGold, type DocumentLocationGold, type LocationGold } from './case-location.ts';
 
-const turnsOf = (text: string): LoggedTurn[] => [
-  { index: 0, toolResults: [], tools: ['hub_start_run'] },
-  { index: 1, toolResults: [{ id: 'r1', text, isError: false }], tools: [] },
-];
-
-const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
-
-describe('case-location scenario without buildCandidates', () => {
-  const gold: LocationGold = {
-    document: '90001',
-    product: 'apv',
-    line: '10.6.1',
-    train: '10.6.1-R2',
-  };
-  const scenario = caseLocation(gold);
-
-  test('holds on a Hub-shaped answer with matching line, train, and product', () => {
-    const good = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2',
-    ].join('\n');
-    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
-  });
-
-  test('fails when version line mismatches', () => {
-    const mismatch = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.7.4（目录，置信度高）；发布火车 10.6.1-R2',
-    ].join('\n');
-    assert.ok(!allOk(scenario, turnsOf(mismatch)));
-  });
-});
-
-describe('case-location scenario with buildCandidates', () => {
-  const gold: LocationGold = {
-    document: '90001',
-    product: 'apv',
-    line: '10.6.1',
-    buildCandidates: {
-      candidates: [
-        { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57', released: '2026-05-14' },
-        { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', released: '2026-05-22' },
-      ],
-      written: [
-        { name: 'Rel_APV_10_6_1_57', classification: 'known' },
-        { name: 'Rel_APV_10_7_4_101', classification: 'other_line', line: '10.7.4' },
-        { name: 'Rel_UNKNOWN', classification: 'unknown' },
-      ],
-    },
-  };
-  const scenario = caseLocation(gold);
-
-  const baseGood = [
-    '运行 run_1 完成：任务包 case-location@1.0.0',
-    'location 用例定位：满足 1',
-    '产品线 apv；版本 10.6.1（目录，置信度高）',
-    '构建候选：版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
-    '写出的构建名 Rel_APV_10_6_1_57 是定位到的版本线的构建',
-    '写出的构建名 Rel_APV_10_7_4_101 属于版本线 10.7.4，不是定位到的版本线 10.6.1 的构建',
-    '知识库不认识写出的构建名 Rel_UNKNOWN（知识库只收录构建站列出的构建；不认识不等于写错）',
-  ].join('\n');
-
-  test('holds when candidate set equals gold, alias brings out base, and written builds classify matching gold', () => {
-    assert.ok(allOk(scenario, turnsOf(baseGood)), JSON.stringify(scenario.check(turnsOf(baseGood))));
-  });
-
-  test('compares the built time and the based-on base of each candidate when gold carries them', () => {
-    const withTimes = caseLocation({
-      document: '90002',
-      product: 'apv',
-      line: '10.6.1',
-      buildCandidates: {
-        candidates: [
-          { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-09-18T00:00:00', released: '2026-09-20' },
-          { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', built: '2026-09-01T00:00:00', released: '2026-09-05' },
-        ],
-        written: [],
-      },
-    });
-    const good = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '构建候选：版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20；Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05',
-    ].join('\n');
-    assert.ok(allOk(withTimes, turnsOf(good)), JSON.stringify(withTimes.check(turnsOf(good))));
-    const wrongTime = good.replace('制作于 2026-09-18 00:00', '制作于 2026-09-19 00:00');
-    assert.ok(!allOk(withTimes, turnsOf(wrongTime)), 'a wrong built time fails');
-    const noTime = good.replace('）制作于 2026-09-18 00:00，已发布', '），已发布');
-    assert.ok(!allOk(withTimes, turnsOf(noTime)), 'a missing built time fails');
-    const wrongBase = good.replace('（NSAE，基于 Rel_APV_10_6_1_57）', '（NSAE，基于 Rel_APV_10_6_1_60）');
-    assert.ok(!allOk(withTimes, turnsOf(wrongBase)), 'a wrong based-on build fails');
-  });
-
-  test('fails when candidate set is missing one candidate', () => {
-    const missingOne = baseGood.replace('Rel_APV_10_6_1_57、', '');
-    const checks = scenario.check(turnsOf(missingOne));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when missing a candidate');
-    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
-    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('缺 1 个'));
-  });
-
-  test('fails when candidate set has an extra candidate', () => {
-    const extraOne = baseGood.replace(
-      'Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
-      'Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）、Rel_APV_10_6_1_60',
-    );
-    const checks = scenario.check(turnsOf(extraOne));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when having an extra candidate');
-    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
-    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('多 1 个'));
-  });
-
-  test('fails when alias does not bring out its base build', () => {
-    const noBase = baseGood.replace('（依据 Rel_APV_10_6_1_57）', '');
-    const checks = scenario.check(turnsOf(noBase));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when alias has no base');
-    const aliasCheck = checks.find((c) => c.name.includes('候选别名') && c.name.includes('Rel_NSAE_10_6_1_57'));
-    assert.ok(aliasCheck && !aliasCheck.ok);
-  });
-
-  test('fails when written build classification does not match gold', () => {
-    const wrongClass = baseGood.replace(
-      '写出的构建名 Rel_APV_10_7_4_101 属于版本线 10.7.4，不是定位到的版本线 10.6.1 的构建',
-      '知识库不认识写出的构建名 Rel_APV_10_7_4_101（知识库只收录构建站列出的构建；不认识不等于写错）',
-    );
-    const checks = scenario.check(turnsOf(wrongClass));
-    assert.ok(!checks.every((c) => c.ok));
-    const writtenCheck = checks.find((c) => c.name.includes('写出的构建名') && c.name.includes('Rel_APV_10_7_4_101'));
-    assert.ok(writtenCheck && !writtenCheck.ok);
-  });
-});
-
-describe('case-location scenario with 15 buildCandidates (top 12 truncation and more count)', () => {
-  const goldCandidates = [
-    // Rel_APV_10_6_1_01 has built: null and sits at the front of the raw list,
-    // testing that ordering places built: null at the end (into the unlisted slice).
-    { name: 'Rel_APV_10_6_1_01', family: 'APV', base: 'Rel_APV_10_6_1_01', built: null, released: '2026-10-10' },
-    { name: 'Rel_APV_10_6_1_90', family: 'APV', base: 'Rel_APV_10_6_1_90', built: '2026-10-22T06:26:12', released: '2026-10-22' },
-    { name: 'Rel_APV_10_6_1_80', family: 'APV', base: 'Rel_APV_10_6_1_80', built: '2026-10-21T15:30:45', released: '2026-10-21' },
-    // Two with identical built time: APV_72 listed before APV_71 in raw array to test tie-break by name
-    { name: 'Rel_APV_10_6_1_72', family: 'APV', base: 'Rel_APV_10_6_1_72', built: '2026-10-20T10:00:00', released: '2026-10-20' },
-    { name: 'Rel_APV_10_6_1_71', family: 'APV', base: 'Rel_APV_10_6_1_71', built: '2026-10-20T10:00:00', released: '2026-10-20' },
-    // NSAE alias 1 and its base
-    { name: 'Rel_NSAE_10_6_1_60', family: 'NSAE', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:30', released: '2026-10-19' },
-    { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:00', released: '2026-10-19' },
-    // NSAE alias 2 and its base
-    { name: 'Rel_NSAE_10_6_1_50', family: 'NSAE', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:10', released: '2026-10-18' },
-    { name: 'Rel_APV_10_6_1_50', family: 'APV', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:00', released: '2026-10-18' },
-    { name: 'Rel_APV_10_6_1_40', family: 'APV', base: 'Rel_APV_10_6_1_40', built: '2026-10-17T11:00:00', released: '2026-10-17' },
-    { name: 'Rel_APV_10_6_1_30', family: 'APV', base: 'Rel_APV_10_6_1_30', built: '2026-10-16T11:00:00', released: '2026-10-16' },
-    { name: 'Rel_APV_10_6_1_20', family: 'APV', base: 'Rel_APV_10_6_1_20', built: '2026-10-15T11:00:00', released: '2026-10-15' },
-    { name: 'Rel_APV_10_6_1_10', family: 'APV', base: 'Rel_APV_10_6_1_10', built: '2026-10-14T11:00:00', released: '2026-10-14' },
-    { name: 'Rel_APV_10_6_1_05', family: 'APV', base: 'Rel_APV_10_6_1_05', built: '2026-10-13T11:00:00', released: '2026-10-13' },
-    { name: 'Rel_APV_10_6_1_02', family: 'APV', base: 'Rel_APV_10_6_1_02', built: '2026-10-12T11:00:00', released: '2026-10-12' },
+const builds = (line = '10.8.1'): BuildCandidateGold[] => {
+  const stem = line.replaceAll('.', '_');
+  return [
+    { name: `Rel_APV_${stem}_41`, family: 'APV', base: `Rel_APV_${stem}_41`, built: '2026-08-20T12:30:40', released: '2026-08-21' },
+    { name: `Rel_NSAE_${stem}_42`, family: 'NSAE', base: `Rel_APV_${stem}_41`, built: '2026-08-19T12:30:00', released: null },
   ];
+};
+const doc = (fields: Partial<DocumentLocationGold> = {}): DocumentLocationGold => ({ document: '930801', product: 'apv', line: '10.8.1', train: '10.8.1-R9', module: '合成模块甲', buildCandidates: builds(fields.line), ...fields });
+const statement = (list: BuildCandidateGold[], line: string): string => `版本线 ${line} 的构建候选 ${list.length} 个，其中别名 ${list.filter(c => c.name !== c.base).length} 个（别名基于它所基于的构建），按制作时间从新到旧：` + orderGoldCandidates(list).slice(0, 12).map(c => `${c.name}（${c.family}${c.name !== c.base ? `，基于 ${c.base}` : ''}）${c.built ? `制作于 ${c.built.slice(0, 16).replaceAll('T', ' ')}` : '制作时间未知'}，${c.released ? `已发布 ${c.released}` : '未发布'}`).join('；') + (list.length > 12 ? `；另有 ${list.length - 12} 个` : '');
+const position = (id: string, requirement: string, said: string) => `    - 位置：条目 ${id}，要求项 ${requirement}，/data；陈述：${said}，支持；性质与依据等级：事实`;
+const row = (d: DocumentLocationGold) => `- ${d.document} | 合成标题 | 产品线 apv；版本 ${d.line}（目录，置信度高）${d.train ? `；发布火车 ${d.train}` : ''}${d.module ? `；模块 ${d.module}` : ''}${d.stories?.length ? `；需求 ${d.stories.join('、')}` : ''}${d.bugs?.length ? `；缺陷 ${d.bugs.join('、')}` : ''}${d.unclassified?.length ? `；未分类编号 ${d.unclassified.join('、')}` : ''}`;
+const answer = (d: DocumentLocationGold) => `问题与未知（条目 | 名称 | 分区 | 要求项）：\n- ${d.document} | 合成标题 | 未知 | other | 合成问题\n条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n  · build_candidates 构建候选：满足\n${position(d.document, 'build_candidates', statement(Array.isArray(d.buildCandidates) ? d.buildCandidates : d.buildCandidates!.candidates, d.line))}`;
+const turnsOf = (text: string): LoggedTurn[] => [{ index: 0, tools: [], toolResults: [{ id: 'synthetic', text, isError: false }] }];
+const checks = (d: DocumentLocationGold, text = answer(d)) => caseLocation(d).check(turnsOf(`运行 run_synthetic\n${text}`));
+const allOk = (d: DocumentLocationGold, text = answer(d)) => checks(d, text).every(c => c.ok);
+const idsCheck = (rows: ReturnType<typeof checks>) => rows.find(c => c.name.includes('关联编号集合'))!;
+const candidateChecks = (d: DocumentLocationGold, text: string) => checks(d, text).filter(c => /候选|写出的构建名/.test(c.name));
 
-  const gold: LocationGold = {
-    document: '90003',
-    product: 'apv',
-    line: '10.6.1',
-    buildCandidates: {
-      candidates: goldCandidates,
-      written: [],
-    },
-  };
-  const scenario = caseLocation(gold);
-
-  const good15 = [
-    '运行 run_1 完成：任务包 case-location@1.0.0',
-    'location 用例定位：满足 1',
-    '产品线 apv；版本 10.6.1（目录，置信度高）',
-    '构建候选：版本线 10.6.1 的构建候选 15 个，其中别名 2 个（别名基于它所基于的构建），按制作时间从新到旧：' +
-      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；' +
-      'Rel_APV_10_6_1_80（APV）制作于 2026-10-21 15:30，已发布 2026-10-21；' +
-      'Rel_APV_10_6_1_71（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
-      'Rel_APV_10_6_1_72（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
-      'Rel_NSAE_10_6_1_60（NSAE，基于 Rel_APV_10_6_1_60）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
-      'Rel_APV_10_6_1_60（APV）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
-      'Rel_NSAE_10_6_1_50（NSAE，基于 Rel_APV_10_6_1_50）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
-      'Rel_APV_10_6_1_50（APV）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
-      'Rel_APV_10_6_1_40（APV）制作于 2026-10-17 11:00，已发布 2026-10-17；' +
-      'Rel_APV_10_6_1_30（APV）制作于 2026-10-16 11:00，已发布 2026-10-16；' +
-      'Rel_APV_10_6_1_20（APV）制作于 2026-10-15 11:00，已发布 2026-10-15；' +
-      'Rel_APV_10_6_1_10（APV）制作于 2026-10-14 11:00，已发布 2026-10-14；另有 3 个',
-  ].join('\n');
-
-  test('holds when candidate set equals top 12, more count matches 3, aliases and built times match', () => {
-    assert.ok(allOk(scenario, turnsOf(good15)), JSON.stringify(scenario.check(turnsOf(good15))));
+describe('mandatory independent candidate input', () => {
+  test('starts without buildCandidates but records a failed check instead of retaining the old success', () => {
+    const scenario = caseLocation({ document: '930801', line: '10.8.1' });
+    const rows = scenario.check(turnsOf('运行 run_synthetic'));
+    assert.ok(rows.some(row => !row.ok && row.name.includes('候选')));
   });
+  test('fails when version line mismatches', () => assert.ok(!allOk(doc(), answer(doc()).replaceAll('版本 10.8.1', '版本 10.9.1'))));
+});
 
-  test('fails when candidate set is missing one candidate', () => {
-    const missingOne = good15.replace(
-      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
-      '',
-    );
-    const checks = scenario.check(turnsOf(missingOne));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when missing a candidate');
-    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
-    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('缺 1 个'));
+describe('candidate comparison', () => {
+  test('holds when candidate set equals gold, alias brings out base, and written builds classify matching gold', () => {
+    const d = doc({ buildCandidates: { candidates: builds(), written: [{ name: builds()[0].name, classification: 'known' }] } });
+    const text = answer(d) + '\n' + position(d.document, 'build_candidates', `写出的构建名 ${builds()[0].name} 是定位到的版本线的构建`);
+    assert.ok(allOk(d, text));
   });
+  test('compares the built time and the based-on base of each candidate when gold carries them', () => {
+    assert.ok(allOk(doc()));
+    assert.ok(!allOk(doc(), answer(doc()).replaceAll('12:30', '12:31')));
+  });
+  test('fails when candidate set is missing one candidate', () => assert.ok(!allOk(doc(), answer(doc()).replace(/；Rel_NSAE[^；\n]+/, ''))));
+  test('fails when candidate set has an extra candidate', () => assert.ok(!allOk(doc(), answer(doc()).replaceAll('，支持；性质', '；Rel_APV_10_8_1_99（APV）制作时间未知，未发布，支持；性质'))));
+  test('fails when alias does not bring out its base build', () => assert.ok(!allOk(doc(), answer(doc()).replaceAll('，基于 Rel_APV_10_8_1_41', ''))));
+  test('fails when written build classification does not match gold', () => {
+    const d = doc({ buildCandidates: { candidates: builds(), written: [{ name: builds()[0].name, classification: 'known' }] } });
+    assert.ok(candidateChecks(d, answer(d) + '\n' + position(d.document, 'build_candidates', `知识库不认识写出的构建名 ${builds()[0].name}`)).some(c => c.name.includes('写出的构建名') && !c.ok));
+  });
+});
 
-  test('fails when candidate set has an extra candidate', () => {
-    const extraOne = good15.replace(
-      'Rel_APV_10_6_1_90',
-      'Rel_EXTRA_10_6_1_99（APV）制作于 2026-10-23 00:00，已发布 2026-10-23；Rel_APV_10_6_1_90',
-    );
-    const checks = scenario.check(turnsOf(extraOne));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when having an extra candidate');
-    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
-    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('多 1 个'));
-  });
-
-  test('fails when more count mismatches', () => {
-    const wrongMore = good15.replace('另有 3 个', '另有 2 个');
-    const checks = scenario.check(turnsOf(wrongMore));
-    assert.ok(!checks.every((c) => c.ok), 'should fail when more count mismatches');
-    const moreCheck = checks.find((c) => c.name.includes('剩余构建') || c.name.includes('另有') || c.name.includes('超出上限'));
-    assert.ok(moreCheck && !moreCheck.ok, 'more count check must fail');
-  });
+describe('fifteen candidates', () => {
+  const list = [...builds(), ...Array.from({ length: 13 }, (_, i) => ({ name: `Rel_APV_10_8_1_${100 + i}`, family: 'APV', base: `Rel_APV_10_8_1_${100 + i}`, built: null, released: null }))];
+  const d = doc({ buildCandidates: list });
+  test('holds when candidate set equals top 12, more count matches 3, aliases and built times match', () => assert.ok(allOk(d)));
+  test('fails when candidate set is missing one candidate', () => assert.ok(!allOk(d, answer(d).replace(/Rel_APV_10_8_1_41（APV）[^；]+；/, ''))));
+  test('fails when candidate set has an extra candidate', () => assert.ok(!allOk(d, answer(d).replaceAll('；另有 3 个', '；Rel_APV_10_8_1_999（APV）制作时间未知，未发布；另有 3 个'))));
+  test('fails when more count mismatches', () => assert.ok(!allOk(d, answer(d).replaceAll('另有 3 个', '另有 2 个'))));
 });
 
 describe('parseReportedCandidates and guideline section avoidance', () => {
-  const twelveList = [
-    'Beta_NSAE_10_6_5_232（NSAE，基于 Beta_APV_10_6_5_232）制作于 2026-10-20 04:02，未发布',
-    'Beta_NSAE_10_6_5_231（NSAE）制作于 2026-10-17 04:14，未发布',
-    'Beta_APV_10_6_5_230（APV）制作于 2026-10-16 10:00，未发布',
-    'Beta_APV_10_6_5_229（APV）制作于 2026-10-15 10:00，未发布',
-    'Beta_APV_10_6_5_228（APV）制作于 2026-10-14 10:00，未发布',
-    'Beta_APV_10_6_5_227（APV）制作于 2026-10-13 10:00，未发布',
-    'Beta_APV_10_6_5_226（APV）制作于 2026-10-12 10:00，未发布',
-    'Beta_APV_10_6_5_225（APV）制作于 2026-10-11 10:00，未发布',
-    'Beta_APV_10_6_5_224（APV）制作于 2026-10-10 10:00，未发布',
-    'Beta_APV_10_6_5_223（APV）制作于 2026-10-09 10:00，未发布',
-    'Beta_APV_10_6_5_222（APV）制作于 2026-10-08 10:00，未发布',
-    'Beta_APV_10_6_5_221（APV）制作于 2026-10-07 10:00，未发布',
-  ];
-
-  const guidelineText = [
-    '4. 构建候选（要求项 build_candidates）：按定位到的版本线在两个名称族的候选构建列表，别名解析到它所依据的构建；如 Rel_OLD_RULE_NOT_A_CANDIDATE。',
-    '',
-    `版本线 10.6.5 的构建候选 81 个，按制作时间从新到旧：${twelveList.join('；')}；另有 69 个，支持；性质……`,
-  ].join('\n');
-
   test('accurately matches conclusion prefix and parses top 12 candidates without being disturbed by section 4 guideline', () => {
-    const candidates = parseReportedCandidates(guidelineText);
-    assert.equal(candidates.length, 12);
-    assert.equal(candidates[0].name, 'Beta_NSAE_10_6_5_232');
-    assert.equal(candidates[0].base, 'Beta_APV_10_6_5_232');
-    assert.equal(candidates[0].built, '2026-10-20T04:02:00');
-
-    assert.equal(candidates[1].name, 'Beta_NSAE_10_6_5_231');
-    assert.equal(candidates[1].base, 'Beta_NSAE_10_6_5_231');
-    assert.equal(candidates[1].built, '2026-10-17T04:14:00');
-
-    for (let i = 2; i < 12; i++) {
-      const num = 232 - i;
-      assert.equal(candidates[i].name, `Beta_APV_10_6_5_${num}`);
-      assert.equal(candidates[i].base, `Beta_APV_10_6_5_${num}`);
-      const built = candidates[i].built;
-      assert.ok(built !== null && built.startsWith('2026-10-'));
-    }
+    const list = [...builds(), ...Array.from({ length: 13 }, (_, i) => ({ name: `Rel_APV_10_8_1_${100 + i}`, family: 'APV', base: `Rel_APV_10_8_1_${100 + i}`, built: null, released: null }))];
+    const result = parseReportedCandidates('4. 构建候选：例如 Rel_IGNORED\n' + statement(list, '10.8.1'));
+    assert.equal(result.length, 12);
+    assert.equal(result[0].name, list[0].name);
+    assert.equal(result[1].base, list[0].name);
+    assert.equal(result[0].built, '2026-08-20T12:30:00');
   });
-
-  test('returns empty array when conclusion prefix is missing', () => {
-    const textWithoutConclusion = '4. 构建候选（要求项 build_candidates）：例如 Rel_APV_10_6_1_57 仅为规程示例，没有结论前缀。';
-    assert.deepEqual(parseReportedCandidates(textWithoutConclusion), []);
-  });
+  test('returns empty array when conclusion prefix is missing', () => assert.deepEqual(parseReportedCandidates('规程示例 Rel_IGNORED'), []));
 });
 
-describe('parseNextCall', () => {
-  test('extracts reference and cursor from balanced JSON after 下一页：get_nodes ', () => {
-    const text = '第一页内容\n下一页：get_nodes {"reference":"rec:abcdef","cursor":"1.0-token123"}；也可看控制台';
-    assert.deepEqual(parseNextCall(text), {
-      reference: 'rec:abcdef',
-      cursor: '1.0-token123',
-    });
-  });
-
-  test('handles nested braces and extracts first complete JSON object', () => {
-    const text = '下一页：get_nodes {"reference":"rec:123","cursor":"c-1","meta":{"p":2}}；也可……';
-    assert.deepEqual(parseNextCall(text), {
-      reference: 'rec:123',
-      cursor: 'c-1',
-    });
-  });
-
-  test('returns null when there is no next page line or invalid format', () => {
-    assert.equal(parseNextCall('没有下一页的内容'), null);
-    assert.equal(parseNextCall('下一页：get_nodes 没有花括号'), null);
-    assert.equal(parseNextCall('下一页：get_nodes other text {"reference": "rec:1", "cursor": "c-1"}'), null);
-    assert.equal(parseNextCall('下一页：get_nodes {"reference": 123}'), null);
-  });
-});
-
-describe('case-location scenario respond flow (two-step start_run -> get_nodes and paging)', () => {
-  const gold: LocationGold = {
-    document: '90001',
-    product: 'apv',
-    line: '10.6.1',
-  };
-  const makeTurn = (index: number, text = ''): Turn => ({
-    index,
-    system: null,
-    messages: [],
-    tools: [],
-    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
-  });
-
+describe('paging', () => {
+  const rec = `rec:${'b'.repeat(64)}`;
+  const turn = (index: number, text = ''): Turn => ({ index, toolResults: text ? [{ id: 'synthetic', text, isError: false }] : [] } as Turn);
+  test('extracts reference and cursor from balanced JSON after 下一页：get_nodes ', () => assert.deepEqual(parseNextCall(`下一页：get_nodes {"reference":"${rec}","cursor":"next"}`), { reference: rec, cursor: 'next' }));
+  test('handles nested braces and extracts first complete JSON object', () => assert.deepEqual(parseNextCall(`下一页：get_nodes {"reference":"${rec}","cursor":"next","nested":{"n":1}}`), { reference: rec, cursor: 'next' }));
+  test('returns null when there is no next page line or invalid format', () => { assert.equal(parseNextCall('完成'), null); assert.equal(parseNextCall('下一页：get_nodes {broken'), null); });
   test('calls hub_get_nodes with reference in turn 1 when start_run returns rec reference', async () => {
-    const s = caseLocation(gold);
-    const startReply = await s.respond(makeTurn(0));
-    assert.deepEqual(startReply, [
-      { tool: 'hub_start_run', input: { pack: 'case-location', product: 'apv', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
-    ]);
-
-    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const startRunText = `运行 run_1 完成：任务包 case-location\n完整结果 ${rec}：用 get_nodes 读第一页，再按每页末尾给出的 cursor 接着读`;
-    const turn1Reply = await s.respond(makeTurn(1, startRunText));
-    assert.deepEqual(turn1Reply, [
-      { tool: 'hub_get_nodes', input: { reference: rec } },
-    ]);
+    const s = caseLocation(doc()); await s.respond(turn(0));
+    assert.deepEqual(await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`)), [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
   });
-
   test('two-page answer flow: reads page 1, gets cursor, reads page 2, finishes and passes all candidate checks', async () => {
-    const s = caseLocation({
-      document: '90001',
-      product: 'apv',
-      line: '10.6.1',
-      buildCandidates: {
-        candidates: [
-          { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-10-22T06:26:00' },
-          { name: 'Rel_APV_10_6_1_50', family: 'APV', base: 'Rel_APV_10_6_1_50', built: '2026-10-21T06:26:00' },
-        ],
-        written: [],
-      },
-    });
-
-    const startReply = await s.respond(makeTurn(0));
-    assert.ok('tool' in startReply[0] && startReply[0].tool === 'hub_start_run');
-
-    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const startRunText = [
-      '运行 run_1 完成：任务包 case-location',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      `完整结果 ${rec}：用 get_nodes 读第一页，再按每页末尾给出的 cursor 接着读`,
-    ].join('\n');
-
-    const turn1Reply = await s.respond(makeTurn(1, startRunText));
-    assert.deepEqual(turn1Reply, [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
-
-    // Page 1 contains first candidate and ends with next page marker
-    const page1Text = [
-      `内容 ${rec}：`,
-      '版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_60（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
-      `下一页：get_nodes {"reference":"${rec}","cursor":"cursor-token-page2"}；也可看控制台`,
-    ].join('\n');
-
-    const turn2Reply = await s.respond(makeTurn(2, page1Text));
-    assert.deepEqual(turn2Reply, [{ tool: 'hub_get_nodes', input: { reference: rec, cursor: 'cursor-token-page2' } }]);
-
-    // Page 2 contains second candidate and has NO next page marker
-    const page2Text = [
-      `内容 ${rec}：`,
-      'Rel_APV_10_6_1_50（APV）制作于 2026-10-21 06:26，已发布 2026-10-21',
-    ].join('\n');
-
-    const turn3Reply = await s.respond(makeTurn(3, page2Text));
-    assert.deepEqual(turn3Reply, [{ text: '定位完成。' }]);
-
-    // Verify checks across all logged turns
-    const loggedTurns: LoggedTurn[] = [
-      { index: 0, tools: ['hub_start_run'], toolResults: [] },
-      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 't0', text: startRunText, isError: false }] },
-      { index: 2, tools: ['hub_get_nodes'], toolResults: [{ id: 't1', text: page1Text, isError: false }] },
-      { index: 3, tools: [], toolResults: [{ id: 't2', text: page2Text, isError: false }] },
-    ];
-    const checks = s.check(loggedTurns);
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+    const d = doc(), s = caseLocation(d), full = position(d.document, 'build_candidates', statement(builds(), d.line));
+    const at = 170;
+    await s.respond(turn(0)); await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`));
+    const first = `条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n${full.slice(0, at)}\n下一页：get_nodes {"reference":"${rec}","cursor":"next"}`;
+    assert.deepEqual(await s.respond(turn(2, first)), [{ tool: 'hub_get_nodes', input: { reference: rec, cursor: 'next' } }]);
+    const second = `内容 ${rec}\n共 1 行，这一页从第 1 行的第 ${at + 1} 个字符起：\n（接上页：第 1 行的前 ${at} 个字符在上一页）\n${full.slice(at)}`;
+    assert.deepEqual(await s.respond(turn(3, second)), [{ text: '定位完成。' }]);
+    assert.ok(s.check([...turnsOf('运行 run_synthetic\n' + first), ...turnsOf(second)]).every(c => c.ok));
   });
-
   test('caps get_nodes paging at maximum 6 pages', async () => {
-    const s = caseLocation(gold);
-    await s.respond(makeTurn(0));
-    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    await s.respond(makeTurn(1, `完整结果 ${rec}`));
-
-    // Pages 1 to 5 each return a next cursor
-    for (let page = 1; page <= 5; page++) {
-      const pageText = `第 ${page} 页\n下一页：get_nodes {"reference":"${rec}","cursor":"${page}.0-abcdef123456"}`;
-      const reply = await s.respond(makeTurn(page + 1, pageText));
-      assert.deepEqual(reply, [
-        { tool: 'hub_get_nodes', input: { reference: rec, cursor: `${page}.0-abcdef123456` } },
-      ]);
-    }
-
-    // Page 6 returns next cursor, but scenario should cap at 6 pages and finish
-    const page6Text = `第 6 页\n下一页：get_nodes {"reference":"${rec}","cursor":"6.0-abcdef123456"}`;
-    const reply7 = await s.respond(makeTurn(7, page6Text));
-    assert.deepEqual(reply7, [{ text: '定位完成。' }]);
+    const s = caseLocation(doc()); await s.respond(turn(0)); await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`));
+    for (let i = 1; i < MAX_PAGES; i++) assert.ok('tool' in (await s.respond(turn(i + 1, `下一页：get_nodes {"reference":"${rec}","cursor":"next"}`)))[0]);
+    assert.deepEqual(await s.respond(turn(20, `下一页：get_nodes {"reference":"${rec}","cursor":"next"}`)), [{ text: '定位完成。' }]);
   });
 });
 
-describe('case-location scenario with document list (at least 5 documents)', () => {
-  const listGold: LocationListGold = {
-    product: 'apv',
-    documents: [
-      {
-        document: '900101',
-        line: '7.1',
-        train: '7.1-R2-2026/5',
-        module: '信标',
-        stories: ['17206'],
-        plmFound: { '17206': true },
-      },
-      {
-        document: '900102',
-        line: '7.1',
-        train: '7.1-R2-2026/5',
-        module: '信标',
-        bugs: ['70412'],
-        plmFound: { '70412': true },
-      },
-      {
-        document: '900103',
-        line: '7.1',
-        train: '7.1-R2-2026/5',
-        module: '健康检查',
-        associatedIds: ['31057'],
-        plmFound: { '31057': true },
-      },
-      {
-        document: '900104',
-        line: '7.2',
-        train: '7.2-R1-2026/7',
-        module: '健康检查',
-        stories: ['19003'],
-        plmFound: { '19003': true },
-      },
-      {
-        document: '900105',
-        line: '7.2',
-        train: '7.2-R1-2026/7',
-        module: 'SSL',
-        bugs: ['70499'],
-        plmFound: { '70499': false },
-      },
-    ],
-  };
-
-  test('holds on a Hub-shaped multi-document answer with 5 items across 2 lines and 3 modules', () => {
-    const s = caseLocation(listGold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 5',
-      '条目（5 个；编号 | 名称 | 摘要）：',
-      '- 900101 | 文档 900101 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标；需求 17206',
-      '- 900102 | 文档 900102 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标；缺陷 70412',
-      '- 900103 | 文档 900103 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 健康检查；未分类编号 31057',
-      '- 900104 | 文档 900104 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 健康检查；需求 19003',
-      '- 900105 | 文档 900105 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 SSL；缺陷 70499',
-    ].join('\n');
-
-    const turns = turnsOf(text);
-    const checks = s.check(turns);
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-
-    // plmFound is not an empty check in checks
-    assert.equal(checks.some((c) => c.name.includes('缺陷系统')), false);
-
-    // plmFound is rendered as manual spot check section, not counted in pass/fail
-    assert.deepEqual(s.sections, [
-      {
-        title: '人工抽查（不是场景核对）',
-        lines: [
-          '- 文档 900101：关联编号 17206 在缺陷系统里找到',
-          '- 文档 900102：关联编号 70412 在缺陷系统里找到',
-          '- 文档 900103：关联编号 31057 在缺陷系统里找到',
-          '- 文档 900104：关联编号 19003 在缺陷系统里找到',
-          '- 文档 900105：关联编号 70499 在缺陷系统里未找到',
-        ],
-      },
-    ]);
-
-    const report = renderReport({
-      title: '真实 Circle 客户端验收：case-location',
-      generatedAt: '2026-10-23T00:00:00Z',
-      checks,
-      limits: ['模型的回答是脚本化的'],
-      sections: s.sections,
-    });
-    assert.match(report, /## 人工抽查（不是场景核对）\n\n- 文档 900101：关联编号 17206 在缺陷系统里找到/);
-    assert.match(report, /- 文档 900105：关联编号 70499 在缺陷系统里未找到/);
-    // Not counted in tally
-    assert.match(report, new RegExp(`共 ${checks.length} 项核对，${checks.length} 项相符，0 项不符`));
-  });
-
+describe('document ownership and report redaction', () => {
+  const docs = Array.from({ length: 5 }, (_, i) => doc({ document: String(930801 + i), line: i < 3 ? '10.8.1' : '10.9.1', module: i % 2 ? '合成模块乙' : '合成模块甲', stories: [String(810001 + i)], buildCandidates: builds(i < 3 ? '10.8.1' : '10.9.1') }));
+  const text = '运行 run_synthetic\n' + docs.map(answer).join('\n');
+  test('holds on a Hub-shaped multi-document answer with 5 items across 2 lines and 3 modules', () => assert.ok(caseLocation({ documents: docs }).check(turnsOf(text)).every(c => c.ok)));
   test('single document gold without plmFound has no sections; with plmFound outputs manual spot check section', () => {
-    const withoutPlm = caseLocation({
-      document: '90001',
-      line: '10.6.1',
-    });
-    assert.equal(withoutPlm.sections, undefined);
-
-    const withPlm = caseLocation({
-      document: '90001',
-      line: '10.6.1',
-      plmFound: { '17206': true, '70499': false },
-    });
-    assert.deepEqual(withPlm.sections, [
-      {
-        title: '人工抽查（不是场景核对）',
-        lines: [
-          '- 关联编号 17206 在缺陷系统里找到',
-          '- 关联编号 70499 在缺陷系统里未找到',
-        ],
-      },
-    ]);
+    assert.equal(caseLocation(doc()).sections, undefined);
+    const s = caseLocation(doc({ plmFound: { '810001': true, '810002': false } }));
+    assert.deepEqual(s.sections?.[0].lines, ['找到 1 个，没找到 1 个']);
+    assert.ok(!JSON.stringify(s.sections).includes('810001'));
   });
-
-  test('fails when list has fewer than 5 documents or lacks line/module diversity', () => {
-    const shortListGold: LocationListGold = {
-      product: 'apv',
-      documents: listGold.documents.slice(0, 4),
-    };
-    const sShort = caseLocation(shortListGold);
-    const text = '运行 run_1 完成：任务包 case-location\nlocation 用例定位：满足 4';
-    const checks = sShort.check(turnsOf(text));
-    const listCheck = checks.find((c) => c.name.includes('文档清单至少 5 份'));
-    assert.ok(listCheck && !listCheck.ok);
+  test('fails when list has fewer than 5 documents or lacks line/module diversity', () => assert.ok(caseLocation({ documents: docs.slice(0, 2) }).check(turnsOf(text)).some(c => !c.ok)));
+  test('fails when a document in the list has line mismatch', () => assert.ok(caseLocation({ documents: docs }).check(turnsOf(text.replaceAll('版本 10.9.1', '版本 10.8.1'))).some(c => !c.ok)));
+  test('missing document rows never borrow another document with identical location and ids', () => {
+    const d = doc({ stories: ['810002'] });
+    const rows = checks(d, answer({ ...d, document: '930899' }));
+    assert.ok(rows.some(c => !c.ok && c.name.includes('第 1 份文档') && c.name.includes('定位数据')));
+    const report = renderReport({ title: '合成核对', generatedAt: 'synthetic', checks: rows, limits: [] });
+    for (const value of [d.document, '930899', d.line, d.train!, d.module!, '810002', '合成标题', builds()[0].name]) assert.ok(!report.includes(value), value);
   });
-
-  test('fails when a document in the list has line mismatch', () => {
-    const s = caseLocation(listGold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 5',
-      '条目（5 个；编号 | 名称 | 摘要）：',
-      '- 900101 | 文档 900101 | 产品线 apv（COMET）；版本 7.9（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标',
-      '- 900102 | 文档 900102 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标',
-      '- 900103 | 文档 900103 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 健康检查',
-      '- 900104 | 文档 900104 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 健康检查',
-      '- 900105 | 文档 900105 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 SSL',
-    ].join('\n');
-
-    const checks = s.check(turnsOf(text));
-    const doc1Check = checks.find((c) => c.name.includes('文档 900101') && c.name.includes('版本线'));
-    assert.ok(doc1Check && !doc1Check.ok);
+  test('a location claim for the document supplies the row fallback, without using another requirement', () => {
+    const d = doc(), claims = position(d.document, 'location', row(d));
+    assert.ok(allOk(d, claims + '\n' + position(d.document, 'build_candidates', statement(builds(), d.line))));
+    assert.ok(checks(d, claims.replaceAll('要求项 location', '要求项 something_else')).some(c => !c.ok && c.name.includes('定位数据')));
   });
 });
 
-describe('case-location associated ID classification and complete result reading', () => {
-  test('checks associated ID set and respective categories: bug to case (unclassified), bug to case 需求 (story), 缺陷 (bug)', () => {
-    const gold: LocationListGold = {
-      product: 'apv',
-      documents: [
-        {
-          document: '900201',
-          line: '7.1',
-          train: '7.1-R2',
-          module: '信标',
-          unclassified: ['900001', '900002'],
-        },
-        {
-          document: '900202',
-          line: '7.1',
-          train: '7.1-R2',
-          module: '信标',
-          stories: ['900003'],
-        },
-        {
-          document: '900203',
-          line: '7.1',
-          train: '7.1-R2',
-          module: '健康检查',
-          bugs: ['900004'],
-        },
-        {
-          document: '900204',
-          line: '7.2',
-          train: '7.2-R1',
-          module: '健康检查',
-          stories: ['900005'],
-        },
-        {
-          document: '900205',
-          line: '7.2',
-          train: '7.2-R1',
-          module: 'SSL',
-          bugs: ['900006'],
-        },
-      ],
-    };
-
-    const s = caseLocation(gold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 5',
-      '条目（5 个；编号 | 名称 | 摘要）：',
-      '- 900201 | 文档 900201 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 信标；未分类编号 900001、900002',
-      '- 900202 | 文档 900202 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 信标；需求 900003',
-      '- 900203 | 文档 900203 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 健康检查；缺陷 900004',
-      '- 900204 | 文档 900204 | 产品线 apv；版本 7.2（目录，置信度高）；发布火车 7.2-R1；模块 健康检查；需求 900005',
-      '- 900205 | 文档 900205 | 产品线 apv；版本 7.2（目录，置信度高）；发布火车 7.2-R1；模块 SSL；缺陷 900006',
-    ].join('\n');
-
-    const checks = s.check(turnsOf(text));
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-
-    // Verify exact check names exist and pass
-    const setCheck1 = checks.find((c) => c.name.includes('文档 900201：关联编号集合与独立依据一致'));
-    assert.ok(setCheck1 && setCheck1.ok);
-    const unclass1 = checks.find((c) => c.name.includes('文档 900201：未分类编号 900001 与独立依据一致'));
-    assert.ok(unclass1 && unclass1.ok);
-    const unclass2 = checks.find((c) => c.name.includes('文档 900201：未分类编号 900002 与独立依据一致'));
-    assert.ok(unclass2 && unclass2.ok);
-
-    const storyCheck = checks.find((c) => c.name.includes('文档 900202：关联需求 900003 与独立依据一致'));
-    assert.ok(storyCheck && storyCheck.ok);
-
-    const bugCheck = checks.find((c) => c.name.includes('文档 900203：关联缺陷 900004 与独立依据一致'));
-    assert.ok(bugCheck && bugCheck.ok);
-  });
-
+describe('associated IDs and complete structured result data', () => {
+  const d = doc({ stories: ['810001'], bugs: ['820001'], unclassified: ['830001'] });
+  test('checks associated ID set and respective categories: bug to case (unclassified), bug to case 需求 (story), 缺陷 (bug)', () => assert.ok(allOk(d)));
   test('reads complete result from hub_get_nodes claim.statement.data when start_run summary is truncated with 等 N 个', () => {
-    const gold: LocationGold = {
-      document: '900301',
-      product: 'apv',
-      line: '10.6.1',
-      unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
-    };
-
-    const s = caseLocation(gold);
-    const rec = 'rec:1122334455667788990011223344556677889900112233445566778899001122';
-
-    // start_run text has truncated summary: only 3 IDs listed, then "等 6 个"
-    const startRunText = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002、900003 等 6 个',
-      `完整结果 ${rec}：用 get_nodes 读第一页`,
-    ].join('\n');
-
-    // get_nodes page returns the validation result JSON carrying complete claim.statement.data
-    const getNodesJson = JSON.stringify({
-      partitions: {
-        delivered: [
-          {
-            item: '900301',
-            requirements: [
-              {
-                requirement: 'location',
-                claims: [
-                  {
-                    statement: {
-                      verdict: 'support',
-                      text: '按目录树定位',
-                      data: {
-                        case_id: '900301',
-                        requirements: [],
-                        defects: [],
-                        unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
-                      },
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    });
-
-    const turns: LoggedTurn[] = [
-      { index: 0, tools: ['hub_start_run'], toolResults: [] },
-      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 't0', text: startRunText, isError: false }] },
-      { index: 2, tools: [], toolResults: [{ id: 't1', text: getNodesJson, isError: false }] },
-    ];
-
-    const checks = s.check(turns);
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-
-    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
-    assert.ok(setCheck && setCheck.ok);
-    assert.equal(setCheck.actual, '共 6 个，集合一致');
-
-    for (const id of ['900001', '900002', '900003', '900004', '900005', '900006']) {
-      const idCheck = checks.find((c) => c.name === `未分类编号 ${id} 与独立依据一致`);
-      assert.ok(idCheck && idCheck.ok, `Check for unclassified id ${id} must pass`);
-    }
+    const data = JSON.stringify({ partitions: { delivered: [{ item: d.document, requirements: [{ requirement: 'location', claims: [{ statement: { data: { requirements: d.stories, defects: d.bugs, unclassified: d.unclassified } } }] }] }] } });
+    const rows = caseLocation(d).check([...turnsOf('运行 run_synthetic\n' + answer(d).replaceAll('未分类编号 830001', '未分类编号 等 1 个')), ...turnsOf(data)]);
+    assert.ok(rows.every(c => c.ok), JSON.stringify(rows));
   });
-
-  test('a start_run summary that lists every id (the new full listing) passes without get_nodes data', () => {
-    const gold: LocationGold = {
-      document: '900301',
-      product: 'apv',
-      line: '10.6.1',
-      unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
-    };
-    const s = caseLocation(gold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.3.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002、900003、900004、900005、900006',
-    ].join('\n');
-    const checks = s.check(turnsOf(text));
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
-    assert.ok(setCheck && setCheck.ok && setCheck.actual.includes('共 6 个，集合一致'));
-  });
-
+  test('a start_run summary that lists every id (the new full listing) passes without get_nodes data', () => assert.ok(allOk(d)));
   test('a summary capped at 20 with 另有 N 个 does not read the count as an id', () => {
-    const gold: LocationGold = {
-      document: '900301',
-      product: 'apv',
-      line: '10.6.1',
-      unclassified: Array.from({ length: 22 }, (_, i) => String(900001 + i)),
-    };
-    const s = caseLocation(gold);
-    const listed = Array.from({ length: 20 }, (_, i) => String(900001 + i)).join('、');
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.3.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      `- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 ${listed}；另有 2 个`,
-    ].join('\n');
-    const checks = s.check(turnsOf(text));
-    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
-    assert.ok(setCheck && !setCheck.ok, 'the two unlisted ids are honestly missing, not silently complete');
-    assert.match(setCheck.actual, /缺 2 个（900021、900022）/, setCheck.actual);
-    assert.ok(!setCheck.actual.includes('另有'), `the cap marker is not an id: ${setCheck.actual}`);
+    const many = doc({ unclassified: Array.from({ length: 22 }, (_, i) => String(830001 + i)) });
+    const truncated = answer(many).replaceAll('、830021、830022', '；另有 2 个');
+    const item = idsCheck(checks(many, truncated));
+    assert.equal(item.ok, false); assert.match(item.actual, /缺 2 个/);
   });
-
-  test('the src hex digest of a 位置 segment after the ids is not read as ids', () => {
-    // The real doc line keeps going after the ids with "位置 src:<hex>"（含 949、06、893744 这样的数字段）—
-    // the ids come only from the marked segment, up to the next ；or |.
-    const gold: LocationGold = {
-      document: '900301',
-      product: 'apv',
-      line: '10.6.1',
-      unclassified: ['900001', '900002'],
-    };
-    const s = caseLocation(gold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.3.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002 | 位置 src:94906f893744abcdef0123456789/json@1/p/beds/0',
-    ].join('\n');
-    const checks = s.check(turnsOf(text));
-    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
-    assert.ok(setCheck && setCheck.ok && setCheck.actual.includes('集合一致'));
-  });
-
-  test('fails when an associated ID is misclassified (gold expects defect but reported as unclassified)', () => {
-    const gold: LocationGold = {
-      document: '90001',
-      line: '10.6.1',
-      bugs: ['900001'],
-    };
-    const s = caseLocation(gold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '- 90001 | 文档 90001 | 版本 10.6.1（目录，置信度高）；未分类编号 900001',
-    ].join('\n');
-
-    const checks = s.check(turnsOf(text));
-    const bugCheck = checks.find((c) => c.name.includes('关联缺陷 900001 与独立依据一致'));
-    assert.ok(bugCheck && !bugCheck.ok, 'must fail because 900001 was reported as unclassified, not defect');
-  });
-
+  test('the src hex digest of a 位置 segment after the ids is not read as ids', () => assert.ok(allOk(d, answer(d).replaceAll('未分类编号 830001', `未分类编号 830001 | 位置 src:${'1'.repeat(64)}`))));
+  test('fails when an associated ID is misclassified (gold expects defect but reported as unclassified)', () => assert.ok(checks(d, answer(d).replaceAll('缺陷 820001', '未分类编号 820001')).some(c => !c.ok && c.name.includes('缺陷分类'))));
   test('fails when associated ID set has missing or extra items', () => {
-    const gold: LocationGold = {
-      document: '90001',
-      line: '10.6.1',
-      unclassified: ['900001', '900002'],
-    };
-    const s = caseLocation(gold);
-    const text = [
-      '运行 run_1 完成：任务包 case-location@1.0.0',
-      'location 用例定位：满足 1',
-      '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '- 90001 | 文档 90001 | 版本 10.6.1（目录，置信度高）；未分类编号 900001、900099',
-    ].join('\n');
-
-    const checks = s.check(turnsOf(text));
-    const setCheck = checks.find((c) => c.name.includes('关联编号集合与独立依据一致'));
-    assert.ok(setCheck && !setCheck.ok, 'must fail because 900002 is missing and 900099 is extra');
-    assert.match(setCheck.actual, /缺 1 个.*多 1 个/);
+    const item = idsCheck(checks(d, answer(d).replaceAll('未分类编号 830001', '未分类编号 830099')));
+    assert.equal(item.ok, false); assert.match(item.actual, /缺 1 个，多 1 个/);
   });
+});
+
+test('module and train fields match whole values rather than a prefix of another value', () => {
+  const d = doc();
+  assert.ok(checks(d, answer(d).replaceAll('模块 合成模块甲', '模块 合成模块甲额外')).some(c => c.name.includes('模块与') && !c.ok));
+  assert.ok(checks(d, answer(d).replaceAll('发布火车 10.8.1-R9', '发布火车 10.8.1-R99')).some(c => c.name.includes('发布火车与') && !c.ok));
+});
+
+test('location review 1: real problem rows and result item blocks do not hide the own location claim', () => {
+  const d = doc();
+  const text = `运行 run_synthetic\n问题与未知（条目 | 名称 | 分区 | 要求项）：\n- ${d.document} | 合成标题 | 未知 | location | 输入缺少\n条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n内容 rec:${'a'.repeat(64)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n  · build_candidates 构建候选：满足\n${position(d.document, 'build_candidates', statement(builds(), d.line))}`;
+  assert.ok(allOk(d, text), JSON.stringify(checks(d, text).filter(c => !c.ok)));
+});
+
+test('location review 3: unknown location values cannot pass as facts and private reasons remain private', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'location-fact-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const d = doc({ product: undefined });
+  const text = answer(d).replace(position(d.document, 'location', row(d).split(' | ').slice(2).join(' | ')), position(d.document, 'location', '定位不确定：根 private-root 不是产品名称；已知：' + row(d).split(' | ').slice(2).join(' | ')).replace('，支持；性质', '，未知；性质'));
+  const rows = caseLocation(d, directory).check(turnsOf('运行 run_synthetic\n' + text));
+  assert.ok(rows.some(c => c.name.includes('定位结论是事实') && !c.ok));
+  assert.ok(!JSON.stringify(rows).includes('private-root'));
+  assert.ok(readFileSync(join(directory, 'case-location-details.json'), 'utf8').includes('private-root'));
+  assert.equal(statSync(join(directory, 'case-location-details.json')).mode & 0o777, 0o600);
+  const list = caseLocation({ product: 'apv', documents: [d] }).check(turnsOf('运行 run_synthetic\n' + answer(d).replaceAll('产品线 apv', '产品线 wrong-product')));
+  assert.ok(list.some(c => c.name.includes('产品线') && !c.ok));
 });

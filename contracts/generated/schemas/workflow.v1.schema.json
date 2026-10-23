@@ -166,6 +166,61 @@
       ],
       "additionalProperties": false
     },
+    "contribution": {
+      "description": "a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification",
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "requirement": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "required": [
+        "slot",
+        "requirement"
+      ],
+      "additionalProperties": false
+    },
+    "outputs": {
+      "description": "task-specific outputs stay in ordinary run submissions",
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ranking",
+                  "selection",
+                  "score"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
     "leases": {
       "description": "the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)",
       "type": "object",

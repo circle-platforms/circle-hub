@@ -1,0 +1,30 @@
+{
+  "id": "shape_bad",
+  "source": "author",
+  "check": "shape",
+  "note": "合成反例",
+  "subject": {
+    "item": "one",
+    "slots": {
+      "contribution": [
+        {
+          "text": "合成回注",
+          "data": {
+            "root": "1111111111111111111111111111111111111111111111111111111111111111",
+            "path": "/commands/status",
+            "source": {
+              "reference": "src:2222222222222222222222222222222222222222222222222222222222222222",
+              "quote": "status prints state"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.structure.required_empty"
+    }
+  ]
+}

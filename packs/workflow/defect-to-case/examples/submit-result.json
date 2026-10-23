@@ -11,7 +11,7 @@
             "text": "SLB健康检查间隔配置测试",
             "quotes": [
               {
-                "reference": "src:2b3e0be7e05987ef55c11a6edcfc21d992d5cf5ada92016036580f64ac506034/json@1/p/html_fields/fix",
+                "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
                 "text": "健康检查间隔设置成功"
               }
             ],
@@ -33,7 +33,7 @@
                 {
                   "text": "健康检查间隔设置成功",
                   "quote": {
-                    "reference": "src:2b3e0be7e05987ef55c11a6edcfc21d992d5cf5ada92016036580f64ac506034/json@1/p/html_fields/fix",
+                    "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
                     "text": "健康检查间隔设置成功"
                   }
                 }

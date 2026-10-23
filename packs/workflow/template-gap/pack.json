@@ -1,20 +1,40 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.0.1",
+  "version": "1.1.2",
   "kind": "workflow",
   "title": "模板缺口检查",
-  "description": "按团队测试用例模板 v3 检查每份测试脑图缺哪些类别，列出每个出现的类别的证据用例；只有事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "940bb6ac2112fcca6bab50e492e432b78a44c028b989c642ee1461a278e5a206",
-      "size": 4228
+      "sha256": "e2b5ca1eff5cea9ac250b89a8c42d13b304ef7d70eef1f999224e2d51c012ea3",
+      "size": 6449
     },
     {
       "path": "checks.json",
-      "sha256": "d5e8c105b053d87512c247f91ac1ab1676b3996c5f46580049c0b36f4672c883",
-      "size": 337
+      "sha256": "aa78b82078d13792ac92791c5c6167ce7d0ce2e507f3ac1f060ff6949e0be55d",
+      "size": 675
+    },
+    {
+      "path": "examples/command_partial_shortfall.json",
+      "sha256": "958cff55989a9f3759c7dfe254fb682f60ab77b1043c0353a2531336be1a957b",
+      "size": 47758
+    },
+    {
+      "path": "examples/command_partial_support.json",
+      "sha256": "ee48b0656114ee7eefbb66bdcc67ee785c9c9f114b352b284601b4b869e9c36a",
+      "size": 52686
+    },
+    {
+      "path": "examples/command_unbound.json",
+      "sha256": "7dc6adc6c051e6f12f67d1001f94448f8b078d9088cd5981700bec9f0f86defb",
+      "size": 35968
+    },
+    {
+      "path": "examples/command_unmatched.json",
+      "sha256": "ddc7a024da54bd44fdd5c64a933e010df8b123e58125b12717bb5893967820f5",
+      "size": 55824
     },
     {
       "path": "examples/synthetic-gap.km.json",
@@ -23,8 +43,8 @@
     },
     {
       "path": "examples/synthetic-gap.result.json",
-      "sha256": "02916bb47ddbef1c04801be07a649db3be4c0c47c588d841d120cee15c86f6c6",
-      "size": 12356
+      "sha256": "b7d6a22f2b2567689546ccf35a7dd4a4f5c4f9f7111aee1a8d33ded09bd7b370",
+      "size": 16997
     },
     {
       "path": "functions/cases.ts",
@@ -32,14 +52,34 @@
       "size": 15514
     },
     {
+      "path": "functions/command-check.ts",
+      "sha256": "96b351aff56c120fb6697fcb569922d3739cf12b4de543be9a5c976ee2e8ac29",
+      "size": 9928
+    },
+    {
+      "path": "functions/command-subject.ts",
+      "sha256": "ef9b82f17ee360bc0d56129ceccac4c66bf8a046ec9770eb95540a0ee55e85c0",
+      "size": 1228
+    },
+    {
+      "path": "functions/commands.ts",
+      "sha256": "5b4606be0b6460474d1e3b50b35af084ecd956677dd8e441b4f347f172d7191e",
+      "size": 6298
+    },
+    {
       "path": "functions/common.ts",
       "sha256": "0aadf0bbb5c1bc504a62ba3e57cb2c8833cea9cb50f1ec638ef35e48e8e3ce78",
       "size": 2088
     },
     {
+      "path": "functions/index.ts",
+      "sha256": "3514531853633d907be6cccecb409a77d1335b75e83998f7f3ad2f3f57ad52ed",
+      "size": 5951
+    },
+    {
       "path": "functions/project.ts",
-      "sha256": "ae130894f8c53b713be71bc4aa854d66f8b70b8aafd58eecb43710d1032966ce",
-      "size": 17860
+      "sha256": "b2c3ee8010e70e7cfd5c92949a6827fa325271b26dc13acc135d4e9ccab9a952",
+      "size": 23564
     },
     {
       "path": "functions/subject.ts",
@@ -53,8 +93,8 @@
     },
     {
       "path": "functions/template.ts",
-      "sha256": "9def3f159a5007131377bf4e9c6a244a91d135f3b5d7f53156f142beef1ed963",
-      "size": 9299
+      "sha256": "5f43af18602bc59a8fcafe079422f9ed0d6f26edbfc9fe47dc250fb5c896699e",
+      "size": 9366
     },
     {
       "path": "functions/text.ts",
@@ -63,13 +103,38 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "1faa86255fb029235b245ac3cdd347ccc311202295c83c0f6e43bbb4bbd595c2",
-      "size": 4593
+      "sha256": "0f134a4ad5d58c0e8381085741b9fcf3d240010d5d56e808cabcd69bf81c84d9",
+      "size": 5569
     },
     {
       "path": "requirements.json",
-      "sha256": "07ed1d773af01aabc5b825d3cf167da1574f4fbaf10a2371fec35aba931421cf",
-      "size": 634
+      "sha256": "e1f47d79d088ffe50c9e2e62bc4ef841794f7393b842c8269efc7fbfdbfe466d",
+      "size": 1231
+    },
+    {
+      "path": "samples/negative/command_absent.json",
+      "sha256": "6b89f2ff979ed27db2dd1ad036f4d5e82454976efc1d7f4c6467fa84fe0e1c68",
+      "size": 3142
+    },
+    {
+      "path": "samples/negative/command_none.json",
+      "sha256": "ef47765e4610973662e6d39f855145503f098402c7b56aff419572400d7453fb",
+      "size": 9594
+    },
+    {
+      "path": "samples/negative/command_rule_mismatch.json",
+      "sha256": "c51bc36bb3466bc6785777d2d3e15bf8306ba83ac2d4705f2b2a7a1cd0f903a5",
+      "size": 10036
+    },
+    {
+      "path": "samples/negative/command_shortfall.json",
+      "sha256": "96a4925fc30f3b4a912607307b673f2fb228752cc43eacec31027a73d51bcdec",
+      "size": 9962
+    },
+    {
+      "path": "samples/negative/command_upload.json",
+      "sha256": "9462d3c25871736cdd81c7e06f50a83d21f7ccc03c0b07930368609bce573e32",
+      "size": 10012
     },
     {
       "path": "samples/negative/coverage-blank-reason.json",
@@ -92,6 +157,16 @@
       "size": 1226
     },
     {
+      "path": "samples/positive/command_all.json",
+      "sha256": "3ebb15bb90d539d468828ef5d1db433b1df2dd06c012953042fe7a24fcf4aa84",
+      "size": 9971
+    },
+    {
+      "path": "samples/positive/command_skip.json",
+      "sha256": "fc7e38f433995404c8a7865be46f35244d8609e06823c294c2b0ea92b0248c75",
+      "size": 10019
+    },
+    {
       "path": "samples/positive/coverage-all-covered.json",
       "sha256": "af188f8d841c3a769b79b0edb4e8eb1e5795ceaba182a27c6596e7a2f68aaeeb",
       "size": 1053
@@ -108,8 +183,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "95bf5c6f47455c3075a2a544381f14f1e59916be8577c0486d43aba2d70deea1",
-      "size": 5060
+      "sha256": "8dbe37577adaa3c77321b0d9a8dce2e7ee0af659f8113781cfa47f881cd2cf74",
+      "size": 6929
     },
     {
       "path": "tables/template-v3-coverage.json",
@@ -123,8 +198,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "5ee5a1128db236277537b106576f6fc1fc36be6bba9607ec3e4d464f8ffd1827",
-      "size": 2685
+      "sha256": "e80104002a6c03a2dffd3aab95f5f78019bf409b5943b8e509e43087c9de2f0c",
+      "size": 3977
     }
   ]
 }

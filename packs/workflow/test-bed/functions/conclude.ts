@@ -1,3 +1,4 @@
+import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
 // conclude: the one computation the search/facts/acquire conclusions rest on, shared by the projection
 // (functions/project.ts) and the check (functions/check-bed.ts), so the check recomputes exactly what the projection
 // computed from the same frozen manifest and lease view. The lease context the workflow declares gives only keys and
@@ -8,7 +9,7 @@ import { bedFacts } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
-export type Action = 'search' | 'facts' | 'acquire' | 'extend' | 'release';
+export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'extend' | 'release'>;
 
 /** A need as the projection and the check see it (parameters normalized). */
 export interface BedNeed {
@@ -43,6 +44,10 @@ export const DEFAULT_HOURS = 2;
 
 export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', extend: '续期预订', release: '释放预订' };
 
+export function isAction(value: unknown): value is Action {
+  return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
+}
+
 /** The rows of the frozen lease view as matchNeed reads them. */
 export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, LeaseEntry> {
   const out: Record<string, LeaseEntry> = {};
@@ -54,7 +59,7 @@ export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, Le
 
 /** Parameters of a run call: action (default search), need, bed, addresses and booking, every problem named with its fix. */
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
-  const action: Action = params.action === 'facts' || params.action === 'acquire' || params.action === 'extend' || params.action === 'release' ? params.action : 'search';
+  const action: Action = isAction(params.action) ? params.action : 'search';
   const needRaw = isRecord(params.need) ? params.need : {};
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];

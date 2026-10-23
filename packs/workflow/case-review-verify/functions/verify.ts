@@ -36,6 +36,8 @@ export const CODES = {
   passWithoutEvidence: `${PACK}.pass_without_evidence`,
   passUnverified: `${PACK}.pass_with_unverified`,
   failWithoutRefutation: `${PACK}.fail_without_major_refutation`,
+  suggestionTargetMissing:PACK+'.suggestion_target_missing',
+  suggestionIncomplete:PACK+'.suggestion_incomplete',
   partialWithoutChange: `${PACK}.partial_without_change`,
 } as const;
 
@@ -84,7 +86,12 @@ export function dispositions(input: unknown): CheckOutcome[] {
   }
   if (out.length === 0) {
     const fresh = claims.filter((c) => c.code === NEW_FINDING).length;
-    out.push({ verdict: 'support', statement: `${draft.size} 条初评发现各有一条处置，新发现 ${fresh} 条，每条都有位置和引文`, grounds: [], tier: TIER, ...own, data: { draft: draft.size, new_findings: fresh } });
+    const fields=isRecord(subject.fields)?subject.fields:{};
+    const sourceFacts=records(fields.draft_source_facts);
+    out.push({verdict:'support',statement:String(draft.size)+' 条初评发现各有一条处置，新发现 '+fresh+' 条，每条都有位置和引文',
+      grounds:sourceFacts.flatMap(fact=>typeof fact.reference==='string'?[fact.reference]:[]),tier:TIER,...own,
+      data:{draft:draft.size,new_findings:fresh,source_facts:sourceFacts}});
+
   }
   return out;
 }
@@ -172,6 +179,25 @@ export function verdict(input: unknown): CheckOutcome[] {
   return out;
 }
 
+/** A suggestion is a model judgment; its node reference and three explicit parts are checked deterministically. */
+export function suggestionTargets(input:unknown):CheckOutcome[] {
+  const subject=isRecord(input)&&isRecord(input.subject)?input.subject:{},items=records(subject.items);
+  const anchor=items.find(item=>isRecord(item.slots)),own=typeof anchor?.id==='string'?{item:anchor.id}:{};
+  const suggestions=records(subject.cross_item).flatMap((claim,index)=>claim.code==='suggestion'?[{claim,index}]:[]);
+  if(suggestions.length===0)return [{verdict:'support',statement:'没有改进建议，无需补充落点',grounds:[],tier:TIER,...own}];
+  if(!anchor)return [{verdict:'unknown',reason:'missing_input',statement:'改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议',grounds:[],tier:TIER,data:{fix:'先把一个用例按 handled 提交复核，再重新提交建议'}}];
+  const digest=targetDigest(items),out:CheckOutcome[]=[];
+  for(const {claim,index} of suggestions){
+    const pointer='/cross_item/'+index,grounds=Array.isArray(claim.grounds)?claim.grounds:[];
+    const target=grounds.some(reference=>typeof reference==='string'&&digest!==null
+      &&new RegExp('^src:'+digest+'/kityminder@1/(?:n/[^/]+|i(?:/(?:0|[1-9][0-9]*))*)(?:/@[^/]+)?(?::[0-9]+-[0-9]+)?$').test(reference));
+    if(!target)out.push({verdict:'refute',code:CODES.suggestionTargetMissing,statement:'这条建议没有指向被复核脑图节点的根据；针对已有用例指向用例，补新用例指向测试子项',grounds:[],tier:TIER,...own,pointer,data:{fix:'grounds 至少给出一条指向被复核脑图的 src: 节点引用；期望来源的引用不能代替落点'}});
+    const parts=typeof claim.statement==='string'?/^补：([\s\S]*?)；\s*因为：([\s\S]*?)；\s*期望：([\s\S]*)$/u.exec(claim.statement.trim()):null;
+    if(parts===null||parts.slice(1).some(part=>part.trim()===''))out.push({verdict:'refute',code:CODES.suggestionIncomplete,statement:'这条建议缺少完整的三段（补：…；因为：…；期望：…）',grounds:[],tier:TIER,...own,pointer,data:{fix:'按“补：<用例>；因为：<原因>；期望：<结果>”填写三段，每段都要有内容'}});
+  }
+  return out.length?out:[{verdict:'support',statement:String(suggestions.length)+' 条建议都有目标脑图落点，补、因为、期望三段齐全',grounds:[],tier:TIER,...own}];
+}
+
 function totally(run: (input: unknown) => CheckOutcome[], name: string): (input: unknown) => unknown {
   return (input) => {
     try {
@@ -184,6 +210,7 @@ function totally(run: (input: unknown) => CheckOutcome[], name: string): (input:
 
 export const dispositionsCheck = totally(dispositions, 'dispositions');
 export const verdictCheck = totally(verdict, 'verdict');
+export const suggestionTargetsCheck=totally(suggestionTargets,'suggestion_targets');
 
 /** Without a named export: the check the subject's shape calls for. */
 export default function (input: unknown): unknown {

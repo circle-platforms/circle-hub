@@ -1,10 +1,10 @@
 // Gold script: build candidates of one version line computed independently from the build site listing page.
 // Strictly independent by design — imports nothing from hub/ or packs/; the build naming, version line, and
 // based-on alias rules are re-implemented directly from packs/product/apv/README.md.
-//   node scripts/real/gold/builds.ts --page <listing.html> --line <versionLine> --out <gold.json>
-// The output JSON is an array of { name, family, base, released }.
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+//   node scripts/real/gold/builds.ts --page <listing.html> [--page <listing.html> ...] --line <versionLine> --out <gold.json>
+// The output JSON is { line, candidates: [{ name, family, base, built, released }] }.
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 
 export interface BuildCandidate {
   name: string;
@@ -149,9 +149,9 @@ function resolveBase(entry: RawEntry, byName: Map<string, RawEntry>): string {
 }
 
 /** Parses candidate builds of the specified version line from build site HTML. */
-export function parseBuildCandidates(html: string, targetLine: string): BuildCandidate[] {
+export function parseBuildCandidates(html: string | readonly string[], targetLine: string): BuildCandidate[] {
   const targetKey = lineKey(targetLine);
-  const rawEntries = parseRawEntries(html);
+  const rawEntries = (typeof html === 'string' ? [html] : html).flatMap(parseRawEntries);
 
   // Map by name keeping latest copy if duplicated
   const byName = new Map<string, RawEntry>();
@@ -185,32 +185,67 @@ export function parseBuildCandidates(html: string, targetLine: string): BuildCan
   return results;
 }
 
-export async function main(argv: string[]): Promise<number> {
-  const value = (name: string): string | undefined => {
-    const at = argv.indexOf(`--${name}`);
-    return at >= 0 ? argv[at + 1] : undefined;
-  };
-  const pagePath = value('page');
-  const line = value('line');
-  const outPath = value('out');
-  if (!pagePath || !line || !outPath) {
-    process.stderr.write('用法：node scripts/real/gold/builds.ts --page <listing.html> --line <versionLine> --out <gold.json>\n');
-    return 2;
+/** Reject any Git checkout, including worktrees and symlinks into a checkout. Values never go into Git. */
+export function privatePath(path: string): string {
+  const absolute = resolve(path);
+  for (let cursor = absolute; ; cursor = dirname(cursor)) {
+    if (existsSync(join(cursor, '.git'))) throw new Error('路径必须在 Git 仓库之外');
+    if (dirname(cursor) === cursor) break;
   }
-  let html: string;
-  try {
-    html = readFileSync(resolve(pagePath), 'utf8');
-  } catch (error) {
-    process.stderr.write(`读不了输入页面（${(error as NodeJS.ErrnoException).code ?? '错误'}）：${(error as Error).message.split('\n')[0]}\n`);
-    return 1;
+  let existing = absolute;
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) throw new Error('路径无效');
+    existing = parent;
   }
-  const candidates = parseBuildCandidates(html, line);
-  writeFileSync(resolve(outPath), `${JSON.stringify(candidates, null, 2)}\n`, 'utf8');
-  return 0;
+  const canonical = resolve(realpathSync(existing), relative(existing, absolute));
+  for (let cursor = canonical; ; cursor = dirname(cursor)) {
+    if (existsSync(join(cursor, '.git'))) throw new Error('路径必须在 Git 仓库之外');
+    if (dirname(cursor) === cursor) break;
+  }
+  return canonical;
 }
 
-if (process.argv[1] !== undefined && process.argv[1].endsWith('builds.ts')) {
-  void main(process.argv.slice(2)).then((code) => {
-    process.exitCode = code;
-  });
+/** Writes a private, immutable capture. Only newly created directories and files receive permissions. */
+export function writePrivateJson(path: string, value: unknown): string {
+  const target = privatePath(path);
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const text = JSON.stringify(value, null, 2) + '\n';
+  writeFileSync(target, text, { flag: 'wx', mode: 0o600 });
+  return text;
 }
+
+export interface BuildsGold { line: string; candidates: BuildCandidate[] }
+
+export async function main(argv: string[]): Promise<number> {
+  const pages: string[] = [];
+  let line: string | undefined, out: string | undefined;
+  for (let i = 0; i < argv.length; i += 2) {
+    const flag = argv[i], value = argv[i + 1];
+    if (!value || value.startsWith('--') || !['--page', '--line', '--out'].includes(flag)) { process.stderr.write(`第 ${i / 2 + 1} 个参数无效；下一步只用 --page、--line、--out 并补齐参数值\n`); return 2; }
+    if (flag === '--page') pages.push(value);
+    else if (flag === '--line') line = value;
+    else out = value;
+  }
+  if (!pages.length || !line || !out || !/^v?[0-9]+(?:[._][0-9]+)+$/i.test(line)) {
+    process.stderr.write('用法：--page <页面> [--page <页面>] --line <版本线> --out <仓库外文件>\n');
+    return 2;
+  }
+  let pageIndex = 0, writing = false;
+  try {
+    const texts = pages.map((page, index) => { pageIndex = index + 1; return readFileSync(privatePath(page), 'utf8'); });
+    const candidates = parseBuildCandidates(texts, line.replace(/^v/i, ''));
+    writing = true;
+    writePrivateJson(out, { line: lineKey(line.replace(/^v/i, '')), candidates } satisfies BuildsGold);
+    process.stdout.write(`候选 ${candidates.length} 个，APV ${candidates.filter(c => c.family === 'APV').length}、NSAE ${candidates.filter(c => c.family === 'NSAE').length}、别名 ${candidates.filter(c => c.name !== c.base).length}、没有制作时间 ${candidates.filter(c => c.built === null).length}\n`);
+    return 0;
+  } catch (error) {
+    const inGit = error instanceof Error && error.message === '路径必须在 Git 仓库之外';
+    if (!writing) { process.stderr.write(`第 ${pageIndex} 个 --page ${inGit ? '在 Git 仓库里' : '读不到'}；下一步：由集成者补可读的仓库外列表页后重跑\n`); return 2; }
+    const code = (error as NodeJS.ErrnoException).code;
+    process.stderr.write(inGit ? '--out 在 Git 仓库里；下一步：改用仓库外的新文件\n' : code === 'EEXIST' ? '--out 已存在，拒绝覆盖；下一步：选择新输出文件\n' : '--out 写入失败；下一步：检查仓库外目标目录的权限并换新文件重跑\n');
+    return inGit ? 2 : 1;
+  }
+}
+
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2));

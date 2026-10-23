@@ -1,9 +1,11 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
+import type { ChangeKind, Verdict, CheckTier, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Pack checks. command_exists: a case on a removed path is a blocking refutation. command_unchanged: first the whole
 // command diff as one cross-item fact (one line per changed path with its earlier-build case count, grounded on the
 // impact view), then a case on a modified path whose definition data differ is an advisory refutation. A well-formed
 // item can carry both. Nothing is
 // claimed about cases the index does not hold: when the subject carries the projection note, command_exists adds that
-// unknown (and, when the view was truncated, an integrity unknown). Samples omit the note, so their polarity stays
+// disclosure stays in the projection note; skipped sources and truncated impact remain unknown. Samples omit the note, so their polarity stays
 // the verdict of the item.
 // A reason on an item is only the index of its path in note.details and the change kind; path strings, field
 // differences and definition references are joined from that run-level table, so an outcome stays small at any
@@ -24,7 +26,7 @@ interface ParsedField {
 
 interface ParsedReason {
   detail: number;
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
 }
 
 interface DetailRow {
@@ -34,12 +36,12 @@ interface DetailRow {
 }
 
 interface Outcome {
-  verdict: 'support' | 'refute' | 'unknown';
+  verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
   grounds: string[];
-  tier: 'blocking' | 'advisory';
-  reason?: 'missing_input' | 'integrity_unproven' | 'check_error';
+  tier: CheckTier;
+  reason?: Extract<UnknownReason, 'missing_input' | 'integrity_unproven' | 'check_error'>;
   item?: string;
   data?: { [key: string]: unknown };
 }
@@ -96,8 +98,9 @@ function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0) return null;
-    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
-    out.push({ detail: raw.detail, change: raw.change });
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)return null;
+    out.push({ detail: raw.detail, change });
   }
   return out;
 }
@@ -229,7 +232,7 @@ function commandExists(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   if (note !== null) {
     const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
-    const base = '索引没有收录的用例，这里不作结论。';
+    const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
     const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
     out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
     if (note.truncated === true) {
@@ -237,7 +240,7 @@ function commandExists(subject: unknown): Outcome[] {
       out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
   return out;
 }
 
@@ -290,7 +293,7 @@ function diffSummaries(subject: unknown): Outcome[] {
     return `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；${which}路径、变更种类、前一构建用例数）：`;
   };
   const lines = rows.slice(0, MAX_DIFF_ROWS).map((row) => {
-    const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
+    const label = (CHANGE_KIND as readonly string[]).includes(row.change) ? CHANGE_LABEL[row.change as ChangeKind] : row.change;
     return `- ${row.path} ${label} ${row.cases} 条${row.change === 'added' ? '（不进范围）' : ''}`;
   });
   const listed = lines.length;
@@ -360,7 +363,7 @@ function commandUnchanged(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+  if (out.length === 0 && noteOf(subject) === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
   return out;
 }
 

@@ -1,3 +1,4 @@
+import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 // matchNeed: which bed fits the need, from the normalized manifest beds, the installed-build reports, the build
 // alias map (a name to the base build it uses, the same base/base writing as the case-location candidates), the
 // lease table (key → until) and now. Pure; the wording of every conclusion says “Hub 记录里”, because Hub records
@@ -18,7 +19,7 @@ export interface Need {
 /** What one device holds: the reported build, where the report came from, and when. */
 export interface Installed {
   build: string;
-  source: 'declared' | 'observed';
+  source: Extract<ProvenanceType, 'declared' | 'observed'>;
   /** When the report was made; absent for a manifest declaration (the document carries no per-entry time). */
   at?: string;
 }
@@ -35,7 +36,7 @@ export interface BedMatch {
   /** no_requirement | match | mismatch | unknown (unknown: no install record, never a mismatch). */
   buildOk: 'no_requirement' | 'match' | 'mismatch' | 'unknown';
   /** observed | declared | none (no install record of the deciding device). */
-  buildSource: 'observed' | 'declared' | 'none';
+  buildSource: Extract<ProvenanceType, 'observed' | 'declared'> | 'none';
   /** When the needed devices are all free (the maximum of their leases' ends), null when idle now. */
   earliestFree: string | null;
   /** How many devices of the needed types the bed has beyond the need (the ordering's third key). */
