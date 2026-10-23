@@ -249,3 +249,11 @@ test('expected negative citations stay separate when an unexpected model claim o
   const missing=compareCatalogMarks({treeXml:tree,source,submission,run:run([hubMark()],null)});
   assert.equal(missing.extra.length,1); assert.equal(missing.missed.length,1);
 });
+
+test('undeclared constraint and token choices request positioned rules instead of guessing codes', () => {
+  for (const [attr,line] of [['type="U16" limit="20"','sample 25'],['type="STRING" limit="5"','sample abcdef'],['type="U16" limit="{auto|1|2}"','sample auto'],['type="IPMASK"','sample 200'],['type="STRING" length="[1 - 2]"','sample "a\\b"']]) {
+    const result=judgeCommand(readCatalog(`<commands><item name="sample"><arguments><arg ${attr}/></arguments></item></commands>`),line);
+    assert.equal(result.code,null,line); assert.ok(result.requests.length,line);
+    assert.ok(result.requests.every(r=>r.pointer && r.next_action && r.line));
+  }
+});

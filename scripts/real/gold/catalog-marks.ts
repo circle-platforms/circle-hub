@@ -140,7 +140,7 @@ function tokenize(line: string): string[] | null {
   let word = '', quote: string | null = null, active = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '\\') { if (i + 1 >= line.length) return null; word += line[++i]; active = true; continue; }
+    if (ch === '\\') return null;
     if (quote !== null) { if (ch === quote) quote = null; else word += ch; active = true; continue; }
     if (ch === '"' || ch === "'") { quote = ch; active = true; continue; }
     if (/\s/.test(ch)) { if (active) words.push(word); word = ''; active = false; }
@@ -159,11 +159,11 @@ function constraint(raw: string | undefined, at: Position, attribute: string, le
   if (range) {
     const low = Number(range[1]), high = Number(range[2]);
     if (Number.isSafeInteger(low) && Number.isSafeInteger(high) && low <= high && (!length || low >= 0)) return { value: { low, high }, requests: [] };
-  } else if (/^\d+$/.test(text) && Number.isSafeInteger(Number(text))) return { value: { high: Number(text) }, requests: [] };
+  } else if (attribute === 'length' && /^\d+$/.test(text) && Number.isSafeInteger(Number(text))) return { value: { high: Number(text) }, requests: [] };
   else if (enumeration && attribute !== 'length') return { value: { values: enumeration[1].split(/\s*[|,]\s*/) }, requests: [] };
   return { value: {}, requests: [request({ ...at, pointer: at.pointer + '/@' + attribute }, '参数约束的可解析语法：' + raw, '请集成者在该位置补取范围或枚举的正式声明；说明语法后重跑独立核对')] };
 }
-interface Parameter { raw: Argument; type: string; limit: Constraint; length: Constraint }
+interface Parameter { raw: Argument; type: string; limit: Constraint; length: Constraint; ambiguities: EvidenceRequest[] }
 function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest[] } {
   const type = raw.type.toUpperCase(), requests: EvidenceRequest[] = [];
   if (!['STRING', 'XSTRING', 'U16', 'U32', 'DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@type' }, '不认识的参数类型：' + raw.type, '请集成者提供该位置类型的定义、合法样例与反例，再补充金标准后重跑'));
@@ -172,7 +172,8 @@ function parameter(raw: Argument): { value: Parameter; requests: EvidenceRequest
   const limit = constraint(raw.limit, raw.at, 'limit', type === 'STRING' || type === 'XSTRING');
   const length = constraint(raw.length, raw.at, 'length', true);
   if (['DOTTEDIP', 'IPADDR', 'IPMASK'].includes(type) && (limit.value.low !== undefined || limit.value.high !== undefined)) requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '地址类型 limit 的计量含义（地址范围还是字符长度）', '请集成者提供此位置 limit 的正式含义；不把数值约束直接当地址字符串长度'));
-  return { value: { raw, type, limit: limit.value, length: length.value }, requests: [...requests, ...limit.requests, ...length.requests] };
+  if (limit.value.values && type !== 'STRING' && type !== 'XSTRING') requests.push(request({ ...raw.at, pointer: raw.at.pointer + '/@limit' }, '枚举与数值或地址类型的覆盖规则', '请集成者声明枚举是替换类型还是与类型相交，并补正反样例后重跑'));
+  return { value: { raw, type, ambiguities: [], limit: limit.value, length: length.value }, requests: [...requests, ...limit.requests, ...length.requests] };
 }
 function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
   const v = word.normalize('NFKC');
@@ -184,7 +185,7 @@ function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
   if (p.type === 'IPMASK') {
     const dotted = isIP(v) === 4 && /^1*0*$/.test(v.split('.').map(n => Number(n).toString(2).padStart(8, '0')).join(''));
     const prefix = /^[+-]?[0-9]+$/.test(v) && Number(v) >= 0 && Number(v) <= 128;
-    if (!dotted && !prefix) return TYPE;
+    if (!dotted && !prefix) { p.ambiguities.push(request(p.raw.at, 'IPMASK 的两个分支均不符时采用的错误码', '请集成者声明掩码与前缀双分支失败的代码选择规则后重跑')); return TYPE; }
   }
   if (numeric && (!Number.isSafeInteger(Number(v)) || Number(v) < 0 || Number(v) > (p.type === 'U16' ? 65535 : 4294967295))) return RANGE;
   const measured = numeric ? Number(v) : [...v].length;
@@ -231,6 +232,8 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
     const codes = states.get(args.length);
     if (codes) { arityFits = true; codes.forEach(code => failedCodes.add(code)); }
   }
+  const ambiguity = signatures.flatMap(signature => signature.flatMap(p => p.value.ambiguities));
+  if (ambiguity.length) return { in_scope: true, code: null, requests: ambiguity };
   if (!arityFits) return { in_scope: true, code: ARITY, requests: [] };
   if (failedCodes.size === 1) return { in_scope: true, code: [...failedCodes][0], requests: [] };
   return { in_scope: true, code: null, requests: [request(command.at, '多个参数或签名失败时错误码的选择规则', '请集成者明确这些签名及参数位置之间的错误码选择规则，补充规则和样例后重跑；不照抄被核实现的优先级')] };
