@@ -128,7 +128,7 @@ export interface RunSubmissionView {
   /** Digest of the stored submission record. */
   record: string;
   received_at: string;
-  acceptance: Acceptance;
+  acceptance: Acceptance | null;
   errors: ProtocolError[];
   /** Digest of the validation_result record, when the submission was accepted. */
   result: string | null;

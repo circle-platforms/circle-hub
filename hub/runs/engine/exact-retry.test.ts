@@ -50,6 +50,13 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.ok(answer.errors.every(error => error.rounds_left === undefined && error.requirement === undefined));
     assert.match(answer.errors[0].fix ?? '', /管理员.*恢复/);
     let saved = await actions(); assert.equal(saved.length, 1);
+    assert.equal(saved[0].body.result, 'error'); assert.equal(saved[0].body.error_code, 'check_error');
+    assert.equal(saved[0].body.acceptance, null);
+    assert.match(String(saved[0].body.detail.fix), /管理员.*恢复.*原样重交/);
+    assert.match(answer.errors[0].message, /Hub.*未完成/);
+    const view = (await h.service.getRun(h.alice, run.run))!.submissions[0];
+    assert.equal(view.acceptance, null); assert.match(view.errors[0].message, /未校验.*Hub/);
+    assert.match(view.errors[0].fix ?? '', /管理员.*恢复.*原样重交/);
     assert.equal(saved[0].body.detail.hub_error, true); assert.deepEqual(saved[0].body.detail.repair, []);
     assert.equal((await h.kit.store.find({ key: INDEX.resultRun, value: run.run, kind: 'validation_result' })).items.length, 0);
     const again = await h.service.submitResult(h.alice, submission, h.call());

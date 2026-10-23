@@ -17,7 +17,7 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, LimitError, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
-import { UNAVAILABLE_MESSAGE, recReference } from '../../refs/api.ts';
+import { recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { describe, protocolError, unavailableError } from './errors.ts';
 import { evaluate } from './evaluate.ts';
@@ -178,7 +178,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const record = kept.record;
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
-  const action = (input: { acceptance: 'accepted' | 'not_accepted'; codes: string[]; repair: string[]; result: string | null; extra?: Record<string, unknown> }) =>
+  const action = (input: { acceptance: 'accepted' | 'not_accepted' | null; codes: string[]; repair: string[]; result: string | null; actionResult?: 'error'; errorCode?: string; extra?: Record<string, unknown> }) =>
     putAction(store, {
       action: 'validate',
       run: run.run,
@@ -186,6 +186,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       startedAt,
       endedAt: ctx.now().toISOString(),
       acceptance: input.acceptance,
+      result: input.actionResult, errorCode: input.errorCode,
       codes: input.codes,
       detail: { submission: received.digest, session, model, repair: input.repair, result: input.result, ...(input.extra ?? {}) },
       submissionRecord: record.digest,
@@ -217,11 +218,11 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     else outcome = await validatePartial(base, args, parsed?.error ?? null);
   } catch (error) {
     if (!(error instanceof HubReadFailure)) throw error;
-    await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null,
-      extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts } });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', UNAVAILABLE_MESSAGE, {
-      fix: '由管理员恢复 Hub 的来源核对能力后原样重交；本次不计修复轮数',
-    })] };
+    await action({ acceptance: null, codes: [error.reason], repair: [], result: null,
+      actionResult: 'error', errorCode: error.reason,
+      extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts,
+        message: error.message, fix: error.fix } });
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
   }
   const saved = await keepResult(base, outcome);
   await action({

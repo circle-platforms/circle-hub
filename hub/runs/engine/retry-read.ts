@@ -38,11 +38,12 @@ export async function retryRead<T>(read: () => Promise<T>, classify: (value: T) 
 
 /** A Hub failure to check a bound source, never a defect in the submitted value. */
 export class HubReadFailure extends Error {
+  readonly fix = '由管理员恢复 Hub 的来源核对能力后原样重交；本次不计修复轮数';
   readonly reference: string;
   readonly reason: ReadFailureReason;
   readonly attempts: Array<Record<string, unknown>>;
   constructor(reference: string, reason: ReadFailureReason, attempts: Array<Record<string, unknown>>) {
-    super('Hub could not check a bound source after bounded retries');
+    super('Hub 来源读取失败，核验未完成');
     this.reference = reference; this.reason = reason; this.attempts = [...attempts];
   }
 }
