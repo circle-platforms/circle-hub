@@ -22,6 +22,7 @@ import { RECORD_SCHEMAS, WHOLE_HUB } from './constants.ts';
 import { normalizeTime } from './db.ts';
 import type { Database } from './db.ts';
 import { isSha256 } from './digest.ts';
+import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 
 const ADMIN: PermissionRole = 'admin';
@@ -146,6 +147,23 @@ export class RecordAuthorizations implements Authorizations {
   async resourceConfig(resourceId: string): Promise<AuthorizationRecord | null> {
     const record = await this.latest(RESOURCE_CONFIG, WHOLE_HUB, resourceId);
     return record !== null && this.#active(record) ? record : null;
+  }
+
+  async resourceConfigs(resourceIds: readonly string[]): Promise<Map<string, AuthorizationRecord>> {
+    const ids = [...new Set(resourceIds.filter(isTerm))];
+    if (!ids.length) return new Map();
+    const keys = ids.map(id => `${RESOURCE_CONFIG}|${WHOLE_HUB}|${id}`);
+    const result = await this.#db.query(
+      `SELECT DISTINCT ON (i.value) r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+       FROM record_index i JOIN records r ON r.digest=i.digest
+       WHERE i.key='authz.key' AND i.value=ANY($1::text[]) AND r.kind='authorization'
+       ORDER BY i.value,i.record_seq DESC`,[keys]);
+    const out = new Map<string, AuthorizationRecord>();
+    for (const row of result.rows) {
+      const record = verifiedRecord<AuthorizationBody>(row);
+      if (record.body.permission === RESOURCE_CONFIG && record.body.subject === WHOLE_HUB && this.#active(record)) out.set(record.body.object,record);
+    }
+    return out;
   }
 
   async share(by: Principal, object: string, audience: string[], reason?: string | null): Promise<AuthorizationRecord[]> {

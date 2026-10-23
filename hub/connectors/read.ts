@@ -581,6 +581,7 @@ export class ReadEngine {
               bytes: bytesOf,
               mediaType: derived.media_type,
               origin: { generated: { generator: `${runtime.pack.id}.${read.name}@${majorOf(runtime.pack.version)}`, inputs: generatedInputs, read_back: null } },
+              derivedSources: generatedInputs.map(input => input.slice('src:'.length)),
               author: { user: null },
               provenanceType: 'projected',
               visibility,

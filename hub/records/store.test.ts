@@ -343,6 +343,20 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   await kit.close();
 });
 
+test('batched record reads retain integrity checks, insertion order and complete index matches', async t => {
+  const kit=await openTestRecords({postgres}); t.after(()=>kit.close());
+  const a=await kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{synthetic:1},index:[{key:'batch.test',value:'one'},{key:'batch.test',value:'both'}]});
+  const b=await kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{synthetic:2},index:[{key:'batch.test',value:'two'},{key:'batch.test',value:'both'}]});
+  const records=await kit.store.getMany([b.digest,a.digest,a.digest,'bad']);
+  assert.equal(records.size,2); assert.deepEqual(records.get(a.digest)?.body,{synthetic:1});
+  const found=await kit.store.findMany({key:'batch.test',values:['two','one','both'],kind:'action'});
+  assert.deepEqual(found.map(r=>r.digest),[a.digest,b.digest]);
+  const client=new pg.Client({...kit.database,ssl:false});await client.connect();
+  try { await client.query("SET session_replication_role = 'replica'"); await client.query('UPDATE records SET body=$1 WHERE digest=$2',['{"synthetic":3}',a.digest]); } finally {await client.end();}
+  await assert.rejects(kit.store.getMany([a.digest]),IntegrityError);
+  await assert.rejects(kit.store.findMany({key:'batch.test',values:['one']}),IntegrityError);
+});
+
 test('the pool never falls back to a password file or PG* variables when the server asks for a password', async () => {
   const { password: _password, ...withoutPassword } = postgres.config;
   const db = new Database(createPool(withoutPassword, 1));

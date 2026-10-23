@@ -80,6 +80,26 @@ export class PgRecordStore implements RecordStore {
     return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0]);
   }
 
+  async getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
+    const wanted = [...new Set(digests.filter(isSha256))];
+    if (!wanted.length) return new Map();
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE digest = ANY($1::text[])`,[wanted],tx);
+    return new Map(result.rows.map(row => { const record = verifiedRecord<B>(row); return [record.digest,record]; }));
+  }
+
+  async findMany<B = unknown>(query: {key:string;values:readonly string[];kind?: import('./api.ts').RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return [];
+    const result = await this.#db.query(
+      `SELECT DISTINCT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+       FROM record_index i JOIN records r ON r.digest=i.digest
+       WHERE i.key=$1 AND i.value=ANY($2::text[]) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
+      query.kind === undefined ? [query.key,values] : [query.key,values,query.kind],tx);
+    return result.rows.map(row => verifiedRecord<B>(row));
+  }
+
   async getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
     if (typeof id !== 'string' || !RECORD_ID.test(id)) return null;
     const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE id = $1`, [id], tx);

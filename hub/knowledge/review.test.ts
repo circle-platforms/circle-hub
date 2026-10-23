@@ -11,7 +11,7 @@ import { FacetView, ImpactView, IndexView } from '../../contracts/src/views.ts';
 import { KnowledgeBuildBody, TreeRootBody } from '../../contracts/src/knowledge.ts';
 import type { BuildInfo, KnownBuild } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
-import type { ActionBody, Principal } from '../records/api.ts';
+import type { ActionBody, DerivedCoverageInput, IngestInput, Principal, SourceArtifact } from '../records/api.ts';
 import { createDefaultRegistry } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
@@ -346,7 +346,7 @@ describe('index keys from data values (finding: __proto__)', () => {
 });
 
 describe('credential findings an administrator accepted (finding: every view over the entry is refused)', () => {
-  test('a view over an entry from an accepted source is served without that entry, with a note', async (t) => {
+  test('views retain covered entries and recheck the acceptance even with a warm cache', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const ids = documents(w, 1, 3);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2', module: 'M2' }, [{ id: 'd2-c1', text: '[cmd: system reboot] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
@@ -362,21 +362,50 @@ describe('credential findings an administrator accepted (finding: every view ove
     assert.ok(accepted, 'get_nodes shows the accepted entry');
     const views = reader(w);
     const index = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
-    assert.equal(index.truncated, true);
-    assert.ok(!Object.values(index.keys).flat().includes(accepted.entry), 'the entry with the finding is left out');
-    assert.equal(Object.keys(index.entries).length, 4, 'the other cases are served');
-    assert.ok(index.notes.some((n) => n.includes(accepted.reference) && /凭据扫描命中/.test(n)), index.notes.join('\n'));
+    assert.equal(index.truncated,false);
+    assert.ok(Object.values(index.keys).flat().includes(accepted.entry),'the covered entry is preserved');
+    assert.equal(Object.keys(index.entries).length,5);
+    assert.ok(index.notes.some(n => /1 个条目.*来源的受理覆盖/.test(n)),index.notes.join('\n'));
     w.external.set(`site:tree:${B}`, { bytes: catalogXml({ ...BASE_CATALOG, system: [{ ...BASE_CATALOG.system[0], params: [{ name: 'delay', type: 'int', min: 0, max: 900 }] }, BASE_CATALOG.system[1]] }), mediaType: XML });
     const b = await w.knowledge.produceTree({ product: w.product, build: build(B, ids) });
     assert.equal(b.ok, true, b.reason ?? '');
     const impact = ImpactView.parse((await views.json(`knowledge:impact:acme:${A}..${B}`)).value);
     assert.deepEqual(impact.changes.map((c) => c.path), ['/commands/system/reboot']);
-    assert.ok(!impact.placements[0].to.includes(accepted.entry));
-    assert.deepEqual([impact.placements[0].from.length, impact.placements[0].to.length], [2, 2], 'the reboot cases of d1 and d3 on both sides');
-    assert.deepEqual(impact.totals, { changed_paths: 1, attached_from: 3, attached_to: 3 });
-    assert.equal(impact.truncated, true);
-    assert.ok(impact.notes.some((n) => /凭据扫描命中/.test(n)));
+    assert.ok(impact.placements[0].to.includes(accepted.entry));
+    assert.deepEqual([impact.placements[0].from.length, impact.placements[0].to.length],[3,3]);
+    assert.deepEqual(impact.totals,{changed_paths:1,attached_from:3,attached_to:3});
+    assert.equal(impact.truncated,false);
+    assert.ok(impact.notes.some(n => /来源的受理覆盖/.test(n)));
+    await w.kit.artifacts.revokeFindings(w.admin,sha,'撤回合成来源受理');
+    const withdrawn = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
+    assert.equal(withdrawn.truncated,true);
+    assert.ok(!Object.values(withdrawn.keys).flat().includes(accepted.entry));
+    assert.equal(Object.keys(withdrawn.entries).length,4);
+    assert.ok(withdrawn.notes.some(n => n.includes(accepted.reference) && /凭据扫描命中/.test(n)));
+    const impactAfter = ImpactView.parse((await views.json(`knowledge:impact:acme:${A}..${B}`)).value);
+    assert.ok(!impactAfter.placements[0].to.includes(accepted.entry));
   });
+});
+
+test('a view retains covered text while omitting novel text even if another unrelated source accepted it', async t => {
+  const known = 'FtpSynthetic7779', novel = 'FtpSynthetic9993';
+  const cases = CASES_SOURCE.replace('statement: node.text +',`statement: (data.id === 'd1-c1' ? 'invented password = ${novel}' : node.text) +`);
+  const w = await world(t,[DEFAULT_PRODUCERS[0],casesProducer()],{pack:{functions:{'cases.ts':cases}}});
+  const ids = documents(w,1,3);
+  w.external.set(ids[1],{bytes:mindMap({id:'d2',module:'M2'},[{id:'d2-c1',text:`[cmd: system reboot] password = ${known}`,expected:['ok']}]),mediaType:JSON_TYPE});
+  const initial = await w.knowledge.produceTree({product:w.product,build:build(A,ids)});
+  const sha = /源文件 ([0-9a-f]{64})/.exec(initial.skipped[0].reason)?.[1]; assert.ok(sha);
+  await w.kit.artifacts.acceptFindings(w.admin,sha,'合成示例，允许处理');
+  const unrelatedInput = {bytes:Buffer.from(`unrelated password = ${novel}`),mediaType:'text/plain',origin:{read:{object:'store:manual:unrelated'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};
+  const unrelated = await w.kit.artifacts.ingest(unrelatedInput);
+  await w.kit.artifacts.acceptFindings(w.admin,unrelated.body.sha256,'合成示例，独立来源');
+  await w.kit.artifacts.ingest(unrelatedInput);
+  const produced = await w.knowledge.produceTree({product:w.product,build:build(A,ids)}); assert.equal(produced.ok,true);
+  const result = IndexView.parse((await reader(w).json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
+  assert.ok(Object.values(result.entries).some(entry => entry.statement.includes(known)));
+  assert.ok(Object.values(result.entries).every(entry => !entry.statement.includes(novel)));
+  assert.ok(result.notes.some(note => /1 个条目.*来源的受理覆盖/.test(note)));
+  assert.equal(result.truncated,true);
 });
 
 describe('list roles in records (finding: list ids copied into every build record, action and composition)', () => {
@@ -631,4 +660,88 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     const digest = cut.keys.a[0];
     assert.deepEqual(cut.entries[digest], all.entries[digest]);
   });
+});
+test('the view budget also charges credential-bearing index keys once and keeps a deterministic prefix', async t => {
+  const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:5})]);
+  const ids:string[]=[];
+  for(let d=0;d<5;d++) {
+    const id=`store:mindmap:budget-${d}`;
+    const module=`sk-SyntheticBudgetToken${d}WithLettersA7349`;
+    const text=mindMap({id:`budget-${d}`,module},Array.from({length:40},(_,i)=>({id:`case-${d}-${i}`,text:`[cmd: system reboot] password = FtpBudget${d}7349`,expected:['ok']})));
+    w.external.set(id,{bytes:text,mediaType:JSON_TYPE});ids.push(id);
+    const source=await w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:JSON_TYPE,origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+    await w.kit.artifacts.acceptFindings(w.admin,source.body.sha256,'合成数据的虚构写法');
+  }
+  const produced=await w.knowledge.produceTree({product:w.product,build:build(A,ids)});assert.ok(produced.root);
+  const nodes=await w.knowledge.getNodes({root:produced.root,paths:['/commands/system/reboot'],depth:0},w.user);assert.ok(nodes);
+  const entries=nodes.nodes[0].entries.filter(e=>e.kind==='case').sort((a,b)=>a.entry<b.entry?-1:1);
+  assert.equal(entries.length,200);
+  const expected:string[]=[],keys=new Set<string>();let hits=0;
+  for(const entry of entries) {
+    const key=String(entry.data?.module),cost=2+(keys.has(key)?0:1);
+    if(hits+cost>100)break;
+    hits+=cost;keys.add(key);expected.push(entry.entry);
+  }
+  const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);assert.ok(result.ok);
+  const artifact=result.artifacts[0].artifact;
+  assert.equal(artifact.body.scan.truncated,false);assert.equal(artifact.body.scan.findings.length,hits);
+  const bytes=await w.kit.artifacts.source(w.user,artifact.body.sha256);assert.ok(bytes?.bytes);
+  const value=IndexView.parse(JSON.parse(Buffer.from(bytes.bytes).toString()));
+  assert.deepEqual(Object.keys(value.entries).sort(),expected);
+  assert.ok(value.notes.some(n=>n.includes(`${200-expected.length} 个条目因整份扫描的命中上限没有留下`)));
+});
+
+// Inject two single-hit undercounts only into the public per-part estimate. The real private ingest
+// scanner and coverage assessment still run, so this exercises an actual truncated
+// stored answer and the single safe retry, rather than fabricating an ingest receipt.
+test('a truncated whole-answer scan retries once without hit entries and distinguishes fallback omissions', async t => {
+  const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]);
+  const ids:string[]=[];
+  for (let d=0;d<2;d++) {
+    const id=`store:mindmap:fallback-${d}`;
+    const text=mindMap({id:`fallback-${d}`,module:'safe-module'},Array.from({length:26},(_,i)=>({id:`case-${d}-${i}`,text:`[cmd: system reboot] password = FtpFallback${d}7349\npassword = FtpFallback${d}8357`,expected:['ok']})));
+    w.external.set(id,{bytes:text,mediaType:JSON_TYPE}); ids.push(id);
+    const source=await w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:JSON_TYPE,origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+    assert.equal(source.body.scan.truncated,false);
+    await w.kit.artifacts.acceptFindings(w.admin,source.body.sha256,'合成数据的虚构写法');
+  }
+  const produced=await w.knowledge.produceTree({product:w.product,build:build(A,ids)});
+  assert.equal(produced.ok,true,produced.reason ?? '');
+  const prepare=w.kit.artifacts.prepareDerived.bind(w.kit.artifacts);
+  let undercounted=0;
+  t.mock.method(w.kit.artifacts,'prepareDerived',async (input:DerivedCoverageInput)=>{
+    const handle=await prepare(input),assess=handle.assess.bind(handle);
+    handle.assess=bytes=>{
+      const result=assess(bytes);
+      const part=JSON.parse(Buffer.from(bytes).toString());
+      if (undercounted < 2 && part.entry && result.scan.findings.length === 2) {
+        undercounted++;
+        return {...result,scan:{...result.scan,findings:result.scan.findings.slice(1)}};
+      }
+      return result;
+    };
+    return handle;
+  });
+  const ingest=w.kit.artifacts.ingest.bind(w.kit.artifacts),answers:SourceArtifact[]=[];
+  t.mock.method(w.kit.artifacts,'ingest',async (input:IngestInput)=>{
+    const artifact=await ingest(input);
+    if (input.name==='index-view.json') answers.push(artifact);
+    return artifact;
+  });
+  const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);
+  assert.ok(result.ok,result.ok ? '' : result.reason);
+  assert.equal(undercounted,2);
+  assert.equal(answers.length,2,'one initial ingest and exactly one fallback');
+  assert.equal(answers[0].body.scan.truncated,true);
+  assert.equal(answers[0].body.read_tier,'retain_only');
+  assert.equal(answers[1].body.scan.truncated,false);
+  assert.equal(answers[1].body.read_tier,'model_readable');
+  assert.equal(result.artifacts[0].artifact.digest,answers[1].digest);
+  const source=await w.kit.artifacts.source(w.user,answers[1].body.sha256); assert.ok(source?.bytes);
+  const view=IndexView.parse(JSON.parse(Buffer.from(source.bytes).toString()));
+  assert.deepEqual(view.entries,{}); assert.deepEqual(view.keys,{});
+  assert.equal(view.truncated,true);
+  assert.ok(view.notes.some(note=>note.startsWith('有 1 个条目因整份扫描的命中上限没有留下')));
+  assert.ok(view.notes.some(note=>note==='有 51 个条目原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉'));
+  assert.ok(!view.notes.some(note=>/52 个条目因整份扫描/.test(note)));
 });

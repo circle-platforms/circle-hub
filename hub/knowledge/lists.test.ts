@@ -280,7 +280,7 @@ describe('list sources used again within max_age_seconds', () => {
     assert.equal(older.root, second.root, 'equal content gives the same root whichever way the documents were loaded');
   });
 
-  test('a stored load that no longer passes the checks is read again (an accepted credential finding takes effect)', async (t) => {
+  test('stored loads use current acceptance without a re-read and become unreadable after withdrawal', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const ids = documents(w, 1, 2);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2' }, [{ id: 'd2-c1', text: '[cmd: system show] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
@@ -291,8 +291,12 @@ describe('list sources used again within max_age_seconds', () => {
     await w.kit.artifacts.acceptFindings(w.admin, sha, '合成用例里的示例写法，不是真实凭据');
     const second = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
     assert.equal(second.ok, true, second.reason ?? '');
-    assert.equal(second.skippedCount, 0, 'the document is read again and now accepted');
-    assert.deepEqual(second.loads, { reused: 1, read: 1 });
+    assert.equal(second.skippedCount,0,'the stored document is now effectively accepted');
+    assert.deepEqual(second.loads,{reused:2,read:0});
+    await w.kit.artifacts.revokeFindings(w.admin,sha,'撤回合成来源受理');
+    const third=await w.knowledge.produceTree({product:w.product,build:build('Rel_ACME_1_2_15',ids)});
+    assert.equal(third.skippedCount,1);
+    assert.deepEqual(third.loads,{reused:1,read:1},'the withdrawn cached source is re-read, remains held and is not admitted');
   });
 });
 

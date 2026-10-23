@@ -291,3 +291,14 @@ test('sharing writes one record per audience member and can be taken back per me
   assert.equal(byPermission.items.length, 3);
   assert.equal(byPermission.items[0].body.subject, alice.id);
 });
+test('bulk resource configurations select latest active decisions and honor withdrawal', async t => {
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const {user:admin}=await kit.principals.bootstrapAdmin('合成管理员');
+  const a=await kit.authorizations.configureResource(admin,'synthetic-one','a'.repeat(64));
+  await kit.authorizations.configureResource(admin,'synthetic-two','b'.repeat(64));
+  const found=await kit.authorizations.resourceConfigs(['synthetic-one','synthetic-two','missing','bad|term','synthetic-one']);
+  assert.equal(found.size,2);assert.equal(found.get('synthetic-one')?.digest,a.digest);
+  await kit.authorizations.revoke(admin,{permission:'resource_config',subject:WHOLE_HUB,object:'synthetic-one'});
+  const current=await kit.authorizations.resourceConfigs(['synthetic-one','synthetic-two']);
+  assert.equal(current.has('synthetic-one'),false);assert.equal(current.has('synthetic-two'),true);
+});

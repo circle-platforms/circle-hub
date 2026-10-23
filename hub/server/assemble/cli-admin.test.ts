@@ -648,6 +648,34 @@ describe('source', () => {
     }
   });
 
+  test('source commands distinguish current direct, derived and absent acceptance without disclosing matches or fingerprints', async () => {
+    secrets.add(secret);
+    const admin = await setup();
+    const read = {bytes,mediaType:'text/markdown',origin:{read:{object:'manuals:file:synthetic/source.md'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};
+    let derivedSha = '';
+    await withKit(admin,async kit => { await kit.artifacts.ingest(read); });
+    assert.match((await expectOk(admin,['source','findings',sha])).text,/没有受理/);
+    await expectOk(admin,['source','accept',sha,'--note','合成示例的受理']);
+    await withKit(admin,async kit => {
+      await kit.artifacts.ingest(read);
+      const output = await kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify({body:`copy ftp://user:${secret}@192.0.2.10/image.bin flash:`})),mediaType:'application/json',origin:{generated:{generator:'synthetic.cli@1',inputs:[`src:${sha}`]}},author:{user:null},provenanceType:'projected',visibility:read.visibility,derivedSources:[sha]});
+      assert.equal(output.body.read_tier,'model_readable'); derivedSha = output.body.sha256;
+    });
+    const direct = await expectOk(admin,['source','findings',sha]); assert.match(direct.text,/直接受理/);
+    const inherited = await expectOk(admin,['source','findings',derivedSha]); assert.match(inherited.text,/由派生覆盖/); assert.ok(inherited.text.includes(sha));
+    const held = await expectOk(admin,['source','held']);
+    assert.ok(held.out.some(line => line.startsWith(sha+'\t') && line.includes('直接受理')));
+    assert.ok(held.out.some(line => line.startsWith(derivedSha+'\t') && line.includes('由派生覆盖')));
+    await expectOk(admin,['source','withdraw',sha]);
+    const withdrawn = await expectOk(admin,['source','findings',derivedSha]); assert.match(withdrawn.text,/没有受理/); assert.match(withdrawn.text,/只保留/);
+    const heldAgain = await expectOk(admin,['source','held']);
+    assert.ok(heldAgain.out.some(line => line.startsWith(derivedSha+'\t') && line.includes('没有受理') && line.includes('只保留')));
+    for (const result of [direct,inherited,held,withdrawn,heldAgain]) {
+      assert.ok(!result.text.includes(secret));
+      assert.ok(!result.text.includes(createHash('sha256').update(secret).digest('hex')));
+    }
+  });
+
   test('a user who is not an administrator, a bad digest and a note that copies the value are refused', async () => {
     const admin = await setup();
     await withKit(admin, async (kit) => void (await kit.artifacts.ingest({ bytes, mediaType: 'text/markdown', origin: { read: { object: 'manuals:file:cli/manual.md@1', resource: 'manual-store', action: null } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'manual.md' })));

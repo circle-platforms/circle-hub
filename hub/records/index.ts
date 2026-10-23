@@ -59,7 +59,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },
     store,
     objects,
-    artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now }),
+    artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now, onCredentialScan:options.onCredentialScan }),
     vault: new FileVault(join(config.dataDir, 'vault'), options.keyProvider),
     principals: new PgPrincipals(db, now),
     authorizations,
