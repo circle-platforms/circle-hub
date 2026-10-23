@@ -31,7 +31,7 @@ name). Every directory is 0700.
 
 ## Commands
 
-`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init|status`,
+`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
 1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
@@ -439,10 +439,9 @@ the account the vault master key may not use).
 ### Recovering after irreversible key loss
 
 Stop the service. Prefer restoring the original keychain items: a new key cannot decrypt the existing vault.
-If the original master key cannot be recovered, move the entire data-root `vault/` to
-`set-aside/<time>-key-loss/` and leave the old sealed files there. Run `circle-hub key init`,
+If the original master key cannot be recovered, run `circle-hub key init --set-aside-vault` after stopping the service. It takes the platform lock, refuses a loaded service, an occupied configured port or an existing key, moves only `vault/` to a unique `set-aside/<timestamp>-key-loss/vault`, recreates an empty 0700 vault and initializes the key. The database and objects stay in place and old sealed files remain in the archive. Then run
 `circle-hub operator-token reissue` (only when the operator token item is also missing), then
 `circle-hub secret import --env-file <file> --key <KEY>=<resource>/<credential>…` to reimport the named credentials,
-and start the service. `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
+and start the service. Without `--set-aside-vault`, `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
 in the database and `resource list` still works without the vault key. The platform rehearsal covers keys and backup;
 the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.

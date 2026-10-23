@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -407,4 +407,35 @@ describe('service commands on settings that give the vault master key the operat
       await removeDir(parent);
     }
   });
+});
+
+async function keyAsideWorld(t: {after(fn:()=>Promise<void>):void},port?:number) {
+ const parent=await tempDir();t.after(()=>removeDir(parent));const layout=layoutAt(join(parent,'root'));await ensureLayout(layout);
+ const keychain=join(parent,'synthetic.keychain-db');await writeFile(keychain,'synthetic fake-keychain target');
+ const dbPort=socketPort();await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:ENVIRONMENT[0],port:port ?? await freePort(),keychainService:'synthetic-key-recovery',database:{port:dbPort}})));
+ const system=fakeSystem();const runner:PlatformContext['runner']=async(command,args,options)=>{if(command==='/usr/bin/security'){await access(join(layout.run,'platform.lock'));assert.ok([...args,options?.input ?? ''].join(' ').includes(keychain));}return system.runner(command,args,options);};
+ const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
+ await writeFile(join(layout.vault,'sealed'),'synthetic sealed bytes');await writeFile(join(layout.db,'sentinel'),'synthetic database');await writeFile(join(layout.objects,'sentinel'),'synthetic object');
+ return{parent,layout,system,run};
+}
+test('closure key init flag archives only the vault under the platform lock and initializes a missing key',async t=>{
+ const w=await keyAsideWorld(t);const before=await w.run('key','init');assert.equal(before.code,1);assert.match(before.err,/--set-aside-vault/);assert.equal(w.system.calls.length,0);
+ await mkdir(join(w.layout.setAside,'20261023T000000Z-key-loss'),{recursive:true});await writeFile(join(w.layout.setAside,'20261023T000000Z-key-loss','sentinel'),'keep prior archive');
+ const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,0,result.err);assert.ok(w.system.state.key);
+ assert.equal(await readFile(join(w.layout.setAside,'20261023T000000Z-key-loss-2','vault','sealed'),'utf8'),'synthetic sealed bytes');assert.deepEqual(await readdir(w.layout.vault),[]);assert.equal((await stat(w.layout.vault)).mode & 0o777,0o700);
+ for(const area of [w.layout.db,w.layout.objects])assert.match(await readFile(join(area,'sentinel'),'utf8'),/synthetic/);assert.doesNotMatch(result.out+result.err,KEY);
+});
+test('closure key init flag refuses a loaded service before any keychain call or move',async t=>{
+ const w=await keyAsideWorld(t);w.system.state.loaded=true;const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/service stop/);assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+});
+test('closure key init flag preserves a healthy existing key and its current vault',async t=>{
+ const w=await keyAsideWorld(t);w.system.state.key='a'.repeat(64);const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');assert.ok(!w.system.calls.some(c=>c.command==='/usr/bin/security' && c.args[0]==='-i'));
+});
+
+test('closure key init flag refuses a manually occupied configured port before touching the vault or keychain',async t=>{
+ const {createServer}=await import('node:net');const server=createServer(socket=>socket.end());
+ await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
+ const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
+ const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/配置端口.*进程应答/);
+ assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
 });
