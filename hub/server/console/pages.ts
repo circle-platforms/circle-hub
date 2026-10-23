@@ -402,6 +402,9 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         current === null ? '—' : html`${link('/console/knowledge/tree', current.root.slice(0, 16), { root: current.root, path: '/' })}（${current.build.name}）`,
       ]);
     }
+    const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
+    rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `来源 ${unversioned.source_count ?? '—'} 个`,
+      unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
     blocks.push(
       section(
         `${line.title}（${line.id}）`,

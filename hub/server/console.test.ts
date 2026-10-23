@@ -417,3 +417,19 @@ describe('pages', () => {
     assert.equal((await get('/console/admin/calls?cursor=%21%21', session)).status, 400);
   });
 });
+
+test('knowledge console lists product-wide roots and renders undeclared builds safely', async () => {
+  const originalInfo=server.deps.knowledge.rootInfo;
+  const originalRoot=server.deps.knowledge.unversionedRoot;
+  const info={root:ROOT_1,composition:'c'.repeat(64),product:'line-a',build:null,source_count:17,produced_at:'2026-10-24T00:00:00.000Z'};
+  try {
+    server.deps.knowledge.unversionedRoot=async product=>product==='line-a'?info:null;
+    server.deps.knowledge.rootInfo=async ()=>[info];
+    const user=await person(['review']);const session=await signIn(user.token);
+    const overview=await get('/console/knowledge',session);
+    assert.match(overview.body,/不分版本/);assert.match(overview.body,/来源 17 个/);
+    assert.match((await get(`/console/knowledge/root?root=${ROOT_1}`,session)).body,/构建未声明/);
+    server.deps.knowledge.unversionedRoot=async ()=>null;
+    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*—/);
+  } finally { server.deps.knowledge.rootInfo=originalInfo;server.deps.knowledge.unversionedRoot=originalRoot; }
+});

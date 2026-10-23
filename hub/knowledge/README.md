@@ -870,3 +870,8 @@ basis is projected by `runs.unversioned_root@1`; no root is a definite fact foll
 by the instruction to sync the product. Boundaries, check fragments, reuse and
 contribution admission recognize the locked set, never a newly moved pointer.
 A changed product-wide lock prevents predecessor reuse. Older ports remain compatible.
+
+The start answer lists the product-wide digest separately. The knowledge overview
+always has an “不分版本” row per readable product, with the current digest and source
+count (including source parts); a missing pointer displays “—”. No extra read right
+is implied by either display.

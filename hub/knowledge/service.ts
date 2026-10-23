@@ -194,7 +194,13 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       );
     },
     resolveBuild: (product, name) => builds.resolve(product, name),
-    unversionedRoot: product => builds.currentRoot(product, null),
+    async unversionedRoot(product) {
+      const info = await builds.currentRoot(product, null);
+      if (info === null) return null;
+      const body = await store.composition(info.composition);
+      if (body === null || body.build !== null || body.version !== null) throw new Error('不分版本的根缺少对应的组成；恢复组成后重新读取');
+      return { ...info, source_count: body.sources.length + (body.parts?.sources ?? []).reduce((n, p) => n + p.rows, 0) };
+    },
     currentRoot: (product, line) => builds.currentRoot(product, line),
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),

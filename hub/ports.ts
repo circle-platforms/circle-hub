@@ -221,6 +221,7 @@ export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
   composition: string;
   product: string;
   build: B;
+  source_count?: number;
   produced_at: string;
 }
 
