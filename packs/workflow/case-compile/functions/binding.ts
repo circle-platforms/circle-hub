@@ -44,3 +44,8 @@ export function hasBalancedCommandText(text: string): boolean {
   }
   return quote === null;
 }
+
+/** Shared cell-format policy; literal assertions do not use the ordinary command quote lexer. */
+export function hasSingleLineValue(value: unknown): value is string {
+  return typeof value === 'string' && value.isWellFormed() && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029\u0000-\u0008\u000e-\u001f\uFFFE\uFFFF]/.test(value) && !/\{(?:0)?\}/.test(value) && !value.startsWith('=');
+}

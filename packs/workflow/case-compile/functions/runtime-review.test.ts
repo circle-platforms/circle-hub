@@ -91,3 +91,6 @@ test('review 16 MAC and clock tokens never become off-bed address facts', () => 
   for (const value of ['widget mac 00:11:22:33:44:55', 'widget clock 12:30:45']) { const data = goodData(); data.steps[0].args = [value]; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support'); assert.deepEqual(literalAddresses(value), []); }
   assert.equal(readAddress(bedsOf()[0], [], '2026-10-23T00:00:00.000Z', '12:30:45').kind, 'not_address');
 });
+test('review 17 assertion formula prefixes and placeholders are rejected before workbook generation', () => {
+  for (const text of ['=成功', '{}', '{0}', '值\u0001尾']) { const data = goodData(); data.expects[0].text = text; data.expects[0].quote.text = text; assert.ok(codes(checkExpectedSources(subjectOf(data))).includes('case-compile.expect_value')); }
+});
