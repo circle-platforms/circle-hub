@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { MindNode } from '../lib/inject.ts';
+import { parseMindMap } from './cases.ts';
 import { CODE_DUPLICATE_KEY, CODE_REQUIRED_EMPTY, CODE_TYPE_MISMATCH, literalGold } from './literal.ts';
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
@@ -121,4 +122,30 @@ test('cases without a unique data.id are counted apart and never scored', () => 
   const answer = literalGold(map);
   assert.deepEqual(answer.noUniqueId.map((n) => n.id), ['@6', 'same', 'same']);
   assert.ok(!answer.cases.some((c) => c.id === 'same'), 'the shared id takes no part in scoring');
+});
+
+
+test('raw blank tags remain required-empty even when parseMindMap filters them out', () => {
+  const tree = doc(group('root-raw', '合成文档', group('group-raw', '合成分组',
+    { data: { id: 'raw-blank', text: '合成用例', priority: 2, resource: ['configuration', '', ' \t '] }, children: [leaf('raw-expected', '合成期望')] },
+    kase('raw-healthy', '健康用例', '另一条合成期望'),
+  )));
+  const parsedCase = parseMindMap(tree).nodes.find(n => n.id === 'raw-blank')!;
+  assert.deepEqual(parsedCase.resource, ['configuration']);
+  assert.deepEqual(answerOf(tree, 'raw-blank'), [CODE_REQUIRED_EMPTY]);
+  assert.deepEqual(answerOf(tree, 'raw-healthy'), []);
+});
+
+test('raw decimal and string priorities are malformed rather than missing and keep traversal alignment', () => {
+  const priorities: unknown[] = [2.5, '2', '2.5', '', 2, null, undefined];
+  const children = priorities.map((priority, at) => ({ data: { id: `raw-priority-${at}`, text: `合成用例 ${at}`, priority, resource: ['configuration'] }, children: [leaf(`raw-result-${at}`, `合成期望 ${at}`)] }));
+  const tree = { root: group('root-raw', '合成文档', group('group-raw', '合成分组', ...children as MindNode[])) };
+  const parsed = parseMindMap(tree);
+  for (let at = 0; at < 4; at++) {
+    assert.equal(parsed.nodes.find(n => n.id === `raw-priority-${at}`)?.priority, null);
+    assert.deepEqual(answerOf(tree, `raw-priority-${at}`), [CODE_TYPE_MISMATCH]);
+  }
+  assert.deepEqual(answerOf(tree, 'raw-priority-4'), []);
+  assert.deepEqual(answerOf(tree, 'raw-priority-5'), [CODE_REQUIRED_EMPTY]);
+  assert.deepEqual(answerOf(tree, 'raw-priority-6'), [CODE_REQUIRED_EMPTY]);
 });
