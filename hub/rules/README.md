@@ -323,3 +323,7 @@ validation. Neither callback nor batch mode is supplied by pack JSON or an MCP c
 Timeout retry scope: only engine checks and subject builders opt in, only wall-clock timeouts and at most once.
 CPU-limit failures and other callers (knowledge, connectors and projections) keep a single timeout attempt; their own
 split/timeout policies apply. Startup failures keep the bounded backoff. Declared maximum-limit escalation awaits the model.
+
+SourceView.unread optionally preserves a typed fragment read failure alongside the legacy why grade. Retain-only quotes
+wait for administrator acceptance (awaiting_step), storing generated credential_unreadable as the source-specific reason
+inside unread_sources, with missing_fact/next_action. The public CheckOutcome.reason stays within its generated axis.

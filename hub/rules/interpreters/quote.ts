@@ -31,9 +31,15 @@ export const quoteInterpreter = defineInterpreter({
           // The graded view says why: not an input (the model can fix the reference) and no such fragment (fix the
           // selector or the quote) are refutations; only genuinely unreadable sources stay unknown, honestly.
           const why = request.sources?.why?.(ref);
-          if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          const unread = request.sources?.unread?.(ref);
+          if (unread?.reason === 'credential_unreadable' || why === 'retain_only') {
+            const failure = unread ?? {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'};
+            outcomes.push(unknown(base,'awaiting_step',`引用 ${ref} 的源文件含凭据，原文不可读；缺少的事实：${failure.missing_fact}；下一步：${failure.next_action}`,{
+              pointer, grounds:[ref], data:{unread_sources:[{reference:ref,...failure}],missing_fact:failure.missing_fact,next_action:failure.next_action},
+            }));
+          }
+          else if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
-          else if (why === 'retain_only') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件含凭据，原文不可读`, { pointer, grounds: [ref] }));
           else if (why === 'too_large') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段超过大小上限`, { pointer, grounds: [ref] }));
           else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件取不回`, { pointer, grounds: [ref] }));
           else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 没有绑定到本次运行，无法核对引文`, { pointer, grounds: [ref] }));

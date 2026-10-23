@@ -48,7 +48,7 @@ const quoteRun = async (h: Harness, map: string, quote: { text: string; referenc
     h.call(),
   );
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-  const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+  const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
   return row.requirements.find((r) => r.requirement === 'findings')!;
 };
 
@@ -152,7 +152,7 @@ test('two data-only quote rows over one reference resolve once per evaluation', 
       h.call(),
     );
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-    const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+    const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
     // Both rows over the one reference are checked (four quote supports: two rows x two checks) with no refute or
     // unknown — one parse served them all.
     const findings = row.requirements.find((r) => r.requirement === 'findings')!;

@@ -14,7 +14,7 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
@@ -394,8 +394,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
-  const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
-  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
+  type GradedFragment = {text?: string; why: string; unread?: FragmentReadFailure};
+  const fragmentCache = new Map<string, Promise<GradedFragment>>();
+  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<GradedFragment> => {
     let pending = fragmentCache.get(reference);
     if (pending === undefined) {
       pending = (async () => {
@@ -405,7 +406,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         } catch {
           return { why: 'unavailable' };
         }
-        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: string }> => {
+        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<GradedFragment> => {
           if (!r.resolved) {
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
@@ -413,7 +414,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             // as unavailable: an honest unknown, never a refutation.
             return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
           }
-          if (r.readTier === 'retain_only') return { why: 'retain_only' };
+          if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'unavailable' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
@@ -457,8 +458,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   };
   const warmed = new Map<string, string>();
   const warmedWhy = new Map<string, string>();
+  const warmedUnread = new Map<string, FragmentReadFailure>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
+    unread: reference => warmedUnread.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
     // unknown, never a refutation.
     why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
@@ -470,7 +473,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       if (texts.has(reference) || warmed.has(reference) || warmedWhy.has(reference)) return;
       const graded = await gradeFragment(reference, capBytes);
       if (graded.text !== undefined) warmed.set(reference, graded.text);
-      else warmedWhy.set(reference, graded.why);
+      else {
+        warmedWhy.set(reference, graded.why);
+        if(graded.unread) warmedUnread.set(reference,graded.unread);
+      }
     }));
   };
 

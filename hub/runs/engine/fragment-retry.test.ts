@@ -34,6 +34,17 @@ for(const mode of ['recover','exhaust','retain','missing'])test(`data-only fragm
     assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
     const claims=Object.values(answer.result!.partitions).flat().flatMap(item=>item.requirements).flatMap(req=>req.claims);
     if(mode==='recover')assert.ok(!claims.some(claim=>claim.statement.verdict==='unknown'),JSON.stringify(claims));
-    else assert.ok(claims.some(claim=>claim.statement.verdict==='unknown'));
+    else {
+      assert.ok(claims.some(claim=>claim.statement.verdict==='unknown'));
+      if(mode==='retain') {
+        const retained=claims.find(claim=>(claim.statement.data?.unread_sources as Array<{reference:string}>|undefined)?.some(source=>source.reference===ref));
+        assert.ok(retained,'data-only retain-only references keep typed unread source evidence');
+        assert.equal(retained.statement.reason,'awaiting_step');
+        const unread=(retained.statement.data!.unread_sources as Array<Record<string,unknown>>)[0];
+        assert.equal(unread.reason,'credential_unreadable');
+        assert.match(String(unread.missing_fact),/管理员.*接受/);assert.match(String(unread.next_action),/请求管理员.*接受.*重新核验/);
+        assert.match(retained.statement.text,/管理员.*接受.*重新核验/);
+      }
+    }
   }finally{await h.close();}
 });

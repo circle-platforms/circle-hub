@@ -1,5 +1,5 @@
 // Types shared by the interpreters, runCheck and the public api.ts.
-import type { CheckTier } from '../../contracts/generated/vocabulary.ts';
+import type { CheckTier, ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CheckOutcome } from '../../contracts/src/tables.ts';
 import type { CatalogView } from './catalog/view.ts';
 
@@ -11,6 +11,12 @@ export interface TableIssue {
   message: string;
 }
 
+export interface FragmentReadFailure {
+  reason: Extract<ValidityStatus, 'credential_unreadable'>;
+  missing_fact: string;
+  next_action: string;
+}
+
 /** Text of the fragments bound to a run, by reference URI. The caller resolves references; interpreters only read. */
 export interface SourceView {
   /** The fragment text a reference resolves to, or undefined when it is not bound to this run or not readable. */
@@ -20,6 +26,8 @@ export interface SourceView {
    * bound but the selector resolves to nothing (fix the selector or the quote); anything else is genuinely unreadable
    * ('retain_only', 'too_large', 'unavailable'), an honest unknown. Absent on a plain view: unknown, as before. */
   why?(reference: string): string;
+  /** Structured registered read reason and recovery facts, independent of legacy rendering grades. */
+  unread?(reference: string): FragmentReadFailure | undefined;
 }
 
 export interface CheckContext {

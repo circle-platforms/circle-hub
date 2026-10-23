@@ -504,3 +504,9 @@ Data-only quoted fragments use the same bounded internal-fault reread policy as 
 evaluation. A recovered read proceeds to quote checking; exhaustion produces a Hub error action and administrator
 recovery/resubmit instruction, without a model repair charge or an accepted result frozen on a temporary read unknown.
 Retain-only and neutral absent/forbidden reads are not transient retry targets in this path.
+
+Retain-only data quotes preserve structured credential_unreadable evidence in data.unread_sources with the bound reference,
+missing administrator acceptance and the administrator acceptance/re-evaluation next action. quote@1 uses awaiting_step
+from the generated Reason axis; credential_unreadable belongs to ValidityStatus and is not a legal CheckOutcome.reason.
+No contract axis is widened. Legacy retain_only views receive the same evidence, and source reads remain single-attempt
+for this deterministic state. Request dispatch and automatic re-evaluation still await the model-owned exit contract.

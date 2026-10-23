@@ -5,7 +5,7 @@ import type { SourceView } from './types.ts';
 export type { CatalogEntry, CatalogParam, CatalogParamType, CatalogSignature, CheckOutcome, TableKind } from '../../contracts/src/tables.ts';
 export { TABLE_SCHEMAS } from '../../contracts/src/tables.ts';
 
-export type { CheckContext, CheckRequest, Interpreter, SourceView, TableIssue } from './types.ts';
+export type { CheckContext, CheckRequest, Interpreter, SourceView, FragmentReadFailure, TableIssue } from './types.ts';
 export { INTERPRETERS, getInterpreter } from './interpreters/registry.ts';
 
 export type { CatalogLookupOptions, CatalogMatch, CatalogSpec, CatalogView, CatalogViewOptions } from './catalog/view.ts';
