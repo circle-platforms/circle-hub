@@ -52,7 +52,7 @@ ROLLBACK;
 export interface Capture { transport_error?: boolean; request: { tool: string; args: unknown }; response: ToolText }
 export interface ResultItem { document: string; location: Record<string, unknown> | null; candidates: unknown[] | null }
 type Pending = { document: string; fact: string; next_action: string; next_command?: string };
-type Difference = { document: string; field: string; gold: unknown; actual: unknown; reason: string };
+type Difference = { document: string; field: string; gold: unknown; actual: unknown; reason: string; next_action?: string };
 type Missing = { document: string; reason: string; next_action: string };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
@@ -294,28 +294,27 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
     const candidates = expected.line === null ? undefined : builds.get(lineKey(expected.line));
     const resultReference = resultReferences.get(expected.document) ?? '<本份结果引用>';
     const readAction = '重读 get_nodes ' + JSON.stringify({ reference: resultReference }) + ' 的完整候选数据；仍缺则同步构建列表后单独重跑本份文档';
-    if (candidates === undefined || actual!.candidates === null) {
+    if (candidates === undefined) {
       summary.candidates.not_run++;
       details.not_run.push({ document: expected.document, fact: candidates === undefined ? expected.line === null ? '本份文档没有可用于候选比较的目录版本线' : '文档 ' + expected.document + ' 所在版本线 ' + expected.line + ' 的 --builds 独立答案输入' : '本份文档的完整 build_candidates 候选数据', next_action: candidates === undefined ? expected.line === null ? '询问集成者核实本份原树的版本线节点；确认约定后重导出原树，不能补造版本线' : '导出这条版本线两个名称族列表页，执行 next_command，补 --builds 文件后用新输出目录重跑比较' : readAction, ...(candidates === undefined && expected.line !== null ? { next_command: "node scripts/real/gold/builds.ts --page '<仓库外APV列表页>' --page '<仓库外NSAE列表页>' --line '" + expected.line + "' --out '<仓库外新金标准文件>'" } : {}) });
       continue;
     }
+    if (actual!.candidates === null) { summary.candidates.not_equal++; details.candidates.push({ document: expected.document, field: 'candidates', gold: '完整候选数组', actual: null, reason: '结果缺候选数据或有多份冲突', next_action: readAction }); continue; }
     const actualCandidates = actual!.candidates!;
     const ordered = candidates;
     const before = details.candidates.length;
     if (actualCandidates.length !== ordered.length) details.candidates.push({ document: expected.document, field: 'count', gold: ordered.length, actual: actualCandidates.length, reason: '候选数不等' });
-    let unread = false;
     ordered.forEach((g, index) => {
       const value = actualCandidates[index];
-      if (!object(value)) { unread = true; details.not_run.push({ document: expected.document, fact: '第 ' + (index + 1) + ' 个候选条目', next_action: readAction }); return; }
+      if (!object(value)) { details.candidates.push({ document: expected.document, field: 'candidates/' + index, gold: g, actual: null, reason: '结果缺候选条目', next_action: readAction }); return; }
       const expectedFields = { name: g.name, family: g.family, base: g.base, alias: g.name !== g.base, built_at: g.built, released: g.released !== null };
       for (const [field, fact] of Object.entries(expectedFields)) {
-        if (!Object.hasOwn(value, field)) { unread = true; details.not_run.push({ document: expected.document, fact: '第 ' + (index + 1) + ' 个候选的 ' + field + ' 字段', next_action: readAction }); continue; }
+        if (!Object.hasOwn(value, field)) { details.candidates.push({ document: expected.document, field: 'candidates/' + index + '/' + field, gold: fact, actual: null, reason: '结果缺候选字段', next_action: readAction }); continue; }
         if ((field === 'built_at' ? builtSecond(value[field]) !== builtSecond(fact) : value[field] !== fact)) details.candidates.push({ document: expected.document, field: `candidates/${index}/${field}`, gold: fact, actual: value[field], reason: '字段不等' });
       }
     });
-    if (unread) summary.candidates.not_run++;
     if (details.candidates.length > before) summary.candidates.not_equal++;
-    else if (!unread) summary.candidates.equal++;
+    else summary.candidates.equal++;
   }
   const goldIds = new Set(gold.map(d => d.document));
   details.only_result = [...byDocument.keys()].filter(id => !goldIds.has(id)).sort(); summary.only_result = details.only_result.length;

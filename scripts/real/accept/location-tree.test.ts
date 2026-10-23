@@ -89,12 +89,13 @@ test('source never imports hub or packs', () => {
 });
 
 
-test('missing candidate fields are not-run and identify a fact and acquisition action', () => {
+test('missing Hub candidate fields are mismatches and identify a reread action', () => {
   const raw = result();
   raw.partitions.delivered[0].requirements[1].claims[0].statement.data = { candidates: [{ name: 'Rel_APV_10_8_1_41' }] };
   const report = compareLocationTree(tree(), captures(raw), [{ line: '10.8.1', candidates: [{ name: 'Rel_APV_10_8_1_41', family: 'APV', base: 'Rel_APV_10_8_1_41', built: null, released: null }] }]);
-  assert.equal(report.summary.candidates.not_run, 1);
-  assert.ok(report.details.not_run.every(row => row.fact && row.next_action));
+  assert.equal(report.summary.candidates.not_run, 0);
+  assert.equal(report.summary.candidates.not_equal, 1);
+  assert.ok(report.details.candidates.some(row => row.reason.includes('缺候选字段') && row.next_action));
 });
 test('facet missing reasons do not borrow aggregate counts or reasons of another document', () => {
   const facets = { rows: [{ values: { document: '940899' }, count: 1 }], truncated: false, skipped: 0 };
@@ -194,4 +195,11 @@ test('location review 5: a title version is not a folder version line', () => {
   const rawTree = { root: { id: 'root', label: '合成产品' }, children: [{ id: '940801', label: '合成 10.8.2.31 升级', children: [] }] };
   const raw = result(['940801'], { version: '10.8.2.31', line: null, train: null, module: null, version_source: 'title' });
   assert.equal(compareLocationTree(rawTree, captures(raw)).summary.not_equal, 0);
+});
+
+test('location review 7: missing Hub candidate output is wrong rather than missing gold input', () => {
+  const raw = result(); raw.partitions.delivered[0].requirements = raw.partitions.delivered[0].requirements.slice(0, 1);
+  const report = compareLocationTree(tree(), captures(raw), emptyBuilds);
+  assert.equal(report.summary.candidates.not_equal, 1); assert.equal(report.summary.candidates.not_run, 0);
+  assert.ok(report.details.candidates.some(row => row.reason.includes('缺候选') && row.next_action));
 });
