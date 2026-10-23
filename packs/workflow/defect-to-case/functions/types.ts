@@ -8,8 +8,9 @@ export const CODES = {
   DUPLICATE_DRAFT: `${PACK}.duplicate_draft`,
   NEGATIVE_ACCEPTED: `${PACK}.negative_accepted`,
   UNEXPECTED_REFUTATION: `${PACK}.unexpected_refutation`,
+  QUOTE_SOURCE_FORBIDDEN: `${PACK}.quote_source_forbidden`,
   QUOTE_MISSING: `${PACK}.quote_missing`,
-  UNSUPPORTED_ENTITY: `${PACK}.unsupported_entity`,
+  EXPECT_NOT_IN_QUOTE: `${PACK}.expect_not_in_quote`,
   DUPLICATE_CASE: `${PACK}.duplicate_case`,
 } as const;
 
@@ -44,7 +45,8 @@ export interface DefectItemFields {
   title: string;
   status?: string;
   fields?: Record<string, unknown>;
-  html_fields?: Record<string, string>;
+  html_fields?: string[];
+  fix_field?: string | null;
   [key: string]: unknown;
 }
 

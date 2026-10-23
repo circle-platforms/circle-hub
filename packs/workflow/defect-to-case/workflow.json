@@ -20,6 +20,16 @@
       ],
       "required": true,
       "many": false
+    },
+    {
+      "slot": "manual",
+      "role": "expected",
+      "description": "可选的同版本线手册 manual:cli:<版本线>；未绑定时仅允许修复字段引文，并给出补取动作",
+      "accepts": [
+        "manual:cli"
+      ],
+      "required": false,
+      "many": false
     }
   ],
   "parameters": [

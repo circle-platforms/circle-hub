@@ -13,8 +13,8 @@
               "text": "健康检查间隔配置回归测试",
               "quotes": [
                 {
-                  "reference": "src:<缺陷修复说明或手册的摘要>/markdown@1/s/<片段编号>",
-                  "text": "<逐字引文>"
+                  "reference": "src:<缺陷原件摘要>/json@1/p/fields/<content.fix_field 的选择器编码>",
+                  "text": "健康检查间隔设置成功"
                 }
               ],
               "data": {
@@ -33,8 +33,8 @@
                   {
                     "text": "健康检查间隔设置成功",
                     "quote": {
-                      "reference": "src:<缺陷修复说明或手册的摘要>/markdown@1/s/<片段编号>",
-                      "text": "<逐字引文>"
+                      "reference": "src:<缺陷原件摘要>/json@1/p/fields/<content.fix_field 的选择器编码>",
+                      "text": "健康检查间隔设置成功"
                     }
                   }
                 ],

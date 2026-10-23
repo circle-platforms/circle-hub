@@ -7,6 +7,7 @@ import {
   isCompactIndex,
   normalizeCommand,
   normalizeText,
+  titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
@@ -380,101 +381,63 @@ export function checkCommandsRefutation(input: unknown): CheckOutcome[] {
   ];
 }
 
-const ON_OFF_TERMS = ['开启', '关闭', '使能', '禁用', '启用', '停用', '正常', '异常', 'on', 'off', 'enable', 'disable', 'enabled', 'disabled', 'up', 'down'];
+/** Fold whitespace as case-compile does; spelling, punctuation and case stay exact. */
+function foldQuoteText(text: string): string {
+  return text.replace(/[\p{White_Space}]+/gu, ' ').trim();
+}
 
-/** Check 3: grounded_reading - verifies expected text has quotation and introduces no unsupported entities */
+/** Every expected text must be a nonempty verbatim fragment of its own quotation. */
 export function checkGroundedReading(input: unknown): CheckOutcome[] {
   const record = isRecord(input) ? input : {};
   const subject = isRecord(record.subject) ? record.subject : record;
   const itemId = typeof subject.item === 'string' ? subject.item : undefined;
   const own = itemId !== undefined ? { item: itemId } : {};
-  const slots = subject.slots;
-
-  if (slots === null || slots === undefined) {
-    return [
-      {
-        verdict: 'support',
-        statement: '该缺陷已声明跳过，无需核对期望结果引文依据',
-        grounds: [],
-        tier: 'advisory',
-        ...own,
-      },
-    ];
-  }
-
-  const drafts = extractDrafts(slots);
-
+  if (subject.slots === null || subject.slots === undefined) return [{ verdict: 'support', statement: '该缺陷已声明跳过，无需核对期望结果引文依据', grounds: [], tier: 'blocking', ...own }];
   const outcomes: CheckOutcome[] = [];
-
-  for (let i = 0; i < drafts.length; i++) {
-    const draft = drafts[i];
-    const prefix = `第 ${i + 1} 个起草用例`;
-
-    for (let j = 0; j < draft.expected.length; j++) {
-      const exp = draft.expected[j];
-      const pointer = `/cases/${i}/expected/${j}/quote`;
-      const at = `${prefix}第 ${j + 1} 个期望结果`;
-
-      if (!exp.quote || !exp.quote.reference || !exp.quote.text || !exp.quote.text.trim()) {
-        outcomes.push({
-          verdict: 'refute',
-          code: CODES.QUOTE_MISSING,
-          statement: `${at}（${pointer}）缺少逐字引文（quote）：每个期望结果必须自带 quote，要求的形状为 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`,
-          grounds: [],
-          tier: 'blocking',
-          pointer,
-          ...own,
-        });
+  for (const [i, draft] of extractDrafts(subject.slots).entries()) {
+    for (const [j, exp] of draft.expected.entries()) {
+      const pointer = `/slots/cases/${i}/data/expected/${j}/quote`;
+      const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
+      if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
+        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${pointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer, ...own });
         continue;
       }
-
-      const quoteText = exp.quote.text;
-      const expectedText = exp.text;
-
-      // Extract numbers from expectedText that are not in quoteText
-      const expNumbers = expectedText.match(/\b\d+\b/g) ?? [];
-      const quoteNumbers = new Set(quoteText.match(/\b\d+\b/g) ?? []);
-      for (const num of expNumbers) {
-        if (!quoteNumbers.has(num)) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.UNSUPPORTED_ENTITY,
-            statement: `${at}文字中包含数字“${num}”，但所附引文中未包含此数字`,
-            grounds: [exp.quote.reference],
-            tier: 'advisory',
-            ...own,
-          });
-          break;
-        }
-      }
-
-      // Extract on/off state terms from expectedText that are not in quoteText
-      for (const term of ON_OFF_TERMS) {
-        if (expectedText.toLowerCase().includes(term) && !quoteText.toLowerCase().includes(term)) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.UNSUPPORTED_ENTITY,
-            statement: `${at}文字中包含状态词“${term}”，但所附引文中未包含该状态词`,
-            grounds: [exp.quote.reference],
-            tier: 'advisory',
-            ...own,
-          });
-          break;
-        }
+      const expected = foldQuoteText(exp.text);
+      if (expected === '' || !foldQuoteText(exp.quote.text).includes(expected)) {
+        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段（只忽略空白差异）；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/slots/cases/${i}/data/expected/${j}/text`, ...own });
       }
     }
   }
+  return outcomes.length ? outcomes : [{ verdict: 'support', statement: '所有期望结果文字均为各自引文的非空逐字片段（只忽略空白差异）', grounds: [], tier: 'blocking', ...own }];
+}
 
-  if (outcomes.length > 0) return outcomes;
-  return [
-    {
-      verdict: 'support',
-      statement: '所有期望结果均具有对应引文依据，未引入无原文依据的数字、命令或开关状态',
-      grounds: [],
-      tier: 'advisory',
-      ...own,
-    },
-  ];
+/** Source identity is frozen by projection, never accepted from submitted draft data. */
+export function checkQuoteSources(input: unknown): CheckOutcome[] {
+  const record = isRecord(input) ? input : {};
+  const subject = isRecord(record.subject) ? record.subject : record;
+  const own = typeof subject.item === 'string' ? { item: subject.item } : {};
+  const allowed = isRecord(subject.allowed_quote_sources) ? subject.allowed_quote_sources : {};
+  const quotes = Array.isArray(subject.quotes) ? subject.quotes : [];
+  const out: CheckOutcome[] = [];
+  const segment = (field: string) => [...field].map((ch) => /[%/:\p{Cc}\p{Cf}\p{Z}]/u.test(ch) ? encodeURIComponent(ch) : ch).join('');
+  const fixRef = `src:${allowed.defect}/json@1/p/fields/${segment(typeof allowed.fix_field === 'string' ? allowed.fix_field : '')}`;
+  const fix = `修正：引用本条缺陷修复说明 ${fixRef}` + (typeof allowed.manual === 'string' ? `，或手册 src:${allowed.manual}/<解析器>/<片段>` : '；当前未绑定手册，不允许其他来源') + '；tree:/rec: 请改引对应绑定原件的 src 片段';
+
+  for (const [index, value] of quotes.entries()) {
+    const reference = isRecord(value) && typeof value.reference === 'string' ? value.reference : '';
+    let accepted = false;
+    const match = /^src:([0-9a-f]{64})(?:\/([^/]+)\/(.+?)(?::[0-9]+-[0-9]+)?)?$/.exec(reference);
+    if (match && match[1] === allowed.manual) accepted = true;
+    if (match && match[1] === allowed.defect && match[2] === 'json@1') {
+      try {
+        const parts = match[3].split('/').map((part) => decodeURIComponent(part));
+        accepted = parts.length === 3 && parts[0] === 'p' && parts[1] === 'fields' && parts[2] === allowed.fix_field;
+      } catch { accepted = false; }
+    }
+    const position = isRecord(value) && Number.isInteger(value.case) && Number.isInteger(value.expected) ? `第 ${(value.case as number) + 1} 个起草用例第 ${(value.expected as number) + 1} 个期望结果` : `第 ${index + 1} 条引文`;
+    if (!accepted) out.push({ verdict: 'refute', code: CODES.QUOTE_SOURCE_FORBIDDEN, statement: `${position}的引用 ${reference} 没有指向本条缺陷的配置修复字段或绑定的同版本线手册。${fix}`, grounds: [], tier: 'blocking', pointer: `/quotes/${index}/reference`, ...own });
+  }
+  return out.length ? out : [{ verdict: 'support', statement: '各引文来源均为本条缺陷的配置修复说明字段或绑定的同版本线手册', grounds: [], tier: 'blocking', ...own }];
 }
 
 /** Check 4: checkDuplicate - verifies drafts do not duplicate indexed cases */
@@ -591,7 +554,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
       // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
       const candTitle = normalizeText(cand.title);
-      const titlesEqual = draftTitle === candTitle && draftTitle !== '';
+      const titlesEqual = draftTitle !== '' && (typeof cand.title_key === 'string' ? titleKey(draftTitle) === cand.title_key : draftTitle === candTitle);
 
       if (titlesEqual) {
         duplicated.add(draft);
