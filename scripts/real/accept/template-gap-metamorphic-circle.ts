@@ -151,6 +151,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
         list.push({ key: `a-${d}`, name: `d${d}-a.json`, tree: plan.a, kind: 'a', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.a, outerIds[d]!) });
         list.push({ key: `b-${d}`, name: `d${d}-b.json`, tree: plan.b, kind: 'b', contains: outerIds[d]!.map((caseId) => ({ document: d, caseId })), premise: premiseOf(plan.b, outerIds[d]!) });
       } else {
+        const original = answerOf.get(`a-${d}`);
+        if (!original || unknown.has(`a-${d}`) || original.caseCount !== outerIds[d]!.length) { unknown.set(`phase2-${d}`, `第 ${d + 1} 份原件用例数未与独立计数核对一致；没有运行单用例副本`); continue; }
         for (const [i, id] of outerIds[d]!.entries()) {
           list.push({ key: `c-${d}-${i}`, name: `d${d}-c${i}.json`, tree: plan.c[i]!, kind: 'c', contains: [{ document: d, caseId: id }], premise: premiseOf(plan.c[i]!, [id]) });
         }

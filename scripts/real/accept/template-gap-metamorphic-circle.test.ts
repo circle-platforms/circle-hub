@@ -389,3 +389,11 @@ test('review 18: a complete id-only form is not a clip and an unrecognized clip 
   assert.ok(result.infos.every(info => ['a','b'].includes(info.kind)));
   assert.match(JSON.stringify(scenario.sections), /下一步|修复/);
 });
+
+test('review 19: only documents with matching original counts enter the single-case phase', () => {
+  const { gold } = goldOf(); const scenario = build(gold);
+  const result = drive(scenario, undefined, { mutate: (info, answer) => ({ ...answer, count: info.document === 0 && info.kind === 'a' ? answer.count - 1 : answer.count }) });
+  assert.equal(result.infos.filter(info => info.document === 0 && info.kind === 'c').length, 0);
+  assert.ok(result.infos.some(info => info.document === 1 && info.kind === 'c'));
+  assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('原件') && line.includes('独立计数'))));
+});
