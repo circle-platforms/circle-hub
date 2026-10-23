@@ -112,7 +112,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
     // PLM has already converted HTML values to plain text in fields; html_fields lists their names.
     const htmlFields = Array.isArray(model.html_fields) ? model.html_fields.filter((name): name is string => typeof name === 'string') : [];
 
-    const summaryText = `缺陷 ${id} · ${status} · 起草 0 个用例`;
+    const summaryText = `缺陷 ${id} · ${status} · 起草 0 个用例${manual === null ? '；未绑定手册，仅修复字段可引' : ''}`;
     const summary = summaryText.length > 200 ? `${summaryText.slice(0, 197)}...` : summaryText;
     const selector = isRecord(model) && Object.hasOwn(model, id)
       ? `p/${id}`
