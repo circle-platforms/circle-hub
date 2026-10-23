@@ -342,6 +342,10 @@ or worktree was changed and no real-system script was run; only synthetic tests 
   contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
   These contract files are outside this task's paths; no contract edit is claimed here.
 
+- **runs**: reject an oversized aggregate bound input before sandbox serialization, naming the input slot(s), measured
+  byte budget and cap, with a split/reduce action. Do not report it as a pack-author function defect. The per-model XLSX
+  budget cannot by itself bound several models plus context in one projection input.
+
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
 
@@ -429,9 +433,12 @@ name required in the local header. A version-1 Info-ZIP Unicode Path field is ac
 CRC and the exact same decoded name, in either header; it never renames a member. Unsafe or duplicate raw names are
 refused before optional metadata can hide them. Invalid or contradictory path metadata is a generic ZIP refusal.
 
-XLSX cell value text has an additional aggregate 32 MiB UTF-8 budget: every resolved shared-string use, inline value
-and v-value is charged before insertion into the model. The shared-string dictionary remains under the ZIP expansion
-cap. A small dictionary referenced many times cannot defer a huge-model failure to sandbox input serialization.
+XLSX has a conservative 16 MiB serialized-model JSON budget. Strings are charged at their JSON-escaped UTF-8 size
+(including quotes, backslashes and C0 escapes); each shared-string use is charged separately, the dictionary and defined
+names once, plus conservative fixed costs per member, relationship, sheet, row and cell. The charge bounds the complete
+model, not just cell value bytes, before building an oversized array or allocating an escaped model string. It leaves
+headroom under a single sandbox input's default 32 MiB cap. Multiple bound models/context can still exceed that cap.
+
 
 For xlsx@1, nulRemoved counts escaped U+0000 removed once per decoded source string (including shared-string entries,
 sheet names and defined names), rather than once per shared-string use. Raw NUL in XML still refuses as repaired XML.
@@ -481,3 +488,12 @@ Limit recovery is constructed at the throw site (with typed limit/max defaults);
 merged-attribute budgets provide their own effective recovery, then passed intact by upload and input
 binding. It is not guessed from message text. Caller-declared/extension formats can refuse; a byte-sniffed format
 cannot by itself reject an upload. The upload-size gate still precedes parsing and keeps its own cap-specific fix.
+
+XLSX rejection locations are assigned before central/local member checks. Central framing failures use that central
+record's offset until a validated local header is known; archive-level checks clear member context. The archive retains
+private member-location metadata for part/schema failures. Sheet/row context is selected before interpreting its values;
+boolean checks name the actual attribute. No public filename or source value is needed to locate the failure.
+
+OPC member identity is ASCII case-insensitive throughout: required metadata, relationship suffix/directory recognition,
+source/target lookup and duplicate detection all use that equivalence. Original spellings remain in members and no
+relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.

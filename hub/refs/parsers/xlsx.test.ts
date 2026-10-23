@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { test } from 'node:test';
 import { ParseError, ParseLimitError } from '../parser.ts';
-import { readXlsxArchive, XLSX_ZIP_LIMITS } from './xlsx.ts';
+import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
 type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
@@ -424,4 +424,109 @@ test('all descriptor widths and per-member ZIP64 declarations have valid and con
   const damaged = Buffer.from(wide); const extraAt = central + 46 + wide.readUInt16LE(central + 28); damaged.writeBigUInt64LE(10n, extraAt + 4);
   refuses(damaged, /本地头大小|大小不一致/);
   assert.ok(performance.now() - started < 2000);
+});
+
+for (const [name, value] of [['ASCII', 'x'], ['JSON control escapes', '_x0001_'], ['backslashes', '\\']] as const)
+  test(`serialized XLSX model budget rejects shared-string amplification: ${name}`, { timeout: 5000 }, () => {
+    const shared = `<sst xmlns="${MAIN}"><si><t>${value.repeat(100000)}</t></si></sst>`;
+    const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(335)}</row></sheetData></worksheet>`;
+    badWorkbook({ shared, sheet }, /模型.*JSON.*上限/);
+  });
+
+test('accepted escaped-value models stay below the full JSON byte budget', () => {
+  const shared = `<sst xmlns="${MAIN}"><si><t>${'A"\\_x0001__x0009_中😀'.repeat(2000)}</t></si></sst>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(30)}</row></sheetData></worksheet>`;
+  const document = parseWorkbook({ shared, sheet });
+  assert.ok(Buffer.byteLength(JSON.stringify(document.model)) < XLSX_MODEL_BYTE_LIMIT);
+});
+
+function centralRecords(bytes: Buffer): { position: number; local: number; name: string }[] {
+  const records = []; let position = bytes.readUInt32LE(bytes.length - 6);
+  for (let i = 0; i < bytes.readUInt16LE(bytes.length - 12); i++) {
+    const nameLength = bytes.readUInt16LE(position + 28);
+    records.push({ position, local: bytes.readUInt32LE(position + 42), name: bytes.subarray(position + 46, position + 46 + nameLength).toString() });
+    position += 46 + nameLength + bytes.readUInt16LE(position + 30) + bytes.readUInt16LE(position + 32);
+  }
+  return records;
+}
+test('ZIP framing failures identify the current member before reading its header', () => {
+  const base = zip(['a.xml', 'b.xml', 'c.xml'].map(name => ({ name, text: '<x/>' })));
+  const records = centralRecords(base);
+  for (const i of [1, 2]) {
+    const changed = Buffer.from(base); changed.writeUInt32LE(0, records[i]!.position);
+    assert.throws(() => readXlsxArchive(changed), (e: unknown) => e instanceof ParseError && e.offset === records[i]!.position && e.message.includes(`成员 ${i + 1}`));
+  }
+  const end = Buffer.from(base.subarray(-22)); end.writeUInt32LE(end.readUInt32LE(12) + 1, 12);
+  const directory = Buffer.concat([base.subarray(0, -22), Buffer.alloc(1), end]);
+  assert.throws(() => readXlsxArchive(directory), (e: unknown) => e instanceof ParseError && !e.message.includes('成员 3') && e.offset === null);
+  const shifted = Buffer.concat([Buffer.alloc(1), base]); shifted.writeUInt32LE(base.readUInt32LE(base.length - 6) + 1, shifted.length - 6);
+  for (const record of records) shifted.writeUInt32LE(record.local + 1, record.position + 1 + 42);
+  assert.throws(() => readXlsxArchive(shifted), (e: unknown) => e instanceof ParseError && e.offset === 1 && e.message.includes('成员 1'));
+  const encrypted = zip([{ name: 'a.xml', zip64: true, flags: 0x801 }]);
+  assert.throws(() => readXlsxArchive(encrypted), (e: unknown) => e instanceof ParseError && e.offset === centralRecords(encrypted)[0]!.position && e.offset < encrypted.length);
+  refuses(zip([{ name: '/absolute.xml' }]), /绝对路径/);
+});
+test('part and cell refusals carry safe member and sheet-row context', () => {
+  for (const [sheet, reason, row] of [
+    [`<worksheet xmlns="${MAIN}"><sheetData><row r="7"><c r="invalid"/></row></sheetData></worksheet>`, /A1/, 7],
+    [`<worksheet xmlns="${MAIN}"><sheetData><row r="1" customHeight="yes"/></sheetData></worksheet>`, /customHeight/, 1],
+  ] as const) {
+    const bytes = workbook({ sheet }); const record = centralRecords(bytes).find(r => r.name.endsWith('sheet1.xml'))!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && reason.test(e.message) && e.message.includes('成员 5') && e.message.includes('工作表 1') && e.message.includes(`行 ${row}`) && e.offset === record.local);
+  }
+  const bytes = workbook({ sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r=1/></sheetData></worksheet>` });
+  const record = centralRecords(bytes).find(r => r.name.endsWith('sheet1.xml'))!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && e.message.includes('成员 5') && e.offset === record.local);
+});
+
+test('workbook and shared-string errors select their own part instead of the last parsed worksheet', () => {
+  for (const options of [
+    { book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet sheetId="1" r:id="sheet"/></sheets></workbook>`, member: 'xl/workbook.xml', ordinal: 3 },
+    { shared: `<sst xmlns="${MAIN}"><si><t>_xD800_</t></si></sst>`, member: 'xl/sharedStrings.xml', ordinal: 6 },
+  ]) {
+    const bytes = workbook(options); const record = centralRecords(bytes).find(r => r.name === options.member)!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && e.offset === record.local && e.message.includes(`成员 ${options.ordinal}`));
+  }
+});
+
+function variantRelationships(target: string, external: boolean): Buffer {
+  return workbook({ extra: [{ name: 'xl/worksheets/_RELS/sheet1.xml.RELS', text: `<Relationships xmlns="${PKG_REL}"><Relationship Id="link" Type="${DOC_REL}/hyperlink" Target="${target}"${external ? ' TargetMode="External"' : ''}/></Relationships>` }] });
+}
+test('case-equivalent relationship parts still disclose links and reject broken internal targets', () => {
+  const document = xlsxParser.parse(variantRelationships('http://192.0.2.1/never-follow', true));
+  assert.equal(document.summary().externalRelationships, 1);
+  assert.ok(document.model.relationships.some(r => r.external && r.id === 'link'));
+  assert.throws(() => xlsxParser.parse(variantRelationships('../drawings/absent.xml', false)), (e: unknown) => e instanceof ParseError && /关系.*不存在|断链/.test(e.message));
+});
+test('required OPC metadata parts are found by ASCII-equivalent identity', () => {
+  const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name: name === '[Content_Types].xml' ? '[CONTENT_TYPES].XML' : name === '_rels/.rels' ? '_RELS/.RELS' : name, bytes }));
+  const document = xlsxParser.parse(zip(members));
+  assert.equal(document.model.sheets.length, 1);
+  assert.equal(document.model.members.find(m => m.name === '[CONTENT_TYPES].XML')!.contentType, null);
+});
+
+test('package relationship failures select the declaring relationship member', () => {
+  for (const duplicate of [false, true]) {
+    const members = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: bytes.toString() }));
+    members[1]!.text = `<Relationships xmlns="${PKG_REL}">${duplicate ? `<Relationship Id="a" Type="${DOC_REL}/officeDocument" Target="xl/workbook.xml"/><Relationship Id="b" Type="${DOC_REL}/officeDocument" Target="xl/workbook.xml"/>` : ''}</Relationships>`;
+    members.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', text: `<Relationships xmlns="${PKG_REL}"/>` });
+    const bytes = zip(members); const record = centralRecords(bytes)[1]!;
+    assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /唯一的工作簿/.test(e.message) && e.message.includes('成员 2') && e.offset === record.local);
+  }
+  const bytes = workbook({ shared: `<sst xmlns="${MAIN}"/>`, relations: `<Relationship Id="second" Type="${DOC_REL}/sharedStrings" Target="sharedStrings.xml"/>` });
+  const record = centralRecords(bytes)[3]!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /共享字符串部件关系不唯一/.test(e.message) && e.message.includes('成员 4') && e.offset === record.local);
+});
+
+test('sheet metadata budget failures do not inherit the last worksheet row', () => {
+  const name = '\\'.repeat(XLSX_MODEL_BYTE_LIMIT / 2);
+  const bytes = workbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${name}" sheetId="1" r:id="sheet"/></sheets></workbook>`, sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="9"/></sheetData></worksheet>` });
+  const record = centralRecords(bytes)[2]!;
+  assert.throws(() => xlsxParser.parse(bytes), (e: unknown) => e instanceof ParseError && /工作表结构/.test(e.message) && !/行 9/.test(e.message) && e.message.includes('成员 3') && e.offset === record.local);
+});
+
+test('XLSX selector budget messages retain the configured cap and the cause', () => {
+  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${'x'.repeat(1000)}" sheetId="1" r:id="sheet"/></sheets></workbook>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData>${Array.from({ length: 200 }, (_, at) => `<row r="${at + 1}"><c r="A${at + 1}"><v>1</v></c></row>`).join('')}</sheetData></worksheet>`;
+  assert.throws(() => xlsxParser.parse(workbook({ book, sheet }), { maxSelectorChars: 150000 }), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars' && /150000.*名称或标题/.test(e.message) && /成员 5/.test(e.message));
 });
