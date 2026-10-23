@@ -262,3 +262,32 @@ and, on macOS, two short-lived orphan `node` processes for the sweep test (kille
   start; decide where `requireOsIsolation: false` may be configured (test harnesses only); optionally run `runSamples()` at
   start and refuse to serve when a sample fails (C05 R[0]).
 - **CI**: the Linux runners lack `sandbox-exec`; sandbox-dependent acceptance either runs on macOS or explicitly opts out.
+
+## quote@1: which sources the check reads
+
+The interpreter asks the run's source view for the fragment a reference resolves to. The engine resolves, in order:
+
+1. The references the boundary already parsed (top-level `quotes`, grounds, item locations) — resolved once at submit.
+2. Any other reference the table reaches inside the judged slot data (for example `data.expected_quote`): the engine
+   parses it with the boundary's own parser (hub/refs: parser@version, selector, character range) over a source bound
+   to the run — the same code path, never a second parser. One reference is parsed once per evaluation; the declared
+   reads' size cap applies to a whole-source fragment, and a retain-only source gives no text (含凭据，原文不可读).
+
+### Graded outcomes
+
+- 引用的源文件不是这次运行的输入：驳回（模型可以改引用）。
+- 源文件绑定了但选择器解析不出片段（片段不存在）：驳回。
+- 引文不逐字：驳回 QUOTE_MISMATCH。
+- 真读不到（源文件取不回、超过大小上限、只保留）：未知，说明照实写原因。
+
+### Why packs no longer need to copy a quote into the top-level quotes array
+
+A quote that sits only in slot data is checked against the bound source anyway. Copying it into the top-level `quotes`
+array remains useful: the boundary resolves those at submit and refuses a wrong reference earlier (a whole-submission
+refusal with the exact position), before any check runs.
+
+### Pending (vocabulary gap)
+
+「引用的源文件不是这次运行的输入」和「片段不存在」currently refute with QUOTE_MISMATCH. The protocol vocabulary has no
+code for either; contracts/src is outside this task's paths. Proposal: two new codes (QUOTE_SOURCE_NOT_BOUND,
+QUOTE_FRAGMENT_MISSING) — awaiting a decision.

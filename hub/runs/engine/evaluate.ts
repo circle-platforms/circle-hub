@@ -14,7 +14,7 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type UnreadSource } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { describe, fixOf } from './errors.ts';
@@ -359,6 +359,69 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     return { boundSources, unreadSources };
   };
 
+  // The graded source view of one evaluation: the texts the boundary already resolved, then — for a reference that
+  // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
+  // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
+  // applies to a whole-source fallback, like readBoundSources.
+  const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
+  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
+    let pending = fragmentCache.get(reference);
+    if (pending === undefined) {
+      pending = (async () => {
+        let ref: ReturnType<typeof parseReference>;
+        try {
+          ref = parseReference(reference);
+        } catch {
+          return { why: 'not_bound' };
+        }
+        if (ref.scheme !== 'src') return { why: 'not_bound' };
+        // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
+        const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
+        if (!bound) return { why: 'not_bound' };
+        const result = await resolveReference(ref, resolveCtx);
+        if (!result.resolved) {
+          // The source is bound (checked above): an unresolved reference now means the selector finds nothing in it
+          // (the resolver's 找不到 wording) — the model can fix the selector or the quote. Anything else (the read
+          // failed, the bytes do not hash) is genuinely unreadable.
+          return { why: result.message.includes('找不到') ? 'no_fragment' : 'unavailable' };
+        }
+        if (result.readTier === 'retain_only') return { why: 'retain_only' };
+        if (result.text === null) return { why: result.fragment === null ? 'no_fragment' : 'unavailable' };
+        if (Buffer.byteLength(result.text, 'utf8') > capBytes) return { why: 'too_large' };
+        return { text: result.text, why: 'bound' };
+      })();
+      fragmentCache.set(reference, pending);
+    }
+    return pending;
+  };
+  const quotedReferences = new Set<string>();
+  /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
+  const collectQuotedReferences = (value: unknown): void => {
+    if (typeof value === 'string' && value.length < 600 && (value.startsWith('src:') || value.startsWith('tree:'))) {
+      quotedReferences.add(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) collectQuotedReferences(item);
+    } else if (typeof value === 'object' && value !== null) {
+      for (const item of Object.values(value)) collectQuotedReferences(item);
+    }
+  };
+  const warmed = new Map<string, string>();
+  const warmedWhy = new Map<string, string>();
+  const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
+    text: (reference) => texts.get(reference) ?? warmed.get(reference),
+    why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'not_bound'),
+  });
+  /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
+  const warmQuoted = async (value: unknown, capBytes: number = MAX_CHECK_READ_BYTES): Promise<void> => {
+    collectQuotedReferences(value);
+    await Promise.all([...quotedReferences].map(async (reference) => {
+      if (warmed.has(reference) || warmedWhy.has(reference)) return;
+      const graded = await gradeFragment(reference, capBytes);
+      if (graded.text !== undefined) warmed.set(reference, graded.text);
+      else warmedWhy.set(reference, graded.why);
+    }));
+  };
+
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>): Promise<CheckOutcome[]> => {
     let table: unknown;
     if (check.table !== undefined) {
@@ -371,7 +434,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
-    const record = { ...Object.fromEntries(texts), ...boundSources };
+    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES);
+    const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
       {
         id: check.id,
@@ -387,10 +451,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         table,
         subject,
         ...(view !== undefined ? { catalog: view } : {}),
-        sources: sourcesFrom(record),
         context: { run: run.run, requirement: requirementsOf.get(check.id)?.[0]?.key, pack: workflow.pack.id, sets },
         packDir: workflow.pack.directory,
         sourceTexts: record,
+        sources: gradedSourceView(texts),
         unreadSources,
         ...(ctx.deps.sandbox !== undefined ? { sandbox: ctx.deps.sandbox } : {}),
         onError,
