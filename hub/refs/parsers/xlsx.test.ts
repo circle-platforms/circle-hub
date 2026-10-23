@@ -5,18 +5,34 @@ import { test } from 'node:test';
 import { ParseError, ParseLimitError } from '../parser.ts';
 import { readXlsxArchive, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
-type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean; compressed?: Buffer };
+type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
   const local: Buffer[] = []; const central: Buffer[] = []; let offset = 0;
   for (const member of members) {
     const name = member.nameBytes ?? Buffer.from(member.name); const bytes = member.bytes ?? Buffer.from(member.text ?? '<synthetic/>');
-    const method = member.method ?? 0; const flags = member.flags ?? 0x800; const extra = member.extra ?? Buffer.alloc(0); const localExtra = member.localExtra ?? extra;
+    const method = member.method ?? 0; const flags = member.flags ?? 0x800; let extra = member.extra ?? Buffer.alloc(0); let localExtra = member.localExtra ?? extra;
     const compressed = member.compressed ?? (method === 8 ? deflateRawSync(bytes) : bytes);
     const crc = member.crc ?? crc32(bytes); const size = member.size ?? bytes.length;
+    if (member.zip64) {
+      extra = Buffer.alloc(28); extra.writeUInt16LE(1); extra.writeUInt16LE(24, 2); extra.writeBigUInt64LE(BigInt(size), 4); extra.writeBigUInt64LE(BigInt(compressed.length), 12); extra.writeBigUInt64LE(BigInt(offset), 20);
+      localExtra = Buffer.from(extra.subarray(0, 20)); localExtra.writeUInt16LE(16, 2);
+    }
     const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(flags, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc, 14); header.writeUInt32LE(compressed.length, 18); header.writeUInt32LE(size, 22); header.writeUInt16LE(name.length, 26); header.writeUInt16LE(localExtra.length, 28);
     const directory = Buffer.alloc(46); directory.writeUInt32LE(0x02014b50); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(flags, 8); directory.writeUInt16LE(method, 10); directory.writeUInt32LE(crc, 16); directory.writeUInt32LE(compressed.length, 20); directory.writeUInt32LE(size, 24); directory.writeUInt16LE(name.length, 28); directory.writeUInt16LE(extra.length, 30); directory.writeUInt32LE(member.attributes ?? 0, 38); directory.writeUInt32LE(offset, 42);
-    const descriptor = member.descriptor ? Buffer.alloc(16) : Buffer.alloc(0);
-    if (member.descriptor) { descriptor.writeUInt32LE(0x08074b50); descriptor.writeUInt32LE(crc, 4); descriptor.writeUInt32LE(compressed.length, 8); descriptor.writeUInt32LE(size, 12); header.fill(0, 14, 26); }
+    const descriptor = Buffer.alloc(member.descriptor === true ? 16 : member.descriptor || 0);
+    if (member.zip64) {
+      header.writeUInt16LE(45, 4); directory.writeUInt16LE(45, 6);
+      header.writeUInt32LE(0xffffffff, 18); header.writeUInt32LE(0xffffffff, 22);
+      for (const at of [20, 24, 42]) directory.writeUInt32LE(0xffffffff, at);
+    }
+    if (member.descriptor) {
+      let at = 0;
+      if (descriptor.length === 16 || descriptor.length === 24) { descriptor.writeUInt32LE(0x08074b50); at = 4; }
+      descriptor.writeUInt32LE(crc, at);
+      if (descriptor.length >= 20) { descriptor.writeBigUInt64LE(BigInt(compressed.length), at + 4); descriptor.writeBigUInt64LE(BigInt(size), at + 12); }
+      else { descriptor.writeUInt32LE(compressed.length, at + 4); descriptor.writeUInt32LE(size, at + 8); }
+      header.fill(0, 14, 26);
+    }
     local.push(header, name, localExtra, compressed, descriptor); central.push(directory, name, extra); offset += 30 + name.length + localExtra.length + compressed.length + descriptor.length;
   }
   const directory = Buffer.concat(central); const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(members.length, 8); end.writeUInt16LE(members.length, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
@@ -200,15 +216,20 @@ test('xlsx@1 parses a freshly generated workbook from the existing independent E
   assert.ok(document.model.definedNames.some((name) => name.name === '合成名'));
   assert.deepEqual(document.model, xlsxParser.parse(bytes).model);
 });
-test('xlsx@1 rejects random and corrupted containers only with typed deterministic parse errors', () => {
+test('xlsx@1 rejects random and corrupted containers only with typed deterministic parse errors', { timeout: 10000 }, () => {
+  const started = performance.now();
   let seed = 2197; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
   const base = workbook();
   for (let i = 0; i < 800; i++) {
     const bytes = i % 2 ? Buffer.from(base) : Buffer.from(Array.from({ length: random(512) }, () => random(256)));
     if (i % 2) for (let j = 0; j < 1 + random(4); j++) bytes[random(bytes.length)] ^= 1 << random(8);
-    try { const document = xlsxParser.parse(bytes); for (const selector of document.listSelectors()) assert.ok(document.locate(selector)); }
-    catch (error) { assert.ok(error instanceof ParseError, String(error)); assert.equal(error.parser, 'xlsx@1'); }
+    const outcome = () => {
+      try { const document = xlsxParser.parse(bytes); for (const selector of document.listSelectors()) assert.ok(document.locate(selector)); return { model: document.model, selectors: document.listSelectors() }; }
+      catch (error) { assert.ok(error instanceof ParseError, String(error)); assert.equal(error.parser, 'xlsx@1'); return { name: error.name, message: error.message, offset: error.offset }; }
+    };
+    assert.deepEqual(outcome(), outcome());
   }
+  assert.ok(performance.now() - started < 5000);
 });
 
 
@@ -279,7 +300,9 @@ test('Unicode path metadata cannot conceal raw unsafe names, duplicates or a dif
 test('resolved shared-string text has a separate aggregate cell-model budget before serialization', { timeout: 5000 }, () => {
   const shared = `<sst xmlns="${MAIN}"><si><t>${'x'.repeat(100000)}</t></si></sst>`;
   const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(400)}</row></sheetData></worksheet>`;
+  const started = performance.now();
   badWorkbook({ shared, sheet }, /模型.*单元格文本.*上限/);
+  assert.ok(performance.now() - started < 2000);
 });
 
 test('decoded NULs are removed and counted once at their source in cells, sheet names and defined names', () => {
@@ -384,4 +407,21 @@ test('refs records the retained resolve test scope deviation', async () => {
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
   assert.match(readme, /resolve\.test\.ts[^\n]*outside[^\n]*allowed paths/);
   assert.match(readme, /xlsx@999[^\n]*unregistered/);
+});
+
+test('all descriptor widths and per-member ZIP64 declarations have valid and contradictory vectors', { timeout: 5000 }, () => {
+  const started = performance.now();
+  for (const length of [12, 16, 20, 24] as const) {
+    const bytes = zip([{ name: 'a.xml', text: 'synthetic', flags: 0x808, descriptor: length }]);
+    const central = bytes.readUInt32LE(bytes.length - 6); const dataAt = 30 + bytes.readUInt16LE(26) + bytes.readUInt16LE(28);
+    assert.equal(central - dataAt - Buffer.byteLength('synthetic'), length);
+    assert.equal(readXlsxArchive(bytes).get('a.xml')?.toString(), 'synthetic');
+    const damaged = Buffer.from(bytes); damaged[central - length + (length === 16 || length === 24 ? 4 : 0)] ^= 1; refuses(damaged, /描述符/);
+  }
+  const wide = zip([{ name: 'a.xml', text: 'synthetic', zip64: true }]);
+  const central = wide.readUInt32LE(wide.length - 6);
+  assert.equal(wide.readUInt32LE(central + 24), 0xffffffff); assert.equal(readXlsxArchive(wide).get('a.xml')?.toString(), 'synthetic');
+  const damaged = Buffer.from(wide); const extraAt = central + 46 + wide.readUInt16LE(central + 28); damaged.writeBigUInt64LE(10n, extraAt + 4);
+  refuses(damaged, /本地头大小|大小不一致/);
+  assert.ok(performance.now() - started < 2000);
 });
