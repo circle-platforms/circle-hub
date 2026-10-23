@@ -107,3 +107,12 @@ for (const value of [
 ]) test('malformed DOCTYPE header or trailing text cannot hide declarations: ' + value, () => {
   assert.throws(() => xmlParser.parse(Buffer.from(value)));
 });
+
+for (const media of ['text/html', 'application/xhtml+xml']) for (const charset of ['utf-16le', 'utf-16be', 'utf-16']) test(`HTML transport ${media} ${charset} requires a BOM`, () => {
+  const bytes = Buffer.from('<p>ab</p><p>cd</p>', 'utf16le');
+  assert.throws(() => htmlParser.parse(bytes, { mediaType: `${media};charset=${charset}` }), (e: unknown) => e instanceof ParseEncodingError && e.offset === 0 && /utf-16/.test(e.message));
+});
+test('HTML meta UTF-16 prescan still uses UTF-8', () => {
+  const parsed = htmlParser.parse(Buffer.from('<meta charset="utf-16le"><p>中文</p>'));
+  assert.equal(parsed.model.charset, 'utf-8');
+});

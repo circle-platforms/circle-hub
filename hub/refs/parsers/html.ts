@@ -167,7 +167,7 @@ function decode(bytes: Uint8Array, mediaType: string | undefined): { text: strin
   if (marker) return decodeEncoding(KEY, bytes, marker);
   const parameter = mediaTypeCharset(mediaType);
   let label = parameter ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
-  if (label.startsWith('utf-16')) label = 'utf-8';
+  if (parameter === null && label.startsWith('utf-16')) label = 'utf-8';
   if (isUtf8Label(label)) {
     const decoded = decodeUtf8(KEY, bytes);
     return { text: decoded.text, charset: 'utf-8', offsets: decoded.offsets };
