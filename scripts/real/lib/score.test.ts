@@ -1,4 +1,4 @@
-import type { Attribution, StaticTerminal, Reason } from '../../../contracts/generated/vocabulary.ts';
+import type { Attribution, StaticTerminal, Reason, CheckTier } from '../../../contracts/generated/vocabulary.ts';
 // Tests of the review scoring (task gold-review step 3). Fixtures are synthetic run results; the mind maps behind
 // the literal answers are synthetic too.
 import assert from 'node:assert/strict';
@@ -14,8 +14,8 @@ const doc = (root: MindNode): MindTree => ({ root });
 
 interface Req {
   requirement: string;
-  layers: Array<{ terminal: StaticTerminal; code?: string; tier?: string; attribution?: Attribution; reason?: Reason }>;
-  claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string; source_role?: string } }>;
+  layers: Array<{ terminal: StaticTerminal; code?: string; tier?: CheckTier; attribution?: Attribution; reason?: Reason }>;
+  claims: ItemLike['requirements'][number]['claims'];
 }
 
 const req = (requirement: string, claims: Req['claims'], layer: Partial<Req['layers'][number]> = {}): Req => ({
@@ -170,8 +170,8 @@ test('the screen lines carry no node ids, titles or texts; the detail file does'
 
 
 test('catalog refutations of model command statements stay separate from subject marks', () => {
-  const commandClaim = { statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'artifact_under_verification' } };
-  const subjectClaim = { statement: { verdict: 'refute', code: 'core.catalog.param_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
+  const commandClaim: Req['claims'][number] = { statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'artifact_under_verification' } };
+  const subjectClaim: Req['claims'][number] = { statement: { verdict: 'refute', code: 'core.catalog.param_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
   const layer: Req['layers'][number] = { terminal: 'violation', attribution: 'author_input' };
   const gold = [entry({ node: 'c1', seen_by: 'mechanical', kind: 'replace_command_word' })];
   const onlyModel = score(gold, result([item('c1', req('catalog', [commandClaim], layer))]));

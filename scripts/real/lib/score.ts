@@ -1,3 +1,4 @@
+import {StaticTerminalSchema, type StaticTerminal, type Attribution, type CheckTier, type Verdict, type Nature, type SourceRole} from '../../../contracts/generated/vocabulary.ts';
 import { PublicRefusal } from './inject.ts';
 // Scores the review of a copy with injected defects against the gold written down at injection time (brief section
 // 6b, review; task gold-review step 3). The Hub's own marks (a refuted fact claim of the literal and catalog
@@ -17,8 +18,8 @@ export interface ItemLike {
   item: string;
   requirements: Array<{
     requirement: string;
-    layers: Array<{ terminal: string; code?: string; tier?: string; attribution?: string }>;
-    claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string; source_role?: string } }>;
+    layers: Array<{ terminal: StaticTerminal; code?: string; tier?: CheckTier; attribution?: Attribution }>;
+    claims: Array<{ statement: { code?: string; verdict?: Verdict; data?: { probe?: string } }; qualifier?: { nature?: Nature; source_role?: SourceRole } }>;
   }>;
 }
 
@@ -97,6 +98,7 @@ export interface Score {
   verifyExtras: string[];
 }
 
+const ScoredLiteralTerminal = StaticTerminalSchema.extract(['pass','violation']);
 const nodeOf = (item: string): string => item.slice(item.lastIndexOf(':') + 1);
 const isStructure = (code: string): boolean => code.startsWith('core.structure.');
 
@@ -114,7 +116,7 @@ function seenOn(result: ResultLike): Map<string, Seen> {
       for (const r of item.requirements) {
         if (r.requirement !== 'literal' && r.requirement !== 'catalog') continue;
         const staticLayer = r.layers[0];
-        if (r.requirement === 'literal' && staticLayer !== undefined && staticLayer.terminal !== 'pass' && staticLayer.terminal !== 'violation') {
+        if (r.requirement === 'literal' && staticLayer !== undefined && !ScoredLiteralTerminal.safeParse(staticLayer.terminal).success) {
           literalUnscored = true;
         }
         // Only an attributed static layer is the Hub's own mark: an expected refutation on a negative case carries
