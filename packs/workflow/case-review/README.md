@@ -433,3 +433,5 @@ node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 ```
 
 生成器定向测试（`tools/gen-contracts.pack-vocabulary.test.ts` 与 `contracts/src/generator.test.ts`）22 项通过，覆盖包快照缺失、被改动、词表变化及 CLI 检查。第 3 项缺陷转用例的完整测试另运行 `node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"`，65 项通过。
+
+编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。

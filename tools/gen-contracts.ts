@@ -73,9 +73,6 @@ export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, readonly string[]>> = {
-  'packs/workflow/case-review/functions/generated/vocabulary.ts': ['measure'],
-  'packs/workflow/case-review-verify/functions/generated/vocabulary.ts': ['measure'],
-  'packs/workflow/case-location/functions/generated/vocabulary.ts': ['measure'],
   'packs/workflow/maintenance-sweep/functions/generated/vocabulary.ts': ['entry_kind', 'change_kind'],
   'packs/workflow/regression-scope/functions/generated/vocabulary.ts': ['entry_kind', 'change_kind'],
 };
