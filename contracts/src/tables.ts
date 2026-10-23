@@ -196,10 +196,17 @@ export const CatalogParamType = z
   .describe('string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract');
 export type CatalogParamType = z.infer<typeof CatalogParamType>;
 
+/** A source constraint whose semantics are not yet declared; it is never silently treated as satisfied. */
+export const CatalogUncheckedConstraint=z.strictObject({
+  path:z.string().regex(/\S/),reason:ReasonSchema,missing:MissingFact,next_action:MissingFact,source_value:z.string().optional(),
+});
+export type CatalogUncheckedConstraint=z.infer<typeof CatalogUncheckedConstraint>;
+
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
     type: CatalogParamType,
+    unchecked_constraints:z.array(CatalogUncheckedConstraint).min(1).optional(),
     address_role:z.string().regex(/\S/).optional().describe('Role identifier from the bound published runtime/bed contract, not an inferred core role'),
     optional: z.boolean().optional().describe('The argument may be omitted'),
     default: z.string().optional().describe('Value used when the argument is omitted, as documented by the source'),

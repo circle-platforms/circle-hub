@@ -922,5 +922,8 @@ KnowledgeOptions.additionalScopeRoots(product) 返回 {root, composition} 数组
 条目用同一组成，防止索引来自一个构建、范围声明却来自另一个构建。
 
 Needs：kb-unversioned 提供并接入 additionalScopeRoots 的部署回调；当前未配置时按上述请求流程处理。
-第 10 条 catalog-entry@1 的地址角色、地址/主机名联合类型、单数 limit，等 hub-unknown-model 合并后
-接入并再验证。当前已完成未打标签用例的“正负向和测试类型未声明”，不据未声明推断正向或类型。
+第 10 条已接入合并后的 catalog-entry@1：地址角色只由显式资料提供，主机名类型由目录核验；未知参数约束保留在签名中，检查输出在顶层 missing 说明事实，exit 由 Hub 按原因补。未打标签用例仍明确“正负向和测试类型未声明”。
+
+第 10 条续接：本次合入 hub-redesign 的 be27627f（含 d2236556）。目录未核对约束由通用签名字段保留，
+不会在 catalogData 边界丢掉；未知结果的 missing 位于顶层，未预填 exit。参数定位与修复说明不作为目录
+语法差异，生产警告保留完整 XML 参数路径，参数元数据用相对重载片段的路径，避免元素移位制造变更。

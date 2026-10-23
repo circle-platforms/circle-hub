@@ -209,10 +209,10 @@ export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]
 
 /**
  * A declared argument type (pack data, authored from the help texts of the tree): argument `position` (1-based) of the
- * command `command` (its words joined by spaces) is read as the tree type `type` (a key of ARGUMENT_TYPES, STRING for
- * example). `origin` says where the declaration comes from; a row without one is ignored.
+ * command `command` (its words joined by spaces) may declare a tree `type` (a key of ARGUMENT_TYPES), an explicit
+ * `address_role`, or both. `origin` says where the declaration comes from; a row without one is ignored.
  */
-export type ArgumentTypeDeclaration = { command: string; position: number; type: string; origin: string };
+export type ArgumentTypeDeclaration = { command: string; position: number; type?: string; address_role?:string; origin: string };
 
 export type CommandTreeParams = {
   /** Tree path the commands go under; default /commands. */

@@ -267,3 +267,12 @@ branch does not rewrite it. Besides the explicitly approved label/source note it
 The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
 still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
 runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
+
+### Unchecked source constraints in catalogs
+
+`CatalogParam.unchecked_constraints` preserves each uninterpreted source constraint's path, reason, missing fact,
+next_action and optional source_value. It does not invent a generic restriction from an unknown source grammar.
+After known parameter checks, a matching but unchecked signature yields unknown with top-level missing; exit stays
+optional for Hub binding. An independently complete matching overload wins, omitted optional arguments without a
+source default do not require a value constraint, and known native type violations remain independently refutable.
+The parameter's diagnostic locator and recovery wording are excluded from catalog syntax comparisons.

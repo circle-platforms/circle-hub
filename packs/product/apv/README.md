@@ -144,15 +144,22 @@ Producers (K02, K04, C07)
   proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
   prevent internal defects and test case titles from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
-  `data` is catalog-entry@1 without `reference`. Types: STRING and XSTRING → string, U16 → int 0..65535, U32 → int
-  0..4294967295, DOTTEDIP → ipv4, IPADDR → ipv4 or ipv6, IPMASK → mask or int 0..128; other types → string with a
-  warning. A DOTTEDIP argument whose help text names another form (`or ...`, a host name, a URL: `OTHER_FORMS`, with its
-  origin) is a string, with a warning count. Declared argument types (`params.argumentTypes`: `{ command, position, type,
-  origin }`, `type` a key of `ARGUMENT_TYPES`) win over both; rows without an origin, of unknown type or never used are
-  warnings. A union argument expands into overloads (`k.1`, `k.2`, ...), at most 32 per list, beyond that string. `limit`
-  `[a - b]` is a value range (int, narrowed to the type range) or a length range (string); `{a|b}` an enumeration; `length`
-  a maximum or a range of the length. Defaults are entity-decoded once more (the tree escapes them twice) and unquoted.
-  Unnamed arguments are `arg1`, `arg2`, ... The statement has one line per overload plus its help texts.
+  `data` is catalog-entry@1 without `reference`. STRING/XSTRING map to string, U16/U32 retain their unsigned
+  numeric bounds, DOTTEDIP to IPv4, IPADDR to either address family, IPMASK to a mask or prefix length. Explicit
+  HOSTNAME and IP_OR_HOSTNAME map to the corresponding generic catalog types. Hostname-only address help narrows to
+  hostname; explicit IPv4/hostname alternatives retain IPv4 plus hostname overloads, while either-family IPADDR with
+  hostname uses ip_or_hostname. URL/list/empty-value help retains the documented string fallback and warning.
+  Address roles come only from address_role in the source or an origin-bearing params.argumentTypes declaration;
+  argument names never infer roles. A declaration may specify type, address_role or both.
+
+  Owner's read-only survey of 12 command trees across both name families and several lines found only inclusive
+  bracket ranges [N - N] among nonempty limit values, and no nonempty length. Only that bracket-range grammar is
+  interpreted: numeric ranges intersect native numeric bounds, string-like ranges bound length. Every other nonempty
+  limit and every nonempty length creates unchecked_constraints on that parameter, with the XML attribute path relative to its overload fragment (the warning carries the full path),
+  source value, reason, missing="这种 limit 写法的含义" and the action "包作者在 README 声明这种 limit 写法的含义后重产".
+  Empty attributes imply no constraint. The production warning and statement disclose the unchecked constraint;
+  catalog checks return unknown with top-level missing and optional exit left to the Hub. Native type failures remain
+  independently checkable. Optional values, documented defaults and overloads retain their existing source semantics.
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
@@ -889,11 +896,14 @@ of depending on a truncated field or a producer-local warning.
 
 View-scope: build timestamps also accept time followed by a slash date. A timestamp that cannot be parsed is a determined
 listing failure, with its build name and a repair instruction; the sync plan excludes it from successful builds.
-Needs: catalog parameter address roles, address/hostname alternatives and singular limit await the hub-unknown-model
-contracts and matcher change owned by codex-b. Those fields are not emitted before the strict contract accepts them.
+Catalog address roles, hostname types and unchecked constraints now use the merged contract. Unrecognized limit syntax is retained with missing semantics and an author recovery action; it never creates a guessed restriction.
 
 未打有效标签的用例在 data.tags_note 和陈述中写明“正负向和测试类型未声明”；negative 仍是 null，
 不能据此推断正向或任何测试类型。空白标签与未打标签相同。
 
 用例命令归位把标题、上级节点、步骤、预期文本送进同一个命令解析器。没有任何目录命中时明确计数
 “没引用目录里的任何命令”，保留可引用的未归位条目；bot 可经 placement_proposal 提议，Hub 核验。
+
+The command-tree follow-up is signed as 1.3.2. Its limit policy follows the owner's read-only survey and does not assign
+semantics to spellings absent from that evidence. Diagnostic parameters remain machine-readable through knowledge
+production and catalog matching; the next action is for the pack author to document the grammar here and reproduce.
