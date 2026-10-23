@@ -69,3 +69,17 @@ test('parser limit recovery is assigned from the limit kind for uploads and run 
   const workflow = { workflow: { inputs: [{ slot: 'file', role: 'subject', required: true, accepts: ['application/json'] }] } } as unknown as LoadedWorkflow;
   await assert.rejects(bindInputs(ctx, { id: 'synthetic', name: '合成', role: 'user' }, workflow, { file: { reference: `src:${'a'.repeat(64)}` } }, 'synthetic-run', 'synthetic-trace'), (e: unknown) => e instanceof Refusal && /128/.test(e.errors[0]!.fix ?? '') && /嵌套|拆分/.test(e.errors[0]!.fix ?? ''));
 });
+
+test('guessed text and JSON limit refusals retain their definite reason and recovery without media advice', async t => {
+  const server = await createTestServer(); t.after(() => server.close());
+  const client = await server.client(server.admin.token); t.after(() => client.close());
+  for (const [text, parser, cap] of [['a\n'.repeat(1_000_001), 'text@1', '1000000'], ['['.repeat(200) + '0' + ']'.repeat(200), 'json@1', '128']]) {
+    const result = await client.call('upload_file', { file_path: Buffer.from(text).toString('base64') });
+    assert.equal(result.isError, false);
+    const structure = result.structuredContent.structure as Record<string, unknown>;
+    const refusal = structure.guessed_refusal as { message: string; fix: string };
+    assert.ok(refusal); assert.ok(refusal.message.includes(parser)); assert.ok(refusal.fix.includes(cap));
+    assert.ok(result.content.some(c => c.text?.includes(refusal.fix)));
+    assert.doesNotMatch(String(structure.note), /media_type|application\/xml|text\/html/);
+  }
+});

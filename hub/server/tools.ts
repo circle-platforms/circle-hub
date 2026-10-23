@@ -26,7 +26,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
@@ -269,9 +269,11 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   let mediaType = mediaTypeFor(bytes, given, name);
   const authoritative = mediaTypeIsAuthoritative(given, name);
   let refusal: ProtocolError | null = null;
+  let suggestMediaType = false;
   let structure: Record<string, unknown> | null = null;
   try {
     structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
+      suggestMediaType = mediaType !== 'text/plain' && !(error instanceof ParseLimitError) && (error instanceof ParseSyntaxError || error instanceof ParseEncodingError);
       refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: error.fix };
     });
   } catch (error) {
@@ -280,10 +282,11 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   }
   if (refusal && authoritative) return errorAnswer('upload_file', [refusal]);
   if (refusal) {
+    const rejected = refusal as ProtocolError;
     const guessed = mediaType;
     const fallback = structureOf(deps.parsers, bytes, 'text/plain');
     if (fallback !== null) { mediaType = 'text/plain'; structure = fallback; }
-    structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, note: '媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；请用 media_type 明确指定实际格式后重传，如 application/xml 或 text/html' };
+    structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, guessed_refusal: rejected, note: `媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；${rejected.message}；修正：${rejected.fix}${suggestMediaType ? '；若类型猜测有误，请用 media_type 明确指定实际格式后重传' : ''}` };
   }
   let artifact;
   try {
