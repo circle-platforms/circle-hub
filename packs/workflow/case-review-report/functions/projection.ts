@@ -4,8 +4,7 @@
 //
 // The items are the blocks' delivered entries merged per item: an item delivered in one block and unfinished in another
 // counts as delivered (that block wins); an item delivered in two blocks is a hard refusal (the run may not start).
-// The run item is the overall: the worst verdict of the blocks (FAIL > PARTIAL > PASS), the level of the block that gave
-// the worst verdict; a missing final names the block and the required next action. The report exposes the blocks'
+// The run item is the overall: the worst verdict of the blocks (FAIL > PARTIAL > PASS), the worst level among tied verdicts, then the smallest record reference on a tie; a missing final names the block and the required next action. The report exposes the blocks'
 // findings as a deterministic table; final prose only declares the computed verdict and level.
 import type { Independence } from '../../../../contracts/generated/vocabulary.ts';
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
@@ -197,7 +196,7 @@ export default function project(input: unknown): unknown {
       return failure('overlap', `同一条目在多块里都已交付：${overlaps.slice(0, 20).join('、')}${overlaps.length > 20 ? ' 等' : ''}；重叠的块不能合成一份终稿`, '退回重叠的块重新分块（一个条目只能由一块交付），再合成终稿');
     }
 
-    // The overall: the worst verdict; the level of the block that gave it; unknown when any final is missing.
+    // The overall: worst verdict, worst tied level, then smallest tied record reference; unknown if a final is missing.
     const finals = blocks.map((b) => finalOf(b.result, b.record));
     let verdict: Verdict | null = null;
     let level: string | null = null;

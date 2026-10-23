@@ -406,7 +406,7 @@ it('modern missing disposition support asks for the current receipt instead of a
 });
 
 it('records the authorization provenance of the generic core string field renderer',()=>{
-  const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');assert.match(readme,/决定 42/);assert.match(readme,/7010ab84/);assert.match(readme,/ea5328d1/);
+  const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');assert.match(readme,/决定 42/);
   const source=readFileSync(new URL('../../../../hub/server/console/pages.ts',import.meta.url),'utf8');assert.doesNotMatch(source,/review_tables|case-review-report/);
 });
 
@@ -440,4 +440,11 @@ it('rejects initial review receipts as the wrong package before inspecting verif
     if(pending)Object.assign((result.partitions as any).delivered[0].requirements[0],{status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
     const out=run([{result}]);assert.equal(out.error?.code,'case-review-report.block_invalid');assert.match(out.error?.message??'',/不是复核任务包/);assert.match(out.error?.fix??'',/case-review-verify.*rec:/);
   }
+});
+
+it('documents report behavior by version without private review narration or commit identities',()=>{
+  const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');
+  const version=readme.split('## 2.0.1')[1]?.split('\n## ')[0];assert.ok(version);assert.match(version,/准入/);assert.match(version,/8 MiB/);assert.match(version,/dispositions/);
+  const testing=readme.split('## 测试')[1];assert.doesNotMatch(testing,/本轮第|私有提交|完整投影/);
+  assert.match(readme,/决定 42/);assert.doesNotMatch(readme,/\b[0-9a-f]{8,40}\b/);
 });
