@@ -3,7 +3,7 @@
 // marked command-changed sits on a modified path, and the changed ones show a field difference.
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
-import { facetReader, facetCountCheck, withoutFacetPages, validateScopeGold, disclosureMessage, unplacedChecks } from './regression-scope.ts';
+import { facetReader, facetCountCheck, withoutFacetPages, validateScopeGold } from './regression-scope.ts';
 import { lengthBounded, runStarted } from './checks.ts';
 
 export interface SweepCaseGold {
@@ -13,9 +13,6 @@ export interface SweepCaseGold {
 }
 
 export interface SweepGold {
-  /** Optional expected count in replay text containing the client disclosure sentence. */
-  unplaced?: number;
-  unplacedRun?: unknown;
   /** Required totals.unplaced from independent case-commands gold for the earlier build. */
   caseCommandsUnplaced: number;
   product: string;
@@ -41,7 +38,7 @@ export default function scenario(gold: SweepGold): Scenario {
     check(turns: LoggedTurn[]): Check[] {
       const answerTurns = withoutFacetPages(turns);
       const text = resultTexts(answerTurns).join('\n');
-      const checks: Check[] = [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, disclosureMessage(gold.unplacedRun, 'maintenance-sweep')), runStarted(area, answerTurns)];
+      const checks: Check[] = [facetCountCheck(area, gold.caseCommandsUnplaced, turns), runStarted(area, answerTurns)];
       for (const c of gold.cases) {
         const at = text.indexOf(c.id);
         const near = at >= 0 ? text.slice(Math.max(0, at - 400), at + 400) : '';

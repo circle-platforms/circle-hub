@@ -245,14 +245,13 @@ describe('unversioned pack names in start_run inputs', () => {
   });
 });
 
-for (const name of ['regression-scope', 'maintenance-sweep']) test(`${name} validates independent count before any client work and replays disclosure from run-show`, () => {
+for (const name of ['regression-scope', 'maintenance-sweep']) test(`${name} validates independent count before client work and refuses prior-run disclosure exports`, () => {
   const base = { product: 'synthetic', earlier: 'Earlier', later: 'Later', changed: [], removed: [], inScope: [], outOfScope: [], cases: [], caseCommandsUnplaced: 0 };
   const make = (value: unknown) => name === 'regression-scope' ? regressionScope(value as ScopeGold) : maintenanceSweep(value as SweepGold);
   assert.throws(() => make({ ...base, caseCommandsUnplaced: undefined }), /caseCommandsUnplaced.*totals.unplaced/);
   assert.throws(() => make({ ...base, caseCommandsUnplaced: -1 }), /caseCommandsUnplaced/);
   assert.throws(() => make({ ...base, unplaced: 4 }), /unplacedRun/);
-  const check = (actual: number) => make({ ...base, unplaced: 4, unplacedRun: { run: { groups: [{ kind: name, message: `有 ${actual} 个用例没有解析出命令` }] } } }).check(turnsOf('运行 run_synthetic')).find((v) => v.name === '回放运行说明未归位用例数')!;
-  assert.equal(check(4).ok, true); assert.equal(check(7).ok, false); assert.equal(check(4).actual, '4');
+  for(const actual of [4,7])assert.throws(()=>make({...base,unplaced:4,unplacedRun:{run:{groups:[{kind:name,message:`有 ${actual} 个用例没有解析出命令`}]}}}),(error:any)=>error.reason==='live_replay');
 });
 
 for (const [name, make] of [

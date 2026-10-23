@@ -13,10 +13,6 @@ export interface ScopeCaseGold {
 }
 
 export interface ScopeGold {
-  /** Optional expected count in replay text containing the client disclosure sentence. */
-  unplaced?: number;
-  /** Observed run-show JSON, only for replaying the optional stored-note disclosure check. */
-  unplacedRun?: unknown;
   /** Required totals.unplaced from independent case-commands gold for the later build. */
   caseCommandsUnplaced: number;
   product: string;
@@ -76,7 +72,7 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
         ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
       }));
-      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), ...unplacedChecks(area, gold.unplaced, disclosureMessage(gold.unplacedRun, 'regression-scope')), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
 }
@@ -159,10 +155,10 @@ export function withoutFacetPages(turns: readonly LoggedTurn[]): LoggedTurn[] {
   return turns.map((turn) => ({ ...turn, toolResults: turn.toolResults.filter((r) => !reference || !r.text.startsWith(`内容 ${reference}`)) }));
 }
 
-export function validateScopeGold(gold: { caseCommandsUnplaced: number; unplaced?: number; unplacedRun?: unknown }, pack: string): void {
-  if (!gold || !Number.isSafeInteger(gold.caseCommandsUnplaced) || gold.caseCommandsUnplaced < 0) throw new Error('caseCommandsUnplaced 必须是非负整数：从对应构建 case-commands.ts 输出复制 totals.unplaced，再启动客户端场景');
-  if (gold.unplaced !== undefined && (!Number.isSafeInteger(gold.unplaced) || gold.unplaced < 0)) throw new Error('unplaced 必须是非负整数');
-  if (gold.unplaced !== undefined && !disclosureMessage(gold.unplacedRun, pack)) throw new Error('可选 unplaced 是运行说明回放核对：同时提供 unplacedRun（circle-hub run show --json 原样导出）；实时场景只核 caseCommandsUnplaced，不从不可见的投影说明猜披露');
+export class ScopeGoldError extends Error {readonly reason:'live_replay'|'gold_count';constructor(reason:'live_replay'|'gold_count',message:string){super(message);this.name='ScopeGoldError';this.reason=reason;}}
+export function validateScopeGold(gold:{caseCommandsUnplaced:number},_pack:string):void {
+ if(!gold||!Number.isSafeInteger(gold.caseCommandsUnplaced)||gold.caseCommandsUnplaced<0)throw new ScopeGoldError('gold_count','caseCommandsUnplaced 必须是非负整数；从独立抽取 totals.unplaced 复制后再启动');
+ if(Object.hasOwn(gold,'unplaced')||Object.hasOwn(gold,'unplacedRun'))throw new ScopeGoldError('live_replay','实时场景不能核对预先导出的运行披露；移除 unplaced 和 unplacedRun，场景只读取本次运行绑定的 facets');
 }
 export function disclosureMessage(value: unknown, pack: string): string {
   if (!value || typeof value !== 'object') return '';
