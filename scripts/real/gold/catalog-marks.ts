@@ -31,8 +31,15 @@ export const fold = (value: string): string => value.normalize('NFKC').toLowerCa
 const request = (at: Position, fact: string, next_action: string): EvidenceRequest => ({ ...at, fact, next_action });
 
 export class CatalogInputError extends Error {
-  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure' | 'argument_types';
+  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure' | 'input_unreadable' | 'argument_types';
   constructor(reason: CatalogInputError['reason'], message: string) { super(message); this.reason = reason; this.name = 'CatalogInputError'; }
+}
+export class CatalogOutputError extends Error {
+  readonly reason: 'path_in_git' | 'path_invalid' | 'output_exists';
+  constructor(reason: CatalogOutputError['reason']) { super(reason); this.reason = reason; this.name = 'CatalogOutputError'; }
+}
+function readKnownInput(file: string | URL): Uint8Array {
+  try { return readFileSync(file); } catch { throw new CatalogInputError('input_unreadable', '输入文件不可读'); }
 }
 export function decodeCatalog(bytes: Uint8Array): string {
   const declaration = Buffer.from(bytes.subarray(0, 256)).toString('ascii');
@@ -244,13 +251,28 @@ const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const displayCommand = (value: string): string => fold((tokenize(value.normalize('NFKC')) ?? [value]).join(' '));
 const markKey = (mark: Mark): string => JSON.stringify([mark.item, mark.pointer, displayCommand(mark.command), mark.code, mark.output_error ?? null]);
 
+/** Validate input shape at its boundary; exceptions from the actual oracle remain gold defects. */
+function parseCatalogSource(value: unknown): ReturnType<typeof parseMindMap> {
+  if (!object(value)) throw new CatalogInputError('source_structure', '脑图不是对象');
+  const root = value.root ?? value;
+  if (!object(root)) throw new CatalogInputError('source_structure', '脑图缺 root');
+  const queue: unknown[] = [root], seen = new Set<unknown>();
+  while (queue.length) {
+    const node = queue.pop();
+    if (!object(node) || (node.data !== undefined && node.data !== null && !object(node.data))) throw new CatalogInputError('source_structure', '脑图节点结构无效');
+    if (seen.has(node) || seen.size >= 100_000) throw new CatalogInputError('source_structure', '脑图节点重复或过多');
+    seen.add(node); queue.push(...array(node.children).slice(0, 1000));
+  }
+  return parseMindMap(value);
+}
+
 /** Comparison uses the submitted phrases as its population, never the Hub's refutations as the oracle. */
 export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged'; argumentTypes?: readonly DeclaredArgumentType[] }): CatalogComparison {
   const report: CatalogComparison = { expected: [], observed: [], supported: [], missed: [], extra: [], negative_expected: [], negative_observed: [], requests: [], summary: { cases: 0, cited: 0, not_quoted: 0, unresolved_heads: 0, ignored_hub_claims: 0, supported: 0, missed: 0, extra: 0, design_gaps: 0 } };
-  const catalog = readCatalog(input.treeXml, input.argumentTypes), parsed = parseMindMap(input.source);
+  const catalog = readCatalog(input.treeXml, input.argumentTypes), parsed = parseCatalogSource(input.source);
   const cases = caseNodesOf(parsed, { caseRule: input.caseRule }), indices = new Set(cases.map(c => c.index));
   const unique = new Map<string, number>(); parsed.nodes.forEach(node => unique.set(node.id, (unique.get(node.id) ?? 0) + 1));
-  const reading = caseGold([{ document: 'source', map: input.source }], { caseRule: input.caseRule }).documents[0].items;
+  const reading = cases.length ? caseGold([{ document: 'source', map: input.source }], { caseRule: input.caseRule }).documents[0].items : [];
   const excluded = new Set(input.excludeNodes ?? []);
   const sourcePointers: string[] = [];
   const walk = (value: unknown, path: string): void => {
@@ -375,7 +397,10 @@ export interface CatalogInputs {
   table: unknown; packManifest?: unknown; tableBytes?: Uint8Array; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
 }
 const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
-const parseJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, ''));
+const parseJson = (bytes: Uint8Array): unknown => {
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, '')); }
+  catch (error) { if (error instanceof SyntaxError || error instanceof TypeError) throw new CatalogInputError('source_structure', '输入不是有效 UTF-8 JSON'); throw error; }
+};
 
 /** Versioned declaration drift is a gap, never silently interpreted as the current resolved table. */
 export function tableRequests(value: unknown): EvidenceRequest[] {
@@ -442,7 +467,7 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   let compared = empty;
   if (!requests.length) {
     try { compared = compareCatalogMarks({ treeXml: input.treeXml, source, submission, run, excludeNodes: input.excludeNodes, argumentTypes: input.argumentTypes, caseRule: rule === 'tagged' ? 'tagged' : 'marked' }); }
-    catch { add('source/tree', '/', '可完整解析的命令树和脑图结构', '请集成者核对这两份原件的编码、完整性和结构，重新导出后重跑；不能把解析失败当零标记'); }
+    catch (error) { if (!(error instanceof CatalogInputError)) throw error; add(error.reason === 'tree_encoding' || error.reason === 'tree_structure' ? 'tree' : error.reason === 'argument_types' ? 'argument-types' : 'source', '/', '可解析的输入：' + error.reason, '请集成者按该固定原因补取原件或编码声明后重跑'); }
   }
   const allRequests = [...requests, ...compared.requests];
   return { ...compared, requests: allRequests, summary: { ...compared.summary, design_gaps: allRequests.length }, inputs };
@@ -450,18 +475,18 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
 
 /** Public declaration bytes are read, never imported as executable target code. */
 export function readDeclaration(file?: string, manifestFile?: string): { table: unknown; bytes: Uint8Array; manifest: unknown } {
-  const bytes = readFileSync(file ?? new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url));
-  return { table: parseJson(bytes), bytes, manifest: JSON.parse(readFileSync(manifestFile ?? new URL('../../../packs/workflow/case-review/pack.json', import.meta.url), 'utf8')) };
+  const bytes = readKnownInput(file ?? new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url));
+  return { table: parseJson(bytes), bytes, manifest: parseJson(readKnownInput(manifestFile ?? new URL('../../../packs/workflow/case-review/pack.json', import.meta.url))) };
 }
 
 function outsideGit(path: string): string {
   const absolute = resolve(path);
-  const check = (start: string): void => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new Error('输出在 Git 中'); if (dirname(at) === at) break; } };
+  const check = (start: string): void => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new CatalogOutputError('path_in_git'); if (dirname(at) === at) break; } };
   check(absolute);
   let existing = absolute;
-  while (!existsSync(existing)) { if (dirname(existing) === existing) throw new Error('路径无效'); existing = dirname(existing); }
+  while (!existsSync(existing)) { if (dirname(existing) === existing) throw new CatalogOutputError('path_invalid'); existing = dirname(existing); }
   const canonical = resolve(realpathSync(existing), relative(existing, absolute)); check(canonical);
-  if (dirname(canonical) === canonical) throw new Error('不是独立输出目录');
+  if (dirname(canonical) === canonical) throw new CatalogOutputError('path_invalid');
   return canonical;
 }
 
@@ -469,7 +494,7 @@ function outsideGit(path: string): string {
 export function writeCatalogReport(out: string, report: CatalogReport): void {
   const directory = outsideGit(out);
   const names = ['catalog-marks.json', 'evidence-requests.json'];
-  if (names.some(name => existsSync(join(directory, name)))) throw new Error('已有输出，拒绝覆盖');
+  if (names.some(name => existsSync(join(directory, name)))) throw new CatalogOutputError('output_exists');
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   writeFileSync(join(directory, names[0]), JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   writeFileSync(join(directory, names[1]), JSON.stringify(report.requests, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -494,7 +519,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
   let report: CatalogReport;
   let stage = 'tree';
   try {
-    const read = (key: string): Uint8Array => { stage = key; return readFileSync(outsideGit(flags.get('--' + key)!)); };
+    const read = (key: string): Uint8Array => { stage = key; return readKnownInput(outsideGit(flags.get('--' + key)!)); };
     const treeBytes = read('tree'), treeXml = decodeCatalog(treeBytes);
     const sourceBytes = read('source'), runBytes = read('run'), run = parseJson(runBytes);
     stage = 'table'; const declaration = readDeclaration(flags.get('--table'), flags.get('--manifest'));
@@ -506,10 +531,12 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     }
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
     const argumentTypes = flags.has('--argument-types') ? readArgumentTypes(read('argument-types')) : undefined;
+    stage = 'compare';
     report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
     report.inputs.tree_sha256 = sha256(treeBytes);
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
-  } catch {
+  } catch (error) {
+    if (!(error instanceof CatalogInputError) && !(error instanceof CatalogOutputError)) { say('金标准缺陷 1；阶段 ' + stage + '；下一步修正脚本后重跑，不补猜测的输入'); return 1; }
     report = emptyGap({ input: stage, pointer: '/' }, `缺可读且完整的 --${stage} 输入`, `由集成者补取这份输入的原始文件和编码声明，再带 --${stage} 重跑；保留原字节，不把解析失败当零标记`);
   }
   try { writeCatalogReport(out, report); }
@@ -537,6 +564,6 @@ export function catalogPreflight(treeXml: string, table: unknown, binding?: { ma
   }
   if (requests.length) return requests;
   try { return readCatalog(treeXml).requests; }
-  catch { return [request({ input: 'tree', pointer: '/' }, '可完整解析的锁定根命令树', '请集成者补取正确编码和结构的命令树原件后重跑；评审尚未启动')]; }
+  catch (error) { if (!(error instanceof CatalogInputError)) throw error; return [request({ input: 'tree', pointer: '/' }, '可完整解析的锁定根命令树', '请集成者补取正确编码和结构的命令树原件后重跑；评审尚未启动')]; }
 }
-export function readCatalogInput(file: string): Uint8Array { return readFileSync(outsideGit(file)); }
+export function readCatalogInput(file: string): Uint8Array { return readKnownInput(outsideGit(file)); }

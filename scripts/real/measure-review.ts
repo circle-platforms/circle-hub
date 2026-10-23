@@ -20,7 +20,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
-import { readArgumentTypes, CatalogInputError, acceptedSubmissionReference, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport, type DeclaredArgumentType } from './gold/catalog-marks.ts';
+import { readArgumentTypes, acceptedSubmissionReference, CatalogInputError, CatalogOutputError, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport, type DeclaredArgumentType } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -243,7 +243,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
       if (options.argumentTypes === undefined) requests.push({ input: 'argument-types', pointer: '/', fact: '锁定根 argumentTypes 声明（可为空数组）', next_action: '请集成者导出 {command,position,type,origin} 声明数组并用 --argument-types 传入后重跑，评审会话尚未启动' });
       if (requests.length) preflight = catalogGapReport(requests, { tree_sha256: createHash('sha256').update(treeBytes).digest('hex'), source_sha256: copySha });
       else catalogInput = { treeXml, table: declaration.table, manifest: declaration.manifest, bytes: declaration.bytes, argumentTypes: options.argumentTypes === undefined ? undefined : readArgumentTypes(readCatalogInput(options.argumentTypes)) };
-    } catch (error) { preflight = catalogGapReport([{ input: error instanceof CatalogInputError && error.reason === 'argument_types' ? 'argument-types' : 'tree/table', pointer: '/', fact: '可读取并解析的输入：' + (error instanceof CatalogInputError ? error.reason : 'input_unreadable'), next_action: error instanceof CatalogInputError && error.reason === 'argument_types' ? '请集成者按 {command,position,type,origin} 修正 --argument-types 声明数组后重跑；会话未启动' : '请集成者补 --tree 原件与匹配的表声明，再启动度量；脚本尚未启动评审会话' }]); }
+    } catch (error) { if (!(error instanceof CatalogInputError) && !(error instanceof CatalogOutputError)) throw error; preflight = catalogGapReport([{ input: error instanceof CatalogInputError && error.reason === 'argument_types' ? 'argument-types' : 'tree/table', pointer: '/', fact: '可读取并解析的输入：' + error.reason, next_action: error instanceof CatalogInputError && error.reason === 'argument_types' ? '请集成者按 {command,position,type,origin} 修正 --argument-types 声明数组后重跑；会话未启动' : '请集成者补 --tree 原件与匹配的表声明，再启动度量；脚本尚未启动评审会话' }]); }
     if (preflight !== undefined) {
       writeCatalogReport(join(options.out, 'catalog-preflight'), preflight);
       say(catalogSummary(preflight)); say('设计缺口 ' + preflight.requests.length + '；下一步按私有补证文件修正声明后重跑；评审会话未启动');

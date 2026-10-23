@@ -323,3 +323,12 @@ test('catalog comparison vocabulary constants are generated-type constrained', a
 // @ts-expect-error Values cannot drift outside the generated axis.
 const invalidVerdict: Verdict = 'invented_catalog_verdict';
 void invalidVerdict;
+
+test('unexpected oracle defects propagate while known input refusals carry fixed reasons', async () => {
+ const {catalogMarks,CatalogInputError}=await import('./catalog-marks.ts');
+ const defect=new Error('不是脑图对象 private synthetic bug');
+ const broken={get root(){throw defect;}};
+ assert.throws(()=>catalogMarks({packManifest,tableBytes,argumentTypes:[],treeXml:tree,sourceBytes,run:receiptRun(),submissionBytes:bytes,table, get excludeNodes(): never {throw defect;}}),e=>e===defect);
+ assert.throws(()=>readCatalog('<commands>'),e=>e instanceof CatalogInputError && e.reason==='tree_structure');
+ void broken;
+});
