@@ -15,3 +15,9 @@ test('submission checks models records descent calibration text code and source 
  await assert.rejects(()=>verify(s.input,new Hub('https://example.invalid/mcp',HUB_KEY,()=>{}),s.store),/scripted/);
  await writeFile(join(s.dir,'out/calibration.jsonl'),'');await assert.rejects(()=>verify(s.input,s.hub,s.store),/校准/);
 });
+
+test('Hub preserves typed tool refusals HTTP status and JSON RPC errors',async t=>{
+ const {createServer}=await import('node:http');let mode='tool';const server=createServer(async(req,res)=>{const chunks=[];for await(const c of req)chunks.push(c);const input=JSON.parse(Buffer.concat(chunks).toString());if(mode==='401'){res.writeHead(401);res.end();return;}const result=input.method==='initialize'?{}:{structuredContent:{call_result:'error',errors:[{code:'REFERENCE_UNRESOLVED',path:'/build',message:'合成构建不存在',fix:'改用列出的构建',options:['synthetic-build']} ]}};res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(mode==='rpc'?{jsonrpc:'2.0',id:input.id,error:{code:-32602,message:'合成参数缺失'}}:{jsonrpc:'2.0',id:input.id,result}));});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));t.after(()=>server.close());const url=`http://127.0.0.1:${(server.address() as any).port}`;
+ await assert.rejects(()=>new Hub(url,HUB_KEY,()=>{}).call('start_run',{}),error=>error instanceof Error&&['start_run','REFERENCE_UNRESOLVED','/build','合成构建不存在','改用列出的构建','synthetic-build'].every(v=>error.message.includes(v)));
+ mode='401';await assert.rejects(()=>new Hub(url,HUB_KEY,()=>{}).call('start_run',{}),/401.*\/secrets HUB_TOKEN/);mode='rpc';await assert.rejects(()=>new Hub(url,HUB_KEY,()=>{}).call('get_nodes',{}),/-32602.*合成参数缺失/);
+});

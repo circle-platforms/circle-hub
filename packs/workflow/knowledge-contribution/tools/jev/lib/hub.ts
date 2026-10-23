@@ -1,18 +1,20 @@
-import { need, record, secureUrl, type LocalStore } from './local.ts';
+import { Refusal, need, record, secureUrl, type LocalStore } from './local.ts';
 export interface Piece { id: string; reference: string; kind: string; text: string; sha256: string; bytes: number }
 export class Hub {
   url: URL; token: string; guard: (v: unknown) => void; id = 0; initialized = false; lastText: string[] = [];
   constructor(url: string, token: string, guard: (v: unknown) => void) { this.url = secureUrl(url); this.token = token; this.guard = guard; }
   async rpc(method: string, params: unknown): Promise<any> {
     const id = ++this.id; const response = await fetch(this.url, { method: 'POST', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), redirect: 'manual', signal: AbortSignal.timeout(60_000) });
-    need(response.status === 200 && response.headers.get('content-type')?.split(';')[0] === 'application/json', 'Hub 未返回 JSON 成功应答；核对 Hub 地址、令牌和权限后重跑');
+    if(response.status!==200)throw new Refusal(`Hub HTTP ${response.status}；${response.status===401||response.status===403?'Hub 令牌被拒；所有者用 /secrets HUB_TOKEN 更新':'核对 Hub 端点和服务状态后重跑'}`);
+    need(response.headers.get('content-type')?.split(';')[0] === 'application/json','Hub 应答不是 JSON；核对 Hub 端点后重跑');
     const raw = await response.text(); need(Buffer.byteLength(raw) <= 16 * 1024 * 1024, 'Hub 回答过大；缩小读取路径后重跑'); this.guard(raw); const reply = JSON.parse(raw); this.guard(reply);
-    need(reply.id === id && reply.jsonrpc === '2.0' && record(reply.result) && !reply.error, 'Hub RPC 未成功；核对参数和权限后重跑'); return reply.result;
+    if(record(reply.error))throw new Refusal(`Hub JSON-RPC ${reply.error.code}：${reply.error.message}；修正 RPC 参数后重跑`);
+    need(reply.id === id && reply.jsonrpc === '2.0' && record(reply.result), 'Hub RPC 未成功；核对参数和权限后重跑'); return reply.result;
   }
   async call(name: string, args: unknown): Promise<any> {
     if (!this.initialized) { await this.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'jev-skill', version: '1.1.0' } }); this.initialized = true; }
     const result = await this.rpc('tools/call', { name, arguments: args }); this.lastText=(result.content??[]).filter((v:any)=>v.type==='text'&&typeof v.text==='string').map((v:any)=>v.text); const value = result.structuredContent;
-    need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); return value;
+    need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); if(value.call_result==='error')throw new Refusal(`${name}：${JSON.stringify(value.errors)}`); return value;
   }
   async nodes(root: string, paths: string[], depth = 1): Promise<any[]> {
     const all: any[] = []; let cursor: string | undefined; const seen = new Set<string>();
