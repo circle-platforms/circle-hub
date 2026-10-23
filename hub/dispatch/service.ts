@@ -418,15 +418,17 @@ export class DispatchService {
     const queryCertified = await this.certified(binding,d,client,'request_journal');
     const deliveryCertified = await this.certified(binding,d,client,'request_journal',{version:intent.body.detail.request_protocol_version});
     const certified=queryCertified && deliveryCertified;
-    if (certified && found === true && identity && reported === 'target_rejected') {
-      const remapped = {...d,receipt:{...d.receipt,identity:r.identity,stage:r.stage,reached_device:r.reached_device}};
-      if (await this.refused(binding,remapped,client,response,lease)) return this.status(by,binding.job);
-    }
     const time = (v: unknown) => readDeclaredTime(v,r.time_scale_ms);
     const clock = time(at(value,r.gateway_time)), floor = time(at(value,r.gc_before));
     const currentIdentity=requestIdentity(value,r.identity,r.time_scale_ms);
     const originalProtocol=intent.body.detail.request_protocol_verified===true && typeof intent.body.detail.request_protocol_version==='string';
     const identityBound=originalProtocol && sameRequestIdentity(intent.body.detail.request_identity,currentIdentity);
+    if(certified && identityBound && found===true && identity && reported==='target_rejected' && mapped(d.receipt.stages,at(value,r.stage))==='target_rejected' && at(value,r.reached_device)===false) {
+      await this.answerRequests(binding,'rejection','read_back','completed',{outcome:'target_rejected',acceptance:'not_accepted',stage:at(value,r.stage),reached_device:false,unfreeze:true},[response.source]);
+      await stop();await this.release(binding,client,lease);
+      await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,next_action:'原请求记录明确拒收且未触达设备；修正拒收前提后可用新的请求尝试派发'});
+      return this.status(by,binding.job);
+    }
     const absent = identityBound && !!currentIdentity && floor>=currentIdentity.since && found === false && Number.isFinite(clock) && Number.isFinite(floor) && clock > deadline && deadline > floor;
     if (certified && identityBound && (absent || (found === true && identity && reported === 'proven_not_executed' && at(value,r.reached_device) === false))) {
       await this.answerRequests(binding,'reconciled','read_back','completed',{outcome:'proven_not_executed',unfreeze:true,reached_device:false},[response.source]);
