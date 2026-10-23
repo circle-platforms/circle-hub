@@ -121,6 +121,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   let uploadsOfPhase = [0, 0, 0];
   let runsOfPhase = [0, 0, 0];
   const uploaded = new Map<string, string>(); // copy key -> sha
+  const uploadVerdicts = new Map<string, boolean>();
   const answerOf = new Map<string, { caseCount: number | null; missing: Set<string>; fullSummary: string }>();
   const unknown = new Map<string, string>(); // copy key -> fixed reason
   const truncated = new Map<string, string>(); // copy key -> reference to read
@@ -236,18 +237,15 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       openRun = null;
     } else {
-      for (const [i, result] of turn.toolResults.entries()) {
-        const p = lastUploaded[i];
-        if (p === undefined) continue;
-        if (result.isError) {
-          unknown.set(p.key, '上传被拒');
-          continue;
-        }
-        const src = srcOf(result.text);
-        const written = uploaded.get(p.key);
-        if (src === null || written === undefined || `src:${written}` !== src) {
-          unknown.set(p.key, '上传引用的 sha256 与写下的字节不符');
-        }
+      const pending = new Map(lastUploaded.map(copy => [`src:${uploaded.get(copy.key)}`, copy]));
+      for (const result of turn.toolResults) {
+        const src = srcOf(result.text); const copy = src === null ? undefined : pending.get(src);
+        if (!copy || result.isError) continue;
+        uploadVerdicts.set(copy.key, true); pending.delete(src!);
+      }
+      for (const copy of lastUploaded) {
+        if (uploadVerdicts.get(copy.key) === true) phaseUploaded.push(copy.key);
+        else { uploadVerdicts.set(copy.key, false); unknown.set(copy.key, '上传被拒或未给出匹配的 sha256'); }
       }
       lastUploaded = [];
     }
@@ -278,11 +276,10 @@ export default function scenario(gold: GapCircleGold): Scenario {
         const batchNow = queue.slice(0, gold.batch);
         queue = queue.slice(batchNow.length);
         lastUploaded = batchNow;
-        phaseUploaded.push(...batchNow.map((p) => p.key));
         uploadsOfPhase[phase - 1]! += batchNow.length;
         return batchNow.map((p) => {
           const sha = writeCopy(p);
-          uploaded.set(p.key, sha);
+          uploaded.set(p.key, sha); uploadVerdicts.set(p.key, false);
           return { tool: 'hub_upload_file', input: { file_path: p.name, media_type: 'application/json' } };
         });
       }
@@ -405,7 +402,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
 
     // 1 上传字节
     const uploadsChecked = [...uploaded.keys()].length;
-    const uploadBad = [...unknown.entries()].filter(([k, r]) => r.includes('sha256') || r.includes('上传被拒')).length;
+    const uploadBad = [...uploadVerdicts.values()].filter(ok => !ok).length;
     // 2 原件用例数
     const aCounts = trees.map((_t, d) => answerOf.get(`a-${d}`)?.caseCount ?? null);
     const originalOk = aCounts.every((n, d) => n === outerIds[d]!.length);

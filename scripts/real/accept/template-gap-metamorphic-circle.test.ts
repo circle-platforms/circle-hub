@@ -339,3 +339,27 @@ test('review 8: a promoted tagged group makes the deletion copy not done instead
   assert.ok(!roots.includes('gap-doc1-d-functional'));
   scenario.check([]); assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('前提不成立'))));
 });
+
+test('review 10: upload replies match by source digest even when their order is reversed', () => {
+  const { gold, dir } = goldOf(); (gold as { batch: number }).batch = 4;
+  const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
+  const uploads = scenario.respond(turn(0)) as any[];
+  const results = uploads.map((call, i) => ({ id: `u${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false })).reverse();
+  scenario.respond(turn(1, results));
+  assert.equal(scenario.check([]).find(check => check.name === '上传字节')?.ok, true);
+});
+test('review 10: a later refusal cannot erase failed upload evidence or bind those failed copies', () => {
+  const { gold, dir } = goldOf(); const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
+  let results: Turn['toolResults'] = []; const failed = new Set<string>(); const bound: string[] = [];
+  for (let index = 0; index < 100; index++) {
+    const reply = scenario.respond(turn(index, results)) as any[];
+    if (reply[0]?.text === '检查完成。') break;
+    results = reply.map((call, i) => {
+      if (call.tool === 'hub_upload_file') { failed.add(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))); return { id: `u${i}`, text: `已上传 src:${'f'.repeat(64)}`, isError: false }; }
+      if (call.tool === 'hub_start_run') bound.push(...call.input.inputs.documents.map((d: { reference: string }) => d.reference.slice(4)));
+      return { id: `r${i}`, text: '调用结果：出错', isError: true };
+    });
+  }
+  assert.equal(scenario.check([]).find(check => check.name === '上传字节')?.ok, false);
+  assert.ok(bound.every(sha => !failed.has(sha)));
+});
