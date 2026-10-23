@@ -261,7 +261,7 @@ links are fixed paths with encoded query parameters).
   values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
   remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/imagesrcset/action/formaction/poster/data,
   ping/background/cite/manifest/icon, CSS url(), @import and image-set() image strings in styles, SVG presentation url() attributes, meta refresh targets (bare or URL= targets after a semicolon, comma or whitespace),
-  and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address count, including srcset
+  and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address (including slash/backslash spellings) count. SVG set/animate targeting URL attributes also inspect to/from/by and each semicolon-separated values entry; numeric attributes remain plain values. This includes srcset
   and ping candidates. Displayed text, comments, CSS content/type strings and raw-text bodies such as textarea and script are not resource references. HTML and nested srcdoc are scanned with scripting both enabled and disabled; the larger resource count is reported, so noscript raw-text parsing cannot hide a reference. The CSP field reports header presence, as required by the task, and does not validate directive values. Page content,
   paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
   makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment

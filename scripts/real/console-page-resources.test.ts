@@ -84,3 +84,18 @@ for(const embedded of [false,true])test('noscript closing text is scanned in bot
   const attribute=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
   assert.equal(summarizePage(embedded?'<iframe srcdoc="'+attribute(markup)+'"></iframe>':markup).externalAddresses,1);
 });
+
+for(const markup of [
+  String.raw`<img src="\\192.0.2.1/a.png">`,
+  String.raw`<img src="/\192.0.2.1/a.png">`,
+  String.raw`<a href="\/192.0.2.1/x">link</a>`,
+  '<svg><image><set attributeName="href" to="https://192.0.2.1/a.png"/></image></svg>',
+  '<svg><a><animate attributeName="href" values="https://192.0.2.1/"/><text>x</text></a></svg>',
+])test('URL reference spelling and SVG animation are counted '+markup,()=>{
+  assert.equal(summarizePage(markup).externalAddresses,1);
+});
+
+test('SVG URL animations inspect each value while non URL attributes remain plain values',()=>{
+  assert.equal(summarizePage('<svg><image><animate attributeName="xlink:href" from="//192.0.2.1/a" to="/local" by="https://192.0.2.2/b" values="/local;https://192.0.2.3/c;//192.0.2.4/d"/></image></svg>').externalAddresses,4);
+  for(const attributeName of ['width','x'])for(const tag of ['set','animate'])assert.equal(summarizePage(`<svg><rect><${tag} attributeName="${attributeName}" from="https://192.0.2.1/a" to="//192.0.2.2/b" values="https://192.0.2.3/c"/></rect></svg>`).externalAddresses,0);
+});

@@ -16,7 +16,7 @@ function externalAddresses(body:string,scriptingEnabled:boolean):number {
   const attributes=new Set(['href','src','srcset','imagesrcset','action','formaction','poster','data','ping','background','cite','manifest','icon']);
   const external=(value:string)=>{
     const address=value.replace(/[\t\r\n]/g,'').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g,'');
-    return /^[a-z][a-z0-9+.-]*:/i.test(address)||address.startsWith('//');
+    return /^[a-z][a-z0-9+.-]*:/i.test(address)||(/^[\\/]{2}/).test(address);
   };
   const candidates=(value:string):string[]=>{
     const urls:string[]=[];let at=0;
@@ -91,6 +91,10 @@ function externalAddresses(body:string,scriptingEnabled:boolean):number {
       else if(name==='srcdoc')pending.push(parse(value,{scriptingEnabled}));
       else if(attributes.has(name))count+=(name==='srcset'||name==='imagesrcset'?candidates(value):name==='ping'?value.split(/\s+/u):[value]).filter(external).length;
       else if(/url\s*\(/i.test(cssDecode(value)))count+=cssTargets(value).filter(external).length;
+    }
+    if(node.namespaceURI==='http://www.w3.org/2000/svg'&&(node.tagName==='set'||node.tagName==='animate')&&attributes.has((values.get('attributename')??'').toLowerCase().split(':').at(-1)!)){
+      for(const name of ['to','from','by']){const value=values.get(name);if(value!==undefined&&external(value))count++;}
+      count+=(values.get('values')??'').split(';').filter(external).length;
     }
     if(node.tagName==='meta'&&values.get('http-equiv')?.trim().toLowerCase()==='refresh'){
       const target=refreshTarget(values.get('content')??'');
