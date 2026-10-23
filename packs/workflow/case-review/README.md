@@ -437,3 +437,5 @@ node --test --test-concurrency=1 "contracts/**/*.test.ts" packs/workflow/case-re
 CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固定查重预算的出口和完整性片段分级另有定向回归。
 
 决定 41 扫描补充：标签表只在上下文类型明确约束了键时豁免，包括生成轴的 Record、映射类型、别名及声明的结构类型；Record<string, string> 没有限定键，不豁免。比较值须是生成轴或 Extract 子集，或声明结构类型的 keyof；类型参数使用其约束，轴类型与 string 的联合不算受约束。结构不按 run/item/min/max 的名字或路径豁免；CLI 命令说明表显式声明结构类型。
+
+比较链同时检查 ===/== 与 ||、!==/!= 与 &&；结构键的运行时验证使用满足 Record<keyof IdRange, boolean> 的字段表，不按字段名字豁免。相关包函数变动均升补丁版并重签。

@@ -14,9 +14,11 @@ function declaredText(value: unknown, max: number): string | null {
   return text === '' || [...text].length > max ? null : text;
 }
 
+const ID_RANGE_FIELDS = {min:true,max:true} satisfies Record<keyof IdRange,boolean>;
+
 function rangeOf(value: unknown): IdRange | null | undefined {
   if (value === undefined) return null;
-  if (!isRecord(value) || Object.keys(value).some((key) => key !== 'min' && key !== 'max')) return undefined;
+  if (!isRecord(value) || Object.keys(value).some(key=>!Object.hasOwn(ID_RANGE_FIELDS,key))) return undefined;
   const range: IdRange = {};
   for (const [key, bound] of Object.entries(value)) {
     if (bound === undefined) continue;

@@ -144,13 +144,14 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
         if (matching.length >= 2 && !checkedMap(node, axis)) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
       }
     }
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+    if (ts.isBinaryExpression(node) && (node.operatorToken.kind === ts.SyntaxKind.BarBarToken || node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)) {
       const compared = new Map<string, { values: Set<string>; expression: ts.Expression }>();
       const collect = (part: ts.Node): void => {
         if (ts.isParenthesizedExpression(part)) return collect(part.expression);
         if (!ts.isBinaryExpression(part)) return;
-        if (part.operatorToken.kind === ts.SyntaxKind.BarBarToken) { collect(part.left); collect(part.right); return; }
-        if (part.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) return;
+        if (part.operatorToken.kind === node.operatorToken.kind) { collect(part.left); collect(part.right); return; }
+        const allowed = node.operatorToken.kind === ts.SyntaxKind.BarBarToken ? [ts.SyntaxKind.EqualsEqualsEqualsToken,ts.SyntaxKind.EqualsEqualsToken] : [ts.SyntaxKind.ExclamationEqualsEqualsToken,ts.SyntaxKind.ExclamationEqualsToken];
+        if (!allowed.includes(part.operatorToken.kind)) return;
         const a = literal(part.left), b = literal(part.right);
         const value = a ?? b;
         if (value === undefined) return;
@@ -163,7 +164,7 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
         const type = originalType && (semantic!.checker.getBaseConstraintOfType(originalType) ?? originalType);
         const members = type?.isUnion() ? type.types : type ? [type] : [];
         const finite = members.length > 0 && members.every(t => (t.flags & ts.TypeFlags.StringLiteral) !== 0);
-        const finiteAxis = finite && axes.some(a=>members.every(t=>a.values.has((t as ts.StringLiteralType).value)));
+        const finiteAxis = finite && members.every(t=>axes.some(a=>a.values.has((t as ts.StringLiteralType).value)));
         const symbol=semantic?.checker.getSymbolAtLocation(expression);
         const structural = finite && symbol?.declarations?.some(d=>(ts.isPropertySignature(d)||ts.isParameter(d)||ts.isVariableDeclaration(d)) && d.type && structuralKeys(d.type));
         const derived = finite && axes.some(a=>type?.aliasSymbol?.declarations?.some(d=>ts.isTypeAliasDeclaration(d)&&derives(d.type,a.type)) || symbol?.declarations?.some(d=>(ts.isPropertySignature(d)||ts.isParameter(d)||ts.isVariableDeclaration(d)) && d.type && derives(d.type,a.type)));
@@ -242,7 +243,7 @@ describe('the vocabulary', () => {
   it('c3 applies contextual key constraints and generated value types across axes', () => {
     const file=join(root,'scan-types-self-test.ts');
     const text=[
-      "import type {ChangeKind,StaticTerminal,Nature,PackKind} from './contracts/generated/vocabulary.ts';",
+      "import type {ChangeKind,StaticTerminal,DynamicTerminal,Nature,PackKind} from './contracts/generated/vocabulary.ts';",
       "type Labels=Record<ChangeKind,string>;",
       "const goodMapped={added:'a',removed:'b',modified:'c'} as const satisfies {readonly [K in ChangeKind]:string};",
       "const goodAlias:Labels={added:'a',removed:'b',modified:'c'};",
@@ -254,12 +255,13 @@ describe('the vocabulary', () => {
       "const badBroad:Record<string,string>={added:'a',removed:'b',modified:'c'};",
       "const badSatisfies={added:'a',removed:'b',modified:'c'} satisfies Record<string,string>;",
       "declare const terminal:StaticTerminal; terminal==='pass'||terminal==='incomplete';",
+      "declare const anyTerminal:StaticTerminal|DynamicTerminal; anyTerminal!=='pass'&&anyTerminal!=='judgment';",
       "declare const nature:Nature; nature==='fact'||nature==='judgment';",
       "declare const kind:PackKind; kind==='product'||kind==='workflow';",
       "function generic<T extends ChangeKind>(v:T){return v==='added'||v==='removed'};",
       "type Mixed='other'|Extract<ChangeKind,'added'|'removed'>; declare const mixed:Mixed; mixed==='added'||mixed==='removed';",
       "declare const badWide:ChangeKind|string; badWide==='added'||badWide==='removed';",
-      "declare const key:keyof RangeSpec; key==='min'||key==='max';",
+      "declare const key:keyof RangeSpec; key==='min'||key==='max'; key!=='min'&&key!=='max';",
       "const badUntyped={run:'run-1',item:'item-1'};",
     ].join('\n');
     const host=ts.createCompilerHost({}),original=host.getSourceFile;
@@ -268,6 +270,12 @@ describe('the vocabulary', () => {
     const hits=handWrittenAxes(text,{source:program.getSourceFile(file)!,checker:program.getTypeChecker()});
     const badLines=text.split('\n').flatMap((line,i)=>line.includes('bad')?[i+1]:[]);
     assert.deepEqual([...new Set(hits.map(h=>h.line))].sort((a,b)=>a-b),badLines);
+  });
+
+  it('c3 detects negated membership and loose equality without field name exemptions',()=>{
+    for(const text of ["value!=='added' && value!=='removed'", "value!='added' && value!='removed'", "value=='added' || value=='removed'"]){assert.ok(handWrittenAxes(text).some(h=>h.axis==='change_kind'),text);}
+    assert.ok(handWrittenAxes("key!=='min' && key!=='max'").some(h=>h.axis==='measure'));
+    assert.deepEqual(handWrittenAxes("x!=='added' && y!=='removed'"),[]);
   });
 
   it('uses generated axes in hub and every pack without handwritten exceptions', () => {

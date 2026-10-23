@@ -64,8 +64,9 @@ function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0 || raw.detail >= details.length) return null;
-    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
-    out.push({ detail: raw.detail, change: raw.change });
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)return null;
+    out.push({ detail: raw.detail, change });
   }
   return out;
 }
@@ -97,8 +98,11 @@ function pathNotes(value: unknown): Array<{ path: string; change: Extract<Change
   if (!Array.isArray(value)) return null;
   const out: Array<{ path: string; change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>> }> = [];
   for (const raw of value) {
-    if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified')) continue;
-    out.push({ path: raw.path, change: raw.change });
+    if (!isRecord(raw) || typeof raw.path !== 'string') continue;
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)continue;
+    if(change!=='added' && change!=='modified')continue;
+    out.push({ path: raw.path, change });
   }
   out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return out;

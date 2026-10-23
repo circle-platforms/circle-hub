@@ -98,8 +98,9 @@ function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0) return null;
-    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
-    out.push({ detail: raw.detail, change: raw.change });
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)return null;
+    out.push({ detail: raw.detail, change });
   }
   return out;
 }
