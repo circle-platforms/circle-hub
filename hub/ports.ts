@@ -1,3 +1,4 @@
+import type {ProtocolCode} from '../contracts/generated/protocol.ts';
 import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
@@ -118,11 +119,13 @@ export interface ExternalArtifact {
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
  * while read exhaustion carries retry metadata and permission failures remain neutral.
  */
+export interface ExternalRedirect {status:number;location:string|null;observed_at:string;location_redacted?:true}
+
 export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
-  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; inputError?: { message: string; fix: string } };
+  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */

@@ -15,9 +15,9 @@
 import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry} from './read-retry.ts';
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
-import type { ExternalArtifact, ExternalReadContext, PackHandle } from '../ports.ts';
+import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
 import type { Artifacts, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
-import { canonicalBytes, sha256Hex } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
@@ -86,7 +86,7 @@ export type ReadOutcome =
       coverage:Coverage;
       absent?:SourceAbsent;
     }
-  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; manifest: string | null;retry?:ReadRetry };
+  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; message?:string; disclosable?:boolean; manifest: string | null;retry?:ReadRetry;redirect?:ExternalRedirect };
 
 export interface ReadEngineOptions {
   readRetrySleep?:(ms:number)=>Promise<void>;
@@ -271,6 +271,7 @@ export class ReadEngine {
     const startedAt = this.#o.now().toISOString();
     const visibility: Visibility = { readers: [reader], admins: true, packs: [], shareable: false };
     const responses = new Map<string, ResponseState>();
+    const echoedArtifacts=new Set<string>();
     const entries: ReadRequestEntry[] = [];
     const nested = new Map<string, NestedState>();
     const refreshed = new Set<string>();
@@ -302,7 +303,6 @@ export class ReadEngine {
       // An answer carrying a credential value the Hub sent (an echo of the request's own header, a debug page) is kept
       // retain_only whatever the credential scanner finds; an admin acceptance of scan findings does not lift it.
       const echoed = this.#o.redactor.echoedIn(exchange.bytes, exchange.mediaType);
-      if (echoed) this.#event('secret_echoed', { resource: runtime.resource.id, route: exchange.route.id, status: exchange.status });
       try {
         const artifact = await this.#o.artifacts.ingest({
           bytes: exchange.bytes,
@@ -315,6 +315,7 @@ export class ReadEngine {
           capturedAt: new Date(exchange.endedAt).toISOString(),
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
         });
+        if(echoed){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,route:exchange.route.id,status:exchange.status,record:artifact.digest});}
         return { artifact, echoed };
       } catch (error) {
         throw new ConnectorError('STORE_FAILED', `保存路由 ${exchange.route.id} 的应答失败`, { cause: error, detail: { route: exchange.route.id } });
@@ -335,14 +336,24 @@ export class ReadEngine {
         status: exchange.status,
         media_type: exchange.mediaType,
         size: exchange.bytes.byteLength,
-        sha256: exchange.sha256,
-        etag: exchange.etag,
-        error: { code, message: `${said}应答（sha256 ${exchange.sha256}）${why}，按“${labelOf('read_tier', RETAIN_ONLY)}”保存，函数拿不到原文` },
+        sha256: stored.echoed?null:exchange.sha256,
+        etag: stored.echoed?null:exchange.etag,
+        error: { code, message: `${said}应答${stored.echoed?'':`（sha256 ${exchange.sha256}）`}${why}，按“${labelOf('read_tier', RETAIN_ONLY)}”保存，函数拿不到原文` },
       };
     };
 
+    const routePages=new Map<string,number>();
+    const redirectChains=new Map<string,{hops:number;limit:number}>();
+    const followed=new Map<string,string>();
+    const covered=(key:string,visited=new Set<string>()):boolean=>{
+      if(visited.has(key))return false;
+      visited.add(key);
+      const state=responses.get(key);
+      return state?.view.ok===true || (state?.view.error?.code==='SOURCE_REDIRECT_REFUSED' && followed.has(key) && covered(followed.get(key)!,visited));
+    };
     const send = async (planned: PlannedRequest, round: number): Promise<void> => {
       const compiled = runtime.routes.find((route) => route.declaration.id === planned.route);
+      if(compiled===undefined && planned.against && responses.get(planned.against)?.view.error?.code==='SOURCE_REDIRECT_REFUSED')throw new ConnectorError('SOURCE_REDIRECT_REFUSED','已观察的 Location 没有对应的已声明读取路由；由资源管理员核对路由',{layer:'transport'});
       if (compiled === undefined) throw new ConnectorError('ROUTE_REFUSED', `系统包没有路由 ${planned.route}；请求在发出前被拒绝`, { layer: 'transport', detail: { route: planned.route } });
       const route = compiled.declaration;
       let path: string;
@@ -353,7 +364,12 @@ export class ReadEngine {
           against = responses.get(planned.against)?.url ?? null;
           if (against === null) throw new ConnectorError('PLAN_INVALID', `请求 ${planned.key} 的 against 指向没有地址的应答 ${planned.against}`, { layer: 'plugin' });
         }
-        const resolved = runtime.http.resolveHref(route.role, planned.href, against);
+        let resolved;
+        try {resolved=runtime.http.resolveHref(route.role,planned.href,against);}
+        catch(error) {
+          if(planned.against && responses.get(planned.against)?.view.error?.code==='SOURCE_REDIRECT_REFUSED')throw new ConnectorError('SOURCE_REDIRECT_REFUSED','已观察的 Location 不在允许的同源根路径内；由资源管理员核对来源与路由',{layer:'transport',cause:error});
+          throw error;
+        }
         path = resolved.path;
         query = resolved.query;
         if (planned.query !== undefined && Object.keys(resolved.query).length > 0) throw new ConnectorError('PLAN_INVALID', `请求 ${planned.key} 的链接已带查询参数`, { layer: 'plugin' });
@@ -363,6 +379,20 @@ export class ReadEngine {
         path = buildPath(compiled, planned.params ?? {});
       }
       for (const [name, value] of Object.entries(planned.query ?? {})) query[name] = String(value);
+      if(planned.against && responses.get(planned.against)?.view.error?.code==='SOURCE_REDIRECT_REFUSED') {
+        const previous=responses.get(planned.against)!;
+        const sourceRoute=runtime.routes.find(r=>r.declaration.id===previous.view.route)?.declaration;
+        const inherited=redirectChains.get(planned.against);
+        const limit=Math.min(inherited?.limit??Infinity,sourceRoute?.redirects?.max_hops??0);
+        const hops=(inherited?.hops??0)+1;
+        if(!sourceRoute?.redirects || hops>limit || !previous.view.location || planned.href!==previous.view.location || Object.keys(planned.query??{}).length>0 || new URL(previous.view.location,previous.url!).origin!==new URL(previous.url!).origin)throw new ConnectorError('SOURCE_REDIRECT_REFUSED','缺少允许此同源跳转的声明或已到跳转上限；由资源管理员核对 Location 与路由',{layer:'transport'});
+        // resolveHref has already checked the same origin and the role base path; check() below checks the allow list.
+        redirectChains.set(planned.key,{hops,limit});followed.set(planned.against,planned.key);
+      } else {
+        const pages=(routePages.get(route.id)??0)+1;routePages.set(route.id,pages);
+        if(route.pagination && pages>route.pagination.max_pages)throw new ConnectorError('READ_LIMIT',`路由 ${route.id} 的分页超过声明的 ${route.pagination.max_pages} 页；缺少余下页面，请管理员核对分页上限后重新完整读取`,{layer:'plugin'});
+      }
+
       const auth = runtime.profile.auth;
       const carries = auth.kind !== 'none' && auth.roles.includes(route.role);
       const refusedEntry = (code: string, masked: boolean): ReadRequestEntry => {
@@ -401,6 +431,7 @@ export class ReadEngine {
       } catch (error) {
         const failed = asConnectorError(error, 'ROUTE_REFUSED', 'transport');
         entries.push(refusedEntry(failed.code, false));
+        if(planned.against && responses.get(planned.against)?.view.error?.code==='SOURCE_REDIRECT_REFUSED')throw new ConnectorError('SOURCE_REDIRECT_REFUSED','已观察的 Location 不符合目标读取路由；由资源管理员核对路由声明',{layer:'transport',cause:failed});
         throw failed;
       }
       let attempts=0,retries=0,waited=0;
@@ -422,11 +453,12 @@ export class ReadEngine {
           status: received?.exchange.status ?? null,
           ok,
           error,
-          sha256: received?.exchange.sha256 ?? null,
+          sha256: received?.stored.echoed?null:received?.exchange.sha256 ?? null,
           size: received?.exchange.bytes.byteLength ?? null,
           media_type: received?.exchange.mediaType ?? null,
-          etag: received?.exchange.etag ?? null,
-          artifact: received?.stored.artifact.digest ?? null,
+          etag: received?.stored.echoed?null:received?.exchange.etag ?? null,
+          ...(received && received.stored.artifact.body.read_tier!==RETAIN_ONLY?this.#location(received.exchange):{}),
+          artifact: received?.stored.echoed?null:received?.stored.artifact.digest ?? null,
           after_login: afterLogin,
         });
         try {
@@ -608,7 +640,7 @@ export class ReadEngine {
       }
       artifacts = [{ name: 'original', artifact: first.artifact }];
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
-      complete = [...responses.values()].every((state) => state.view.ok) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
+      complete = [...responses.keys()].every(key=>covered(key)) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
         const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews());
         if ('error' in projected && read.absent_codes?.includes(projected.error.code) && [...responses.values()].every(state=>state.view.ok || state.view.error?.code==='SOURCE_ABSENT')) {
@@ -630,7 +662,7 @@ export class ReadEngine {
         const inputs = [
           ...order.flatMap((key) => {
             const artifact = responses.get(key)?.artifact;
-            return artifact ? [`src:${artifact.body.sha256}`] : [];
+            return artifact && !echoedArtifacts.has(artifact.body.sha256) ? [`src:${artifact.body.sha256}`] : [];
           }),
           ...nestedOrder.flatMap((key) => (nested.get(key)?.artifacts ?? []).map((artifact) => `src:${artifact.body.sha256}`)),
         ];
@@ -640,6 +672,7 @@ export class ReadEngine {
           names.add(derived.name);
           if (derived.response !== undefined) {
             const state = responses.get(derived.response);
+            if(state?.artifact && echoedArtifacts.has(state.artifact.body.sha256))throw new ConnectorError('SOURCE_CREDENTIAL','投影不得引用 Hub 凭据回显原件');
             if (state?.artifact == null) throw new ConnectorError('PROJECTION_FAILED', `派生件 ${derived.name} 指向没有保存的应答 ${derived.response}`, { layer: 'plugin' });
             artifacts.push({ name: derived.name, artifact: state.artifact });
             // A stored answer named as content or meta gives nested readers its value, unless no function may read it.
@@ -653,7 +686,6 @@ export class ReadEngine {
           try {
             bytesOf = derived.text !== undefined ? Buffer.from(derived.text, 'utf8') : canonicalBytes(derived.json);
             const echoed = this.#o.redactor.echoedIn(bytesOf, derived.media_type);
-            if (echoed) this.#event('secret_echoed', { resource: runtime.resource.id, artifact: derived.name });
             artifact = await this.#o.artifacts.ingest({
               bytes: bytesOf,
               mediaType: derived.media_type,
@@ -670,6 +702,7 @@ export class ReadEngine {
             const why = error instanceof TypeError ? error.message : error instanceof Error && error.name === 'CanonicalizationError' ? '不是可规范化的 JSON' : '存储失败';
             throw new ConnectorError('PROJECTION_FAILED', `派生件 ${derived.name} 不能保存（${this.#o.redactor.text(why)}）`, { layer: 'plugin', cause: error });
           }
+          if(this.#o.redactor.echoedIn(bytesOf,derived.media_type)){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,artifact:derived.name,record:artifact.digest});throw new ConnectorError('SOURCE_CREDENTIAL','派生件含有 Hub 凭据回显，原件身份仅供管理员私审');}
           artifacts.push({ name: derived.name, artifact });
           // A derived artifact stored retain_only (the scanner flagged what the projection made) gives no content.
           const kept = artifact.body.read_tier === RETAIN_ONLY;
@@ -707,8 +740,15 @@ export class ReadEngine {
       } catch(error) {absent=undefined;failure=asConnectorError(error,'PROJECTION_FAILED');}
     }
 
+    const disclosable=echoedArtifacts.size===0 && ![...responses.values()].some(state=>state.artifact?.body.read_tier===RETAIN_ONLY) && !artifacts.some(entry=>entry.artifact.body.read_tier===RETAIN_ONLY);
+    // Interpreting a held envelope can itself produce an error containing its text. That text belongs only in
+    // the protected original, never in the manifest, diagnostic message or a public protocol error.
+    if(failure && !disclosable && (failure.code!=='SOURCE_CREDENTIAL' || echoedArtifacts.size>0)) {
+      failure=new ConnectorError(failure.code,`${CONNECTOR_ERRORS[failure.code]}；原件按保留档位处理，请管理员核对受理与读取档位后重读`,{layer:failure.layer,cause:failure,detail:{...(typeof failure.detail.retry_at==='string'?{retry_at:failure.detail.retry_at,attempts:failure.detail.attempts}:{})}});
+    }
+
     entries.sort((a, b) => a.round - b.round || order.indexOf(a.key) - order.indexOf(b.key) || Number(a.after_login) - Number(b.after_login));
-    const examined = [...responses.values()].filter((state) => state.view.ok || absent?.responses?.some(key=>responses.get(key)===state)).length + [...nested.values()].filter(state=>state.view.ok).length;
+    const examined = [...responses.keys()].filter(key=>covered(key) || absent?.responses?.includes(key)).length + [...nested.values()].filter(state=>state.view.ok).length;
     const total = order.length + nestedOrder.length;
     const incompleteNested=[...nested].filter(([,state])=>!state.view.ok || state.view.coverage?.complete===false).map(([external])=>external);
     if(incompleteNested.length && !note)note=`嵌套来源尚未完整：${incompleteNested.slice(0,10).join('、')}；恢复失败来源后重读本对象，再确认完整范围`;
@@ -784,7 +824,9 @@ export class ReadEngine {
     });
     if (failure !== null || digest === null) {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
-      return { ok: false, external: subject.id, code: final.code, reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
+      const refusedRedirect=final.code==='SOURCE_REDIRECT_REFUSED'?[...responses].findLast(([key,state])=>state.view.error?.code==='SOURCE_REDIRECT_REFUSED' && !covered(key)):undefined;
+      const redirect=refusedRedirect?{status:refusedRedirect[1].view.status!,location:refusedRedirect[1].view.location??null,observed_at:this.#o.now().toISOString(),...(refusedRedirect[1].view.location_redacted?{location_redacted:true as const}:{})}:undefined;
+      return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
     return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
   }
@@ -930,6 +972,15 @@ export class ReadEngine {
     return this.#o.redactor.text(`${error.message}${detail ? `；${detail}` : ''}`);
   }
 
+  #location(exchange:HttpExchange):Pick<ReadResponse,'location'|'location_redacted'> {
+    const location=exchange.location;
+    if(location===undefined)return {};
+    let credentials=false;
+    try {const url=new URL(location,exchange.url);credentials=url.username!=='' || url.password!=='';} catch {credentials=true;}
+    if(location.length>4096 || credentials || this.#o.redactor.text(location)!==location || scanForCredentials(Buffer.from(location)).findings.length)return {location_redacted:true};
+    return {location};
+  }
+
   #view(route: string, path: string, query: Record<string, string>, exchange: HttpExchange & { json?: unknown; text?: string }, error: ConnectorError | null): ReadResponse {
     const view: ReadResponse = {
       ok: error === null,
@@ -941,6 +992,7 @@ export class ReadEngine {
       size: exchange.bytes.byteLength,
       sha256: exchange.sha256,
       etag: exchange.etag,
+      ...this.#location(exchange),
       error: error === null ? null : { code: error.code, message: this.#o.redactor.text(error.message) },
     };
     const kind = exchange.route.response;

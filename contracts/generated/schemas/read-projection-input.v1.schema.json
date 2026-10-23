@@ -129,6 +129,15 @@
               "null"
             ]
           },
+          "location": {
+            "description": "Observed Location, only when safe to disclose; a redirect is followed only by a separately planned request",
+            "type": "string",
+            "maxLength": 4096
+          },
+          "location_redacted": {
+            "type": "boolean",
+            "const": true
+          },
           "json": {
             "description": "the parsed answer of a json route"
           },

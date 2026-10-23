@@ -318,8 +318,8 @@ test('a reader without the right pack is refused; ambiguity, disabled resources 
   w.k.packs.set(await writePack(w.k.packRoot, { id: 'agile-test', version: '1.3.0', system: { ...agileSystem(), routes: [] } }));
   await assert.rejects(w.k.connectors.admin.updateResource(w.k.admin, w.resources.agile.id, { system_pack: 'agile-test@1.3.0' }), (e: unknown) => (e as { code?: string }).code === 'PROFILE_INVALID');
   assert.equal(await w.k.connectors.reader.accepts('agile:tree:7714'), false);
-  // Two enabled resources for one type.
-  const second = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'test', origins: { 'manual-store': w.dav.origin } });
+  // One enabled resource per type and environment; routing across two environments is still ambiguous.
+  const second = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'production', origins: { 'manual-store': w.dav.origin } });
   assert.equal(await w.k.connectors.reader.accepts('manual:file:spec/a.md'), true);
   failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /2 个启用的资源/);
   await w.k.connectors.admin.disable(w.k.admin, second.id);
@@ -509,6 +509,11 @@ test('an answer echoing the credential the Hub sent is kept retain_only; neither
     const sha = sha256Hex(bytes);
     assert.ok((await w.k.records.artifacts.records(sha)).every((record) => record.body.read_tier === 'retain_only'));
     assert.equal((await w.k.records.artifacts.text(w.k.user, sha))?.readable, false);
+  }
+  const manifests=await w.k.records.store.list<ReadManifest>({kind:'action',limit:100});
+  for(const read of manifests.items.filter(record=>record.schema==='read-manifest@1'))for(const request of read.body.requests){
+    if(request.artifact!==null){const artifact=await w.k.records.store.get<SourceArtifact['body']>(request.artifact);assert.ok(!artifact || !holders.some(bytes=>sha256Hex(bytes)===artifact.body.sha256),'echo original record identities are private');}
+    assert.ok(!holders.some(bytes=>sha256Hex(bytes)===request.sha256),'echo original digests are private');
   }
   assert.ok(w.k.log.some((event) => event.event === 'secret_echoed'));
   assert.ok(!(await allRecordsText(w)).includes(token), 'no record carries the token');

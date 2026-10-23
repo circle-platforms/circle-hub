@@ -165,7 +165,8 @@ export async function bindInputs(
     const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
     if (!read.ok) {
       if (read.inputError !== undefined) {
-        schemaError(path, read.inputError.message, read.inputError.fix);
+        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
+        else schemaError(path, read.inputError.message, read.inputError.fix);
         notes.push(`${path}: ${read.reason}`);
         return null;
       }

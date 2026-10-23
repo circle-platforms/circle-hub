@@ -65,6 +65,8 @@ export interface HttpRequest {
 }
 
 export interface HttpExchange {
+  /** Kept inside the connector until its safe observation is built. */
+  location?:string;
   route: RouteDeclaration;
   method: HttpMethod;
   path: string;
@@ -222,6 +224,7 @@ class Limiter {
 }
 
 interface RawAnswer {
+  location?:string;
   retryAfterMs?:number;
   status: number;
   mediaType: string;
@@ -345,6 +348,7 @@ export class HttpSource {
       query,
       body: request.body,
       url: url.href,
+      ...(raw.location===undefined?{}:{location:raw.location}),
       status: raw.status,
       mediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
       etag: raw.etag,
@@ -508,6 +512,7 @@ export class HttpSource {
       const etag = response.headers.get('etag');
       return {
         retryAfterMs:retryAfterMs(response.headers.get('retry-after'),this.#now()),
+        ...(response.headers.get('location')===null?{}:{location:response.headers.get('location')!}),
         status: response.status,
         mediaType: contentType !== null && MEDIA_TYPE.test(contentType.trim()) ? contentType.trim() : '',
         etag: etag !== null && ETAG.test(etag) ? etag : null,

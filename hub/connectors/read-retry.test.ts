@@ -66,3 +66,8 @@ test('the external reader preserves the retry code and next eligible time',async
   const w=await world(t,()=>new Response('{}',{status:503}));const result=await w.external();
   assert.equal(result.ok,false);if(result.ok)return;assert.equal(result.retry?.code,'SOURCE_HTTP_STATUS');assert.equal(result.retry?.attempts,3);assert.ok(Date.parse(result.retry!.at)>w.now());
 });
+test('a nontransient malformed response is a determined read failure with an administrator action',async t=>{
+ const w=await world(t,()=>new Response('{bad',{headers:{'content-type':'application/json'}}));
+ const result=await w.external();assert.ok(!result.ok && result.inputError?.code==='SOURCE_READ_FAILED');assert.equal(w.calls(),1);
+ if(!result.ok)assert.match(result.inputError!.fix,/资源管理员/);
+});

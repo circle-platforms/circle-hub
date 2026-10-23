@@ -254,7 +254,7 @@ Personal credentials (whose reads are visible to the reader only and never enter
 
 ## Errors
 
-Internal codes (`CONNECTOR_ERRORS`), never protocol codes; each read error carries its D01 R[5] layer:
+Internal adapter codes (`CONNECTOR_ERRORS`) retain their D01 R[5] layer. Authorized, determined read outcomes map to registered protocol codes below; private causes remain separate:
 
 | Layer | Codes |
 | --- | --- |
@@ -602,3 +602,11 @@ ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实�
 缺席观察（hub-read-absence）：HTTP 404/410 的原件仍先保存；仅当它是本次对象的原件请求，才形成 SOURCE_ABSENT。系统包可在读取声明的 absent_codes 中列出表示整份对象缺席的投影错误码；代码不在声明里则仍是投影错误。ReadProjectionOutput.absent 也会核对系统、对象和应答键。支持应答必须本次已存且可读，401/403、凭据保留、超时或其他失败不能作缺席根据。Hub 以自己的读取时刻写规范 JSON 观察为 content，生成血缘指向支持应答，ReadOutcome/ExternalRead 同时带 absent；这类观察不进入嵌套缓存。必填输入直接答 SOURCE_ABSENT，期望来源则绑定该可读观察，供声明 reads 的检查读取。缺席不等同于对被测行为的通过或驳回。
 
 资源启用的唯一性：同一环境类别内，每个外部类型至多一个启用资源，跨系统包也一样。新增、修改和启用在记录库业务锁下核对当前已提交的配置，与配置授权在同一事务里写入；同一连接池的其他配置调用在取数据库连接前排队。默认配置调用的行为保留，可选事务只用于这条核对。绑定包损坏或丢失时，缺少可核验的读取类型，拒绝新的冲突核对并说明恢复原包或停用旧资源的动作。读取的绑定错误进入私有诊断与管理员资源列表，普通读者列表不带这些原因。
+
+分页与重定向：路由的 pagination.max_pages 约束该路由在一次对象读取中的显式分页请求数，仍受整份 max_requests、字节预算和规划轮数约束，超限拒绝，不能截断后答完成。重定向由 HttpSource 以 manual 接收并先存应答，安全的 Location 作为观察写入读清单和规划输入。只有源路由声明 redirects.same_origin、未超过 max_hops，且下一条规划请求以 against 指向该应答、href 逐字采用 Location，才跟随；同源、角色根路径、目标路由、参数和凭据规则逐项重验，不自动复用请求或跟随网络跳转。已跟随到成功应答的跳转计入完整覆盖。未声明、越源或超限的跳转给 SOURCE_REDIRECT_REFUSED，保留状态、可公开的 Location 和管理员核对动作；含凭据或不可安全公开的值不回显、不另存其摘要。
+
+分页或整次读取预算用完，对有权读者由内部 READ_LIMIT 映射为 SOURCE_READ_LIMIT，说明页数、请求数或字节预算和管理员调整声明／缩小范围后重读的动作。未取得读权的调用仍不带这些诊断。
+
+确定的非重试故障（来源状态／格式、规划、投影、存储、锁定修订）向已验证读取身份的调用者映射 SOURCE_READ_FAILED，给安全的核心错误说明与对应管理员／系统包负责人的修复动作；不回显仅管理员可见的附加诊断。无权、身份未定、来源拒绝凭据与凭据保留不借这个码透露内容；有界传输重试仍用 SOURCE_RETRYABLE，预算仍用 SOURCE_READ_LIMIT。旧内部原因前缀在管理员记录中保留，便于逐层核对。
+
+保留原件的非重试故障不升为公开诊断。真实回显还隐藏原始 sha256、源记录身份和 ETag：函数视图与读清单不带这些值，派生来源不把回显原件的引用带出去，原件记录号仅写管理员事件。派生出件含实际 Hub 凭据回显或试图原样引用该原件时整次读取拒绝；普通来源的凭据受理与现有作用域规则保留。

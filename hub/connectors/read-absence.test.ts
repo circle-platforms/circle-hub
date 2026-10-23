@@ -9,10 +9,10 @@ import {writePack} from './testing/packs.ts';
 import {ReadManifest} from '../../contracts/src/resources.ts';
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
-async function world(t:{after:(fn:()=>Promise<void>)=>void},status=404,project?:unknown){
+async function world(t:{after:(fn:()=>Promise<void>)=>void},status=404,project?:unknown,body='{"data":[]}',envelope=false){
  let calls=0;
- const kit=await openConnectorKit(postgres,{fetch:async()=>{calls++;return new Response('{"data":[]}',{status,headers:{'content-type':'application/json'}});},...(project?{callFunction:async()=>project}:{})});t.after(()=>kit.close());
- const handle=await writePack(kit.packRoot,{id:'synthetic-absence',system:{schema:'system@1',title:'合成来源',roles:[{name:'source'}],auth:{kind:'none'},routes:[{id:'one',role:'source',method:'GET',path:'/one',response:'json',max_bytes:1024,read:true}],reads:[{name:'one',external:'fixture:item',request:{route:'one'},...(project?{project:{module:'functions/absent.ts'},absent_codes:['fixture.absent']}:{})}]}});if(project)await writeFile(join(handle.directory,'functions/absent.ts'),'export default function(){return {error:{code:"fixture.absent",message:"absent"}}}');kit.packs.set(handle);
+ const kit=await openConnectorKit(postgres,{fetch:async()=>{calls++;return new Response(body,{status,headers:{'content-type':'application/json'}});},...(project?{callFunction:async()=>project}:{})});t.after(()=>kit.close());
+ const handle=await writePack(kit.packRoot,{id:'synthetic-absence',system:{schema:'system@1',title:'合成来源',roles:[{name:'source'}],auth:{kind:'none'},...(envelope?{envelope:{code:'/code',ok:[1000],expired:[],message:'/msg'}}:{}),routes:[{id:'one',role:'source',method:'GET',path:'/one',response:'json',max_bytes:1024,read:true,...(envelope?{envelope:true}:{})}],reads:[{name:'one',external:'fixture:item',request:{route:'one'},...(project?{project:{module:'functions/absent.ts'},absent_codes:['fixture.absent']}:{})}]}});if(project)await writeFile(join(handle.directory,'functions/absent.ts'),'export default function(){return {error:{code:"fixture.absent",message:"absent"}}}');kit.packs.set(handle);
  const resource=await kit.connectors.admin.addResource(kit.admin,{system_pack:handle.id,name:'合成来源',environment:'test',origins:{source:'http://192.0.2.1'}});
  return {kit,calls:()=>calls,read:()=>kit.connectors.executeRead(resource.id,'one',{id:'sample'},{principal:kit.user,purpose:'synthetic absence'}),external:()=>kit.connectors.reader.read('fixture:item:sample',{principal:kit.user,purpose:'synthetic absence'})};
 }
@@ -39,4 +39,19 @@ test('structured absence verifies its identity and response keys before binding'
  for(const changed of [{...absent,object:'fixture:item:other'},{...absent,system:'another'},{...absent,responses:['not-read']}]){
   const w=await world(t,200,{artifacts:[],absent:changed});const result=await w.read();assert.ok(!result.ok && result.code==='PROJECTION_FAILED',JSON.stringify(result));
  }
+});
+test('a known projection failure has a registered public correction, while an invalid reader gets no details',async t=>{
+ const w=await world(t,200,{error:{code:'fixture.invalid',message:'合成格式错误'}});
+ const answer=await w.external();assert.ok(!answer.ok && answer.inputError?.code==='SOURCE_READ_FAILED');if(!answer.ok){assert.match(answer.inputError!.message,/投影函数失败/);assert.doesNotMatch(answer.inputError!.message,/fixture.invalid|合成格式错误/);assert.match(answer.inputError!.fix,/系统包负责人/);}
+ await w.kit.records.principals.setDisabled(w.kit.admin,w.kit.user.id,true);
+ const hidden=await w.external();assert.ok(!hidden.ok && hidden.inputError===undefined);
+});
+
+test('a retained envelope never discloses its message through public or persisted failure diagnostics',async t=>{
+ const secret='SyntheticEnvelopePassword42';
+ const body=JSON.stringify({code:7,password:secret,msg:'password='+secret});
+ const w=await world(t,200,undefined,body,true);
+ const result=await w.external();assert.ok(!result.ok && result.inputError===undefined);assert.ok(!JSON.stringify(result).includes(secret));
+ for(const record of (await w.kit.records.store.list({kind:'action',limit:100})).items)assert.ok(!JSON.stringify(record.body).includes(secret));
+ assert.ok(!JSON.stringify(w.kit.log).includes(secret));
 });

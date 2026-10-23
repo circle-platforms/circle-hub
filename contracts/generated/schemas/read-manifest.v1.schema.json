@@ -243,6 +243,14 @@
               }
             ]
           },
+          "location": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "location_redacted": {
+            "type": "boolean",
+            "const": true
+          },
           "artifact": {
             "anyOf": [
               {

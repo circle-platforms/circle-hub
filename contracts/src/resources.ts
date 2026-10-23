@@ -724,6 +724,8 @@ export const ReadResponse = z.strictObject({
   size: z.number().int().nonnegative().nullable(),
   sha256: Sha256.nullable().describe('digest of the stored response body'),
   etag: z.string().nullable(),
+  location:z.string().max(4096).optional().describe('Observed Location, only when safe to disclose; a redirect is followed only by a separately planned request'),
+  location_redacted:z.literal(true).optional(),
   json: z.unknown().optional().describe('the parsed answer of a json route'),
   text: z.string().optional().describe('the decoded answer of a text, xml or html route (or of a json route that did not parse)'),
   model: z.unknown().optional().describe('the model of the core parser the route names'),
@@ -851,6 +853,8 @@ export const ReadRequestEntry = z.strictObject({
   size: z.number().int().nonnegative().nullable(),
   media_type: z.string().nullable(),
   etag: z.string().max(300).nullable(),
+  location:z.string().max(4096).optional(),
+  location_redacted:z.literal(true).optional(),
   artifact: Sha256.nullable().describe('digest of the source_artifact record of the response'),
   after_login: z.boolean().describe('sent again once after a login, because the first answer said the login had expired'),
 });

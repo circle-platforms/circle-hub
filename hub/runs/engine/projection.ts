@@ -193,6 +193,9 @@ export async function bindExpected(
       }
       const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源',adminNote:detail=>ctx.log({traceId,run:runId,what:`expected source ${wanted.external}`,detail}), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
       if (!read.ok) {
+        if(read.inputError?.code==='SOURCE_READ_FAILED'){out.warnings.push({code:'SOURCE_READ_FAILED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
+        if(read.inputError?.code==='SOURCE_READ_LIMIT'){out.warnings.push({code:'SOURCE_READ_LIMIT',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
+        if(read.redirect && read.inputError) {out.warnings.push({code:'SOURCE_REDIRECT_REFUSED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.retry) {
           const message=`缺少期望来源 ${wanted.external} 的读取结果；下一次时间 ${read.retry.at}，按原对象重读后重新开始运行`;
           out.warnings.push({code:'SOURCE_RETRYABLE',message});
