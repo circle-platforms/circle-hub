@@ -94,3 +94,11 @@ test('R09 a risk disposition is visible and does not pretend the original effect
   assert.equal(state.outcome,'unknown');assert.ok(state.marks?.includes('disposed'));assert.equal(state.disposition,'mark_failed');assert.equal(state.decided_by,c.admin.id);assert.ok(state.missing_fact && state.next_action);
   const decision=(await c.service.journal.events(first.job)).find(e=>e.body.detail.risk_confirmed===true)!;assert.equal(decision.body.detail.possible_duplicate,undefined);
 });
+
+test('R10 the booking must cover submission plus the entire observation window',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'synthetic short booking'});
+  await c.leases.acquire({keys:c.executor.definition.resources,prefix:'synthetic/',ttlSeconds:15,maxTtlSeconds:3600,holder:{user:c.owner.id,run:c.run}});
+  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/租约到期/);
+  assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+});

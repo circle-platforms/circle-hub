@@ -135,7 +135,7 @@ export class DispatchService {
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
     if (!source?.bytes) throw new Error('核验字节不可读取，未提交');
-    const initial = await this.holders(input.ancestors, input.user, d.resources, d.max_run_ms);
+    const initial = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms+d.max_run_ms);
     const secret = await this.secret(executor);
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if (JSON.stringify(binding).includes(secret)) throw new Error('绑定元数据不能包含执行器密钥');
@@ -159,7 +159,7 @@ export class DispatchService {
       await this.registry.admin(by);
       const ownerNow = await this.options.records.principals.get(input.user);
       if (!ownerNow || ownerNow.disabled) throw new Error('发起用户已经不可用；未提交');
-      const fresh = await this.holders(input.ancestors, input.user, d.resources, d.max_run_ms);
+      const fresh = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms+d.max_run_ms);
       if (!this.sameFences(initial, fresh)) throw new Error('派发前围栏已变；未提交，请重新证明基线');
       const currentProof = await verifyInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
       if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
@@ -534,8 +534,9 @@ export class DispatchService {
     const deadline = Date.parse(String(intent.body.detail.not_after)) + d.max_run_ms; let drift = false;
     for (;;) {
       const response = await this.retryRead(binding, client, 'status', context, deadline);
-      if (!drift && !this.sameFences(fences, await this.options.leases.holderSnapshot(binding.resources))) {
-        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'unknown', { drift: true, note: '派发后围栏改变，不能声称保持同一租约；继续只读状态' });
+      const observedHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
+      if (!drift && !this.sameFences(fences, observedHolders)) {
+        drift = true; await this.journal.append(binding, 'fencing', 'validate', 'unknown', { drift: true,expired:observedHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
       }
       const mapping = mapped(d.status.map, at(response.value, d.status.pointer));
       if (!mapping || mapping.effect_outcome === 'unknown' || mapping.action_result === 'unknown' || mapping.acceptance === 'not_accepted' || mapping.effect_outcome === 'read_back_mismatch' || mapping.effect_outcome === 'target_rejected' || mapping.effect_outcome === 'not_dispatched' || mapping.effect_outcome === 'proven_not_executed') { await this.unknown(binding, '目标状态不能作为可信终态（未映射或缺拒绝阶段、未执行证明）；下一步管理员对账', [response.source], { reported_state: mapping ?? null }); return this.status(by, binding.job); }
@@ -551,8 +552,9 @@ export class DispatchService {
       await this.unknown(binding, '结果身份或摘要不符，整份不采信；请管理员对账', [response.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
     }
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
-    if (!drift && !this.sameFences(fences, await this.options.leases.holderSnapshot(binding.resources))) {
-      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'unknown', { drift: true, note: '结果读取期间围栏改变，不能声称保持同一租约' });
+    const finalHolders=!drift?await this.options.leases.holderSnapshot(binding.resources):[];
+    if (!drift && !this.sameFences(fences, finalHolders)) {
+      drift = true; await this.journal.append(binding, 'fencing', 'validate', 'unknown', { drift: true,expired:finalHolders.some(row=>Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
     }
     await stopHeartbeat();
     const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);
