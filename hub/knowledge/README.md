@@ -875,3 +875,7 @@ The start answer lists the product-wide digest separately. The knowledge overvie
 always has an “不分版本” row per readable product, with the current digest and source
 count (including source parts); a missing pointer displays “—”. No extra read right
 is implied by either display.
+
+Build differences remain differences of the two build roots alone. Product-wide
+paths never become added/removed paths or regression changes merely because the
+product-wide scope is readable alongside those roots.
