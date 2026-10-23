@@ -9,6 +9,11 @@ import { libpqAvailable, LIBPQ_MISSING, removeDir, tempDir } from './test-suppor
 
 const libpq = await libpqAvailable();
 
+// Complete asynchronous availability checks before registering any tests.
+const security = '/usr/bin/security';
+const hasSecurity = await access(security).then(() => true, () => false);
+const keyLossSkip = !libpq ? LIBPQ_MISSING : !hasSecurity ? 'skipped: /usr/bin/security is only on macOS' : false;
+
 test('rehearsal: init, write, back up, destroy, restore, compare in a throwaway root that is removed', { skip: libpq ? false : LIBPQ_MISSING }, async () => {
   const parent = await tempDir();
   try {
@@ -74,9 +79,6 @@ test('rehearsal can keep its root for inspection, extracted pack trees still rea
   }
 });
 
-const security = '/usr/bin/security';
-const hasSecurity = await access(security).then(() => true, () => false);
-const keyLossSkip = !libpq ? LIBPQ_MISSING : !hasSecurity ? 'skipped: /usr/bin/security is only on macOS' : false;
 
 test('rehearsal loses both isolated keychain items, scans backups and always removes the keychain even with keep', { skip: keyLossSkip }, async () => {
   const parent = await tempDir(); const calls: { args: readonly string[]; input: string }[] = [];

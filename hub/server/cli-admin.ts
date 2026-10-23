@@ -690,8 +690,10 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
       entries[mapping.entry] = value; grouped.set(mapping.resource, entries);
     }
     if (values['dry-run']) return 0;
-    for (const [resource, entries] of grouped) await decided(() => hub.connectors.admin.setCredentials(admin, resource, entries));
-    for (const { resource, entry, rule } of mappings) session.out(`已设置资源 ${resource} 的凭据 ${entry}：${rule === 'sha512_base64' ? '按系统包的规则只存它的 Base64(SHA-512) 摘要，不存原值' : '按系统包的规则原样存进密钥库'}；密钥库里这个资源的登录状态已清除`);
+    for (const [resource, entries] of grouped) {
+      await decided(() => hub.connectors.admin.setCredentials(admin, resource, entries));
+      for (const { entry, rule } of mappings.filter((mapping) => mapping.resource === resource)) session.out(`已设置资源 ${resource} 的凭据 ${entry}：${rule === 'sha512_base64' ? '按系统包的规则只存它的 Base64(SHA-512) 摘要，不存原值' : '按系统包的规则原样存进密钥库'}；密钥库里这个资源的登录状态已清除`);
+    }
     return 0;
   }
   if (sub === 'set') {

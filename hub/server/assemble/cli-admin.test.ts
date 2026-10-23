@@ -30,6 +30,9 @@ import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
 
+// Await availability before registering suites, including when only the recovery tests are selected.
+const temporaryKeychainAvailable = process.platform === 'darwin' && await access('/usr/bin/security').then(() => true, () => false);
+
 const DOCUMENT = 'd7f3k9';
 const PASSWORD = 'Synthetic#Pass42';
 const WRONG_PASSWORD = 'Wrong#Pass00';
@@ -1340,6 +1343,16 @@ describe('secret import', () => {
     assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.username`)), basic);
   });
 
+  test('a later resource refusal discloses the earlier completed write without exposing any value', async () => {
+    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+    const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
+    const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
+    const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`]);
+    assert.equal(result.code, 1); assert.ok(result.text.includes(`已设置资源 ${first} 的凭据 username`));
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${first}.username`)), 'reader');
+    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.password`)), null);
+  });
+
   test('missing and commented keys write nothing, malformed files disclose no values or paths', async () => {
     const admin = await setup(); const id = await importResource(admin);
     const value = 'SyntheticMalformedValue58'; secrets.add(value); secrets.add(value.slice(0, 12));
@@ -1383,7 +1396,6 @@ describe('secret import', () => {
 });
 
 
-const temporaryKeychainAvailable = process.platform === 'darwin' && await access('/usr/bin/security').then(() => true, () => false);
 describe('reimport after key loss', () => {
   for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && !temporaryKeychainAvailable ? 'skipped: /usr/bin/security is unavailable (requires macOS)' : false }, async () => {
     const directory = await mkdtemp(join(harness.scratch, 'key-loss-'));
@@ -1416,7 +1428,9 @@ describe('reimport after key loss', () => {
       });
       await read(); assert.equal(agile.logins, loginsBefore + 1);
       if (keychain) {
-        const bytes = await master.read(); secrets.add(Buffer.from(bytes).toString('hex'));
+        const bytes = await master.read(); secrets.add(Buffer.from(bytes).toString('hex')); bytes.fill(0);
+        const operatorBytes = await operator.read();
+        secrets.add(Buffer.from(operatorBytes).toString('hex')); secrets.add(Buffer.from(operatorBytes).toString('base64url')); operatorBytes.fill(0);
         await master.delete(); await operator.delete();
         const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
         assert.equal(refused.code, 1); assert.match(refused.text, /operator-token reissue/);

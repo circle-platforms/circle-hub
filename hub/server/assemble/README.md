@@ -129,7 +129,8 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   path or line content. Each key is reported only as found/absent and length; a missing or empty key prevents every write.
   Basic combines the two named values into the whole authorization header (a colon in the username is refused).
   Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
-  credentials are stored. Neither raw values, fragments nor digests of values appear in output.
+  credentials are stored. Resources are independent writes: each completed resource is reported immediately, so a later
+  resource failure cannot hide an earlier write. Neither raw values, fragments nor digests of values appear in output.
 
 - **Irrecoverable key loss**: stop the service, preserve the old data-root `vault/` by moving it to
   `set-aside/<time>-key-loss/`, run `circle-hub key init`, reissue the operator token with `circle-hub operator-token reissue`
