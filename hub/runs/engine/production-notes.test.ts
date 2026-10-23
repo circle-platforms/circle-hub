@@ -106,3 +106,12 @@ test('explicit projection note data preserves all declared metadata',{skip},asyn
   const id=await pack({override:{data:metadata}});const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
   assert.equal(detail.answer.call_result,'ok');assert.deepEqual(noteOf(detail.production!.result)!.statement.data,metadata);
 });
+
+test('projection facts disclose their advisory cross-item scope instead of pretending to satisfy requirements',{skip},async()=>{
+  const id=await pack();const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{reference:source}}},h.call());
+  assert.equal(detail.answer.call_result,'ok');const result=detail.production!.result;const note=noteOf(result)!;
+  assert.equal(note.requirement,undefined);
+  for(const item of Object.values(result.partitions).flat())for(const requirement of item.requirements)assert.ok(!requirement.claims.some(c=>c.pointer==='/groups/0'));
+  const text=toolText('start_run',{...detail.answer,trace:result.trace},{production:result});
+  assert.match(text,/投影说明（提示，不参与要求项）/);
+});

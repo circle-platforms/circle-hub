@@ -661,8 +661,9 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
       grounds.push(resolved.value.reference);
       roles.push(resolved.value.role);
     }
+    // Projection notes are advisory cross-item facts, never evidence satisfying a requirement.
     evaluation.result.cross_item.push({...factClaim({
-      outcome:{verdict:'support',statement:note.data.message,grounds,tier:'advisory',...(note.data.data === undefined ? {} : {data:note.data.data})},
+      outcome:{verdict:'support',statement:note.data.message,grounds,...(note.data.data === undefined ? {} : {data:note.data.data})},
       rule:`${workflow.pack.id}.projection@${workflow.pack.version}`,judges:strongestRole(roles) ?? 'subject',
       overClaims:false,discrimination:false,bound:[runDigest, workflow.pack.digest, ...(run.root === undefined ? [] : [run.root]), ...grounds.flatMap(ref => {const digest = rootDigest(ref); return digest === null ? [] : [digest];})],
     }),pointer:at});

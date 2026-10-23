@@ -391,3 +391,5 @@ read; results, run records and production results over the record limit; queries
 ### 生产投影的确定说明
 
 只有显式标记 nature=fact、verdict=support 的组会升格，且每条 grounds 都按本次运行的读取范围核验。说明对象只接收 nature、verdict、message、grounds 和可选 data；considered、details、view 等附加元数据必须显式放在 data 内，不静默丢弃额外键。message 和 grounds 分别进入主张文字和根据，data 原样进入 statement.data。pointer 保留 /groups/<序号> 以回读冻结输出；投影输出不合格的拒绝不伪造调用参数 path，而在消息和包维护人的修正动作中说明位置与规则。
+
+投影说明统一是 cross_item 的提示用途事实，没有 requirement，不参与要求项满足或分区计数。Claim 不承载检查 tier，构造时也不传这个无效字段；回答按上述结构化位置和函数凭据标出“投影说明（提示，不参与要求项）”，不把它和条目检查事实混为同一用途，也不改变根据等级。

@@ -819,7 +819,9 @@ function startText(v: StartOut, context: TextContext): string {
         head: [`跨条目主张（不计入分区，${full.cross_item.length} 条）：`],
         entries: full.cross_item.map((claim, k) => {
           const c = clip(k);
-          return c.entry(`- ${claimText(claim, c, CLIP.field)}`);
+          const projectionNote=claim.requirement===undefined && claim.pointer!==undefined && /^\/groups\/\d+$/.test(claim.pointer) && claim.qualifier.nature==='fact' && claim.statement.verdict==='support' && claim.warrant.producer==='function';
+          const scope=projectionNote?`投影说明（${labelOf('check_tier','advisory')}，不参与要求项）：`:'';
+          return c.entry(`- ${scope}${claimText(claim, c, CLIP.field)}`);
         }),
         unit: '跨条目主张',
         measure: '条',
