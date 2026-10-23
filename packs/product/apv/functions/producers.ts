@@ -55,7 +55,9 @@ const withSlot = (fragment: FragmentRef, slot: string): FragmentRef & { slot: st
 /**
  * Manuals of the line: signature paragraphs are definitions (at /commands only when the build's command tree has the
  * command), the text under a command behaviours, every other block hangs at its section node under /manual/<slot>. The
- * `tree` slot (the build's command tree) decides existence and the drift list; without it anchors are placed unchecked.
+ * `tree` slot (the build's command tree) decides existence and the drift list. Two modes: a direct call without a
+ * catalog places by the literal, unchecked; a production with no tree slot or a non-xml@1 tree keeps every signature
+ * at its section node, warns with the missing fact and the next action, and lists no drift.
  */
 export function manual(input: unknown): ProducerOutput {
   const entries: ProducedEntry[] = [];

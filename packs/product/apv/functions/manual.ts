@@ -1,7 +1,9 @@
 // Producer of manual entries, from either form of the CLI manual:
 // - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
 //   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
-//   - a signature hangs at its command node only when the command exists in the build's command tree (`/commands` nodes
+//   - a signature hangs at its command node only when the command exists in the build's command tree (a DIRECT call
+//     without a catalog places by the literal, unchecked; a PRODUCTION with no tree slot or a non-xml@1 tree keeps
+//     every signature at its section node, warns with the missing fact and the next action, and lists no drift) (`/commands` nodes
 //     are built by the command-tree producer alone); without a tree the literal decides, unchecked;
 //   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists
 //     and every command of a multi-command row exists (then the row hangs at their nearest common ancestor when that
@@ -25,6 +27,9 @@ import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
 import { asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
+// The fragment parser key of this call's input model (K1: a document model with section paths; the adoc producer
+// passes its own key so the placement code stays unchanged).
+const parserOf = (options: ManualOptions): string => options.fragmentParser ?? MARKDOWN;
 const JSON_PARSER = 'json@1';
 const CATALOG_SCHEMA = 'ist.manual-command-catalog';
 const COMMANDS = 'commands';
@@ -706,7 +711,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     // command is missing stays a definition entry at its section node.
     const placed = anchorPathOf(anchor, catalog, options) ?? sectionEntryPath(index);
     headingAnchors.set(index, { anchor, path: placed });
-    const entry = signatureEntry(anchor, placed, { parser: MARKDOWN, selector: section.selector as string });
+    const sectionCite = options.sectionSelector === undefined ? (section.selector as string) : options.sectionSelector(sectionSegments(index) ?? []);
+    const entry = signatureEntry(anchor, placed, { parser: parserOf(options), selector: sectionCite });
     noteSignature(entry);
     entry.applicability = toApplicability(conditionsOf(section.title));
     entries.push(entry);
@@ -875,7 +881,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
-    const fragment: FragmentRef = { parser: MARKDOWN, selector: block.selector };
+    const fragment: FragmentRef = { parser: parserOf(options), selector: block.selector };
     const anchor = block.kind === 'paragraph' ? parseAnchor(text, heads) : null;
     if (anchor !== null) {
       // A signature whose command is not in the build's tree is still a signature: it hangs at its section node, and
@@ -922,7 +928,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             continue;
           }
           signatureRows++;
-          const rowFragment: FragmentRef = { parser: MARKDOWN, selector: block.selector, range: ranges[row.line] };
+          const rowFragment: FragmentRef = { parser: parserOf(options), selector: block.selector, range: ranges[row.line] };
           const rowText = table.lines[row.line].trimEnd();
           if (found.length === 1) {
             const { cell, anchor: one } = found[0];
@@ -977,7 +983,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
                   statement: rowText,
                   block: 'table',
                   section: block.section,
-                  fragments: [{ parser: MARKDOWN, selector: block.selector, range: ranges[line] } as FragmentRef],
+                  fragments: [{ parser: parserOf(options), selector: block.selector, range: ranges[line] } as FragmentRef],
                   ...(current !== null ? { words: current.words } : {}),
                 }),
               );

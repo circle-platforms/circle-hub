@@ -151,7 +151,7 @@ Producers (K02, K04, C07)
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
-  command-tree producer alone; without a tree (a direct call) the literal decides, unchecked. Head groups hold
+  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (a warning names the missing fact and the next action, and no drift list is computed). Head groups hold
   alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
   leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
   missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
@@ -349,10 +349,10 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
-  section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to
-  the adoc task (K4). K4's page says the placement code applies unchanged with text@1 l/<a>-<b> fragments, so the
-  split must take the fragment parser key and the section-selector decoding from the input model there (markdown@1
-  stays the default here); this note points the integrator at that item.
+  section paths alone, and that is what the options give: `fragmentParser` names the input model's parser key and
+  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). The adoc producer
+  passes its own pair, so K4's placement reuse needs no change here; only the markdown@1 h/ decoding stays the
+  default inside this producer.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
