@@ -11,11 +11,12 @@
 // units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import {MissingFact,UnknownExit,recoveryCondition} from './recovery.ts';
 import {isIP} from 'node:net';
 import {X509Certificate} from 'node:crypto';
 import { SecretReference, VariableUse, referencesIn, resolve as resolveExecutorReferences, VariableInputError } from './variables.ts';
 import type {ProtocolCode} from '../generated/protocol.ts';
-import { AcceptanceSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
+import { AcceptanceSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
 import { ExternalObjectId } from './reference.ts';
@@ -1033,7 +1034,21 @@ export const ExecutorSource=executor.base.extend({manifest_sha256:z.union([Sha25
 });
 export type ExecutorSource=z.infer<typeof ExecutorSource>;
 
+/** Append-only B06 snapshots; early refusals have no allocated intent or request identity. */
+export const EffectRecord=z.strictObject({
+ schema:z.literal('effect@1'),job:Sha256,run:RunId.nullable(),intent_key:Sha256.nullable(),request_id:z.string().min(1).nullable(),not_after:IsoTime.nullable(),
+ action_digest:Sha256.nullable(),target_key:Sha256,covered_items:z.array(z.string().min(1)),
+ effect_class:EffectClassSchema,retry_safety:RetrySafetySchema,signing:SigningSchema,
+ content_sha256:Sha256.nullable(),before_state:z.strictObject({bound:z.boolean(),sha256:Sha256.nullable(),reference:z.string().nullable()}),
+ writing_identity:z.strictObject({credential:SecretReference.nullable(),on_behalf_of:UserId,subject:z.unknown()}),
+ audience:z.null(),outcome:EffectOutcomeSchema,marks:z.array(EffectMarkSchema),previous:Sha256.nullable(),
+ boundary:z.strictObject({clause:z.number().int().min(1).max(9),code:z.string().min(1),row:z.string().nullable()}).nullable(),
+ missing:MissingFact.optional(),exit:UnknownExit.optional(),
+}).superRefine((effect,ctx)=>{if(effect.outcome==='unknown'){if(!effect.missing)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown effect names its missing fact'});if(!effect.exit)ctx.addIssue({code:'custom',path:['exit'],message:'an unknown effect names its next action'});}}).meta(recoveryCondition('outcome',['unknown'],['missing','exit']));
+export type EffectRecord=z.infer<typeof EffectRecord>;
+
 export const schemas: Record<string, z.ZodType> = {
+  'effect@1':EffectRecord,
   'write-declaration@1':WriteDeclaration,
   'executor@1':ExecutorSource,
   'system@1': SystemProfile,

@@ -21,6 +21,7 @@ function retrySafeOutcome(value:unknown):boolean {
   return outcome==='target_rejected'||outcome==='proven_not_executed';
 }
 export interface DispatchOptions {
+  recheckChecks?:import('../ports.ts').EffectCheckReplay;
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;

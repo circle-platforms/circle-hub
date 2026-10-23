@@ -198,7 +198,10 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
   return check.interpreter ?? `${workflow.pack.id}.${check.id}@${workflow.pack.version}`;
 }
 
-export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
+export interface ReplayedChecks {outcomes:Record<string,CheckOutcome[]>;retryAttempts:Array<Record<string,unknown>>}
+export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks:ReadonlySet<string>}):Promise<ReplayedChecks>;
+export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
+export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
   const { run, workflow, submission } = input;
   const retryAttempts: Array<Record<string, unknown>> = [];
   const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
@@ -534,7 +537,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   };
 
   // ---- run every check
-  const used = workflow.checks.filter((c) => requirementsOf.has(c.id));
+  const used = workflow.checks.filter((c) => requirementsOf.has(c.id) && (input.replayChecks===undefined||input.replayChecks.has(c.id)));
   const runOutcomes = new Map<string, { own: Map<string, CheckOutcome[]>; loose: CheckOutcome[] }>();
   const itemOutcomes = new Map<string, Map<string, CheckOutcome[]>>();
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
@@ -621,6 +624,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       }
     }));
   } catch (error) { functionBatches.cancel(error); throw error; }
+
+  if(input.replayChecks!==undefined) {
+    const outcomes:Record<string,CheckOutcome[]>={};
+    for(const check of used) {
+      const whole=runOutcomes.get(check.id);
+      outcomes[check.id]=whole?[...whole.loose,...[...whole.own.values()].flat()]:[...(itemOutcomes.get(check.id)?.entries()??[])].flatMap(([item,rows])=>rows.map(row=>({...row,item:row.item??item})));
+    }
+    return {outcomes,retryAttempts};
+  }
 
   const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] => [
     ...template.checks.flatMap((cid) => {

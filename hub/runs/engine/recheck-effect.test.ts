@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {test} from 'node:test';
+import {startPostgres} from '../../testing/postgres.ts';
+import {openHarness,sandboxSkip} from './testing/harness.ts';
+import {locatePack,writePack} from './testing/packs.ts';
+import {standardDocument,toyMap} from './testing/mindmap.ts';
+import {recheckEffectChecks} from './recheck-effect.ts';
+const skip=await sandboxSkip();
+test('effect policy replay uses frozen subjects tables and scripts without storing or spending another round',{skip},async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());const dir=await mkdtemp(join(tmpdir(),'effect-replay-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const spec=locatePack();spec.id='synthetic-effect-replay';
+ const requirements=spec.files['requirements.json'] as {json:{requirements:Array<Record<string,unknown>>}};requirements.json.requirements=requirements.json.requirements.filter(r=>r.key==='overview');requirements.json.requirements[0].checks=['first','second'];
+ const checks=spec.files['checks.json'] as {json:{checks:unknown[]}};checks.json.checks=['first','second'].map(id=>({id,function:{module:'functions/'+id+'.ts'},table:'policies/checked.json',applies:'run',judges:'subject',tier:'advisory'}));
+ spec.files['policies/checked.json']={json:{tag:'frozen'}};
+ for(const id of ['first','second'])spec.files['functions/'+id+'.ts']=`export default function(input){return [{verdict:'support',tier:'advisory',statement:'${id}',grounds:[],data:{tag:input.table.tag}}]}`;
+ const loaded=await h.workflows.add(await writePack(dir,spec));h.workflows.assign(h.alice.id,spec.id);const map=await h.upload(h.alice,toyMap(standardDocument()));
+ const started=await h.service.startRun(h.alice,{pack:spec.id,inputs:{map:{reference:map}}},h.call());assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
+ const answer=await h.service.submitResult(h.alice,{run:started.run!.run,model:'synthetic-replay',items:started.run!.items.map(item=>({item:item.id,handling:'handled'}))},h.call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+ const deps={records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,sandbox:{requireOsIsolation:false}};
+ const before=(await h.service.getRun(h.alice,started.run!.run))!.submissions.length;
+ spec.version='1.1.0';spec.files['policies/checked.json']={json:{tag:'changed'}};await h.workflows.add(await writePack(dir,spec));
+ const result=await recheckEffectChecks(deps,{run:started.run!.run,submission:answer.result!.submission,checks:['first']});assert.deepEqual(Object.keys(result),['first']);assert.ok(result.first.length>0);assert.ok(result.first.every(outcome=>outcome.verdict==='support'&&outcome.data?.tag==='frozen'));
+ assert.equal((await h.service.getRun(h.alice,started.run!.run))!.submissions.length,before);assert.equal(loaded.pack.digest,(await h.workflows.byDigest(loaded.pack.digest))!.pack.digest);
+ await assert.rejects(recheckEffectChecks(deps,{run:started.run!.run,submission:answer.result!.submission,checks:['not-in-the-pack']}),/冻结|点名/);
+});
