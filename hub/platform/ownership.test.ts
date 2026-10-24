@@ -31,6 +31,7 @@ const COLUMN: Record<string, string> = {
   user_history: 'name',
   call_logs: 'tool',
   call_notes: 'note',
+  call_reasons: 'note',
   users: 'name',
   tokens: 'label',
   pointers: 'name',

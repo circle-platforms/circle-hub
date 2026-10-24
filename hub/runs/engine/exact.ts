@@ -208,14 +208,14 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       let result: Awaited<ReturnType<typeof resolveReference>>;
       try {
         result = await retryRead(() => resolveReference(ref, context), result => !result.resolved
-          && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
+          && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
           attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference:canonical})); });
       } catch (error) {
         ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
         return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
       }
-      if (!result.resolved && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined) {
+      if (!result.resolved && result.reason !== undefined) {
         ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: `bound source ${canonical}: ${result.reason}` });
         if (consumer === 'function') throw new HubReadFailure(canonical, result.reason, attempts);
       }

@@ -81,7 +81,7 @@ test('two real resources share enrolled names and a rotation reaches both withou
     assert.match(JSON.stringify(refused.out), /对你不可用/);
     assert.ok(!JSON.stringify(refused.out).includes('DEMO_PORTAL_PASSWORD'));
     const calls = await bed.hub.records.callLog.query(bed.hub.admin.principal, { tool: 'start_run', limit: 1 });
-    assert.match(calls.items[0].admin_note ?? '', /secret set --name DEMO_PORTAL_PASSWORD/);
+    assert.match((calls.items[0].admin_reasons ?? []).join('\n'), /secret set --name DEMO_PORTAL_PASSWORD/);
     await set('DEMO_PORTAL_PASSWORD', PASSWORD);
     assert.ok((await reads()).every(r => r.ok));
     await set('DEMO_PORTAL_PASSWORD', WRONG);

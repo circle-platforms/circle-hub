@@ -1,3 +1,4 @@
+import { KnowledgeError } from '../knowledge/api.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
 // and delegation to RunsService for the rest. Every answer is validated against the tool's output schema before it is sent;
@@ -26,7 +27,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { RecordsError, isSha256, type Principal } from '../records/api.ts';
+import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
@@ -370,7 +371,7 @@ const resolveTool: Handler = async (deps, call, args) => {
 const submitResult: Handler = async (deps, call, args) => {
   const run = args.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
-  const answer = (await deps.runs.submitResult(call.principal, args, call.context)) as Answer;
+  const answer = { ...((await deps.runs.submitResult(call.principal, args, call.context)) as Answer) };
   return { answer, text: { record: await storedResult(deps, call, answer) } };
 };
 
@@ -378,14 +379,19 @@ const submitResult: Handler = async (deps, call, args) => {
 async function storedResult(deps: ServerDeps, call: ToolCall, answer: Answer): Promise<string | null> {
   const result = answer.result as { run?: unknown; submission?: unknown } | undefined;
   if (deps.runsDetail === undefined || typeof result?.run !== 'string' || typeof result.submission !== 'string') return null;
-  try {
-    const stored = await deps.runsDetail.getResult(call.principal, result.run, result.submission);
-    return stored === null ? null : recordReference(stored.record);
-  } catch (error) {
-    // The answer stands; only the way to its record is missing (the text then names the console).
-    call.context.adminNote(`the stored result of submission ${result.submission} was not found: ${describeError(error)}`);
-    return null;
+  for(let attempt=1;attempt<=2;attempt++) {
+    try {
+      const stored=await deps.runsDetail.getResult(call.principal,result.run,result.submission);
+      if(stored!==null)return recordReference(stored.record);
+      call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission} has no returned result record`);
+    } catch(error) {
+      call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission}: ${describeError(error)}`);
+    }
+    if(attempt===1)await new Promise(resolve=>setTimeout(resolve,50));
   }
+  const next=new Date((deps.now?.()??new Date()).getTime()+1000).toISOString();
+  if(Array.isArray(answer.errors))answer.errors=[...answer.errors,{code:'SOURCE_RETRYABLE',message:`缺少已存结果的记录引用（提交 ${result.submission}）；两次查询均未取到，下一次重读时间 ${next}`,fix:`到控制台 /console/runs/${result.run} 按提交 ${result.submission} 查看结果；仍缺时请管理员核对结果记录与索引，恢复后重交同一提交读取当前结果`,path:'/result'}];
+  return null;
 }
 
 const READ_FIX = '读引用和读子树分两次调用；翻下一页只给 reference 和 cursor';
@@ -420,13 +426,33 @@ const getNodes: Handler = async (deps, call, args) => {
     if(root===detail.run.root){composition=null;const ids=detail.run.target_basis.flatMap(claim=>{const data=claim.statement.data;return data&&data.root===root&&typeof data.composition==='string'?[data.composition]:[];});if(new Set(ids).size===1)composition=ids[0];}
     if (root === undefined) {
       note(`run ${input.run} locked no knowledge root`);
-      return { answer: errorAnswer('get_nodes', [unavailable()]) };
+      return { answer: errorAnswer('get_nodes', [violation('get_nodes', '/run', '这次运行没有锁定知识根', '给出要读取的 root，或用 reference 读取已绑定的来源')]) };
     }
   }
   if (root === undefined) {
     return { answer: errorAnswer('get_nodes', [violation('get_nodes', '', '要给出 run、root 或 reference 之一', '给出 start_run 返回的 run，或一个知识根，或一个引用')]) };
   }
-  const page = await deps.knowledge.getNodes({ root, paths: input.paths ?? ['/'], depth: input.depth ?? 1, cursor, ...(composition !== undefined ? {composition} : {}) }, call.principal);
+  let page;
+  for(let attempt=0;;attempt++) {
+    try {
+      page=await deps.knowledge.getNodes({root,paths:input.paths??['/'],depth:input.depth??1,cursor,...(composition!==undefined?{composition}:{})},call.principal);
+      break;
+    } catch(error) {
+      if(error instanceof IntegrityError) {
+        note(`knowledge original integrity failed: ${describeError(error)}`);
+        return {answer:errorAnswer('get_nodes',[{code:'SOURCE_INTEGRITY_UNPROVEN',message:'缺少经摘要核验的知识原件；请管理员从备份恢复后重读',fix:PROTOCOL_CODES.SOURCE_INTEGRITY_UNPROVEN.fix}])};
+      }
+      if(error instanceof KnowledgeError && error.code!==null) {
+        return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!,...(typeof error.detail.path==='string'?{path:error.detail.path}:cursor?{path:'/cursor'}:{})}])};
+      }
+      note(`knowledge reader attempt ${attempt+1} failed: ${describeError(error)}`);
+      if(attempt===2) {
+        const next=new Date((deps.now?.()??new Date()).getTime()+1000).toISOString();
+        return {answer:errorAnswer('get_nodes',[{code:'SOURCE_RETRYABLE',message:`缺少这次知识页的读取结果；下一次重读时间 ${next}，保持原查询重读`,fix:PROTOCOL_CODES.SOURCE_RETRYABLE.fix}])};
+      }
+      await new Promise(resolve=>setTimeout(resolve,10*(attempt+1)));
+    }
+  }
   if (page === null) {
     note(`knowledge root ${root} (paths ${clipNote(JSON.stringify(input.paths ?? ['/']), 300)}) is absent or not readable by ${call.principal.id}`);
     return { answer: errorAnswer('get_nodes', [unavailable()]) };
@@ -462,6 +488,8 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
   const reader: ReaderIdentity = { user: call.principal.id, role: call.principal.role, ...(run === undefined ? {} : { run }) };
   const result = await resolveReference(parsed, {
+    retryReads:true,
+    now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
     sources,

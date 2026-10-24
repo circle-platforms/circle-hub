@@ -107,12 +107,12 @@ describe('scenario 7: call log', () => {
       newestFirst: false,
     });
     const batchCalls = logPage.items.filter((entry) =>
-      entry.admin_note?.includes('JSON-RPC batch refused'),
+      entry.admin_reasons?.some(reason=>reason.includes('JSON-RPC batch refused')),
     );
     assert.equal(batchCalls.length, 3, 'exactly 3 call log lines logged, one for each request in the batch');
     for (let i = 0; i < 3; i++) {
       assert.equal(batchCalls[i].call_result, 'transport_failure');
-      assert.ok(batchCalls[i].admin_note?.includes(`request ${i + 1} of 3`));
+      assert.ok(batchCalls[i].admin_reasons?.some(reason=>reason.includes(`request ${i + 1} of 3`)));
     }
   });
 });
