@@ -1,5 +1,6 @@
 // Rules the docs keep, applied by docs.test.ts: links the docs site can serve, vocabulary tables equal to the generated
 // vocabulary, the model's decided and deferred counts, a source for every recorded decision, and no local paths.
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 
@@ -191,6 +192,15 @@ const SYNTHETIC_PATHS: Readonly<Record<string, readonly string[]>> = {
   'hub/config/config.test.ts': ['/' + 'var/log/hub'],
 };
 
+
+// Only the original, hash-pinned third-party bytes may contain their upstream synthetic home example.
+const VENDORED_SYNTHETIC_PATHS: Readonly<Record<string, { sha256: string; paths: readonly string[] }>> = {
+  'packs/product/apv/functions/adoc/vendor/core.mjs': {
+    sha256: '5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d',
+    paths: ['/' + 'Users/foo'],
+  },
+};
+
 function archived(file: string): boolean {
   return file.startsWith('foundation/') || file.startsWith('references/');
 }
@@ -208,8 +218,10 @@ function networkPathURL(token:string):boolean {
 }
 
 /** Machine paths anywhere in tracked text, with explicit file-scoped synthetic fixtures. */
-export function localPathProblems(file: string, text: string): string[] {
+export function localPathProblems(file: string, text: string, byteDigest?: string): string[] {
   if (archived(file)) return [];
+  const pinned = VENDORED_SYNTHETIC_PATHS[file];
+  const upstreamPaths = pinned && byteDigest === pinned.sha256 && createHash('sha256').update(text).digest('hex') === pinned.sha256 ? pinned.paths : [];
   const problems: string[] = [];
   text.split('\n').forEach((line, index) => {
     for (const m of line.matchAll(LOCAL_PATH)) {
@@ -219,7 +231,7 @@ export function localPathProblems(file: string, text: string): string[] {
       if(token&&networkPathURL(token))continue;
       // ~/Library is an OS layout template, not a personal absolute path.
       if (m[0] === '~/' && /^~\/Library(?:[\/\s`"',;)]|$)/.test(line.slice(m.index))) continue;
-      if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0])) continue;
+      if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0]) || upstreamPaths.includes(m[0])) continue;
       problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
     }
   });
@@ -239,9 +251,10 @@ export function buildNameProblems(file: string, text: string): string[] {
 }
 
 /** Scan regular file contents and Git's symlink target text; never follow a symlink or discard a NUL-bearing blob. */
-export function trackedFileText(path: string): string | null {
+export function trackedFileText(path: string, onBytes?: (bytes: Uint8Array) => void): string | null {
   const info = lstatSync(path);
-  if (info.isSymbolicLink()) return readlinkSync(path).replaceAll('\0', '');
-  if (info.isFile()) return readFileSync(path).toString('utf8').replaceAll('\0', '');
-  return null;
+  const bytes = info.isSymbolicLink() ? readlinkSync(path, { encoding: 'buffer' }) : info.isFile() ? readFileSync(path) : null;
+  if (bytes === null) return null;
+  onBytes?.(bytes);
+  return bytes.toString('utf8').replaceAll('\0', '');
 }

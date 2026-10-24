@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { RunSummary } from '../../../contracts/src/run.ts';
 import { SubmitResultOutput } from '../../../contracts/src/tools.ts';
-import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
+import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import type { ActionBody } from '../../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { INDEX } from './store.ts';
@@ -27,6 +27,20 @@ after(async () => {
   await h?.close();
   await postgres?.stop();
 });
+
+function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'exit' | 'gaps'>[] {
+  return layers.map(layer => {
+    LayerResult.parse(layer);
+    if (layer.reason !== undefined) {
+      assert.ok(layer.missing);
+      assert.equal(layer.exit?.action, 'request');
+      assert.equal(layer.exit?.request_kind, 'repair');
+      assert.deepEqual(layer.exit?.audience, { user: h.alice.id });
+    }
+    const { missing, exit, gaps, ...fields } = layer;
+    return fields;
+  });
+}
 
 const TRACE = '0af7651916cd43dd8448eb211c80319c';
 const TITLES: Record<string, string> = { [ITEM.c1]: '设置 3 区浇灌 15 分钟', [ITEM.c2]: '查看分区状态', [ITEM.c3]: '设置 9 区应报错', [ITEM.c4]: '没有期望结果的用例' };
@@ -297,7 +311,7 @@ test('a statement the catalog contradicts is a violation routed into repair, nev
   assert.equal(exhausted.partition, 'incomplete');
   assert.equal((exhausted.item as { reason?: string }).reason, 'repair_exhausted');
   const findings = requirementOf(exhausted.item, 'findings');
-  assert.deepEqual(findings.layers, [{ layer: 'static', terminal: 'incomplete', code: 'core.catalog.membership_contradicted', tier: 'blocking', reason: 'repair_exhausted', attribution: 'producer_error' }]);
+  assert.deepEqual(terminalFields(findings.layers), [{ layer: 'static', terminal: 'incomplete', code: 'core.catalog.membership_contradicted', tier: 'blocking', reason: 'repair_exhausted', attribution: 'producer_error' }]);
   assert.ok(findings.claims.some((c: Claim) => c.warrant.producer === 'model' && c.statement.text.includes('第 3 次')));
   assert.deepEqual(last!.result!.rounds, { used: 2, max: 2 });
   // a corrected statement is delivered again
@@ -331,9 +345,9 @@ test('items not covered and items skipped are incomplete; not covered is named i
   assert.equal(answer.acceptance, 'accepted');
   const missing = itemOf(answer.result!, ITEM.c2);
   assert.deepEqual([missing.partition, (missing.item as { reason?: string }).reason], ['incomplete', 'not_covered']);
-  assert.deepEqual(requirementOf(missing.item, 'findings').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
+  assert.deepEqual(terminalFields(requirementOf(missing.item, 'findings').layers), [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   // W07 R[3]: the item the submission does not mention is incomplete at every requirement, facts included.
-  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
+  assert.deepEqual(terminalFields(requirementOf(missing.item, 'structure').layers), [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   const skipped = itemOf(answer.result!, ITEM.c3);
   assert.deepEqual([skipped.partition, (skipped.item as { reason?: string }).reason], ['incomplete', 'declared_skip']);
   assert.deepEqual(answer.errors.map((e) => [e.code, e.item, e.rounds_left]), [['core.coverage.shortfall', ITEM.c2, 2]]);

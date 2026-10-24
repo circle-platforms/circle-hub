@@ -55,7 +55,7 @@ export interface AdocEntryOptions {
   slot?: string;
   /** The command heads of the build, when the build's tree is readable (K1's anchor check). */
   heads?: readonly string[] | null;
-  /** The build's command catalog, for the placement check and the drift candidates. */
+  /** The build's command catalog for placement; declared relations perform links and drift checks afterward. */
   catalog?: CommandCatalog | null;
 }
 
@@ -98,7 +98,15 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     // — under the command before it, with that command's words in `data` — so the mark rides on the entry: a reader, a
     // drift count or a review can tell example content from what the manual states.
     const reference = entry.fragments.length > 0 && entry.fragments.every((fragment) => citesExample(mapped.model, fragment.selector));
-    entries.push(reference ? { ...entry, fragments, data: { ...entry.data, reference_only: true } } : { ...entry, fragments });
+    if (!reference) { entries.push({ ...entry, fragments }); return; }
+    // Link declarations read top-level literal fields. Keep the source literals as reference data, outside that input.
+    const data = { ...entry.data, reference_only: true } as Record<string, unknown>;
+    const referenceData: Record<string, unknown> = {};
+    for (const field of ['command_literals', 'signature_literals']) {
+      if (Object.hasOwn(data, field)) { referenceData[field] = data[field]; delete data[field]; }
+    }
+    if (Object.keys(referenceData).length > 0) data.reference = referenceData;
+    entries.push({ ...entry, fragments, data });
   });
   const unplaced: Unplaced[] = [];
   placed.unplaced.forEach((span, index) => {
@@ -116,22 +124,14 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
       },
     };
   }
-  // An example takes no part in judgment (task item 6), and K1's own checks run over the model it is given, so the
-  // production's report lines — its drift candidates included — are read from a second run over the model without the
-  // example content: a literal only an example carries is no drift candidate of the manual. The entries still carry the
-  // example content, marked; only the report is computed as if the examples were not read for judgment. K1's placement of
-  // every other block is the same in both runs (an example block is no anchor and ends no command), and K1's files are
-  // not changed by it.
-  const judgment = produceManualEntries({ ...mapped.model, blocks: mapped.model.blocks.filter((block) => !block.example) }, options.heads ?? null, {
-    name: options.name,
-    ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
-  });
-  const warnings = [...mapped.warnings, ...judgment.warnings];
-  const reference = entries.filter((entry) => entry.data.reference_only === true && asStrings(entry.data.command_literals).length > 0);
+  // K1 only extracts literals; the shared relation evaluator performs links and drift checks from product declarations.
+  const warnings = [...mapped.warnings, ...placed.warnings];
+  const literalsOf = (entry: ProducedEntry): string[] => isRecord(entry.data.reference) ? asStrings(entry.data.reference.command_literals) : [];
+  const reference = entries.filter(entry => entry.data.reference_only === true && literalsOf(entry).length > 0);
   if (reference.length > 0) {
     warnings.push(
-      `有 ${reference.length} 条标为参考（data.reference_only）的条目带命令字面，共 ${new Set(reference.flatMap((entry) => asStrings(entry.data.command_literals))).size} 个。` +
-        '示例不参与判定：漂移候选按不含示例内容的那一遍核对给出，这些字面不在其中。读时视图、评审与回归核对仍要按 data.reference_only 分流参考条目；本包不改 K1，也不代替消费端过滤。',
+      `有 ${reference.length} 条标为参考（data.reference_only）的条目带命令字面，共 ${new Set(reference.flatMap(literalsOf)).size} 个。` +
+        '示例不参与命令关系判定：字面保留在 data.reference，不写入共用关系核验器读取的顶层字段。读时视图、评审与回归核对原文时仍要按 data.reference_only 分流参考条目；本包不改 K1。',
     );
   }
   return { ok: true, entries, unplaced, warnings };

@@ -16,7 +16,7 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
   const base = { tier: TIER, ...(item ? { item } : {}), grounds: typeof s.location === 'string' && s.location.startsWith('src:') ? [s.location] : [] };
   const unknown = (statement: string, missing: string[], data: Record<string, unknown> = {}): CheckOutcome => {
     const action = typeof data.next_action === 'string' ? data.next_action : `补齐缺失事实后重新开始运行文档 ${document}`;
-    return { ...base, verdict: 'unknown', reason: 'missing_input', statement, data: { missing, ...data, next_action: action, recovery: { action, object: { document: document || item || '当前文档', build: lock.build ?? null }, deadline: '本轮最终回报前；补齐事实后立即重跑，单次补读仍不全则报告能力缺口', attempts: 1 } } };
+    return { ...base, verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason: 'missing_input', statement, data: { missing, ...data, next_action: action, recovery: { action, object: { document: document || item || '当前文档', build: lock.build ?? null }, deadline: '本轮最终回报前；补齐事实后立即重跑，单次补读仍不全则报告能力缺口', attempts: 1 } } };
   };
   const retry = `知识同步后，重新读取锁定构建 ${String(lock.build ?? '未提供')} 的 case_index 并重跑文档 ${document}；若同键、字节上限或标题/标签字段截断仍导致取不全，明确报告索引补读能力缺口并交集成者处理`;
   const nodes = isRecord(s.nodes) ? s.nodes : {};
@@ -63,5 +63,5 @@ export function commandOutcomes(subject: unknown): CheckOutcome[] {
 }
 export default function (input: unknown): unknown {
   try { return commandOutcomes(isRecord(input) ? input.subject : undefined); }
-  catch { return [{ verdict: 'unknown', reason: 'check_error', statement: '按命令覆盖检查出错；下一步：联系包维护人修复后重跑', tier: TIER, grounds: [], data: { missing: ['command_coverage_check'], next_action: '联系包维护人修复后重跑', recovery: { action: '联系包维护人修复检查函数后重跑', object: { check: 'template-gap.command_coverage' }, deadline: '本轮最终回报前，修复后立即重跑', attempts: 1 } } }]; }
+  catch { return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('按命令覆盖检查出错；下一步：联系包维护人修复后重跑'), reason: 'check_error', statement: '按命令覆盖检查出错；下一步：联系包维护人修复后重跑', tier: TIER, grounds: [], data: { missing: ['command_coverage_check'], next_action: '联系包维护人修复后重跑', recovery: { action: '联系包维护人修复检查函数后重跑', object: { check: 'template-gap.command_coverage' }, deadline: '本轮最终回报前，修复后立即重跑', attempts: 1 } } }]; }
 }

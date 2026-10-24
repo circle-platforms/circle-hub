@@ -104,7 +104,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.0', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.1', independence: 'judge_not_author' });
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
 
     const webui = located(result, '10.6.1/WebUI');

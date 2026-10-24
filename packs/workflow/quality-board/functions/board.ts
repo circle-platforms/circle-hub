@@ -110,7 +110,7 @@ export function boardOutcomes(subject: unknown): CheckOutcome[] {
     try {
       const fields = fieldsOf(value.fields);
       if (fields === null) {
-        out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${id} 的字段不是质量看板的形状（任务包缺陷）`, grounds: [], tier: TIER, item: id, pointer });
+        out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`条目 ${id} 的字段不是质量看板的形状（任务包缺陷）`), reason: 'check_error', statement: `条目 ${id} 的字段不是质量看板的形状（任务包缺陷）`, grounds: [], tier: TIER, item: id, pointer });
         continue;
       }
       const breach = inconsistencyOf(fields.counts);
@@ -137,10 +137,10 @@ export function boardOutcomes(subject: unknown): CheckOutcome[] {
         data: { ...(fields.coverage ? { coverage: fields.coverage } : {}), line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
       });
     } catch (error) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`看板检查出错（任务包缺陷）：${internalError(error)}`), reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '看板检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('看板检查的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '看板检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -148,6 +148,6 @@ export function boardOutcomes(subject: unknown): CheckOutcome[] {
 export default function boardCheck(input: unknown): unknown {
   return guarded<unknown>(
     () => boardOutcomes(isRecord(input) ? input.subject : undefined),
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`看板检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }
