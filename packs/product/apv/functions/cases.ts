@@ -203,7 +203,7 @@ export function cases(input: unknown): ProducerOutput {
     let catalog: CommandCatalog;
     if (tree === null || tree.parser !== 'xml@1') {
       warnings.push(rawPhrases?`${where}不分版本范围不带命令树，这一批 ${elements.length} 份文档的命令短语照录，用例条目保留为未归位`:`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
-      catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
+      catalog = { root: { children: new Map(), path: null }, size: 0, grammar: { words: new Map(), rules: [] } };
     } else {
       const built = commandCatalog(tree.model as XmlModel);
       catalog = built.catalog;

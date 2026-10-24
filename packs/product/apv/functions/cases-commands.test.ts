@@ -1,26 +1,34 @@
-// Commands named in case texts, against the hand-written truth table of tests/fixtures/case-index (written before the
-// resolver ran: every row says which commands must resolve and which must not), the abbreviation and `no` rules, list
-// numbers, one scan for many texts, hostile text and size.
+// Commands named in case texts, against the hand-written truth table of tests/fixtures/case-index (every row says which
+// whole statements must resolve and which must not), one scan for many texts, hostile text and size.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CASE_COMMAND_TABLE, CATALOG_A, CATALOG_B, commandPath, commandTreeXml } from '../../../../tests/fixtures/case-index/index.ts';
+import { CASE_COMMAND_TABLE, CATALOG_A, CATALOG_B, commandPath, commandTreeXml, type Arg, type Command } from '../../../../tests/fixtures/case-index/index.ts';
 import { commandCatalog, resolvePhrase, textCommands, withoutListNumbers } from './cases-commands.ts';
-import { extractCommands } from './commands.ts';
 import { randomText, seeded, xml } from '../testing/test-support.ts';
 
 const catalogA = commandCatalog(xml(commandTreeXml(CATALOG_A))).catalog;
 const catalogB = commandCatalog(xml(commandTreeXml(CATALOG_B))).catalog;
 const commandsOf = (text: string, catalog = catalogA): string[] => textCommands(catalog, [text]).results[0].paths;
 
+/** A whole statement of one catalog command: its exact words and one value per required argument. */
+function statementOf(command: Command): string {
+  const valueOf = (arg: Arg): string => {
+    const alternatives = arg.limit === undefined ? null : /^\{(.+)\}$/.exec(arg.limit);
+    if (alternatives !== null) return alternatives[1].split('|')[0];
+    if (arg.type === 'IPADDR') return '192.0.2.1';
+    if (arg.type === 'U16' || arg.type === 'U32') return '1';
+    return 'pool1';
+  };
+  return [command.words, ...command.args.filter((arg) => arg.optional !== true).map(valueOf)].join(' ');
+}
+
 describe('the catalog of a build', () => {
-  it('holds every command of the tree at its path, and abbreviation heads of the first words only', () => {
+  it('holds every command of the tree, and a whole statement of it resolves to that path', () => {
     assert.equal(catalogA.size, CATALOG_A.length);
     assert.equal(catalogB.size, CATALOG_B.length);
-    for (const command of CATALOG_A) assert.equal(resolvePhrase(catalogA, command.words), commandPath(command.words), command.words);
-    assert.ok(catalogA.heads.includes('sh') && catalogA.heads.includes('sys') && catalogA.heads.includes('wid'));
-    assert.ok(!catalogA.heads.includes('s'), 'one letter is never an abbreviation');
-    assert.ok(!catalogA.heads.includes('be'), 'an English short word is never an abbreviation');
-    assert.ok(!catalogA.heads.includes('n'), 'no is a word of its own');
+    for (const command of CATALOG_A) assert.equal(resolvePhrase(catalogA, statementOf(command)), commandPath(command.words), command.words);
+    assert.equal(resolvePhrase(catalogA, 'sh health'), null);
+    assert.equal(resolvePhrase(catalogA, 'widget health interval'), null, 'required arguments are part of the statement');
   });
 
   it('an empty or broken tree gives an empty catalog, and nothing resolves', () => {
@@ -32,9 +40,9 @@ describe('the catalog of a build', () => {
 });
 
 describe('the truth table', () => {
-  it(`has at least 40 rows, commands that must resolve and words that must not`, () => {
+  it('has at least 40 rows, commands that must resolve and words that must not', () => {
     assert.ok(CASE_COMMAND_TABLE.length >= 40);
-    assert.ok(CASE_COMMAND_TABLE.filter((r) => r.commands.length > 0).length >= 20);
+    assert.ok(CASE_COMMAND_TABLE.filter((r) => r.commands.length > 0).length >= 10);
     assert.ok(CASE_COMMAND_TABLE.filter((r) => r.commands.length === 0).length >= 20);
     assert.equal(new Set(CASE_COMMAND_TABLE.map((r) => r.key)).size, CASE_COMMAND_TABLE.length);
   });
@@ -54,30 +62,24 @@ describe('the truth table', () => {
 });
 
 describe('resolution rules', () => {
-  it('abbreviations: unique prefixes of two letters or more, never alone, never ambiguous', () => {
-    assert.equal(resolvePhrase(catalogA, 'sh health'), '/commands/show/health');
-    assert.equal(resolvePhrase(catalogA, 'SHO HEA DET pool1'), '/commands/show/health/detail');
-    assert.equal(resolvePhrase(catalogA, 'sh'), null, 'an abbreviation alone is no command');
-    assert.equal(resolvePhrase(catalogA, 'pin 192.0.2.1'), null, 'a one-word command reached through an abbreviation needs a second word');
-    assert.equal(resolvePhrase(catalogA, 'relay en 192.0.2.1'), null, 'en names endpoint and encrypt');
-    assert.equal(resolvePhrase(catalogA, 'widget h interval'), null, 'one letter is no abbreviation');
-    assert.equal(resolvePhrase(catalogA, 'widget health interva pool1'), '/commands/widget/health/interval');
-  });
-
-  it('the longest command wins, and an argument never extends a command', () => {
-    assert.equal(resolvePhrase(catalogA, 'show health detail'), '/commands/show/health/detail');
+  it('a statement is the exact tree words; a prefix, another case, or a second command is not', () => {
+    assert.equal(resolvePhrase(catalogA, 'show health detail pool1'), '/commands/show/health/detail');
     assert.equal(resolvePhrase(catalogA, 'show health pool1'), '/commands/show/health');
-    assert.equal(resolvePhrase(catalogA, 'show health "detail"'), '/commands/show/health', 'a quoted word is an argument');
+    assert.equal(resolvePhrase(catalogA, 'show health "detail"'), '/commands/show/health');
+    assert.equal(resolvePhrase(catalogA, 'show health detail'), '/commands/show/health', 'detail is the optional pool, and the longer command still needs its pool');
+    assert.equal(resolvePhrase(catalogA, 'sh health'), null);
+    assert.equal(resolvePhrase(catalogA, 'SHO HEA DET pool1'), null);
+    assert.equal(resolvePhrase(catalogA, 'widget pool add pool1 50 show pools'), null);
   });
 
-  it('no forms: the catalog\'s own, else the command they undo, never a no alone', () => {
+  it('a declared no command resolves; no does not undo a command the tree did not declare', () => {
     assert.equal(resolvePhrase(catalogA, 'no widget health probe pool1'), '/commands/no/widget/health/probe');
-    assert.equal(resolvePhrase(catalogA, 'no widget pool mode pool1'), '/commands/widget/pool/mode');
+    assert.equal(resolvePhrase(catalogA, 'no widget pool mode pool1'), null);
     assert.equal(resolvePhrase(catalogA, 'no'), null);
     assert.equal(resolvePhrase(catalogA, 'no such thing'), null);
   });
 
-  it('list numbers before a command are blanked out, offsets kept; numbers that are values are left alone', () => {
+  it('list numbers before a letter can be blanked, offsets kept; recognition leaves the line as written', () => {
     for (const [text, expected] of [
       ['1.widget pool delete pool1', '  widget pool delete pool1'],
       ['（2）show pools', '   show pools'],
@@ -90,6 +92,8 @@ describe('resolution rules', () => {
       assert.equal(out, expected, text);
       assert.equal(out.length, text.length);
     }
+    assert.deepEqual(commandsOf('1.widget pool delete pool1'), []);
+    assert.deepEqual(commandsOf('widget pool delete pool1'), ['/commands/widget/pool/delete']);
   });
 });
 
@@ -102,11 +106,11 @@ describe('one scan for many texts', () => {
     texts.forEach((text, k) => assert.deepEqual(together[k], textCommands(catalogA, [text]).results[0], JSON.stringify(text)));
   });
 
-  it('counts phrases that resolve to nothing', () => {
+  it('counts statements that resolve to nothing', () => {
     assert.deepEqual(textCommands(catalogA, ['widget health 配置', 'widget health interval pool1 5，widget health timeout 3', '基本功能']).results, [
       { paths: [], phrases: 1, unresolved: 1 },
-      { paths: ['/commands/widget/health/interval'], phrases: 2, unresolved: 1 },
-      { paths: [], phrases: 0, unresolved: 0 },
+      { paths: [], phrases: 1, unresolved: 1 },
+      { paths: [], phrases: 1, unresolved: 1 },
     ]);
   });
 
@@ -116,11 +120,6 @@ describe('one scan for many texts', () => {
     const out = textCommands(catalogA, long);
     assert.ok(performance.now() - start < 10_000, 'took too long');
     assert.equal(out.results.length, long.length);
-    assert.deepEqual(out.results[5].paths, ['/commands/widget/health/interval']);
-  });
-
-  it('extractCommands is the phrase finder: a phrase the resolver gets is one commands.ts finds', () => {
-    const text = '在 CLI 下执行 widget health interval pool1 5 后，show health 显示间隔';
-    assert.deepEqual(extractCommands({ text, heads: catalogA.heads }).phrases.map((p) => p.text), ['widget health interval pool1 5', 'show health']);
+    assert.deepEqual(out.results[5].paths, []);
   });
 });

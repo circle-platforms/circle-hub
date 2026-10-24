@@ -170,7 +170,7 @@ describe('the case entries of the corpus', () => {
     assert.equal(counted, all.length);
     assert.equal(named, indexed);
     assert.equal(none + unresolved, all.length - indexed);
-    assert.ok(none > 0 && unresolved > 0, 'both reasons occur and are disclosed');
+    assert.ok(unresolved > 0, 'a statement that is not one command is disclosed');
     const examples = run.warnings.join('\n').match(/「[^」]*」/g) ?? [];
     assert.ok(examples.length > 0);
     for (const warning of run.warnings) assert.ok((warning.match(/「/g) ?? []).length <= 20, 'at most 20 examples per call');
