@@ -10,7 +10,7 @@ import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import type { Principal, VariableSnapshot } from '../../records/api.ts';
-import { EXTERNAL_ARTIFACT, type LoadedWorkflow } from '../../ports.ts';
+import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognize, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
@@ -64,6 +64,7 @@ export async function bindInputs(
   composition?: string | null,
   build?:string,
   variables?:VariableSnapshot,
+  unversioned?: ExternalReadContext['unversioned'],
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -164,7 +165,7 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) };
+    const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
     const read = id.startsWith('knowledge:') ? await completeKnowledgeView(id,readContext,ctx.deps.external,{artifacts,store}) : await ctx.deps.external.read(id,readContext);
     if (!read.ok) {
       if (read.inputError !== undefined) {

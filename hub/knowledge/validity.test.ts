@@ -193,7 +193,7 @@ describe('the read stays efficient and the conditions are all listed', () => {
       body: { action: 'generate', run: null, item: null, inputs: [], component: 'knowledge.produce', lease: null, started_at: '2026-10-23T14:10:00.000Z', ended_at: '2026-10-23T14:10:01.000Z', result: 'completed', error_code: null, acceptance: null, codes: [], detail: { sync: null, product: multi.product, pack: { id: multi.producer.pack, version: multi.producer.version, digest: multi.producer.digest }, build: multi.build, root: multi.root, composition: record.digest, sources: [], missing: [], lists: [], calls: { made: 0, reused: 0 }, placement: null, reason: null } },
       index: [
         { key: 'knowledge.produce.root', value: multi.root },
-        { key: 'knowledge.produce', value: `${multi.product}/${multi.build.name.toLowerCase()}` },
+        { key: 'knowledge.produce', value: `${multi.product}/${multi.build!.name.toLowerCase()}` },
       ],
     });
     const read = await w.knowledge.treeReader().read(w.root, PATH, null, { user: w.user.id, role: 'user' as const });

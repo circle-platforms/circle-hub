@@ -32,7 +32,7 @@ async function productionOf(context: KnowledgeContext, composition: CompositionV
         if (production?.detail.composition === composition.record && production.detail.product === composition.body.product)
             return production;
     }
-    const latest = await context.store.latestProduction(composition.body.product, composition.body.build.name);
+    const latest = await context.store.latestProduction(composition.body.product, composition.body.build?.name ?? null);
     if (latest?.detail.composition === composition.record)
         return latest;
     return (await context.store.productionsOfRoot(composition.body.root)).find(production => production.detail.composition === composition.record && production.detail.product === composition.body.product) ?? null;
@@ -47,7 +47,7 @@ export async function documentScope(context: KnowledgeContext, product: string, 
         if (!allMain.some(composition => composition.record === ref.composition) && !extra.some(composition => composition.record === ref.composition))
             extra.push(new CompositionView(context.store, ref.composition, body));
     }
-    const header = (composition: CompositionView) => ({ root: composition.body.root, composition: composition.record, build: composition.body.build.name });
+    const header = (composition: CompositionView) => ({ root: composition.body.root, composition: composition.record, build: composition.body.build?.name ?? null });
     const listed = new Map<string, ScopedDocument>(), other = new Map<string, ScopedDocument>(), candidates = new Map<string, ScopedDocument>(), optional: ScopedDocument[] = [];
     let unplacedEntries = 0;
     const unplacedCases: number[] = [];
@@ -108,7 +108,7 @@ export async function documentScope(context: KnowledgeContext, product: string, 
     const missing = [...candidates.values()].filter(row => !ownIds.has(row.external));
     const elsewhere = missing.flatMap(row => [...other.values()].filter(source => source.external === row.external).map(source => ({ ...row, sha256: source.sha256, at: source.at })));
     const uncovered = missing.filter(row => !otherIds.has(row.external));
-    const declared = context.additionalScopeRoots !== undefined;
+    const declared = context.additionalScopeRootsDeclared ?? (context.additionalScopeRoots !== undefined);
     const sort = (rows: ScopedDocument[]) => rows.sort((a, b) => compareText(a.external ?? '', b.external ?? '') || compareText(a.sha256 ?? '', b.sha256 ?? ''));
     for (const doc of [...listed.values(), ...other.values()]) {
         doc.at?.sort(compareText);

@@ -164,6 +164,31 @@
         "additionalProperties": false
       }
     },
+    "scope": {
+      "description": "product-wide sources without a declared build",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          {
+            "maxItems": 20000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+            }
+          }
+        ]
+      }
+    },
     "fetch": {
       "type": "array",
       "items": {

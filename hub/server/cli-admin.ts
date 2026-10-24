@@ -12,7 +12,7 @@ import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protoco
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
 import { tmpdir } from 'node:os';
@@ -21,10 +21,10 @@ import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { KnowledgeError, createKnowledgeReader, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
-import { RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -53,10 +53,12 @@ export const PACK_USAGE =
 export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
-export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
+export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
+export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
+export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
@@ -239,7 +241,7 @@ class Session {
    * `--as` allowed only when it names that account; without a token `--as` or the only enabled admin. A keychain item
    * that cannot be read (a locked keychain) is said on stderr and the command reads as if there were none.
    */
-  async viewer(as: string | undefined): Promise<Principal> {
+  async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
     let token = this.envToken;
     let source = `${OPERATOR_TOKEN_VARIABLE} 的令牌`;
     let hint: string | null = null;
@@ -250,7 +252,7 @@ class Session {
       try {
         token = await store.read();
       } catch (error) {
-        this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
+        if (!quietTokenRead) this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
         return this.ctx.actingAdmin(as);
       }
     }
@@ -704,8 +706,65 @@ async function productOf(hub: AssembledHub, viewer: Principal, name: string): Pr
   return product;
 }
 
+/** Own the newly created file before writing, so cleanup never removes a competing writer's file. */
+export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<Record<string, unknown>> {
+  let file: Awaited<ReturnType<typeof openTarget>>;
+  try { file = await openTarget(); }
+  catch { throw new CliError('无法创建知识视图文件', '检查目录权限并换一个不存在的文件名后重试'); }
+  try { await file.writeFile(bytes); await file.close(); }
+  catch {
+    await file.close().catch(() => {});
+    const removed = await rm(target).then(() => true, () => false);
+    throw new CliError('知识视图文件写入失败', removed ? '半截文件已删除；检查磁盘空间和目录权限后重试' : '检查并删除本次创建的半截文件，恢复磁盘空间和目录权限后重试');
+  }
+  try {
+    const view: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    if (view === null || typeof view !== 'object' || Array.isArray(view)) throw new Error('not a view object');
+    return view as Record<string, unknown>;
+  } catch {
+    const removed = await rm(target).then(() => true, () => false);
+    throw new CliError('知识视图字节不是有效的 JSON 对象', removed ? '文件已删除；修复知识视图字节后重新导出' : '检查并删除本次创建的文件，修复知识视图字节后重新导出');
+  }
+}
+
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'view') {
+    const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' }, as: { type: 'string' } }, 1);
+    if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
+    const viewer = await session.viewer(values.as, true).catch(error => {
+      if (error instanceof CliError || error instanceof UsageError) throw error;
+      throw new CliError('无法核对知识视图读取账号', '检查管理员身份及记录库连接后重试；原始异常不输出到终端');
+    });
+    if (viewer.role !== 'admin') throw new CliError('只有管理员能导出知识视图');
+    const target = resolve(values.out);
+    if (await lstat(target).then(() => true, () => false)) throw new CliError('输出文件已存在', '换一个新文件');
+    let external = positionals[0];
+    if (values.only !== undefined) {
+      if (!values.only || /[&?#]/.test(values.only) || /[?&]only=/.test(external)) throw new UsageError('--only 要给非空取值列表，不能同时写在引用里；特殊字符按 URI 百分号编码');
+      external += `${external.includes('?') ? '&' : '?'}only=${values.only.replaceAll(' ', '%20')}`;
+    }
+    const result = await (async () => {
+      try {
+        const hub = await session.hub(false, true);
+        return await createKnowledgeReader(hub.knowledge).read(external, { principal: viewer, run: null, purpose: 'administrator view export' });
+      } catch { throw new CliError('知识视图计算未完成', '检查装配、来源和视图计算后重试；原始异常不输出到终端'); }
+    })();
+    if (!result.ok) throw new CliError('未能读取指定知识视图', '核对产品、构建、权限和视图参数后重试；原始读取说明不输出到终端');
+    const artifact = result.artifacts.find(a => a.name === 'original');
+    const kit = await session.records();
+    const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256).catch(() => { throw new CliError('知识视图字节读取失败', '修复原件存储后重新导出；原始异常不输出到终端'); }) : null;
+    if (bytes === null) throw new CliError('知识视图字节缺失', '修复原件存储后重新导出');
+    const view = await writeKnowledgeViewFile(target, bytes);
+    const counts = (value: unknown): unknown => {
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+      return Object.fromEntries(Object.entries(value).filter(([key]) => /^[a-z][a-z0-9_]*$/.test(key)).map(([key, entry]) => [key, counts(entry)]).filter(([, entry]) => entry !== undefined));
+    };
+    session.out(`已导出 ${artifact!.artifact.body.sha256}：${bytes.length} 字节，权限 0600`);
+    session.out(`totals：${view.totals == null ? '未提供' : JSON.stringify(counts(view.totals))}；截断：${typeof view.truncated === 'boolean' ? (view.truncated ? '是' : '否') : '未提供'}；跳过：${typeof view.skipped === 'number' ? view.skipped : '未提供'}`);
+    return 0;
+  }
   if (sub === 'sync') {
     let parsed: KnowledgeSyncArgs;
     try {
@@ -987,7 +1046,7 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
 async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
-    const { values } = parse(rest, { external: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
+    const { values } = parse(rest, { external: { type: 'string' }, suffix: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
     if (viewer.role !== 'admin') throw new CliError('只有管理员能列出原件');
     const limit = values.limit === undefined ? 100 : Number(values.limit);
@@ -1003,6 +1062,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
         if (!('read' in body.origin)) continue;
         const object = body.origin.read.object;
         if (values.external !== undefined && !object.startsWith(values.external)) continue;
+        if (values.suffix !== undefined && !object.endsWith(values.suffix)) continue;
         // One line per external id: the newest read of the same object decides the digest shown.
         if (seen.has(object)) continue;
         seen.add(object);
@@ -1011,7 +1071,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
       }
       cursor = lines.length >= limit ? null : page.next;
     } while (cursor !== null);
-    if (lines.length === 0) session.out(values.external === undefined ? '还没有读过的原件' : '没有外部标识以这个前缀开头的原件');
+    if (lines.length === 0) session.out(values.suffix !== undefined ? (values.external === undefined ? '没有符合指定后缀的原件' : '没有同时符合指定前缀和后缀的原件') : values.external === undefined ? '还没有读过的原件' : '没有外部标识以这个前缀开头的原件');
     for (const line of lines) session.out(line);
     return 0;
   }
@@ -1188,11 +1248,57 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
   session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);return 0;
 }
 
+// ---------------------------------------------------------------- sharing (B04, R02): a read capability only
+async function sharingCommand(session: Session, args: readonly string[], withdraw = false): Promise<number> {
+  const admin = await session.admin();
+  const kit = await session.records();
+  const [sub, ...rest] = args;
+  if (sub === 'list' && !withdraw) {
+    const {values} = parse(rest,{object:{type:'string'}},0);
+    const shares = await kit.authorizations.shares(admin,values.object);
+    const names = await session.names();
+    for (const share of shares) session.out([share.body.object,labelOf('share_audience',share.body.share_audience ?? 'user'),names.get(share.body.subject) ?? share.body.subject,share.body.note ?? ''].map(terminalSafe).join('\t'));
+    if (!shares.length) session.out('没有有效分享');
+    return 0;
+  }
+  if (sub !== 'run' && sub !== 'production') throw new UsageError(withdraw ? UNSHARE_USAGE : SHARE_USAGE);
+  const {positionals,values} = parse(rest,{users:{type:'string'},user:{type:'string'},'pack-users':{type:'boolean'},reason:{type:'string'}},1);
+  const hub = await session.hub();
+  let object: string; let pack: string;
+  if (sub === 'run') {
+    const run = await hub.deps.runs.getRun(admin,positionals[0]);
+    if (!run) throw new CliError('对你不可用');
+    object = run.run.run; pack = parsePackRef(run.run.pack)!.id;
+    if (withdraw) {
+      if (Boolean(values.user) === Boolean(values['pack-users']) || values.users) throw new UsageError(UNSHARE_USAGE);
+      const audience = values.user ? (await session.user(values.user)).id : {kind:'pack_users' as const,pack};
+      await kit.authorizations.unshare(admin,object,audience,values.reason);
+    } else {
+      if (Boolean(values.users) === Boolean(values['pack-users']) || values.user) throw new UsageError(SHARE_USAGE);
+      const audience = values.users ? await Promise.all(values.users.split(',').map(async name => (await session.user(name.trim())).id)) : {kind:'pack_users' as const,pack};
+      await kit.authorizations.share(admin,object,audience,values.reason);
+    }
+  } else {
+    if (values.users || values.user || values['pack-users']) throw new UsageError(withdraw ? UNSHARE_USAGE : SHARE_USAGE);
+    pack = packIdOf(positionals[0],'分享');
+    const published = await hub.registry.resolve(pack);
+    if (!published || published.kind !== 'workflow') throw new CliError('对你不可用');
+    object = productionShareKey(pack);
+    const audience = {kind:'pack_users' as const,pack};
+    if (withdraw) await kit.authorizations.unshare(admin,object,audience,values.reason);
+    else await kit.authorizations.share(admin,object,audience,values.reason);
+  }
+  session.out(`${withdraw ? '已撤回分享' : '已分享（只读）'} ${object}`);
+  return 0;
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
+  {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
+  {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
   {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },

@@ -29,6 +29,7 @@ import {
   type PathChange,
   type Placement,
   type ViewEntry,
+  type UnversionedView,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
 import { canonicalBytes, canonicalize, sha256Hex, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
@@ -275,7 +276,8 @@ function facetValues(data: Record<string, unknown>, field: string, odd: { count:
 }
 
 /** One entry of a kind, once: a placed row keeps its path; an unplaced row is cited at the root (K01 R[4]). */
-type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean };
+type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean; root?:string; unversioned?:boolean };
+type ScopeRoot = {root:string;composition:string};
 
 /**
  * Distinct entries of one kind. Placed rows come first, so an entry that is also unplaced keeps the path it hangs on and
@@ -295,6 +297,18 @@ async function* entriesOfKind(composition: CompositionView, kind: string): Async
   }
 }
 
+async function* scopedEntries(main: CompositionView | null, scope: CompositionView | null, kind: string): AsyncGenerator<KindEntry> {
+  const seen = new Set<string>();
+  for (const composition of [main, scope]) {
+    if (composition === null) continue;
+    for await (const row of entriesOfKind(composition, kind)) {
+      if (seen.has(row.entry)) continue;
+      seen.add(row.entry);
+      yield {...row,root:composition.body.root,unversioned:composition===scope};
+    }
+  }
+}
+
 /** The keys an index files an entry under: the text of each distinct element of a list or of the value; null and missing give none. */
 function indexKeys(data: Record<string, unknown>, field: string): string[] {
   const value = Object.hasOwn(data, field) ? data[field] : undefined;
@@ -306,12 +320,13 @@ function indexKeys(data: Record<string, unknown>, field: string): string[] {
 // ---------------------------------------------------------------- the views
 
 interface At {
+  composition?: string;
   build: string;
   root: string;
 }
 
-function viewEntry(digest: string, content: EntryContent, root: string, path: string): ViewEntry {
-  return { entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: treeReference(root, path, digest) };
+function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false): ViewEntry {
+  return { ...(unversioned ? {root,build:null} : {}), entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: treeReference(root, path, digest) };
 }
 
 /** Exact bytes of one member `"<key>":<value>,` of an object in the canonical answer (the last member has no comma: one byte to spare). */
@@ -375,10 +390,71 @@ export class KnowledgeViews {
     const named=await this.#builds.rootOfBuild(product,at.build);
     if(named?.root===at.root){const body=await this.#context.store.composition(named.composition);if(body?.product===product)return new CompositionView(this.#context.store,named.composition,body);}
     const all=(await this.#reading.compositionsOf(at.root)).filter(composition=>composition.body.product===product);
-    return all.find(composition=>composition.body.build.name===at.build)??all[0]??null;
+    return all.find(composition=>composition.body.build?.name===at.build)??all[0]??null;
   }
 
   #budget(reserve=VIEW_MARGIN):number {return Math.max(0,this.#context.limits.maxViewBytes-reserve);}
+  async #scope(product: string, context?: ExternalReadContext, declared?: readonly ScopeRoot[]): Promise<ScopeRoot | null> {
+    if (context?.run) {
+      const lock = await this.#relations.runLock(context.run, context.principal);
+      if (!lock.found) return context.unversioned ?? null;
+      if (lock.product !== product) throw new ImpactRefusal('没有可读的运行产品范围；按本次运行的产品重读');
+      if(context.unversioned!==undefined && canonicalize(context.unversioned)!==canonicalize(lock.unversioned??null)) throw new ImpactRefusal('读取上下文与运行的不分版本快照不同；按已存运行锁重读');
+      return lock.unversioned ?? null;
+    }
+    const roots:ScopeRoot[]=[];
+    for(const ref of declared ?? await this.#context.additionalScopeRoots?.(product) ?? []) {
+      const body=await this.#context.store.composition(ref.composition);
+      if(!body||body.product!==product||body.root!==ref.root)throw new ImpactRefusal('额外根缺少匹配的组成；管理员修正根与产品声明后重读');
+      // Build-root declarations retain their original omission-only meaning.
+      if(body.version===null&&body.build===null)roots.push(ref);
+    }
+    if (roots.length > 1) throw new ImpactRefusal('产品有多个不分版本的当前根；修复指针后重读');
+    return roots[0] ?? null;
+  }
+
+  async #scopeView(product: string, scope: ScopeRoot | null): Promise<CompositionView | null> {
+    if (scope === null) return null;
+    const body = await this.#context.store.composition(scope.composition);
+    if (!body || body.product !== product || body.root !== scope.root || body.version !== null || body.build !== null) throw new ImpactRefusal('不分版本的根缺少匹配的组成；恢复组成后重读');
+    return new CompositionView(this.#context.store,scope.composition,body);
+  }
+
+  async #buildView(product: string, at: At): Promise<CompositionView | null> {
+    if(at.composition===undefined)return this.#composition(product,at);
+    const body=await this.#context.store.composition(at.composition);
+    if(!body||body.product!==product||body.root!==at.root||body.build===null)throw new ImpactRefusal('构建根缺少匹配的组成；恢复组成后重读');
+    return new CompositionView(this.#context.store,at.composition,body);
+  }
+
+  async #scopeSummary(scope: CompositionView | null, kinds: readonly string[], include: (row: KindEntry) => boolean = () => true): Promise<UnversionedView | null> {
+    if (scope === null) return null;
+    const entries=new Set<string>(), documents=new Set<string>();
+    for (const kind of kinds) for await(const row of entriesOfKind(scope,kind)) {
+      if(!include(row))continue;
+      entries.add(row.entry);
+      const document=row.content.data.document;
+      if (typeof document==='string' && document!=='') documents.add(document);
+    }
+    return {root:scope.body.root,composition:scope.record,build:null,skipped_sources:skippedCount(scope),totals:{entries:entries.size,documents:documents.size}};
+  }
+
+  #scopeCounts(summary: UnversionedView | null) {
+    return summary===null ? {} : {unversioned_entries:summary.totals.entries,unversioned_documents:summary.totals.documents};
+  }
+
+  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null): string {
+    if(summary===null)return scopeLocked
+      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）'
+      : '这条产品线还没有不分版本的根；下一步：同步这条产品线';
+    let note=`不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
+    if(summary.skipped_sources>0){
+      const producers=[...new Set((scope?.body.skipped??[]).map(row=>row.producer))].sort(compareText);
+      const detail=producers.length?`摘要中记录的生产器：${producers.join('、')}`:'旧组成未记录生产器明细，请按该组成的生产动作读取完整问题记录';
+      note+=`；不分版本的根有 ${summary.skipped_sources} 份列出的来源未使用（${detail}）；缺少这些来源经核验的入根产出，不能据此当作没有条目。下一步：管理员恢复读取条件或修正资料/生产器，下轮同步自动重读重产，完成后以新运行核验`;
+    }
+    return note;
+  }
 
   async #content(row: ReadRow | null, digest: string): Promise<EntryContent | null> {
     return row?.content ?? (await this.#context.store.entry(digest));
@@ -391,7 +467,9 @@ export class KnowledgeViews {
    * one only itself. With `catalog` only the catalog's members count as changes, read per root and compared by syntax:
    * a path whose members differ only in the descriptive fields or the overload order is not a change, counted in the notes.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{from:CompositionView|null;to:CompositionView|null;reserve?:number}): Promise<ImpactView> {
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{from:CompositionView|null;to:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<ImpactView> {
+    const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
+    const summary = await this.#scopeSummary(scope,attached);
     let membersFrom: ReadonlyMap<string, string> | null = null;
     let membersTo: ReadonlyMap<string, string> | null = null;
     let catalogKind: EntryKind | null = null;
@@ -420,8 +498,8 @@ export class KnowledgeViews {
       return { kind: content.kind, statement: '', data, applicability: content.applicability };
     };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
-    const [fromComposition, toComposition] = pinned?[pinned.from,pinned.to]:await Promise.all([this.#composition(product,from),this.#composition(product,to)]);
-    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],exclude:[...exclude].sort()});
+    const [fromComposition, toComposition] = pinned?[pinned.from,pinned.to]:await Promise.all([this.#buildView(product,from),this.#buildView(product,to)]);
+    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],scope:scope?.record??null,exclude:[...exclude].sort()});
     const budget = this.#budget(pinned?.reserve);
     interface Item {
       position:number;
@@ -560,12 +638,33 @@ export class KnowledgeViews {
         const value = named.get(digest) as Named;
         entries[digest] = viewEntry(digest, value.content, value.root, value.path);
       }
+      const mainDone = !full && count === kept.length;
+      let nextOffset=items.length ? items.at(-1)!.position+1 : page.offset;
+      if(mainDone)nextOffset=Math.max(nextOffset,changedPaths);
+      let scopeTruncated=false;
+      if(scope !== null && mainDone) {
+        const unique=new Map<string,KindEntry>();
+        for(const kind of attached)for await(const row of entriesOfKind(scope,kind))unique.set(row.entry,row);
+        const rows=[...unique.values()].sort((a,b)=>compareText(a.entry,b.entry));
+        let bytes=Object.entries(entries).reduce((n,[key,value])=>n+memberBytes(key,value),0)+items.reduce((n,item)=>n+elementBytes(item.change)+(item.placement?elementBytes(item.placement):0),0);
+        for(let i=Math.max(0,page.offset-changedPaths);i<rows.length;i++) {
+          const row=rows[i];
+          if(entries[row.entry]||exclude.has(row.entry)){nextOffset=changedPaths+i+1;continue;}
+          const value=viewEntry(row.entry,slim(row.content),scope.body.root,row.path,true),size=memberBytes(row.entry,value);
+          if(Object.keys(entries).length>=MAX_IMPACT_ENTRIES||bytes+size>budget){
+            if(items.length===0&&Object.keys(entries).length===0)throw new ImpactRefusal('单条不分版本内容超过视图页上限；用 attached_fields 收窄条目后重读');
+            scopeTruncated=true;break;
+          }
+          entries[row.entry]=value;bytes+=size;nextOffset=changedPaths+i+1;
+        }
+      }
       return {
         schema: 'impact-view@1',
-        next: items.length>0&&items.at(-1)!.position+1<changedPaths?page.next(items.at(-1)!.position+1):null,
+        next: nextOffset<changedPaths||scopeTruncated?page.next(nextOffset):null,
+        unversioned: summary,
         product,
-        from,
-        to,
+        from: {build:from.build,root:from.root},
+        to: {build:to.build,root:to.root},
         changed_kinds: [...effectiveChanged],
         attached_kinds: [...attached],
         ...(attachedFields !== null ? { attached_fields: [...attachedFields] } : {}),
@@ -573,10 +672,10 @@ export class KnowledgeViews {
         changes: items.map((item) => item.change),
         placements: items.flatMap((item) => (item.placement === null ? [] : [item.placement])),
         entries,
-        totals: { changed_paths: changedPaths, attached_from: attachedFrom, attached_to: attachedTo },
-        truncated: page.offset + count < changedPaths || excludedEntries.size > 0,
-        skipped: { from: skippedCount(fromComposition), to: skippedCount(toComposition) },
-        notes: await notesOf(count),
+        totals: { ...this.#scopeCounts(summary), changed_paths: changedPaths, attached_from: attachedFrom, attached_to: attachedTo },
+        truncated: scopeTruncated || nextOffset < changedPaths || excludedEntries.size > 0 || (scope !== null && exclude.size > 0),
+        skipped: { from: skippedCount(fromComposition) + skippedCount(scope), to: skippedCount(toComposition) + skippedCount(scope) },
+        notes: [...await notesOf(count), this.#scopeNote(summary,scopeLocked,scope)],
       };
     };
     // Sized exactly above; a later-root citation can lengthen a reference, so the answer is checked once more as a whole.
@@ -597,19 +696,21 @@ export class KnowledgeViews {
    * exactly. `exclude` names rows left out (by the canonical JSON of their values) because their values have credential
    * scan hits.
    */
-  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number}): Promise<FacetView> {
-    const composition = pinned===undefined?await this.#composition(product,at):pinned.composition;
-    const page=pageState(after,{product,at,kind,by,composition:composition?.record,exclude:[...exclude].sort()});
+  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<FacetView> {
+    const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
+    const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
+    const summary = await this.#scopeSummary(scope,[kind]);
+    const page=pageState(after,{product,at,kind,by,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
     const seen = new Set<string>();
-    const counts = new Map<string, { values: FacetValue[]; count: number }>();
+    const counts = new Map<string, { values: FacetValue[]; count: number; unversioned: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
     const odd = { count: 0 };
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
     let unlisted = 0;
     let unplacedCount = 0;
-    if (composition !== null) {
-      for await (const row of entriesOfKind(composition, kind)) {
+    if (composition !== null || scope !== null) {
+      for await (const row of scopedEntries(composition, scope, kind)) {
         seen.add(row.entry);
         if (row.unplaced) unplacedCount++;
         const lists = by.map((field) => facetValues(row.content.data, field, odd));
@@ -624,8 +725,8 @@ export class KnowledgeViews {
         for (const combo of combos) {
           const key = canonicalize(combo);
           const held = counts.get(key);
-          if (held !== undefined) held.count++;
-          else if (counts.size < limit) counts.set(key, { values: combo, count: 1 });
+          if (held !== undefined) { held.count++; if(row.unversioned) held.unversioned++; }
+          else if (counts.size < limit) counts.set(key, { values: combo, count: 1, unversioned: row.unversioned ? 1 : 0 });
           else throw new ImpactRefusal('分面取值组合超过可计算上限；减少 by 字段后重读，未返回部分计数');
         }
         if (left) unlisted++;
@@ -644,8 +745,8 @@ export class KnowledgeViews {
     const rows: FacetView['rows'] = [];
     let bytes = 0;
     if(page.offset>all.length)throw new ImpactRefusal('续读游标已超出分面结果；从首页重新读取');
-    for (const [, { values, count }] of all.slice(page.offset)) {
-      const row = { values: Object.fromEntries(by.map((field, i) => [field, values[i]])), count };
+    for (const [, { values, count, unversioned }] of all.slice(page.offset)) {
+      const row = { values: Object.fromEntries(by.map((field, i) => [field, values[i]])), count, ...(unversioned>0 ? {unversioned_count:unversioned,unversioned_root:scope!.body.root} : {}) };
       const size = elementBytes(row);
       if (rows.length + 1 > MAX_FACET_ROWS || bytes + size > budget) break;
       rows.push(row);
@@ -664,16 +765,17 @@ export class KnowledgeViews {
     const view: FacetView = {
       schema: 'facet-view@1',
       next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
+      unversioned: summary,
       product,
-      build: at,
+      build: {build:at.build,root:at.root},
       kind,
       by: [...by],
       rows,
       total: seen.size,
-      totals: { empty },
+      totals: { empty, ...this.#scopeCounts(summary) },
       truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
-      skipped: skippedCount(composition),
-      notes,
+      skipped: skippedCount(composition) + skippedCount(scope),
+      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
     };
     if(rows.length===0&&page.offset<all.length)throw new ImpactRefusal('单行分面超过视图页上限；减少 by 字段后重读');
     return conforming(FacetView, view, 'facet-view@1');
@@ -686,7 +788,7 @@ export class KnowledgeViews {
    * the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names entries left
    * out because their text has credential scan hits.
    */
-  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number}): Promise<IndexView> {
+  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<IndexView> {
     // With fields, entries carry only those data fields and an empty statement; the identity (entry digest) and the
     // reference are unchanged. The truncation accounting uses the slimmed size: the fields decide what an entry costs.
     const slim = (content: EntryContent): EntryContent => {
@@ -695,29 +797,31 @@ export class KnowledgeViews {
       for (const field of fields) if (Object.hasOwn(content.data, field)) data[field] = content.data[field];
       return { kind: content.kind, statement: '', data, applicability: content.applicability };
     };
-    const composition = pinned===undefined?await this.#composition(product,at):pinned.composition;
-    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,exclude:[...exclude].sort()});
+    const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
+    const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
+    const summary = await this.#scopeSummary(scope,[kind],row=>indexKeys(row.content.data,key).some(value=>only===null||only.includes(value)));
+    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
     const onlySet = only === null ? null : new Set(only);
     const budget = this.#budget(pinned?.reserve);
     const seen = new Set<string>();
     const keys = new Map<string, string[]>();
     /** Every carrier: the path it is cited at and the exact bytes of its member in `entries`. */
-    const carriers = new Map<string, { path: string; bytes: number }>();
+    const carriers = new Map<string, { path: string; bytes: number; root:string; unversioned:boolean }>();
     const held = new Map<string, EntryContent>();
     let heldBytes = 0;
     let ofKind = 0;
     let unplacedCount = 0;
     const excluded = new Map<string, string>();
-    if (composition !== null) {
-      for await (const row of entriesOfKind(composition, kind)) {
+    if (composition !== null || scope !== null) {
+      for await (const row of scopedEntries(composition, scope, kind)) {
         seen.add(row.entry);
         ofKind++;
         if (row.unplaced) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) continue;
-        const entryBytes = memberBytes(row.entry, viewEntry(row.entry, slim(row.content), at.root, row.path));
-        carriers.set(row.entry, { path: row.path, bytes: entryBytes });
-        if (exclude.has(row.entry)) excluded.set(row.entry, treeReference(at.root, row.path, row.entry));
+        const entryBytes = memberBytes(row.entry, viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned));
+        carriers.set(row.entry, { path: row.path, bytes: entryBytes, root:row.root!, unversioned:row.unversioned===true });
+        if (exclude.has(row.entry)) excluded.set(row.entry, treeReference(row.root!, row.path, row.entry));
         else if (heldBytes + entryBytes <= budget) {
           held.set(row.entry, row.content);
           heldBytes += entryBytes;
@@ -765,8 +869,8 @@ export class KnowledgeViews {
     if(page.offset>available)throw new ImpactRefusal('续读游标已超出索引结果；从首页重新读取');
     // Listed entries whose content was not held during the scan are read in a second one.
     const wanted = new Set([...listedAll].filter((d) => !held.has(d)));
-    if (wanted.size > 0 && composition !== null) {
-      for await (const row of entriesOfKind(composition, kind)) {
+    if (wanted.size > 0 && (composition !== null || scope !== null)) {
+      for await (const row of scopedEntries(composition, scope, kind)) {
         if (!wanted.has(row.entry)) continue;
         held.set(row.entry, row.content);
         wanted.delete(row.entry);
@@ -791,19 +895,22 @@ export class KnowledgeViews {
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
+      out.push(this.#scopeNote(summary,scopeLocked,scope));
       return out;
     };
     const build = (count: number): IndexView => {
       const items = kept.slice(0, count);
       const entries: Record<string, ViewEntry> = {};
       for (const digest of items.flatMap((item) => item.fresh).sort(compareText)) {
-        entries[digest] = viewEntry(digest, slim(held.get(digest) as EntryContent), at.root, (carriers.get(digest) as { path: string }).path);
+        entries[digest] = viewEntry(digest, slim(held.get(digest) as EntryContent), (carriers.get(digest)!).root, (carriers.get(digest)!).path, (carriers.get(digest)!).unversioned);
       }
       return {
         schema: 'index-view@1',
         next: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available?page.next(page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)):null,
+        unversioned: summary,
+        totals: this.#scopeCounts(summary),
         product,
-        build: at,
+        build: {build:at.build,root:at.root},
         kind,
         key,
         ...(fields !== null ? { fields: [...fields] } : {}),
@@ -815,7 +922,7 @@ export class KnowledgeViews {
         total_keys: keys.size,
         total_entries: carriers.size,
         truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0,
-        skipped: skippedCount(composition),
+        skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
     };
@@ -845,6 +952,22 @@ export class KnowledgeViews {
   async #readLinks(bare:string,request:Extract<ViewRequest,{type:'links'}>,context:ExternalReadContext,startedAt:string):Promise<ExternalRead>{
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
     if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
+    const scopeLocked=Boolean(context.run)||request.cursor!==null;
+    let scopeRoot=await this.#scope(handle.product.id,context);
+    let pageCursor=request.cursor, cursorComposition:string|undefined, savedScopeCut:number|undefined;
+    if(pageCursor!==null){
+      let decoded:unknown;
+      try{decoded=JSON.parse(Buffer.from(pageCursor,'base64url').toString('utf8'));}catch{}
+      if(decoded!==null&&typeof decoded==='object'&&'cursor' in decoded){
+        const wrapper=decoded as Record<string,unknown>, value=wrapper.scope;
+        if(typeof wrapper.cursor!=='string'||!Sha256.safeParse(wrapper.c).success||!(value===null||value!==null&&typeof value==='object'&&'root' in value&&'composition' in value&&Sha256.safeParse(value.root).success&&Sha256.safeParse(value.composition).success))throw new LinkRefusal('分页游标缺少有效的不分版本快照；从第一页重新读取');
+        const saved=value===null?null:value as ScopeRoot;
+        if(context.run&&canonicalize(saved)!==canonicalize(scopeRoot))throw new LinkRefusal('分页游标与运行的不分版本快照不同；从本次运行的第一页重新读取');
+        if(wrapper.scope_cut!==undefined&&(!Number.isSafeInteger(wrapper.scope_cut)||Number(wrapper.scope_cut)<0))throw new LinkRefusal('分页游标的不分版本截断计数无效；从首页重新读取');
+        savedScopeCut=wrapper.scope_cut as number|undefined;
+        scopeRoot=saved;pageCursor=wrapper.cursor;cursorComposition=String(wrapper.c);
+      }
+    }
     const fold=(name:string)=>name.normalize('NFC').toLowerCase();
     let locked=context.composition,lockedRoot:string|null=null,selectedBuild=context.build,selectedProduct:string|null=null;
     let storedRun=false,storedComposition:string|null|undefined;
@@ -867,7 +990,7 @@ export class KnowledgeViews {
     if(context.run&&useRunLock&&storedRun&&lockedRoot!==null&&!locked)return {ok:false,id:bare,reason:'这个运行没有锁定组成快照；下一步：以同样输入新开运行再读关联'};
     const effectiveLock=context.run?(useRunLock?locked:undefined):locked;
     if(effectiveLock&&request.composition&&effectiveLock!==request.composition)return {ok:false,id:bare,reason:'请求的组成与运行锁定的组成不同；按锁定组成重读'};
-    let composition=effectiveLock??request.composition??request.revision;
+    let composition=effectiveLock??request.composition??cursorComposition??(scopeRoot===null?request.revision:null);
     if(!composition&&request.cursor){try{const cursor=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(Sha256.safeParse(cursor.c).success)composition=cursor.c;}catch{}}
     if(!composition){
       if(named!==null){const namedRoot=await this.#builds.rootOfBuild(handle.product.id,named.name);if(!namedRoot)return {ok:false,id:bare,reason:'这个命名构建没有已生产的组成；先生产其基础构建再读'};composition=namedRoot.composition;}
@@ -876,24 +999,54 @@ export class KnowledgeViews {
     const body=await this.#context.store.composition(composition);
     if(!body||body.product!==handle.product.id)return {ok:false,id:bare,reason:'组成不属于请求的产品，改用该产品的组成'};
     if(useRunLock&&context.run&&lockedRoot!==null&&body.root!==lockedRoot)return {ok:false,id:bare,reason:'组成的根与运行锁定的根不同；按运行锁定组成重读'};
-    if(named===null&&body.version.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
+    if(named===null&&body.version?.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
     if(named!==null&&!target){
-      const base=fold(body.build.name),graph=new Map<string,Set<string>>();
+      const base=fold(body.build?.name ?? ''),graph=new Map<string,Set<string>>();
       for(const row of await history()){const key=fold(row.body.build.name),values=graph.get(key)??new Set<string>();values.add(fold(row.body.build.base));graph.set(key,values);}
       const seen=new Set<string>(),belongs=(name:string):boolean=>{const key=fold(name);if(key===base)return true;if(seen.has(key))return false;seen.add(key);return [...(graph.get(key)??[])].some(belongs);};
       if(!belongs(named.name))return {ok:false,id:bare,reason:'组成不属于这个命名构建或它已记录的基础构建；核对 composition 后重读'};
     }
-    if(request.revision!==null&&request.revision!==composition)return {ok:false,id:bare,reason:'要求的修订与锁定组成不同，请按锁定组成重读'};
-    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:request.cursor,limit:request.limit,...(named?{build:request.build}:{})});
+    const revision=scopeRoot===null?composition:sha256Hex(canonicalize({composition,scope:scopeRoot}));
+    if(request.revision!==null&&request.revision!==revision)return {ok:false,id:bare,reason:'要求的修订与锁定组成不同，请按锁定组成重读'};
+    const scope=await this.#scopeView(handle.product.id,scopeRoot);
+    const summary=await this.#scopeSummary(scope,ENTRY_KIND);
+    const firstPage=pageCursor===null;
+    const entries:Record<string,ViewEntry>={};
+    let cut=savedScopeCut??0;
+    if(scope){
+      const budget=Math.max(0,Math.floor((this.#context.limits.maxViewBytes-4096)/2));
+      let used=2,full=false;cut=0;
+      for(const kind of ENTRY_KIND)for await(const row of entriesOfKind(scope,kind)){
+        if(full){cut++;continue;}
+        const entry=viewEntry(row.entry,row.content,scope.body.root,row.path,true),size=memberBytes(row.entry,entry);
+        if(full||used+size>budget){full=true;cut++;continue;}
+        used+=size;if(firstPage)entries[row.entry]=entry;
+      }
+    }
+    if(savedScopeCut!==undefined&&savedScopeCut!==cut)throw new LinkRefusal('分页游标的不分版本截断计数与根和预算不符；请从首页重新读取');
+    if(summary)summary.totals.cut_entries=cut;
+    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary,scopeLocked,scope)]}).byteLength;
+    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,maxBytes:Math.max(0,this.#context.limits.maxViewBytes-reserve),...(named?{build:request.build}:{})});
+    if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next,scope_cut:cut})).toString('base64url');
+    view.unversioned=summary;
+    view.notes.push(this.#scopeNote(summary,scopeLocked,scope));
+    if(scope){
+      view.entries=firstPage?entries:{};
+      if(cut>0){view.truncated=true;view.notes.push(`不分版本条目只在首页交付；有 ${cut} 条被字节预算截断，按 get_nodes 从根 ${scope.body.root} 分页读取剩余条目`);}
+      else view.notes.push('不分版本条目只在首页交付，后续页不重复发送');
+    }
+    if(view.totals)Object.assign(view.totals,this.#scopeCounts(summary),summary?{unversioned_entries_cut:cut}:{});
+    if(canonicalBytes(view).byteLength>this.#context.limits.maxViewBytes)throw new LinkRefusal('链接视图的固定范围说明超过字节上限；请维护者调整字节预算后从首页重读');
     LinksView.parse(view);
     const inputs=[`tree:${body.root}/`,`rec:${composition}`],origin={generated:{generator:COMPONENTS.views,inputs}},sources=new Set<string>();
     const sourceView=new CompositionView(this.#context.store,composition,body);
-    for(const source of await sourceView.sources())sources.add(source.sha256);
+    for(const sourceViewItem of [sourceView,scope])if(sourceViewItem)for(const source of await sourceViewItem.sources())sources.add(source.sha256);
+    if(scope)inputs.push(`tree:${scope.body.root}/`,`rec:${scope.record}`);
     const derivedCoverage=await this.#context.records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:[...sources]});
     const artifact=await this.#context.records.artifacts.ingest({bytes:canonicalBytes(view),mediaType:'application/json',origin,derivedCoverage,author:{user:null},provenanceType:'projected',visibility:{readers:[context.principal.id],admins:true,packs:[],shareable:false},name:'links-view.json'});
     if(artifact.body.read_tier!=='model_readable')return {ok:false,id:bare,reason:'链接视图含有未受理的凭据命中，需管理员处理后重读'};
-    const manifest=await this.#context.store.putAction({action:ACTION.generate,run:RunId.safeParse(context.run).success?context.run!:null,item:null,inputs,component:COMPONENTS.views,lease:null,started_at:startedAt,ended_at:this.#context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{external:bare,view:'links',product:body.product,roots:[body.root],composition,revision:composition,artifact:artifact.digest,sha256:artifact.body.sha256,size:artifact.body.size,reader:context.principal.id,purpose:cutText(context.purpose,200)}},[]);
-    return {ok:true,id:bare,revision:composition,artifacts:[{name:'original',artifact}],manifest:manifest.digest};
+    const manifest=await this.#context.store.putAction({action:ACTION.generate,run:RunId.safeParse(context.run).success?context.run!:null,item:null,inputs,component:COMPONENTS.views,lease:null,started_at:startedAt,ended_at:this.#context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{external:bare,view:'links',product:body.product,roots:[body.root,...(scopeRoot?[scopeRoot.root]:[])],composition,revision,artifact:artifact.digest,sha256:artifact.body.sha256,size:artifact.body.size,reader:context.principal.id,purpose:cutText(context.purpose,200)}},[]);
+    return {ok:true,id:bare,revision,artifacts:[{name:'original',artifact}],manifest:manifest.digest};
   }
 
   async #read(id: string, context: ExternalReadContext, startedAt: string): Promise<ExternalRead> {
@@ -909,6 +1062,8 @@ export class KnowledgeViews {
     if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识` };
     const pins=new Map<string,CompositionView>();
     let reserve=VIEW_MARGIN;
+    const additional=context.run?undefined:await this.#context.additionalScopeRoots?.(product);
+    const scopeRoot = await this.#scope(product,context,additional);
     const resolve = async (name: string): Promise<At | string> => {
       const named = await this.#builds.named(product, name);
       if (named === null) {
@@ -918,10 +1073,14 @@ export class KnowledgeViews {
       }
       const root = await this.#builds.rootOfBuild(product, name);
       if (root === null) return `构建 ${named.name} 还没有知识树的根`;
-      const body=await this.#context.store.composition(root.composition);
-      if(!body||body.product!==product||body.root!==root.root)throw new ImpactRefusal('构建的组成快照缺失；管理员恢复组成后重读');
-      pins.set(`${root.root}\0${named.name}`,new CompositionView(this.#context.store,root.composition,body));
-      return { build: named.name, root: root.root };
+      const locked=context.composition && context.build===named.name ? await this.#context.store.composition(context.composition) : null;
+      const at = locked && locked.product===product
+        ? {build:named.name,root:locked.root,composition:context.composition!}
+        : {build:named.name,root:root.root,composition:root.composition};
+      const body=await this.#context.store.composition(at.composition);
+      if(!body||body.product!==product||body.root!==at.root)throw new ImpactRefusal('构建的组成快照缺失；管理员恢复组成后重读');
+      pins.set(`${at.root}\0${at.build}`,new CompositionView(this.#context.store,at.composition,body));
+      return at;
     };
     let roots: string[];
     let key: string;
@@ -934,7 +1093,7 @@ export class KnowledgeViews {
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve});
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run));
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);
@@ -942,19 +1101,21 @@ export class KnowledgeViews {
       roots = [at.root];
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
-        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve});
+        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run));
         title = `${labelOf('entry_kind', request.kind)}按 ${request.by.join('、')} 计数（${at.build}）`;
       } else {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields, after:request.after??null });
-        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve});
+        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run));
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }
-    const revision = roots.join('..');
+    key = canonicalize({request:key,scope:scopeRoot});
+    const revision = scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
     if (request.revision !== null && request.revision !== revision) return { ok: false, id: bare, reason: `要求修订 ${cutText(request.revision, 140)}，现在是 ${revision}` };
     const compositions=[...new Map([...pins.values()].map(composition=>[composition.record,composition])).values()];
     key=canonicalize({query:key,compositions:compositions.map(composition=>composition.record)});
-    const rawScope=await documentScope(this.#context,product,compositions,request.type==='impact');
+    const rawScope=await documentScope({...this.#context,additionalScopeRootsDeclared:(this.#context.additionalScopeRootsDeclared??this.#context.additionalScopeRoots!==undefined)||scopeRoot!==null,additionalScopeRoots:async()=>additional??(scopeRoot?[scopeRoot]:[])},product,compositions,request.type==='impact');
+    if(scopeRoot){roots.push(scopeRoot.root);const scope=await this.#scopeView(product,scopeRoot);if(scope&&!compositions.some(c=>c.record===scope.record))compositions.push(scope);}
     const inputs = [...new Set(roots)].map((root) => `tree:${root}/`);
     const derivedSources = new Set<string>();
     for (const composition of compositions) {
@@ -997,7 +1158,7 @@ export class KnowledgeViews {
       if(page.length>0)await storePage(page);
       return {total:rows.length,parts};
     };
-    const scoped:KnowledgeViewScope={note:'清单是这些根生产时使用或列出的来源观察，依生产器与槽位区分用途；仅核对列明范围，不代表系统内全部文档。额外根只供略去核对，其条目未合并',roots:rawScope.roots,additional_roots:rawScope.additional_roots,additional_roots_declared:rawScope.additional_roots_declared,complete:rawScope.pending.length===0,
+    const scoped:KnowledgeViewScope={note:'清单是这些根生产时使用或列出的来源观察，依生产器与槽位区分用途；仅核对列明范围，不代表系统内全部文档。不分版本根的条目按本次锁定范围合并，并分别标注来源',roots:rawScope.roots,additional_roots:rawScope.additional_roots,additional_roots_declared:rawScope.additional_roots_declared,complete:rawScope.pending.length===0,
       not_in_roots:await scopeCollection(rawScope.not_in_roots),listed_documents:await scopeCollection(rawScope.listed),elsewhere_documents:await scopeCollection(rawScope.elsewhere),omitted_documents:rawScope.omitted===null?null:await scopeCollection(rawScope.omitted),pending_documents:await scopeCollection(rawScope.pending),missing_optional_sources:await scopeCollection(rawScope.optional),unplaced_entries:rawScope.unplaced_entries,...(rawScope.unplaced_cases?{unplaced_cases:rawScope.unplaced_cases}:{})};
     if(rawScope.pending.length>0){
       const action='管理员配置本产品额外根及其组成清单，确认这些来源是否已在其他范围；配置后重读，下一轮同步仍会重试来源';

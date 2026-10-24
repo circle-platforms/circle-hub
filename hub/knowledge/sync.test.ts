@@ -74,9 +74,9 @@ describe('knowledge sync', () => {
     assert.ok(acme13 && zeta13);
     assert.equal(zeta13.root, acme13.root);
     assert.notEqual(zeta13.composition, acme13.composition);
-    assert.equal(zeta13.build.name, 'Rel_ZETA_1_3_20');
+    assert.equal(zeta13.build!.name, 'Rel_ZETA_1_3_20');
     const infos = await w.knowledge.rootInfo(acme13.root);
-    assert.deepEqual(infos.map((i) => i.build.name).sort(), ['Rel_ACME_1_3_20', 'Rel_ZETA_1_3_20']);
+    assert.deepEqual(infos.map((i) => i.build!.name).sort(), ['Rel_ACME_1_3_20', 'Rel_ZETA_1_3_20']);
     assert.notEqual(acme13.root, root12);
 
     // Current roots: per line, the newest build that has a root (release date, then build time), any family.
@@ -140,8 +140,8 @@ describe('knowledge sync', () => {
     // The line pointer still names a build that has a root, never a name-only build.
     const current = await w.knowledge.currentRoot('acme', '1.2');
     assert.ok(current !== null && current.root !== null);
-    assert.notEqual(current.build.name, 'Rel_ACME_1_2_17');
-    assert.notEqual(current.build.name, 'Rel_ZETA_1_2_8');
+    assert.notEqual(current.build!.name, 'Rel_ACME_1_2_17');
+    assert.notEqual(current.build!.name, 'Rel_ZETA_1_2_8');
     // A rerun registers them again without producing anything.
     const again = await w.knowledge.syncProduct(w.product, { by: w.admin });
     assert.equal(again.counts.registered, 2);
@@ -188,7 +188,7 @@ describe('knowledge sync', () => {
     assert.match(first.pointers.find((p) => p.line === '1.2')?.reason ?? '', /还没有根/);
     // The failure is recorded as a generate action with its reason (progress per build).
     const failures = (await w.knowledge.store.productions('acme')).filter((p) => !p.completed);
-    assert.deepEqual(failures.map((p) => p.detail.build.name).sort(), ['Rel_ACME_1_2_15', 'Rel_ACME_1_3_20']);
+    assert.deepEqual(failures.map((p) => p.detail.build!.name).sort(), ['Rel_ACME_1_2_15', 'Rel_ACME_1_3_20']);
 
     w.external.set('site:tree:Rel_ACME_1_2_15', tree as { bytes: string; mediaType: string });
     w.external.throwing.clear();

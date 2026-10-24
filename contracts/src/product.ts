@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../generated/protocol.ts';
 import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
-import { EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
+import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
 
@@ -130,6 +130,7 @@ export type FailedBuild = z.infer<typeof FailedBuild>;
 
 export const SyncPlanOutput = z.strictObject({
   failed_builds: z.array(FailedBuild).optional(),
+  scope: BuildInfo.shape.sources.optional().describe('product-wide sources without a declared build'),
   fetch: z.array(ExternalObjectId).describe('more pages to read before the plan is complete; asked again with their answers'),
   builds: z.array(BuildInfo).describe('every build found so far; the list of the last round is the plan'),
   done: z.boolean(),
@@ -209,6 +210,7 @@ export type ProducerPlacement = Placement;
  * into the source by parser and selector, and the Hub verifies that each one exists before it is hung on the tree (K02 R[0]).
  */
 export const Producer = z.strictObject({
+  unversioned: z.boolean().optional().describe('only produce the product-wide root; absent or false produces build roots'),
   id: z.string().regex(/^[a-z][a-z0-9_-]*$/),
   title: z.string().min(1),
   function: PackFunctionRef,
@@ -230,7 +232,7 @@ export const ProducerSlot = z.strictObject({
 
 /** Input of a producer function. A slot whose source could not be read and was declared optional is null. */
 export const ProducerInput = z.strictObject({
-  build: KnownBuild,
+  build: KnownBuild.optional(),
   slots: z.record(SlotName, ProducerSlot.nullable()),
   lists: z.record(SlotName, z.array(ProducerSlot)).optional().describe('the batch of each list slot (many: true); the other slots are the same in every call'),
   batch: z.strictObject({ index: z.number().int().nonnegative(), of: z.number().int().min(1) }).optional().describe('which batch this call is, when the producer has a list slot'),
@@ -238,23 +240,36 @@ export const ProducerInput = z.strictObject({
 });
 export type ProducerInput = z.infer<typeof ProducerInput>;
 
+/** Conditions the producer read from the source structure; null on an entry means undeclared (K02 F[6]). */
+const MemoryBound=z.strictObject({bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),inclusive:z.boolean()});
+export const Applicability = z.strictObject({
+  builds: z.array(z.string()).optional(),
+  platforms: z.array(z.string()).optional(),
+  models: z.array(z.string()).optional(),
+  components:z.strictObject({with:z.array(z.string().min(1)).min(1).optional(),without:z.array(z.string().min(1)).min(1).optional()}).refine(value=>value.with!==undefined||value.without!==undefined,'declare components with or without').optional(),
+  memory:z.strictObject({minimum:MemoryBound.optional(),maximum:MemoryBound.optional(),raw:z.string().regex(/\S/,'preserve the explicit memory notation')}).refine(value=>value.minimum!==undefined||value.maximum!==undefined,'declare a numeric memory bound').optional(),
+  licenses:z.array(z.string().min(1)).optional(),
+  deployment_forms:z.array(z.string().min(1)).optional(),
+  inherited:z.array(ApplicabilityFieldSchema).optional().describe('Inherited field codes only; source positions belong to composition provenance'),
+});
+export type Applicability = z.infer<typeof Applicability>;
+
+/** Declared field provenance; conflict preserves competing source declarations without choosing a value. */
+export const ApplicabilityOrigin=z.strictObject({field:ApplicabilityFieldSchema,section:z.array(z.string()),declaration:Applicability,conflict:z.boolean().optional(),superseded:z.boolean().optional().describe('An inner scope replaced this declaration; retained as provenance only')});
+export type ApplicabilityOrigin=z.infer<typeof ApplicabilityOrigin>;
+
 /** A piece of a stored source: parser, selector and an optional UTF-8 byte range inside the fragment. */
 export const FragmentRef = z.strictObject({
   slot: SlotName.optional().describe('which input slot; required when the producer has more than one'),
   source: Sha256.optional().describe('digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot'),
   parser: Versioned,
   selector: z.string().min(1),
+  applicability:z.array(ApplicabilityOrigin).min(1).optional().describe('Field-specific source provenance, excluded from entry content'),
   range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
 });
 export type FragmentRef = z.infer<typeof FragmentRef>;
 
-/** Conditions the producer read from the source structure; null on an entry means undeclared (K02 F[6]). */
-export const Applicability = z.strictObject({
-  builds: z.array(z.string()).optional(),
-  platforms: z.array(z.string()).optional(),
-  models: z.array(z.string()).optional(),
-});
-export type Applicability = z.infer<typeof Applicability>;
+
 
 export const ProducedEntry = z.strictObject({
   kind: z.string().describe('declared by the producer (K02 F[0], R[3]); the knowledge package checks it against the entry_kind axis one entry at a time, so one wrong entry is refused and reported without losing the rest'),

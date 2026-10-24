@@ -20,7 +20,7 @@ export function slotOf(source: ParsedSource): ProducerSlotValue {
 }
 
 export interface ProducerCall {
-  build: KnownBuild;
+  build: KnownBuild | null;
   slots: ReadonlyMap<string, ParsedSource | null>;
   params: Record<string, unknown>;
   /** The batch of the list slot, when the producer has one. */
@@ -30,7 +30,7 @@ export interface ProducerCall {
 export async function runProducer(context: KnowledgeContext, product: ProductHandle, producer: Producer, call: ProducerCall): Promise<ProducerRun> {
   const slots: ProducerInput['slots'] = {};
   for (const [slot, source] of call.slots) slots[slot] = source === null ? null : slotOf(source);
-  const payload: ProducerInput = { build: call.build, slots, params: call.params };
+  const payload: ProducerInput = { ...(call.build === null ? {} : { build: call.build }), slots, params: call.params };
   if (call.list !== undefined) {
     payload.lists = { [call.list.slot]: call.list.elements.map(slotOf) };
     payload.batch = call.list.batch;

@@ -25,6 +25,16 @@ after(async () => {
 describe('scenario 14: knowledge sync, idempotence, incrementality, and root diff', () => {
   let initialRoot: string;
 
+  test('the shared bed explicitly deploys empty applicability vocabularies before its real product sync', async () => {
+    const snapshot=await bed.hub.records.variables.snapshot();
+    for(const name of ['APV_COMPONENTS','APV_LICENSES','APV_DEPLOYMENT_FORMS']){
+      assert.ok(snapshot.has(name),name);
+      const resolved=await bed.hub.records.variables.resolveVariables({value:'${var:'+name+'}'},'synthetic-applicability',snapshot);
+      assert.deepEqual(resolved.value,{value:[]});
+    }
+    assert.equal(bed.syncs.two?.error,null);
+  });
+
   test('initial sync produced roots for both name families', () => {
     const sync = bed.syncs.two;
     assert.ok(sync);

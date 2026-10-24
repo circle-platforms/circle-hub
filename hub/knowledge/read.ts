@@ -6,7 +6,7 @@
 import { KnowledgeError } from './errors.ts';
 import { createHash } from 'node:crypto';
 import {requestKnowledgeFact} from './requests.ts';
-import { EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
+import { ApplicabilityFieldSchema, labelOf, type ApplicabilityField, EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
@@ -35,16 +35,44 @@ const SHA256 = /^[0-9a-f]{64}$/;
 /** Binds a tree reader to the composition a run locked (RootInfo.composition): its grounds and premises come from it alone. */
 export interface TreeLock {
   composition?: string | null;
+  compositions?: string[];
 }
 
 /** Display text of an entry's applicability (K02 R[2]: undeclared is said, never hidden). */
-export function applicabilityText(applicability: Applicability | null): string {
-  if (applicability === null) return UNDECLARED;
-  const parts: string[] = [];
-  if (applicability.builds !== undefined) parts.push(`构建 ${applicability.builds.join('、') || '（无）'}`);
-  if (applicability.platforms !== undefined) parts.push(`平台 ${applicability.platforms.join('、') || '（无）'}`);
-  if (applicability.models !== undefined) parts.push(`型号 ${applicability.models.join('、') || '（无）'}`);
-  return parts.length === 0 ? '未限定' : parts.join('；');
+export function applicabilityText(applicability: Applicability | null, sources:readonly {field:ApplicabilityField;section:readonly string[];declaration?:Applicability;conflict?:boolean;superseded?:boolean}[]=[]): string {
+  sources=sources.filter(source=>!source.superseded);
+  const conflicts=new Set(sources.filter(source=>source.conflict).map(source=>source.field));
+  const unread=new Set(sources.filter(source=>source.declaration!==undefined&&source.declaration[source.field]===undefined).map(source=>source.field));
+  if(applicability===null&&!conflicts.size&&!unread.size)return UNDECLARED;
+  const parts:string[]=[];
+  const add=(field:ApplicabilityField,value:string)=>{
+    if(conflicts.has(field)||unread.has(field))return;
+    const inherited=applicability?.inherited?.includes(field);
+    const sections=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')).filter(Boolean))];
+    parts.push(labelOf('applicability_field',field)+' '+value+(inherited?'（继承自章节开头：'+(sections.length?sections.join('、'):'出处未取得；下一步读取组成记录中的来源片段')+'）':''));
+  };
+  if(applicability!==null){
+  if(applicability.builds!==undefined)add('builds',applicability.builds.join('、')||'（无）');
+  if(applicability.platforms!==undefined)add('platforms',applicability.platforms.join('、')||'（无）');
+  if(applicability.models!==undefined)add('models',applicability.models.join('、')||'（无）');
+  if(applicability.components!==undefined)add('components',[applicability.components.with?'装有 '+applicability.components.with.join('、'):'',applicability.components.without?'没有 '+applicability.components.without.join('、'):''].filter(Boolean).join('，'));
+  if(applicability.memory!==undefined){const m=applicability.memory;const bounds=[m.minimum?(m.minimum.inclusive?'≥':'>')+m.minimum.bytes+' 字节':'',m.maximum?(m.maximum.inclusive?'≤':'<')+m.maximum.bytes+' 字节':''].filter(Boolean).join('，');add('memory',m.raw+'（'+bounds+'）');}
+  if(applicability.licenses!==undefined)add('licenses',applicability.licenses.join('、')||'（无）');
+  if(applicability.deployment_forms!==undefined)add('deployment_forms',applicability.deployment_forms.join('、')||'（无）');
+  }
+  for(const field of ApplicabilityFieldSchema.options)if(conflicts.has(field)||unread.has(field)){
+    const paths=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')).filter(Boolean))];
+    const location=paths.length?paths.join('、'):'出处未取得；下一步读取组成记录中的来源片段';
+    const next=conflicts.has(field)?'下一步：来源维护者核对这些片段，修订或明确保留矛盾后重新同步':'下一步：读取组成记录里的来源片段核对原文';
+    parts.push(labelOf('applicability_field',field)+' 未声明（章节开头'+(conflicts.has(field)?'冲突，双方值和片段保留在组成记录':'条件未能结构化，原文保留')+'：'+location+'；'+next+'）');
+  }
+  return parts.length?parts.join('；'):'未限定';
+}
+
+/** Source declarations are not target observations (K02 R[2], B01 F[4]). */
+export function applicabilityPremises(applicability:Applicability|null):string[]{
+  if(applicability===null)return [];
+  return ApplicabilityFieldSchema.extract(['components','memory','licenses','deployment_forms']).options.filter(field=>applicability[field]!==undefined).map(field=>'目标前提，未核对：缺目标上的'+labelOf('applicability_field',field)+'观察；下一步：在目标上观察');
 }
 
 export interface ProvenanceRow {
@@ -387,7 +415,7 @@ export class TreeReading {
       children: node.children.map((child) => ({ name: child.name, path: pathOf([...segments, child.name]), digest: child.digest })),
       entries: entries.map(({ digest: entry, content }) => {
         const placement = rows?.get(entry)?.placement;
-        const applicability = applicabilityText(content.applicability);
+        const applicability = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
         return {
           entry,
           // Entries are checked against the entry_kind axis before they are stored; a stored kind outside it is corruption.
@@ -412,7 +440,14 @@ export class TreeReading {
   treeReader(lock: TreeLock | null = null): TreeReader {
     const bound = typeof lock?.composition === 'string' && SHA256.test(lock.composition) ? lock.composition : null;
     return {
-      read: (root, path, entry, reader) => this.#read(root, path, entry, reader, bound),
+      read: async (root, path, entry, reader) => {
+        let selected = bound;
+        for (const digest of lock?.compositions ?? []) {
+          const body = await this.#context.store.composition(digest);
+          if (body?.root === root) { selected = digest; break; }
+        }
+        return this.#read(root, path, entry, reader, selected);
+      },
       readEntry: (entry, reader) => this.#readEntry(entry, reader),
       // A path or entry that `read` does not find in a root the reader may read is a mistake in the reference.
       hasRoot: async (root, reader) => (await this.mayReadRoot({ id: reader.user }, root)) && (await this.#context.store.node(root)) !== null,
@@ -453,7 +488,7 @@ export class TreeReading {
         const own: string[] = [];
         for (const digest of digests) for (const fragment of rowsOf[i].get(digest)?.fragments ?? []) if (!own.includes(fragment)) own.push(fragment);
         for (const fragment of own) if (!grounds.includes(fragment)) grounds.push(fragment);
-        return { composition: c.record, build: c.body.build.name, grounds: own };
+        return { composition: c.record, build: c.body.build?.name ?? UNDECLARED, grounds: own };
       });
       return { grounds, tagged };
     };
@@ -474,7 +509,7 @@ export class TreeReading {
       }
       // Only readable compositions may select comparison targets. Several readable scopes are unambiguous only
       // when every current pointer names the same root; otherwise the reader must supply a composition.
-      const scopes=new Map(compositions.map(composition=>[pointerName(composition.body.product,composition.body.version.line),true]));
+      const scopes=new Map(compositions.map(composition=>[pointerName(composition.body.product,composition.body.version?.line ?? null),true]));
       const targets=await Promise.all([...scopes.keys()].map(async name=>(await this.#context.records.pointers.get(name))?.target??null));
       return targets.length>0&&targets.every(root=>root!==null)&&new Set(targets).size===1?targets[0]:null;
     })();
@@ -506,6 +541,12 @@ export class TreeReading {
         out.push({ digest, source: `rec:${record.digest}`, at: body.at ?? record.created_at, other: body.other ?? '', by: body.by ?? '', provenance: record.provenance });
       }
       return out;
+    };
+
+    const applicabilitySourcesOf=(digests:readonly string[])=>{
+      const sources:NonNullable<CompositionRow['applicability_sources']>=[];
+      for(const rows of rowsOf)for(const digest of digests)for(const origin of rows.get(digest)?.applicability_sources??[])if(!sources.some(existing=>JSON.stringify(existing)===JSON.stringify(origin)))sources.push(origin);
+      return sources;
     };
 
     const validityOfRows = async (digests: readonly string[]): Promise<{
@@ -569,6 +610,8 @@ export class TreeReading {
         if (visible) contradictions.push({ source: relation.source, at: relation.at, other: relation.other });
       }
       if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
+      const sourceConflicts=applicabilitySourcesOf(digests).filter(source=>source.conflict&&!source.superseded);
+      if(sourceConflicts.length)conditions.push({condition:'contradicted',source:'章节开头条件冲突；未裁决：'+sourceConflicts.map(source=>labelOf('applicability_field',source.field)+' '+source.fragment).join('、')});
       let status: ValidityStatus = unevaluated.length > 0 ? 'not_evaluated' : 'valid';
       for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }
       const result: {
@@ -597,11 +640,11 @@ export class TreeReading {
         text: content.statement,
         mediaType: 'text/plain',
         readTier: 'model_readable',
-        data: { kind: content.kind, data: content.data, applicability: content.applicability } as JsonValue,
+        data: { kind: content.kind, data: content.data, applicability: content.applicability,applicability_sources:applicabilitySourcesOf([entry]) } as JsonValue,
         grounds,
         validity: {
           ...validity,
-          premises: content.applicability === null ? [...premises, `适用条件：${UNDECLARED}`] : premises,
+          premises: [...(content.applicability === null ? [...premises, `适用条件：${UNDECLARED}`] : premises),...applicabilityPremises(content.applicability)],
           compositions: tagged,
         } as JsonValue,
       };
@@ -616,7 +659,7 @@ export class TreeReading {
       readTier: 'model_readable',
       data: { name: found.node.name, level: found.node.level, children: found.node.children.map((c) => c.name), entries: [...found.node.entries] },
       grounds,
-      validity: { ...validity, premises, compositions: tagged } as JsonValue,
+      validity: { ...validity, premises:[...new Set([...premises,...entries.flatMap(entry=>applicabilityPremises(entry.content.applicability))])], compositions: tagged } as JsonValue,
     };
   }
 
@@ -823,7 +866,7 @@ export class TreeReading {
           root: parsed.root,
           composition: view.record,
           product: production.detail.product,
-          build: production.detail.build.name,
+          build: production.detail.build?.name ?? UNDECLARED,
           path,
           entry: row.entry,
           kind: row.kind,

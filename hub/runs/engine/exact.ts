@@ -46,6 +46,8 @@ export interface RunScope {
   /** The judged source: the sources and records bound through the workflow's subject slot (where a statement's location lies). */
   subject: { shas: ReadonlySet<string>; records: ReadonlySet<string> };
   root: string | null;
+  unversionedRoot?: string | null;
+  compositions?: string[];
   catalogs: readonly CatalogView[];
   /** Quotation candidates of every bound source the consumer may read, parsed on first use. */
   candidates(): Promise<QuoteCandidate[]>;
@@ -124,6 +126,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
     records,
     subject,
     root: run.root ?? null,
+    unversionedRoot: run.unversioned_root ?? null,
+    compositions: run.target_basis.flatMap(c => { const d=c.statement.data; return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : []; }),
     catalogs,
     candidates: () =>
       (candidates ??= (async () => {
@@ -164,7 +168,7 @@ export function scopeProblem(ref: Reference, scope: RunScope): string | null {
     case 'src':
       return scope.sources.has(ref.sha256) ? null : '引用的源文件没有绑定到本次运行';
     case 'tree':
-      return scope.root !== null && ref.root === scope.root ? null : '引用的知识树根不是本次运行锁定的根';
+      return [scope.root, scope.unversionedRoot].includes(ref.root) ? null : '引用的知识树根不是本次运行锁定的根';
     case 'rec':
       return scope.records.has(ref.record) ? null : '引用的 Hub 记录没有绑定到本次运行';
     case 'entry':
@@ -180,7 +184,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     reader: scope.reader,
     parsers: ctx.parsers,
     sources: sourceReader(artifacts, consumer),
-    trees: ctx.deps.knowledge.treeReader(),
+    trees: ctx.deps.knowledge.treeReader({ compositions: scope.compositions }),
     records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
     consumer,
     documents: ctx.documents,

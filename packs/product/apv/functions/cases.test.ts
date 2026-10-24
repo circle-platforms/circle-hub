@@ -383,7 +383,7 @@ describe('the producer on bad input', () => {
   });
 
   it('says what it could not use: no list, no tree, documents that are no mind maps or hold no case', () => {
-    assert.deepEqual(cases({ build: buildOf('10.4.1', []), slots: { tree: treeSlot(CATALOG_A), folders: null }, lists: { documents: [] }, batch: { index: 0, of: 1 }, params: {} }), { entries: [], warnings: ['这个构建没有列出用例文档'] });
+    assert.deepEqual(cases({ build: buildOf('10.6.141', []), slots: { tree: treeSlot(CATALOG_A), folders: null }, lists: { documents: [] }, batch: { index: 0, of: 1 }, params: {} }), { entries: [], warnings: ['这个构建没有列出用例文档'] });
     const noTree = cases({ build: buildOf('10.6.1', []), slots: { tree: null, folders: null }, lists: { documents: [element(corpus.documents['950081'])] }, batch: { index: 0, of: 1 }, params: {} });
     assert.ok(noTree.entries.length > 0 && noTree.entries.every((entry) => entry.path === null));
     assert.match(noTree.warnings[0] ?? '', /没有命令树/);

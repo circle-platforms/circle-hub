@@ -2,6 +2,68 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "unversioned": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "composition": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "build": {
+              "type": "null"
+            },
+            "skipped_sources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "documents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cut_entries": {
+                  "description": "product-wide entries omitted by the links first-page payload budget; repeated unchanged on later pages",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "entries",
+                "documents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "root",
+            "composition",
+            "build",
+            "skipped_sources",
+            "totals"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "schema": {
       "type": "string",
       "const": "impact-view@1"
@@ -27,7 +89,10 @@
                 "pattern": "^[0-9a-f]{64}$"
               },
               "build": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -52,7 +117,10 @@
                 "pattern": "^[0-9a-f]{64}$"
               },
               "build": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -577,6 +645,13 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "root": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "build": {
+            "type": "null"
+          },
           "entry": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
@@ -622,6 +697,16 @@
     "totals": {
       "type": "object",
       "properties": {
+        "unversioned_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unversioned_documents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "changed_paths": {
           "type": "integer",
           "minimum": 0,
@@ -668,7 +753,7 @@
         "to"
       ],
       "additionalProperties": false,
-      "description": "listed sources the producers could not use, per root (unreadable, unparsable, over the byte cap): what they would have given is unknown, not absent, so a pack must not read the absence of an entry as a fact when this is not zero"
+      "description": "listed sources the producers could not use per side: the build root on that side plus the shared locked product-wide root; the shared count intentionally contributes to both sides; the produced entries do not cover these sources"
     },
     "notes": {
       "type": "array",

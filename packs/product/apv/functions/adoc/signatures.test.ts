@@ -495,7 +495,7 @@ test('an example takes no part in judgment: its literal is no drift candidate, a
     ['/commands', new Set()], ['/commands/demo', new Set()], ['/commands/demo/probe', definition],
   ]);
   const sources = produced.entries.map((entry, index) => ({
-    path: entry.path ?? '/', unplaced: entry.path === null, entry: createHash('sha256').update(String(index)).digest('hex'), producers: ['manual'],
+    path: entry.path ?? '/', unplaced: entry.path === null, entry: createHash('sha256').update(String(index)).digest('hex'), producers: ['manual-apv'],
     content: { kind: entry.kind, statement: String(entry.statement), data: entry.data, applicability: entry.applicability ?? null },
   }));
   const facts = relationFacts('a'.repeat(64), rules, nodes, sources);

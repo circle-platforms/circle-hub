@@ -83,7 +83,7 @@ export interface Knowledge extends KnowledgePort {
   /** What a run locks: the root of a named build (any family), else the current root of the line. */
   lockRoot(product: string, target: { line?: string | null; build?: string | null }): Promise<RootInfo | null>;
   /** An enabled admin moves a current root, with the completed generate action that produced it as `cause` (K01 R[6], B05 R[4]). */
-  moveRoot(product: string, line: string, expected: string | null, root: string, cause: string | null, options?: MoveRootOptions): Promise<MoveRootResult>;
+  moveRoot(product: string, line: string | null, expected: string | null, root: string, cause: string | null, options?: MoveRootOptions): Promise<MoveRootResult>;
   reconcileLine(product: string, line: string, by?: Principal | null): Promise<LineReconciliation>;
   /** Provenance for a reader who may read the root; null for anyone else (absent and forbidden alike). */
   provenanceOf(reference: string, reader: Principal): Promise<ProvenanceRow[] | null>;
@@ -104,8 +104,9 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const placer = new Placer({ jev: options.jev ?? null, store, now });
   const calibration = new CalibrationStore(store, options.records.principals);
   const context: KnowledgeContext = {
+    additionalScopeRoots: options.additionalScopeRoots,
+    additionalScopeRootsDeclared: options.additionalScopeRoots !== undefined,
     records: options.records,
-    additionalScopeRoots:options.additionalScopeRoots,
     store,
     parsers: options.parsers,
     packs: options.packs,
@@ -124,6 +125,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     writes: new WriteQueue(),
   };
   const builds = new Builds(context);
+  context.additionalScopeRoots ??= async product => {
+    const root = await builds.currentRoot(product, null);
+    return root === null ? [] : [{root:root.root,composition:root.composition}];
+  };
   const reading = new TreeReading(context);
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
@@ -175,7 +180,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
         questions.push({ key: `${row.entry}:${depth}`, text: masked, section: '', fragment: row.fragments[0], segments: at, children, expected: depth < segments.length ? segments[depth] : null });
       }
     }
-    const samples = await placer.sample(questions, { product: composition.body.product, build: composition.body.build.name });
+    const samples = await placer.sample(questions, { product: composition.body.product, build: composition.body.build?.name ?? '未声明' });
     if (samples.length === 0) return { record: null, samples: 0, state: await calibration.state(kind, model) };
     const record = await calibration.append({ kind, model, origin: 'projected', samples, decided_by: null, root: input.root, note: `由 ${rows.length} 个代码挂树的片段遮去命令字面后生成` });
     return { record, samples: samples.length, state: await calibration.state(kind, model) };
@@ -205,6 +210,13 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       );
     },
     resolveBuild: (product, name) => builds.resolve(product, name),
+    async unversionedRoot(product) {
+      const info = await builds.currentRoot(product, null);
+      if (info === null) return null;
+      const body = await store.composition(info.composition);
+      if (body === null || body.build !== null || body.version !== null) throw new Error('不分版本的根缺少对应的组成；恢复组成后重新读取');
+      return { ...info, source_count: body.sources.length + (body.parts?.sources ?? []).reduce((n, p) => n + p.rows, 0) };
+    },
     currentRoot: (product, line) => builds.currentRoot(product, line),
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),

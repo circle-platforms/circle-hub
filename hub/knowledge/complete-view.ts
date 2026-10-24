@@ -30,14 +30,14 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
   try{const raw=JSON.parse(Buffer.from(source.bytes).toString('utf8'));const schema=raw.schema==='index-view@1'?IndexView:raw.schema==='facet-view@1'?FacetView:raw.schema==='impact-view@1'?ImpactView:null;
    if(!schema)return read;page=schema.parse(raw);
   }catch{return fail('知识视图页不符合公开结构；请管理员修复视图后重试');}
-  const pageKeys:string[]=page.schema==='index-view@1'?Object.entries(page.keys).flatMap(([key,values])=>(values as string[]).map(value=>canonicalize([key,value]))):page.schema==='facet-view@1'?page.rows.map((row:any)=>canonicalize(row.values)):page.changes.map((change:any)=>change.path);
+  const pageKeys:string[]=page.schema==='index-view@1'?Object.entries(page.keys).flatMap(([key,values])=>(values as string[]).map(value=>canonicalize([key,value]))):page.schema==='facet-view@1'?page.rows.map((row:any)=>canonicalize(row.values)):[...page.changes.map((change:any)=>'path:'+change.path),...Object.entries(page.entries).filter(([,entry])=>(entry as any).build===null).map(([digest])=>'unversioned:'+digest)];
   if(page.next&&pageKeys.length===0)return fail('知识视图给出了空的续读页，无法推进；请管理员修复分页后重试');
   for(const key of pageKeys){if(delivered.has(key))return fail('知识视图续读重复交付同一项；请管理员修复游标后重试');delivered.add(key);}
   if(page.schema==='impact-view@1')for(const placement of page.placements){if(placements.has(placement.path))return fail('知识视图续读重复交付同一节点的附着条目；请管理员修复游标后重试');placements.add(placement.path);}
   inputs.push(`src:${source.sha256}`);
   if(merged===null)merged=page;
   else{
-   const scope=(v:any)=>JSON.stringify({schema:v.schema,product:v.product,build:v.build,from:v.from,to:v.to,kind:v.kind,key:v.key,by:v.by,fields:v.fields,only:v.only,changed:v.changed_kinds,attached:v.attached_kinds,attached_fields:v.attached_fields,catalog:v.catalog,skipped:v.skipped,total:v.total,total_keys:v.total_keys,total_entries:v.total_entries,totals:v.totals,scope:v.scope});
+   const scope=(v:any)=>JSON.stringify({schema:v.schema,product:v.product,build:v.build,from:v.from,to:v.to,kind:v.kind,key:v.key,by:v.by,fields:v.fields,only:v.only,changed:v.changed_kinds,attached:v.attached_kinds,attached_fields:v.attached_fields,catalog:v.catalog,skipped:v.skipped,total:v.total,total_keys:v.total_keys,total_entries:v.total_entries,totals:v.totals,unversioned:v.unversioned,scope:v.scope});
    if(scope(merged)!==scope(page))return fail('知识视图续读的查询范围或计数改变；从首页重新绑定');
    if(page.schema==='index-view@1'){
     for(const [key,values] of Object.entries(page.keys))merged.keys[key]=[...new Set([...(merged.keys[key]??[]),...(values as string[])])].sort();

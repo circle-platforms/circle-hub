@@ -12,6 +12,8 @@ import type { ItemResult, LayerResult, RequirementResult, ValidationResult } fro
 import type { RunDetail } from '../../ports.ts';
 import type { CallLogLine, Principal } from '../../records/api.ts';
 import { UNAVAILABLE_MESSAGE } from '../../refs/api.ts';
+import { canSeeRun } from '../../runs/engine/api.ts';
+import { productionShareKey } from '../../records/api.ts';
 import { itemCell } from '../../runs/api.ts';
 import type { ServerDeps } from '../api.ts';
 import { NOT_APPLICABLE, cellText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
@@ -207,6 +209,22 @@ export function missingProductionResult(detail:RunDetail):Html {
 ${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${code(detail.latest.record)}；运行页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
 }
 
+/** The query already authorized this run; this marker never grants access itself. */
+export function sharedRunNotice(ctx: PageContext, run: RunRecord): Html {
+  return canSeeRun(ctx.principal,run) ? html`` : html`<p class="notice">经管理员分享（只读）</p>`;
+}
+
+async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
+  if (!ctx.admin) return html``;
+  const direct = await ctx.deps.records.authorizations.shares(ctx.principal,run.run);
+  const pack = run.pack.slice(0,run.pack.lastIndexOf('@'));
+  const policies = run.requirements.length && run.requirements.every(row=>row.accepted_producer==='fact')
+    ? await ctx.deps.records.authorizations.shares(ctx.principal,productionShareKey(pack)) : [];
+  return section('当前分享',table(['对象','受众','主体','决定时刻','理由'],[...direct,...policies].map(share=>[
+    code(share.body.object),labelOf('share_audience',share.body.share_audience ?? 'user'),code(share.body.subject),share.body.decided_at,share.body.note ?? '—',
+  ]),'没有有效分享'));
+}
+
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
   const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId);
@@ -291,7 +309,8 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     status: 200,
     body: page(
       ctx.chrome(`运行 ${run.run}`),
-      html`${summary}
+      html`${sharedRunNotice(ctx,run)}${summary}
+${await runSharing(ctx,run)}
 ${section('版本依据', basis)}
 ${section('来源', sources)}
 ${section('要求项', requirements)}
@@ -402,6 +421,9 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         current === null ? '—' : html`${link('/console/knowledge/tree', current.root.slice(0, 16), { root: current.root, path: '/' })}（${current.build.name}）`,
       ]);
     }
+    const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
+    rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
+      unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
     blocks.push(
       section(
         `${line.title}（${line.id}）`,
@@ -455,7 +477,7 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
       html`<p>${code(root)} ${link('/console/knowledge/tree', '浏览树', { root, path: '/' })}</p>
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],
-  infos.map((info) => [code(info.composition), info.product, info.build.name, info.build.family, info.build.line, info.produced_at]),
+  infos.map((info) => [code(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '—', info.build?.line ?? '不分版本', info.produced_at]),
 )}`,
     ),
   };

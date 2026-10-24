@@ -66,15 +66,15 @@ describe('locations gold generator', () => {
     const title2 = 'bug to case 70412 & 70413 信标权重为0时的调度';
     const res2 = extractAssociatedIds(title2, ['004：7.1-R2-2026/5', '信标']);
     assert.deepEqual(res2.stories, []);
-    assert.deepEqual(res2.bugs, []);
-    assert.deepEqual(res2.unclassified, ['70412', '70413']);
+    assert.deepEqual(res2.bugs, ['70412', '70413']);
+    assert.deepEqual(res2.unclassified, []);
     assert.deepEqual(res2.associatedIds, ['70412', '70413']);
 
-    // Three convention cases: bug to case 900001 900002 (unclassified), bug to case 需求900003 (stories), 缺陷900004 (bugs)
+    // Three convention cases: the family marks bugs, a nearer requirement marker overrides it, and 缺陷 marks bugs
     const resB2C = extractAssociatedIds('bug to case 900001 900002', []);
-    assert.deepEqual(resB2C.unclassified, ['900001', '900002']);
+    assert.deepEqual(resB2C.unclassified, []);
     assert.deepEqual(resB2C.stories, []);
-    assert.deepEqual(resB2C.bugs, []);
+    assert.deepEqual(resB2C.bugs, ['900001', '900002']);
     assert.deepEqual(resB2C.associatedIds, ['900001', '900002']);
 
     const resB2CStory = extractAssociatedIds('bug to case 需求900003', []);
@@ -409,5 +409,54 @@ describe('leading-zero associated identifiers', () => {
     const joined = joinGold([{ bug: '910001', status: 'fixed', module: '', system: 'plm' }], [{ document: 'synthetic-doc', id: 'synthetic-case', title: '合成用例', defects: bugs }], { plm: [{ id: '00910001', status: 'closed' }] });
     assert.equal(joined.closed_traced, 1);
     assert.deepEqual(extractAssociatedIds('000000 合成标题', ['缺陷 00000', '需求 00']).associatedIds, []);
+  });
+});
+
+
+describe('published bug-to-case identifier convention', () => {
+  // Literal synthetic titles exercise the documented family, independently of any pack implementation.
+  for (const marker of ['bug to case', 'Bug2case', 'bugtocase', 'but-to-case', 'Butocase', 'bug ro case', 'bug-to-case', 'bug_to_case']) {
+    for (const separator of ['', ' ']) {
+      it(`classifies ${JSON.stringify(marker + separator)} followed by an id as a defect`, () => {
+        assert.deepEqual(extractAssociatedIds(`${marker}${separator}735001 合成标题`, []), {
+          stories: [], bugs: ['735001'], unclassified: [], associatedIds: ['735001'],
+        });
+      });
+    }
+  }
+
+  for (const title of ['Bug2case需求735001', 'bug to case 需求 735001', 'bugtocase story735001', 'but-to-case story 735001']) {
+    it(`lets the type word nearest the id win: ${title}`, () => {
+      assert.deepEqual(extractAssociatedIds(title, []), { stories: ['735001'], bugs: [], unclassified: [], associatedIds: ['735001'] });
+    });
+  }
+  it('keeps each marker local to its following list, without retyping a neighbouring id', () => {
+    assert.deepEqual(extractAssociatedIds('Bug2case735001 & 735002；story735003；PLM735004', []), {
+      stories: ['735003'], bugs: ['735001', '735002'], unclassified: ['735004'], associatedIds: ['735001', '735002', '735003', '735004'],
+    });
+  });
+  it('does not treat PLM alone as a defect marker', () => {
+    for (const title of ['PLM735001', 'PLM 735001']) {
+      assert.deepEqual(extractAssociatedIds(title, []), { stories: [], bugs: [], unclassified: ['735001'], associatedIds: ['735001'] });
+    }
+    assert.deepEqual(extractAssociatedIds('PLM Bug2case735001', []).bugs, ['735001']);
+    assert.deepEqual(extractAssociatedIds('PLM story735001', []).stories, ['735001']);
+  });
+  for (const title of ['debugtocase735001', 'Bug2case note 735001', 'bug to case story note 735001', 'Bug2case000000', 'Bug2case7350012345']) {
+    it(`does not manufacture a typed id from ${JSON.stringify(title)}`, () => {
+      assert.deepEqual(extractAssociatedIds(title, []), { stories: [], bugs: [], unclassified: [], associatedIds: [] });
+    });
+  }
+  it('does not let a trailing family phrase classify a leading bare id retroactively', () => {
+    assert.deepEqual(extractAssociatedIds('735001 合成标题 Bug2case', []), { stories: [], bugs: [], unclassified: ['735001'], associatedIds: ['735001'] });
+  });
+  it('retains padding while typed folder evidence classifies a bare title id', () => {
+    assert.deepEqual(extractAssociatedIds('0735001 合成标题', ['Bug2case 0735001']), { stories: [], bugs: ['0735001'], unclassified: [], associatedIds: ['0735001'] });
+  });
+  it('carries the independent classification into a conforming document location', () => {
+    const result = evaluateLocation({ document: 'synthetic-document', title: 'Butocase735001 合成文档', ancestors: ['10.6.1', '10.6.1-R2', 'Synthetic Module'] });
+    assert.equal(result.location.conforming, true);
+    assert.deepEqual(result.location.bugs, ['735001']);
+    assert.deepEqual(result.location.unclassified, []);
   });
 });

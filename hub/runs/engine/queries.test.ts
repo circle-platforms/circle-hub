@@ -135,3 +135,103 @@ test('resolve_reference on a run with large bound sources (>65536 candidates) do
   assert.equal(answer.call_result, 'ok');
   assert.equal(answer.resolution, 'resolved');
 });
+
+test('sharing grants read queries and preview but never submission or predecessor rights', { skip }, async t => {
+  const { recordReader, identityOf } = await import('./readers.ts');
+  const { runById } = await import('./store.ts');
+  const a = h.kit.authorizations;
+  const stored = (await runById(h.kit.store, run.run))!;
+  await a.share(h.admin, run.run, {kind:'pack_users',pack:'toy-review'});
+  assert.equal(await h.service.getRun(h.bob, run.run), null);
+  await a.assign(h.admin,h.bob.id,'toy-review');
+  const view = await h.service.getRun(h.bob,run.run); assert.ok(view);
+  assert.deepEqual(view.run,stored.body);
+  assert.ok(await h.service.getResult(h.bob,run.run));
+  assert.ok((await h.service.listRuns(h.bob,{limit:1})).items.some(row=>row.run===run.run));
+  const records = recordReader(h.kit.store);
+  assert.ok(await records.read(stored.digest,identityOf(h.bob)));
+  assert.ok(await records.read(view.latest!.record,identityOf(h.bob)));
+  assert.ok(await records.read(view.submissions.find(s=>s.acceptance==='accepted')!.record,identityOf(h.bob)));
+  const preview = await h.service.resolveReference(h.bob,{run:run.run,text:'rec:'+stored.digest,expect:'reference'},h.call());
+  assert.equal(preview.call_result,'ok');
+  t.mock.method(h.packs,'readableProducts',async()=>new Set<string>());
+  const noTree = await h.service.resolveReference(h.bob,{run:run.run,text:'zone set 2 5',expect:'command'},h.call());
+  assert.equal(noTree.call_result,'ok'); assert.equal(noTree.resolution,'unresolved'); assert.deepEqual(noTree.references,[]);
+  const submission = await h.service.submitResult(h.bob,{...accepted,run:run.run},h.call());
+  assert.equal(submission.acceptance,'not_accepted'); assert.equal(submission.errors[0].code,'SOURCE_UNAVAILABLE');
+  h.workflows.assign(h.bob.id,'toy-review');
+  const next = await h.service.startRun(h.bob,{pack:'toy-review',predecessor:run.run,inputs:{map:{reference:map}}},h.call());
+  assert.equal(next.call_result,'error'); assert.equal(next.errors[0].code,'SOURCE_UNAVAILABLE'); assert.equal(next.errors[0].path,'/predecessor');
+  await a.unshare(h.admin,run.run,{kind:'pack_users',pack:'toy-review'});
+  assert.equal(await h.service.getRun(h.bob,run.run),null);
+  assert.equal(await records.read(stored.digest,identityOf(h.bob)),null);
+  assert.equal((await h.service.resolveReference(h.bob,{run:run.run,text:'rec:'+stored.digest},h.call())).call_result,'error');
+});
+
+test('production policy covers current future and Hub runs but not judgment runs and pages visible rows only', { skip }, async () => {
+  const { productionShareKey } = await import('../../records/api.ts');
+  const a = h.kit.authorizations;
+  const first = (await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:map}},client_key:'synthetic-shared-key'},h.call())).run!;
+  await a.share(h.admin,productionShareKey('toy-locate'),{kind:'pack_users',pack:'toy-locate'});
+  assert.equal(await h.service.getRun(h.bob,first.run),null);
+  await a.assign(h.admin,h.bob.id,'toy-locate'); h.workflows.assign(h.bob.id,'toy-locate');
+  assert.ok(await h.service.getRun(h.bob,first.run));
+  const future = (await h.service.startHubRun(h.admin,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call())).answer.run!;
+  assert.ok(await h.service.getRun(h.bob,future.run));
+  assert.equal(await h.service.getRun(h.bob,run.run),null);
+  const collected: string[] = []; let cursor: string|null = null;
+  do { const page = await h.service.runsFor(h.bob,'toy-locate',{limit:1,cursor}); collected.push(...page.items.map(r=>r.run)); cursor=page.next; } while(cursor);
+  assert.deepEqual(collected,(await h.service.runsFor(h.admin,'toy-locate')).items.map(r=>r.run)); assert.equal(new Set(collected).size,collected.length);
+  await a.share(h.admin,productionShareKey('toy-review'),{kind:'pack_users',pack:'toy-review'});
+  assert.equal(await h.service.getRun(h.bob,run.run),null);
+  const ownMap = await h.upload(h.bob,toyMap(standardDocument()));
+  const own = (await h.service.startRun(h.bob,{pack:'toy-locate',inputs:{map:{reference:ownMap}},client_key:'synthetic-shared-key'},h.call())).run!;
+  assert.notEqual(own.run,first.run);
+  await a.unassign(h.admin,h.bob.id,'toy-locate');
+  assert.equal(await h.service.getRun(h.bob,first.run),null); assert.equal(await h.service.getRun(h.bob,future.run),null);
+  await a.assign(h.admin,h.bob.id,'toy-locate'); await a.unshare(h.admin,productionShareKey('toy-locate'),{kind:'pack_users',pack:'toy-locate'});
+  assert.equal(await h.service.getRun(h.bob,first.run),null); assert.ok(await h.service.getRun(h.bob,own.run));
+});
+
+test('shared pagination sorts frozen start times rather than append order and has stable ties', {skip}, async()=>{
+  const {RunRecord}=await import('../../../contracts/src/run.ts');
+  const {newId}=await import('../../records/api.ts');
+  const fresh=(await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call())).run!;
+  const base=(await h.service.getRun(h.alice,fresh.run))!.run;
+  const rows:string[]=[];
+  for(const started_at of ['2026-10-20T00:00:00.000Z','2026-10-19T00:00:00.000Z','2026-10-20T00:00:00.000Z']){
+    const run=newId('run');rows.push(run);
+    const body=RunRecord.parse({...base,run,started_at});
+    await h.kit.store.put({kind:'run',schema:'run@1',provenance:'observed',body,index:[{key:'runs.id',value:run},{key:'runs.pack',value:'toy-locate'}]});
+    await h.kit.authorizations.share(h.admin,run,[h.bob.id]);
+  }
+  let cursor:string|null=null;const all:string[]=[];
+  do{const page=await h.service.runsFor(h.bob,'toy-locate',{limit:2,cursor});assert.ok(page.items.length>0);all.push(...page.items.map(r=>r.run));cursor=page.next;}while(cursor);
+  assert.equal(new Set(all).size,all.length);
+  assert.deepEqual(all.filter(id=>rows.includes(id)),[rows[2],rows[0],rows[1]]);
+});
+
+test('shared run details never include rejected validation bodies while owner and admin retain them', {skip}, async()=>{
+  const rejected=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic-review',items:[{item:'synthetic-private-item',handling:'handled',slots:{}}]},h.call());
+  assert.equal(rejected.acceptance,'not_accepted');
+  const original=(await h.service.getRun(h.alice,run.run))!;
+  const receipt=original.submissions.at(-1)!;
+  assert.ok(receipt.errors.some(error=>error.message.includes('synthetic-private-item')));
+  assert.ok(receipt.errors.some(error=>error.path!==undefined));
+  assert.ok(receipt.errors.some(error=>error.requirement!==undefined));
+  await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
+  const shared=(await h.service.getRun(h.bob,run.run))!;
+  const visible=shared.submissions.find(row=>row.record===receipt.record)!;
+  assert.equal(visible.acceptance,'not_accepted');assert.equal(visible.result,null);
+  assert.ok(visible.errors.length>0);
+  for(const error of visible.errors){
+    assert.deepEqual(Object.keys(error).sort(),['code','message']);
+    assert.equal(error.message,PROTOCOL_CODES[error.code as keyof typeof PROTOCOL_CODES].when);
+  }
+  assert.ok(!JSON.stringify(visible.errors).includes('synthetic-private-item'));
+  assert.deepEqual((await h.service.getRun(h.alice,run.run))!.submissions.find(row=>row.record===receipt.record)!.errors,receipt.errors);
+  assert.deepEqual((await h.service.getRun(h.admin,run.run))!.submissions.find(row=>row.record===receipt.record)!.errors,receipt.errors);
+  assert.deepEqual(shared.run,original.run);
+  await h.kit.authorizations.unshare(h.admin,run.run,h.bob.id);
+  assert.equal(await h.service.getRun(h.bob,run.run),null);
+});

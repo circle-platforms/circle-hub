@@ -786,11 +786,24 @@ describe('original', () => {
       const filtered = await expectOk(admin, ['original', 'list', '--external', 'agile:']);
       assert.equal(filtered.out.length, 1);
       assert.ok(filtered.out[0].startsWith(`agile:page:release-100@1\t${shaOne}`), filtered.text);
+      const suffix = await expectOk(admin, ['original', 'list', '--suffix', '.xml@1', '--limit', '1']);
+      assert.equal(suffix.out.length, 1);
+      assert.ok(suffix.out[0].startsWith(`build:file:tree-100.xml@1\t${shaTwo}`), suffix.text);
       const limited = await expectOk(admin, ['original', 'list', '--limit', '1']);
       assert.equal(limited.out.length, 1);
       for (const line of [...all.out, ...filtered.out]) {
         assert.ok(!line.includes('修复了'), 'the content never reaches the screen');
         assert.ok(!line.includes('<tree'), 'the content never reaches the screen');
+      }
+    });
+  });
+
+  test('an unmatched suffix names the suffix filter with or without a prefix', async () => {
+    await withOriginals(async admin => {
+      for (const prefix of [[], ['--external', 'agile:']]) {
+        const empty = await expectOk(admin, ['original', 'list', ...prefix, '--suffix', '.synthetic-missing']);
+        assert.match(empty.text, /后缀/);
+        assert.ok(!empty.text.includes('以这个前缀开头'));
       }
     });
   });
@@ -1669,4 +1682,34 @@ test('lease ownership commands audit reassignment and list owner, holder and run
   assert.ok(actions.some(row=>row.op==='register'&&row.owner===next.id&&row.previous_owner===owner.id&&row.reason==='合成归属更正'));
   assert.ok(actions.some(row=>row.op==='unregister'&&row.owner===next.id));
   assert.equal((await admin.run(['lease','register','bed/sample/','--owner',next.id])).code,2);
+});
+
+test('administrator sharing commands cover users package audiences policy listing and withdrawals', async t => {
+  const admin = await setup();
+  await expectOk(admin,['pack','grant-publish','根管理员']); await expectOk(admin,['pack','publish',packs.review]);
+  const token = await userWithToken(admin,'合成分享读者');
+  await expectOk(admin,['pack','assign','合成分享读者',REVIEW_PACK]);
+  const kit = await admin.kit(); t.after(()=>kit.close());
+  const {RunRecord} = await import('../../../contracts/src/run.ts');
+  const {newId,productionShareKey} = await import('../../records/api.ts');
+  const owner = (await kit.principals.findByName('根管理员'))!;
+  const reader = (await kit.principals.findByName('合成分享读者'))!;
+  const run = newId('run');
+  const body = RunRecord.parse({run,pack:REVIEW_PACK+'@1.0.0',pack_digest:'a'.repeat(64),target_basis:[],sources:[],requirements:[],items:[],instructions:'合成说明',instructions_digest:'b'.repeat(64),started_at:'2026-10-24T00:00:00Z',runner:owner.id,host:'local_circle',trigger:'session',parameters:{},session:'synthetic-session',client_key:'synthetic-key',request_digest:'c'.repeat(64),client_key_expires_at:'2026-10-25T00:00:00Z'});
+  await kit.store.put({kind:'run',schema:'run@1',provenance:'observed',body,index:[{key:'runs.id',value:run}]});
+  await expectOk(admin,['share','run',run,'--users',reader.name,'--reason','合成只读分享']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),true);
+  assert.match((await expectOk(admin,['share','list','--object',run])).text,new RegExp(run));
+  await expectOk(admin,['unshare','run',run,'--user',reader.name]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),false);
+  await expectOk(admin,['share','run',run,'--pack-users']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),true);
+  await expectOk(admin,['unshare','run',run,'--pack-users']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),false);
+  await expectOk(admin,['share','production',REVIEW_PACK]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,productionShareKey(REVIEW_PACK)),true);
+  await expectOk(admin,['unshare','production',REVIEW_PACK]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,productionShareKey(REVIEW_PACK)),false);
+  for(const args of [['share','list'],['share','run',run,'--pack-users'],['unshare','run',run,'--pack-users'],['share','production',REVIEW_PACK],['unshare','production',REVIEW_PACK]]) assert.equal((await admin.run(args,{[OPERATOR_TOKEN_VARIABLE]:token})).code,1);
+  const missing = await admin.run(['share','run','run_'+'1'.repeat(26),'--pack-users']); assert.equal(missing.code,1); assert.match(missing.text,/对你不可用/);
 });

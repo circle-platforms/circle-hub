@@ -325,3 +325,25 @@ test('resource configuration participates in an optional caller transaction whil
  await kit.authorizations.configureResource(admin,resource,bound);
  assert.equal((await kit.authorizations.resourceConfig(resource))?.body.bound,bound);
 });
+
+test('pack audiences follow current assignments with one append-only share decision', async t => {
+  const kit = await openTestRecords({ postgres }); t.after(() => kit.close());
+  const { admin, alice, bob } = await setup(kit);
+  const object = 'run_00000000000000000000000001';
+  const audience = { kind: 'pack_users' as const, pack: 'synthetic-task' };
+  const decisions = await kit.authorizations.share(admin, object, audience, '合成分享');
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].body.share_audience, 'pack_users');
+  assert.equal(await kit.authorizations.isSharedWith(bob.id, object), false);
+  await kit.authorizations.assign(admin, bob.id, audience.pack);
+  assert.equal(await kit.authorizations.isSharedWith(bob.id, object), true);
+  await kit.authorizations.unassign(admin, bob.id, audience.pack);
+  assert.equal(await kit.authorizations.isSharedWith(bob.id, object), false);
+  await kit.authorizations.assign(admin, bob.id, audience.pack);
+  await kit.authorizations.unshare(admin, object, audience);
+  assert.equal(await kit.authorizations.isSharedWith(bob.id, object), false);
+  await assert.rejects(kit.authorizations.share(alice, object, audience), AccessError);
+  await assert.rejects(kit.authorizations.shares(alice, object), AccessError);
+  await kit.authorizations.share(admin, object, [alice.id]);
+  assert.deepEqual((await kit.authorizations.shares(admin, object)).map(r => r.body.subject), [alice.id]);
+});

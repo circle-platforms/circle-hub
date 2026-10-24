@@ -16,6 +16,7 @@ import { type Scenario } from '../lib/accept.ts';
 import type { Check, ReportSection } from '../lib/report.ts';
 import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory, type SkipReason } from '../gold/gap-metamorphic.ts';
 import { readCategories } from '../gold/gap-metamorphic.ts';
+import { contentHeader } from './content-header.ts';
 
 const skipActions: Record<SkipReason['reason'],string> = {
   '前提不成立':'下一步换用保持用例边界且满足该变换前提的文档或类别后重新生成副本',
@@ -80,17 +81,31 @@ export function truncationReference(summary: string): string | null {
 
 /** The summary out of a hub_get_nodes answer ('内容 <引用>：<text>'; the answer may arrive JSON-encoded). */
 export function summaryOfGetNodes(result: string, expectedReference?: string): string | null {
-  let text = result;
-  if (text.startsWith('"')) { try { const decoded: unknown = JSON.parse(text); if (typeof decoded !== 'string') return null; text = decoded; } catch { return null; } }
-  const lines = text.trim().split(/\r?\n/); const head = /^内容 (\S+)：(.+)$/.exec(lines[0] ?? '');
-  if (!head || expectedReference !== undefined && head[1] !== expectedReference || head[2] !== labelOf('read_tier', 'model_readable')) return null;
+  return readSummary(result, expectedReference).summary;
+}
+
+function readSummary(result: string, expectedReference?: string): { summary: string | null; missing: string } {
+  const refuse = (missing: string) => ({ summary: null, missing });
+  const head = contentHeader(result);
+  if (!head) return refuse('缺少仅带已知客户端前言的 Hub 内容头');
+  if (expectedReference !== undefined && head.reference !== expectedReference) return refuse('缺少所请求摘要引用的读取结果');
+  if (head.tier !== labelOf('read_tier', 'model_readable')) return refuse('缺少模型可读的摘要全文');
+  const lines = head.lines;
+  const count = /^原文（([0-9]+) 个字符）：$/.exec(lines[1] ?? '');
+  if (count) {
+    const end = lines.findIndex((line, index) => index > 1 && line.startsWith('追踪 '));
+    if (end < 0) return refuse('缺少摘要全文结束的追踪标记');
+    const summary = lines.slice(2, end).join('\n');
+    if (!Number.isSafeInteger(Number(count[1])) || summary.length !== Number(count[1])) return refuse(`缺少与原文声明 ${count[1]} 个字符一致的完整摘要（实际 ${summary.length} 个字符）`);
+    return summary.startsWith('用例 ') ? { summary, missing: '' } : refuse('缺少以用例计数开头的摘要全文');
+  }
   const candidates: string[] = [];
   for (const line of lines.slice(1)) {
     if (line.startsWith('追踪 ')) break;
-    if (line.startsWith('"')) { try { const value: unknown = JSON.parse(line); if (typeof value === 'string') candidates.push(value); } catch { return null; } }
+    if (line.startsWith('"')) { try { const value: unknown = JSON.parse(line); if (typeof value === 'string') candidates.push(value); } catch { return refuse('缺少可解析的摘要字符串'); } }
     else if (line.startsWith('用例 ')) candidates.push(line);
   }
-  return candidates.length === 1 ? candidates[0]! : null;
+  return candidates.length === 1 ? { summary: candidates[0]!, missing: '' } : refuse('缺少唯一的摘要全文');
 }
 
 export const sha256Of = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -291,8 +306,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
     }
     if (fatal) return [{ text: halted() }];
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
-      const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
-      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文；下一步用该副本已记录的截断引用加 /summary 再调用 hub_get_nodes 重读');
+      const read = readSummary(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
+      const full = read.summary;
+      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, `${turn.toolResults.some(result => result.isError) ? '缺少成功的摘要读取结果' : read.missing}；下一步用已记录的引用 ${pendingGetNodes.reference} 调用 hub_get_nodes 重读，核对原文字符数与全文一致后重跑本场景`);
       else {
         const parsed = parseSummary(full, categories);
         if (!parsed.valid) unknown.set(pendingGetNodes.key, '全文缺少可解析的用例数或完整类别集合；下一步重读已保存的全文引用并核对完整计数与类别集合，仍不符交集成者修正读取解析');

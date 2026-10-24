@@ -1,3 +1,4 @@
+import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated/vocabulary.ts';
 // Producer of manual entries, from either form of the CLI manual:
 // - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
 //   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
@@ -25,7 +26,7 @@
 import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
 import { type CommandCatalog } from './cases-commands.ts';
 import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
-import { asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
+import { canonicalJson, asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
 // The fragment parser key of this call's input model (K1: a document model with section paths; the adoc producer
@@ -225,7 +226,7 @@ function commandPath(words: readonly string[]): string | null {
 
 /** Trailing spaces off every line, outer blank lines off: the canonical text of a block. */
 /** The applicability of a multi-row table statement: only when every data row states the same condition. */
-function tableEveryRow(statement: string): ProducedEntry['applicability'] {
+function tableEveryRow(statement: string, vocabulary:ClosedSets): ProducedEntry['applicability'] {
   const lines = statement.split('\n').filter((line) => line.trim() !== '');
   const data = lines.filter((line) => {
     const cells = line.split('|').map((cell) => cell.trim()).filter((cell) => cell !== '');
@@ -234,7 +235,7 @@ function tableEveryRow(statement: string): ProducedEntry['applicability'] {
   if (data.length === 0) return null;
   let acc: ProducedEntry['applicability'] = null;
   for (const line of data) {
-    const own = toApplicability(conditionsOf(line));
+    const own = toApplicability(conditionsOf(line,vocabulary));
     if (own === null) return null;
     if (acc === null) acc = own;
     else if (JSON.stringify(acc) !== JSON.stringify(own)) return null;
@@ -377,12 +378,122 @@ function commonPrefix(lists: readonly string[][]): string[] {
   return out;
 }
 
-// Applicability (K02 F[6]): only what the entry's own text says explicitly, and only the fields the contract holds. A
-// table row's condition is read from that row alone; a block's from that block alone; nothing is inherited from a
-// heading, a sibling block or another row (a section-wide rule waits on the owner's decision). `builds` is never set
-// on a manual entry: which builds use the manual is said by the per-build roots and their compositions. Vague,
-// inclusive, exception and negated writings are not conditions and stay unread (they stay in the entry's text).
-type Conditions = { platforms?: string[]; models?: string[] };
+// Explicit condition extraction is local to each source block. The scope pass below applies verified chapter-opening
+// declarations per field, after row and signature placement. Builds still come from roots and compositions.
+type Conditions = NonNullable<ProducedEntry['applicability']>;
+type ClosedSets = {components:ReadonlySet<string>;licenses:ReadonlySet<string>;deployment_forms:ReadonlySet<string>};
+function closedVocabulary(options:ManualOptions):ClosedSets {
+  const read=(value:unknown):ReadonlySet<string>=>{
+    if(value===undefined)return new Set<string>();
+    if(!Array.isArray(value)||value.some(word=>typeof word!=='string'||word.trim()===''))throw new TypeError('适用条件闭集须为非空词的字符串列表；请管理员核对产品变量后重新同步');
+    return new Set(value);
+  };
+  return {components:read(options.components),licenses:read(options.licenses),deployment_forms:read(options.deployment_forms)};
+}
+const SERIES_SEPARATOR = /\s*(?:以及|或者|、|,|，|\/|和|与|及|或|并)\s*/u;
+function closedSeries(text:string,words:ReadonlySet<string>):string[]|null {
+  const clean=text.trim();
+  if(words.has(clean))return [clean];
+  const items=clean.split(SERIES_SEPARATOR).map(item=>item.replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').trim());
+  return items.length&&items.every(item=>item!==''&&words.has(item))?[...new Set(items)].sort(compareText):null;
+}
+/** Read only closed names and explicit positive restrictions; never keep a recognized prefix of a failed list. */
+function closedConditions(text:string,vocabulary:ClosedSets):Conditions {
+  if(!vocabulary.components.size&&!vocabulary.licenses.size&&!vocabulary.deployment_forms.size)return {};
+  const withWords=new Set<string>(),withoutWords=new Set<string>(),licenses=new Set<string>(),forms=new Set<string>();
+  const unread={components:false,licenses:false,deployment_forms:false};
+  const out:Conditions={};
+  for(const clause of text.split(/[。；：\n]/u)){
+    const bad=[...clause.matchAll(/不|未|无|非|没|勿|除|之外|以外|其余|其他|等等?|可能|通常|一般|某些|部分|大概|也|还|亦/gu)].filter(match=>!clause.startsWith('不少于',match.index)&&!clause.startsWith('不超过',match.index)).map(match=>match.index);
+    const outside=(start:number,end:number)=>bad.some(at=>at<start||at>=end);
+    const explicit=(pattern:RegExp,field:keyof ClosedSets,absent=false)=>{
+      for(const match of clause.matchAll(pattern)){
+        const start=match.index,end=start+match[0].length;
+        const values=closedSeries(match[1]!,vocabulary[field])??(field==='components'?closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary[field]):null);
+        const tail=clause.slice(end);
+        const continued=/^\s*(?:、|以及|或者|和|与|及|或|并|\/)/u.test(tail)||(/^\s*[，,]/u.test(tail)&&/(?:部件|许可|部署形态|部署方式)/u.test(tail));
+        if(outside(start,end)||!values||continued){unread[field]=true;continue;}
+        const found=field==='components'?(absent?withoutWords:withWords):field==='licenses'?licenses:forms;
+        for(const value of values)found.add(value);
+      }
+    };
+    explicit(/装有\s*([^。；：\n]{1,200}?)\s*时/gu,'components');
+    explicit(/没有\s*([^。；：\n]{1,200}?)\s*时/gu,'components',true);
+    explicit(/需要\s*([^。；：\n]{1,200}?)\s*许可/gu,'licenses');
+    for(const pattern of [/适用于\s*([^。；：\n]{1,200})/gu,/(?:仅|只)\s*([^。；：\n]{1,200}?)\s*支持/gu])for(const match of clause.matchAll(pattern)){
+      let candidate=match[1]!.trim(),end=match.index+match[0].length;
+      const when=candidate.indexOf('时');
+      if(when>=0){end=match.index+match[0].indexOf(match[1]!)+match[1]!.indexOf('时')+1;candidate=candidate.slice(0,when).trim();}
+      else if(end<clause.length)continue;
+      if(outside(match.index,end))continue;
+      const candidates=[
+        {field:'components' as const,words:vocabulary.components,values:withWords,noun:/\s*部件$/u},
+        {field:'licenses' as const,words:vocabulary.licenses,values:licenses,noun:/\s*许可$/u},
+        {field:'deployment_forms' as const,words:vocabulary.deployment_forms,values:forms,noun:/\s*(?:部署形态|部署方式|部署)$/u},
+      ];
+      const reads=candidates.flatMap(row=>{const values=closedSeries(candidate,row.words)??closedSeries(candidate.replace(row.noun,''),row.words);return values?[{...row,read:values}]:[];});
+      if(reads.length!==1)continue;
+      const row=reads[0]!;for(const value of row.read)row.values.add(value);
+    }
+  }
+  if(!unread.components&&(withWords.size||withoutWords.size))out.components={...(withWords.size?{with:[...withWords].sort(compareText)}:{}),...(withoutWords.size?{without:[...withoutWords].sort(compareText)}:{})};
+  if(!unread.licenses&&licenses.size)out.licenses=[...licenses].sort(compareText);
+  if(!unread.deployment_forms&&forms.size)out.deployment_forms=[...forms].sort(compareText);
+  return out;
+}
+
+
+/** Binary memory units; accept only exact integer byte counts representable by JSON numbers. */
+function memoryBytes(number:string,unit:string):number|null {
+  const [whole,fraction='']=number.split('.');
+  const denominator=10n**BigInt(fraction.length);
+  const numerator=BigInt(whole+fraction)*(unit==='GB'||unit==='G'?1024n**3n:1024n**2n);
+  if(numerator%denominator!==0n)return null;
+  const bytes=numerator/denominator;
+  return bytes<=BigInt(Number.MAX_SAFE_INTEGER)?Number(bytes):null;
+}
+function memoryCondition(text:string,vocabulary:ClosedSets):Conditions['memory'] {
+  if(!text.includes('内存'))return undefined;
+  const dimension='(?<mark>\\*\\*|__)?(?<number>[0-9]{1,18}(?:\\.[0-9]{1,18})?)\\s*(?<unit>GB|G|MB|M)\\k<mark>(?![A-Za-z0-9_.])';
+  const patterns=[
+    new RegExp('内存\\s*(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension,'gu'),
+    new RegExp('(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension+'\\s*(?:的)?内存(?:的设备)?','gu'),
+    new RegExp('内存\\s*(?:为\\s*)?'+dimension+'\\s*(?<relation>以上|以下)','gu'),
+    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*(?<relation>以上|以下)\\s*(?:的)?内存(?:的设备)?','gu'),
+    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*内存的设备','gu'),
+  ];
+  const results:NonNullable<Conditions['memory']>[]=[];let unread=false;
+  for(const clause of text.split(/[。；：]/u)){
+    type Found={start:number;end:number;minimum?:{bytes:number;inclusive:boolean};maximum?:{bytes:number;inclusive:boolean}};
+    const found:Found[]=[];
+    for(const pattern of patterns)for(const match of clause.matchAll(pattern)){
+      const start=match.index,end=start+match[0].length;
+      if(found.some(previous=>start<previous.end&&end>previous.start))continue;
+      const bytes=memoryBytes(match.groups!.number!,match.groups!.unit!);
+      if(bytes===null){unread=true;continue;}
+      const relation=match.groups?.relation;
+      const lower=relation===undefined||relation==='不少于'||relation==='至少'||relation==='大于'||relation==='以上';
+      const upper=relation===undefined||relation==='小于'||relation==='不超过'||relation==='以下';
+      const inclusive=relation!=='大于'&&relation!=='小于';
+      found.push({start,end,...(lower?{minimum:{bytes,inclusive}}:{}),...(upper?{maximum:{bytes,inclusive}}:{})});
+    }
+    if(!found.length)continue;
+    found.sort((a,b)=>a.start-b.start);
+    const otherScopes=[...clause.matchAll(/(?:装有|没有)\s*([^。；：\n]{1,200}?)\s*时/gu)].filter(match=>closedSeries(match[1]!,vocabulary.components)!==null||closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary.components)!==null).map(match=>({start:match.index,end:match.index+match[0].length}));
+    const outside=[...clause.matchAll(/不|未|无|非|没|除|之外|以外|等等?|可能|约|通常|一般|左右|较|或/gu)].some(match=>![...found,...otherScopes].some(span=>match.index>=span.start&&match.index<span.end));
+    if(outside){unread=true;continue;}
+    let minimum:Found['minimum'],maximum:Found['maximum'];let conflict=false;
+    for(const match of found){
+      if(match.minimum){if(minimum&&JSON.stringify(minimum)!==JSON.stringify(match.minimum))conflict=true;minimum=match.minimum;}
+      if(match.maximum){if(maximum&&JSON.stringify(maximum)!==JSON.stringify(match.maximum))conflict=true;maximum=match.maximum;}
+    }
+    if(conflict){unread=true;continue;}
+    results.push({...(minimum?{minimum}:{}),...(maximum?{maximum}:{}),raw:clause.slice(found[0]!.start,found.at(-1)!.end)});
+  }
+  if(unread||!results.length)return undefined;
+  const bounds=(value:NonNullable<Conditions['memory']>)=>JSON.stringify({minimum:value.minimum,maximum:value.maximum});
+  return results.every(value=>bounds(value)===bounds(results[0]!))?results[0]:undefined;
+}
 
 /** Platform values a manual may name: the pack's platform tokens (hyphen-joined) plus the Han words 虚拟/物理. */
 const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequence) => sequence.join('-')), '虚拟', '物理']);
@@ -416,7 +527,7 @@ const SUB_CLAUSE_END = /[，,]/;
  * connectives and the field's noun, must all be readable; a trailing 等 (a partial listing) or another connective
  * after the series makes it unread; one unreadable token makes the whole series unread, never a narrowed one.
  */
-function conditionsOf(text: string): Conditions {
+function conditionsOf(text: string, vocabulary: ClosedSets): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
   // One clause split for the whole text (bounded: every clause is scanned once, every candidate's series window is
   // capped, so hostile paragraphs stay linear — closure findings 7 and 15).
@@ -481,7 +592,8 @@ function conditionsOf(text: string): Conditions {
   const out: Conditions = {};
   if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
   if (found.models.size > 0) out.models = [...found.models].sort(compareText);
-  return out;
+  const memory=memoryCondition(text,vocabulary);
+  return {...out,...closedConditions(text,vocabulary),...(memory?{memory}:{})};
 }
 
 /** One series candidate: the items up to and through the field noun, tokens by field, or null when unread. */
@@ -491,7 +603,7 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
   let rest = candidate;
   const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
   const tokensOk = (): boolean => tokensByField.platforms.length + tokensByField.models.length > 0;
-  let field: 'platforms' | 'models' | null = null;
+  let field: Extract<ApplicabilityField,'platforms'|'models'> | null = null;
   let nounAteSupport = false;
   let afterConnective = false;
   const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
@@ -528,7 +640,7 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
     if (head.index > CLAUSE_WINDOW) return null;
     const itemPart = rest.slice(0, head.index);
     const nounWord = head[1]!;
-    const nextField: 'platforms' | 'models' = nounWord === '平台' ? 'platforms' : 'models';
+    const nextField: Extract<ApplicabilityField,'platforms'|'models'> = nounWord === '平台' ? 'platforms' : 'models';
     if (field === null) field = nextField;
     else if (field !== nextField) return null;
     const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
@@ -574,11 +686,13 @@ const CLAUSE_WINDOW = 200;
 
 /** The applicability of an entry, or null (未声明) when nothing declares a condition. */
 function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
-  return conditions.platforms === undefined && conditions.models === undefined ? null : conditions;
+  return Object.keys(conditions).length===0 ? null : conditions;
 }
 
 function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, options: ManualOptions, warnings: string[]): ManualResult {
   const entries: ProducedEntry[] = [];
+  const vocabulary=closedVocabulary(options);
+  const entryContexts=new Map<ProducedEntry,{section:number;text:string;heading?:boolean}>();
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
   const sections: Section[] = asArray(model.sections).map((value) => {
@@ -620,6 +734,134 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       return null;
     }
   };
+  // Conditions are source scopes. Provenance is attached to fragments, never to entry content.
+  type Field=typeof APPLICABILITY_FIELD[number];
+  type OriginMeta=NonNullable<FragmentRef['applicability']>[number];
+  type Origin={fragment:FragmentRef;meta:OriginMeta};
+  type Scope={declaration:Conditions|null;origins:Origin[];conflict:boolean};
+  const report:NonNullable<ManualResult['applicability_report']>={counts:Object.fromEntries(APPLICABILITY_FIELD.map(field=>[field,{direct:0,inherited:0}])) as NonNullable<ManualResult['applicability_report']>['counts'],overrides:[],conflicts:[]};
+  const firstBlocks=new Map<number,{raw:Record<string,unknown>;position:number}>();
+  asArray(model.blocks).forEach((raw,position)=>{if(isRecord(raw)&&Number.isInteger(raw.section)&&!firstBlocks.has(raw.section as number))firstBlocks.set(raw.section as number,{raw,position});});
+  const firstDescendant=new Map<number,number>();
+  for(const [owner,first] of firstBlocks){const visited=new Set<number>();for(let parent=sections[owner]?.parent;parent!==null&&parent!==undefined&&!visited.has(parent);parent=sections[parent]?.parent){visited.add(parent);firstDescendant.set(parent,Math.min(firstDescendant.get(parent)??Infinity,first.position));}}
+  const openingParagraphs=new Map<number,Record<string,unknown>>();
+  for(const [index,first] of firstBlocks){
+    if(index<=0||first.raw.kind!=='paragraph'||typeof first.raw.text!=='string'||typeof first.raw.selector!=='string')continue;
+    if((firstDescendant.get(index)??Infinity)<first.position)continue;
+    const rawSection=asArray(model.sections)[index];
+    if(isRecord(rawSection)&&rawSection.cite===undefined&&typeof first.raw.line==='number'){
+      const childBefore=asArray(model.sections).some(child=>isRecord(child)&&child.parent===index&&typeof child.line==='number'&&child.line<=(first.raw.line as number));
+      if(childBefore)continue;
+    }
+    openingParagraphs.set(index,first.raw);
+  }
+  const sectionOrigin=(index:number):string[]=>[...(sectionSegments(index)??titleChains[index]??[])];
+  const headingFragment=(index:number):FragmentRef|null=>{
+    const raw=asArray(model.sections)[index];
+    if(!isRecord(raw))return null;
+    if(options.sectionSelector!==undefined)return {parser:parserOf(options),selector:options.sectionSelector(sectionOrigin(index))};
+    // Mapped formats own their citation rewrite. Markdown can cite just the physical heading line.
+    if(raw.cite===null)return null;
+    if(raw.cite===undefined&&Number.isInteger(raw.line)&&Number(raw.line)>=0)return {parser:'text@1',selector:'l/'+(Number(raw.line)+1)};
+    return sections[index]?.selector?{parser:parserOf(options),selector:sections[index]!.selector!}:null;
+  };
+  const declaration=(value:Conditions,field:Field):Conditions=>value[field]===undefined?{}:{[field]:structuredClone(value[field])} as Conditions;
+  const equal=(left:Conditions|null,right:Conditions|null,field:Field):boolean=>{
+    const value=(app:Conditions|null)=>field==='memory'&&app?.memory?{minimum:app.memory.minimum,maximum:app.memory.maximum}:app?.[field];
+    return JSON.stringify(value(left))===JSON.stringify(value(right));
+  };
+  const topics=(text:string,own:Conditions):Set<Field>=>{
+    const found=new Set<Field>(APPLICABILITY_FIELD.filter(field=>own[field]!==undefined));
+    const hasMember=(candidate:string,words:ReadonlySet<string>,noun:RegExp)=>candidate.split(SERIES_SEPARATOR).some(part=>words.has(part.trim().replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').replace(noun,'').trim()));
+    if(vocabulary.components.size)for(const match of text.matchAll(/(?:装有|没有)\s*([^。；\n]{1,200}?)\s*时/gu)){
+      if(hasMember(match[1]!,vocabulary.components,/\s*(?:部件|单板|模块|卡)$/u)||/(?:部件|单板|模块|卡$)/u.test(match[1]!))found.add('components');
+    }
+    if(vocabulary.licenses.size&&/需要[^。；\n]{1,200}许可/u.test(text))found.add('licenses');
+    if(/(?:适用于|仅|只)[^。；\n]{0,200}平台/u.test(text))found.add('platforms');
+    if(/(?:适用于|仅|只)[^。；\n]{0,200}(?:型号|机型|系列)/u.test(text))found.add('models');
+    if(vocabulary.deployment_forms.size&&/(?:适用于|仅|只)[^。；\n]{0,200}部署(?:形态|方式)?/u.test(text))found.add('deployment_forms');
+    if(/内存\s*(?:不少于|至少|大于|小于|不超过|[0-9]|较大|较小)|[0-9]\s*(?:GB|G|MB|M)\s*内存/u.test(text))found.add('memory');
+    // A mixed closed series still identifies its field when at least one member is known; do not inherit a narrower parent.
+    for(const match of text.matchAll(/(?:适用于|仅|只)\s*([^。；：\n]{1,200})/gu)){
+      const parts=match[1]!.split(SERIES_SEPARATOR).map(value=>value.trim());
+      if(parts.some(value=>vocabulary.components.has(value)))found.add('components');
+      if(parts.some(value=>vocabulary.licenses.has(value)))found.add('licenses');
+      if(parts.some(value=>vocabulary.deployment_forms.has(value)))found.add('deployment_forms');
+    }
+    return found;
+  };
+  const locals=new Map<number,Map<Field,Scope>>();
+  for(let index=1;index<sections.length;index++){
+    const heading=conditionsOf(sections[index]!.title,vocabulary),paragraph=openingParagraphs.get(index);
+    const body=paragraph?conditionsOf(paragraph.text as string,vocabulary):{};
+    const headerTopics=topics(sections[index]!.title,heading),bodyTopics=paragraph?topics(paragraph.text as string,body):new Set<Field>();
+    const local=new Map<Field,Scope>();
+    for(const field of APPLICABILITY_FIELD){
+      if(!headerTopics.has(field)&&!bodyTopics.has(field))continue;
+      const origins:Origin[]=[];
+      const h=headerTopics.has(field),b=bodyTopics.has(field);
+      const add=(app:Conditions,fragment:FragmentRef|null)=>{
+        if(fragment)origins.push({fragment,meta:{field,section:sectionOrigin(index),declaration:declaration(app,field)}});
+        else warnings.push('章节开头条件缺可核对片段：'+sectionOrigin(index).join('/')+'；下一步修复源定位后重新生产');
+      };
+      if(h)add(heading,headingFragment(index));
+      if(b)add(body,{parser:parserOf(options),selector:paragraph!.selector as string});
+      const conflict=h&&b&&heading[field]!==undefined&&body[field]!==undefined&&!equal(heading,body,field);
+      const unread=(h&&heading[field]===undefined)||(b&&body[field]===undefined)||origins.length!==Number(h)+Number(b);
+      if(conflict){for(const origin of origins)origin.meta={...origin.meta,conflict:true};report.conflicts.push({field,section:sectionOrigin(index),values:origins.map(origin=>origin.meta.declaration),fragments:origins.map(origin=>origin.fragment)});}
+      local.set(field,{declaration:conflict||unread?null:declaration(b?body:heading,field),origins,conflict});
+    }
+    locals.set(index,local);
+  }
+  const scopes=new Map<number,Map<Field,Scope>>([[0,new Map()]]);
+  const scopeOf=(index:number):Map<Field,Scope>=>{
+    const chain:number[]=[],seen=new Set<number>();let at=index;
+    while(at>0&&at<sections.length&&!scopes.has(at)){
+      if(seen.has(at)){for(const item of chain)scopes.set(item,new Map());warnings.push('章节层级成环，未继承条件；下一步修复源层级后重新生产');return scopes.get(index)??new Map();}
+      seen.add(at);chain.push(at);at=sections[at]!.parent??0;
+    }
+    let parent=scopes.get(at)??new Map<Field,Scope>();
+    for(const item of chain.reverse()){
+      const current=new Map(parent);
+      for(const [field,local] of locals.get(item)??[]){
+        const outer=parent.get(field);
+        if(outer&&(!equal(outer.declaration,local.declaration,field)||outer.conflict!==local.conflict))report.overrides.push({field,section:sectionOrigin(item),values:[...outer.origins,...local.origins].map(origin=>origin.meta.declaration),fragments:[...outer.origins,...local.origins].map(origin=>origin.fragment)});
+        current.set(field,outer?{...local,origins:[...local.origins,...outer.origins.map(origin=>({...origin,meta:{...origin.meta,superseded:true}}))]}:local);
+      }
+      scopes.set(item,current);parent=current;
+    }
+    return scopes.get(index)??new Map();
+  };
+  for(let index=1;index<sections.length;index++)scopeOf(index);
+  const sameFragment=(a:FragmentRef,b:FragmentRef)=>a.parser===b.parser&&a.selector===b.selector&&JSON.stringify(a.range)===JSON.stringify(b.range);
+  const attach=(entry:ProducedEntry,origin:Origin)=>{
+    let fragment=entry.fragments.find(candidate=>sameFragment(candidate,origin.fragment));
+    if(!fragment){fragment={...origin.fragment};entry.fragments.push(fragment);}
+    fragment.applicability??=[];
+    if(!fragment.applicability.some(existing=>canonicalJson(existing)===canonicalJson(origin.meta)))fragment.applicability.push(structuredClone(origin.meta));
+  };
+  const applyScopes=()=>{
+    for(const entry of entries){
+      const context=entryContexts.get(entry);if(!context)continue;
+      const own=entry.applicability??{},ownTopics=topics(context.text,own),effective:Conditions={...own};
+      const inherited:Field[]=[];const opening=context.heading||openingParagraphs.get(context.section)?.selector===entry.fragments[0]?.selector;
+      for(const field of APPLICABILITY_FIELD){
+        const scope=scopeOf(context.section).get(field);
+        if(opening&&locals.get(context.section)?.get(field)?.declaration===null){delete (effective as Record<string,unknown>)[field];for(const origin of scope?.origins??[])attach(entry,origin);continue;}
+        if(ownTopics.has(field)){
+          if(own[field]===undefined){delete (effective as Record<string,unknown>)[field];}
+          if(opening&&scope?.origins.some(origin=>origin.meta.superseded))for(const origin of scope.origins)attach(entry,origin);
+          continue;
+        }
+        if(!scope)continue;
+        for(const origin of scope.origins)attach(entry,origin);
+        if(scope.declaration?.[field]!==undefined){(effective as Record<string,unknown>)[field]=structuredClone(scope.declaration[field]);inherited.push(field);}
+      }
+      if(inherited.length)effective.inherited=inherited;
+      entry.applicability=toApplicability(effective);
+    }
+  };
+
   /** The manual-namespace path of a block's section (the namespace root when it cannot be written). */
   const sectionPath = (value: { [key: string]: unknown }, section: number): string => {
     if (section < 0 || section >= sections.length) {
@@ -662,8 +904,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   /**
    * A behaviour entry. `data` is placement-independent and heading-independent (K01 R[1], K02 F[1]): only `form` and
    * `words` (whenever the block follows an anchor); the section chain is provenance and lives in the fragment
-   * selectors and the section-node paths, never in the digest. Applicability comes from the entry's own text alone
-   * (K02 F[6]): no condition is inherited from a heading, a sibling block or another row.
+   * selectors and the section-node paths, never in the digest. Explicit conditions come from this entry; the scope pass adds chapter-opening conditions per field.
    */
   const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[]; noLiterals?: boolean }): ProducedEntry => {
     // Data stays identical across placements (K01 R[1]) and across heading edits (K02 F[1], R[4]): the section
@@ -675,12 +916,13 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     // declares the others. Non-table statements read their own text as before.
     const isTableText = init.block === 'table' && init.statement.includes('\n');
     const applicability = isTableText
-      ? tableEveryRow(init.statement)
-      : toApplicability(conditionsOf(init.statement));
+      ? tableEveryRow(init.statement,vocabulary)
+      : toApplicability(conditionsOf(init.statement,vocabulary));
     const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability };
     // A multi-command row's own anchors are recorded as signature literals by the caller: its prose must not add them
     // back as unresolved spans.
     if (init.noLiterals !== true) putLiterals(entry, init.block, init.statement);
+    entryContexts.set(entry,{section:init.section,text:init.statement});
     return entry;
   };
   /** Byte ranges of the lines of a block's text (the fragment text the selectors name). */
@@ -711,7 +953,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     headingAnchors.set(index, { anchor, path: placed });
     const sectionCite = options.sectionSelector === undefined ? (section.selector as string) : options.sectionSelector(sectionSegments(index) ?? []);
     const entry = signatureEntry(anchor, placed, { parser: parserOf(options), selector: sectionCite });
-    entry.applicability = toApplicability(conditionsOf(section.title));
+    entry.applicability = toApplicability(conditionsOf(section.title,vocabulary));
+    entryContexts.set(entry,{section:index,text:section.title,heading:true});
     entries.push(entry);
   });
 
@@ -935,7 +1178,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       const placed = anchorPathOf(anchor, catalog, options) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
 
-      entry.applicability = toApplicability(conditionsOf(text));
+      entry.applicability = toApplicability(conditionsOf(text,vocabulary));
+      entryContexts.set(entry,{section:block.section,text});
       entries.push(entry);
       current = { path: placed, words: anchor.words, params: anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(anchor) };
       continue;
@@ -990,7 +1234,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const path = anchorPathOf(one, catalog, options) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
 
-            signature.applicability = toApplicability(conditionsOf(rowText));
+            signature.applicability = toApplicability(conditionsOf(rowText,vocabulary));
+            entryContexts.set(signature,{section:block.section,text:rowText});
             split.push(signature);
             const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
             if (described.length > 0) split.push(textEntry({ path, statement: described.join('；'), block: 'table', section: block.section, words: one.words, fragments: [rowFragment] }));
@@ -1017,7 +1262,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const quiet: number[] = [];
           for (const line of rowLines) {
             const rowText = table.lines[line].trimEnd();
-            const own = conditionsOf(rowText);
+            const own = conditionsOf(rowText,vocabulary);
             if (toApplicability(own) !== null) {
               entries.push(
                 textEntry({
@@ -1079,7 +1324,18 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   }
   if (missingSection > 0) warnings.push(`有 ${missingSection} 个块指向不存在的章节，挂在手册命名空间的根下`);
   if (unwritable > 0) warnings.push(`有 ${unwritable} 个块的章节路径写不出（过长或含写不出的字符），挂在手册命名空间的根下`);
-  return { entries, unplaced: [], warnings };
+  applyScopes();
+  for(const field of APPLICABILITY_FIELD){
+    for(const entry of entries)if(entry.applicability?.[field]!==undefined){
+      if(entry.applicability.inherited?.includes(field))report.counts[field].inherited++;
+      else report.counts[field].direct++;
+    }
+    const count=report.counts[field];
+    warnings.push(`适用条件统计：${labelOf('applicability_field',field)}：直接抽取 ${count.direct} 条，继承 ${count.inherited} 条`);
+  }
+  for(const difference of report.overrides)warnings.push(`适用条件内外层不同：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}`);
+  for(const difference of report.conflicts)warnings.push(`适用条件同章冲突，未裁决：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}；缺少一致的来源声明；下一步：来源维护者核对这些片段，在再次同步前修订或明确保留矛盾，再重新生产`);
+  return { entries, unplaced: [], warnings, applicability_report:report };
 }
 
 /** A signature's literals are its command words and variants (never the parameters): what read time can match. */
@@ -1242,7 +1498,8 @@ export default function manual(input: unknown): ManualResult {
     () => {
       if (isRecord(input) && 'model' in input && !isMarkdown(input) && !isCatalog(input)) {
         const name = typeof input.name === 'string' && input.name !== '' ? input.name : undefined;
-        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, name === undefined ? {} : { name });
+        const params=isRecord(input.params)?input.params:{};
+        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, {components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined,...(name===undefined?{}:{name})});
       }
       return produceManualEntries(input as MarkdownModel);
     },
