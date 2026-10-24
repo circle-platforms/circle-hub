@@ -661,21 +661,14 @@ regression, without changing the engine's status precedence.
 
 ## Transitional recovery metadata
 
-New unknown outcomes name `missing` at their producer. Evaluation binds every transitional layer to its missing facts
-and complete `exit`, preserving independent causes in `gaps`. Pack repairs address the published pack owner;
-clarification and artifact repair address the runner (or standing-obligation configurer); administrator actions address
-the first active administrator in account-id order. A legacy test port without publication ownership instead asks its
-runner to clarify that missing authority; it never invents a pack owner.
-
-Until `hub-unknown-exits` binds actual request records and deadline processing, every exit intent has an absolute due
-at evaluation time plus 72 hours, matching the administrator acceptance request default. These fields do not claim
-that a request was created or an action was performed. Existing finite retries and splitting remain unchanged. Missing
-input from a temporarily unavailable quote schedules rereading; withheld ordinary sources require administrator
-acceptance; digest mismatches require trusted-backup restoration, never blind rereading. Actual credential echoes
-remain excluded at the input boundary and cannot gain an administrator-acceptance exit here.
-
-Historical stored results remain byte-for-byte unchanged. A transitional layer without a recorded exit displays
-`出口未写`; the reader never invents its missing facts, audience or deadline.
+The mainline pure-intent interface and the named runtime interface share the single reason table in recovery.ts.
+terminals.ts keeps its existing exports. New writes keep producer-authored missing facts, bind audiences from actual
+Hub identities and create the durable requests described above; missing ownership wiring fails explicitly.
+Package-authored exits cannot nominate another account. Only an explicitly trusted parent observation can propose a
+Hub reread or reevaluation intent through the compatibility interface; the helper itself performs neither action.
+The older intent interface retains its 72-hour default for compatibility. Runtime requests retain their actual fixed
+due dates (24 hours by default), without extending them on repeats. Historical records remain unchanged and readers
+continue to report “出口未写” rather than synthesizing an old actor, fact or deadline.
 
 A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
 extend is refused for the whole request before effects, and release still requires the same user and predecessor

@@ -246,50 +246,7 @@ const BY_REASON = {
   integrity_unproven: 'data_gap',
 } as const satisfies Record<Reason, Attribution>;
 
-/** V03 R[11]-R[15]: after bounded check/read recovery, unresolved facts go to a named person. */
-export const EXIT_BY_REASON = {
-  no_check: { recipient: 'owner', kind: 'repair', next_action: '包作者安装声明层的检查或观察，发布修复版本；运行者以原运行为 predecessor 用 start_run 重跑' },
-  check_error: { recipient: 'owner', kind: 'repair', next_action: '具名维护人核对所指检查并修复实现或声明，发布修复版本；运行者以原运行为 predecessor 重跑' },
-  timeout: { recipient: 'owner', kind: 'repair', next_action: '包作者在沙箱上限内调整单项检查上限或拆分输入，发布修复版本后以新修订重跑' },
-  missing_input: { recipient: 'runner', kind: 'clarification', next_action: '运行者用 upload_file 补齐点名的运行输入，再以原运行为 predecessor 用 start_run 开新修订；缺在提交声明上的可用 submit_result 重交' },
-  integrity_unproven: { recipient: 'administrator', kind: 'repair', next_action: '管理员补齐点名的完整性前提：字节摘要不符的从可信备份恢复，目录不全的重新生产，目标观察不全的核对原作业；不重交原效果。补齐后重评，仍不能补齐则重证基线并以新修订重跑' },
-  budget_exhausted: { recipient: 'owner', kind: 'repair', next_action: '包作者在沙箱最大值以内调高检查工作上限，或拆分检查工作；修好后以新修订重跑' },
-  declared_skip: { recipient: 'runner', kind: 'repair', next_action: '运行者用 submit_result 交回完整的新提交，仍可取代本次结果' },
-  not_covered: { recipient: 'runner', kind: 'repair', next_action: '运行者用 submit_result 补齐未覆盖条目的完整提交，仍可取代本次结果' },
-  awaiting_step: { recipient: 'runner', kind: 'repair', next_action: '完成 missing 指向的前置修复或请求后，原样 submit_result 由 Hub 重评；改变输入时以本运行为 predecessor 开新修订' },
-  output_failed: { recipient: 'runner', kind: 'repair', next_action: '运行者修复所指产物的生成或回读不一致，补交可核验产物；更改输入时以本运行为 predecessor 重跑' },
-  repair_exhausted: { recipient: 'runner', kind: 'repair', next_action: '修复轮数用完；运行者仍可用 submit_result 重交完整的新提交取代结果，或以本运行为 predecessor 用 start_run 开新修订' },
-} as const satisfies Record<Reason, { recipient: keyof Pick<RecoveryContext, 'runner' | 'owner' | 'administrator'>; kind: NonNullable<UnknownExit['request_kind']>; next_action:string }>;
-
-export interface RecoveryContext {
-  runner: string;
-  owner: string;
-  administrator: string;
-  due: string;
-  location: string;
-}
-
-/** Bind new results only. Stored results are read through readStoredValidationResult, never passed here. */
-export function bindRecovery(layer: LayerResult, context: RecoveryContext, outcomes: readonly CheckOutcome[] = []): LayerResult {
-  const reason = layer.reason ?? 'check_error';
-  const gap = (cause: Reason, missing: string) => {
-    const policy = EXIT_BY_REASON[cause];
-    return { reason: cause, missing, exit: UnknownExit.parse({ action: 'request', request_kind: policy.kind,
-      audience: { user: context[policy.recipient] }, due: context.due }) };
-  };
-  const distinct = new Map<string, ReturnType<typeof gap>>();
-  for (const outcome of outcomes) {
-    if (outcome.verdict !== 'unknown') continue;
-    const cause = outcome.reason ?? 'check_error';
-    const missing = outcome.missing ?? outcome.statement;
-    distinct.set(JSON.stringify([cause, missing]), gap(cause, missing));
-  }
-  if (!isUnsettled(layer)) return distinct.size ? {...layer,gaps:[...distinct.values()]} : layer;
-  const selected = [...distinct.values()].find(g => g.reason === reason)
-    ?? gap(reason, `${context.location}：缺少${reason === 'not_covered' || reason === 'declared_skip' || reason === 'repair_exhausted' ? '完整的条目提交' : '该层可核验的结果'}（${labelOf('reason',reason)}）`);
-  const rest = [...distinct.values()].filter(g => g !== selected);
-  return { ...layer, ...selected, ...(rest.length ? { gaps: rest } : {}) };
-}
+export {bindRecovery,EXIT_BY_REASON,type NamedRecoveryContext as RecoveryContext} from './recovery.ts';
 
 /** V04: attribution of a violation by the role of what the refuting check judges (A03). */
 const BY_ROLE = {
