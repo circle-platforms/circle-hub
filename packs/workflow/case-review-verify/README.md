@@ -176,3 +176,7 @@ data.source_facts 并列原引用为根据；不重判、不改生产者或归�
 每条源反驳单独检查 statement.data.expected：即使同要求项的静态层归责 author_input，expected:true 的期望结果也不进入初评事实快照或 Hub 缺陷栏；整层归责不能替代逐条判定。
 
 本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
+
+## Predecessor result default
+
+The `draft` slot explicitly declares `default_from_predecessor: {pack: "case-review"}`. A verifier may omit it when supplying `predecessor`; the Hub binds that run's newest accepted submitted validation record and discloses the frozen `input_defaults` provenance in both the start reply and run record. Newer refusals or system deliveries do not replace the eligible submitted result. No accepted submission refuses start with the existing schema code and a concrete resubmit-then-review action. Explicit draft references retain the package's existing validation, including `draft_invalid` and `draft_not_accepted`. This adds no read or predecessor authority. Other artifact slots opt in separately; the compiler's binary workbook slot is unchanged.

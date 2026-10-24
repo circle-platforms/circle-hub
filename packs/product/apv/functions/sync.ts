@@ -86,6 +86,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
 
     // Builds of the listing pages read so far, each with the kind of the page that lists it (mainline wins).
     const listed: Build[] = [];
+    const failedBuilds: NonNullable<SyncPlanOutput['failed_builds']> = [];
     const pageOf = new Map<string, ListingPage>();
     const failed: string[] = [];
     for (const page of plan.pages) {
@@ -97,6 +98,14 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         continue;
       }
       for (const build of parseListing(model, { platform: page.platform }).builds) {
+        if (build.failure) {
+          if (build.line !== null && build.family !== 'other' && (options.lines === null || options.lines.has(lineKey(build.line)))) failedBuilds.push({
+            source: listingId(page.page), build: {name:build.name, family:build.family, line:build.line, base:build.name,
+              platform:build.platform, built_at:null, released_at:isoTime(build.released).iso, sources:{}},
+            raw: { ...build }, reason:'SOURCE_UNPARSEABLE', fix:build.failure,
+          });
+          continue;
+        }
         listed.push(build);
         const seen = pageOf.get(build.name);
         if (seen === undefined || (seen.kind !== 'mainline' && page.kind === 'mainline')) pageOf.set(build.name, page);
@@ -222,7 +231,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     if (options.lines !== null) summary.push(`只列版本线 ${[...options.lines].join('、')}`);
     if (notes.length > 0) summary.push(notes.slice(0, 3).join('；'));
     const note = summary.join('；');
-    return { fetch, builds: kept, done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
+    return { fetch, builds: kept, ...(failedBuilds.length ? {failed_builds:failedBuilds} : {}), done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
   } catch (error) {
     return { fetch: [], builds: [], done: true, note: internalError(error) };
   }

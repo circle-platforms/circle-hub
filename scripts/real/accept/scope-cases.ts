@@ -267,7 +267,7 @@ export function computeScopeCases(inputs: {
 
 function casesFromGold(gold: CommandsGold, paths: ReadonlySet<string>): { cases: Set<string>; incompleteReasons: string[] } {
   if (gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases)) throw new Error('金标准格式无效');
-  return { cases: new Set(gold.cases.filter((c) => c.comparable && c.paths.some((p) => paths.has(p.path))).map((c) => c.key)), incompleteReasons: [] };
+  return { cases: new Set(gold.cases.filter((c) => c.comparable && (c.placement_paths??c.paths).some((p) => paths.has(p.path))).map((c) => c.key)), incompleteReasons: [] };
 }
 function filterRun(run: RunShowExport, gold?: CommandsGold): Set<string> {
   const cases = extractCasesFromRun(run);

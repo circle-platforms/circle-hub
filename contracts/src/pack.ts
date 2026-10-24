@@ -458,6 +458,8 @@ export type SlotsFile = z.infer<typeof SlotsFile>;
 
 // ---------------------------------------------------------------- workflow.json (W03)
 
+/** An explicit slot-level default source, including the workflow whose submitted result is accepted. */
+export const PredecessorInputDefault = z.strictObject({pack:PackId});
 export const WorkflowInput = z.strictObject({
   slot: Key,
   role: SourceRoleSchema,
@@ -465,6 +467,11 @@ export const WorkflowInput = z.strictObject({
   accepts: z.array(z.string().min(1)).min(1).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
+  default_from_predecessor: PredecessorInputDefault.optional().describe('When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win'),
+}).superRefine((slot,ctx)=>{
+  if(slot.default_from_predecessor===undefined)return;
+  if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor'});
+  if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
 });
 export type WorkflowInput = z.infer<typeof WorkflowInput>;
 

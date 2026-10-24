@@ -323,3 +323,12 @@ test('incomplete legacy reasons are displayed as categories without private path
   const report = computeScopeCases({ diff: { added: [], modified: [], removed: [] }, earlierNodesLines: [JSON.stringify({ next: 'opaque-private-cursor', nodes: [] })], laterNodesLines: [], regressionRun: { items: [] }, maintenanceRun: { items: [] } });
   const output = renderReport(report); assert.match(output, /分页未完 1 项/); assert.match(output, /下一步.*next/); assert.ok(!output.includes('opaque-private-cursor')); assert.ok(output.endsWith('判定：输入不全'));
 });
+
+test('scope comparison uses body placement while retaining title-only legacy measurements',()=>{
+ const xml='<commands><menu name="widget"><item name="add"/></menu></commands>';
+ const map={root:{data:{text:'root'},children:[{data:{id:'body',text:'plain',resource:['Functional']},children:[{data:{text:'widget add'},children:[{data:{text:'done'}}]}]}]}};
+ const gold=caseCommandsGold(xml,[{document:'synthetic-body',map}]);assert.equal(gold.cases[0].paths.length,0);
+ const input={diff:{added:['/commands/widget/add'],removed:[],modified:[]},earlierCases:gold,laterCases:gold,regressionRun:{items:[{id:'synthetic-body:body'}]},maintenanceRun:{items:[]}};
+ assert.equal(computeScopeCases(input).allEqual,true);
+ assert.equal(computeScopeCases({...input,regressionRun:{items:[]}}).allEqual,false);
+});

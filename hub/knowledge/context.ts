@@ -108,7 +108,10 @@ export class WriteQueue {
 }
 
 export interface KnowledgeContext {
-  additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
+  /** Whether the generic additional-root scope was explicitly declared, beyond automatic unversioned discovery. */
+  additionalScopeRootsDeclared?: boolean;
+  additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
+  credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

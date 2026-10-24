@@ -12,7 +12,8 @@
     {
       "slot": "draft",
       "role": "artifact_under_verification",
-      "description": "初评运行的验证结果：初评 submit_result 回执里的 rec:<摘要>（Hub 记录，不带 # 指针）；开始运行时 predecessor 写初评运行的编号",
+      "description": "初评运行的已受理验证结果：可以不写，给了 predecessor 时由 Hub 按前驱的已受理结果绑定；显式给值仍用初评 submit_result 回执里的 rec:<摘要>（Hub 记录，不带 # 指针）",
+      "default_from_predecessor": { "pack": "case-review" },
       "accepts": ["application/json"],
       "required": true,
       "many": false

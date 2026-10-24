@@ -107,3 +107,14 @@ test('CLI missing flags return usage and input errors identify only the input ki
     writeFileSync(tree, '<commands/>'); result = run(); assert.match(result.stderr, /脑图 1.*缺少 root/); assert.ok(!result.stderr.includes(dir)); assert.ok(!result.stderr.includes('private-doc'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('placement includes operation, intermediate and expected text but excludes preconditions and nested case bodies',()=>{
+ const pre={data:{id:'pre',text:'widget pool add',priority:3}};
+ const map={root:node('root','plain',[node('case','plain',[pre,node('step','show pools',[node('middle','widget health probe',[node('expected','relay endpoint add',[],false)],false)],false),node('nested','plain',[node('nested-step','widget pool add',[node('nested-expect','done',[],false)],false)])])],false)};
+ const result=caseCommandsGold(xml,[{document:'synthetic-body',map}]);
+ const outer=result.cases.find(c=>c.node==='case')! as any,nested=result.cases.find(c=>c.node==='nested')! as any;
+ assert.deepEqual(outer.paths,[],'title measurement remains independent of the body');
+ assert.deepEqual(outer.steps.map((p:any)=>p.path),['/commands/show/pools']);
+ assert.deepEqual(outer.placement_paths.map((p:any)=>p.path),['/commands/relay/endpoint/add','/commands/show/pools','/commands/widget/health/probe']);
+ assert.deepEqual(nested.placement_paths.map((p:any)=>p.path),['/commands/widget/pool/add']);
+});
