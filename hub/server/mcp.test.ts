@@ -460,14 +460,18 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       model: 'scripted-model@test',
       items: summary.items.map((item,i)=>({item:item.id,handling:'handled',slots:{findings:i===0?[{text:`第 ${n} 次提交的发现`}]:[]}})),
     });
-    const lastNote = async () => (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, tool: 'submit_result', limit: 1 })).items[0].admin_note;
+    const lastReasons = async () => {
+      const [line] = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, tool: 'submit_result', limit: 1 })).items;
+      assert.equal(line.admin_note, `管理员理由 ${line.admin_reasons?.length} 条；详见管理员调用日志详情`);
+      return (line.admin_reasons ?? []).join('\n');
+    };
     server.fakes.runs.script.failNext('getResult', new Error('合成的查找失败'));
     const failed = await client.call('submit_result', submission(1));
     assert.equal(failed.isError, false, failed.content[0].text);
     assert.equal(failed.structuredContent.acceptance, 'accepted', 'the answer stands');
     assert.ok(failed.structuredContent.result, 'with its result');
     assert.match(failed.content[0].text ?? '', /存下的结果 rec:[0-9a-f]{64}/, 'the second lookup recovers the stored record');
-    assert.match(await lastNote() ?? '', /defect.result_lookup_miss.*attempt 1/);
+    assert.match(await lastReasons(), /defect.result_lookup_miss.*attempt 1/);
     server.fakes.runs.script.answerNext('getResult', null);
     const missing = await client.call('submit_result', submission(2));
     assert.equal(missing.structuredContent.acceptance, 'accepted');
@@ -790,7 +794,7 @@ describe('start_run with the engine\'s detail', () => {
       assert.ok(lines.includes(`完整结果 ${result.reference}（用 get_nodes 按引用读）`));
       assert.equal(lines.at(-1), `追踪 ${started.structuredContent.trace}`);
       const [line] = (await other.records.callLog.query(other.admin.principal, { userId: user.user.id, tool: 'start_run', limit: 1 })).items;
-      assert.match(line.admin_note ?? '', /the text of the start_run answer could not be laid out: TypeError: /);
+      assert.match((line.admin_reasons ?? []).join('\n'), /the text of the start_run answer could not be laid out: TypeError: /);
       assert.equal(line.call_result, 'ok', 'the call is logged as answered');
       await client.close();
     } finally {
@@ -912,7 +916,7 @@ describe('batches and notes', () => {
         ['list_task_packs', 'transport_failure'],
       ],
     );
-    for (const line of lines) assert.match(line.admin_note ?? '', /JSON-RPC batch refused/);
+    for (const line of lines) assert.match((line.admin_reasons ?? []).join('\n'), /JSON-RPC batch refused/);
     const empty = await post(user.token, '[]');
     assert.equal(empty.status, 400);
     const single = await post(user.token, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'upload_file', arguments: { file_path: b64(content) } } }));
@@ -925,16 +929,20 @@ describe('batches and notes', () => {
     const client = await connect(user);
     const absent = await client.call('get_nodes', { root: 'e'.repeat(64), paths: [`/${'a'.repeat(296)}😀`] });
     assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
-    server.fakes.runs.script.failNext('startRun', Object.assign(new Error('read failed at\u0000offset 7'), { code: 'SOURCE_UNAVAILABLE' }));
+    server.fakes.runs.script.failNext('startRun', Object.assign(new Error('read failed at\u0000offset 7\ud800'), { code: 'SOURCE_UNAVAILABLE' }));
     assert.equal(firstError(await client.call('start_run', { pack: 'review', inputs: {} })).code, 'SOURCE_UNAVAILABLE');
     const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 20 })).items;
     const nodes = lines.find((line) => line.tool === 'get_nodes');
     assert.ok(nodes, 'the get_nodes line is written');
-    assert.match(nodes.admin_note ?? '', /is absent or not readable/);
-    assert.ok((nodes.admin_note ?? '').isWellFormed());
+    assert.match((nodes.admin_reasons ?? []).join('\n'), /is absent or not readable/);
+    assert.ok(nodes.admin_reasons?.length);
+    assert.ok(nodes.admin_reasons.every(reason => reason.isWellFormed() && !reason.includes('\0')));
+    assert.equal(nodes.admin_note, `管理员理由 ${nodes.admin_reasons.length} 条；详见管理员调用日志详情`);
     const start = lines.find((line) => line.tool === 'start_run');
     assert.ok(start, 'the start_run line is written');
-    assert.match(start.admin_note ?? '', /read failed atoffset 7/);
+    assert.match((start.admin_reasons ?? []).join('\n'), /read failed atoffset 7\ufffd/);
+    assert.ok(start.admin_reasons?.every(reason => reason.isWellFormed() && !reason.includes('\0')));
+    assert.equal(start.admin_note, `管理员理由 ${start.admin_reasons?.length} 条；详见管理员调用日志详情`);
     await client.close();
   });
 
@@ -1042,9 +1050,10 @@ describe('neutral answers', () => {
     assert.equal(firstError(answer).code, 'SOURCE_UNAVAILABLE');
     assert.doesNotMatch(JSON.stringify(answer), /not visible|absent/);
     const adminView = await server.records.callLog.query(server.admin.principal, { userId: other.user.id, tool: 'get_nodes' });
-    assert.match(adminView.items[0].admin_note ?? '', /not visible/);
+    assert.match((adminView.items[0].admin_reasons ?? []).join('\n'), /not visible/);
     const ownView = await server.records.callLog.query(other.principal, { tool: 'get_nodes' });
     assert.equal(ownView.items[0].admin_note, undefined, 'a user never sees the admin note');
+    assert.equal(ownView.items[0].admin_reasons, undefined, 'a user never sees the private reasons');
     await ownerClient.close();
     await otherClient.close();
   });
@@ -1109,7 +1118,7 @@ describe('the isError matrix and output schemas', () => {
     assert.equal(failed.length, 3);
     for (const line of failed) {
       assert.equal(line.call_result, 'error');
-      assert.match(line.admin_note ?? '', /does not conform to its output schema/);
+      assert.match((line.admin_reasons ?? []).join('\n'), /does not conform to its output schema/);
     }
     await client.close();
   });
@@ -1132,11 +1141,12 @@ describe('the isError matrix and output schemas', () => {
       return true;
     });
     const logEntries = await server.records.callLog.query(server.admin.principal, { userId: user.user.id });
-    const internalLine = logEntries.items.find((line) => line.call_result === 'error' && line.admin_note?.includes('connection to 192.0.2.1 refused'));
-    assert.ok(internalLine, 'an internal failure writes the admin note');
-    assert.match(internalLine.admin_note ?? '', /\bat /);
-    assert.doesNotMatch(internalLine.admin_note ?? '', /\/Users\//);
-    assert.doesNotMatch(internalLine.admin_note ?? '', /file:\/\//);
+    const internalLine = logEntries.items.find((line) => line.call_result === 'error' && line.admin_reasons?.some(reason => reason.includes('connection to 192.0.2.1 refused')));
+    assert.ok(internalLine, 'an internal failure writes private admin reasons');
+    assert.equal(internalLine.admin_note, `管理员理由 ${internalLine.admin_reasons?.length} 条；详见管理员调用日志详情`);
+    assert.match((internalLine.admin_reasons ?? []).join('\n'), /\bat /);
+    assert.doesNotMatch((internalLine.admin_reasons ?? []).join('\n'), /\/Users\//);
+    assert.doesNotMatch((internalLine.admin_reasons ?? []).join('\n'), /file:\/\//);
     await client.close();
   });
 });

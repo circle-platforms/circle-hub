@@ -227,7 +227,7 @@ describe('/mcp transport', () => {
     assert.equal(refused.status, 406);
     const lines = await server.records.callLog.query(server.admin.principal, { tool: 'tools/list', limit: 5 });
     assert.equal(lines.items[0].call_result, 'transport_failure');
-    assert.match(lines.items[0].admin_note ?? '', /HTTP 406/);
+    assert.match((lines.items[0].admin_reasons ?? []).join('\n'), /HTTP 406/);
   });
 
   test('a body over the request limit is refused before it is read, declared or streamed, and logged as a transport failure', async () => {
@@ -249,7 +249,7 @@ describe('/mcp transport', () => {
     });
     assert.equal(streamed, 413);
     const lines = await server.records.callLog.query(server.admin.principal, { tool: 'mcp' });
-    assert.ok(lines.items.some((line) => line.call_result === 'transport_failure' && /over 65536 bytes/.test(line.admin_note ?? '')));
+    assert.ok(lines.items.some((line) => line.call_result === 'transport_failure' && /over 65536 bytes/.test((line.admin_reasons ?? []).join('\n'))));
   });
 
   test('every refusal of an authenticated caller at the transport is one transport_failure line with its reason', async () => {
@@ -272,11 +272,12 @@ describe('/mcp transport', () => {
     for (const line of lines) {
       assert.equal(line.call_result, 'transport_failure');
       assert.equal(line.tool, 'mcp');
-      assert.ok((line.admin_note ?? '').length > 0, 'the reason is in the admin note');
+      assert.ok(line.admin_reasons?.length, 'the reason is in private admin reasons');
+      assert.equal(line.admin_note, `管理员理由 ${line.admin_reasons.length} 条；详见管理员调用日志详情`);
     }
-    assert.match(lines[0].admin_note ?? '', /method PUT is not served/);
-    assert.match(lines[1].admin_note ?? '', /text\/plain is not application\/json/);
-    assert.match(lines[2].admin_note ?? '', /the transport answered HTTP 400/);
+    assert.match((lines[0].admin_reasons ?? []).join('\n'), /method PUT is not served/);
+    assert.match((lines[1].admin_reasons ?? []).join('\n'), /text\/plain is not application\/json/);
+    assert.match((lines[2].admin_reasons ?? []).join('\n'), /the transport answered HTTP 400/);
     // Neither is a call: a GET (the client's probe for the optional server stream, 405 by the specification) and a
     // notification (202).
     assert.equal((await send('/mcp', { headers })).status, 405);
@@ -295,7 +296,7 @@ describe('/mcp transport', () => {
     assert.equal(JSON.parse(reply.body).error.code, -32700);
     const [line] = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 5 })).items;
     assert.equal(line.call_result, 'transport_failure');
-    assert.match(line.admin_note ?? '', /not UTF-8/);
+    assert.match((line.admin_reasons ?? []).join('\n'), /not UTF-8/);
     assert.equal((await send('/mcp', { method: 'POST', headers: mcpHeaders(user.token), body: good })).status, 200, 'the same call in UTF-8 is served');
   });
 
@@ -323,7 +324,7 @@ describe('/mcp transport', () => {
       slow.destroy();
       assert.match(await raw(`${head(2000)}${padded}`, 1500, info.port), /^HTTP\/1\.1 200 /);
       const lines = await server.records.callLog.query(server.admin.principal, { userId: server.admin.user.id, tool: 'mcp', limit: 20 });
-      assert.ok(lines.items.some((line) => /budget of 4096 bytes/.test(line.admin_note ?? '')), 'the 503 is logged as a transport failure');
+      assert.ok(lines.items.some((line) => /budget of 4096 bytes/.test((line.admin_reasons ?? []).join('\n'))), 'the 503 is logged as a transport failure');
     } finally {
       await app.close();
     }
