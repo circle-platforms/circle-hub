@@ -10,13 +10,13 @@ import { asArray, guarded, internalError, isRecord, squeeze } from './util.ts';
 // apv-directory@1, declared in README: prefix code, colon, version line, train, then module.
 const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*[:：]\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
-const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
+const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_]([^\r\n/]+)$/;
 const MAX_LABELS = 64;
 const MAX_LABEL = 1000;
 
 /** The label text with its prefix code removed (full-width colon and digits normalized); labels are cut at MAX_LABEL. */
 export function stripPrefix(label: string): string {
-  const text = squeeze(label.slice(0, MAX_LABEL));
+  const text = label.slice(0, MAX_LABEL);
   const match = PREFIX.exec(text);
   return match ? text.slice(match[0].length).trim() : text;
 }
