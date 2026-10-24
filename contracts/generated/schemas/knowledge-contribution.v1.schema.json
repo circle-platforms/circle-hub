@@ -417,7 +417,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
-              }
+              },
+              "description": "Unique accepted exact tag literals; undeclared fields have no accepted tags. The original parsed author field is retained in resource_declaration.raw_json and content identity."
             },
             "steps": {
               "minItems": 0,
@@ -1524,6 +1525,126 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "resource_declaration": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "declared",
+                    "undeclared"
+                  ]
+                },
+                "present": {
+                  "type": "boolean"
+                },
+                "raw_json": {
+                  "type": "string",
+                  "description": "Lossless JSON encoding of the original parsed resource value; absence is distinguished by present"
+                },
+                "types": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "table": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "violations": {
+                  "maxItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "const": "resource"
+                      },
+                      "tier": {
+                        "type": "string",
+                        "enum": [
+                          "advisory"
+                        ]
+                      },
+                      "allowed_values": {
+                        "maxItems": 1000,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "statement": {
+                        "type": "string"
+                      },
+                      "next_action": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "tier",
+                      "allowed_values",
+                      "statement",
+                      "next_action"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "missing": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null",
+                      "const": null
+                    }
+                  ]
+                },
+                "next_action": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null",
+                      "const": null
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "present",
+                "raw_json",
+                "types",
+                "table",
+                "violations",
+                "missing",
+                "next_action"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1544,7 +1665,7 @@
           ],
           "additionalProperties": false,
           "title": "fed-case@1",
-          "description": "Content identity hashes the canonical caseStatement projection (autoid, priority, resources, original steps and expectations). Source, root, commands, bindings and annotations do not enter identity; repeated bytes from multiple documents remain one object."
+          "description": "Content identity hashes the canonical caseStatement projection (autoid, priority, resources, original steps and expectations). Source, root, commands, bindings and annotations do not enter identity; repeated bytes from multiple documents remain one object. Invalid resource values remain in raw_json and content identity; the tag field is undeclared with one advisory violation. No literal recovery or whole-document rejection."
         },
         {
           "type": "object",

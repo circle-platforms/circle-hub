@@ -10,7 +10,7 @@ import {folderLine} from './documents.ts';
 import {parseBuildName,lineKey} from './naming.ts';
 import {parseListing} from './listing.ts';
 import {isRecord} from './util.ts';
-import {declareResourceTags,TEST_TYPE_IDS} from './generated/vocabulary.ts';
+import {declareResourceTags,TEST_TYPE_IDS,RESOURCE_TAG_TEXTS} from './generated/vocabulary.ts';
 import type {XmlModel,HtmlModel} from './types.ts';
 const text=(value:unknown):string|null=>typeof value==='string'?value:Number.isSafeInteger(value)?String(value):null;
 export function normalizeLine(input:unknown):{line:string|null}{const value=isRecord(input)&&typeof input.line==='string'?input.line:null;return {line:value===null?null:folderLine('rel_apv_'+value.replaceAll('.','_'))};}
@@ -29,12 +29,15 @@ export default function project(input:unknown):unknown{
   const tree=isRecord(input.tree)?input.tree:null;
   const catalog=tree?commandCatalog(tree.model as XmlModel,tree.sha256 as string).catalog:null;
   const document=elementDocument({model,external:s.external})??text(s.key);if(!document)throw Error('缺文档身份；补原始文档字段后重读');
-  for(const node of scan.cases){const declaration=declareResourceTags(node.resource);if(!declaration.valid)throw Error('resource 含未声明的闭集原文；作者按精确原文修正后整份重读');if(node.priority!==null&&typeof node.priority!=='number')throw Error('priority 不是原始整数');
+  for(const node of scan.cases){const declaration=declareResourceTags(node.resource);if(node.priority!==null&&typeof node.priority!=='number')throw Error('priority 不是原始整数');
    const steps=(node.stepTexts??[]).map(text=>({text})),expects=(node.expectedTexts??[]).map(text=>({text}));
    const parsed=catalog?textCommands(catalog,steps.map(step=>step.text)).results:[];
    const commands=parsed.flatMap(row=>row.identities??[]),unparsed_steps=steps.filter((_,index)=>!parsed[index]?.states?.length||parsed[index].identities?.length!==parsed[index].states?.length).length;
+   // Identity retains the source value. An invalid tag declaration is local evidence, never a document exception.
    const content={autoid:node.autoid,priority:node.priority,resources:node.resource===undefined?[]:node.resource,steps,expects};
-   rows.push({body:{schema:'fed-case@1',...base,source:{system:'agile',document,element:node.id??node.selector,revision:text(s.revision),bytes:s.bytes},...content,commands,unparsed_steps,document_lines:lines},identity:content,lines,selector:node.selector,grammar:'apv-directory-folder@1',conflict:lines.length>1,...(unparsed_steps?{missing:[{missing:unparsed_steps+' 个步骤缺可核对的完整命令身份',next_action:'包作者核对锁定命令树的完整签名，或作者补完整命令后重新读取；不猜命令'}]}:{})});
+   const resource_declaration={status:declaration.status,present:declaration.present,raw_json:JSON.stringify(declaration.raw),types:declaration.types,table:declaration.table,missing:declaration.missing,next_action:declaration.next_action,violations:declaration.valid?[]:[{field:'resource',tier:'advisory',allowed_values:[...RESOURCE_TAG_TEXTS],statement:'未声明的标签：'+declaration.issues.map(issue=>JSON.stringify(issue.raw)).join('、')+'；resource 应改为发布闭集的精确原文：'+RESOURCE_TAG_TEXTS.join('、')+'；不推测原值对应哪项',next_action:declaration.next_action!}]};
+   const resources=declaration.valid&&Array.isArray(node.resource)?[...new Set(node.resource)]:[];
+   rows.push({body:{schema:'fed-case@1',...base,source:{system:'agile',document,element:node.id??node.selector,revision:text(s.revision),bytes:s.bytes},...content,resources,resource_declaration,commands,unparsed_steps,document_lines:lines},identity:content,lines,selector:node.selector,grammar:'apv-directory-folder@1',conflict:lines.length>1,...(unparsed_steps?{missing:[{missing:unparsed_steps+' 个步骤缺可核对的完整命令身份',next_action:'包作者核对锁定命令树的完整签名，或作者补完整命令后重新读取；不猜命令'}]}:{})});
   }
  }else if(s.system==='plm'&&model.kind==='bug'){
   const original=structuredDefect(model)!;if(text(s.key)!==original.id)throw Error('PLM 记录身份与读取地址不一致');const {id,status,fix_builds}=original,affected_lines=original.affected_lines.map(nativeLine),resolved_lines=original.resolved_lines.map(nativeLine);

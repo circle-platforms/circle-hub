@@ -23,3 +23,8 @@ test('observed source provenance and note classification are strict; free text g
  const note=feedingExamples()['fed-note@1'][0] as Record<string,unknown>,quote={identity:{source_sha256:'a'.repeat(64),parser:'text@1',path:'l/1',span:{unit:'byte',offset:0,length:4}},text:'合成'};
  assert.ok(FedNoteSchema.safeParse({...note,classification:[{value:'minutes',quote}]}).success);assert.equal(FedNoteSchema.safeParse({...note,classification:[{value:'Minutes',quote}]}).success,false);assert.equal(FedNoteSchema.safeParse({...note,commands:[]}).success,false);
 });
+test('case resource diagnostics are optional for history and admit only an advisory structure violation',()=>{
+ const old=feedingExamples()['fed-case@1'][0] as Record<string,unknown>;assert.ok(FedCaseSchema.safeParse(old).success);
+ const violation={field:'resource',tier:'advisory',allowed_values:['functional'],statement:'未声明的标签；作者选择发布闭集的精确原文修正',next_action:'修正 resource 后重读'};
+ const resource_declaration={status:'undeclared',present:true,raw_json:'["Functional"]',types:[],table:{id:'synthetic-tags',version:'1',sha256:'a'.repeat(64)},violations:[violation],missing:'标签未声明',next_action:'修正后重读'};const current={...old,resources:[],resource_declaration};assert.ok(FedCaseSchema.safeParse(current).success);assert.equal(FedCaseSchema.safeParse({...current,resource_declaration:{...resource_declaration,violations:[{...violation,tier:'blocking'}]}}).success,false);assert.equal(FedCaseSchema.safeParse({...current,resource_declaration:{...resource_declaration,status:'guessed'}}).success,false);
+});
