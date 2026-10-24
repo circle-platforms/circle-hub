@@ -15,7 +15,7 @@
     {
       "slot": "case_index",
       "role": "expected",
-      "description": "同一锁定构建的完整用例索引，only 精确列本次敏捷平台文档，fields=document,node,commands,command_identities,title,path_labels；旧条目缺完整身份时用新生产器重产，不能以旧路径判覆盖完整",
+      "description": "同一锁定构建的完整用例索引，only 精确列本次敏捷平台文档，fields=document,node,commands,command_identities,command_tree_root,title,path_labels；旧条目缺完整身份时用新生产器重产，不能以旧路径判覆盖完整",
       "accepts": [
         "knowledge:index"
       ],

@@ -7,6 +7,8 @@ export function readCommandIdentity(value:unknown,root?:string):CommandIdentity|
  const result=Identity.safeParse(value);if(!result.success)return null;
  const identity=result.data as CommandIdentity;
  if(root!==undefined&&identity.tree_root!==root)return null;
+ const signatureRoot=identity.signature.startsWith('src:')?identity.signature.slice(4).split('#')[0]:identity.signature.startsWith('tree:')?identity.signature.slice(5).split('/')[0]:null;
+ if(signatureRoot!==identity.tree_root)return null;
  const positions=new Set<number>();
  for(const p of identity.parameters){if(positions.has(p.position))return null;positions.add(p.position);}
  return identity;

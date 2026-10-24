@@ -28,8 +28,8 @@ export function commandCoverage(template: Template, document: string, cases: Cas
     const e=index.entries[digest]!,key=e.data.node as string;let row=rows.get(key);
     if(!row){row={identities:new Map(),references:new Set(),revisions:new Set(),title:e.data.title as string,labels:e.data.path_labels as string[],legacy:false};rows.set(key,row);}
     const identities=e.data.command_identities;
-    if(!Array.isArray(identities))row.legacy=true;
-    else for(const value of identities){const identity=readCommandIdentity(value,index.build.root);if(identity)rememberIdentity(row.identities,identity);else row.legacy=true;}
+    if(!Array.isArray(identities)||e.data.command_tree_root===null)row.legacy=true;
+    else for(const value of identities){const identity=readCommandIdentity(value,typeof e.data.command_tree_root==='string'?e.data.command_tree_root:undefined);if(identity)rememberIdentity(row.identities,identity);else row.legacy=true;}
     row.references.add(e.reference);row.revisions.add(revision(e.data.title as string,e.data.path_labels as string[]));
   }
   const sameRevision=(fact:CaseCategory,row:{title:string;labels:string[]})=>{

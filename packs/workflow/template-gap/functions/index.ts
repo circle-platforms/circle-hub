@@ -10,7 +10,7 @@ const count = (v: unknown): v is number => Number.isSafeInteger(v) && (v as numb
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 export function indexBindingFix(build: unknown, documents: string[]): string {
   const expected = [...new Set(documents)].sort(compareText);
-  return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,command_identities,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
+  return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,command_identities,command_tree_root,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
 }
 export function readCaseIndex(input: Record<string, unknown>, agileDocuments: string[]): CaseIndex | null | PackFailure {
   const bound = (input.inputs as unknown[]).filter(v => isRecord(v) && v.slot === 'case_index');
@@ -38,7 +38,7 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
       if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || typeof entry.data.title !== 'string' || !strings(entry.data.path_labels) || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
       if (entry.data.command_identities !== undefined) {
         const identities=entry.data.command_identities;
-        if (!Array.isArray(identities) || !identities.every(i => readCommandIdentity(i,(v.build as {root:string}).root)!==null)) return bad('command_identities 不是锁定根下的完整 CommandIdentity 列表');
+        if (!Array.isArray(identities) || !identities.every(i => readCommandIdentity(i,typeof entry.data.command_tree_root==='string'?entry.data.command_tree_root:undefined)!==null)) return bad('command_identities 不是冻结命令树来源下的完整 CommandIdentity 列表');
         const paths=[...new Set(identities.map(i => readCommandIdentity(i)!.path))].sort(compareText);
         if (JSON.stringify(paths)!==JSON.stringify([...new Set(entry.data.commands as string[])].sort(compareText))) return bad('commands 必须恰好是 command_identities 派生的路径集合');
       }
@@ -55,7 +55,7 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
     keys[document] = [...new Set(v.keys[document] as string[])].sort(compareText);
     for (const digest of keys[document]!) {
       const e = (v.entries as Record<string, any>)[digest];
-      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, title: e.data.title, path_labels: [...e.data.path_labels], commands: [...new Set<string>(e.data.commands)].sort(compareText), ...(e.data.command_identities!==undefined?{command_identities:e.data.command_identities}: {}) } };
+      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, title: e.data.title, path_labels: [...e.data.path_labels], commands: [...new Set<string>(e.data.commands)].sort(compareText), ...(e.data.command_identities!==undefined?{command_identities:e.data.command_identities}: {}),...(Object.hasOwn(e.data,'command_tree_root')?{command_tree_root:e.data.command_tree_root}: {}) } };
     }
   }
   return { schema: 'index-view@1', product: v.product, build: { root: v.build.root, build: v.build.build }, kind: 'case', key: 'document', only: expected, fields: ['document', 'node', 'commands', 'title', 'path_labels'], keys, entries, cut_keys: [...new Set(v.cut_keys as string[] ?? [])].sort(compareText), truncated: v.truncated, skipped: v.skipped, total_keys: v.total_keys, total_entries: v.total_entries, notes: [...v.notes].sort(compareText) };

@@ -253,33 +253,7 @@ export type SourcesOutput = { external: ExternalObjectId[]; basis: SourceBasis[]
 
 // template-coverage.ts ------------------------------------------------------------------------------------------------------
 
-export type TemplateField = 'path' | 'title' | 'steps' | 'expected' | 'preconditions';
-
-export type TemplateCategory = {
-  id: string;
-  label: string;
-  group?: string;
-  /** Default true: a required category that no item shows is missing. */
-  required?: boolean;
-  /** Present when an item has one of these canonical tags. */
-  tags?: CanonicalTag[];
-  /** Present when a searched text contains one of these (after normalization). */
-  contains?: string[];
-  /** Present when a searched text starts with one of these (after normalization). */
-  prefixes?: string[];
-  /** Present when a searched text is one of these (after normalization), for example a group node named "no". */
-  equals?: string[];
-  /** Texts searched by contains and prefixes; default path and title. */
-  fields?: TemplateField[];
-};
-
-export type Template = {
-  schema: 'case-review.template@1';
-  id: string;
-  origin: string;
-  description?: string;
-  categories: TemplateCategory[];
-};
+export type Template = import('./template-coverage.ts').Template;
 
 export type CoverageSkip = { category: string; reason: string };
 
@@ -308,4 +282,4 @@ export type CoverageFacts = {
   warnings: Warning[];
 };
 
-export type CoverageOutput = CoverageFacts | Failure;
+export type CoverageOutput = import('./template-coverage.ts').CoverageOutput | Failure;

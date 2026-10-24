@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "74577030530c956b19f71dd56bf2aec8ab27698f98a87b44b560759a104c0bcc",
-      "size": 6666
+      "sha256": "7e9e3878141abf9574df5b96221b6ff58410196f9965f6e0673f8da3a271fceb",
+      "size": 6760
     },
     {
       "path": "functions/common.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/index.ts",
-      "sha256": "eefb8a40d6a39a64188ba9e3c33108ffb93c29776a89fe674984788b360c2f3c",
-      "size": 6762
+      "sha256": "f157b324312104fd7c839c731b61913ddd137aa654d9756507f042792f36be44",
+      "size": 6942
     },
     {
       "path": "functions/project.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "29081b400c9f51dcd67669609bf6705aba09b7cd13ae559a212503ad62909d9f",
-      "size": 1902
+      "sha256": "87b6cea694c6a5256b085ffca8e1bc6561dc841491c582b07c8ee26de3462717",
+      "size": 1819
     },
     {
       "path": "functions/tags.ts",
@@ -208,8 +208,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "2307fa967e2335884835f925b9614aa609f9fd34c85e64ea10fbf31bdeee614a",
-      "size": 18300
+      "sha256": "3153d6d2099ea820976f1c4ea23be4705f8e6c53b5274fe7f8e64f51471d4491",
+      "size": 18318
     },
     {
       "path": "functions/category-evidence.ts",
@@ -228,13 +228,13 @@
     },
     {
       "path": "functions/command-identity.ts",
-      "sha256": "7c4e9c28fae401b31ebfdcbe9492fa94a5e670499dbc4c0df02d5005604ba445",
-      "size": 1896
+      "sha256": "887556b1c19f3ca8ce32a9101a82888c162fbbca5197c7a8984903a1c136b317",
+      "size": 2136
     },
     {
       "path": "functions/coverage-check.ts",
-      "sha256": "bad587dd6f74fff79595dcf3a301e474d83606470146b26506d3c836b321a4ec",
-      "size": 4657
+      "sha256": "0a1980a3d5f1b9ffb6be65690b55e4746e21c09b04345c83bc9c6400706018d2",
+      "size": 4810
     },
     {
       "path": "functions/source-quotes.ts",

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "1a1d39ac57b55578181730ccca43e6cf057b690ac0eb8319af378f9bb3049804",
-      "size": 13139
+      "sha256": "a5ed6a6c51f3a9458f423cd22d73e9a41c2f4d9169d2c35cac889c152f287f3e",
+      "size": 12275
     },
     {
       "path": "requirements.json",
@@ -248,8 +248,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "a93ecd801096b8b0b6f705b4169f21e5e317f5cd5dcb3bb56c6446bce0b9f36a",
-      "size": 12607
+      "sha256": "50e9d4d5c0d3e717e4600df19a5ecf06f21a2f1320938f2df31a297222e1253e",
+      "size": 12244
     },
     {
       "path": "tables/command-claims.json",
