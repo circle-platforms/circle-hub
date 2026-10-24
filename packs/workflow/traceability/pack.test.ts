@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.7', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.8', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/matrix.ts') && files.includes('samples/negative/status-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
