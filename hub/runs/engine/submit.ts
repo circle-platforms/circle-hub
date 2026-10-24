@@ -3,7 +3,7 @@ import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
-import type { CheckOutcome } from '../../rules/api.ts';
+import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
 // anything. A different session or model is a different judge of that body and is validated again, so a drafter cannot
@@ -459,6 +459,25 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
   return checked;
 }
 
+/** Whole-submission boundary; an unruled interpreter is preserved but never executed. */
+export function runtimeCheckProblems(workflow: LoadedWorkflow, items: readonly {id:string}[], submission: Submission): ProtocolError[] {
+  const errors: ProtocolError[] = [];
+  const add = (path:string,message:string) => errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION',message,{path,fix:'按要求项的 run_table 和已发布台账修正；样例必须引用本运行的条目后重交'}));
+  for (const [i,check] of (submission.checks ?? []).entries()) {
+    const at = pointerOf('checks',i);
+    const requirement = workflow.requirements.find(r=>r.key===check.requirement);
+    if (!requirement?.run_table) add(at+'/requirement','要求项没有声明允许运行内的表');
+    if (workflow.ledger?.shapes.some(row=>row.requirement===check.requirement && row.interpreter===check.interpreter)) {
+      const interpreter = getInterpreter(check.interpreter);
+      if (!interpreter || interpreter.validateTable(check.table).length) add(at+'/table','表不符合台账允许的解释器格式');
+    }
+    check.samples.forEach((sample,j)=>{
+      if (!items.some(item=>item.id===sample.item)) add(at+`/samples/${j}/item`,'样例不在本运行的条目中');
+    });
+  }
+  return errors;
+}
+
 async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const capability=workflow.workflow.contribution;
@@ -466,7 +485,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     const tokens=error.path?.split('/');
     return capability!==undefined&&tokens?.[1]==='items'&&tokens[3]==='slots'&&tokens[4]===capability.slot?{...error,requirement:capability.requirement}:error;
   });
-  const structure = attribute(slotProblems(workflow, run.items, submission));
+  const structure = attribute([...slotProblems(workflow, run.items, submission), ...runtimeCheckProblems(workflow,run.items,submission)]);
   const exactAttempts: Array<Record<string, unknown>> = [];
   const scope = await buildScope(ctx, run, workflow, user, 'function', exactAttempts);
   const resolver = createResolver(ctx, scope, 'function', exactAttempts);
