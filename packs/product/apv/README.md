@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.4.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -909,5 +909,11 @@ of depending on a truncated field or a producer-local warning.
 
 生产结果的 warnings 沿用知识同步报告通道：七个字段逐一报告直接抽取条目数和继承条目数（含零），
 签名、正文、拆分表格行分别按实际条目计数。内外层不同和同章冲突逐处列出字段、章节、声明值及源选择器，
-不截断这些明细；冲突写明来源维护者在再次同步前核对原片段、修订或保留矛盾再生产。
+包内不截断这些明细；核心同步报告仍有保留条数和每条 1000 字符上限，完整字段来源及冲突双方以组成记录为准。冲突写明来源维护者在再次同步前核对原片段、修订或保留矛盾再生产。
 这里的计数只证明合成输入下的规则行为，不证明目标上的部件、内存、许可或部署形态已满足条件。
+
+本次适用条件扩展将产品包升为 1.4.0 并重签，未发布。新变量启用前须显式设置三个闭集（允许 []）。
+
+adoc 的本次改动仅在 `functions/adoc/entries.ts` 转交三个闭集选项及字段来历，并以合成展开模型核验。
+外层 adoc 槽和名称族变量接线由部署约定任务负责；接入时应传入解析后的闭集，不能以未传参的空集代替显式部署设置。
+include 展开、AST 和源读取没有改动。

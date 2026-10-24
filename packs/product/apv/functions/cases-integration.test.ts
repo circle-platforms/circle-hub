@@ -81,7 +81,8 @@ before(async () => {
   admin = principal((await kit.principals.bootstrapAdmin('管理员')).user);
   const owner = principal(await kit.principals.createUser(admin, '包作者'));
   await kit.authorizations.grantPublishRight(admin, owner.id);
-  const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: isolation } });
+  // This private fixture starts with no deployment names; the registry still checks its own product-name claims.
+  const registry = createPackRegistry({ records: kit, variableNameAvailable:async()=>true, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: isolation } });
   for (const id of ['agile-platform', 'build-site', 'apv']) {
     const outcome = await registry.publish(owner, await stagePack(PACK_DIRECTORIES[id], join(temp.path, 'staged', id)));
     assert.equal(outcome.ok, true, `publishing ${id}: ${JSON.stringify(outcome).slice(0, 1500)}`);
@@ -105,6 +106,7 @@ before(async () => {
   knowledge = createKnowledge({ records: kit, parsers: createDefaultRegistry(), packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
   views = createKnowledgeReader(knowledge);
   apv = (await packs.productById('apv')) as ProductHandle;
+  for(const variable of apv.product.variables??[])await kit.variables.setVariable(admin,variable.name,[],'合成空闭集');
   first = await knowledge.syncProduct(apv, { by: admin });
 });
 

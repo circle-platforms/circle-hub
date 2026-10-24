@@ -160,7 +160,7 @@ describe('producing a root', () => {
     const catalog = await w.knowledge.catalog(result.root as string, 'catalog@1');
     assert.equal(catalog?.complete, false);
     const note = await w.knowledge.getNodes({ root: result.root as string, paths: ['/notes'], depth: 0 }, w.admin);
-    assert.equal(note?.nodes[0].entries[0].applicability, '构建 Rel_ACME_1_2_15');
+    assert.equal(note?.nodes[0].entries[0].applicability, '起止构建 Rel_ACME_1_2_15');
   });
 
   test('a source whose credential scan found something is never parsed into the tree; the reason names its digest', async (t) => {
