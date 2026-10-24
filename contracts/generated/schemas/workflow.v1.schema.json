@@ -62,7 +62,26 @@
             "type": "boolean"
           },
           "default_from_predecessor": {
-            "description": "When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win",
+            "description": "When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object",
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "slot": {
+                "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "from_runs": {
+            "description": "Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow",
             "type": "object",
             "properties": {
               "pack": {

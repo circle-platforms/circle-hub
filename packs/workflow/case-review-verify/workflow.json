@@ -4,7 +4,8 @@
     {
       "slot": "target",
       "role": "subject",
-      "description": "初评评审的同一份测试脑图：和初评运行一样的 agile:mindmap:<文档编号>，或初评绑定的同一份上传（src:<摘要>）；必须是初评判定的那份源文件",
+      "description": "初评评审的同一份测试脑图：可以不写，给了 predecessor 时由 Hub 按前驱运行冻结的评审对象绑定，回答会写明绑定来历；显式给出时必须与前驱冻结的是同一对象（agile:mindmap:<文档编号> 或 src:<摘要>），不一致会拒绝并说明",
+      "default_from_predecessor": { "pack": "case-review", "slot": "subject" },
       "accepts": ["agile:mindmap", "application/json"],
       "required": true,
       "many": false

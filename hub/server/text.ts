@@ -909,7 +909,7 @@ function startText(v: StartOut, context: TextContext): string {
     more: () => `要求项：${seeConsole(r.run)}`,
   });
   if(r.input_defaults?.length)blocks.push({
-    priority:1,head:['输入缺省绑定：'],entries:r.input_defaults.map(binding=>`- ${binding.slot} 按前驱 ${binding.predecessor} 的已受理结果 ${binding.reference} 绑定`),unit:'绑定',measure:'个',
+    priority:1,head:['输入缺省绑定：'],entries:r.input_defaults.map(binding=>binding.kind==='input'?`- ${binding.slot} 按前驱 ${binding.predecessor} 冻结的输入 ${binding.reference} 绑定`:`- ${binding.slot} 按前驱 ${binding.predecessor} 的已受理结果 ${binding.reference} 绑定`),unit:'绑定',measure:'个',
     more:()=>`绑定来历：${record===null?seeConsole(r.run):readCall(record+'#/input_defaults')}`,
   });
   const sources = r.sources.map((s) => sourceEntry(s, r.run));

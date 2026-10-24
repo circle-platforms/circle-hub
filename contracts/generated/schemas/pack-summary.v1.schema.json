@@ -77,6 +77,24 @@
               "pack": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "slot": {
+                "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "from_runs": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
               }
             },
             "required": [
