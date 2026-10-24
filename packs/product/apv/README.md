@@ -198,9 +198,9 @@ Producers (K02, K04, C07)
   Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
   The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
   mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
-- Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
-  table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
-  row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
+- Applicability (K02 F[6]): explicit conditions on an entry take priority; otherwise each field inherits the nearest
+  chapter-opening declaration. A chapter opening is its title and first paragraph before any other block or child.
+  Ordinary sibling blocks and table rows never supply scope to each other. `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
   from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
   `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
   never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
@@ -683,8 +683,10 @@ accepted.
   recorded too and then shows up in the drift candidates; what is a command is decided when a literal is resolved at
   read time.
 - Only pipe tables split by row; a grid, multiline or simple table stays one block at its section node.
-- The section-opening scope of applicability is gone: every entry reads only its own text (a section-wide rule waits on
-  the owner's decision).
+- Chapter-opening fields inherit independently. Same-section title/paragraph disagreement leaves that field undeclared,
+  retains both values and verified source fragments, and marks conflict without adjudication or outer fallback.
+  Inner scope takes priority over outer scope, with the difference reported. Provenance stays in composition metadata,
+  outside entry content: heading edits alone do not change inherited entry digests.
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with

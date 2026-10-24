@@ -49,6 +49,9 @@ export function catalogRefusal(family?: string): { code: string; message: string
 }
 
 export interface AdocEntryOptions {
+  components?:readonly string[];
+  licenses?:readonly string[];
+  deployment_forms?:readonly string[];
   /** The manual name of this name family; K1 composes `/manual/<name>/<章节路径>` from it. */
   name: string;
   /** The producer's input slot. A fragment carries it whenever the producer has more than one slot or a list slot. */
@@ -70,10 +73,11 @@ export type Produced =
 export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): Produced {
   const placed = produceManualEntries(mapped.model, options.heads ?? null, {
     name: options.name,
+    components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
     ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
   });
   const unresolved: string[] = [];
-  const fragmentOf = (fragment: { selector: string; range?: [number, number] }, where: string): FragmentRef | null => {
+  const fragmentOf = (fragment: { selector: string; range?: [number, number];applicability?:FragmentRef['applicability'] }, where: string): FragmentRef | null => {
     const cite = citationFor(mapped.model, fragment.selector, fragment.range);
     if (cite === null || cite.sha256 === '') {
       unresolved.push(`${where} 的片段 ${fragment.selector}${fragment.range === undefined ? '' : ` 范围 [${fragment.range[0]}, ${fragment.range[1]})`} 没有已核对的原文行`);
@@ -81,6 +85,7 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     }
     return {
       ...(options.slot === undefined ? {} : { slot: options.slot }),
+      ...(fragment.applicability===undefined?{}:{applicability:fragment.applicability}),
       source: cite.sha256,
       parser: ADOC_PARSER,
       selector: cite.selector,

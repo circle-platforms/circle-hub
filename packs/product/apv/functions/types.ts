@@ -1,4 +1,4 @@
-import type { Applicability as SourceApplicability } from '../../../../contracts/src/product.ts';
+import type { Applicability as SourceApplicability, FragmentRef as SourceFragmentRef } from '../../../../contracts/src/product.ts';
 // Input and output shapes of the APV/NSAE product pack functions. Types only: every import here is erased at run time,
 // so the functions stay pure modules inside the pack.
 import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
@@ -180,12 +180,7 @@ export type SyncBuildsResult = {
 // `data` (form, status).
 
 /** Where the content of an entry comes from: a fragment of the parsed source (parser@version and its selector). */
-export type FragmentRef = {
-  parser: string;
-  selector: string;
-  /** UTF-8 byte range [from, to) inside the fragment text, when the entry is a part of the fragment. */
-  range?: [number, number];
-};
+export type FragmentRef = Pick<SourceFragmentRef,'parser'|'selector'|'range'|'applicability'>;
 
 /** Applicability conditions the producer read from the source structure; null on an entry means "未声明" (K02 F[6]). */
 export type Applicability = SourceApplicability;
@@ -269,7 +264,9 @@ export type ManualOptions = {
  */
 export type Unplaced = { fragment: FragmentRef; section: string; kind: EntryKind; text: string };
 
-export type ManualResult = { entries: ProducedEntry[]; unplaced: Unplaced[]; warnings: string[] };
+export interface ApplicabilityDifference {field:import('./generated/vocabulary.ts').ApplicabilityField;section:string[];values:Applicability[];fragments:FragmentRef[]}
+export interface ManualApplicabilityReport {overrides:ApplicabilityDifference[];conflicts:ApplicabilityDifference[]}
+export type ManualResult = { entries: ProducedEntry[]; unplaced: Unplaced[]; warnings: string[]; applicability_report?:ManualApplicabilityReport };
 
 export type ReleaseInput = MarkdownModel | { model: MarkdownModel };
 

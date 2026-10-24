@@ -923,9 +923,9 @@ describe('applicability from explicit conditions', () => {
     );
     const [own, model, mixed, builds] = result.entries;
     assert.deepEqual(own.applicability, { platforms: ['hg-k'] });
-    assert.deepEqual(model.applicability, { models: ['X9000'] });
-    assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'a start build ("自…起") is not a manual-entry condition');
-    assert.equal(builds.applicability, null, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
+    assert.deepEqual(model.applicability, { models: ['X9000'], platforms:['hg-k'], inherited:['platforms'] });
+    assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'],models:['X9000'],inherited:['models'] }, 'a start build ("自…起") is not a manual-entry condition');
+    assert.deepEqual(builds.applicability, {models:['X9000'],platforms:['hg-k'],inherited:['models','platforms']}, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
   });
 
 
@@ -1206,17 +1206,15 @@ describe('applicability from explicit conditions', () => {
     assert.equal(nameRow.applicability, null, 'the name row inherits nothing');
   });
 
-  it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {
+  it('retains a title and opening-paragraph disagreement without adjudicating any entry', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n适用于 ft-kylinv10 平台的功能。\n\n本节的另一段。\n\n### 小节\n\n子节的一段。\n'));
     const [own, other, sub] = result.entries;
-    assert.deepEqual(own.applicability, { platforms: ['ft-kylinv10'] });
-    assert.equal(other.applicability, null, 'a sibling block states nothing');
-    assert.equal(sub.applicability, null, 'a subsection states nothing');
+    for(const entry of [own,other,sub]){assert.equal(entry.applicability,null);assert.equal(entry.fragments.flatMap(fragment=>fragment.applicability??[]).filter(origin=>origin.conflict).length,2);}
   });
 
-  it('does not read a condition of a bare heading (a heading is no entry’s own text)', () => {
+  it('inherits an explicit heading condition into signatures and their body', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n'));
-    assert.ok(result.entries.every((entry) => entry.applicability === null));
+    assert.ok(result.entries.every((entry) => JSON.stringify(entry.applicability) === JSON.stringify({platforms:['hg-k'],inherited:['platforms']})));
   });
 
   it('keeps a command block’s condition on its own entry and lets nothing leak to a sibling command', () => {
@@ -1263,7 +1261,7 @@ describe('applicability from explicit conditions', () => {
     const positive = produceManualEntries(markdown('# 章\n\n适用于 hg-k 平台和 ft-kylinv10 平台。\n\n仅虚拟平台支持。\n\n适用于 X9000、X8000 机型。\n'));
     assert.deepEqual(positive.entries[0].applicability, { platforms: ['ft-kylinv10', 'hg-k'] });
     assert.deepEqual(positive.entries[1].applicability, { platforms: ['虚拟'] });
-    assert.deepEqual(positive.entries[2].applicability, { models: ['X8000', 'X9000'] });
+    assert.deepEqual(positive.entries[2].applicability, { models: ['X8000', 'X9000'],platforms:['ft-kylinv10','hg-k'],inherited:['platforms'] });
   });
 
   it('leaves applicability null when nothing declares a condition', () => {

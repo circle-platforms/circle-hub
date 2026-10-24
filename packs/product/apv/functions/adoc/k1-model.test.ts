@@ -397,3 +397,17 @@ test('splitting a block by its source ranges does not make a signature the autho
     );
   }
 });
+
+test('adoc forwards closed sets and preserves field provenance on verified chapter line fragments', async () => {
+  const out = await compile({'main.adoc': '= Book\n\n== Outer 装有 Card-A 时\n\n内存至少8GB。\n\n=== Child\n\n普通正文。\n'});
+  const produced = produceAdocEntries(mapped(out), {name:'cli',slot:'manual',components:['Card-A'],licenses:[],deployment_forms:[]});
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const entry = produced.entries.find(row => row.statement === '普通正文。')!;
+  assert.ok(entry);
+  assert.deepEqual(entry.applicability?.components,{with:['Card-A']});
+  assert.deepEqual(entry.applicability?.inherited,['components','memory']);
+  assert.equal(entry.fragments[0]!.selector,'l/9');
+  const inherited=entry.fragments.slice(1);
+  assert.deepEqual(inherited.map(row=>row.selector),['l/3','l/5']);
+  assert.ok(inherited.every(row=>row.parser==='text@1'&&row.source===out.composition.files[0]?.sha256&&row.applicability?.length));
+});

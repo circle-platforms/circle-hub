@@ -36,14 +36,18 @@ export interface TreeLock {
 }
 
 /** Display text of an entry's applicability (K02 R[2]: undeclared is said, never hidden). */
-export function applicabilityText(applicability: Applicability | null, sources:readonly {field:ApplicabilityField;section:readonly string[]}[]=[]): string {
-  if(applicability===null)return UNDECLARED;
+export function applicabilityText(applicability: Applicability | null, sources:readonly {field:ApplicabilityField;section:readonly string[];declaration?:Applicability;conflict?:boolean}[]=[]): string {
+  const conflicts=new Set(sources.filter(source=>source.conflict).map(source=>source.field));
+  const unread=new Set(sources.filter(source=>source.declaration!==undefined&&source.declaration[source.field]===undefined).map(source=>source.field));
+  if(applicability===null&&!conflicts.size&&!unread.size)return UNDECLARED;
   const parts:string[]=[];
   const add=(field:ApplicabilityField,value:string)=>{
-    const inherited=applicability.inherited?.includes(field);
+    if(conflicts.has(field)||unread.has(field))return;
+    const inherited=applicability?.inherited?.includes(field);
     const sections=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')))];
     parts.push(labelOf('applicability_field',field)+' '+value+(inherited?'（继承自章节开头：'+(sections.length?sections.join('、'):'出处未取得；下一步读取组成记录中的来源片段')+'）':''));
   };
+  if(applicability!==null){
   if(applicability.builds!==undefined)add('builds',applicability.builds.join('、')||'（无）');
   if(applicability.platforms!==undefined)add('platforms',applicability.platforms.join('、')||'（无）');
   if(applicability.models!==undefined)add('models',applicability.models.join('、')||'（无）');
@@ -51,6 +55,11 @@ export function applicabilityText(applicability: Applicability | null, sources:r
   if(applicability.memory!==undefined){const m=applicability.memory;const bounds=[m.minimum?(m.minimum.inclusive?'≥':'>')+m.minimum.bytes+' 字节':'',m.maximum?(m.maximum.inclusive?'≤':'<')+m.maximum.bytes+' 字节':''].filter(Boolean).join('，');add('memory',m.raw+'（'+bounds+'）');}
   if(applicability.licenses!==undefined)add('licenses',applicability.licenses.join('、')||'（无）');
   if(applicability.deployment_forms!==undefined)add('deployment_forms',applicability.deployment_forms.join('、')||'（无）');
+  }
+  for(const field of ApplicabilityFieldSchema.options)if(conflicts.has(field)||unread.has(field)){
+    const paths=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')))];
+    parts.push(labelOf('applicability_field',field)+' 未声明（章节开头'+(conflicts.has(field)?'冲突，双方值和片段保留在组成记录':'条件未能结构化，原文保留')+'：'+paths.join('、')+'）');
+  }
   return parts.length?parts.join('；'):'未限定';
 }
 
@@ -399,7 +408,7 @@ export class TreeReading {
       children: node.children.map((child) => ({ name: child.name, path: pathOf([...segments, child.name]), digest: child.digest })),
       entries: entries.map(({ digest: entry, content }) => {
         const placement = rows?.get(entry)?.placement;
-        const applicability = applicabilityText(content.applicability);
+        const applicability = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
         return {
           entry,
           // Entries are checked against the entry_kind axis before they are stored; a stored kind outside it is corruption.
@@ -517,6 +526,12 @@ export class TreeReading {
       return out;
     };
 
+    const applicabilitySourcesOf=(digests:readonly string[])=>{
+      const sources:NonNullable<CompositionRow['applicability_sources']>=[];
+      for(const rows of rowsOf)for(const digest of digests)for(const origin of rows.get(digest)?.applicability_sources??[])if(!sources.some(existing=>JSON.stringify(existing)===JSON.stringify(origin)))sources.push(origin);
+      return sources;
+    };
+
     const validityOfRows = async (digests: readonly string[]): Promise<{
       status: ValidityStatus;
       bound: string[];
@@ -551,6 +566,8 @@ export class TreeReading {
         if (visible) contradictions.push({ source: relation.source, at: relation.at, other: relation.other });
       }
       if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
+      const sourceConflicts=applicabilitySourcesOf(digests).filter(source=>source.conflict);
+      if(sourceConflicts.length)conditions.push({condition:'contradicted',source:'章节开头条件冲突；未裁决：'+sourceConflicts.map(source=>labelOf('applicability_field',source.field)+' '+source.fragment).join('、')});
       let status: ValidityStatus = 'valid';
       for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }
       const result: {
@@ -578,7 +595,7 @@ export class TreeReading {
         text: content.statement,
         mediaType: 'text/plain',
         readTier: 'model_readable',
-        data: { kind: content.kind, data: content.data, applicability: content.applicability } as JsonValue,
+        data: { kind: content.kind, data: content.data, applicability: content.applicability,applicability_sources:applicabilitySourcesOf([entry]) } as JsonValue,
         grounds,
         validity: {
           ...validity,

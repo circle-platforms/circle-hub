@@ -226,16 +226,6 @@ export const ProducerInput = z.strictObject({
 });
 export type ProducerInput = z.infer<typeof ProducerInput>;
 
-/** A piece of a stored source: parser, selector and an optional UTF-8 byte range inside the fragment. */
-export const FragmentRef = z.strictObject({
-  slot: SlotName.optional().describe('which input slot; required when the producer has more than one'),
-  source: Sha256.optional().describe('digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot'),
-  parser: Versioned,
-  selector: z.string().min(1),
-  range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
-});
-export type FragmentRef = z.infer<typeof FragmentRef>;
-
 /** Conditions the producer read from the source structure; null on an entry means undeclared (K02 F[6]). */
 const MemoryBound=z.strictObject({bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),inclusive:z.boolean()});
 export const Applicability = z.strictObject({
@@ -249,6 +239,23 @@ export const Applicability = z.strictObject({
   inherited:z.array(ApplicabilityFieldSchema).optional().describe('Inherited field codes only; source positions belong to composition provenance'),
 });
 export type Applicability = z.infer<typeof Applicability>;
+
+/** Declared field provenance; conflict preserves competing source declarations without choosing a value. */
+export const ApplicabilityOrigin=z.strictObject({field:ApplicabilityFieldSchema,section:z.array(z.string()),declaration:Applicability,conflict:z.boolean().optional()});
+export type ApplicabilityOrigin=z.infer<typeof ApplicabilityOrigin>;
+
+/** A piece of a stored source: parser, selector and an optional UTF-8 byte range inside the fragment. */
+export const FragmentRef = z.strictObject({
+  slot: SlotName.optional().describe('which input slot; required when the producer has more than one'),
+  source: Sha256.optional().describe('digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot'),
+  parser: Versioned,
+  selector: z.string().min(1),
+  applicability:z.array(ApplicabilityOrigin).min(1).optional().describe('Field-specific source provenance, excluded from entry content'),
+  range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
+});
+export type FragmentRef = z.infer<typeof FragmentRef>;
+
+
 
 export const ProducedEntry = z.strictObject({
   kind: z.string().describe('declared by the producer (K02 F[0], R[3]); the knowledge package checks it against the entry_kind axis one entry at a time, so one wrong entry is refused and reported without losing the rest'),
