@@ -817,6 +817,10 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
   try {
     files = await generate(root);
     packFiles = packVocabularyFiles(root);
+    for (const [target,source] of Object.entries({
+      'packs/workflow/template-gap/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/template-gap/tables/category-judgment.schema.json':'schemas/category-judgment.v1.schema.json',
+    })) if(files[source]!==undefined)packFiles[target]=files[source];
   } catch (error) {
     const problems = error instanceof ContractsError ? error.problems : [(error as Error).stack ?? String(error)];
     console.error(`cannot generate contracts (${problems.length} problem${problems.length > 1 ? 's' : ''}):`);

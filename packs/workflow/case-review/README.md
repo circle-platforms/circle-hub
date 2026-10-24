@@ -165,7 +165,7 @@ the owner decided the unified rule on 2026-10-22 (docs/hub-r4-tasks/union-case-r
 | `command-claims.json` | catalog@1 | blocking | the membership statements of the findings (`$.claims[*]`) |
 | `findings-quotes.json` | quote@1 | blocking | quotations of the findings verbatim in their fragments |
 | `catalog.json` | catalog@1 | advisory | the optional scan of the case's own lines (`$.commands`), scope resolved, negative flag |
-| `template-v3-coverage.json`, `template-v3.json` | coverage@1, `case-review.template@1` | advisory | the template coverage of `template-coverage.ts`; no check of this pack uses them (the template gap check is the pack `template-gap`) |
+| `template-v3-coverage.json`, `template-v3.json` | coverage@1, `case-review.template@2` | advisory | the template coverage of `template-coverage.ts`; no check of this pack uses them (the template gap check is the pack `template-gap`) |
 | `codes.json` | `case-review.codes@1` | | refusals, warnings and check codes with Chinese when and fix; finding codes, bands, levels |
 
 Every core table passes the contract shape and the interpreter's admission, names its origin, and a blocking one names its
@@ -227,20 +227,21 @@ default 8).
 
 ## Template coverage
 
+The exported templateCoverage utility is not wired into checks.json. Its known repository callers are the template utility
+and table/sandbox tests and template-gap parity tests. R1 affects historical direct calls and the active template-gap copy;
+it does not establish that case-review literal, catalog or level checks consumed the old matcher.
 
-`tables/template-v3.json` lists 24 categories (author-written from the description of the team template, not copied from it):
-the six test types by canonical tag; per command add, delete, modify, query, show at maximum configuration, no and clear
-commands, operation log and audit log; configuration sync, save, restore and clear; upgrade new→newer, old→new and new→old;
-security; database. A category is shown by a canonical tag or by literal keywords (`contains`, `prefixes`, `equals`) in the
-texts it names, compared in the matching form with arrows written as `->`; a keyword with a space at an end only matches at
-word boundaries (" add " does not match "address"). The template is admitted like a table (C04 R[0]): a closed shape, an
-origin, literal keywords only; anything else is `case-review.template_invalid`. Output: `required`, `covered`, `missing`,
-`skipped` (declared skips with a reason) and per category `present`, `count` and up to 50 item ids as evidence.
+The descriptive template table has only id, label, group and description. Required scope lives in template-v3-coverage.json
+(the six test types here); explicit user skips require a known id and a nonempty reason. No keyword, prefix, synonym or tag
+matching is performed. The utility reads category_ids only from bound original inputs at the item's exact node, not from
+caller-added projected fields. Missing declarations are unclassified and prevent asserting unseen categories as missing.
+Invalid declarations are structural errors. Counts are complete; sorted display evidence is capped at 50 ids.
 
-Only the six test types are required. With all 24 required, every sampled document missed 8 to 23 categories (median 19) and
-four categories matched in none, because whether a per-command or per-feature category applies needs the commands of the
-feature, and their real wording is often a product command (which a workflow pack cannot name). They are reported (present,
-count, evidence) but not counted missing; the sampled documents now miss 0 to 6 categories (median 3).
+Model classification is accepted through template-gap's generated CategoryJudgment slot and Hub source/quote checks. This
+legacy pure utility cannot resolve accepted-result records, so it refuses caller-supplied judgments and points to that workflow.
+It never treats a reference supplied by a caller as proof of acceptance. Author categories and test_type_ids are independent.
+Old results remain immutable; the integrator appends legacy_keyword_rules annotations for affected direct calls and records
+the new model/pack/root/run lineage when re-producing. No real results were read or re-produced for this change.
 
 ## Fixtures (`tests/fixtures/mindmaps`)
 

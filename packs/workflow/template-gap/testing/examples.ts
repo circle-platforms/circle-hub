@@ -1,3 +1,6 @@
+import { writeCategorySamples } from './category-samples.ts';
+import { classificationSubject } from '../functions/classification-subject.ts';
+import { coverageOutcomes } from '../functions/coverage-check.ts';
 // The pack's examples (examples/, T01 F[11]) and how they are made (not part of the pack): the synthetic document without its
 // Stress cases, as an upload, with the item the projection gives it and the outcome of the coverage check. The tests compare
 // the committed files with what this module computes; `node packs/workflow/template-gap/testing/examples.ts` writes them and
@@ -39,8 +42,8 @@ export async function exampleResult(bytes: Uint8Array = exampleBytes()): Promise
   if (isFailure(projected)) throw new Error(projected.error.message);
   const [item] = projected.items;
   const location = `src:${sha}/${item.location.parser}/${item.location.selector}`;
-  const subject = coverageSubject({ applies: 'item', item: { id: item.id, label: item.label, location, fields: item.fields }, slots: null, evidence: [], context: CONTEXT });
-  const [outcome] = await runCheck({ id: 'coverage', interpreter: 'coverage@1' }, { table: table('template-v3-coverage.json'), subject, context: { pack: 'template-gap', requirement: 'coverage', sets: {} } });
+  const subject = classificationSubject({ applies:'item', item:{id:item.id,label:item.label,location,fields:item.fields},slots:{coverage:[]},evidence:[],context:{...LOCK,groups:projected.groups} });
+  const [outcome] = coverageOutcomes(subject);
   return {
     note: '合成示例：一份没有压力测试用例的脑图（内容是编的），作为上传文件开始运行时 Hub 给出的条目和覆盖检查的结果；条目编号按上传文件的 SHA-256 前 12 位',
     input: EXAMPLE_INPUT,
@@ -56,6 +59,7 @@ if (import.meta.main) {
   await writeFile(`${PACK_DIR}${EXAMPLE_INPUT}`, bytes);
   await writeFile(`${PACK_DIR}${EXAMPLE_RESULT}`, `${JSON.stringify(await exampleResult(bytes), null, 2)}\n`);
   await writeCommandSamples(PACK_DIR);
+  await writeCategorySamples(PACK_DIR);
   const manifest = await signManifest();
   console.log(`wrote ${EXAMPLE_INPUT} and ${EXAMPLE_RESULT}; pack.json lists ${manifest.files.length} files`);
 }
