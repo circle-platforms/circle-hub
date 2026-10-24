@@ -198,10 +198,15 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
   const record = kept.record;
   const management=await abandonDecision(ctx,run.run);
-  const repeat = refresh||management ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
+  const owner = keyOwner(run);
+  const successors = (await successorsOf(store, run.run)).filter((s) => packIdOf(s.body.pack) === packIdOf(run.pack) && keyOwner(s.body) === owner);
+  const eligible=!refresh&&management===null&&successors.length===0;
+  const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest):undefined;
+  const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
+  const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
   if (repeat !== null) return answerOf(repeat);
-  const previous=await resultFor(store,run.run,received.digest);
-  if (!refresh && !management && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+  const previous=useCached?await resultFor(store,run.run,received.digest):null;
+  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
 
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -221,8 +226,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
 
   // W06 R[1]: superseded by a newer revision of the same work, the runner's own (another runner's run of this pack that
   // names this run is a branch of theirs; a run of another pack, such as the verification, continues it).
-  const owner = keyOwner(run);
-  const successors = (await successorsOf(store, run.run)).filter((s) => packIdOf(s.body.pack) === packIdOf(run.pack) && keyOwner(s.body) === owner);
   if (successors.length > 0) {
     await action({ acceptance: 'not_accepted', codes: ['RUN_SUPERSEDED'], repair: [], result: null, extra: { superseded_by: successors.map((s) => s.body.run) } });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `运行 ${run.run} 已被新修订 ${successors[successors.length - 1].body.run} 取代`, { path: '/run' })] };
@@ -234,7 +237,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
   }
-  const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
+  const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest):frozenWorkflow;
   if (workflow === null) {
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
     await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
