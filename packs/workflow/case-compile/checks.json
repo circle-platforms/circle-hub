@@ -36,7 +36,6 @@
     {
       "id": "commands_catalog",
       "title": "命令行在目标构建的命令目录里",
-      "interpreter": "catalog@1",
       "applies": "item",
       "subject": {
         "module": "functions/subject.ts",

@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/WebUI",
-        "location": "src:61066056e6b93d39477f41d9a2dee3836db520f3e2939f7ef107b8469b273c92/json@1/p/rows",
+        "location": "src:3e7b711189bd81807db4efa6a494d0e0e77bcacf5c436b5164663f43ebb23778/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "WebUI",
@@ -16,7 +16,9 @@
             "cases": 10,
             "missing": 4,
             "vague": 3,
-            "negative": 0
+            "negative": 0,
+            "negative_denominator": 10,
+            "type_unclassified": 0
           },
           "quality": {
             "judged": 6,
@@ -65,7 +67,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:61066056e6b93d39477f41d9a2dee3836db520f3e2939f7ef107b8469b273c92",
+            "source": "src:3e7b711189bd81807db4efa6a494d0e0e77bcacf5c436b5164663f43ebb23778",
             "total": 10,
             "truncated": false,
             "skipped": 0,

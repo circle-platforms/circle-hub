@@ -27,8 +27,8 @@ export function caseItem(node: string, changes: Fields = {}): Item {
     title: `设置池 ${node} 的探测间隔`,
     priority: 2,
     degree: null,
-    tags: ['Functional'],
-    tagsNormalized: ['Functional'],
+    tags: ['functional'],
+    tagsNormalized: ['functional'],
     expected: ['显示的探测间隔与设置一致'],
     expectedCount: 1,
     steps: [],
@@ -95,7 +95,11 @@ export function samples(): Entry[] {
   const good = [caseItem('c1'), caseItem('c2', { title: '设置池 c2 的探测间隔为最大值', expected: ['探测间隔显示为 300'] })];
   const negativeCase = caseItem('n1', { tags: ['Negative'], tagsNormalized: ['Negative'], negative: true, title: '探测间隔超出范围时报错', steps: [{ text: 'health interval pool1 0', expected: ['提示取值超出范围'] }], expected: ['提示取值超出范围'] });
   const withLine = (node: string, line: string): Item => caseItem(node, { steps: [{ text: line, expected: ['显示的探测间隔与设置一致'] }] });
+  const leaf=loc('e1'),quality={item:'sample:c1',location:loc('c1'),fields:{expected:['合成期望'],expectedCount:1,expectedSelectors:['n/e1']},slots:{expected_quality:[{code:'expected_quality',text:'脚本化模型主张',quotes:[{reference:leaf,text:'合成期望'}],data:{schema:'expected-quality@1',vague:false,source_sha256:SHA,expected_count:1,expected_references:[leaf]}}]}};
+  const badQuality=structuredClone(quality);badQuality.slots.expected_quality[0].quotes[0].text='改写引文';
   return [
+    sample('positive','expected_quality_exact','expected_quality_evidence','全部期望叶子的逐字身份匹配',quality,[{verdict:'support',item:'sample:c1',tier:'blocking'}],{sources:{[leaf]:'合成期望'}}),
+    sample('negative','expected_quality_changed','expected_quality_evidence','引文不是原件逐字文本',badQuality,[{verdict:'refute',code:'case-review.quote_missing',item:'sample:c1',tier:'blocking'}],{sources:{[leaf]:'合成期望'}}),
     sample('positive','negative_command_present','negative_commands','反向用例从自身取命令行',itemSubject(commandSubject,negativeCase,{findings:[]}),[{verdict:'support',item:'sample:n1',tier:'advisory'}],{catalog:CATALOG}),
     sample('negative','negative_command_missing','negative_commands','反向用例自身没有目录命令行',itemSubject(commandSubject,caseItem('n1',{tags:['Negative'],tagsNormalized:['Negative'],negative:true,title:'拒绝非法输入',steps:[],expected:['拒绝非法输入']}),{findings:[]}),[{verdict:'refute',code:'case-review.negative_command_missing',item:'sample:n1',tier:'advisory'}],{catalog:CATALOG}),
 
@@ -168,7 +172,7 @@ export function samples(): Entry[] {
     sample('positive', 'sources_product', 'findings_sources', '发现写了位置，引用规格书（期望来源）', defaultSubject(caseItem('c1'), { findings: [finding()] }, [evidence(loc('c1'), 'subject'), evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
       { verdict: 'support', item: 'sample:c1', tier: 'blocking' },
     ]),
-    sample('positive', 'sources_cited_line', 'findings_sources', '发现照用例原样引用了用例步骤里的命令行（大小写和空白不同不算改动）', defaultSubject(withLine('c1', 'health interval pool1 30'), { findings: [finding({ commands: [{ command: 'Health  Interval pool1 30' }, { command: 'show pool', present: true }] })] }, [evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
+    sample('positive', 'sources_cited_line', 'findings_sources', '发现照用例原样引用了用例步骤里的命令行（命令文字完全相等）', defaultSubject(withLine('c1', 'health interval pool1 30'), { findings: [finding({ commands: [{ command: 'health interval pool1 30' }, { command: 'show pool', present: true }] })] }, [evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
       { verdict: 'support', item: 'sample:c1', tier: 'blocking' },
     ]),
     sample(

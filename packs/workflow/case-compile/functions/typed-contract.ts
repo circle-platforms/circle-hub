@@ -1,5 +1,5 @@
 // runtime-contract@2 declarations are policy inputs, never inferences from names or prose.
-import {fromJSONSchema} from 'zod';
+import {schema} from './schema.ts';
 import TYPE from '../tables/declared-type.schema.json' with {type:'json'};
 import ROLE from '../tables/declared-role.schema.json' with {type:'json'};
 import ADDRESS from '../tables/typed-address.schema.json' with {type:'json'};
@@ -7,7 +7,6 @@ import IDENTITY from '../tables/command-identity.schema.json' with {type:'json'}
 import type {CommandIdentity,DeclaredParameterType} from '../../../../contracts/generated/shared-interfaces.ts';
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
-const schema=(v:unknown)=>fromJSONSchema(v as Parameters<typeof fromJSONSchema>[0]);
 const Type=schema(TYPE),Role=schema(ROLE),Address=schema(ADDRESS),Identity=schema(IDENTITY);
 export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number}
 export interface RoleDeclaration {source:string;bed_member?:boolean}
