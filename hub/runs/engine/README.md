@@ -600,3 +600,26 @@ unfinished jobs while the lock is held; a competing reservation rechecks fences 
 The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
 Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
 older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.
+
+## Shared read access
+
+`canSeeRun` remains the synchronous owner/administrator capability used by submissions and predecessor checks.
+`canViewRun` adds only the current sharing decisions and assignment checks. Production policies evaluate the frozen
+requirements, include Hub-side runs, and never include judgment workflows. Shared readers receive the original run,
+including runner, session and client key; accepted validation results and run-scoped submission/action records remain
+citable by their exact record digests. Rejected validation bodies, administrator notes and call logs are not shared.
+
+Run lists filter visible records before paging, ordered by start time with run identity as the stable tie breaker.
+Cursors bind the reader, package filter and last ordering key; hidden records cannot create visible empty pages.
+Sharing confers no submission, lease lineage, repair round or client-key ownership. The model's conditional read-only
+predecessor exception requires a workflow declaration that the present format does not yet expose; this task keeps the
+existing predecessor guard, as specified by its task page, and introduces no such declaration.
+
+Shared previews use the same run-bound generated-source accessor for fragment resolution and quotation candidates.
+A shared run never grants knowledge-tree permission: live catalogs are omitted from a preview when its reader cannot
+read the product, and tree references still pass the ordinary tree reader. Connector originals retain their own ACLs.
+
+Shared run-detail receipts use only the action codes and their registered descriptions for rejected validations. Instance
+messages, fixes, paths and requirement pointers from those validation bodies do not enter the shared aggregate view.
+Owners and administrators retain the full diagnostics. The underlying submissions, actions, results and run record are
+never rewritten or redacted under their original digests.
