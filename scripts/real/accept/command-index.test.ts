@@ -2,15 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { caseCommandsGold, sha256 } from '../gold/case-commands.ts';
 import { compareCommandIndex, renderIndexReport } from './command-index.ts';
-const gold = caseCommandsGold('<commands><menu name="widget"><item name="add"/></menu></commands>', [{ document: 'synthetic-doc', map: { root: { data: { text: 'root' }, children: [{ data: { id: 'synthetic-case', text: 'widget add', resource: ['Functional'] } }, { data: { id: 'unplaced', text: 'plain', resource: ['Functional'] }, children: [{ data: { text: 'widget add' }, children: [{ data: { text: 'done' } }] }] }] } } }]);
+const gold = caseCommandsGold('<commands><menu name="widget"><item name="add"/></menu></commands>', [{ document: 'synthetic-doc', map: { root: { data: { text: 'root' }, children: [{ data: { id: 'synthetic-case', text: 'widget add', resource: ['Functional'] } }, { data: { id: 'unplaced', text: 'plain', resource: ['Functional'] }, children: [{ data: { text: 'widget add' }, children: [{ data: { text: 'done' } }] }] }, {data:{id:'plain-unplaced',text:'plain',resource:['Functional']}}] } } }]);
 function view() {
   const root = 'a'.repeat(64);
-  const entries = Object.fromEntries(gold.cases.map((c) => { const digest = sha256(c.key); return [digest, { entry: digest, kind: 'case', reference: `tree:${root}${c.paths[0]?.path ?? '/'}@${digest}`, data: { document: c.document, node: c.node, commands: c.paths.map((p) => p.path) } }]; }));
+  const entries = Object.fromEntries(gold.cases.map((c) => { const digest = sha256(c.key); return [digest, { entry: digest, kind: 'case', reference: `tree:${root}${(c.placement_paths??c.paths)[0]?.path ?? '/'}@${digest}`, data: { document: c.document, node: c.node, commands: (c.placement_paths??c.paths).map((p) => p.path) } }]; }));
   return { schema: 'index-view@1', product: 'synthetic', build: { build: 'synthetic', root }, kind: 'case', key: 'document', keys: { 'synthetic-doc': Object.keys(entries) } as Record<string, string[]>, entries, total_keys:1,total_entries:Object.keys(entries).length,notes:[] as string[],truncated: false, cut_keys: [] as string[], skipped: 0 };
 }
-test('equal tables, unplaced and separate step measurement; screen contains no identifiers', () => {
+test('equal placement tables, unplaced and separate step measurement; screen contains no identifiers', () => {
   const report = compareCommandIndex(gold, [view()]);
-  assert.equal(report.verdict, '相等'); assert.equal(report.counts.unplaced_both, 1); assert.equal(report.counts.steps_placed_in_hub_unplaced, 1);
+  assert.equal(report.verdict, '相等'); assert.equal(report.counts.unplaced_both, 1); assert.equal(report.counts.steps_placed_in_hub_unplaced, 0);
   assert.equal(report.hashes.gold, report.hashes.hub);
   const output = renderIndexReport(report); assert.ok(!output.includes('synthetic-doc')); assert.ok(!output.includes('synthetic-case')); assert.ok(!output.includes('/commands/')); assert.ok(output.endsWith('判定：相等'));
 });
@@ -113,3 +113,32 @@ test('closure 04 entry exclusions require cited-source inspection instead of ine
 
 test('closure 04 explicitly reported reserved-key and credential exclusions do not promise a shard-only fix',()=>{for(const note of ['取值 __proto__ 不能作为这个视图的键（合成说明）','1 个条目的文字有凭据扫描命中，没有放进这个视图（合成引用）']){const raw=view();raw.truncated=true;raw.total_keys=2;raw.total_entries+=1;raw.notes=[note];const output=renderIndexReport(compareCommandIndex(gold,[raw]));assert.ok(output.includes('来源排除'));assert.ok(output.includes('get_nodes'));assert.ok(!output.includes('分成更小分片'));}});
 test('closure 03 malformed declared index metadata is a Hub defect rather than a complete comparison',()=>{for(const field of ['total_keys','total_entries','notes','product']){const raw=view() as any;delete raw[field];assert.equal(compareCommandIndex(gold,[raw]).verdict,'不相等',field);}assert.equal(compareCommandIndex(gold,[{...view(),only:'invalid'}]).verdict,'不相等');});
+
+test('one canonical index reference carries the complete independently checked command set',()=>{
+ const input=structuredClone(gold),row=input.cases.find(c=>c.paths.length>0)!;
+ row.placement_paths=[...row.paths,{path:'/commands/widget/extra',abbreviated:false,via_no:false,words:2}];
+ const raw=view();Object.values(raw.entries).find(e=>e.data.node===row.node)!.data.commands=row.placement_paths.map((p:any)=>p.path);
+ const report=compareCommandIndex(input,[raw]);assert.equal(report.verdict,'相等',JSON.stringify(report));assert.equal(report.counts.entry_data_mismatches,0);
+ for(const commands of [[row.paths[0].path],['/commands/other',...row.placement_paths.map((p:any)=>p.path)]]){
+  const broken=structuredClone(raw);Object.values(broken.entries).find(e=>e.data.node===row.node)!.data.commands=commands;
+  assert.equal(compareCommandIndex(input,[broken]).verdict,'不相等');
+ }
+});
+
+test('legacy title-only gold retains its original measured scope without inventing body evidence',()=>{
+ const input=structuredClone(gold);for(const row of input.cases)delete row.placement_paths;
+ const raw=view();for(const entry of Object.values(raw.entries)){const row=input.cases.find(c=>c.node===entry.data.node)!;entry.data.commands=row.paths.map(p=>p.path);entry.reference=`tree:${raw.build.root}${row.paths[0]?.path??'/'}@${entry.entry}`;}
+ const report=compareCommandIndex(input,[raw]);assert.equal(report.verdict,'相等');assert.equal(report.counts.steps_placed_in_hub_unplaced,1);
+});
+
+test('product-wide references must carry the declared second root and undeclared-build provenance',()=>{
+ const raw:any=view(),scope='b'.repeat(64);
+ raw.unversioned={root:scope,composition:'c'.repeat(64),build:null,totals:{entries:Object.keys(raw.entries).length,documents:1},skipped_sources:0};
+ for(const entry of Object.values(raw.entries) as any[]){entry.root=scope;entry.build=null;entry.reference=entry.reference.replace('tree:'+raw.build.root,'tree:'+scope);}
+ assert.equal(compareCommandIndex(gold,[raw]).verdict,'相等');
+ for(const mutate of [(v:any)=>{delete v.unversioned;},(v:any)=>{(Object.values(v.entries)[0] as any).root='d'.repeat(64);},(v:any)=>{delete (Object.values(v.entries)[0] as any).build;}]){
+  const bad=structuredClone(raw);mutate(bad);assert.equal(compareCommandIndex(gold,[bad]).verdict,'不相等');
+ }
+ const changed=structuredClone(raw);changed.unversioned.composition='d'.repeat(64);
+ assert.equal(compareCommandIndex(gold,[raw,changed]).verdict,'输入不全');
+});
