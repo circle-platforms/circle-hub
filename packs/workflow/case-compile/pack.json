@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "kind": "workflow",
   "title": "用例编译",
-  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
+  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "766daef92491b14388c361d45675a22fff4a29096a413fefe1cff3f532f3e837",
-      "size": 6835
+      "sha256": "9432a819d860897fadcc5c07aceb3fc9ded6db86be154e98766f3dab7bc862ac",
+      "size": 7352
     },
     {
       "path": "checks.json",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "650dda5c26e05ef7d83c77ec50d60d6c884ac511ccbd92b5fe0eabe9b1a0b9ec",
-      "size": 14480
+      "sha256": "d38ad97b3f939c41b755f98498f50647f0a802b338b6b3ec21f0756fbe0eff50",
+      "size": 17378
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -153,8 +153,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "a198501c6b04927a77598641e21762245095fea2727ff59548995b04f6b0b592",
-      "size": 4627
+      "sha256": "ed7f0c8f233cd090a59c799569d6c08d99c5ade94a07c82a2f9ba03e9f48175b",
+      "size": 7852
     },
     {
       "path": "functions/text.ts",
@@ -168,8 +168,8 @@
     },
     {
       "path": "functions/typed-contract.ts",
-      "sha256": "120f43eab5b76f38e8023463ce101da9764054d7d0122e601ac37014e1280cd8",
-      "size": 9578
+      "sha256": "f2e5d13f129dd36961d91578442a0dc10fdf103073558139b7ae0b2317aba962",
+      "size": 9611
     },
     {
       "path": "functions/workbook.ts",
