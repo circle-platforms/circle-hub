@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "2.4.2",
+  "version": "3.0.0",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f2acf2bcb8d1d82ceb1731340e2c8a4cfcc4226430f15cd48bcf3bf39e7409d2",
-      "size": 5150
+      "sha256": "766daef92491b14388c361d45675a22fff4a29096a413fefe1cff3f532f3e837",
+      "size": 6835
     },
     {
       "path": "checks.json",
-      "sha256": "67ddfbe653bfd763968a188b2cc79899073889d948275c36936993a392176493",
-      "size": 3898
+      "sha256": "6071edb01935710200e5cdd663493e995758fb3da3cf8d0146e179e83eddcb24",
+      "size": 3932
     },
     {
       "path": "examples/bed-topology.json",
@@ -27,14 +27,34 @@
       "size": 616
     },
     {
+      "path": "examples/command-identities-v2.json",
+      "sha256": "b1c3b228e862d51386b315a5000cc1f6e360cbba635a86702fc501b7f9ddd1d6",
+      "size": 792
+    },
+    {
+      "path": "examples/command-tree-v2.xml",
+      "sha256": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
+      "size": 138
+    },
+    {
+      "path": "examples/runtime-contract-v2.json",
+      "sha256": "42a6755dbffefe78c9d4173dc3f209121436a148658dfd7fe685c0fe522e1eb5",
+      "size": 12629
+    },
+    {
       "path": "examples/runtime-contract.json",
       "sha256": "3eb25ff451e9e3149a33e37de223bdcc0f55d4f9119548724fb0c9ea9d08967b",
       "size": 7617
     },
     {
+      "path": "examples/runtime-profile-v2.json",
+      "sha256": "89444e956e437dd16e748bc742b55bc0eec6642eb0580dfcbb320349ba9e9a0a",
+      "size": 1679
+    },
+    {
       "path": "examples/runtime-profile.json",
-      "sha256": "24d13a52fd18447effc86f182a71f5a7839d98783eade82b8eeac9ccf0788054",
-      "size": 1925
+      "sha256": "0c9b41cb6495ed138f36589eb05782c0eedd99b549e8be8f9e85dfecf58987ee",
+      "size": 1679
     },
     {
       "path": "examples/start-run.json",
@@ -47,9 +67,14 @@
       "size": 1871
     },
     {
+      "path": "examples/typed-authority-source.json",
+      "sha256": "9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b",
+      "size": 2292
+    },
+    {
       "path": "functions/addresses.ts",
-      "sha256": "36f02765628acdf5540cdd2582db68dd29a3b25dddd87b62f38a58b5b3d3fef9",
-      "size": 4721
+      "sha256": "6f937ae65ecc6a4d195e7e3f2c21949789701872a44da23d91978a8d7aa099f2",
+      "size": 2468
     },
     {
       "path": "functions/bed.ts",
@@ -58,8 +83,8 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "76fe07e1fa452de75dea04d6f8faf8572579161094829014f7f13cc37c407967",
-      "size": 4892
+      "sha256": "ed8197415bdbfd7bf5c97d5a09ba38b20031124876a64da59f9c178bcd8e5173",
+      "size": 4631
     },
     {
       "path": "functions/canonical-json.ts",
@@ -73,8 +98,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "6c828d3880b0783c9a10c42368bb72f0cdc4ece2cc983f4dacb1fabdc6146ffa",
-      "size": 15235
+      "sha256": "650dda5c26e05ef7d83c77ec50d60d6c884ac511ccbd92b5fe0eabe9b1a0b9ec",
+      "size": 14480
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -88,8 +113,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "47aadc7d361b2a1c7264fd2394bc0b3c5517bcf64698833f2488a3f4f0f0541b",
-      "size": 11909
+      "sha256": "60ea6a8a6e42e034ac14a1d2d87075000223b18ae83600d08f844f992f85e260",
+      "size": 12219
     },
     {
       "path": "functions/manifest.ts",
@@ -98,13 +123,13 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "75a4d5a3f2ca0d061e583bf841f84b076d7f0ff79fcfb49097174204914bdc7c",
-      "size": 12398
+      "sha256": "db0ad86b385f2965de6d7b6de52fa2c6f0aa45bcd968c4cbfd3c6f1960593022",
+      "size": 12336
     },
     {
       "path": "functions/project.ts",
-      "sha256": "fcc7c885394ca12d7f9e8507f91c44d617e4b148257e9e2410d4629c16e298d6",
-      "size": 10542
+      "sha256": "58552a03a0cfee0939487930e36f2d7556d2bb2fe2ca9870edc2e16324295733",
+      "size": 11378
     },
     {
       "path": "functions/quote-width.ts",
@@ -113,23 +138,23 @@
     },
     {
       "path": "functions/quote.ts",
-      "sha256": "17fa49bd823c1e48578f2e46203863337ff3aaae06c0ce676facd91eb92fbb44",
-      "size": 840
+      "sha256": "f0db53eeeacf6367575671171ce5efd19afc0b811e58b53ff3b21078adc3735e",
+      "size": 870
     },
     {
       "path": "functions/runtime-contract.ts",
-      "sha256": "74e3700a403d1d72dc30620bd2d2a84aa075613e74a5befefa630caa0524ad85",
-      "size": 10748
+      "sha256": "ef1d6449b1174b98b8ab0760f2af1b8caf38733ff5cea146c40586da56c06090",
+      "size": 11096
     },
     {
       "path": "functions/slots.ts",
-      "sha256": "130fdfbf71906740d4058044d11959bc50f05375ac973df0d1ce70b64a37b5a7",
-      "size": 4696
+      "sha256": "b11a74635cd0884cfa93c1b64518dfe60430d207144803980da9f43e4e776397",
+      "size": 5249
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "91311a534ff2dcbcf5a68d53d526ac63df03c00225803d2c3037eea9acd92e13",
-      "size": 5859
+      "sha256": "a198501c6b04927a77598641e21762245095fea2727ff59548995b04f6b0b592",
+      "size": 4627
     },
     {
       "path": "functions/text.ts",
@@ -137,9 +162,19 @@
       "size": 2657
     },
     {
+      "path": "functions/typed-authority.ts",
+      "sha256": "bb53a5a627cea3acd290f6dcb744031ef92f82b6114a1b69ff618d91d004a403",
+      "size": 8390
+    },
+    {
+      "path": "functions/typed-contract.ts",
+      "sha256": "f7225ba7b1733e2430aa468991a60a18c973dc96d0bcd900d5c642c070a330bb",
+      "size": 9578
+    },
+    {
       "path": "functions/workbook.ts",
-      "sha256": "3824ae4aab90e5cf543eee0ddf4d1f5941a45478760550beee999087fc95ac84",
-      "size": 16925
+      "sha256": "96d1967c35f12ba8d7a562c2f6f76c54eed6bad4576de090512a628baf46cfd2",
+      "size": 17272
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -643,8 +678,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "f145f597254ffe92fbeca5e6469eb0a9ccdbf54cd1d3495fc8d3356d7a03a173",
-      "size": 3524
+      "sha256": "836ae0692a3561f1a090b41a3e63ee23eb51c593512d96f98abfd2a9134ac2a6",
+      "size": 3867
     },
     {
       "path": "tables/codes.json",
@@ -652,9 +687,24 @@
       "size": 9296
     },
     {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
+    },
+    {
       "path": "tables/commands.json",
       "sha256": "b072a75eef2e71e647f79d96c7e5687b45dc4492edd59140361f5f768168d8e0",
       "size": 838
+    },
+    {
+      "path": "tables/declared-role.schema.json",
+      "sha256": "d16d38c9841ecdadba751ea46416912d602d082e5395063c67549f378e8c7902",
+      "size": 1996
+    },
+    {
+      "path": "tables/declared-type.schema.json",
+      "sha256": "50c1cf08456d3903086026070132011514392bb1c1cf26ab56f790f13149b488",
+      "size": 2918
     },
     {
       "path": "tables/dispatch-roles.json",
@@ -677,8 +727,13 @@
       "size": 473
     },
     {
+      "path": "tables/typed-address.schema.json",
+      "sha256": "06a209354465e59b0cd34cb388b4597340438341d135970f13b46f22d32f0698",
+      "size": 2740
+    },
+    {
       "path": "tables/workbook-format.json",
-      "sha256": "82bfb078080671c0cd2643443515a1b770a3d1e793af8f016ef0ab917cef400e",
+      "sha256": "8e50127eb9f04680929465bc51bf8d4b6be32b418245bc40ee27c5911de8b0b1",
       "size": 555
     },
     {
@@ -698,8 +753,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "f46a942e3038e741d499803ac52ebe18b89f2c7eaed63ab0d2ef92b2cede15f0",
-      "size": 3341
+      "sha256": "66cc5298aa781f1875e5f57931cef2da30b6611aef2eca74e4d4217bb0d2921c",
+      "size": 3722
     }
   ]
 }

@@ -1,10 +1,12 @@
 // Original runner contract, not an adapter into a new contract format. Identity covers all original members.
 import { createHash } from 'node:crypto';
 import FORMAT from '../tables/runtime-contract-format.json' with { type: 'json' };
+import {readAuthority,type Authority} from './typed-contract.ts';
 import { isRecord } from './text.ts';
 export interface Problem { pointer: string; message: string; fix: string }
 export interface RuntimeParameter { name: string; kind: string; required: boolean; redacted: boolean }
-export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[] }
+/** The legacy reader verifies signatures only; unknown/raw metadata never becomes typed authority. */
+export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[]; sourcePointer?: string; authority?: Authority | null }
 export interface RuntimeContract { runtimeVersion: string; digest: string; objects: string[]; enabled: RuntimeEntry[] }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
 const SHA = /^[a-f0-9]{64}$/;
@@ -48,7 +50,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
     }
   };
   inspect(value, '');
-  if (value.schema !== FORMAT.contract_schema) issue('/schema', '不是运行器原始函数合约 schema');
+  if (value.schema !== FORMAT.contract_schema && value.schema !== 'runtime-contract@2') issue('/schema', '不是运行器原始函数合约 schema');
   if (value.complete !== true) issue('/complete', '合约没有声明完整');
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   for (const field of ['minimum_version', 'runner_source']) if (!nonempty(runtime[field])) issue(`/runtime/${field}`, '缺少运行时标识或源文件名');
@@ -107,7 +109,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       if (JSON.stringify(signature[field]) !== JSON.stringify(wanted)) issue(`${at}/signature/${field}`, '签名参数分组与逐参数标志不一致');
     }
     if (typeof signature.text !== 'string') issue(`${at}/signature/text`, '签名说明不是文字');
-    if (entry.status === 'enabled' && entry.certification_candidate !== true) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters });
+    if (entry.status === 'enabled' && entry.certification_candidate !== true) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters, sourcePointer: at, authority: readAuthority(value,entry,parameters.map(p=>p.name)) });
   }
   let digest = '';
   try { digest = runtimeDigest(value); } catch { /* Precise numeric/key problems were already listed above. */ }

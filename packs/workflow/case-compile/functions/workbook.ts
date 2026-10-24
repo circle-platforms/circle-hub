@@ -55,7 +55,7 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   const identity = grid(1);
   if (identity[1] !== recipe.contract.runtimeVersion || identity[2] !== recipe.contract.digest || identity[3] || identity[4]) issue('identity', '/sheets/0/rows/0', '运行时/合约身份不符，或认证请求 D/E 格不为空');
   if (identity[FORMAT.identity_generator_column - 1] !== FORMAT.generator) issue('generator', '/sheets/0/rows/0', '工作簿生成器版本与本运行锁定包的生成器版本不符');
-  const recipeDigest = hash(canonicalJson({ slots: plan, fields: { autoid: recipe.fields.autoid, title: recipe.fields.title, priority: recipe.fields.priority ?? null, steps: recipe.fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: recipe.contract.runtimeVersion, digest: recipe.contract.digest }, profile, plan_run: recipe.plan_run, build: recipe.build, generator: FORMAT.generator }));
+  const recipeDigest = hash(canonicalJson({ slots: plan, fields: { command_identities:recipe.fields.command_identities??null,autoid: recipe.fields.autoid, title: recipe.fields.title, priority: recipe.fields.priority ?? null, steps: recipe.fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: recipe.contract.runtimeVersion, digest: recipe.contract.digest }, profile, plan_run: recipe.plan_run, build: recipe.build, generator: FORMAT.generator }));
   if (identity[FORMAT.identity_recipe_column - 1] !== recipeDigest) issue('recipe', '/sheets/0/rows/0', '工作簿没有绑定当前完整槽位、来源字段及配置');
   const reference = `'${book.sheet.replaceAll("'", "''")}'!$A$2:$I$2`;
   if (model.definedNames.length !== 1 || model.definedNames[0].name !== book.range_name || model.definedNames[0].scope !== null || model.definedNames[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
@@ -119,7 +119,10 @@ export default function check(input: unknown): Outcome[] {
   const grounds = typeof raw.sha256 === 'string' && /^[a-f0-9]{64}$/.test(raw.sha256) ? [`src:${raw.sha256}`, `src:${s.manifest_sha256}`] : [];
   const fail = (message: string, at = pointer): Outcome[] => [{ verdict: 'refute', code: 'case-compile.workbook_invalid', statement: message + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: at }];
   const checked = [checkContractShape, checkAddresses, checkExpectedSources].flatMap((fn) => fn({ subject: s }));
-  if (checked.some((v) => v.verdict !== 'support')) return fail('计划的调用、地址或期望尚未满足，不能核验工作簿；先修计划，再由同版客户端脚本重生成');
+  if (checked.some(v => v.verdict === 'refute')) return fail('计划的调用、地址或期望尚未满足，不能核验工作簿；先修计划，再由同版客户端脚本重生成');
+  const unverified = checked.find(v => v.verdict === 'unknown');
+  if (unverified) return [{ ...unverified, statement: '工作簿未核对：' + unverified.statement, grounds, ...(item ? { item } : {}) }];
+  fields.command_identities=isRecord(s.fields)?s.fields.command_identities:undefined;
   const recipe: GenerationInput = { slots: slots.slots, fields, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build };
   try {
     const read = readWorkbook(raw.model, recipe); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);
