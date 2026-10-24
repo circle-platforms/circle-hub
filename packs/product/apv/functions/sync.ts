@@ -48,10 +48,10 @@ function newestFirst(a: Build, b: Build): number {
   return compareNullable(b.built, a.built) || compareDotted(b.number, a.number) || compareText(a.name, b.name);
 }
 
-function optionsOf(value: unknown): { include: string[]; exclude: string[]; lines: Set<string> | null } {
+function optionsOf(value: unknown): { include: string[]; exclude: string[]; mainline_page_words:string[]; lines: Set<string> | null } {
   const options = isRecord(value) ? value : {};
   const lines = Array.isArray(options.lines) ? new Set(asStrings(options.lines).map(lineKey)) : null;
-  return { include: asStrings(options.include), exclude: asStrings(options.exclude), lines };
+  return { include: asStrings(options.include), exclude: asStrings(options.exclude), mainline_page_words:asStrings(options.mainline_page_words), lines };
 }
 
 export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
@@ -65,7 +65,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       const reason = read[INDEX_ID]?.reason;
       return { fetch: [], builds: [], done: true, note: `索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建` };
     }
-    const walk = { include: options.include, exclude: options.exclude };
+    const walk = { include: options.include, exclude: options.exclude, mainline_page_words:options.mainline_page_words };
     const first = planSync({ index, options: walk });
     const hubs: ReadHub[] = first.hubs.filter((hub) => Object.hasOwn(read, listingId(hub.page))).map((hub) => ({ page: hub.page, href: hub.href, model: htmlOf(read[listingId(hub.page)]) }));
     const plan = hubs.length > 0 ? planSync({ index, hubs, options: walk }) : first;

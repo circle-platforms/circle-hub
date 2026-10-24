@@ -2,15 +2,30 @@
   "schema": "product@1",
   "id": "apv",
   "title": "APV / NSAE",
-  "names": ["APV", "NSAE"],
+  "names": [
+    "APV",
+    "NSAE"
+  ],
   "sync": {
-    "start": ["buildsite:listing:index"],
-    "plan": { "module": "functions/sync.ts" },
-    "options": { "include": [], "exclude": [], "case_index": true, "min_line": "10.4.2" },
+    "start": [
+      "buildsite:listing:index"
+    ],
+    "plan": {
+      "module": "functions/sync.ts"
+    },
+    "options": {
+      "include": [],
+      "exclude": [],
+      "case_index": true,
+      "min_line": "${var:APV_MIN_LINE}",
+      "mainline_page_words": "${var:APV_MAINLINE_PAGE_WORDS}"
+    },
     "max_rounds": 6,
     "max_reads": 300
   },
-  "select_build": { "module": "functions/select.ts" },
+  "select_build": {
+    "module": "functions/select.ts"
+  },
   "links": [
     {
       "id": "manual-literals",
@@ -50,41 +65,111 @@
     }
   ],
   "catalogs": [
-    { "id": "commands@1", "entry_kind": "definition", "producer": "command-tree", "complete": true, "case_sensitive": false }
+    {
+      "id": "commands@1",
+      "entry_kind": "definition",
+      "producer": "command-tree",
+      "complete": true,
+      "case_sensitive": false
+    }
   ],
   "producers": [
     {
       "id": "command-tree",
       "title": "命令树（构建自带的 command_tree XML）",
-      "function": { "module": "functions/producers.ts", "export": "commandTree" },
-      "inputs": { "tree": { "source": "tree" } }
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "commandTree"
+      },
+      "inputs": {
+        "tree": {
+          "source": "tree"
+        }
+      }
     },
     {
       "id": "manual",
       "title": "CLI 手册与应用手册（版本线的手册）",
-      "function": { "module": "functions/producers.ts", "export": "manual" },
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "manual"
+      },
       "inputs": {
-        "cli": { "external": "manual:cli:{line}", "optional": true },
-        "app": { "external": "manual:app:{line}", "optional": true },
-        "tree": { "source": "tree" }
+        "cli": {
+          "external": "manual:cli:{line}",
+          "optional": true
+        },
+        "app": {
+          "external": "manual:app:{line}",
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        }
       },
       "placement": "judgment_allowed"
     },
     {
       "id": "release-notes",
       "title": "修复的缺陷（构建的修复缺陷清单）",
-      "function": { "module": "functions/producers.ts", "export": "releaseNotes" },
-      "inputs": { "notes": { "source": "fixed_bugs", "optional": true } }
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "releaseNotes"
+      },
+      "inputs": {
+        "notes": {
+          "source": "fixed_bugs",
+          "optional": true
+        }
+      }
     },
     {
       "id": "cases",
       "title": "用例（敏捷平台的测试脑图，按用例涉及的命令归档）",
-      "function": { "module": "functions/cases.ts", "export": "cases" },
+      "function": {
+        "module": "functions/cases.ts",
+        "export": "cases"
+      },
       "inputs": {
-        "documents": { "source": "case_documents", "many": true, "batch": 40, "optional": true },
-        "tree": { "source": "tree" },
-        "folders": { "source": "case_tree", "optional": true }
+        "documents": {
+          "source": "case_documents",
+          "many": true,
+          "batch": 40,
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        },
+        "folders": {
+          "source": "case_tree",
+          "optional": true
+        }
       }
+    }
+  ],
+  "variables": [
+    {
+      "name": "APV_MIN_LINE",
+      "description": "Minimum release-train line for case indexing; null imposes no floor",
+      "schema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default": null
+    },
+    {
+      "name": "APV_MAINLINE_PAGE_WORDS",
+      "description": "Additional literal tokens permitted after a mainline page version",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
     }
   ]
 }
