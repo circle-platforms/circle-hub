@@ -331,7 +331,7 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     { fn: product.select_build!, input: { line: '10.6.1', candidates: [knownBuild], request: {} }, direct: select },
     { fn: product.producers[0].function, input: { build: knownBuild, slots: { tree: slot('xml@1', xml(fixtureBytes('command-tree.xml'))) }, params: {} }, direct: commandTree },
     ...(['APV','NSAE'] as const).map(family=>({fn:product.producers.find(p=>p.id==='manual-'+family.toLowerCase())!.function,input:{build:knownBuild,slots:{cli:slot('markdown@1',markdown(fixtureBytes('manual.md'))),app:null},params:{family,root:null,main:'book.adoc',attributes:{[family]:{}}}},direct:(input:unknown)=>familyManual(input as Parameters<typeof familyManual>[0])})),
-    { fn: product.producers.find(p=>p.id==='release-notes')!.function, input: { build: knownBuild, slots: { notes: slot('markdown@1', markdown(fixtureBytes('release-note.md'))) }, params: {} }, direct: releaseNotes },
+    { fn: { module: 'functions/producers.ts', export: 'releaseNotes' }, input: { build: knownBuild, slots: { notes: slot('markdown@1', markdown(fixtureBytes('release-note.md'))) }, params: {} }, direct: releaseNotes },
   ];
   for (const call of calls) {
     it(`${call.fn.module}#${call.fn.export ?? 'default'} gives the same answer as the direct call`, async () => {

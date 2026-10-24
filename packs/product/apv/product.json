@@ -16,7 +16,7 @@
     "options": {
       "include": [],
       "exclude": [],
-      "case_index": true,
+      "case_index": false,
       "min_line": "${var:APV_MIN_LINE}",
       "mainline_page_words": "${var:APV_MAINLINE_PAGE_WORDS}",
       "adoc": {
@@ -29,7 +29,7 @@
           "main": "${var:NSAE_ADOC_MAIN}"
         }
       },
-      "spec_index": true
+      "spec_index": false
     },
     "max_rounds": 10,
     "max_reads": 300
@@ -185,222 +185,19 @@
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
       },
       "placement": "judgment_allowed"
-    },
-    {
-      "id": "release-notes",
-      "title": "修复的缺陷（构建的修复缺陷清单）",
-      "function": {
-        "module": "functions/producers.ts",
-        "export": "releaseNotes"
-      },
-      "inputs": {
-        "notes": {
-          "source": "fixed_bugs",
-          "optional": true
-        }
-      }
-    },
-    {
-      "id": "cases",
-      "title": "用例（敏捷平台的测试脑图，按用例涉及的命令归档）",
-      "function": {
-        "module": "functions/cases.ts",
-        "export": "cases"
-      },
-      "inputs": {
-        "documents": {
-          "source": "case_documents",
-          "many": true,
-          "batch": 40,
-          "optional": true
-        },
-        "tree": {
-          "source": "tree"
-        },
-        "folders": {
-          "source": "case_tree",
-          "optional": true
-        }
-      }
-    },
-    {
-      "id": "specifications",
-      "title": "产品线不分版本的规格章节",
-      "unversioned": true,
-      "function": {
-        "module": "functions/specifications.ts",
-        "export": "specifications"
-      },
-      "inputs": {
-        "documents": {
-          "source": "spec_documents",
-          "many": true,
-          "batch": 20,
-          "optional": true
-        },
-        "catalog": {
-          "source": "spec_catalog",
-          "optional": true
-        }
-      },
-      "params": {
-        "components": "${var:APV_COMPONENTS}",
-        "licenses": "${var:APV_LICENSES}",
-        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
-      }
-    },
-    {
-      "id": "unversioned-cases",
-      "title": "没有覆盖构建的用例文档",
-      "unversioned": true,
-      "function": {
-        "module": "functions/cases.ts",
-        "export": "cases"
-      },
-      "inputs": {
-        "documents": {
-          "source": "unversioned_case_documents",
-          "many": true,
-          "batch": 40,
-          "optional": true
-        },
-        "folders": {
-          "source": "case_tree",
-          "optional": true
-        }
-      },
-      "params": {
-        "command_phrases": true
-      }
     }
   ],
   "variables": [
-    {
-      "name": "APV_MIN_LINE",
-      "description": "Minimum release-train line for case indexing; null imposes no floor",
-      "schema": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
-      "default": null
-    },
-    {
-      "name": "APV_MAINLINE_PAGE_WORDS",
-      "description": "Additional literal tokens permitted after a mainline page version",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    },
-    {
-      "name": "APV_ADOC_ROOT",
-      "description": "SVN directory template with {line}; explicit null selects Markdown",
-      "schema": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
-      "default": null
-    },
-    {
-      "name": "APV_ADOC_MAIN",
-      "description": "Main adoc file relative to the configured family directory",
-      "schema": {
-        "type": "string",
-        "minLength": 1
-      },
-      "default": "book.adoc"
-    },
-    {
-      "name": "APV_ADOC_ATTRIBUTES_APV",
-      "description": "Explicit attribute set for this family; empty is an explicit set",
-      "schema": {
-        "type": "object",
-        "additionalProperties": {
-          "type": [
-            "string",
-            "boolean"
-          ]
-        }
-      },
-      "default": {}
-    },
-    {
-      "name": "NSAE_ADOC_ROOT",
-      "description": "SVN directory template with {line}; explicit null selects Markdown",
-      "schema": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
-      "default": null
-    },
-    {
-      "name": "NSAE_ADOC_MAIN",
-      "description": "Main adoc file relative to the configured family directory",
-      "schema": {
-        "type": "string",
-        "minLength": 1
-      },
-      "default": "book.adoc"
-    },
-    {
-      "name": "APV_ADOC_ATTRIBUTES_NSAE",
-      "description": "Explicit attribute set for this family; empty is an explicit set",
-      "schema": {
-        "type": "object",
-        "additionalProperties": {
-          "type": [
-            "string",
-            "boolean"
-          ]
-        }
-      },
-      "default": {}
-    },
-    {
-      "name": "APV_COMPONENTS",
-      "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    },
-    {
-      "name": "APV_LICENSES",
-      "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    },
-    {
-      "name": "APV_DEPLOYMENT_FORMS",
-      "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    }
+    {"name": "APV_MIN_LINE", "description": "Minimum release-train line for case indexing; null imposes no floor", "schema": {"type": ["string", "null"]}, "default": null},
+    {"name": "APV_MAINLINE_PAGE_WORDS", "description": "Additional literal tokens permitted after a mainline page version", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_ADOC_ROOT", "description": "SVN directory template with {line}; explicit null selects Markdown", "schema": {"type": ["string", "null"]}, "default": null},
+    {"name": "APV_ADOC_MAIN", "description": "Main adoc file relative to the configured family directory", "schema": {"type": "string", "minLength": 1}, "default": "book.adoc"},
+    {"name": "APV_ADOC_ATTRIBUTES_APV", "description": "Explicit attribute set for this family; empty is an explicit set", "schema": {"type": "object", "additionalProperties": {"type": ["string", "boolean"]}}, "default": {}},
+    {"name": "NSAE_ADOC_ROOT", "description": "SVN directory template with {line}; explicit null selects Markdown", "schema": {"type": ["string", "null"]}, "default": null},
+    {"name": "NSAE_ADOC_MAIN", "description": "Main adoc file relative to the configured family directory", "schema": {"type": "string", "minLength": 1}, "default": "book.adoc"},
+    {"name": "APV_ADOC_ATTRIBUTES_NSAE", "description": "Explicit attribute set for this family; empty is an explicit set", "schema": {"type": "object", "additionalProperties": {"type": ["string", "boolean"]}}, "default": {}},
+    {"name": "APV_COMPONENTS", "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_LICENSES", "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_DEPLOYMENT_FORMS", "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []}
   ]
 }

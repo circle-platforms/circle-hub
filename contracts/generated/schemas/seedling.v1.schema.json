@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the version line of the seedling"
+    },
+    "root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "digest of the root node"
+    },
+    "composition": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "the tree_root@1 record the production wrote"
+    },
+    "build": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the released build whose command tree the seedling used"
+    },
+    "origin": {
+      "minItems": 1,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "command-tree",
+              "cli-manual",
+              "app-manual"
+            ]
+          },
+          "producer": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the producer id that read this source"
+          },
+          "slot": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the input slot the source was read through"
+          },
+          "external": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the external object id the source was read as"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "digest of the original bytes"
+          },
+          "revision": {
+            "description": "the fixed SVN revision the adoc was read at (null for the command tree)",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "role",
+          "producer",
+          "slot",
+          "external",
+          "sha256",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "description": "the fixed sources, sorted by role"
+    },
+    "parent": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the previous seedling record of this line (null for the first)"
+    },
+    "basis": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "why the seedling was produced, as one line of text"
+    }
+  },
+  "required": [
+    "product",
+    "line",
+    "root",
+    "composition",
+    "build",
+    "origin",
+    "parent",
+    "basis"
+  ],
+  "additionalProperties": false
+}
