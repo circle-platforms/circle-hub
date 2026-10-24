@@ -148,9 +148,9 @@ PLM 部署设置有两项。`settings.bug_fix_field` 由系统包在缺陷 `cont
 
 ## 检查时按草稿命令收窄读取
 
-`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取。主体构造器从完整命令身份取显式 path，去重后取键；核心不解释命令或草稿字段。引擎按已绑定视图的同一修订实际重读 `only`，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
+`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取，`rebind: true` 用这些键替换已绑定的 only。主体构造器从目录里最长命令头的 CommandIdentity 完整路径取键，模型声明的 read_keys 不参与。引擎按已绑定视图的同一修订重读，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
 
-推荐开始运行时绑定带 `fields=commands,document,node,title,negative,case_structure` 的索引，不预先加 `only`，检查时按实际草稿收窄。若输入已带 `only`，它仍是本运行的范围上界，不能扩大到范围外的命令。缺键、跳过、截断或超限时没有重复只记未知，并说明缺的事实和重读或调高上限的动作；可见的重复仍驳回。完全不可读时不调用检查函数。索引修订已不可取或永久跳过文档时，应补建并绑定新修订重开运行，不把读取新根冒充旧根的完整结果。
+推荐开始运行时绑定带 `fields=commands,document,node,title,negative,case_structure` 的索引。预先写上的 only（包括 only=user 这种空视图）不再挡住这些命令路径。收窄结果在同一修订上完整、且这些命令没有用例时，结论是范围内没有重复。跳过、截断或超限仍是未知；可见的重复仍驳回。完全不可读时不调用检查函数。索引修订已不可取或永久跳过文档时，应补建并绑定新修订重开运行。
 
 超限后的客户端补取动作在 SKILL 中：读取草稿完整命令身份的 path，读取同一锁定构建的 only/fields 索引，以新输入重开后再交草稿；旧运行不会因重交而刷新冻结输入。数据内引文的预热和分级已经实现，删除旧的必须抄到顶层才能核验的绕行说法。
 

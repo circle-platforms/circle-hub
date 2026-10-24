@@ -6,7 +6,7 @@
 
 - **开始运行**：要对照某个构建时，build 和 version 写在 start_run 顶层，与 pack、product、inputs 并列，不写进 parameters。
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,case_structure`）。推荐省略 `only`，由检查按草稿声明的命令路径动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单。绑定 `knowledge:index:<product>:<build>?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure`，不要写 `only`，也不要在槽位里声明 `read_keys`。Hub 从起草命令在目录中的 CommandIdentity 完整路径算出读取键，并在同一修订上把索引重绑为 `only=<命令路径>&fields=commands,document,node,title,negative,case_structure`。索引里没有同命令用例时，结论是范围内没有重复。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。
@@ -30,9 +30,9 @@
   - 对于反向用例（如测试参数超出范围时报错），`negative: true` 且 `expects_refutation: true`，其命令行预期被目录反驳（参数越界为用例设计点）。若命令行被目录接受，Hub 将判定为违规并要求修复。
 - `preconditions`：字符串数组，前置条件列表。
 - `steps`：测试步骤列表，包含 `text`（步骤说明）与 `command`（执行的命令行）。每个用例至少包含一个带有命令行的步骤。
-- `expected`：期望结果列表。**特别注意**：每个期望结果必须自己带 `quote` 对象（形状为 `{"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`），槽位路径为 `/cases/<用例序号>/expected/<期望结果序号>/quote`。**严禁**将引文放在用例一级或在期望结果中遗漏 quote。引文可以只位于期望数据内，Hub 已预热表内和槽位数据的引用并按本运行绑定来源分级读取；顶层 quotes 可以照抄作显式引用，不再是绕过核心缺口的条件。
-  - `text`：期望结果文字（必填字符串，必须是自身引文的非空逐字片段，只忽略空白差异，不得改写）。
-  - `quote`：逐字引文（必填对象，`{ "text": "...", "reference": "..." }`），包含必填的 `text`（修复说明或手册里的逐字原文）和 `reference`（引用地址）。每个期望结果必须各自携带自己的 quote。
+- `expected`：期望结果列表。每个期望结果必须自己带 `quote`，槽位路径为 `/cases/<用例序号>/expected/<期望结果序号>/quote`。不要把引文放在用例一级。不要写 `identity`、`after`、`digest`、`sha256`、`original`、`span` 或 `byte_span`：Hub 从 `reference` 解析出源摘要、parser@主版本、片段路径，再在原件字节里定位引文的 offset 和 length，得到 ExpectedQuoteIdentity 后核对。
+  - `text`：期望结果文字，必须是自身引文的非空逐字片段，不得改写。
+  - `quote`：`{ "text": "<修复说明或手册里的逐字原文>", "reference": "src:<64位摘要>/<解析器@主版本>/<片段路径>" }`。`reference` 用 `resolve_reference` 能解析的那种。修复说明写 `src:<缺陷摘要>/json@1/p/fields/<fix_field>` 或 `src:<缺陷摘要>/json@1/p/fix_notes/<序号>/comment`；手册写 `src:<手册摘要>/<解析器@主版本>/<片段路径>`。
 - `tags`：标签列表，至少包含一个属于团队模板类别的标签（`Functional`、`Negative`、`Boundary`、`Performance`、`Security`、`Compatibility`）。反向用例若含 `Negative` 标签，必须保证 `negative: true`。
 
 ## 4. 边界校验与修复规则
@@ -44,8 +44,8 @@ Hub 对提交进行两层核对：
 2. **要求项事实检查**：
    - `shape`（结构）：空标题、缺失步骤或期望结果、优先级越界、非标准标签、同次提交重复用例（退回修复，最多 2 轮）。
    - `commands`（命令与参数）：参数类型不符、参数越界或命令不存在；反向用例反驳与预期不一致（退回修复，最多 2 轮）。
-   - `grounded`（依据）：只允许本条缺陷 src 原件的 json@1/p/fields/<fix_field>、json@1/p/fix_notes/<序号>/comment，或 manual 槽绑定手册的 src 片段；其他字段、未冻结的序号、其他来源及 tree:/rec: 均退回修正，改引对应原件；每个期望结果必须自带 quote；缺失 quote、把 quote 放在用例一级而非期望结果内部、或 quote 缺失 reference/text 均会被拒；期望文字不是自身引文的逐字片段（退回修复，最多 2 轮）。
-   - `not_duplicate`（去重）：按 case-structure@2 的命令路径、类型参数、期望原件引文身份与 after 比较，完全相等为重复（提示档）。标题、标签及正反向标记不作键；缺完整身份或完整索引范围为未知，补声明和原件后重开。
+   - `grounded`（依据）：只允许本条缺陷 src 原件的 json@1/p/fields/<fix_field>、json@1/p/fix_notes/<序号>/comment，或 manual 槽绑定手册的 src 片段。quote 只写 text 和 reference。Hub 自己推出完整期望引用身份并核对原始字节；引文在片段中不唯一或原件读不到时仍是未知。期望文字不是引文的逐字片段则退回修复，最多 2 轮。
+   - `not_duplicate`（去重）：读取键由 Hub 从命令目录解析出的 CommandIdentity 完整路径计算，并自动重绑索引。不要在 data 里写 read_keys。索引在这些命令上没有用例时，结论是范围内没有重复。有同命令用例时，仍按 case-structure@2 比较；缺作者结构则未知，不把未知说成没有重复。
 
 ## 5. 提交样例
 
@@ -104,11 +104,4 @@ Hub 对提交进行两层核对：
 }
 ```
 
-查重未知时必须自动补取：先补完整命令身份；only 未覆盖就重读含草稿命令路径的索引并重开；缺键、截断、每键上限、缺 commands 字段或未读来源，就补齐相应事实后重开核对。接口仍拿不到完整数据时明确报告能力缺口，不把未知转述成没有重复。参数类型与解析值参与结构键，参数值不同不算同一结构。
-
-### 检查时按草稿动态读取
-Hub 在 duplicate_check 构造主体后，按草稿声明的完整命令身份 path从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative,case_structure，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
-
-缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,case_structure`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。
-
-每条草稿声明稳定 id、每步完整 identity、每个 expected 的 identity/after；引用必须带原始 byte span。不要用相同标题或文字前缀查重。索引须有作者 case_structure；缺声明就请求作者补结构后重产新根，缺原件就补读，截断按冻结根续读。不能把不完整键当空集合。发布状态只取原始 JSON status，缺字段请发布页或缺陷系统维护者补声明。
+查重的读取键和期望引用身份都由 Hub 计算，不要在修复轮里补写。截断、跳过或每键上限仍是未知：按 missing_fact 和 next_action 在同一修订重读。可见重复照样驳回。不要用标题或文字前缀查重。索引里同命令用例缺作者 case_structure 时，请作者补结构后重产新根。发布状态只取原始 JSON status。

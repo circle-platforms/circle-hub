@@ -346,6 +346,7 @@ export const NarrowCheckRead = z.strictObject({
   into: SafeSubjectPointer.describe('JSON pointer receiving the narrowed index view in the built subject'),
   max_keys: z.number().int().positive().max(MAX_CHECK_READ_KEYS),
   max_entries: z.number().int().positive().max(MAX_CHECK_READ_ENTRIES),
+  rebind: z.boolean().optional().describe('replace the bound only with the subject keys on the same revision; the subject derives the keys and the model does not supply them'),
 });
 export type NarrowCheckRead = z.infer<typeof NarrowCheckRead>;
 

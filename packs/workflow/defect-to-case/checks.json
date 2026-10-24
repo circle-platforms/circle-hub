@@ -116,7 +116,8 @@
           "key_path": "/read_keys",
           "into": "/indexed_cases",
           "max_keys": 100,
-          "max_entries": 5000
+          "max_entries": 5000,
+          "rebind": true
         }
       },
       "judges": "artifact_under_verification",
