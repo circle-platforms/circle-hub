@@ -22,7 +22,7 @@ import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
-import { evaluate, type Evaluation } from './evaluate.ts';
+import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
 import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
@@ -674,18 +674,7 @@ async function startFresh(
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
   const startedAt = ctx.now().toISOString();
-  const evaluation = await evaluate(ctx, {
-    run,
-    workflow,
-    submission: null,
-    submissionDigest: runDigest,
-    exact: null,
-    carried: new Map(),
-    roundsUsed: new Map(),
-    origin: null,
-    author: null,
-    traceId,
-  });
+  const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
   const noteSchema = z.strictObject({

@@ -77,6 +77,11 @@ export interface EvaluationInput {
   admission?: {requirement:string;outcomes:ReadonlyMap<string,CheckOutcome[]>};
 }
 
+/** The same production evaluation inputs are used at startup and before an effect replay. */
+export function productionEvaluationInput(run: RunRecord, workflow: LoadedWorkflow, runDigest: string, traceId: string): EvaluationInput {
+  return {run,workflow,submission:null,submissionDigest:runDigest,exact:null,carried:new Map(),roundsUsed:new Map(),origin:null,author:null,traceId};
+}
+
 export interface Evaluation {
   result: ValidationResult;
   /** Item-level refutations routed by the error table and the items the submission did not cover (also in result.errors). */
