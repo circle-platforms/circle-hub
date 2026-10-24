@@ -25,7 +25,7 @@ const knowledge = createKnowledge({
   admin,                              // the admin context of standing syncs when a call names none
 });
 const report = await knowledgeSync(knowledge, packs, admin, parseKnowledgeSyncArgs(['--product', 'x', '--line', '1.2']));
-registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `circle-hub knowledge sync ...`
+registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `circle-hub knowledge sync ...` and `knowledge seed ...`
 // The run engine reads `knowledge:impact|facets|index:...` ids through the views, every other id through the connectors.
 const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
 ```
@@ -47,7 +47,8 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | `calibration.ts` | Wilson lower bound, threshold rule, calibration sets, literal masking |
 | `layers.ts`, `contributions.ts` | observation and verified contribution layers |
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
-| `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` |
+| `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` (`sync` and `seed`) |
+| `seed.ts` | `knowledge seed`: the three sources the product pack declares, `produceSeedling`, the Chinese report |
 | `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
 
 ## Records
