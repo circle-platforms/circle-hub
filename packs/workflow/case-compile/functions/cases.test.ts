@@ -60,7 +60,7 @@ describe('投影', () => {
     assert.equal(out.items[0].fields.case_rule, 'marked');
     const group = out.groups[0];
     assert.equal(group.kind, 'case-compile');
-    assert.equal((group.contract as Record<string, unknown>).schema, 'ist.excel.function-contract');
+    assert.equal((group.contract as Record<string, unknown>).schema, 'runtime-contract@2');
     assert.equal((group.manifest as Record<string, unknown>).schema, 'test-bed-manifest@1');
     assert.equal(group.rule_summary, '用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）');
     assert.deepEqual(out.warnings, []);

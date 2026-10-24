@@ -251,6 +251,11 @@
           "code": "case-compile.expect_value",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_not_in_criterion",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },

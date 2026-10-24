@@ -1,3 +1,4 @@
+import {addressInput} from '../testing/typed-fixtures.ts';
 // Semantic merge regressions across runtime policy and workbook integer encoding.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,6 +18,5 @@ test('merged generator rejects assertion values which runtime cannot satisfy', (
   for (const text of ['=bad', '{}', 'first\nsecond']) { const recipe = generationFixture(); recipe.slots.expects[0].text = text; recipe.slots.expects[0].quote.text = text; assert.throws(() => generateWorkbook(recipe), GenerationError); }
 });
 test('decision 35 permits other device interfaces in workbook-bound plans', () => {
-  const input = workbookCheckInput(); const recipe = generationFixture(); recipe.slots.steps[0].args = ['widget address 192.0.2.1']; input.subject.data = recipe.slots;
-  assert.equal(checkAddresses(input)[0].verdict, 'support');
+  assert.equal(checkAddresses(addressInput('192.0.2.1'))[0].verdict,'support');
 });
