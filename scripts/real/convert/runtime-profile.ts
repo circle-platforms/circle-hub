@@ -85,8 +85,10 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
       requireFact(record(v.parameters) && Object.keys(v.parameters).every((name) => method.parameters.some((p) => p.name === name)), '角色决定含签名外参数；核对原签名后改正');
     }
   }
-  for (const pointer of ['/synthetic', '/workbook', '/seats', '/hosts', '/denied/device', '/denied/host', '/max_wait_seconds', '/fold_newlines']) add(pointer, '缺少运行环境部署事实', '集成者从运行器格式和只读预检填写，重新运行 --check；不得以空列表代替未核对的事实');
-  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion, contract_sha256: wanted.digest }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, workbook: null, seats: null, hosts: null, allowed, unopened, denied: { device: null, host: null }, pending };
+  // The denial word list is retired (R5): dispatch authority comes from the contract's closed roles, complete commands
+  // and effect table, so the draft no longer asks for /denied.
+  for (const pointer of ['/synthetic', '/workbook', '/seats', '/hosts', '/max_wait_seconds', '/fold_newlines']) add(pointer, '缺少运行环境部署事实', '集成者从运行器格式和只读预检填写，重新运行 --check；不得以空列表代替未核对的事实');
+  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion, contract_sha256: wanted.digest }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, workbook: null, seats: null, hosts: null, allowed, unopened, pending };
   return profile;
 }
 export function checkCoverage(profile: unknown, contract: RuntimeContract): void {
@@ -123,9 +125,8 @@ export function checkProfile(profile: unknown, manifest: unknown, rawContract: u
   const parsed = parseProfile(profile, contract.contract, beds.beds);
   requireFact(parsed.ok, parsed.ok ? '' : parserDiagnostics('runtime-profile', parsed.problems, '集成者从只读预检和合约补齐该字段，使用同一清单重跑 --check'));
   requireFact(record(profile) && profile.synthetic === false, '部署配置的 synthetic 必须是 false；集成者核对真实接入事实后设为 false 并重跑 --check');
-  for (const [role, key, classes] of [['device_cli', 'device', '重启、清配置、升级、HA'], ['host_shell', 'host', '重启、关机、格式化']] as const) {
-    requireFact(!parsed.profile.allowed.some(call => Object.values(call.parameters).includes(role)) || parsed.profile.denied[key].length > 0, `denied/${key} 缺少${classes}类命令的部署文字；请集成者从运行器接入规则补取并填写拒绝表后重跑 --check`);
-  }
+  // The retired denial word list is not a deployment fact any more: a profile that still carries it is refused by
+  // parseProfile above ('拒绝词表已退役'), and dispatch authority rests on the contract's closed roles and effect table.
   requireFact(parsed.profile.seats.every((v) => v.ordinal < parsed.profile.device_count), '座位序号超出预检设备数；重新核对座位顺序');
   return parsed.profile;
 }

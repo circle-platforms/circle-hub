@@ -52,9 +52,29 @@
       "size": 15668
     },
     {
+      "path": "functions/category-evidence.ts",
+      "sha256": "0eab9886519f0e32b6b4c32684881bb208d06acaf596b9a75d1a0c35eedf47b6",
+      "size": 1694
+    },
+    {
+      "path": "functions/classification-subject.ts",
+      "sha256": "964ea50982894e71caca5b4c823c742ae851b706447bf65d0c6598eff1a65765",
+      "size": 763
+    },
+    {
+      "path": "functions/classification.ts",
+      "sha256": "e3289b0502beb05ed16b6e4134a90ca050e681389103092e726b48e60390da38",
+      "size": 4508
+    },
+    {
       "path": "functions/command-check.ts",
       "sha256": "9e49d6eb4f86e9beca16b70c5d3d22f0e38879e7de7711928a88904b23b3a452",
       "size": 11696
+    },
+    {
+      "path": "functions/command-identity.ts",
+      "sha256": "b7325730d2943dbdfd580cff8fa26147add2933a9e78ffecddad9bd4ef21ff36",
+      "size": 2136
     },
     {
       "path": "functions/command-subject.ts",
@@ -72,14 +92,19 @@
       "size": 2088
     },
     {
+      "path": "functions/coverage-check.ts",
+      "sha256": "0a1980a3d5f1b9ffb6be65690b55e4746e21c09b04345c83bc9c6400706018d2",
+      "size": 4810
+    },
+    {
       "path": "functions/generated/vocabulary.ts",
       "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
       "size": 4642
     },
     {
       "path": "functions/index.ts",
-      "sha256": "f157b324312104fd7c839c731b61913ddd137aa654d9756507f042792f36be44",
-      "size": 6942
+      "sha256": "44726f1ac87189fc86b6b590a8596650f07a1fc63f3ad30768a5104b638ba94b",
+      "size": 7103
     },
     {
       "path": "functions/project.ts",
@@ -87,9 +112,19 @@
       "size": 25860
     },
     {
+      "path": "functions/source-quotes.ts",
+      "sha256": "10a599074f78f740ebfe2e74069e07ab49870a943a49024665891d64988c3352",
+      "size": 5690
+    },
+    {
       "path": "functions/subject.ts",
       "sha256": "87b6cea694c6a5256b085ffca8e1bc6561dc841491c582b07c8ee26de3462717",
       "size": 1819
+    },
+    {
+      "path": "functions/tag-declarations.ts",
+      "sha256": "c34840304a43b6e0264f15fb6544162b70030feb996ac886e107059fd2182145",
+      "size": 2357
     },
     {
       "path": "functions/tags.ts",
@@ -187,9 +222,19 @@
       "size": 4445
     },
     {
+      "path": "tables/category-judgment.schema.json",
+      "sha256": "0720e737e7168eff6981e1bbed72c369ae6b19ad4faac4f1dbce22f52ae1fc5f",
+      "size": 5152
+    },
+    {
       "path": "tables/codes.json",
       "sha256": "383e826a65a3178e3ef2277b6ab5ab104f3e74b6216f16e3abf90a43bc0ccffc",
       "size": 7747
+    },
+    {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
     },
     {
       "path": "tables/resource-tags.json",
@@ -210,46 +255,6 @@
       "path": "workflow.json",
       "sha256": "3153d6d2099ea820976f1c4ea23be4705f8e6c53b5274fe7f8e64f51471d4491",
       "size": 18318
-    },
-    {
-      "path": "functions/category-evidence.ts",
-      "sha256": "0eab9886519f0e32b6b4c32684881bb208d06acaf596b9a75d1a0c35eedf47b6",
-      "size": 1694
-    },
-    {
-      "path": "functions/classification-subject.ts",
-      "sha256": "964ea50982894e71caca5b4c823c742ae851b706447bf65d0c6598eff1a65765",
-      "size": 763
-    },
-    {
-      "path": "functions/classification.ts",
-      "sha256": "e3289b0502beb05ed16b6e4134a90ca050e681389103092e726b48e60390da38",
-      "size": 4508
-    },
-    {
-      "path": "functions/command-identity.ts",
-      "sha256": "b7325730d2943dbdfd580cff8fa26147add2933a9e78ffecddad9bd4ef21ff36",
-      "size": 2136
-    },
-    {
-      "path": "functions/coverage-check.ts",
-      "sha256": "0a1980a3d5f1b9ffb6be65690b55e4746e21c09b04345c83bc9c6400706018d2",
-      "size": 4810
-    },
-    {
-      "path": "functions/source-quotes.ts",
-      "sha256": "10a599074f78f740ebfe2e74069e07ab49870a943a49024665891d64988c3352",
-      "size": 5690
-    },
-    {
-      "path": "tables/category-judgment.schema.json",
-      "sha256": "0720e737e7168eff6981e1bbed72c369ae6b19ad4faac4f1dbce22f52ae1fc5f",
-      "size": 5152
-    },
-    {
-      "path": "tables/command-identity.schema.json",
-      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
-      "size": 16758
     }
   ]
 }

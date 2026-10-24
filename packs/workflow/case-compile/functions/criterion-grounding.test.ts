@@ -8,6 +8,7 @@ import { checkExpectedSources } from './checks.ts';
 import { criteriaOf, quoteSubject } from './subject.ts';
 import { MANIFEST_DOC, QUOTE, goodData } from './test-support.ts';
 import type { PlanSlots } from './slots.ts';
+import type { CommandIdentity } from '../../../../contracts/generated/shared-interfaces.ts';
 
 const DECLARATION = `rec:${'b'.repeat(64)}#/criterion_changes/0`;
 const REVIEW = `rec:${'c'.repeat(64)}`;
@@ -22,11 +23,11 @@ const ITEM = 'doc-1:c-1';
 const examples = new URL('../examples/', import.meta.url);
 const TYPED_CONTRACT = JSON.parse(readFileSync(new URL('runtime-contract-v2.json', examples), 'utf8')) as unknown;
 const TYPED_PROFILE = JSON.parse(readFileSync(new URL('runtime-profile-v2.json', examples), 'utf8')) as unknown;
-const TYPED_IDENTITIES = (JSON.parse(readFileSync(new URL('command-identities-v2.json', examples), 'utf8')) as { command_identities: unknown[] }).command_identities;
+const TYPED_IDENTITIES = (JSON.parse(readFileSync(new URL('command-identities-v2.json', examples), 'utf8')) as { command_identities: CommandIdentity[] }).command_identities;
 
 /** The plan of the fixture, with the frozen command identities the typed authority asks for. */
-function typedData(mutate?: (data: PlanSlots & { command_identities?: unknown }) => void): PlanSlots {
-  const data = goodData() as PlanSlots & { command_identities?: unknown };
+function typedData(mutate?: (data: PlanSlots & { command_identities?: CommandIdentity[] }) => void): PlanSlots {
+  const data = goodData() as PlanSlots & { command_identities?: CommandIdentity[] };
   data.command_identities = TYPED_IDENTITIES;
   if (mutate !== undefined) mutate(data);
   return data;

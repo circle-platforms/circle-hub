@@ -42,6 +42,11 @@
       "size": 4131
     },
     {
+      "path": "functions/expected-quality.ts",
+      "sha256": "78b17136ed985dd8d5030feb2b6f90ff457828cbb78b97afd5362680354a6d49",
+      "size": 3113
+    },
+    {
       "path": "functions/expected-sources.ts",
       "sha256": "d354d43571e906ab58bf2464c7aef89b41620e2e2b97819895645c333facce72",
       "size": 21506
@@ -290,11 +295,6 @@
       "path": "workflow.json",
       "sha256": "ce5d1815ed859e774b5ef15e427426da5cf7754806255c61dcc830487a53b33d",
       "size": 5953
-    },
-    {
-      "path": "functions/expected-quality.ts",
-      "sha256": "78b17136ed985dd8d5030feb2b6f90ff457828cbb78b97afd5362680354a6d49",
-      "size": 3113
     }
   ]
 }
