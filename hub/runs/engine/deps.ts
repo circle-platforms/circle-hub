@@ -23,7 +23,7 @@ export interface RunsEngineDeps {
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
-    principals?: Pick<Principals, 'get'>;
+    principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
   };
   workflows: WorkflowStore;
   packs: PacksPort;

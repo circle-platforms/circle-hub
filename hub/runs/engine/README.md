@@ -552,6 +552,24 @@ K2 admission exclusions are applied before subject priming and before forming it
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
 
+## Transitional recovery metadata
+
+New unknown outcomes name `missing` at their producer. Evaluation binds every transitional layer to its missing facts
+and complete `exit`, preserving independent causes in `gaps`. Pack repairs address the published pack owner;
+clarification and artifact repair address the runner (or standing-obligation configurer); administrator actions address
+the first active administrator in account-id order. A legacy test port without publication ownership instead asks its
+runner to clarify that missing authority; it never invents a pack owner.
+
+Until `hub-unknown-exits` binds actual request records and deadline processing, every exit intent has an absolute due
+at evaluation time plus 72 hours, matching the administrator acceptance request default. These fields do not claim
+that a request was created or an action was performed. Existing finite retries and splitting remain unchanged. Missing
+input from a temporarily unavailable quote schedules rereading; withheld ordinary sources require administrator
+acceptance; digest mismatches require trusted-backup restoration, never blind rereading. Actual credential echoes
+remain excluded at the input boundary and cannot gain an administrator-acceptance exit here.
+
+Historical stored results remain byte-for-byte unchanged. A transitional layer without a recorded exit displays
+`出口未写`; the reader never invents its missing facts, audience or deadline.
+
 A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
 extend is refused for the whole request before effects, and release still requires the same user and predecessor
 lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as

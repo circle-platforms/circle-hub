@@ -26,6 +26,7 @@ export function refusal(code: string, message: string, fix: string, warnings: Pa
 
 /** A check outcome, statement always closed by the two markers (the synthetic one only when the contract is synthetic). */
 export interface Outcome {
+  missing?: string;
   verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;

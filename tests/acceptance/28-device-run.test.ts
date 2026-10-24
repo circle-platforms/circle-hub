@@ -52,7 +52,11 @@ async function start(args: Record<string, unknown>): Promise<z.infer<typeof Star
   const answer = await client.call('start_run', args); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.run); if (args.pack === 'case-compile') itemIds.set(answer.out.run.run, answer.out.run.items[0].id); return answer.out;
 }
 async function booking(): Promise<string> {
-  return (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }], hours: 1 } } })).run!.run;
+  const booked = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
+  const held = (await bed.hub.leases.view('bed/')).entries;
+  assert.ok(held.length > 0);
+  assert.ok(held.every(row => row.until === null), 'bookings last until the owning lineage releases them');
+  return booked;
 }
 async function release(booked: string) {
   await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, predecessor: booked, parameters: { action: 'release', booking: booked } });
@@ -219,7 +223,14 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const booked = await booking(); const first = await verify(await plan(booked)); const before = submissions; lose = true;
     const frozen = await dispatch().dispatch(bed.hub.admin.principal, first.run, executor); lose = false;
     assert.equal(frozen.outcome, 'unknown'); assert.equal(frozen.frozen, true); assert.match(frozen.next_action!, /管理员/);
-    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal, first.run, executor), /冻结|占用|已.*派发|提交/); assert.equal(submissions, before + 1);
+    const budgetRefused=await dispatch().dispatch(bed.hub.admin.principal,first.run,executor);
+    assert.equal(budgetRefused.outcome,'not_dispatched');
+    const refusal=(await dispatch().journal.events(budgetRefused.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+    assert.equal(refusal.body.error_code,'EFFECT_BUDGET_EXHAUSTED');assert.equal(refusal.body.detail.boundary_clause,4);assert.equal(refusal.body.detail.effect_row,'submit_verified_workbook');
+    assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
+    const whileFrozen=await verify(await plan(booked,1),1);
+    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
+    assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');
     const recovered = await dispatch().dispose(bed.hub.admin.principal, frozen.job, { choice: 'reconcile', remote_id: latest.key });
     assert.equal(recovered.frozen, false); assert.equal(recovered.outcome, 'effective'); assert.equal(submissions, before + 1); await resultReport(recovered);

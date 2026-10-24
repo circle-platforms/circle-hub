@@ -36,6 +36,7 @@ interface DetailRow {
 }
 
 interface Outcome {
+  missing?: string;
   verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
@@ -198,14 +199,14 @@ function commandExists(subject: unknown): Outcome[] {
     const reasons = reasonsOf(item, details);
     const title = item.label !== '' ? item.label : item.id;
     if (reasons === null) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'blocking', item: item.id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`用例 ${item.id} 没有可读的维护原因`), reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'blocking', item: item.id });
       continue;
     }
     const grounds = groundsOf(item);
     const gone = reasons.filter(removed);
     if (gone.length > 0) {
       if (gone.some((reason) => pathOf(details, reason) === null)) {
-        out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 的删除原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'blocking', item: item.id });
+        out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`用例 ${item.id} 的删除原因点名的运行级详情行不存在（任务包缺陷）`), reason: 'check_error', statement: `用例 ${item.id} 的删除原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'blocking', item: item.id });
         continue;
       }
       const paths = gone.map((reason) => pathOf(details, reason)).join('、');
@@ -234,13 +235,13 @@ function commandExists(subject: unknown): Outcome[] {
     const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
     const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
     const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
-    out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
+    out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
     if (note.truncated === true) {
       const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
-      out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`), reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
     }
   }
-  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
   return out;
 }
 
@@ -330,13 +331,13 @@ function commandUnchanged(subject: unknown): Outcome[] {
     const reasons = reasonsOf(item, details);
     const title = item.label !== '' ? item.label : item.id;
     if (reasons === null) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'advisory', item: item.id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`用例 ${item.id} 没有可读的维护原因`), reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'advisory', item: item.id });
       continue;
     }
     const grounds = groundsOf(item);
     const modified = reasons.filter((reason) => reason.change === 'modified');
     if (modified.some((reason) => pathOf(details, reason) === null)) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 的变更原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'advisory', item: item.id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`用例 ${item.id} 的变更原因点名的运行级详情行不存在（任务包缺陷）`), reason: 'check_error', statement: `用例 ${item.id} 的变更原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'advisory', item: item.id });
       continue;
     }
     const diffs = reasons.filter((reason) => changed(reason, details));
@@ -363,14 +364,14 @@ function commandUnchanged(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0 && noteOf(subject) === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+  if (out.length === 0 && noteOf(subject) === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
   return out;
 }
 
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
   if (check === 'command_exists') return commandExists(subject);
   if (check === 'command_unchanged') return [...diffSummaries(subject), ...commandUnchanged(subject)];
-  return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: 'advisory' }];
+  return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('这个函数没有对应的检查'), reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: 'advisory' }];
 }
 
 export default function check(input: unknown): unknown {
@@ -380,6 +381,6 @@ export default function check(input: unknown): unknown {
       const id = typeof raw.check === 'string' ? raw.check : null;
       return checkOutcomes(id, raw.subject);
     },
-    (message): Outcome[] => [{ verdict: 'unknown', reason: 'check_error', statement: `维护巡检的检查出错（任务包缺陷）：${message}`, grounds: [], tier: 'advisory' }],
+    (message): Outcome[] => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`维护巡检的检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `维护巡检的检查出错（任务包缺陷）：${message}`, grounds: [], tier: 'advisory' }],
   );
 }

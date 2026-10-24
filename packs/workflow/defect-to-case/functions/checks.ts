@@ -454,7 +454,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   if (!subject.indexed_cases) {
     return [
       {
-        verdict: 'unknown',
+        verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('没有绑定用例索引（indexed_cases），无法核对重复用例'),
         reason: 'missing_input',
         statement: '没有绑定用例索引（indexed_cases），无法核对重复用例',
         grounds: [],
@@ -504,7 +504,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   for (const [draft, line] of unresolved) {
     const title = (draft as { title?: string }).title ?? '（无标题）';
     outcomes.push({
-      verdict: 'unknown',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`起草用例“${title}”的命令行“${line}”在锁定构建的命令目录里解析不出命令头，无法核对重复（命令检查已另行驳回它）`),
       reason: 'missing_input',
       statement: `起草用例“${title}”的命令行“${line}”在锁定构建的命令目录里解析不出命令头，无法核对重复（命令检查已另行驳回它）`,
       grounds: [],
@@ -600,7 +600,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     const gap = gaps.join('；');
     const narrowingOnly = undecidable.has(draft) && gaps.length === 1;
     outcomes.push(gap ? {
-      verdict: 'unknown', reason: narrowingOnly ? 'missing_input' : 'integrity_unproven',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('起草用例“' + title + '”未能证明没有重复：' + gap), reason: narrowingOnly ? 'missing_input' : 'integrity_unproven',
       statement: '起草用例“' + title + '”未能证明没有重复：' + gap, grounds: [], tier: 'advisory', ...own,
       data: { missing_keys: missing },
     } : { verdict: 'support', statement: '起草用例“' + title + '”未发现与已索引用例重复', grounds: [], tier: 'advisory', ...own });

@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "7909ed1f6fbec39491818bcbcaed6ac043aa9dfc805a8c5912b893ceb153652c",
-      "size": 14946
+      "sha256": "ec161e89669b4936246585368f6fa2b0dc542f5f6367e3990bc75fc3e0bd8d98",
+      "size": 15294
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -133,13 +133,13 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "7e6e86171576cba2ad13f951535dcc5f3532e02333ea7e3e4f82d76edb08654a",
-      "size": 2637
+      "sha256": "1e3e5c1af6485f6488c2cd02c2feae1e037925b25d7f1975453266fe4fd981cf",
+      "size": 2657
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "7ffc5cf4fdb2959ef6caf9a722fb1cb1b69c508ea16f20317fb17be18d543c25",
-      "size": 16859
+      "sha256": "3824ae4aab90e5cf543eee0ddf4d1f5941a45478760550beee999087fc95ac84",
+      "size": 16925
     },
     {
       "path": "functions/xlsx-model.ts",

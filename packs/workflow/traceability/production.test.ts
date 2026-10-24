@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
-import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
+import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { caseEntry, defectEntry, indexViewOf } from './functions/test-support.ts';
@@ -14,6 +14,21 @@ import { BUILD, ROOT, call, openHub, type Hub } from './test-hub.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
 let hub: Hub;
+
+function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'exit' | 'gaps'>[] {
+  return layers.map(layer => {
+    LayerResult.parse(layer);
+    if (layer.reason !== undefined) {
+      assert.ok(layer.missing);
+      assert.equal(layer.exit?.action, 'request');
+      assert.equal(layer.exit?.request_kind, 'clarification');
+      assert.deepEqual(layer.exit?.audience, { user: hub.alice.id });
+    }
+    const { missing, exit, gaps, ...fields } = layer;
+    return fields;
+  });
+}
+
 
 const DEFECTS_ID = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug`;
 const CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects&fields=document,node,title`;
@@ -117,12 +132,12 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(partition, 'delivered', id);
       assert.deepEqual(item.requirements.map((r) => r.requirement), ['traced'], id);
       const [requirement] = item.requirements;
-      assert.deepEqual(requirement.layers, expected.layers, id);
+      assert.deepEqual(terminalFields(requirement.layers), expected.layers, id);
       assert.equal(requirement.status, expected.status, id);
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.5', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.6', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(

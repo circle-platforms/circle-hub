@@ -11,6 +11,8 @@ import type { LoadedWorkflow, WorkflowStore } from '../../../ports.ts';
 import { requirementSummary } from '../start.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
+  readonly owner?: string;
+  constructor(owner?: string) { this.owner = owner; }
   readonly #byDigest = new Map<string, LoadedWorkflow>();
   readonly #versions = new Map<string, LoadedWorkflow[]>();
   readonly #assigned = new Map<string, Set<string>>();
@@ -23,6 +25,7 @@ export class FakeWorkflowStore implements WorkflowStore {
     const listed = new Set(manifest.files.map((f) => f.path));
     const instructions = await readFile(join(dir, 'SKILL.md'));
     const loaded: LoadedWorkflow = {
+      ...(this.owner ? { owner: this.owner } : {}),
       pack: { id: manifest.id, version: manifest.version, digest: digestOf(manifest), kind: manifest.kind, directory: dir },
       manifest,
       workflow: WorkflowFile.parse(await json('workflow.json')),
