@@ -1191,6 +1191,30 @@
           "type": "string",
           "maxLength": 500
         },
+        "dispatch_targets": {
+          "type": "object",
+          "properties": {
+            "type_field": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "types": {
+              "minItems": 1,
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          },
+          "required": [
+            "type_field",
+            "types"
+          ],
+          "additionalProperties": false
+        },
         "command_pattern": {
           "type": "string",
           "minLength": 1,
