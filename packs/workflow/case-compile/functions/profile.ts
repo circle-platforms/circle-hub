@@ -1,4 +1,4 @@
-// Deployment profile owned by this pack; it assigns meaning absent from the runner's signature contract.
+// The deployment profile selects a subset of the published contract; it cannot invent type, role or effect authority.
 import DISPATCH from '../tables/dispatch-roles.json' with {type:'json'};
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
