@@ -67,6 +67,10 @@
             "type": "string",
             "const": "predecessor"
           },
+          "independence_by_account": {
+            "description": "A04: determine independence from authenticated non-author accounts, not client session/model declarations",
+            "type": "boolean"
+          },
           "accepts_declared_independence": {
             "description": "accept the independence the client declares (A04 R[4]); not accepted when absent",
             "type": "boolean"

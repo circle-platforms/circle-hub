@@ -1,3 +1,4 @@
+import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
 import { abandonDecision } from './management.ts';
 import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
@@ -243,6 +244,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
+  if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[unavailableError('/inputs')]};
   const roundsUsed = await roundsUsedOf(ctx, run.run);
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, submissionRecord:record.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
@@ -261,7 +263,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
         message: error.message, fix: error.fix } });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
   }
-  const sessionMissing = session === null && workflow.requirements.some(t => t.independent_of !== undefined);
+  const sessionMissing = session === null && workflow.requirements.some(t => t.independent_of !== undefined&&!t.independence_by_account);
   if (sessionMissing) {
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
@@ -294,6 +296,7 @@ interface Basis {
 }
 
 interface Validated {
+  criterionChanges?:Array<{index:number;change:import('../../../contracts/src/criterion.ts').CriterionChange}>;
   runtimeAdmission?:RuntimeAdmission[];
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */
@@ -370,8 +373,13 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
   const store = ctx.deps.records.store;
   try {
     const save = async () => {
-      if (outcome.prepared === undefined || outcome.result.acceptance !== 'accepted') return putResult(store, outcome.result, ctx.now().toISOString());
+      const criteria=outcome.criterionChanges??[];
+      if(outcome.result.acceptance!=='accepted')return putResult(store,outcome.result,ctx.now().toISOString());
+      if(outcome.prepared===undefined&&!criteria.length&&!base.run.criterion_review)return putResult(store,outcome.result,ctx.now().toISOString());
       return store.withTransaction(async tx => {
+        await publishCriterionRequests(ctx,base.run,base.submissionRecord,criteria,outcome.result,tx);
+        if(outcome.prepared===undefined){const stored=await putResult(store,outcome.result,ctx.now().toISOString(),tx);await answerCriterionReview(ctx,base.run,stored,tx);return stored;}
+
         const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size+(outcome.refusals?.size??0), stored: [], not_stored: [...(outcome.refusals??new Map())].map(([item,reason])=>({item,reason})) };
         const eligible = new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
         const layer = ctx.deps.knowledge.layers!.contributions;
@@ -488,6 +496,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     return capability!==undefined&&tokens?.[1]==='items'&&tokens[3]==='slots'&&tokens[4]===capability.slot?{...error,requirement:capability.requirement}:error;
   });
   const structure = attribute([...slotProblems(workflow, run.items, submission), ...runtimeCheckProblems(workflow,run.items,submission)]);
+  if(submission.criterion_changes?.length&&!run.submission_due)structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','历史运行缺少提交期限，不能建立判据复核请求',{path:'/criterion_changes',fix:'以本运行为 predecessor 开新修订，取得明确提交期限后重交声明'}));
   const exactAttempts: Array<Record<string, unknown>> = [];
   const scope = await buildScope(ctx, run, workflow, user, 'function', exactAttempts);
   const resolver = createResolver(ctx, scope, 'function', exactAttempts);
@@ -563,7 +572,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { runtimeAdmission:evaluation.runtimeAdmission, result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
+    evaluation.result.errors.push(...(exact.criterionRefusals??[]));
+    return { criterionChanges:exact.criterionChanges, runtimeAdmission:evaluation.runtimeAdmission, result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);

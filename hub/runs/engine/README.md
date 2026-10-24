@@ -829,6 +829,52 @@ original labels and all stored bytes. A missing locked package or requirement ra
 fixed SOURCE_UNAVAILABLE code and an instruction to restore the locked package from backup before rereading or reusing the
 run. Current summaries do not acquire a dependency on reloading the package; list hydration shares a load per digest.
 
+## Criterion changes (W10)
+
+`criterion_changes` declares a proposed replacement without changing bound source bytes. The Hub resolves the criterion and
+all grounds and checks their quotes before accepting the submission; source-role errors refuse only that declaration.
+For a W10 tree criterion or quote, every provenance fragment must be a src reference whose exact digest is bound as expected
+in this run. Missing provenance, an unbound original or any mixed non-expected original locally refuses the declaration.
+The general tree citation role stays unchanged. This uses parsed reference syntax and explicit source bindings, without text
+heuristics.
+The ordinary checks and error-table budget still apply to the original run. Each accepted declaration creates a judgment
+request at its submission record and JSON pointer, with the original run's submission deadline. Resubmission of the same
+item and canonical criterion appends a superseding answer; it never edits the earlier request or result.
+
+A view-predecessor workflow cannot declare `default_from_predecessor`; publication requires an explicit binding rather
+than a defaulted predecessor result.
+
+The criterion-review workflow explicitly binds that submission, and its optional expected-role evidence slot binds the
+original fragments under the reviewer's own current rights. The account owner confirms acceptance or rejection; the Hub
+verifies identity, exact quotes, source family and the satisfied independent requirement. Author accounts are runner, or
+configurer when runner is absent, throughout the lineage. Session/model differences and client assertions cannot establish
+account independence. A shared predecessor opens only a view gate: it supplies no inherited leases, repair budget, client
+key or carry-over offer. Other workflows retain their owner/admin predecessor gate.
+
+A same-workflow revision freezes only answers already accepted at its start cutoff. Unanswered, expired-unanswered and
+rejected proposals remain visible with their request, named audience, deadline and next action. A late acceptance can enter
+a later revision, never an already-started one. Each separately submitted declaration needs its own review. Run records
+store only declaration/review references and reviewer accounts; checks receive the hydrated declarations in RunContext.
+Effective criteria continue across revisions until replaced again. Checks decide how to use them; the core changes no
+source content. Carry-over is withheld for affected items so old conclusions cannot bypass the changed context.
+
+Each result partition may show `replaced_criteria`: position, effective old value, new value, declaration, private review
+reference and reviewer. On repeated replacement, the old display value rolls from the preceding frozen new value, while the
+submitted old quote and all predecessor records retain their original bytes. Requests expose only the safe acceptance,
+reason and reviewer summary. Knowing the private review reference grants no access to its body. Start answers use their
+snapshot statuses; the original run page also shows the current safe answers to its own requests.
+
+This is the generic first stage. The case-compile consumer update waits for the integrator's hub-pack-findings merge and
+separate second-stage notification. Synthetic checks prove these boundaries, not a real human confirmation or device run.
+
+### Needs for the second stage
+
+The first stage hands the frozen new text and its declaration/review references to checks. It does not promote submission
+records to grounds: B01 still permits claim, validation result, action and effect records. The integrator must decide the
+reference boundary for a consumer that quotes the accepted new text itself. The proposed allowance is limited to the exact
+accepted declaration's `/new` fragment in the run that froze it, with current reader permissions and the review digest
+bound; it has not been implemented or presumed authorized. This does not block checks from comparing the already-frozen
+text through RunContext. The case-compile second stage remains deferred.
 
 ## Declared predecessor input defaults
 

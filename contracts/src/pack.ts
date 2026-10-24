@@ -5,6 +5,7 @@
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
+import {FrozenCriterion} from './criterion.ts';
 import {
   EffectClassSchema,
   EffectTriggerSchema,
@@ -158,6 +159,7 @@ export const RequirementTemplate = z
     layers: z.array(LayerSchema).min(1),
     accepted_producer: AcceptedProducerSchema,
     independent_of: z.literal('predecessor').optional().describe('an independent judgment is satisfied only by another session and model than the predecessor run (A04)'),
+    independence_by_account:z.boolean().optional().describe('A04: determine independence from authenticated non-author accounts, not client session/model declarations'),
     accepts_declared_independence: z.boolean().optional().describe('accept the independence the client declares (A04 R[4]); not accepted when absent'),
     checks: z.array(Key).describe('ids from checks.json that judge this requirement; none means no check is installed (reason no_check)'),
     expected: ExpectedOutcome.optional(),
@@ -167,6 +169,7 @@ export const RequirementTemplate = z
     run_table: z.boolean().optional().describe('whether submissions may add checks using inline tables (W04)'),
   })
   .superRefine((r, ctx) => {
+    if(r.independence_by_account&&r.independent_of!=='predecessor')ctx.addIssue({code:'custom',path:['independence_by_account'],message:'account independence requires independent_of predecessor'});
     if ((r.accepted_producer === 'independent_judgment') !== (r.independent_of !== undefined)) {
       ctx.addIssue({ code: 'custom', path: ['independent_of'], message: 'an independent judgment names what it is independent of, and only one does' });
     }
@@ -266,6 +269,8 @@ export const LeaseContextRow = z.strictObject({
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
+  accepted_criteria:z.array(FrozenCriterion).optional(),
+  criterion_review:z.strictObject({submission:z.string(),declarations:z.array(z.strictObject({pointer:z.string(),request:z.string()}))}).optional(),
   product: z.string().nullable(),
   names: z.array(z.string()).describe('every name of the bound product line (all of them name one line); empty when the run has no product'),
   line: z.string().nullable(),
@@ -470,6 +475,8 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
+    criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
     predecessor:z.literal('required').optional().describe('The service must reject start_run without an explicit predecessor; not an independent_of inference'),
     inputs: z.array(WorkflowInput).min(1),
     parameters: z.array(WorkflowParameter),

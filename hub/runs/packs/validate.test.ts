@@ -543,3 +543,18 @@ test('ledger shapes require a declared runtime table, an installed interpreter a
   assert.ok(empty.pack.warnings.some(w=>w.rule==='ledger.unruled'));
   assert.deepEqual((await accepted(base)).pack.warnings, []);
 });
+
+test('read-only predecessor publication requires every requirement to be independently checked',async()=>{
+ await refused(workflow(f=>{f.predecessor_access='view';}),'workflow.predecessor_access',{field:'/predecessor_access'});
+});
+test('criterion review publication requires an account-verified single requirement and read-only predecessor',async()=>{
+ await refused(workflow(f=>{f.criterion_review=true;}),'workflow.criterion_review',{field:'/criterion_review'});
+});
+
+test('read-only review publication forbids the declared predecessor result default',async()=>{
+ const {readFile}=await import('node:fs/promises'),root=new URL('../../../packs/workflow/criterion-review/',import.meta.url);
+ const manifest=JSON.parse(await readFile(new URL('pack.json',root),'utf8')),files:PackDescription['files']={};for(const file of manifest.files)files[file.path]=await readFile(new URL(file.path,root));
+ const review:PackDescription={...manifest,files};await accepted(review);
+ const defaulted=editJson<Json>(review,'workflow.json',file=>{file.inputs[0].default_from_predecessor={pack:'synthetic-author'};});
+ await refused(defaulted,'workflow.predecessor_default',{file:'workflow.json',field:'/inputs'});
+});

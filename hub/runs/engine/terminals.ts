@@ -339,6 +339,7 @@ export interface StatusInput {
   independence: IndependenceFinding | null;
   /** The template accepts the independence the client declares (A04 R[4]). */
   acceptsDeclared: boolean;
+  accountVerified?:boolean;
 }
 
 /**
@@ -352,7 +353,7 @@ export function requirementStatus(input: StatusInput): { status: RequirementStat
   if (input.layers.some(layer=>!isUnsettled(layer)&&!meets(layer,input.expectation,input.expectedRefutation,input.producer))) return {status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'};
   if (input.layers.some(isUnsettled)) return { status: 'pending' };
   if (!input.layers.every((l) => meets(l, input.expectation, input.expectedRefutation,input.producer))) return { status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch' };
-  if (input.independence !== null && !(input.independence === 'independent' && input.acceptsDeclared)) {
+  if (input.independence !== null && !(input.independence === 'independent' && (input.accountVerified||input.acceptsDeclared))) {
     return { status: 'unsatisfied', unsatisfied_reason: 'independence_unknown' };
   }
   return { status: 'satisfied' };
