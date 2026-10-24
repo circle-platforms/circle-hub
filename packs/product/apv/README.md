@@ -985,3 +985,5 @@ This step raises APV from 1.4.2 to 1.4.3, manual-store from 1.0.3 to 1.0.4 and O
 两条支线各自把 APV 记为 1.4.3 而内容不同（view-scope 一侧的构建时间失败诊断与未打标签说明，这一侧的产品级规格与未覆盖用例），合并后 APV 升为 1.4.4，按合并后的原字节重签（`node packs/product/apv/api.ts sign`）；manual-store 1.0.4 与 OpenKM 1.0.3 两侧不冲突，取较新的一版。
 
 Complete zero selections emit source inventory proofs: specifications cite the bound directory files/complete fields; uncovered cases cite the bound tree documents/complete fields. The core independently verifies both before accepting an empty product-wide root. The composition stores each observed list total and selected=0; sync and reads say “不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）”. An empty selection can clear previously populated scope content; unread/incomplete inventories cannot do so. Specification filenames are percent-encoded when made into external references and decoded for document metadata, so an authored @ never becomes revision syntax.
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。

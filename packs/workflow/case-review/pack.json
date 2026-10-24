@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.9",
+  "version": "1.0.11",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "0b6ee19e7e569ac3be57c034407ec66f16e5f88672fde8c8dfaafe6fb04a5b44",
-      "size": 8485
+      "sha256": "65c346301dbc0b94a3675bc0a2a696728278f9f34f282d7fc294661f3e7ce803",
+      "size": 8562
     },
     {
       "path": "functions/common.ts",
@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "4fec2878fa4cf48db688f15da6c7402545d98b9990b4d60857ecd3d328bc5c94",
-      "size": 27394
+      "sha256": "af20c30d16030b664a03606a15cc26cca4987832611c900fca7ba5ab57f52bcb",
+      "size": 27584
     },
     {
       "path": "functions/projection.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "95be8f43d37ed6eb2559a067d3841139e6f8f8ef2c4b5f1164a666b1e3e6f955",
-      "size": 8518
+      "sha256": "8fa9207fa246910a793fc4be8ba0bf1ea9f92fc8f1a847b9bc6c1542112d6ad9",
+      "size": 6322
     },
     {
       "path": "functions/subjects.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/tags.ts",
-      "sha256": "da839702a5d6b7e488ffa55276cada65a288d17aad61a25eea65a6e5f09ab483",
-      "size": 4639
+      "sha256": "178e954ef4d0918b5b6597248da3c2a25c2a2f1761d25179ef8fa503a03f8e60",
+      "size": 1686
     },
     {
       "path": "functions/template-coverage.ts",
@@ -93,8 +93,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a24272bf7147733287bd1a817eee02eb90d4b6efab94820919337853bbaa4597",
-      "size": 12902
+      "sha256": "1a1d39ac57b55578181730ccca43e6cf057b690ac0eb8319af378f9bb3049804",
+      "size": 13139
     },
     {
       "path": "requirements.json",
@@ -233,8 +233,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "e81b5bd6c074e58d017545e711556c07fc363f8eb3588ff9825bfc7ace025c25",
-      "size": 12370
+      "sha256": "8b51718d57757e1c971292526f6f91c6ae3b6ba76c240d662d6878159fab629e",
+      "size": 12416
     },
     {
       "path": "tables/command-claims.json",
@@ -263,8 +263,8 @@
     },
     {
       "path": "tables/template-v3.json",
-      "sha256": "53a6e4417b5253b195c80c922704601e1eab33af63f3261e9e23fb61805caace",
-      "size": 6439
+      "sha256": "29a0d7f90731d41ff889ceed51239d20fc10a043e8143bcea3f112259b1de358",
+      "size": 8599
     },
     {
       "path": "workflow.json",

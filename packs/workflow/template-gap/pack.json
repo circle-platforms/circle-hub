@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.1.3",
+  "version": "1.1.5",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "aa78b82078d13792ac92791c5c6167ce7d0ce2e507f3ac1f060ff6949e0be55d",
-      "size": 675
+      "sha256": "748bf86651c52dbb3a9306e7a037223e1a95c61beb50a0c1a826209cb0f85fa7",
+      "size": 957
     },
     {
       "path": "examples/command_partial_shortfall.json",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "ca52d84a5cd11c1ee3fe92f61421a5ab48dda1ae6b1fc1a4d5df848d649d6e2a",
-      "size": 15514
+      "sha256": "b32dc58023500d9361b7539deebadf8855ce33c843145faa136b44c9645837ab",
+      "size": 15571
     },
     {
       "path": "functions/command-check.ts",
@@ -78,23 +78,23 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "b2c3ee8010e70e7cfd5c92949a6827fa325271b26dc13acc135d4e9ccab9a952",
-      "size": 23564
+      "sha256": "1abc9068de232952c9020e27d02a817687e69a86a82969d50c34e3c650ee026d",
+      "size": 23925
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "87b6cea694c6a5256b085ffca8e1bc6561dc841491c582b07c8ee26de3462717",
-      "size": 1819
+      "sha256": "46099108509a8ecb7706833fc2388e81251a2d851d406dac3ec24b9e03091327",
+      "size": 1854
     },
     {
       "path": "functions/tags.ts",
-      "sha256": "82dfb9366c99160a958ca86bb720dae03b5c69d2020faa644ec72952e779f8ce",
-      "size": 3754
+      "sha256": "a70f8733b39e395bb6c6490d579aab7d0029d3da11fcd6487e21aba5415c9972",
+      "size": 826
     },
     {
       "path": "functions/template.ts",
-      "sha256": "5f43af18602bc59a8fcafe079422f9ed0d6f26edbfc9fe47dc250fb5c896699e",
-      "size": 9366
+      "sha256": "e727d49bd8adff5de0ba641d70f09d2a8f5dc2a9ccf26d1a30bd33cced5cb3fc",
+      "size": 9448
     },
     {
       "path": "functions/text.ts",
@@ -103,13 +103,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "0f134a4ad5d58c0e8381085741b9fcf3d240010d5d56e808cabcd69bf81c84d9",
-      "size": 5569
+      "sha256": "0fde779fcb44e4292a259bd60b8bc7d79e443c7b2ba6ed5e56acc7b05980277e",
+      "size": 5821
     },
     {
       "path": "requirements.json",
-      "sha256": "e1f47d79d088ffe50c9e2e62bc4ef841794f7393b842c8269efc7fbfdbfe466d",
-      "size": 1231
+      "sha256": "23b1c3e5bae40ed9d1e8d924a95184f2a05b5952cb1a83f1d633253d2cf950ec",
+      "size": 1695
     },
     {
       "path": "samples/negative/command_absent.json",
@@ -183,8 +183,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "8dbe37577adaa3c77321b0d9a8dce2e7ee0af659f8113781cfa47f881cd2cf74",
-      "size": 6929
+      "sha256": "7dab655b82e63543c06f14e8472b30c9664e40f5df68029a5e31dfd06ecd9537",
+      "size": 7200
     },
     {
       "path": "tables/template-v3-coverage.json",
@@ -193,8 +193,8 @@
     },
     {
       "path": "tables/template-v3.json",
-      "sha256": "6f89cac979578f9a9c607d4fcbe1f345c71b11d7d499fd10a3c9ec0c67d2981b",
-      "size": 6049
+      "sha256": "d882f638055df3ef02bfb67d364f8425662717444d3687d061ba25e372e4bdce",
+      "size": 8597
     },
     {
       "path": "workflow.json",
