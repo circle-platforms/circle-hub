@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1`: names `[APV, NSAE]`; deployment variables below; sync start `buildsite:listing:index`, plan `functions/sync.ts`, up to 10 rounds; producers `command-tree`, independent `manual-apv` and `manual-nsae`, `release-notes`, `cases`; each family manual has its own `root`, `main`, `attributes.<family>` references, directory metadata slot and one bounded complete chapter-list slot |
+| `product.json` | `product@1`: names `[APV, NSAE]`; deployment variables below; sync start `buildsite:listing:index`, plan `functions/sync.ts`, up to 10 rounds; producers `command-tree`, independent `manual-apv` and `manual-nsae` (the `release-notes`, `cases`, `specifications` and `unversioned-cases` producers were removed from the declaration on the owner's 10-24 revision: cases, defects and specifications are fed by Circle, not batch-produced; the functions stay for the per-use projection); each family manual has its own `root`, `main`, `attributes.<family>` references, directory metadata slot and one bounded complete chapter-list slot |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -141,8 +141,7 @@ Producers (K02, K04, C07)
   reachable only through direct calls of `produceManualEntries` or the default export: the producer reads markdown@1
   slots only, so no catalog span reaches a production. The release-note defects keep `path: null` under the default
   `code_only`: they stay unplaced at the root and nothing leaves the Hub; offering them to the bot's verified placement
-  proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
-  prevent internal defects and test case titles from leaving the Hub.
+  proposals (K04 R[6]) is an owner decision. `command-tree` keeps default `code_only` to prevent internal defects from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
   `data` is catalog-entry@1 without `reference`. STRING/XSTRING map to string, U16/U32 retain their unsigned
   numeric bounds, DOTTEDIP to IPv4, IPADDR to either address family, IPMASK to a mask or prefix length. Explicit
@@ -785,10 +784,8 @@ a document twice or listed twice doubles nothing, a document alone gives its ent
 every document that carries `external` and does not guess the rest; a case with no command and a case with no command
 tree still produce an empty-path entry; a case id copied onto an expected-result leaf; hostile input; one batch at scale;
 the sandbox) and
-`cases-integration.test.ts` (the real registry, connectors and knowledge service: the sync produces both builds, the facet
-view by line and module, the index view by document with the entries' data and the impact view of the two builds (changed
-commands and exactly the cases filed on them) equal to the truth, the NSAE alias reads the APV base's root, a second sync
-skips every build, an agile outage lists no build and moves no current root).
+`cases-integration.test.ts` was removed with the case-index declaration (the owner's 10-24 revision: cases are fed per
+use by Circle, not batch-produced; see `docs/hub-r4-tasks/kb-seedling.md`).
 
 `functions/adapters.test.ts` tests the product.json entry points against the product@1 shapes (good, malformed and hostile
 input); `functions/sandbox.test.ts` and the adapters' sandbox suite run them in the Hub sandbox (skipped where sandbox-exec is
@@ -976,7 +973,7 @@ The `specifications` producer runs only with `unversioned: true`. Supported Mark
 
 The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
 
-The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+The `unversioned-cases` and `specifications` declarations were removed from `product.json` on the owner's 10-24 revision (see `docs/hub-r4-tasks/kb-seedling.md`): cases, defects and specifications are no longer batch-produced into per-build or product-wide roots; Circle feeds them per use, and the functions (`cases.ts`, `specifications.ts`, `fixed-bugs.ts`) stay for that projection. Existing per-build roots are neither deleted nor extended by this change.
 
 Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
 

@@ -107,6 +107,8 @@ export interface ProduceInput {
   listingDigest?:string;
   retrySkipped?:boolean;
   refreshSources?:ReadonlySet<string>;
+  /** Run only these producer ids of the pack (the seedling production names its three); undefined runs all of the scope. */
+  producers?: readonly string[];
 }
 
 export interface ProduceResult {
@@ -507,7 +509,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};
   }
   input={...input,variables:productionVariableUses(product,build===null,input.variables??[])};
-  product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null)) } };
+  product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null) && (input.producers === undefined || input.producers.includes(p.id))) } };
   product.product.catalogs = product.product.catalogs.filter(catalog => catalog.producer === undefined || product.product.producers.some(producer => producer.id === catalog.producer));
   // The build's own identity goes into every record of the production, the failure included: it is checked first.
   // infoOf deliberately strips the KnownBuild root before validation.

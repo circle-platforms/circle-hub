@@ -130,13 +130,8 @@ function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unk
 }
 
 describe('the declaration', () => {
-  it('the producer reads the case documents in batches of 40, the command tree and the agile tree', () => {
-    assert.deepEqual(declared?.inputs, {
-      documents: { source: 'case_documents', many: true, batch: 40, optional: true },
-      tree: { source: 'tree' },
-      folders: { source: 'case_tree', optional: true },
-    });
-    assert.equal(declared?.params, undefined);
+  it("the producer is no longer declared in product.json (the owner's 10-24 revision: cases are fed per use)", () => {
+    assert.equal(declared, undefined);
   });
 });
 

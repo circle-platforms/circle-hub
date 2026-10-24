@@ -80,6 +80,8 @@ export const INDEX = {
   buildBase: 'knowledge.build.base',
   pointer: 'knowledge.pointer',
   pointerMove: 'knowledge.pointer.move',
+  seedling: 'knowledge.seedling',
+  seedlingRoot: 'knowledge.seedling.root',
   reuse: 'knowledge.jev.reuse',
   judgmentInput: 'knowledge.jev.input',
   calibration: 'knowledge.calibration',
