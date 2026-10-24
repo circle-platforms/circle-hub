@@ -85,8 +85,8 @@ export class RecordAuthorizations implements Authorizations {
     this.#now = now;
   }
 
-  async grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord> {
-    return this.#decide(by, input, false);
+  async grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord> {
+    return this.#decide(by, input, false, tx);
   }
 
   async revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord> {
@@ -142,6 +142,11 @@ export class RecordAuthorizations implements Authorizations {
   async configureResource(by: Principal, resourceId: string, bound: string, reason?: string | null): Promise<AuthorizationRecord> {
     if (!isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
     return this.grant(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason });
+  }
+
+  async configureResourceInTransaction(by: Principal, object: string, bound: string | null, reason: string, tx: Transaction, revoked = false): Promise<AuthorizationRecord> {
+    if (!revoked && !isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, revoked, tx);
   }
 
   async resourceConfig(resourceId: string): Promise<AuthorizationRecord | null> {

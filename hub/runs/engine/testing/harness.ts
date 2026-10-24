@@ -29,6 +29,7 @@ export interface HarnessOptions {
   limits?: Partial<Limits>;
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
+  leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
 }
 
 export interface Harness {
@@ -78,7 +79,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const admin = principal(adminUser);
     const alice = principal(await kit.principals.createUser(admin, '甲'));
     const bob = principal(await kit.principals.createUser(admin, '乙'));
-    const workflows = new FakeWorkflowStore();
+    const workflows = new FakeWorkflowStore(alice.id);
     const review = await workflows.add(await writePack(dir, reviewPack({ ...(options.review ?? {}), ...(options.dataQuotes !== undefined ? { dataQuotes: options.dataQuotes } : {}) })));
     const verify = await workflows.add(await writePack(dir, verifyPack({ acceptsDeclared: options.verifyAcceptsDeclared })));
     const locate = await workflows.add(await writePack(dir, locatePack()));
@@ -104,7 +105,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       knowledge,
       external,
       now,
-      ...(leases !== null ? { leases } : {}),
+      ...(leases !== null ? { leases, leaseJobs: options.leaseJobs ?? (async () => []) } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),
       adminLog: (entry) => logs.push(entry),

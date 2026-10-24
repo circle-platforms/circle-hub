@@ -2,16 +2,18 @@
 // - system@1: the system pack profile (system.json): roles, authentication, the route allow-list and the reads with their
 //   planner and projection functions. Product dialect stays in the pack's functions and settings, never in the core.
 // - resource@1: a deployment instance of a system (admin-managed, never in Git): the exact system pack version and digest,
-//   base URL per role, the origins allowed to carry credentials over plain HTTP, the vault entry names and digest rules of
+//   base URL per role, the origins allowed to carry credentials over plain HTTP, the vault entry names of
 //   its credentials and non-secret settings.
 // - read-manifest@1: the action record of one read (B05): what was requested, through which routes, when, the digests of
 //   every response and derived artifact, and the coverage the Hub computed.
 // - read-plan-*@1, read-projection-*@1: inputs and outputs of the planner and projection functions of a system pack.
-// The closed sets below (HTTP methods, response kinds, authentication kinds, password digest rules, header schemes, expiry
+// The closed sets below (HTTP methods, response kinds, authentication kinds, header schemes, expiry
 // units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
-import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
+import { SecretReference, VariableUse } from './variables.ts';
+import type {ProtocolCode} from '../generated/protocol.ts';
+import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
 import { ExternalObjectId } from './reference.ts';
@@ -24,9 +26,6 @@ export const RESPONSE_KINDS = ['json', 'text', 'xml', 'html', 'bytes'] as const;
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
 export const AUTH_KINDS = ['none', 'static_header', 'login_token'] as const;
 export type AuthKind = (typeof AUTH_KINDS)[number];
-/** How a credential is kept in the vault and sent: as given, or Base64(SHA-512(UTF-8 of the value)). */
-export const DIGEST_RULES = ['plain', 'sha512_base64'] as const;
-export type DigestRule = (typeof DIGEST_RULES)[number];
 /** raw: the header value is the token itself; bearer: `Bearer <token>`. */
 export const HEADER_SCHEMES = ['raw', 'bearer'] as const;
 export type HeaderScheme = (typeof HEADER_SCHEMES)[number];
@@ -372,6 +371,8 @@ export const RouteDeclaration = z
     headers: z.record(HeaderName, HeaderValue).optional().describe('fixed request headers, for example Depth: 1'),
     response: z.enum(RESPONSE_KINDS),
     max_bytes: z.number().int().min(1).max(MAX_ROUTE_BYTES).describe('a longer response is an error; it is never truncated'),
+    pagination:z.strictObject({max_pages:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('The planner may request further pages within this finite bound; no hidden fetch or truncated completion'),
+    redirects:z.strictObject({same_origin:z.literal(true),max_hops:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('Each same-origin hop is another planned, recorded read request; never a transport auto-follow'),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),
     envelope: EnvelopeMode.optional().describe('check the system envelope of a JSON answer: true, when_present or false'),
     parse: Versioned.optional().describe('a core parser whose model the read functions get besides the text'),
@@ -422,7 +423,7 @@ export const HeaderDeclaration = z.strictObject({ name: HeaderName, scheme: z.en
 
 export const CredentialDeclaration = z.strictObject({
   name: CredentialName,
-  digest: z.enum(DIGEST_RULES).describe('what the vault keeps and the request carries: the value as given, or Base64(SHA-512(value))'),
+  digest: DigestRuleSchema.describe('what the vault keeps and the request carries: the value as given, or Base64(SHA-512(value))'),
   description: Description.optional(),
 });
 
@@ -653,8 +654,8 @@ export const ResourceRecord = z
     environment: EnvironmentSchema,
     origins: z.record(RoleName, BaseUrl).describe('base URL of each role of the system pack'),
     allow_plaintext: z.array(z.string().max(300)).max(16).describe('origins (scheme://host[:port]) whose plain HTTP may carry credentials'),
-    credentials: z.record(CredentialName, VaultEntryName).describe('vault entry of each credential the system pack declares'),
-    credential_digests: z.record(CredentialName, z.enum(DIGEST_RULES)).describe('the digest rule each credential is kept under in the vault'),
+    credentials: z.record(CredentialName, z.union([VaultEntryName, SecretReference])).describe('named secret reference of each credential; legacy vault entry names are decoded only for history'),
+    credential_digests: z.record(CredentialName, DigestRuleSchema).describe('the digest rule each credential is kept under in the vault'),
     settings: z.record(z.string(), z.unknown()).describe('non-secret deployment values handed to the read functions as input.settings'),
     limits: ResourceLimits.optional(),
     created_by: UserId,
@@ -682,6 +683,16 @@ export const ResourceRecord = z
     }
     if (size > 64 * 1024) ctx.addIssue({ code: 'custom', path: ['settings'], message: 'settings are at most 64 KiB of JSON' });
   });
+/** Activation/routing snapshot supplied by the registry, including the types declared by each bound system pack. */
+export const ReadResourceRoutingSet=z.array(z.strictObject({resource:ResourceId,environment:EnvironmentSchema,enabled:z.boolean(),types:z.array(ExternalType).min(1)})).superRefine((resources,ctx)=>{
+  const owners=new Map<string,string>();
+  resources.forEach((resource,index)=>{if(!resource.enabled)return;resource.types.forEach((type,at)=>{
+    const key=resource.environment+':'+type,old=owners.get(key);
+    if(old!==undefined&&old!==resource.resource)ctx.addIssue({code:'custom',path:[index,'types',at],message:'an environment and external type have at most one enabled resource'});
+    owners.set(key,resource.resource);
+  });});
+});
+
 export type ResourceRecord = z.infer<typeof ResourceRecord>;
 
 // ---------------------------------------------------------------- read functions: planner and projection
@@ -788,14 +799,25 @@ export const DerivedArtifact = z
   });
 export type DerivedArtifact = z.infer<typeof DerivedArtifact>;
 
+/** A system-level observation of absence, not a permission-neutral failure. */
+export const SourceAbsent=z.strictObject({
+  code:z.literal('SOURCE_ABSENT' satisfies ProtocolCode),
+  system:PackId,
+  object:ExternalObjectId,
+  observed_at:IsoTime,
+  responses:z.array(RequestKey).min(1).optional().describe('Stored response keys that support the observation; the service verifies them against the current read'),
+});
+export type SourceAbsent=z.infer<typeof SourceAbsent>;
+
 export const ReadProjectionOutput = z.union([
   z.strictObject({
     revision: z.string().min(1).max(200).nullable().optional().describe('the revision of the object, when the system has one'),
     artifacts: z.array(DerivedArtifact).max(MAX_DERIVED_ARTIFACTS),
+    absent:SourceAbsent.optional().describe('A determinate authorized absence; the service binds its originals and never turns permission denial into this observation'),
     complete: z.boolean().optional().describe('false when the projection saw that the read did not cover the object; it never makes coverage complete'),
     note: z.string().max(500).optional(),
     warnings: z.array(z.string().max(500)).max(50).optional(),
-  }),
+  }).superRefine((output,ctx)=>{if(output.absent!==undefined){if(output.artifacts.length)ctx.addIssue({code:'custom',path:['artifacts'],message:'an absent object has no found-content artifacts'});if(output.complete===false)ctx.addIssue({code:'custom',path:['complete'],message:'an incomplete lookup cannot assert whole-object absence'});}}).meta({allOf:[{if:{required:['absent'],properties:{absent:{}}},then:{properties:{artifacts:{type:'array',maxItems:0},complete:{const:true}}}}]}),
   z.strictObject({
     error: z.strictObject({ code: z.string().min(1).max(100), message: z.string().max(2000) }),
     warnings: z.array(z.string().max(500)).max(50).optional(),
@@ -855,6 +877,7 @@ export const ReadManifest = z.strictObject({
     z.strictObject({ name: z.string(), record: Sha256, sha256: Sha256, media_type: z.string(), size: z.number().int().nonnegative() }),
   ),
   coverage: Coverage,
+  variables: z.array(VariableUse).optional().describe('exact named deployment decisions used by this read'),
   reason: z.string().max(2000).nullable().describe('why the read failed, for the admin log'),
   warnings: z.array(z.string().max(500)).max(50),
 });

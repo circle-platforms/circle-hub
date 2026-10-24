@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
@@ -45,7 +46,7 @@ describe('reads through the connectors with Basic authentication', () => {
     postgres = await startPostgres();
     kit = await openSystemKit(postgres, ['openkm']);
     store = await startGuardedStore(manualStoreFiles(), SYNTHETIC_AUTHORIZATION, PREFIX);
-    resource = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'openkm', name: '合成文档库', environment: 'test', origins: { openkm: `${store.origin}${PREFIX}` }, allow_plaintext: [store.origin] })).id;
+    resource = (await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, { system_pack: 'openkm', name: '合成文档库', environment: 'test', origins: { openkm: `${store.origin}${PREFIX}` }, allow_plaintext: [store.origin] })).id;
   });
   after(async () => {
     await store?.close();
@@ -62,7 +63,7 @@ describe('reads through the connectors with Basic authentication', () => {
   });
 
   test('with the credential every request carries it; the search and the manuals read as in the manual store', async () => {
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'authorization', SYNTHETIC_AUTHORIZATION);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'authorization', SYNTHETIC_AUTHORIZATION);
     const manual = await read('openkm:cli:7.1');
     assert.equal(manual.ok, true, manual.ok ? '' : manual.reason);
     const search = await read(`openkm:spec-search:${SPEC_SEARCH_TERMS.join('+')}`);
@@ -75,7 +76,7 @@ describe('reads through the connectors with Basic authentication', () => {
   });
 
   test('a refused credential stops: it is not sent again until an admin acts', async () => {
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'authorization', 'Basic d3Jvbmc6Y3JlZGVudGlhbA==');
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'authorization', 'Basic d3Jvbmc6Y3JlZGVudGlhbA==');
     assert.equal((await read(`openkm:file:spec/${encodeURIComponent('日志导出配置.md')}`)).ok, false);
     const refused = store.refused;
     assert.ok(refused >= 1);

@@ -97,7 +97,7 @@ export type AddressReading =
 
 export interface LeaseRow {
   key: string;
-  until: string;
+  until: string | null;
   mine?: boolean;
 }
 
@@ -115,7 +115,7 @@ export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: 
     }
   }
   const prefix = `bed/${bed.name}/ip/`;
-  const leased = leases.some((row) => row.mine === true && row.until > now && typeof row.key === 'string' && row.key.startsWith(prefix) && addressKey(row.key.slice(prefix.length)) === key);
+  const leased = leases.some((row) => row.mine === true && (row.until === null || Date.parse(row.until) > Date.parse(now)) && typeof row.key === 'string' && row.key.startsWith(prefix) && addressKey(row.key.slice(prefix.length)) === key);
   return leased ? { kind: 'allocated' } : { kind: 'off_bed' };
 }
 

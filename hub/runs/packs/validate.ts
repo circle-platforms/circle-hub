@@ -1,6 +1,7 @@
 // Validation of a pack read from its directory (T01, W02, W03, W05, C05, C07, A03): every declaration file parsed with its
 // contract shape, then the rules that hold ACROSS files. Messages are Chinese, name the file and the field and say how to
 // fix; nothing is published while one problem remains. Product dialect never appears here: only the shapes and the rules.
+import { packSchema } from '../engine/slots.ts';
 import type { z } from 'zod';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { ERROR_HANDLING, isCheckTier, labelOf, TARGET, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
@@ -10,7 +11,7 @@ import {
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
-  RequirementsFile,
+  PublishableRequirementsFile,
   SlotsFile,
   WorkflowFile,
   type CheckEntry,
@@ -241,7 +242,7 @@ function judgmentRequirement(r: { accepted_producer: string }): boolean {
 async function validateWorkflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<{ declarations: WorkflowDeclarations; samples: LoadedSample[] } | null> {
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
-  const requirements = c.parse('requirements.shape', 'requirements.json', RequirementsFile, 'requirements@1');
+  const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);
@@ -370,7 +371,12 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       });
       const interpreters = new Set(r.checks.map((id) => interpreterOf.get(id)).filter((x): x is string => x !== undefined));
       r.error_handling.forEach((row, k) => {
-        const field = `/requirements/${i}/error_handling/${k}/code`;
+        const field = `/requirements/${i}/error_handling/${k}/${row.reason!==undefined?'reason':'code'}`;
+        const selector=row.reason!==undefined?'原因 '+labelOf('reason',row.reason):row.code;
+        if(row.reason!==undefined && row.action==='reject'){
+          c.add(problem('requirements.reject_scope','requirements.json','原因行不能处理为进已拒收；进已拒收只用于待判定产物上的阻断检查码','按原因声明修复或其他允许动作，按检查码声明已拒收',{field:'/requirements/'+i+'/error_handling/'+k+'/action'}));
+          return;
+        }
         if (row.action === 'reject' && !r.checks.some((id) => blockingOnArtifact.has(id))) {
           const artifact = labelOf('source_role', 'artifact_under_verification');
           const others = ERROR_HANDLING.filter((a) => a !== 'reject').map((a) => labelOf('error_handling', a));
@@ -378,12 +384,14 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
             problem(
               'requirements.reject_scope',
               'requirements.json',
-              `要求项 ${r.key} 把 ${row.code} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
+              `要求项 ${r.key} 把 ${selector} 处理为${labelOf('error_handling', row.action)}，但它没有判定${artifact}的${tierText('blocking')}检查；${labelOf('error_handling', 'reject')}只用于${artifact}上的${tierText('blocking')}检查码（W02 F[7]）`,
               `改成${others.join('、')}之一，或者让这个要求项带一个判定${artifact}的${tierText('blocking')}检查`,
               { field: `/requirements/${i}/error_handling/${k}/action` },
             ),
           );
         }
+        // Cause selectors were checked by the generated ReasonSchema, not an installed interpreter.
+        if(row.code===undefined)return;
         if (!isKnownCode(row.code, manifest.id)) {
           c.add(problem('requirements.unknown_code', 'requirements.json', `要求项 ${r.key} 的错误处理行用了未知的码 ${row.code}`, `用 *、核心违规码、协议码，或者包自己的码（${manifest.id}.<码>）`, { field }));
         } else if (Object.hasOwn(CORE_VIOLATION_CODES, row.code)) {
@@ -499,6 +507,10 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
 async function validateProduct(c: Collector, policy: ImportPolicy): Promise<PackDeclarations | null> {
   const product = c.parse('product.shape', 'product.json', ProductDeclaration, 'product@1', 'contracts/src/product.ts');
   if (!product) return null;
+  for (const [i, variable] of (product.variables ?? []).entries()) {
+    const compiled = packSchema(variable.schema);
+    if (!compiled.ok || !compiled.schema.safeParse(variable.default).success) c.add(problem('variables.schema', 'product.json', `变量 ${variable.name} 的模式不能执行或默认值不合模式`, '按 Hub 支持的 JSON Schema 2020-12 写模式并提供合成默认值', {field:`/variables/${i}`}));
+  }
   product.names.forEach((name, i) => {
     if (name.trim() !== name) c.add(problem('product.name_space', 'product.json', `产品名 ${JSON.stringify(name)} 首尾有空白，调用方写的名字对不上`, '去掉首尾空白', { field: `/names/${i}` }));
   });
@@ -533,6 +545,11 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   for (const p of await scanTools(c.files)) c.add(p);
   for (const p of versionProblems(manifest)) c.add(p);
   for (const p of credentialProblems(directory)) c.add(p);
+  for (const file of directory.files) {
+    if (manifest.kind === 'product' && file.path === 'product.json') continue;
+    const text = utf8(file.bytes);
+    if (text && /\$\{(?:var|secret):/i.test(text)) c.add(problem('variables.reference',file.path,'这里不能引用变量或密钥','只在产品包 product.json 的 sync.options 或生产器 params 里引用已声明的普通变量'));
+  }
   for (const [i, file] of manifest.files.entries()) {
     const owner = DECLARATION_KIND.get(file.path);
     if (owner !== undefined && owner !== manifest.kind) {

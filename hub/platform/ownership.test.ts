@@ -2,7 +2,7 @@
 // platform's code may import nothing but contracts). As `serve --migrate-only` does, the superuser role that owns the Hub
 // database migrates and grants the application role (migrateRecords with runtimeRole); as `serve` does, the kit runs as
 // the application role without migrating. The application role appends, and every statement that would delete,
-// truncate, drop, alter or disable the triggers of a table is refused with 42501, before and after a backup, a destroy
+// truncate, drop, alter or disable the triggers of a history table is refused with 42501, before and after a backup, a destroy
 // and a restore.
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
@@ -26,6 +26,7 @@ const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
   record_index: 'value',
+  record_keys: 'key',
   objects: 'media_type',
   user_history: 'name',
   call_logs: 'tool',
@@ -34,6 +35,7 @@ const COLUMN: Record<string, string> = {
   tokens: 'label',
   pointers: 'name',
   leases: 'key',
+  lease_registrations: 'owner',
 };
 
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
@@ -43,8 +45,8 @@ function tamperingStatements(): string[] {
     const column = COLUMN[table];
     assert.ok(column, `a column for ${table}`);
     out.push(
-      `DELETE FROM ${table}`,
-      `UPDATE ${table} SET ${column} = ${column}`,
+      // The ownership registry is mutable derived state; every other table keeps its original forbidden-row probes.
+      ...(table === 'lease_registrations' ? [] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,
@@ -95,6 +97,12 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   /** The statements the application role ran or that failed with another SQLSTATE than 42501. */
   const notRefused = () =>
     withSession(control.applicationConnector, control.target.database, async (session) => {
+      // The registered-prefix projection must remain writable before and after restoration, without granting DDL.
+      await session.query("INSERT INTO lease_registrations (prefix, owner, registered_at) VALUES ('test/ownership/', 'synthetic-owner', now())");
+      await session.query("UPDATE lease_registrations SET owner = 'synthetic-next' WHERE prefix = 'test/ownership/'");
+      assert.deepEqual(await session.query("SELECT owner FROM lease_registrations WHERE prefix = 'test/ownership/'"), [{ owner: 'synthetic-next' }]);
+      await session.query("DELETE FROM lease_registrations WHERE prefix = 'test/ownership/'");
+      assert.deepEqual(await session.query("SELECT owner FROM lease_registrations WHERE prefix = 'test/ownership/'"), []);
       const out: string[] = [];
       for (const statement of tamperingStatements()) {
         const code = await sqlState(session, statement);
@@ -148,7 +156,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       for (let n = 0; n < 5; n++) {
-        const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, index: [{ key: 'synthetic.n', value: String(n) }] });
+        const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, unique_key: `synthetic.${n}`, index: [{ key: 'synthetic.n', value: String(n) }] });
         appended.push({ id: record.id, digest: record.digest });
       }
       await kit.objects.put(Buffer.from('合成对象'), 'text/plain');
@@ -199,6 +207,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     try {
       for (const record of appended) assert.equal((await kit.store.get(record.digest))?.id, record.id);
       assert.equal(await kit.vault.getText('synthetic.entry'), '合成');
+      assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');
       await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n: 99, text: '恢复之后' } });
     } finally {
       await kit.close();

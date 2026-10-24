@@ -6,6 +6,11 @@
       "type": "string",
       "const": "workflow@1"
     },
+    "predecessor": {
+      "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
+      "type": "string",
+      "const": "required"
+    },
     "inputs": {
       "minItems": 1,
       "type": "array",
@@ -231,15 +236,14 @@
           "pattern": "\\/$"
         },
         "max_ttl_seconds": {
+          "description": "the ceiling of one lease request's TTL and of the cumulative extension (D04 R[0])",
           "type": "integer",
           "exclusiveMinimum": 0,
-          "maximum": 2592000,
-          "description": "the ceiling of one lease request's TTL and of the cumulative extension (D04 R[0])"
+          "maximum": 2592000
         }
       },
       "required": [
-        "prefix",
-        "max_ttl_seconds"
+        "prefix"
       ],
       "additionalProperties": false
     }

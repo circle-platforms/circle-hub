@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../../hub/connectors/testing/credentials.ts';
 // The case index end to end through the real Hub packages: the pack registry publishes the agile-platform, build-site and
 // apv packs (publish checks included), the connectors read a synthetic agile platform (the case-index corpus with the
 // product's two roots) and a synthetic build site (two released builds whose command trees differ, an NSAE alias), the
@@ -90,7 +91,7 @@ before(async () => {
   agile = await startAgileStub(caseIndexAgileOptions(corpus));
   buildSite = await startBuildSiteStub(site());
   connectors = createConnectors({ records: kit, packs, log: () => undefined, sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
-  const resource = await connectors.admin.addResource(admin, {
+  const resource = await addSyntheticResource(kit, packs, connectors, admin, {
     system_pack: 'agile-platform',
     name: '合成敏捷平台',
     environment: 'test',
@@ -98,9 +99,9 @@ before(async () => {
     allow_plaintext: [agile.origin],
     settings: { roots: corpus.roots },
   });
-  await connectors.admin.setCredential(admin, resource.id, 'username', CASE_INDEX_ACCOUNT.username);
-  await connectors.admin.setCredential(admin, resource.id, 'password', CASE_INDEX_ACCOUNT.password);
-  await connectors.admin.addResource(admin, { system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${buildSite.origin}/builds` }, settings: { index_page: 'index.html' } });
+  await setSyntheticCredential(kit, connectors, admin, resource.id, 'username', CASE_INDEX_ACCOUNT.username);
+  await setSyntheticCredential(kit, connectors, admin, resource.id, 'password', CASE_INDEX_ACCOUNT.password);
+  await addSyntheticResource(kit, packs, connectors, admin, { system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${buildSite.origin}/builds` }, settings: { index_page: 'index.html' } });
   knowledge = createKnowledge({ records: kit, parsers: createDefaultRegistry(), packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
   views = createKnowledgeReader(knowledge);
   apv = (await packs.productById('apv')) as ProductHandle;

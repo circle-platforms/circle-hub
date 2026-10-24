@@ -154,6 +154,11 @@
               "independent_judgment"
             ]
           },
+          "observation": {
+            "description": "The declared P07 observation contract for the dynamic layer",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
           "repair_rounds": {
             "type": "integer",
             "minimum": 0,

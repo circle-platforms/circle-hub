@@ -395,6 +395,11 @@ export class LoginManager {
    * it, renewed the token or stopped, or have a login in flight, whose result is waited for. `fresh`: the token is
    * unconfirmed, so an "expired" answer to it is a refusal.
    */
+  /** Read-only fast path; the caller checks the shared version stop before sending. Never starts a login. */
+  async cachedToken():Promise<{token:string;fresh:boolean}|null> {
+    await this.#store.ready();const s=this.#store.state;
+    return this.#usable(s)&&s.token!==null?{token:s.token,fresh:s.unconfirmed}:null;
+  }
   async token(): Promise<{ token: string; fresh: boolean }> {
     await this.#store.ready();
     for (;;) {
@@ -590,7 +595,7 @@ export class LoginManager {
       for (const [name, entry] of Object.entries(this.#o.credentials)) {
         const value = await this.#o.vault.getText(entry);
         if (value === null || value === '') throw new ConnectorError('CREDENTIAL_MISSING', `资源 ${this.#o.resource} 的凭据 ${name} 还没有设置`, { detail: { credential: name } });
-        this.#o.redactor.add(value);
+        this.#o.redactor.addSent(value);
         values[name] = value;
       }
       body = fillTemplate(this.#o.login.body, values);

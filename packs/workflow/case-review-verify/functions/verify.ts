@@ -184,7 +184,7 @@ export function suggestionTargets(input:unknown):CheckOutcome[] {
   const anchor=items.find(item=>isRecord(item.slots)),own=typeof anchor?.id==='string'?{item:anchor.id}:{};
   const suggestions=records(subject.cross_item).flatMap((claim,index)=>claim.code==='suggestion'?[{claim,index}]:[]);
   if(suggestions.length===0)return [{verdict:'support',statement:'没有改进建议，无需补充落点',grounds:[],tier:TIER,...own}];
-  if(!anchor)return [{verdict:'unknown',reason:'missing_input',statement:'改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议',grounds:[],tier:TIER,data:{fix:'先把一个用例按 handled 提交复核，再重新提交建议'}}];
+  if(!anchor)return [{verdict:'unknown', missing: '尚未取得本检查所需的事实：' + ('改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议'),reason:'missing_input',statement:'改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议',grounds:[],tier:TIER,data:{fix:'先把一个用例按 handled 提交复核，再重新提交建议'}}];
   const digest=targetDigest(items),out:CheckOutcome[]=[];
   for(const {claim,index} of suggestions){
     const pointer='/cross_item/'+index,grounds=Array.isArray(claim.grounds)?claim.grounds:[];
@@ -202,7 +202,7 @@ function totally(run: (input: unknown) => CheckOutcome[], name: string): (input:
     try {
       return run(input);
     } catch {
-      return [{ verdict: 'unknown', reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier: TIER }];
+      return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`检查 ${name} 内部出错（任务包的缺陷）`), reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier: TIER }];
     }
   };
 }

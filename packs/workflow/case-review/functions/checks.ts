@@ -93,7 +93,7 @@ export function negativeCommands(input:unknown):CheckOutcome[] {
   const phrases=Array.isArray(subject.phrases)?subject.phrases.filter((p):p is string=>typeof p==='string'):[];
   if(subject.negative!==true)return [{verdict:'support',statement:'未声明反向标记，此项不要求非法命令行',grounds:[],tier:'advisory',...own}];
   const catalog=isRecord(raw.catalog)?raw.catalog:{};
-  if(!Array.isArray(raw.catalog)&&!Array.isArray(catalog.entries))return [{verdict:'unknown',reason:'missing_input',statement:'缺少冻结命令目录；请集成者选择有命令目录的构建或恢复目录绑定后重开评审，不能据此断言用例没有命令',grounds:[],tier:'advisory',...own}];
+  if(!Array.isArray(raw.catalog)&&!Array.isArray(catalog.entries))return [{verdict:'unknown',reason:'missing_input',missing:'冻结命令目录；下一步：请集成者选择有命令目录的构建或恢复目录绑定后重开评审',statement:'缺少冻结命令目录；请集成者选择有命令目录的构建或恢复目录绑定后重开评审，不能据此断言用例没有命令',grounds:[],tier:'advisory',...own}];
   const entries=Array.isArray(raw.catalog)?raw.catalog.filter(isRecord):Array.isArray(catalog.entries)?catalog.entries.filter(isRecord):[];
   const fold=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();
   const found=phrases.filter(phrase=>entries.some(entry=>{
@@ -141,7 +141,7 @@ function total(run: (input: unknown) => CheckOutcome[], name: string, tier: Chec
     try {
       return run(input);
     } catch {
-      return [{ verdict: 'unknown', reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier }];
+      return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`检查 ${name} 内部出错（任务包的缺陷）`), reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier }];
     }
   };
 }

@@ -4,11 +4,11 @@ import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
-import { sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
+import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
+import { sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
-import { readSecret } from './assemble/secret-input.ts';
 import { UsageError } from './errors.ts';
-export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> [--secret] | list | disable <执行器>（密钥只从标准输入读）';
+export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
@@ -37,16 +37,23 @@ function output(s: JobCommandSession, state: JobStatus): void {
 async function readDefinition(s: JobCommandSession, file: string): Promise<unknown> {
   try { return JSON.parse(await readFile(resolve(s.ctx.io.cwd, file), 'utf8')); } catch { throw new UsageError('执行器定义不是可读取的 JSON 文件'); }
 }
+async function executorLine(s:JobCommandSession,registry:ExecutorRegistry,by:import('../records/api.ts').Principal,e:import('../dispatch/api.ts').RegisteredExecutor) {
+ const uses=[];for(const use of e.variables) {const version=(await registry.records.variables.history(by,'var',use.name)).find(v=>v.decision.digest===use.decision);uses.push(use.name+' 第 '+(version?.version??0)+' 版');}
+ s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length===0)}；解析后摘要 ${e.resolved_digest}；变量 ${uses.join('、')||'无'}`);
+}
 export async function executorCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   let parsed;
   try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
-  if (parsed.values.secret && sub !== 'update') throw new UsageError('--secret 只用于 update');
+  if(parsed.values.secret)throw new UsageError('--secret 已退役：用 circle-hub secret set --name <名字> 换钥匙，引用它的执行器下次开会话用新版本');
   const by = await s.admin();
   const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
   if (sub === 'list' && !parsed.positionals.length) {
-    const entries = await registry.list(by);
-    for (const e of entries) s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`);
+    const entries=await registry.sources(by);
+    for(const source of entries){
+      try{const e=await registry.get(source.id);if(e)await executorLine(s,registry,by,e);}
+      catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
+    }
     s.out(`执行器 ${entries.length}`); return 0;
   }
   if (sub === 'disable' && parsed.positionals.length === 1) {
@@ -54,14 +61,12 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   }
   if (sub === 'add' && parsed.positionals.length === 1) {
     const input = await readDefinition(s, parsed.positionals[0]);
-    const secret = await (s.options.readSecret ?? readSecret)('执行器调用密钥');
-    const e = await registry.add(by, input, secret); s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`); return 0;
+    const e = await registry.add(by, input); await executorLine(s,registry,by,e); return 0;
   }
   if (sub === 'update' && parsed.positionals.length === 2) {
     const [id, file] = parsed.positionals; const definition = await readDefinition(s, file);
-    const secret = parsed.values.secret ? await (s.options.readSecret ?? readSecret)('执行器调用密钥') : undefined;
-    const e = await registry.update(by, id, definition, secret);
-    s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length === 0)}`); return 0;
+    const e = await registry.update(by, id, definition);
+    await executorLine(s,registry,by,e); return 0;
   }
   throw new UsageError(`executor 的子命令：${EXECUTOR_USAGE}`);
 }

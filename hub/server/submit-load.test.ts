@@ -64,5 +64,6 @@ test('scenario 19 under load completes ten 67-item MCP submissions within the ex
     assert.equal((await bed.hub.records.store.find({ key: 'runs.result.run', value: result.run })).items.length, 1);
   }
   assert.ok(Math.max(...completed) < 60_000, 'submission phase must stay inside the existing MCP timeout');
-  assert.equal(launches, 10 * 4, 'two run calls, one item-builder batch and one item-check batch per submission');
+  // negative_commands adds a second item-check batch; all three command checks still share one commandSubject build.
+  assert.equal(launches, 10 * 5, 'two run calls, one shared item-builder batch and two item-check batches per submission');
 });

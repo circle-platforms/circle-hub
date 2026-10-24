@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "kind": "workflow",
   "title": "用例定位",
   "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，给出定位到的版本线在两个名称族的构建候选（别名解析到它所依据的构建）并核对目录和标题里写出的构建名，以及标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -18,13 +18,13 @@
     },
     {
       "path": "functions/candidates.ts",
-      "sha256": "097f27fc4575cf8de0cb45efb5f2cbc5b69ac5b2d0d00d6b2d701eac3d338285",
-      "size": 13768
+      "sha256": "5a4f89677da77e1095b067ec41a6206d280d894cc8d4da88b48ec807d0aa2d35",
+      "size": 14861
     },
     {
       "path": "functions/check.ts",
-      "sha256": "fd519f9d37012fb3a406d9327364f3c315da53acf3eae2477da0a3814814fa32",
-      "size": 3213
+      "sha256": "438e1b28ac7f8795b4e064eaac4aac0a34074727f5a045583598eb437d70e5c0",
+      "size": 3667
     },
     {
       "path": "functions/convention.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/locate.ts",
-      "sha256": "cc2af8a324d435639fc9e2909b9b9a00274c4c905d3daa6e7693f16ed5268e2b",
-      "size": 36822
+      "sha256": "97e31326f4310d6167100d97ba87606baa83af3f6db4ba40f7b3b539f3df4ea8",
+      "size": 37167
     },
     {
       "path": "functions/params.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "46cd82360769323464cf4bd7f60cc96fbeeb66e0da507d2f9b7c0a4c06494c9b",
-      "size": 7404
+      "sha256": "a2b47632103bdb4d802b96813eadadc7c4b0351b71a73749a6a75e3d0aab7039",
+      "size": 7422
     },
     {
       "path": "requirements.json",

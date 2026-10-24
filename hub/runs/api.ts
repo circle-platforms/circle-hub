@@ -66,3 +66,5 @@ export {
   writePack,
 } from './packs/testing/builder.ts';
 export type { FileContent, PackDescription, WrittenManifest, WrittenPack } from './packs/testing/builder.ts';
+
+export { packSchema } from './engine/slots.ts';

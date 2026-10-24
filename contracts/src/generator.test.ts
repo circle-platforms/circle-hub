@@ -12,7 +12,7 @@ import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../too
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = (script: string, args: string[], cwd = repo) => spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' });
 /** Runs an ES module given as text in a fresh Node process. */
-const evaluate = (code: string, args: string[] = []) => spawnSync(process.execPath, ['--input-type=module', '-e', code, ...args], { cwd: repo, encoding: 'utf8' });
+const evaluate = (code: string, args: string[] = [], maxBuffer: number = 16 * 1024 * 1024) => spawnSync(process.execPath, ['--input-type=module', '-e', code, ...args], { cwd: repo, encoding: 'utf8', maxBuffer });
 
 /** Every file under a directory, by relative name. */
 function snapshot(dir: string, prefix = ''): Record<string, string> {
@@ -148,7 +148,8 @@ describe('on a temporary copy', () => {
     try {
       const code = `import { generate } from ${JSON.stringify(join(repo, 'tools', 'gen-contracts.ts'))};
         process.stdout.write(JSON.stringify(await generate(process.argv[1])));`;
-      const result = evaluate(code, [link]);
+      // This call returns the complete schema snapshot; bound capture to its actual expected serialized size.
+      const result = evaluate(code, [link], Buffer.byteLength(JSON.stringify(expected))+1024);
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(result.stdout), expected);
     } finally {

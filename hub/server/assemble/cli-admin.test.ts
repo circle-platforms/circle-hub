@@ -1,3 +1,5 @@
+import {secretNameOf} from '../../../contracts/src/variables.ts';
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../connectors/testing/credentials.ts';
 // The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
 // (the token stored, never printed; a token it cannot store is revoked or said to be live), the operator token from
 // CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
@@ -507,7 +509,7 @@ describe('init-admin and the operator token', () => {
       ['pack', 'retire', `${REVIEW_PACK}@1.0.0`],
       ['pack', 'activate', PRODUCT_PACK],
       ['pack', 'deactivate', PRODUCT_PACK],
-      ['resource', 'add', AGILE_PACK, '--name', '合成敏捷', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`],
+      ['resource', 'add', AGILE_PACK, '--name', '合成敏捷', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, ...syntheticCredentialArgs('username','password')],
       ['resource', 'disable', 'res_00000000000000000000000000'],
       ['resource', 'enable', 'res_00000000000000000000000000'],
       ['resource', 'reset-login', 'res_00000000000000000000000000'],
@@ -565,7 +567,6 @@ describe('init-admin and the operator token', () => {
     const asUser = { [OPERATOR_TOKEN_VARIABLE]: userToken };
     for (const argv of [
       ['resource', 'list', '--as', '根管理员'],
-      ['secret', 'list', '--as', '根管理员'],
       ['pack', 'list', '--as', '根管理员'],
       ['knowledge', 'roots', 'DEMO', '--as', '根管理员'],
     ]) {
@@ -575,6 +576,7 @@ describe('init-admin and the operator token', () => {
       assert.doesNotMatch(result.text, /还没有资源|密钥库里还没有条目|还没有发布任何任务包/, 'nothing of the admin view was printed');
     }
     assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '甲'], asUser)).out, ['没有分配给你的任务包'], '--as naming the token\'s own account');
+    for(const argv of [['secret','list'],['var','list']]){const denied=await admin.run(argv,asUser);assert.equal(denied.code,1);assert.match(denied.text,/管理员/);}
     const invalid = await admin.run(['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: 'C'.repeat(43) });
     assert.equal(invalid.code, 1);
     assert.match(invalid.text, /错误：CIRCLE_HUB_TOKEN 的令牌无效（不存在、已撤销，或者账号已停用）/);
@@ -606,7 +608,7 @@ describe('init-admin and the operator token', () => {
     }
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     keychain.state.locked = true;
-    for (const argv of [['pack', 'list'], ['secret', 'list'], ['resource', 'list']]) {
+    for (const argv of [['pack', 'list'], ['resource', 'list']]) {
       const result = await expectOk(admin, argv);
       assert.ok(
         result.err.some((line) => line === `注意：读不出钥匙串（服务 circle-hub-rehearsal，账户 operator-token）里的操作令牌（读取${OPERATOR_TOKEN_ITEM.label}失败（security 退出码 36）：User interaction is not allowed.）；这个只读命令按唯一启用的管理员读取`),
@@ -614,6 +616,7 @@ describe('init-admin and the operator token', () => {
       );
       assert.ok(!result.text.includes(VAULT_KEY_ITEM.label), 'the item is the operator token, not the vault master key');
     }
+    const secretListing=await admin.run(['secret','list']);assert.equal(secretListing.code,1);assert.match(secretListing.text,/操作令牌/);
     const refused = await admin.run(['pack', 'revoke-publish', '根管理员']);
     assert.equal(refused.code, 1);
     assert.match(refused.text, new RegExp(`错误：读不出钥匙串（服务 circle-hub-rehearsal，账户 operator-token）里的操作令牌：读取${OPERATOR_TOKEN_ITEM.label}失败（security 退出码 36）`));
@@ -950,8 +953,7 @@ describe('pack', () => {
     await expectOk(admin, ['pack', 'publish', packs.agile]);
     const renamed = await expectOk(admin, [
       'resource', 'add', AGILE_PACK, '--name', `合成${ESC}]0;改了标题${BEL}`, '--environment', 'test',
-      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api',
-    ]);
+      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
     const usage = await admin.run(['pack', 'retire', `${ESC}[31m坏${BEL}`]);
     assert.equal(usage.code, 2);
     const printed = [...listed.out, ...listed.err, ...usage.out, ...usage.err, ...renamed.out, ...renamed.err];
@@ -971,10 +973,10 @@ describe('resource and secret', () => {
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.agile]);
     const usage = [
-      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'staging', '--origin', `agile-oauth=${agile.origin}`],
-      ['resource', 'add', AGILE_PACK, '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`],
-      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--allow-plaintext', 'agile-api'],
-      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', 'no-equals-sign'],
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'staging', '--origin', `agile-oauth=${agile.origin}`, ...syntheticCredentialArgs('username','password')],
+      ['resource', 'add', AGILE_PACK, '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, ...syntheticCredentialArgs('username','password')],
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')],
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', 'no-equals-sign', ...syntheticCredentialArgs('username','password')],
       ['resource', 'add', '--name', 'x', '--environment', 'test'],
     ];
     for (const argv of usage) assert.equal((await admin.run(argv)).code, 2, argv.join(' '));
@@ -995,34 +997,31 @@ describe('resource and secret', () => {
       'agile-oauth',
       '--allow-plaintext',
       'agile-api',
-      '--setting',
-      'roots=["7714"]',
-    ]);
+      '--setting-json',
+      'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
     const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（系统包 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
     assert.ok(id, added.text);
-    assert.match(added.text, new RegExp(`凭据项 username、password：用 circle-hub secret set ${id} <凭据项> 设置`));
+    assert.match(added.text,/密钥 DEMO_.*还没有设置/);assert.match(added.text,/secret set --name/);
     const listed = await expectOk(admin, ['resource', 'list']);
     assert.equal(listed.out.length, 1);
     const fields = listed.out[0].split('\t');
     assert.deepEqual(fields.slice(0, 5), [id, '合成敏捷平台', 'demo-agile@1.0.0', '测试', '启用']);
     assert.deepEqual(fields[5].split(' ').sort(), [`agile-api=${agile.origin}`, `agile-oauth=${agile.origin}`]);
-    assert.deepEqual(fields.slice(6), [`允许明文 ${agile.origin}`, '密钥库里的登录状态：还没有登录']);
+    assert.equal(fields[6],`允许明文 ${agile.origin}`);assert.match(fields[7],/secret set --name/);
 
     admin.stdin.push('reader', PASSWORD);
-    assert.match((await expectOk(admin, ['secret', 'set', id, 'username'])).text, /按系统包的规则原样存进密钥库/);
-    const set = await expectOk(admin, ['secret', 'set', id, 'password']);
-    assert.match(set.text, /只存它的 Base64\(SHA-512\) 摘要，不存原值/);
-    assert.ok(set.err.some((line) => line.startsWith(`连接器：credential_set ${id} `)), 'the assembly\'s log lines reach the command\'s stderr, which the secret scan covers');
+    assert.match((await expectOk(admin, await setArgs(admin,id,'username'))).text, /第 1 版/);
+    const set = await expectOk(admin, await setArgs(admin,id,'password'));
+    assert.match(set.text, /Base64\(SHA-512\)/);
+    assert.match(set.text,/使用者/);assert.ok(set.text.includes(id));
     const missing = await admin.run(['secret', 'set', id, 'token']);
-    assert.equal(missing.code, 1, 'a credential the resource does not have');
-    assert.match(missing.text, /没有凭据项 token/);
-    assert.match(missing.text, /它的凭据项是 (username、password|password、username)/);
-    assert.equal((await admin.run(['secret', 'set', 'res_00000000000000000000000000', 'password'])).code, 1);
+    assert.equal(missing.code,2,'retired positional syntax is rejected');assert.match(missing.text,/resource update/);assert.match(missing.text,/--credential/);
+    assert.equal((await admin.run(['secret', 'set', 'res_00000000000000000000000000', 'password'])).code, 2);
     assert.equal((await admin.run(['secret', 'set', id])).code, 2);
     assert.equal(admin.stdin.length, 0, 'nothing was read for a refused credential');
     await withKit(admin, async (kit) => {
-      assert.equal(await kit.vault.getText(`connector.${id}.password`), passwordDigest(PASSWORD), 'Base64(SHA-512) as the profile says, never the value');
-      assert.equal(await kit.vault.getText(`connector.${id}.username`), 'reader');
+      assert.equal(await storedNamed(kit,id,'password'), passwordDigest(PASSWORD), 'Base64(SHA-512) as the profile says, never the value');
+      assert.equal(await storedNamed(kit,id,'username'), 'reader');
       // The stored digest logs in: a read through the resource works.
       const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, resourceCacheMs: 0, log: (line) => admin.deployment.printed.push(line) });
       const by = (await kit.principals.findByName('根管理员'))!;
@@ -1032,11 +1031,7 @@ describe('resource and secret', () => {
     assert.equal(agile.logins, 1);
 
     const names = await expectOk(admin, ['secret', 'list']);
-    assert.deepEqual(names.out.sort(), [
-      `connector.${id}.password\t资源 ${id} 的凭据 password`,
-      `connector.${id}.session\t资源 ${id} 的登录会话`,
-      `connector.${id}.username\t资源 ${id} 的凭据 username`,
-    ]);
+    assert.match(names.text,/第 1 版/);assert.match(names.text,/登录状态条目/);assert.ok(!names.text.includes(PASSWORD));
     const userToken = await userWithToken(admin, '甲');
     assert.equal((await admin.run(['secret', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).code, 1, 'names are for admins');
     const forUser = await admin.run(['resource', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
@@ -1046,20 +1041,22 @@ describe('resource and secret', () => {
     assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t密钥库里的登录状态：已登录（到期 /);
     await expectOk(admin, ['resource', 'disable', id]);
     assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t停用/);
+    const hiddenSettings=await expectOk(admin,['resource','show',id]);assert.match(hiddenSettings.text,/设置 roots/);assert.ok(!hiddenSettings.text.includes('[\"7714\"]'));
+    const literalSettings=await expectOk(admin,['resource','show',id,'--values']);assert.ok(literalSettings.text.includes('[\"7714\"]'));
     await expectOk(admin, ['resource', 'enable', id]);
     await expectOk(admin, ['resource', 'reset-login', id]);
     assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t启用\t.*\t密钥库里的登录状态：还没有登录$/);
     assert.equal((await admin.run(['resource', 'disable', 'res_00000000000000000000000000'])).code, 1);
   });
 
-  test('update changes the name, the environment, the addresses and the settings as whole items, and refuses what makes no sense', async () => {
+  test('update changes metadata and addresses while merging settings by key, and refuses what makes no sense', async () => {
     const admin = await setup();
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.agile]);
-    const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '甲', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting', 'roots=["7714"]']);
+    const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '甲', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting-json', 'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
     assert.ok(id, added.text);
-    const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '乙', '--environment', 'shared', '--setting', 'roots=["7714","7001"]']);
+    const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '乙', '--environment', 'shared', '--setting-json', 'roots=["7714","7001"]']);
     assert.match(renamed.text, new RegExp(`已更新资源 ${id}：乙（系统包 demo-agile@1\\.0\\.0，环境 共享）`));
     const listed = await expectOk(admin, ['resource', 'list']);
     const fields = listed.out[0].split('\t');
@@ -1083,12 +1080,11 @@ describe('resource and secret', () => {
       const added = await expectOk(admin, [
         'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
         '--origin', `agile-oauth=${stub.origin}`, '--origin', `agile-api=${stub.origin}`,
-        '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting', 'roots=["7714"]',
-      ]);
+        '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting-json', 'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
       const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
       admin.stdin.push('reader', WRONG_PASSWORD);
-      await expectOk(admin, ['secret', 'set', id, 'username']);
-      await expectOk(admin, ['secret', 'set', id, 'password']);
+      await expectOk(admin, await setArgs(admin,id,'username'));
+      await expectOk(admin, await setArgs(admin,id,'password'));
 
       // The running Hub: an assembly of its own over the same records and vault, as `serve` has in its own process.
       const kit = await admin.kit();
@@ -1109,10 +1105,10 @@ describe('resource and secret', () => {
         );
 
         admin.stdin.push(PASSWORD);
-        const set = await expectOk(admin, ['secret', 'set', id, 'password']);
-        assert.match(set.out.join('\n'), /密钥库里这个资源的登录状态已清除，Hub 下一次登录就用新的值/);
-        assert.match(set.err.join('\n'), /注意：正在运行的 Hub 下一次要用这个资源的凭据时会重读密钥库里的登录状态：它停下的登录或冷却随之解除，并用已存的凭据登录一次/);
-        assert.match(set.err.join('\n'), /不用重启 Hub/);
+        const set = await expectOk(admin, await setArgs(admin,id,'password'));
+        assert.match(set.text,/第 2 版/);
+        assert.match(set.text,/在签发方吊销或换掉旧值/);
+        assert.ok(set.text.includes(id));
         assert.doesNotMatch(set.text, /要重启 Hub 才解除/);
         assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t密钥库里的登录状态：还没有登录$/, 'the column is the vault\'s state, read fresh');
         // What the messages describe (hub/connectors, "Between processes"): the running Hub reads the session entry again at
@@ -1122,15 +1118,15 @@ describe('resource and secret', () => {
         assert.equal(stub.logins, 2, 'one login with the new value, no restart');
         const reset = await expectOk(admin, ['resource', 'reset-login', id]);
         assert.match(reset.out.join('\n'), new RegExp(`资源 ${id} 在密钥库里的登录状态已清除：Hub 下一次要用这个资源的凭据时用已存的凭据登录一次`));
-        assert.match(reset.err.join('\n'), /它手里还有可用的令牌时照常用，到下一次登录才用新的值；不用重启 Hub/);
+        assert.match(reset.err.join('\n'),/旧令牌、停止和冷却不再沿用/);
         // The running Hub holds a usable token: it keeps using it, no new login.
         assert.equal((await read()).ok, true);
-        assert.equal(stub.logins, 2);
-        // A restart finds no session entry and logs in once more.
+        assert.equal(stub.logins,3,'reset invalidates the old token at the next read');
+        // A restart takes the new version-bound session already stored by that read.
         const restarted = await assembleHub(loadServerConfig(admin.deployment.env), kit, options);
         const again = await read(restarted);
         assert.equal(again.ok, true, again.ok ? '' : again.reason);
-        assert.equal(stub.logins, 3);
+        assert.equal(stub.logins,3);
       } finally {
         await kit.close();
       }
@@ -1145,16 +1141,15 @@ describe('resource and secret', () => {
     await expectOk(admin, ['pack', 'publish', packs.agile]);
     const added = await expectOk(admin, [
       'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
-      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api',
-    ]);
+      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
     assert.match((await expectOk(admin, ['pack', 'list'])).out[0], /^demo-agile@1\.0\.0\t系统包/);
-    assert.deepEqual((await expectOk(admin, ['secret', 'list'])).out, ['密钥库里还没有条目']);
+    assert.ok(!(await expectOk(admin,['secret','list'])).text.includes(PASSWORD));
     const listed = await expectOk(admin, ['resource', 'list']);
     assert.match(listed.out[0], /\t登录状态读不出：密钥库主密钥不存在；密钥只在显式初始化时创建$/);
     await expectOk(admin, ['resource', 'reset-login', id]);
     admin.stdin.push(PASSWORD);
-    for (const argv of [['secret', 'set', id, 'password'], ['knowledge', 'sync', '--product', 'DEMO']]) {
+    for (const argv of [await setArgs(admin,id,'password'), ['knowledge', 'sync', '--product', 'DEMO']]) {
       const refused = await admin.run(argv);
       assert.equal(refused.code, 1, argv.join(' '));
       assert.match(refused.text, /错误：密钥库主密钥不可用，这个命令要用密钥库，没有执行：密钥库主密钥不存在/, argv.join(' '));
@@ -1326,33 +1321,49 @@ test('R33 lease release honors the configured record byte limit atomically',asyn
   assert.notEqual(result.code,0);assert.equal((await leases.holderSnapshot([key]))[0].released,false);
 });
 
+let syntheticCredentialCounter=0;
+function syntheticCredentialArgs(...items:string[]) {const index=++syntheticCredentialCounter;return items.flatMap(item=>['--credential',item+'=DEMO_'+item.toUpperCase()+'_'+index]);}
+const namedResourceCache=new Map<string,Record<string,string>>();
+async function nameOf(admin:Admin,id:string,item:string):Promise<string>{
+ let names=namedResourceCache.get(id);
+ if(!names){names=await withKit(admin,async kit=>{const config=await kit.authorizations.resourceConfig(id);assert.ok(config?.body.bound);const source=JSON.parse(Buffer.from((await kit.objects.get(config.body.bound))!).toString());return Object.fromEntries(Object.entries(source.credentials).map(([key,value])=>{assert.equal(typeof value,'string');const name=secretNameOf(value as string);assert.ok(name);return [key,name];}));});namedResourceCache.set(id,names);}
+ assert.ok(names[item],'synthetic resource must explicitly name the requested credential');return names[item];
+}
+async function setArgs(admin:Admin,id:string,item:string):Promise<string[]>{const name=await nameOf(admin,id,item);return ['secret','set','--name',name,'--reason','DEMO_ROTATE',...(item==='username'?['--short',name]:[]),...(item==='password'?['--digest',name+'=sha512_base64']:[])];}
+async function storedNamed(kit:RecordsKit,id:string,item:string):Promise<string|null>{
+ const config=await kit.authorizations.resourceConfig(id);assert.ok(config?.body.bound);const source=JSON.parse(Buffer.from((await kit.objects.get(config.body.bound))!).toString());const name=secretNameOf(source.credentials[item]);assert.ok(name);
+ const admin=(await kit.principals.findByName('根管理员'))!;const version=(await kit.variables.list(admin)).find(v=>v.name===name&&v.kind==='secret');return version?.definition?.schema==='secret@1'?kit.vault.getText(version.definition.entry):null;
+}
 async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
   await expectOk(admin, ['pack', 'publish', packs.agile]);
   return addImportResource(admin);
 }
 async function addImportResource(admin: Admin): Promise<string> {
-  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api']);
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
   return /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
 }
 async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<string> {
   const path = join(admin.deployment.dataDir, 'synthetic.env');
   await writeFile(path, bytes, { mode: 0o600 }); return path;
 }
-const importArgs = (file: string, id: string) => ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${id}/username`, '--key', `PORTAL_PASSWORD=${id}/password`];
+const importArgs = async (admin:Admin,file:string,id:string) => {
+ const user=await nameOf(admin,id,'username'),password=await nameOf(admin,id,'password');
+ return ['secret','import','--env-file',file,'--key',`PORTAL_USER=${user}`,'--key',`PORTAL_PASSWORD=${password}`,'--digest',password+'=sha512_base64','--short',user,'--reason','DEMO_IMPORT'];
+};
 
 describe('secret import', () => {
   test('imports grouped credentials, hashes the password, shares a key across resources and supports dry run', async () => {
     const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
     const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
     const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
-    const args = [...importArgs(file, id), '--key', `PORTAL_USER=${second}/username`];
+    const args = [...await importArgs(admin,file,id), '--key', `PORTAL_USER=${await nameOf(admin,second,'username')}`, '--short',await nameOf(admin,second,'username')];
     const dry = await expectOk(admin, [...args, '--dry-run']); assert.match(dry.text, /PORTAL_USER：找到，长度 6/);
     assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
     const result = await expectOk(admin, args); assert.match(result.text, /Base64\(SHA-512\)/);
     await withKit(admin, async (kit) => {
-      assert.equal(await kit.vault.getText(`connector.${id}.password`), passwordDigest(PASSWORD));
-      assert.equal(await kit.vault.getText(`connector.${second}.username`), 'reader');
+      assert.equal(await storedNamed(kit,id,'password'), passwordDigest(PASSWORD));
+      assert.equal(await storedNamed(kit,second,'username'), 'reader');
       for (const name of await kit.vault.list()) assert.ok(!(await kit.vault.getText(name))?.includes(unrelated));
       const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
       const by = (await kit.principals.findByName('根管理员'))!;
@@ -1365,50 +1376,50 @@ describe('secret import', () => {
     const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
     const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
-    const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`]);
+    const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${await nameOf(admin,first,'username')}`, '--key', `BAD=${await nameOf(admin,second,'password')}`, '--reason', 'DEMO_IMPORT']);
     assert.equal(result.code, 1); assert.ok(!result.text.includes(`已设置资源 ${first}`));
-    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${first}.username`)), null);
-    assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${second}.password`)), null);
+    assert.equal(await withKit(admin, (kit) => storedNamed(kit,first,'username')), null);
+    assert.equal(await withKit(admin, (kit) => storedNamed(kit,second,'password')), null);
   });
 
   test('missing and commented keys write nothing, malformed files disclose no values or paths', async () => {
     const admin = await setup(); const id = await importResource(admin);
     const value = 'SyntheticMalformedValue58'; secrets.add(value); secrets.add(value.slice(0, 12));
     for (const bytes of [`PORTAL_USER=${value}\n# PORTAL_PASSWORD=${value}\n`, `PORTAL_USER=${value}\nPORTAL_USER=${value}\n`, `PORTAL_USER=${value}\0\n`, Buffer.from([0xff, 0xfe]), `PORTAL_USER=${value}\n${'x'.repeat(65536)}`]) {
-      const file = await importFile(admin, bytes); const result = await admin.run(importArgs(file, id));
+      const file = await importFile(admin, bytes); const result = await admin.run(await importArgs(admin,file,id));
       assert.equal(result.code, 1); assert.ok(!result.text.includes(file)); assert.ok(!result.text.includes(value.slice(0, 12)));
       assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
     }
     const emptyFile = await importFile(admin, `PORTAL_USER=\nPORTAL_PASSWORD=${value}`);
-    const empty = await admin.run(importArgs(emptyFile, id));
+    const empty = await admin.run(await importArgs(admin,emptyFile,id));
     assert.equal(empty.code, 1); assert.match(empty.text, /PORTAL_USER：是空的/);
     assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
     const linked = join(admin.deployment.dataDir, 'linked.env');
     await symlink(join(admin.deployment.dataDir, 'synthetic.env'), linked);
     for (const path of [admin.deployment.dataDir, linked]) {
-      const refused = await admin.run(importArgs(path, id));
+      const refused = await admin.run(await importArgs(admin,path,id));
       assert.equal(refused.code, 1); assert.ok(!refused.text.includes(path));
     }
     const file = await importFile(admin, `PORTAL_USER=has:colon\nPORTAL_PASSWORD=${value}`); secrets.add('has:colon');
-    assert.equal((await admin.run(['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${id}/username`])).code, 1);
+    assert.equal((await admin.run(['secret', 'import', '--env-file', file, '--basic', `PORTAL_USER:PORTAL_PASSWORD=${await nameOf(admin,id,'username')}`, '--reason', 'DEMO_IMPORT'])).code, 1);
     assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
   });
 
   test('authorization, vault and every target are checked before opening the environment file', async () => {
     const admin = await setup(); const id = await importResource(admin); const missingFile = join(admin.deployment.dataDir, 'must-not-open');
-    for (const mapping of [`PORTAL_USER=res_00000000000000000000000000/username`, `PORTAL_USER=${id}/absent`]) {
-      const refused = await admin.run(['secret', 'import', '--env-file', missingFile, '--key', mapping]);
+    for (const mapping of [`PORTAL_USER=DEMO_UNREFERENCED`, `PORTAL_USER=DEMO_UNREFERENCED`]) {
+      const refused = await admin.run(['secret', 'import', '--env-file', missingFile, '--key', mapping, '--reason', 'DEMO_IMPORT']);
       assert.equal(refused.code, 1); assert.doesNotMatch(refused.text, /环境文件/);
     }
-    const duplicate = await admin.run([...importArgs(missingFile, id), '--key', `OTHER=${id}/username`]);
+    const duplicate = await admin.run([...await importArgs(admin,missingFile,id), '--key', `OTHER=${await nameOf(admin,id,'username')}`]);
     assert.notEqual(duplicate.code, 0); assert.doesNotMatch(duplicate.text, /环境文件/);
     const user = await userWithToken(admin, '导入普通用户');
-    assert.match((await admin.run(importArgs(missingFile, id), { [OPERATOR_TOKEN_VARIABLE]: user })).text, /管理员/);
+    assert.match((await admin.run(await importArgs(admin,missingFile,id), { [OPERATOR_TOKEN_VARIABLE]: user })).text, /管理员/);
     admin.tokens!.value = null;
-    assert.match((await admin.run(importArgs(missingFile, id))).text, /没有找到/);
+    assert.match((await admin.run(await importArgs(admin,missingFile,id))).text, /没有找到/);
     const noKey = await setup({ deployment: { key: false } }); const noKeyId = await importResource(noKey);
-    assert.match((await noKey.run(importArgs(missingFile, noKeyId))).text, /主密钥不可用/);
-    const dry = await noKey.run([...importArgs(missingFile, noKeyId), '--dry-run']);
+    assert.match((await noKey.run(await importArgs(noKey,missingFile,noKeyId))).text, /主密钥不可用/);
+    const dry = await noKey.run([...await importArgs(noKey,missingFile,noKeyId), '--dry-run']);
     assert.match(dry.text, /环境文件/); assert.doesNotMatch(dry.text, /主密钥不可用/);
   });
 });
@@ -1437,7 +1448,7 @@ describe('reimport after key loss', () => {
       const id = await importResource(admin);
       const env = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}\nUNUSED=SyntheticUnusedValue79`);
       secrets.add('reader'); secrets.add('SyntheticUnusedValue79');
-      await expectOk(admin, importArgs(env, id));
+      await expectOk(admin, await importArgs(admin,env,id));
       const loginsBefore = agile.logins;
       const read = async () => withKit(admin, async (kit) => {
         const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
@@ -1450,12 +1461,12 @@ describe('reimport after key loss', () => {
         const operatorBytes = await operator.read();
         secrets.add(Buffer.from(operatorBytes).toString('hex')); secrets.add(Buffer.from(operatorBytes).toString('base64url')); operatorBytes.fill(0);
         await master.delete(); await operator.delete();
-        const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+        const refused = await admin.run(await importArgs(admin,join(directory,'not-readable'),id));
         assert.equal(refused.code, 1); assert.match(refused.text, /operator-token reissue/);
         await expectOk(admin, ['operator-token', 'reissue']);
         const store = keychainOperatorTokens({ service, keychain: file, runner }); secrets.add((await store.read())!);
       } else await rm(admin.deployment.key.path);
-      const refused = await admin.run(importArgs(join(directory, 'not-readable'), id));
+      const refused = await admin.run(await importArgs(admin,join(directory,'not-readable'),id));
       assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
       for(const step of ['operator-token reissue','secret import','最后起服务']) assert.ok(refused.text.includes(step),step);
       assert.ok(refused.text.indexOf('operator-token reissue') < refused.text.indexOf('secret import'), refused.text);
@@ -1464,8 +1475,8 @@ describe('reimport after key loss', () => {
       const aside = join(admin.deployment.dataDir, 'set-aside'); await mkdir(aside, { mode: 0o700 });
       await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
       if (keychain) await master.init(); else await admin.deployment.key.initKey();
-      await expectOk(admin, importArgs(env, id));
-      assert.equal(await withKit(admin, (kit) => kit.vault.getText(`connector.${id}.password`)), passwordDigest(PASSWORD));
+      await expectOk(admin, await importArgs(admin,env,id));
+      assert.equal(await withKit(admin, (kit) => storedNamed(kit,id,'password')), passwordDigest(PASSWORD));
       await read(); assert.equal(agile.logins, loginsBefore + 2);
     } finally {
       if (keychain) await runner('/usr/bin/security', ['delete-keychain', file]);
@@ -1478,7 +1489,7 @@ describe('resource read', () => {
   test('a read prints only declared names, outcome codes and artifact sizes and digests', async () => {
     const admin = await setup(); const id = await importResource(admin);
     const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
-    await expectOk(admin, importArgs(file, id));
+    await expectOk(admin, await importArgs(admin,file,id));
     const result = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
     assert.match(result.text, /demo-agile@1\.0\.0\/mindmap：读取完成/);
     assert.match(result.text, /产物 original [0-9a-f]{64} [0-9]+ 字节/); assert.match(result.text, /读清单 [0-9a-f]{64}/);
@@ -1497,8 +1508,9 @@ describe('resource read', () => {
     const absent = await admin.run(['resource', 'read', 'res_00000000000000000000000000', 'mindmap', DOCUMENT]); assert.equal(absent.code, 1);
     const user = await userWithToken(admin, '冒烟普通用户'); assert.equal((await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT], { [OPERATOR_TOKEN_VARIABLE]: user })).code, 1);
     const missing = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing-document']);
-    assert.equal(missing.code, 1); assert.match(missing.text, /失败（[A-Z_]+）/); assert.doesNotMatch(missing.text, /synthetic-missing-document|404|reason|meta/);
-    admin.stdin.push(WRONG_PASSWORD); await expectOk(admin, ['secret', 'set', id, 'password']);
+    // A permitted digest can contain 404: verify the complete declared output instead of scanning digest digits as body text.
+    assert.equal(missing.code, 1); assert.match(missing.text, /^demo-agile@1\.0\.0\/mindmap：失败（[A-Z_]+）\n读清单 [0-9a-f]{64}$/);
+    admin.stdin.push(WRONG_PASSWORD); await expectOk(admin, await setArgs(admin,id,'password'));
     const login = await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT]);
     assert.equal(login.code, 1); assert.match(login.text, /失败（[A-Z_]+）/); assert.ok(!login.text.includes(DOCUMENT));
   });
@@ -1508,7 +1520,7 @@ describe('resource read', () => {
 test('review 1: resource read exposes connector diagnostics only with the explicit events flag', async () => {
   const admin = await setup(); const id = await importResource(admin);
   const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
-  await expectOk(admin, importArgs(file, id));
+  await expectOk(admin, await importArgs(admin,file,id));
   const quiet = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
   assert.ok(!quiet.err.some(line => line.includes('read_ok')));
   const events = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT, '--events']);
@@ -1523,7 +1535,7 @@ test('review 5: dry-run and real import validate every value before the first wr
   for (const value of ['SensitiveCtlPrivate95\tValue', 'X'.repeat(4097)]) {
     secrets.add(value); secrets.add(value.slice(0, 12));
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${value}`);
-    const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`, '--key', `BAD=${second}/password`];
+    const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${await nameOf(admin,first,'username')}`, '--key', `BAD=${await nameOf(admin,second,'password')}`, '--reason', 'DEMO_IMPORT'];
     for (const suffix of [['--dry-run'], []]) {
       const result = await admin.run([...args, ...suffix]); assert.equal(result.code, 1); assert.match(result.text, /BAD/);
       assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
@@ -1531,40 +1543,39 @@ test('review 5: dry-run and real import validate every value before the first wr
     await withKit(admin, async kit => {
       const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: line => admin.deployment.printed.push(line) });
       const by = (await kit.principals.findByName('根管理员'))!;
-      await assert.rejects(hub.connectors.admin.setCredentials(by, second, { password: value }));
+      await assert.rejects(setSyntheticCredentials(kit, hub.connectors, by, second, { password: value }));
     });
   }
   const valid = 'V'.repeat(4096); secrets.add(valid);
   const file = await importFile(admin, `PORTAL_USER=${valid}`);
-  const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`];
+  const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${await nameOf(admin,first,'username')}`, '--reason', 'DEMO_IMPORT'];
   await expectOk(admin, [...args, '--dry-run']); await expectOk(admin, args);
-  assert.equal((await withKit(admin, kit => kit.vault.getText(`connector.${first}.username`)))?.length, 4096);
+  assert.equal((await withKit(admin, kit => storedNamed(kit,first,'username')))?.length, 4096);
 });
 
 
 test('review 6: missing and empty keys refuse explicitly with corrective hints and no writes', async () => {
   const admin = await setup(); const id = await importResource(admin);
   for (const body of [`PORTAL_USER=reader`, `PORTAL_USER=\nPORTAL_PASSWORD=${PASSWORD}`]) {
-    const file = await importFile(admin, body); const result = await admin.run(importArgs(file, id));
-    assert.equal(result.code, 1); assert.match(result.text, /未写入任何凭据/); assert.match(result.text, /--dry-run/);
+    const file = await importFile(admin, body); const result = await admin.run(await importArgs(admin,file,id));
+    assert.equal(result.code, 1); assert.match(result.text, /未写入任何密钥/); assert.match(result.text, /--dry-run/);
     assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
     if (body.includes('PORTAL_USER=\n')) assert.match(result.text, /PORTAL_USER：是空的/);
   }
   const missing = join(admin.deployment.dataDir, 'not-opened.env');
-  const resource = await admin.run(['secret', 'import', '--env-file', missing, '--key', 'USER=res_00000000000000000000000000/username']);
-  assert.match(resource.text, /resource list/);
-  const credential = await admin.run(['secret', 'import', '--env-file', missing, '--key', `USER=${id}/absent`]);
-  assert.match(credential.text, /它的凭据项是/); assert.doesNotMatch(credential.text, /环境文件/);
+  const resource = await admin.run(['secret', 'import', '--env-file', missing, '--key', 'USER=DEMO_UNREFERENCED', '--reason', 'DEMO_IMPORT']);
+  assert.match(resource.text,/还没有部署定义引用/);
+  const credential = await admin.run(['secret', 'import', '--env-file', missing, '--key', `USER=DEMO_UNREFERENCED`, '--reason', 'DEMO_IMPORT']);
+  assert.match(credential.text,/还没有部署定义引用/); assert.doesNotMatch(credential.text, /环境文件/);
 });
 
 
 test('review 8: Basic targets refuse before file access and a static authorization header reaches the stub', async () => {
   const admin = await setup(); const agileId = await importResource(admin);
   for (const entry of ['password', 'username']) {
-    const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${agileId}/${entry}`]);
+    const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${await nameOf(admin,agileId,entry)}`, '--reason', 'DEMO_IMPORT']);
     assert.equal(refused.code, 1); assert.match(refused.text, /Basic.*原样.*Authorization/);
-    assert.doesNotMatch(refused.text, /resource show/);assert.match(refused.text,/circle-hub resource list/);
-    assert.ok(refused.text.includes(AGILE_PACK));assert.match(refused.text,/凭据项是/);assert.ok(refused.text.includes('username') && refused.text.includes('password'));
+    assert.ok(refused.text.includes(agileId));assert.ok(refused.text.includes(AGILE_PACK));assert.ok(refused.text.includes(entry));assert.match(refused.text,/--key/);
     assert.doesNotMatch(refused.text, /环境文件/);
   }
   const username = 'SyntheticBasicUser'; const password = 'SyntheticBasicPassword92';
@@ -1586,17 +1597,17 @@ test('review 8: Basic targets refuse before file access and a static authorizati
       title: '合成头值认证', description: '合成只读认证核对', files: { 'system.json': profile } });
     await expectOk(admin, ['pack', 'publish', pack.dir]);
     const added = await expectOk(admin, ['resource', 'add', 'demo-basic', '--name', '合成认证', '--environment', 'test',
-      '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository']);
+      '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository', ...syntheticCredentialArgs('authorization')]);
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
-    const args = (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${id}/authorization`];
+    const args = async (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${await nameOf(admin,id,'authorization')}`, '--reason', 'DEMO_IMPORT'];
     const colonFile = await importFile(admin, `USER=has:colon\nPASS=${password}`); secrets.add('has:colon');
-    const colon = await admin.run(args(colonFile)); assert.equal(colon.code, 1); assert.match(colon.text, /用户名含冒号/);
+    const colon = await admin.run(await args(colonFile)); assert.equal(colon.code, 1); assert.match(colon.text, /用户名含冒号/);
     assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
     const file = await importFile(admin, `USER=${username}\nPASS=${password}`);
-    await expectOk(admin, [...args(file), '--dry-run']);
+    await expectOk(admin, [...await args(file), '--dry-run']);
     assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
-    await expectOk(admin, args(file));
-    assert.equal(await withKit(admin, kit => kit.vault.getText(`connector.${id}.authorization`)), header);
+    await expectOk(admin, await args(file));
+    assert.equal(await withKit(admin, kit => storedNamed(kit,id,'authorization')), header);
     await expectOk(admin, ['resource', 'read', id, 'document', 'synthetic-file', '--events']);
     assert.equal(stub.requests.length, 1);
   } finally { await stub.close(); }
@@ -1609,4 +1620,52 @@ test('c3 Secrets documentation follows the supported irreversible key loss proce
  let previous=-1;for(const step of steps){const at=procedure.indexOf(step,previous+1);assert.ok(at>previous,step);previous=at;}
  assert.match(procedure,/loaded service/);assert.match(procedure,/configured port/);assert.match(procedure,/present key/);assert.match(procedure,/Plain `key init` refuses a nonempty vault/);
  assert.ok(!text.includes('the advice is always to restore'));
+});
+
+test('lease release refuses an unfinished dispatch job before changing the row',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const user=(await kit.principals.findByName('根管理员'))!;
+  const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const leases=new LeaseService(db,{records:kit.store});const key='synthetic/pending-release/k';
+  const {newId,sha256Hex}=await import('../../records/api.ts');
+  assert.ok((await leases.acquire({keys:[key],prefix:'synthetic/',holder:{user:user.id,run:newId('run')}})).ok);
+  const time=new Date().toISOString();const job='synthetic-pending-release';
+  await kit.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:time,
+    body:{action:'validate',run:null,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:time,ended_at:time,result:'completed',error_code:null,acceptance:null,codes:[],detail:{job,phase:'reservation',binding:{job,initiated_by:user.id,user:user.id,executor:'synthetic',executor_digest:'a'.repeat(64),target_key:'synthetic',input:null,resources:[key]}}},
+    index:[{key:'dispatch.resource',value:sha256Hex(key)},{key:'dispatch.job',value:job}]});
+  const refused=await admin.run(['lease','release',key,'--reason','合成处置']);
+  assert.equal(refused.code,1,refused.text);
+  assert.match(refused.text,/还没有终态/);assert.match(refused.text,/job dispose/);
+  assert.equal((await leases.holders([key]))[0]!.released,false);
+});
+
+test('lease ownership commands audit reassignment and list owner, holder and run without internal identities',async t=>{
+  const admin=await setup();
+  const {stage}=await import('../../../packs/workflow/test-bed/pack-files.ts');
+  const directory=await mkdtemp(join(tmpdir(),'ownership-cli-pack-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  await stage(directory);
+  await expectOk(admin,['pack','grant-publish','根管理员']);await expectOk(admin,['pack','publish',directory]);
+  await expectOk(admin,['user','create','合成主人']);await expectOk(admin,['user','create','合成后继主人']);
+  const kit=await admin.kit();t.after(()=>kit.close());
+  const owner=(await kit.principals.findByName('合成主人'))!;
+  const next=(await kit.principals.findByName('合成后继主人'))!;
+  await expectOk(admin,['lease','register','bed/sample/','--owner',owner.name,'--reason','合成登记']);
+  const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const leases=new LeaseService(db,{records:kit.store});const key='bed/sample/client';
+  const {newId}=await import('../../records/api.ts');const run=newId('run');
+  assert.ok((await leases.acquire({keys:[key],prefix:'bed/',holder:{user:next.id,run}})).ok);
+  const listed=await expectOk(admin,['lease','list']);
+  assert.ok(listed.text.includes(owner.name)&&listed.text.includes(next.name)&&listed.text.includes(run),listed.text);
+  assert.ok(!listed.text.includes('lse_')&&!listed.text.includes('fencing'));
+  await expectOk(admin,['lease','register','bed/sample/','--owner',next.id,'--reason','合成归属更正']);
+  assert.equal((await leases.registrations('bed/'))[0]!.owner,next.id);
+  const busy=await admin.run(['lease','unregister','bed/sample/','--reason','合成注销']);
+  assert.equal(busy.code,1);assert.match(busy.text,/先强制释放，或等它释放/);
+  await expectOk(admin,['lease','release',key,'--reason','合成主人要求收回']);
+  await expectOk(admin,['lease','unregister','bed/sample/','--reason','合成注销']);
+  assert.deepEqual(await leases.registrations('bed/'),[]);
+  const actions=await leases.actionLog('bed/');
+  assert.ok(actions.some(row=>row.op==='register'&&row.owner===next.id&&row.previous_owner===owner.id&&row.reason==='合成归属更正'));
+  assert.ok(actions.some(row=>row.op==='unregister'&&row.owner===next.id));
+  assert.equal((await admin.run(['lease','register','bed/sample/','--owner',next.id])).code,2);
 });

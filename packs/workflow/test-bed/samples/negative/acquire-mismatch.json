@@ -2,7 +2,7 @@
   "id": "acquire_mismatch",
   "source": "author",
   "check": "bed",
-  "note": "合成反例：条目的租约键漏了客户端；检查按冻结内容重算的键是 bed/bed-a/apv0 和 bed/bed-a/client0，反驳（acquire_mismatch）",
+  "note": "合成反例：acquire 按冻结清单和租约重算；没有时长上限",
   "subject": {
     "items": [
       {
@@ -11,12 +11,13 @@
         "fields": {
           "action": "acquire",
           "bed": "bed-a",
-          "devices": ["apv0", "client0"],
+          "devices": [
+            "apv0",
+            "client0"
+          ],
           "addresses": [],
-          "keys": ["bed/bed-a/apv0"],
-          "ttl_seconds": 7200,
-          "hours": 2,
-          "conclusion": "预订 bed-a，设备 apv0、client0，2 小时"
+          "keys": [],
+          "conclusion": "预订 bed-a，设备 apv0、client0，不限时长，用完由运行释放"
         }
       }
     ],
@@ -24,28 +25,73 @@
       "groups": [
         {
           "action": "acquire",
-          "need": { "devices": [{ "type": "load-balancer", "count": 1 }, { "type": "client", "count": 1 }], "hours": 2 },
+          "need": {
+            "devices": [
+              {
+                "type": "load-balancer",
+                "count": 1
+              },
+              {
+                "type": "client",
+                "count": 1
+              }
+            ]
+          },
           "bed": "bed-a",
           "addresses": null,
+          "booking": null,
+          "reason": "",
+          "devices": null,
           "manifest": {
             "schema": "test-bed-manifest@1",
             "beds": [
               {
                 "name": "bed-a",
                 "devices": [
-                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26"], "ipv6": [] },
-                  { "name": "client0", "type": "client", "ipv4": ["192.0.2.74/26"], "ipv6": [] }
+                  {
+                    "name": "apv0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "client0",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  }
                 ],
                 "services": [],
                 "reserved": []
               }
             ]
           },
-          "leases": { "now": "2026-10-22T02:00:00.000Z", "entries": [] },
-          "lease_requests": [{ "keys": ["bed/bed-a/apv0", "bed/bed-a/client0"], "ttl_seconds": 7200 }]
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          },
+          "lease_requests": [
+            {
+              "keys": [
+                "bed/bed-a/apv0",
+                "bed/bed-a/client0"
+              ]
+            }
+          ]
         }
       ]
     }
   },
-  "expect": [{ "verdict": "refute", "code": "test-bed.acquire_mismatch", "tier": "advisory" }]
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.acquire_mismatch",
+      "tier": "advisory"
+    }
+  ]
 }

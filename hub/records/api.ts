@@ -17,6 +17,8 @@ import type { HubConfig } from '../config/index.ts';
 export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
+export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
+export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
@@ -460,6 +462,8 @@ export interface Vault {
   get(name: string): Promise<Uint8Array | null>;
   getText(name: string): Promise<string | null>;
   has(name: string): Promise<boolean>;
+  /** Entry write time only; no decrypted bytes or master-key access. */
+  stat(name: string): Promise<{ written_at: string } | null>;
   /** Names only, sorted. */
   list(): Promise<string[]>;
   remove(name: string): Promise<boolean>;
@@ -513,7 +517,7 @@ export interface Authorizations {
    * the pack id (the subject of its first publication); a version once published keeps its content. Withdrawing a
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
-  grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord>;
+  grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
   revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
@@ -527,6 +531,8 @@ export interface Authorizations {
   revokePublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Resource configuration (deployment instance, environment class, source-to-tree mapping, freeze release), bound to a content digest. */
   configureResource(by: Principal, resourceId: string, bound: string, note?: string | null): Promise<AuthorizationRecord>;
+  /** Appends a resource decision inside the caller's transaction; the ordinary authorization checks still apply. */
+  configureResourceInTransaction(by: Principal, object: string, bound: string | null, note: string, tx: Transaction, revoked?: boolean): Promise<AuthorizationRecord>;
   /** Latest active configuration of a resource, or null. */
   resourceConfig(resourceId: string): Promise<AuthorizationRecord | null>;
   /** Latest active decisions in one verified query; missing/revoked/expired entries are absent. */
@@ -705,6 +711,7 @@ export interface RecordsKit {
   objects: ObjectStore;
   artifacts: Artifacts;
   vault: Vault;
+  variables: import('./variables.ts').RecordVariables;
   principals: Principals;
   authorizations: Authorizations;
   pointers: Pointers;

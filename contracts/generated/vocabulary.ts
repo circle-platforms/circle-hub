@@ -36,7 +36,7 @@ export const AXES = {
   effect_class: { label: '效果类', owner: 'D03', values: [{ code: 'none', label: '无' }, { code: 'read', label: '读' }, { code: 'sync_write', label: '同步写' }, { code: 'job', label: '作业' }, { code: 'notification', label: '通知' }] },
   retry_safety: { label: '重试安全类', owner: 'D03', values: [{ code: 'same_key_safe', label: '同键安全' }, { code: 'dedup_window', label: '时间窗内去重' }, { code: 'duplicate_tolerant', label: '可容忍重复' }, { code: 'unsafe', label: '不安全' }] },
   signing: { label: '署名方式', owner: 'D03', values: [{ code: 'own_credential', label: '本人凭据' }, { code: 'service_on_behalf', label: '服务账号代表发起用户' }] },
-  disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '保持未知' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
+  disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
@@ -68,6 +68,8 @@ export const AXES = {
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
   work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
+  variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
+  digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -372,7 +374,7 @@ export function isSigning(value: unknown): value is Signing {
 /** 处置 (B07) */
 export const DISPOSITION = ['reconcile', 'keep_unknown', 'abandon', 'mark_failed', 'compensate', 'complete'] as const;
 export type Disposition = (typeof DISPOSITION)[number];
-export const DISPOSITION_LABEL = { 'reconcile': '核对', 'keep_unknown': '保持未知', 'abandon': '放弃', 'mark_failed': '标记失败', 'compensate': '补偿', 'complete': '补齐' } as const satisfies { readonly [K in Disposition]: string };
+export const DISPOSITION_LABEL = { 'reconcile': '核对', 'keep_unknown': '带期限的暂缓', 'abandon': '放弃', 'mark_failed': '标记失败', 'compensate': '补偿', 'complete': '补齐' } as const satisfies { readonly [K in Disposition]: string };
 export const DispositionSchema = z.enum(DISPOSITION);
 export function isDisposition(value: unknown): value is Disposition {
   return (DISPOSITION as readonly unknown[]).includes(value);
@@ -657,6 +659,24 @@ export function isLinkMatch(value: unknown): value is LinkMatch {
   return (LINK_MATCH as readonly unknown[]).includes(value);
 }
 
+/** 变量种类 (D01) */
+export const VARIABLE_KIND = ['var', 'secret'] as const;
+export type VariableKind = (typeof VARIABLE_KIND)[number];
+export const VARIABLE_KIND_LABEL = { 'var': '普通变量', 'secret': '密钥' } as const satisfies { readonly [K in VariableKind]: string };
+export const VariableKindSchema = z.enum(VARIABLE_KIND);
+export function isVariableKind(value: unknown): value is VariableKind {
+  return (VARIABLE_KIND as readonly unknown[]).includes(value);
+}
+
+/** 摘要规则 (D01) */
+export const DIGEST_RULE = ['plain', 'sha512_base64'] as const;
+export type DigestRule = (typeof DIGEST_RULE)[number];
+export const DIGEST_RULE_LABEL = { 'plain': '原样', 'sha512_base64': 'Base64(SHA-512)' } as const satisfies { readonly [K in DigestRule]: string };
+export const DigestRuleSchema = z.enum(DIGEST_RULE);
+export function isDigestRule(value: unknown): value is DigestRule {
+  return (DIGEST_RULE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -723,6 +743,8 @@ export interface AxisValues {
   exit_action: ExitAction;
   work_class: WorkClass;
   link_match: LinkMatch;
+  variable_kind: VariableKind;
+  digest_rule: DigestRule;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -791,6 +813,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   exit_action: EXIT_ACTION_LABEL,
   work_class: WORK_CLASS_LABEL,
   link_match: LINK_MATCH_LABEL,
+  variable_kind: VARIABLE_KIND_LABEL,
+  digest_rule: DIGEST_RULE_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

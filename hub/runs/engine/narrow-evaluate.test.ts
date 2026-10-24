@@ -61,6 +61,10 @@ for (const mode of ['complete', 'missing', 'truncated', 'retain', 'unavailable',
     assert.equal(claim.statement.data?.read_manifest, `rec:${receipts[0].digest}`);
     if (mode !== 'complete') {
       const unread = claim.statement.data?.unread_sources as Array<{missing_fact:string;next_action:string}>;
+      if (mode !== 'refute') {
+        const requirement = Object.values(checked.result.partitions).flat().flatMap(item => item.requirements).find(requirement => requirement.claims.includes(claim))!;
+        assert.ok(requirement.layers.some(layer => typeof layer.missing === 'string' && layer.missing.includes('下一步')), JSON.stringify(requirement.layers));
+      }
       assert.ok(unread.length); assert.ok(unread.every(row => row.missing_fact && row.next_action));
       assert.ok(!JSON.stringify(claim).includes('private synthetic failure'));
     }

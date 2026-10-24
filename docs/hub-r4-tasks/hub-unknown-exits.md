@@ -13,7 +13,7 @@
 
 ## 要做的
 
-1. 在 BY_REASON 旁加出口表（satisfies Record<Reason, Exit>），每个未核对、未完成、未运行终态带 missing 和 exit；交付前边界拒绝没有出口的未知；outcomeProblems 拒收不带 data.missing 的包未知。
+1. 在 BY_REASON 旁加出口表（satisfies Record<Reason, Exit>），每个未核对、未完成、未运行终态带 missing 和 exit；交付前边界拒绝没有出口的未知；outcomeProblems 拒收不带顶层 missing 的包未知。
 2. errors 点名每个未知（路径、缺什么、剩余轮数）并计一轮；错误表按原因的行可路由；缺的事实归到待判定产物上时给修复（case-review 负向用例那 33 个条目是第一个用例）。
 3. 跳过：每个跳过条目一条错误（带模型的理由和剩余轮数）并计轮；SkippedItem.reason 进结果的未完成分区（W07 R[2] 的“附理由”）。
 4. 轮数用完：写 B07 修复请求记录（运行、条目、要求项、领头的码），在 errors 和控制台列出；回执写明完整的新提交仍可取代；剩 0 轮的未覆盖改记修复轮数用完；“发请求”行写请求记录，“记未知”行写假设集（V08）并点名。
@@ -54,5 +54,16 @@
     - README 的 Deviations 第二条照这一条改写：它说只有判断类的记未完成，代码从 bca2dbe 起事实类也记了，两边一直对不上。
     - oracle（`tests/acceptance/oracle/oracle.ts` 286–287 行）同步改，差分测试照新规则。
     - 测试：只判被判对象的事实要求项，在跳过和未覆盖的条目上各给出通过和不通过；判待判定产物的照旧未完成；只出事实的包里声明跳过的条目照样交付。
+
+## 集成者答复（2026-10-24 凌晨）
+
+- **05:28 的契约口径；06:35 答 codex-b**：unknown 的缺失事实写**顶层 `missing`**；check-outcome 的 `exit` 可由 Hub 按原因补，新写的 `LayerResult` 则须有 missing 和完整出口。可改 `hub/rules/outcome.ts` 的 `unknown()`，把 detail 写进顶层 missing；旧结果缺出口只显示“出口未写”。
+- **06:06，可改路径补充**：`hub/runs/engine/service.ts`、`deps.ts`、`api.ts`、`store.ts`、`hub/ports.ts` 及 Hub 启停生命周期的最小接线，用于请求列出、期限、孤儿重验、已有派发核对；包注册表可加 `ownerOf(digest)` 读取包主人，账号表可取具名管理员。只接本页流程，不借机改其他运行行为。
+- **06:17**：分区不改，gaps 的未知另计“带未决未知”数（可选字段或 Needs），不改 `isUnknownTerminal`。依赖只认 `Claim.validity.premises` 的显式路径：依赖层记 `awaiting_step`，missing 点明要求项和修复路径，继承该修复的具名出口，不从正文猜依赖。
+- **06:24，第 10 条**：可在 `hub/dispatch/**` 加按运行读取既有 journal 绑定、结果引用的只读函数，在 `api.ts` 导出并测试；不改派发、重发或核对行为。
+- **07:00，发布作答**：可改 `hub/server/cli-admin.ts` 的 pack publish 接线、包注册表和对应测试，加可重复的 `--answer-request <请求摘要>`。注册表核对请求绑定的包与具名作者，发布成功后只按实际 `pack_version` 记录作答。
+- **07:26，读取归属**：可改服务端与运行读取器（`hub/server/readers.ts`、`hub/runs/engine/readers.ts`）识别 request 和 `hypothesis-set@1` 的所属运行，沿用运行可见性，不给新记录另开可见范围。
+- **07:26、07:59，放弃运行**：授权 `circle-hub run abandon <run> --answer-request <摘要> --reason <理由>` 的 CLI、运行服务及测试接线；仅运行者本人或管理员、持有效操作令牌可作出。只追加处置与新的交付结果，要求项标已放弃；保留原层终态和未知计数。新管理投影注明“旧技术记录未写、此次未重验”，出口引用本次真实处置请求的受众和期限，原件仍显示“出口未写”。旧结果、远端和冻结不改，不加 MCP 工具。
+- **07:59，模型负责人授权**：动态 `fail` 的 `code` 可选；登记 `EFFECT_UNKNOWN_DISPOSED`、`RUN_ABANDONED` 两个协议码，模型协议码源、变更记录、相关契约和生成物可作这一处最小修改并加测试。前者是效果原结局未证明时的具名标记失败处置、归已拒收；后者是已放弃运行的新提交原样保存但不受理，继续须开新修订。用途、受众、下一步与不改写技术事实的边界见[决定 45](../hub-r4-progress.md)。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

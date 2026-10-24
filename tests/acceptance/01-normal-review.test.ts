@@ -157,10 +157,29 @@ describe('scenario 1: a normal review', () => {
     // A case without any literal defect and with the document's usual tag spelling passes.
     const clean = cases.find((c) => c.tags.length === 1 && c.tags[0] === 'Configuration' && c.expected.length === 1 && c.priority === 2 && !twins.includes(c))!;
     assert.deepEqual(staticLayer(result, idOf(clean), 'literal'), { layer: 'static', terminal: 'pass' });
-    // Negative cases cite no command line of their own here: the catalog requirement stays unknown, never a pass.
+    // No finding cites a command here. The review now reads the negative case's own literal lines instead.
+    // The active site fixture declares interval/retries/probe, endpoint add and show health only.
+    // Weight and pool add/delete are absent from that catalog; they cannot provide a verifiable command here.
+    const negativeCodes = new Map([
+      ['widget health interval pool1 61', 'core.catalog.param_out_of_range'],
+      ['widget health retries pool1 0', 'core.catalog.param_out_of_range'],
+      ['relay endpoint weight 192.0.2.21 101', 'case-review.negative_command_missing'],
+      ['relay endpoint weight 192.0.2.22 abc', 'case-review.negative_command_missing'],
+      ['WebUI 输入间隔 0 时提示错误', 'case-review.negative_command_missing'],
+      ['后端端口不可达时探测超时', 'case-review.negative_command_missing'],
+      ['探测类型输入 udp 被拒绝', 'case-review.negative_command_missing'],
+      ['删除不存在的池', 'case-review.negative_command_missing'],
+      ['池名称超过 32 个字符', 'case-review.negative_command_missing'],
+    ]);
     const negatives = run.items.filter((i) => i.fields.negative === true);
     assert.equal(negatives.length, cases.filter((c) => c.tags.some((t) => /^\[?(negative|负向)\]?$/i.test(String(t)))).length);
-    for (const n of negatives) assert.deepEqual([staticLayer(result, n.id, 'catalog').terminal, staticLayer(result, n.id, 'catalog').reason], ['unchecked', 'missing_input']);
+    for (const n of negatives) {
+      const code = negativeCodes.get(n.label);
+      assert.ok(code, `negative fixture expectation missing for ${n.label}`);
+      assert.equal(staticLayer(result, n.id, 'catalog').terminal, 'violation');
+      const codes = refutationCodes(result, n.id, 'catalog');
+      assert.ok(codes.includes(code), `${n.label}: expected ${code}, got ${codes.join(', ')}`);
+    }
     // Judgments are terminal `judgment`, satisfied by the accepted producer.
     for (const item of run.items) assert.equal(staticLayer(result, item.id, 'findings').terminal, 'judgment');
   });

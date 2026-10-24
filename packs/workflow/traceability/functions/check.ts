@@ -162,7 +162,7 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
     };
   }
   return {
-    verdict: 'unknown',
+    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (untracedStatement(fields.bug, fields.statuses, info, facts)),
     reason: 'missing_input',
     statement: fields.ambiguous_cases?.length ? `缺陷 ${fields.bug} 在当前视图有 ${fields.ambiguous_cases.length} 个同号用例的系统归属待补；请集成者补取用例系统来源，在本次追溯重跑前明确归属，不能按无追溯或任一系统处理` : untracedStatement(fields.bug, fields.statuses, info, facts),
     grounds: [...fields.references],
@@ -197,16 +197,16 @@ export function traceOutcomes(
     try {
       const fields = fieldsOf(item);
       if (fields === null) {
-        out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${item.id} 的字段不是追溯矩阵的形状（任务包缺陷）`, grounds: [], tier: TIER, item: item.id, pointer: `/items/${at}/fields` });
+        out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`条目 ${item.id} 的字段不是追溯矩阵的形状（任务包缺陷）`), reason: 'check_error', statement: `条目 ${item.id} 的字段不是追溯矩阵的形状（任务包缺陷）`, grounds: [], tier: TIER, item: item.id, pointer: `/items/${at}/fields` });
         continue;
       }
       const info = defectSystemInfoOf(fields.bug, fields.systems, plmStatuses, plmUnread, closedSet, hasPlmSource, hasUnreadSources);
       out.push(outcomeOf(item, at, fields, facts, info));
     } catch (error) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: item.id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`追溯检查出错（任务包缺陷）：${internalError(error)}`), reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: item.id });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '追溯检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('追溯检查的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '追溯检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -221,6 +221,6 @@ export default function traceCheck(input: unknown): unknown {
         checkInput.table,
         checkInput.unread_sources as ReadonlyArray<{ reference: string; reason: string }> | undefined,
       ),
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`追溯检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

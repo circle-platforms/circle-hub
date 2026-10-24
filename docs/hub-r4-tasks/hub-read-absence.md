@@ -50,4 +50,13 @@
      - Hub 侧运行开始以后把配置者降成用户：评估照常；
      - 只保留的来源两边都不给原文；受理撤回以后，评估立刻读不到原文。
 
+## 集成者答复（2026-10-24 凌晨）
+
+- **05:24，答 codex**：覆盖传播可改 `contracts/src/run.ts`、`contracts/src/resources.ts` 及对应生成物、测试；引擎可改 `claims.ts`、`evaluate.ts` 的覆盖传播一段，避开 hub-unknown-model 正在改的段落。
+- **06:20、06:23**：授权在模型协议码源和变更记录登记 `SOURCE_RETRYABLE`、`SOURCE_INTEGRITY_UNPROVEN` 并重新生成；`hub/knowledge/read.ts`、`service.ts` 只在确认有读权后给结构化诊断，`hub/server/tools.ts` 透传。`hub/runs/engine/exact.ts`、`evaluate.ts` 按内部 reason 识别这两类结果为未完成，不从私有消息猜原因。码的用途、受众和下一步见[决定 45](../hub-r4-progress.md)。
+- **06:35**：`configureResource` 可加可选事务参数；与 hub-variables 的同一入口合一，不另做一套资源配置入口。
+- **06:39**：可在 `hub/records/migrations.ts` 末尾追加迁移，逐条保存管理员理由；`CallLog` 的管理员字段和控制台详情显示这些理由，普通读者与 JSONL 不带。可改对应 calllog、控制台显示和测试，不改已应用迁移。
+- **06:39、06:50、07:01**：继续授权登记 `SOURCE_REDIRECT_REFUSED`、`SOURCE_READ_LIMIT`、`SOURCE_READ_FAILED`，模型源、变更记录与生成物一起更新，语义和权限边界照决定 45。重定向带状态、脱敏 Location 和资源管理员核对动作；同源已声明跳转由规划函数发下一条请求。
+- **05:56 的并行改动**：hub-view-scope 也获准给 `hub/ports.ts` 的失败分支加可选 manifest，并在 `hub/connectors/connectors.ts` 透传；本页也改这两个文件，后合并方解冲突，不丢任一边的失败/覆盖信息。
+
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

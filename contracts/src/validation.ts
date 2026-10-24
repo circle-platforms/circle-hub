@@ -8,6 +8,7 @@ import {
   PARTITION,
   ReasonSchema,
   RequirementStatusSchema,
+  STATIC_TERMINAL, DYNAMIC_TERMINAL, ExitActionSchema, RequestKindSchema,
   StaticTerminalSchema,
   UnsatisfiedReasonSchema,
   type DynamicTerminal,
@@ -16,8 +17,39 @@ import {
   type StaticTerminal,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { Coverage, ItemId, ProtocolError, RunId, Sha256, TraceId } from './common.ts';
+import { Coverage, IsoTime, UserId, ItemId, ProtocolError, RunId, Sha256, TraceId } from './common.ts';
 import { ReferenceUri, referenceUriOf } from './reference.ts';
+
+/** One concrete fact the process must obtain; whitespace never describes a missing fact. */
+export const MissingFact = z.string().regex(/\S/, 'name the missing fact');
+/** A nonblank external account identity supplied by the referenced mapping. */
+export const MappedIdentity=z.string().regex(/\S/,'name the mapped external identity').describe('External account identity bound by the referenced mapping');
+/** Named request recipients are accounts or mapped external identities, never a role placeholder. */
+export const ExitAudience = z.union([
+  z.strictObject({hub:z.literal(true)}),
+  z.strictObject({user:UserId}),
+  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MappedIdentity})}),
+]);
+export const UnknownExit = z.strictObject({
+  action:ExitActionSchema,
+  request_kind:RequestKindSchema.optional(),
+  audience:ExitAudience,
+  due:IsoTime.describe('Absolute next-execution time or the named request deadline; never inferred when reading history'),
+}).superRefine((exit,ctx)=>{
+  if(exit.action==='request'){
+    if(exit.request_kind===undefined)ctx.addIssue({code:'custom',path:['request_kind'],message:'a request exit names its request kind'});
+    if('hub'in exit.audience)ctx.addIssue({code:'custom',path:['audience'],message:'a request names a person, not the Hub'});
+  }else{
+    if(exit.request_kind!==undefined)ctx.addIssue({code:'custom',path:['request_kind'],message:'only a request exit names a request kind'});
+    if(!('hub'in exit.audience))ctx.addIssue({code:'custom',path:['audience'],message:'a non-request action is scheduled by the Hub; human work needs a request'});
+  }
+}).meta({allOf:[{if:{properties:{action:{const:'request'}},required:['action']},then:{properties:{request_kind:{},audience:{type:'object',not:{required:['hub'],properties:{hub:{}}}}},required:['request_kind']},else:{properties:{audience:{type:'object',properties:{hub:{const:true}},required:['hub']}},not:{required:['request_kind'],properties:{request_kind:{}}}}}]});
+export type UnknownExit=z.infer<typeof UnknownExit>;
+export const RecoveryGap=z.strictObject({reason:ReasonSchema,missing:MissingFact,exit:UnknownExit});
+/** JSON Schema carries the same unknown-boundary condition as the Zod admission refinement. */
+export function recoveryCondition(field:string,values:readonly string[],required:readonly string[]):Record<string,unknown>{
+  return {allOf:[{if:{properties:{[field]:{enum:[...values]}},required:[field]},then:{properties:Object.fromEntries(required.map(key=>[key,{}])),required:[...required]}}]};
+}
 
 type Presence = 'required' | 'optional' | 'forbidden';
 /** What a layer terminal carries (V03 F[0]-F[1], R[4]; V04 R[1]); `unknown` marks the terminals counted as unknown. */
@@ -44,25 +76,29 @@ const DYNAMIC_TERMINAL_RULES = {
   incomplete: { code: 'optional', reason: 'required', attribution: true, unknown: false },
 } as const satisfies Record<DynamicTerminal, TerminalRule>;
 
-type LayerFields = { terminal: string; code?: string; reason?: string; attribution?: string };
+type LayerFields = { terminal: string; code?: string; reason?: string; attribution?: string;missing?:string;exit?:unknown };
 
 function ruleOf(rules: Record<string, TerminalRule>, terminal: string): TerminalRule | undefined {
   return Object.hasOwn(rules, terminal) ? rules[terminal] : undefined;
 }
 
-function checkTerminal(rules: Record<string, TerminalRule>, r: LayerFields, ctx: z.core.$RefinementCtx<LayerFields>): void {
+function checkTerminal(rules: Record<string, TerminalRule>, r: LayerFields, ctx: z.core.$RefinementCtx<LayerFields>,requireExit=true): void {
   const rule = ruleOf(rules, r.terminal);
   if (rule === undefined) return;
   for (const field of ['code', 'reason'] as const) {
     if (rule[field] === 'required' && r[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: `a ${r.terminal} terminal needs a ${field}` });
     if (rule[field] === 'forbidden' && r[field] !== undefined) ctx.addIssue({ code: 'custom', path: [field], message: `a ${r.terminal} terminal carries no ${field}` });
   }
+  if(requireExit&&rule.reason==='required')for(const field of ['missing','exit'] as const)if(r[field]===undefined)ctx.addIssue({code:'custom',path:[field],message:'a transitional layer needs '+field});
   if (!rule.attribution && r.attribution !== undefined) {
     ctx.addIssue({ code: 'custom', path: ['attribution'], message: 'attribution hangs only on a non-pass terminal that is not a judgment (V04 R[1])' });
   }
 }
 
 const layerFields = {
+  missing:MissingFact.optional(),
+  exit:UnknownExit.optional(),
+  gaps:z.array(RecoveryGap).min(1).optional().describe('Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason'),
   code: z.string().min(1).optional().describe('violation code; required when the terminal is violation or fail'),
   tier: CheckTierSchema.optional(),
   reason: ReasonSchema.optional().describe('why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete'),
@@ -72,12 +108,12 @@ const layerFields = {
 /** Terminal state of the static layer of one (item, requirement). */
 export const StaticLayerResult = z
   .strictObject({ layer: z.literal('static' satisfies Layer), terminal: StaticTerminalSchema, ...layerFields })
-  .superRefine((r, ctx) => checkTerminal(STATIC_TERMINAL_RULES, r, ctx));
+  .superRefine((r, ctx) => checkTerminal(STATIC_TERMINAL_RULES, r, ctx)).meta(recoveryCondition('terminal',STATIC_TERMINAL.filter(t=>STATIC_TERMINAL_RULES[t].reason==='required'),['missing','exit','reason']));
 
 /** Terminal state of the dynamic layer of one (item, requirement). */
 export const DynamicLayerResult = z
   .strictObject({ layer: z.literal('dynamic' satisfies Layer), terminal: DynamicTerminalSchema, ...layerFields })
-  .superRefine((r, ctx) => checkTerminal(DYNAMIC_TERMINAL_RULES, r, ctx));
+  .superRefine((r, ctx) => checkTerminal(DYNAMIC_TERMINAL_RULES, r, ctx)).meta(recoveryCondition('terminal',DYNAMIC_TERMINAL.filter(t=>DYNAMIC_TERMINAL_RULES[t].reason==='required'),['missing','exit','reason']));
 
 /** Terminal state of one (item, requirement, layer). A layer the requirement does not declare has no entry: the screen says "not applicable". */
 export const LayerResult = z.discriminatedUnion('layer', [StaticLayerResult, DynamicLayerResult]);
@@ -114,6 +150,7 @@ function itemResult<const E extends z.ZodRawShape>(extra: E) {
   return z.strictObject({
     item: ItemId,
     label: z.string(),
+    skip_reason:MissingFact.optional().describe('The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code'),
     location: ReferenceUri.describe('reference URI of the item in the judged source'),
     ...extra,
     carried_over: referenceUriOf('rec')
@@ -225,4 +262,38 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
     for (const it of partitions[p]) if (it.requirements.some((r) => r.layers.some(isUnknownTerminal))) unknown++;
   }
   return { ...counts, unknown };
+}
+
+
+/** Read-only historical shape: omissions are preserved, not backfilled into old append-only records. */
+export const StoredLayerResult=z.discriminatedUnion('layer',[
+  z.strictObject({layer:z.literal('static' satisfies Layer),terminal:StaticTerminalSchema,...layerFields}).superRefine((r,ctx)=>checkTerminal(STATIC_TERMINAL_RULES,r,ctx,false)),
+  z.strictObject({layer:z.literal('dynamic' satisfies Layer),terminal:DynamicTerminalSchema,...layerFields}).superRefine((r,ctx)=>checkTerminal(DYNAMIC_TERMINAL_RULES,r,ctx,false)),
+]);
+const StoredRequirementResult=RequirementResult.safeExtend({layers:z.array(StoredLayerResult)});
+const storedRequirementFields={requirements:z.array(StoredRequirementResult)};
+export const StoredPartitionItem={
+  delivered:PartitionItem.delivered.safeExtend(storedRequirementFields),
+  rejected:PartitionItem.rejected.safeExtend(storedRequirementFields),
+  quarantined:PartitionItem.quarantined.safeExtend(storedRequirementFields),
+  incomplete:PartitionItem.incomplete.safeExtend(storedRequirementFields),
+} satisfies Record<Partition,z.ZodType>;
+const storedArrays=Object.fromEntries(PARTITION.map(p=>[p,z.array(StoredPartitionItem[p])])) as PartitionArrays;
+export const StoredValidationResult=ValidationResult.safeExtend({partitions:Partitions.safeExtend(storedArrays)});
+/** Missing recovery facts on one immutable historical item; paths are relative to the supplied prefix. */
+export function storedItemNotices(item:Pick<z.infer<typeof StoredPartitionItem.delivered>,'requirements'>,prefix=''){
+  const notices:Array<{path:string;message:string}>=[];
+  item.requirements.forEach((requirement,j)=>requirement.layers.forEach((layer,k)=>{
+    const rules=layer.layer==='static'?STATIC_TERMINAL_RULES:DYNAMIC_TERMINAL_RULES;
+    if(ruleOf(rules,layer.terminal)?.reason!=='required')return;
+    const path=prefix+'/requirements/'+j+'/layers/'+k;
+    if(layer.exit===undefined)notices.push({path:path+'/exit',message:'出口未写'});
+    if(layer.missing===undefined)notices.push({path:path+'/missing',message:'缺失事实未写'});
+  }));
+  return notices;
+}
+export function readStoredValidationResult(value:unknown){
+  const result=StoredValidationResult.parse(value),notices:Array<{path:string;message:string}>=[];
+  for(const p of PARTITION)result.partitions[p].forEach((item,i)=>notices.push(...storedItemNotices(item,'/partitions/'+p+'/'+i)));
+  return {result,notices};
 }

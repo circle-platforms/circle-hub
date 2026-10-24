@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { ExpectedSourcesOutput, ItemSubjectInput, ProjectionOutput, RunSubjectInput } from '../../../../contracts/src/pack.ts';
 import { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
-import { COMMAND_NOT_IN_CASE, HINT_ONLY, LOCATION_MISSING, QUOTE_MISSING, findingSources } from './checks.ts';
+import { COMMAND_NOT_IN_CASE, HINT_ONLY, LOCATION_MISSING, QUOTE_MISSING, findingSources, negativeCommands } from './checks.ts';
 import expectedFn, { HISTORY_SEARCH, STRATEGY_SEARCH, expected } from './expected.ts';
 import { quotedFromCase } from './lines.ts';
 import { project as projectDirect, parseFixture, parseLarge, parseText } from '../testing/test-support.ts';
@@ -400,4 +400,12 @@ describe('the adapters in the Hub sandbox', () => {
 it('negative cases without a cited command fall back to their own lines',()=>{
  const out=commandSubject({item:{id:'synthetic-negative',location:'src:'+SHA+'/kityminder@1/n/c1',fields:{negative:true,title:'health interval pool1 0',steps:[],expected:[],preconditions:[]}},slots:{findings:[]},evidence:[]}) as {phrases:string[]};
  assert.deepEqual(out.phrases,['health interval pool1 0']);
+});
+
+
+it('negative command checking without a catalog declares the missing fact at top level', () => {
+  const outcomes = negativeCommands({ subject: { item: 'synthetic-negative', negative: true, phrases: ['demo probe'] } });
+  assert.equal(outcomes[0].verdict, 'unknown');
+  assert.match(outcomes[0].missing ?? '', /冻结命令目录/);
+  assert.match(outcomes[0].statement, /重开评审/);
 });

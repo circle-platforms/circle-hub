@@ -6,6 +6,7 @@ import * as knowledgeSchemas from './knowledge.ts';
 import * as resourceSchemas from './resources.ts';
 import * as tableSchemas from './tables.ts';
 import * as viewSchemas from './views.ts';
+import * as variableSchemas from './variables.ts';
 import { Claim } from './claim.ts';
 import { SchemaId } from './common.ts';
 import { RecordEnvelope } from './records.ts';
@@ -23,6 +24,7 @@ export * from './run.ts';
 export * from './submission.ts';
 export * from './contributions.ts';
 export * from './records.ts';
+export * from './variables.ts';
 export * from './annotations.ts';
 export * from './tools.ts';
 
@@ -58,4 +60,5 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'resources.ts': resourceSchemas.schemas,
   'tables.ts': tableSchemas.schemas,
   'views.ts': viewSchemas.schemas,
+  'variables.ts': variableSchemas.schemas,
 });
