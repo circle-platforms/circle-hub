@@ -153,6 +153,7 @@ test('administrator knowledge view and original export operate against the synth
   for(const privateValue of [document,options.build,options.product,options.token])assert.ok(!summary.join('\n').includes(privateValue));
   await assert.rejects(viewCommand.run(['view',external,'--out',output],context(options.token,[])),/已存在/);
   assert.deepEqual(readFileSync(output),written);
+  await assert.rejects(viewCommand.run(['view','knowledge:index:synthetic-private-original:synthetic-build?kind=case&key=document','--out',join(dir,'missing.json')],context(options.token,[])),(e:any)=>!!e.hint&&!e.message.includes('synthetic-private-original'));
   await assert.rejects(viewCommand.run(['view',external+'&only=x','--only','y','--out',join(dir,'duplicate.json')],context(options.token,[])),/不能同时/);
 
   // The added read command is administrator-only even if a caller can read the product through MCP.

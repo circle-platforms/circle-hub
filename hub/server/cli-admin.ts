@@ -707,7 +707,7 @@ async function productOf(hub: AssembledHub, viewer: Principal, name: string): Pr
 }
 
 /** Own the newly created file before writing, so cleanup never removes a competing writer's file. */
-export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<void> {
+export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<Record<string, unknown>> {
   let file: Awaited<ReturnType<typeof openTarget>>;
   try { file = await openTarget(); }
   catch { throw new CliError('无法创建知识视图文件', '检查目录权限并换一个不存在的文件名后重试'); }
@@ -717,6 +717,14 @@ export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, 
     const removed = await rm(target).then(() => true, () => false);
     throw new CliError('知识视图文件写入失败', removed ? '半截文件已删除；检查磁盘空间和目录权限后重试' : '检查并删除本次创建的半截文件，恢复磁盘空间和目录权限后重试');
   }
+  try {
+    const view: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    if (view === null || typeof view !== 'object' || Array.isArray(view)) throw new Error('not a view object');
+    return view as Record<string, unknown>;
+  } catch {
+    const removed = await rm(target).then(() => true, () => false);
+    throw new CliError('知识视图字节不是有效的 JSON 对象', removed ? '文件已删除；修复知识视图字节后重新导出' : '检查并删除本次创建的文件，修复知识视图字节后重新导出');
+  }
 }
 
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
@@ -724,7 +732,10 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
   if (sub === 'view') {
     const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' } }, 1);
     if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
-    const viewer = await session.viewer(undefined);
+    const viewer = await session.viewer(undefined).catch(error => {
+      if (error instanceof CliError || error instanceof UsageError) throw error;
+      throw new CliError('无法核对知识视图读取账号', '检查管理员身份及记录库连接后重试；原始异常不输出到终端');
+    });
     if (viewer.role !== 'admin') throw new CliError('只有管理员能导出知识视图');
     const target = resolve(values.out);
     if (await lstat(target).then(() => true, () => false)) throw new CliError('输出文件已存在', '换一个新文件');
@@ -733,15 +744,18 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
       if (!values.only || /[&?#]/.test(values.only) || /[?&]only=/.test(external)) throw new UsageError('--only 要给非空取值列表，不能同时写在引用里；特殊字符按 URI 百分号编码');
       external += `${external.includes('?') ? '&' : '?'}only=${values.only.replaceAll(' ', '%20')}`;
     }
-    const hub = await session.hub();
-    const result = await createKnowledgeReader(hub.knowledge).read(external, { principal: viewer, run: null, purpose: 'administrator view export' });
-    if (!result.ok) throw new CliError(result.reason, '核对产品、构建和视图参数后重试');
+    const result = await (async () => {
+      try {
+        const hub = await session.hub(false, true);
+        return await createKnowledgeReader(hub.knowledge).read(external, { principal: viewer, run: null, purpose: 'administrator view export' });
+      } catch { throw new CliError('知识视图计算未完成', '检查装配、来源和视图计算后重试；原始异常不输出到终端'); }
+    })();
+    if (!result.ok) throw new CliError('未能读取指定知识视图', '核对产品、构建、权限和视图参数后重试；原始读取说明不输出到终端');
     const artifact = result.artifacts.find(a => a.name === 'original');
     const kit = await session.records();
-    const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256) : null;
+    const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256).catch(() => { throw new CliError('知识视图字节读取失败', '修复原件存储后重新导出；原始异常不输出到终端'); }) : null;
     if (bytes === null) throw new CliError('知识视图字节缺失', '修复原件存储后重新导出');
-    await writeKnowledgeViewFile(target, bytes);
-    const view = JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>;
+    const view = await writeKnowledgeViewFile(target, bytes);
     const counts = (value: unknown): unknown => {
       if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
       if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
