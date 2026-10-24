@@ -1281,6 +1281,7 @@ export class KnowledgeViews {
         visibility,
         name: `${request.type}-view.json`,
       });
+    };
     const scopeCollection=async(rows:ScopedDocument[]):Promise<KnowledgeViewScope['listed_documents']>=>{
       const parts:KnowledgeViewScope['listed_documents']['parts']=[];
       const storePage=async(page:ScopedDocument[]):Promise<void>=>{
