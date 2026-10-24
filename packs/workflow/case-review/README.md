@@ -476,3 +476,7 @@ R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例
 `tags_variant` 保留输入原文 `Functional`、`function`，三条均期望 `case-review.tag_variant` 的提示档结构违规。闭集仅声明 `functional`；变体不能通过归一化或同义映射变成有效声明。正例 `tags_consistent` 使用闭集原文。
 
 `sources_cited_line` 逐字引用原步骤 `health interval pool1 30`，维持支持；另加反例 `sources_cited_line_variant`，引用 `Health  Interval pool1 30`，期望 `case-review.command_not_in_case`。大小写和空白差异不能冒充原文证据。这是 R4 的引用边界，和 R2 的标签闭集分别核验。样例由 `testing/samples.ts` 重生成，并按新版本重签；不修改旧运行结果。
+
+## 可执行槽 Schema 修正（1.1.20）
+
+槽声明仅保留 Hub 可执行的结构约束，去掉 pattern、patternProperties、format。摘要、引用解析、原件身份、路径及逐字引文仍由现有受理边界核验，槽位收到字符串不表示身份已核对。case-review 的 expected_quality 继续逐字核对冻结原件与全部期望叶子；knowledge-contribution 从权威 ContributionInput Schema 生成受限槽投影，不修改权威受理合约。生成器按 Schema 结构遍历，名为 pattern 或 format 的普通字段不会被误删。case-review-verify 与 quality-board 槽声明未发现这些关键字，无须升版。
