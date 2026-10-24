@@ -8,12 +8,12 @@ const model=JSON.parse(readFileSync(new URL('../model.json',import.meta.url),'ut
 const element=(id:string)=>model.elements.find((value:any)=>value.id===id);
 const source='决定 35（集成者，10-24）';
 const rule='每一轮先看它合不合期望的结局；聚合方式为“全部”时，各轮都合期望才合期望；有一轮不合就是不合；既有合又有不合的，标“间歇”，附观测分布。间歇的原因（被测对象、环境、执行上下文）只作假设，不进归责（V04 R[0]）。';
-test('the shared qualifier axis uses the agreed mark code and records each mark owner in its element',()=>{
- assert.equal(labelOf('qualifier_mark','unruled_shape'),'判定形状未裁定');
- assert.ok(QualifierMarkSchema.safeParse('unruled_shape').success);
- assert.ok(!QualifierMarkSchema.safeParse('decision_shape_unruled').success);
+test('the shared qualifier axis retains its existing codes and records each mark owner in its element',()=>{
+ assert.equal(labelOf('qualifier_mark','decision_shape_unruled'),'判定形状未裁定');
+ assert.ok(QualifierMarkSchema.safeParse('decision_shape_unruled').success);
+ assert.ok(!QualifierMarkSchema.safeParse('unruled_shape').success);
  assert.equal(labelOf('qualifier_mark','intermittent'),'间歇');
- for(const [id,code] of [['W04','unruled_shape'],['V07','intermittent']])assert.ok(element(id).changes10.some((text:string)=>text.includes(code)&&text.includes('归 '+id)&&text.includes(source)));
+ for(const [id,code] of [['W04','decision_shape_unruled'],['V07','intermittent']])assert.ok(element(id).changes10.some((text:string)=>text.includes(code)&&text.includes('归 '+id)&&text.includes(source)));
 });
 test('the existing work class, ledger and model revision remain unique and consistent with their generated contracts',()=>{
  assert.equal(model.version,10);assert.equal(MODEL_VERSION,10);

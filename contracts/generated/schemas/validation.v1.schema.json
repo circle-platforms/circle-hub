@@ -1236,7 +1236,7 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "unruled_shape"
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -2547,7 +2547,7 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "unruled_shape"
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -3871,7 +3871,7 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "unruled_shape"
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -5195,7 +5195,7 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "unruled_shape"
+                                    "decision_shape_unruled"
                                   ]
                                 }
                               },
@@ -5569,7 +5569,7 @@
                     "not_realtime",
                     "partial",
                     "intermittent",
-                    "unruled_shape"
+                    "decision_shape_unruled"
                   ]
                 }
               },
