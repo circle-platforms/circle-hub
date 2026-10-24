@@ -36,7 +36,9 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；按 slots.schema.json 的形状修正`, `/data${v.pointer}`)) };
 }
 function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, slots,s.command_identities,s.command_catalog);
+  // Model identity proposals belong to commands_known, not shared contract prerequisites.
+  const {command_identities:_modelDeclaration,...plan}=slots;
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
   if(gaps.some(g=>g.verdict==='refute'))return [refute(s,'method_forbidden',missing,'/data',{problems:gaps})];
@@ -135,5 +137,5 @@ export function checkExpectedSources(input: unknown): Outcome[] {
 /** commands_known resolves whole plan commands against the locked grammar, then checks typed authority. */
 export function checkCommandsKnown(input:unknown):Outcome[]{
  const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
- const gaps=typedPrerequisites(s,read.slots);const resolved=s.contract&&s.profile?planCommands(s.contract,s.profile,read.slots,s.command_catalog):null;return gaps??[support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved?.identities??[],command_catalog:resolved?.catalog})];
+ const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;const resolved=s.contract&&s.profile?planCommands(s.contract,s.profile,read.slots,s.command_catalog):null;const declarations=resolved?.problems.filter(problem=>problem.pointer==='/command_identities')??[];if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved?.identities??[],command_catalog:resolved?.catalog})];
 }
