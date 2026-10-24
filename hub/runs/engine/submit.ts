@@ -244,7 +244,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
   const roundsUsed = await roundsUsedOf(ctx, run.run);
-  const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, roundsUsed };
+  const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, submissionRecord:record.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
   let outcome: Validated;
   try {
@@ -282,6 +282,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
 
 /** What a validation of one submission is made from. */
 interface Basis {
+  submissionRecord: string;
   ctx: EngineContext;
   user: Principal;
   call: CallContext;
@@ -551,6 +552,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     workflow,
     submission,
     submissionDigest: base.digest,
+    submissionRecord:base.submissionRecord,
     exact,
     carried: carried.carried,
     roundsUsed,

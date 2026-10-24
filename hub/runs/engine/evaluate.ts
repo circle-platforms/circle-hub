@@ -64,6 +64,7 @@ export interface EvaluationInput {
   submission: Submission | null;
   /** Digest of the submission as received, or of the run record for a production result. */
   submissionDigest: string;
+  submissionRecord?: string;
   exact: ExactResult | null;
   carried: ReadonlyMap<string, CarriedItem>;
   /** Repair rounds each requirement used in earlier submissions of the run. */
@@ -257,10 +258,28 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // samples carry author_samples_only. A model judgment never takes them — they speak about a rule's samples.
   const sampleMarks = publishCheckMarks(workflow);
   const exclude = input.exclude ?? new Set<string>();
-  const templates = workflow.requirements;
+  const runtimeChecks = new Map<string, NonNullable<Submission['checks']>[number]>();
+  const runtimeCatalogGaps = new Map<string,{missing:string;next_action:string}>();
+  for (const [index,declared] of (submission?.checks ?? []).entries()) {
+    const allowed=workflow.requirements.some(t=>t.key===declared.requirement && t.run_table)
+      && workflow.ledger?.shapes.some(row=>row.requirement===declared.requirement && row.interpreter===declared.interpreter);
+    const interpreter=getInterpreter(declared.interpreter);
+    if(allowed && interpreter && !interpreter.validateTable(declared.table).length) runtimeChecks.set(`@runtime.${index}`,declared);
+  }
+  const templates = workflow.requirements.map(t=>({...t,checks:[...t.checks,...[...runtimeChecks].filter(([,check])=>check.requirement===t.key).map(([id])=>id)]}));
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
+  for(const [id,declared] of runtimeChecks){
+    const check:CheckEntry={id,interpreter:declared.interpreter,applies:'item',judges:'subject'};
+    if(declared.interpreter==='catalog@1'){
+      const requirement=workflow.requirements.find(t=>t.key===declared.requirement)!;
+      const catalogs=[...new Set(workflow.checks.filter(base=>requirement.checks.includes(base.id)).flatMap(base=>base.catalog?[base.catalog]:[]))];
+      if(catalogs.length===1)check.catalog=catalogs[0];
+      else runtimeCatalogGaps.set(id,{missing:`要求项 ${requirement.key} 的唯一目录绑定（当前 ${catalogs.length} 个）`,next_action:'请运行者联系包作者，在新版本中为该要求项明确唯一目录绑定，发布后重开运行'});
+    }
+    checks.set(id,check);
+  }
   if(input.admission!==undefined)checks.set(ADMISSION_CHECK,{id:ADMISSION_CHECK,title:'Hub 回注来源核验',applies:'item',judges:'artifact_under_verification',tier:'blocking',basis:'K03 R[4]-R[6]：回注根据与入层约束'});
   // Whole-refusal diagnostics must never check unresolved items, including fact checks and run-level subjects.
   // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
@@ -509,7 +528,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   };
 
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>, item?: string): Promise<CheckOutcome[]> => {
-    let table: unknown;
+    const gap=runtimeCatalogGaps.get(check.id);
+    if(gap)return [{verdict:'unknown',reason:'missing_input',statement:gap.missing,missing:gap.missing,grounds:[],tier:'advisory',data:{fix:gap.next_action}}];
+    let table: unknown = runtimeChecks.get(check.id)?.table;
     if (check.table !== undefined) {
       try {
         table = workflow.readJson(check.table);
@@ -520,7 +541,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
-    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
+    await warmQuoted(runtimeChecks.has(check.id)?[subject,table]:subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
     const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
       {
@@ -581,7 +602,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   };
 
   // ---- run every check
-  const used = workflow.checks.filter((c) => requirementsOf.has(c.id) && (input.replayChecks===undefined||input.replayChecks.has(c.id)));
+  const used = [...checks.values()].filter((c) => requirementsOf.has(c.id) && (input.replayChecks===undefined||input.replayChecks.has(c.id)));
   const runOutcomes = new Map<string, { own: Map<string, CheckOutcome[]>; loose: CheckOutcome[] }>();
   const itemOutcomes = new Map<string, Map<string, CheckOutcome[]>>();
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
@@ -625,7 +646,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context };
   };
   const runtimeAdmission: RuntimeAdmission[] = [];
-  for (const declared of submission?.checks ?? []) {
+  const admittedChecks = new Map<string,RuntimeAdmission>();
+  for (const [index,declared] of (submission?.checks ?? []).entries()) {
     const requirement = templates.find(t=>t.key===declared.requirement);
     const interpreter = getInterpreter(declared.interpreter);
     if (!requirement?.run_table || !workflow.ledger?.shapes.some(row=>row.requirement===declared.requirement && row.interpreter===declared.interpreter) || !interpreter || interpreter.validateTable(declared.table).length) continue;
@@ -637,7 +659,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence};
       const texts=evidenceOf(item.id).texts;
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
-      const outcome=await runCheck({interpreter:declared.interpreter},{table:declared.table,subject,sources:gradedSourceView(texts),context:{run:run.run,requirement:requirement.key,pack:workflow.pack.id,sets}});
+      const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
       const ref=parseReference(item.location);
       const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
       const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
@@ -649,8 +671,21 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       && record.samples.some(sample=>sample.expect.some(e=>e.verdict==='refute'))
       && record.samples.some(sample=>sample.source_provenance?.outside_author);
     if(!record.admitted){record.missing=`要求项 ${record.requirement} 的通过正反对照和至少一份作者之外样例的准入证据`;record.next_action='重读外部来源或由其他账号提供样例，补齐正反对照后重交；本次结论以判断为前提';}
+    const bindingGap=runtimeCatalogGaps.get(`@runtime.${index}`);
+    if(bindingGap){record.missing=bindingGap.missing;record.next_action=bindingGap.next_action;}
     runtimeAdmission.push(record);
+    admittedChecks.set(`@runtime.${index}`,record);
   }
+  const runtimeFactOf = (check: CheckEntry) => {
+    const admission=admittedChecks.get(check.id);
+    if(!admission)return {};
+    const index=Number(check.id.slice('@runtime.'.length));
+    return {runtime:{admitted:admission.admitted,admission:`rec:${input.submissionRecord??input.submissionDigest}#/checks/${index}/samples`,run:receivedDigest(run).digest,table:admission.table_sha256,submission:input.submissionDigest}};
+  };
+  const claimRuleOf = (check:CheckEntry):string => {
+    const admission=admittedChecks.get(check.id);
+    return admission ? `运行内检查@${admission.table_sha256}` : ruleOf(workflow,check);
+  };
   const builders = new Map<string, { target: PackFunctionTarget; entries: Map<string, unknown> }>();
   for (const check of perItem) {
     const ids = items.filter(it => eligible(check, it.id)).map(it => it.id);
@@ -827,6 +862,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         independence: t.independent_of !== undefined ? independence : null,
         acceptsDeclared: t.accepts_declared_independence === true,
       });
+      if(status.status==='satisfied' && t.requires_discrimination && (!t.checks.some(id=>admittedChecks.get(id)?.admitted) || t.checks.some(id=>admittedChecks.has(id) && !admittedChecks.get(id)!.admitted))) {
+        status.status='unsatisfied';status.unsatisfied_reason='outcome_mismatch';
+      }
       const claims: Claim[] = [];
       if (isJudgment(t) && hasProducer && handling === 'handled' && !exclude.has(it.id)) {
         if (carried) claims.push(...(carried.claims.get(t.key) ?? []));
@@ -863,7 +901,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             requirement: t.key,
             coverage:sourceCoverage(run.sources,[it.location,...o.outcome.grounds,...sourcesForReads(check).map(s=>s.reference)]),
             outcome: o.outcome,
-            rule: ruleOf(workflow, check),
+            rule: claimRuleOf(check),
+            ...runtimeFactOf(check),
             judges: o.judges,
             sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
@@ -880,7 +919,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         errors.push({
           code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
           message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
-          fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
+          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交'),
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
@@ -899,7 +938,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         problems.add(t.key);
         if (routed.routed.some(r => r.outcome === outcome)) continue;
         const check=checks.get(outcome.check);
-        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
+        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:runtimeCatalogGaps.get(outcome.check)?.next_action??'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
       if (submission!==null&&(handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
         handlingErrorRecorded=true;
@@ -951,7 +990,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       requirement,
       coverage:sourceCoverage(run.sources,[...items.map(it=>it.location),...o.grounds,...sourcesForReads(check).map(s=>s.reference)]),
       outcome: o,
-      rule: ruleOf(workflow, check),
+      rule: claimRuleOf(check),
+            ...runtimeFactOf(check),
       judges: check.judges,
       sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',

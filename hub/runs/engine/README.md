@@ -795,3 +795,10 @@ Failed contrasts, missing polarities and author-only examples keep the submissio
 The evidence is `detail.admission` on the submission's existing validate action, including table digest, expectations,
 observed source provenance and actual outcomes. No additional validate action is written: author/session lineage and the
 per-submission repair-round accounting keep their existing identity.
+
+Admitted runtime checks are added to the locked template checks, never substituted for them. Their warrant is
+`运行内检查@<canonical table sha256>`; validity additionally binds the current run body, submission and table digests.
+Their grounds point to the stored submission's sample list. The admission of that submission is found on its existing
+validate action (linked by submission record and argument digest); this avoids a circular result/action digest reference.
+An admitted outside-author contrast establishes discriminating power. Otherwise the runtime conclusion is conditional and
+its discriminating power is not established; a requirement asking for discrimination remains unsatisfied.
