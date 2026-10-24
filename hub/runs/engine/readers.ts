@@ -50,7 +50,7 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): Sour
 export function runOfRecord(record: { kind: string; schema: string; body: unknown }): string | null {
   const { kind, schema, body } = record;
   if (!isObject(body)) return null;
-  if (kind !== 'run' && kind !== 'validation_result' && kind !== 'submission' && kind !== 'action') return null;
+  if (!(kind==='claim'&&schema==='hypothesis-set@1') && kind !== 'run' && kind !== 'validation_result' && kind !== 'submission' && kind !== 'action' && kind !== 'request') return null;
   if (typeof body.run === 'string') return body.run;
   if (kind === 'submission' && schema === SCHEMAS.received && isObject(body.received) && typeof body.received.run === 'string') return body.received.run;
   return null;
@@ -69,6 +69,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
         if (run === null) return null;
         const owner = record.kind === 'run' ? (record.body as RunRecord) : (await runById(store, run))?.body;
         if (owner === undefined || !await canViewRun(principalOf(reader), owner, store)) return null;
+        if (!canSeeRun(principalOf(reader),owner)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return null;
         if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };

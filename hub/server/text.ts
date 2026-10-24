@@ -1,3 +1,4 @@
+import { isAbandonedResult } from '../runs/api.ts';
 import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
@@ -40,7 +41,7 @@ import {
   type SubmitResultOutput,
   type UploadFileOutput,
 } from '../../contracts/src/tools.ts';
-import { PartitionCounts, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
 import { NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type LayerTerminal } from './claims.ts';
@@ -182,7 +183,7 @@ function reasonCounts(items: readonly ItemResult[] | undefined): string {
 /** Items per partition (a declared skip is told apart from an item the submission did not cover) and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
 export function countsText(counts: PartitionCounts, partitions?: Partitions): string {
   const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p])}`).join('，');
-  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}`;
+  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}${counts.pending_unknown ? `；其中 ${counts.pending_unknown} 个还有未决未知` : ''}`;
 }
 
 /** The partition counts line: receipt, items per partition and the items with an unknown terminal. */
@@ -1142,9 +1143,16 @@ function buildView(c: Content & { text: string }): ContentView {
     try{read=readStoredValidationResult(value);}catch(error){if(!(error instanceof ZodError))throw error;read=null;}
     if (read !== null) {
       const result = read.result;
+      const notices=read.notices;
+      const management=isAbandonedResult(result);
+      const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
+      const missingExits=notices.filter(n=>n.message==='出口未写'),missingFacts=notices.filter(n=>n.message==='缺失事实未写');
       const head = [
-        `结果 ${c.reference}（运行 ${result.run}）：${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
+        ...(management?['管理放弃：要求项未满足（已放弃）；技术层沿用原记录，未重验；保留未知计数，不改变原效果及冻结。',`原技术记录有 ${typeof unwritten==='number'?unwritten:0} 处字段未写；管理出口不是旧技术出口，原件不回填。`]:[]),
+        `结果 ${c.reference}（运行 ${result.run}）：${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
         `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
+        ...(notices.length?[`旧结果：出口未写 ${missingExits.length} 处，缺失事实未写 ${missingFacts.length} 处；首处 ${notices[0].path}。原记录不回填，请按具名请求补齐事实后重评或开新修订`]:[]),
+        ...(result.system_input?[`系统交付输入摘要 ${result.submission}；来源 ${result.system_input}`]:[]),
         `内容${RESULT_PARTS}`,
       ];
       return { head, lines: resultLayout(result, recReference(record)).lines, unit: '结果', run: result.run, record, tree: null, text: false };

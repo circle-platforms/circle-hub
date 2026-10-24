@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.3.6'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.4.1'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -26,7 +26,7 @@ test('workflow binds the published profile and exposes reservation addresses und
 test('every check serves one requirement and repairable codes have exactly two rounds', () => {
   const checks = json('checks.json').checks as Array<{ id: string; tier: string }>;
   const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
-  assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'workbook_verified']);
+  assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'workbook_verified', 'dispatch_policy']);
   assert.ok(checks.every((v) => v.tier === 'blocking'));
   assert.deepEqual([...new Set(requirements.flatMap((v) => v.checks))].sort(), checks.map((v) => v.id).sort());
   assert.ok(!requirements.some((v) => v.key === 'plan_deterministic'));
@@ -43,7 +43,7 @@ test('complete slot schema rejects legacy data and nonempty blocks', () => {
 });
 test('each runtime plan rule has paired positive and negative author samples', () => {
   const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
-  assert.deepEqual(positive, negative); assert.equal(positive.length, 47);
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 48);
   const coverage = new Set<string>();
   for (const name of positive) {
     const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);

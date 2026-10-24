@@ -1,5 +1,6 @@
+import {isReason,labelOf} from '../../../contracts/generated/vocabulary.ts';
 import assert from 'node:assert/strict';
-import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
+import {CORE_VIOLATION_CODES,PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
 import type { RunSummary } from '../../../contracts/src/run.ts';
 import { ResolveReferenceOutput } from '../../../contracts/src/tools.ts';
@@ -226,7 +227,7 @@ test('shared run details never include rejected validation bodies while owner an
   assert.ok(visible.errors.length>0);
   for(const error of visible.errors){
     assert.deepEqual(Object.keys(error).sort(),['code','message']);
-    assert.equal(error.message,PROTOCOL_CODES[error.code as keyof typeof PROTOCOL_CODES].when);
+    assert.equal(error.message,Object.hasOwn(PROTOCOL_CODES,error.code)?PROTOCOL_CODES[error.code as keyof typeof PROTOCOL_CODES].when:Object.hasOwn(CORE_VIOLATION_CODES,error.code)?CORE_VIOLATION_CODES[error.code as keyof typeof CORE_VIOLATION_CODES].when:isReason(error.code)?labelOf('reason',error.code):'');
   }
   assert.ok(!JSON.stringify(visible.errors).includes('synthetic-private-item'));
   assert.deepEqual((await h.service.getRun(h.alice,run.run))!.submissions.find(row=>row.record===receipt.record)!.errors,receipt.errors);

@@ -268,7 +268,8 @@
       "checks": [
         "workbook_verified",
         "commands_catalog",
-        "expected_quotes"
+        "expected_quotes",
+        "dispatch_policy"
       ],
       "error_handling": [
         {
@@ -306,6 +307,41 @@
           "action": "repair",
           "max_rounds": 2
         }
+      ]
+    }
+  ],
+  "effects": [
+    {
+      "id": "submit_verified_workbook",
+      "resource_kind": "executor",
+      "action": "submit",
+      "effect_class": "job",
+      "parameters": {
+        "policy": "policies/dispatch.json",
+        "check": "dispatch_policy"
+      },
+      "release": {
+        "requirements": [
+          "plan",
+          "contract_methods",
+          "bed_addresses",
+          "commands_known",
+          "expected_grounded",
+          "workbook_verified"
+        ],
+        "artifact": "workbook_verified"
+      },
+      "trigger": "hub_template",
+      "budget": {
+        "count": 1,
+        "duration_ms": {
+          "executor_max_run_ms": true
+        }
+      },
+      "deadline_ms": 86400000,
+      "optional": false,
+      "policy_checks": [
+        "dispatch_policy"
       ]
     }
   ]

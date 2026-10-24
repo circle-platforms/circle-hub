@@ -154,14 +154,14 @@ test('claims are shown in DISPLAY_ORDER; unknown terminals have their own symbol
   assert.match(fields[1][1], /参数超出范围，反驳，core\.catalog\.param_out_of_range/);
   assert.equal(fields[2][1], '事实，观察上的规则');
   for (const terminal of STATIC_TERMINAL) {
-    const layer = LayerResult.parse({ layer: 'static', terminal, ...(terminal === 'violation' ? { code: 'x' } : {}), ...(['unchecked', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing: '合成检查的判定结果', exit: { action: 'reevaluate', audience: { hub: true }, due: '2026-01-01T00:00:00Z' } } : {}) });
+    const layer = LayerResult.parse({ layer: 'static', terminal, ...(terminal === 'violation' ? { code: 'x' } : {}), ...(['unchecked', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing:'合成观察尚未提供',exit:{action:'request',request_kind:'repair',audience:{user:'usr_00000000000000000000000001'},due:'2026-10-25T00:00:00.000Z'} } : {}) });
     const symbol = terminalSymbol(layer);
     if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
     else assert.notEqual(symbol, SYMBOL.unknown, terminal);
     assert.match(terminalText(layer), /^.\s静态：/);
   }
   for (const terminal of DYNAMIC_TERMINAL) {
-    const layer = LayerResult.parse({ layer: 'dynamic', terminal, ...(terminal === 'fail' ? { code: 'x' } : {}), ...(['no_verdict', 'not_run', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing: '合成检查的判定结果', exit: { action: 'reevaluate', audience: { hub: true }, due: '2026-01-01T00:00:00Z' } } : {}) });
+    const layer = LayerResult.parse({ layer: 'dynamic', terminal, ...(terminal === 'fail' ? { code: 'x' } : {}), ...(['no_verdict', 'not_run', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing:'合成观察尚未提供',exit:{action:'request',request_kind:'repair',audience:{user:'usr_00000000000000000000000001'},due:'2026-10-25T00:00:00.000Z'} } : {}) });
     const symbol = terminalSymbol(layer);
     if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
     else assert.ok(symbol !== SYMBOL.unknown, terminal);

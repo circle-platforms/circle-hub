@@ -1,12 +1,13 @@
+import {partitionItems} from './partitions.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bindRecovery } from './recovery.ts';
 import { REASON, SOURCE_ROLE } from '../../../contracts/generated/vocabulary.ts';
 import type { RequirementTemplate } from '../../../contracts/src/pack.ts';
-import { LayerResult } from '../../../contracts/src/validation.ts';
+import { LayerResult,partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
 import {
   applyRouting,
+  bindRecovery,
   attributionByReason,
   attributionByRole,
   dynamicLayer,
@@ -66,13 +67,13 @@ test('fact terminals: all support pass, any refute violation, unknown by its rea
   // a used-up budget is incomplete wherever it was used up (P11 R[3]), and stronger than an unknown of another check
   for (const data of [undefined, { sandbox: 'SANDBOX_UNAVAILABLE', reason: 'queue_full' }]) {
     const b = fact([judged(unknown('missing_input')), judged(unknown('budget_exhausted', data === undefined ? {} : { data }))]);
-    assert.deepEqual([b.terminal, b.reason], ['incomplete', 'budget_exhausted']);
+    assert.deepEqual([b.terminal, b.reason], ['unchecked', 'missing_input']);
   }
   // a refutation wins over an unknown or a used-up budget of another check
   assert.equal(fact([judged(unknown('check_error', { data: { sandbox: 'FUNCTION_THREW' } })), judged(refute('core.catalog.not_member'))]).terminal, 'violation');
   assert.equal(fact([judged(unknown('budget_exhausted')), judged(refute('core.catalog.not_member'))]).terminal, 'violation');
   assert.deepEqual([fact([], SUPPORT, 0).terminal, fact([], SUPPORT, 0).reason], ['unchecked', 'no_check']);
-  assert.deepEqual([fact([], SUPPORT, 2).terminal, fact([], SUPPORT, 2).reason], ['unchecked', 'no_check']);
+  assert.deepEqual([fact([], SUPPORT, 2).terminal, fact([], SUPPORT, 2).reason], ['unchecked', 'check_error']);
 });
 
 test('the violation shows a blocking refutation first, and an unexpected one before an expected one', () => {
@@ -174,7 +175,7 @@ test('attribution only on non-pass terminals that miss the expectation, by rule 
   const judgment = staticLayer(applyRouting(staticTerminal({ producer: 'judgment', hasProducer: true, checks: 0, outcomes: [], handling: 'handled', expectation: SUPPORT }), t, 0), SUPPORT);
   assert.equal(judgment.attribution, undefined);
   // every layer the functions build is a valid layer result of the contract
-  for (const l of [layer, judgment, dynamicLayer()]) assert.ok(LayerResult.safeParse(bindRecovery(l, [], { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) })).success, JSON.stringify(l));
+  for (const l of [layer, judgment, dynamicLayer()]) assert.ok(LayerResult.safeParse(bindRecovery(l,{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:'synthetic'})).success, JSON.stringify(l));
 });
 
 test('error routing: repair with rounds left and exhaustion, request waits, unknown records unknown, reject keeps the violation', () => {
@@ -245,13 +246,13 @@ test('a requirement incomplete at every declared layer: skipped, not covered, re
   const repairRow = template({ error_handling: [{ code: 'p.code', action: 'repair', max_rounds: 1 }] });
   const exhausted = applyRouting(staticTerminal({ ...base, outcomes: [judged(refute('p.code'), 'artifact_under_verification')], handling: 'handled' }), repairRow, 1);
   assert.deepEqual(dynamicLayer(exhausted), { layer: 'dynamic', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error' });
-  assert.equal(dynamicLayer(applyRouting(fact([judged(unknown('budget_exhausted'))]), template(), 0)).terminal, 'incomplete');
+  assert.equal(dynamicLayer(applyRouting(fact([judged(unknown('budget_exhausted'))]), template(), 0)).terminal, 'not_run');
   // a request waiting, an unknown, a pass: the dynamic layer has no check of its own, not run
   for (const raw of [fact([judged(unknown('timeout'))]), fact([judged(support())]), staticTerminal({ ...base, outcomes: [], handling: 'handled' })]) {
     assert.deepEqual(dynamicLayer(applyRouting(raw, template(), 0)), dynamicLayer());
   }
   assert.equal(dynamicLayer(applyRouting(fact([judged(refute('p.code'), 'subject')]), template({ error_handling: [{ code: '*', action: 'request' }] }), 0)).terminal, 'not_run');
-  for (const l of [dynamicLayer(skipped), dynamicLayer(exhausted)]) assert.ok(LayerResult.safeParse(bindRecovery(l, [], { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) })).success, JSON.stringify(l));
+  for (const l of [dynamicLayer(skipped), dynamicLayer(exhausted)]) assert.ok(LayerResult.safeParse(bindRecovery(l,{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:'synthetic'})).success, JSON.stringify(l));
 });
 
 test('item cell: strongest terminal per layer with the counts of the other non-pass terminals; undeclared layers have none', () => {
@@ -274,4 +275,18 @@ test('item cell: strongest terminal per layer with the counts of the other non-p
   assert.equal(itemCell([r('a', [{ layer: 'static', terminal: 'pass' }])]).static?.terminal, 'pass');
   assert.ok(isUnsettled({ layer: 'dynamic', terminal: 'no_verdict', reason: 'integrity_unproven' }));
   assert.ok(!isUnsettled({ layer: 'static', terminal: 'judgment' }));
+});
+
+test('a known expectation miss outranks an unsettled layer without changing facts or partition counts',()=>{
+  const dynamic=bindRecovery(dynamicLayer(),{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:'synthetic'});
+  const layers:LayerResult[]=[{layer:'static',terminal:'violation',code:'synthetic.violation'},dynamic];
+  const before=structuredClone(layers);
+  const status=requirementStatus({layers,hasProducer:true,expectation:SUPPORT,expectedRefutation:false,independence:null,acceptsDeclared:false});
+  assert.deepEqual(status,{status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
+  assert.deepEqual(layers,before);
+  const make=(value:{status:'pending'}|typeof status)=>partitionItems([{item:'synthetic',label:'合成条目',location:'src:'+'a'.repeat(64),requirements:[{requirement:'r',layers,claims:[],...value}],required:new Set(['r']),notCovered:false,rejection:null}],['synthetic']);
+  const pending=make({status:'pending'}),unmet=make(status);
+  assert.deepEqual(Object.keys(unmet).map(key=>unmet[key as keyof typeof unmet].map(item=>item.item)),Object.keys(pending).map(key=>pending[key as keyof typeof pending].map(item=>item.item)));
+  assert.deepEqual(partitionCountsOf(unmet),partitionCountsOf(pending));assert.equal(partitionCountsOf(unmet).unknown,1);
+  assert.deepEqual(requirementStatus({layers,hasProducer:true,expectation:{outcome:'refute',codes:['synthetic.violation']},expectedRefutation:true,independence:null,acceptsDeclared:false}),{status:'pending'},'a matching known terminal leaves the other layer pending');
 });

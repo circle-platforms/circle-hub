@@ -1,3 +1,4 @@
+import { readRunJobs } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
@@ -8,7 +9,7 @@ import { productVariableNameAvailable } from '../variables.ts';
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService } from '../../dispatch/api.ts';
+import { DispatchService, freezeEffectRegistry } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -29,9 +30,11 @@ import {
   createPackRegistry,
   createPacksPort,
   createRunsService,
+  recheckEffectChecks,
   createWorkflowStore,
   type PackRegistry,
   type RunsEngine,
+  type RunsEngineDeps,
 } from '../../runs/api.ts';
 import type { AssembleFunction, CommandIo, ServerDeps } from '../api.ts';
 import { createDocs, routeDocs, type Docs } from '../docs.ts';
@@ -176,7 +179,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
   let dispatch: DispatchService | null = null;
-  const engine = createRunsService({
+  const engineDeps:RunsEngineDeps = {
+    effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
+    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);}},
     records,
     workflows,
     packs,
@@ -191,15 +196,17 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
       return dispatch.activeLeaseJobs(keys);
     } } : {}),
     adminLog: notes.engine,
-  });
+  };
+  const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ records, leases, runs, workflows,redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, leases, runs, workflows,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,
     records,
     runs,
     runsDetail: runs,
+    ...(options.command?{}:{maintenance:engine}),
     knowledge,
     workflows,
     packs: catalog,

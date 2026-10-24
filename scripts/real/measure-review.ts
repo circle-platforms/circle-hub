@@ -13,6 +13,10 @@ import { PublicRefusal, type PublicRefusalReason, recordRefusal, refusalSummary 
 //     [--baseline <previous --out>] [--tree <command XML>] [--submission <raw-file-{n}.json>]
 //     [--catalog-table <declaration.json>] [--catalog-manifest <pack.json>] [--argument-types <JSON array>] --out <dir>
 // Accepted bodies are read by record reference and bound by canonical JSON digest; missing reads request positioned evidence.
+// Verify prompt templates: {copy} is the copy path, {draft_run} the current draft run, and {draft_record} its accepted
+// validation result's root rec:<64 lowercase hex> reference (not a submission original). The record comes from the same
+// run-show snapshot used to judge validity. A template using it requires that reference; otherwise the draft is invalid
+// and no verify session starts. The reference stays in the private prompt/evidence, never the fixed screen count lines.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -26,7 +30,7 @@ import { parseCallLog } from './review-circle.ts';
 export interface SessionSpec {
   /** review-circle.ts's endpoint and connection arguments, verbatim. */
   args: string[];
-  /** The prompt template; {copy} becomes the copy path, {draft_run} this round's draft run. */
+  /** Prompt template: {copy} is the copy path; verify also receives {draft_run} and the accepted result {draft_record}. */
   prompt: string;
 }
 
@@ -188,6 +192,13 @@ export function judgeRun(
   return { ok: true, run, detail, result: detail.latest.result as unknown as ResultLike };
 }
 
+/** Use only the accepted validation result recorded by this already-judged run-show snapshot. */
+function acceptedDraftRecord(detail: RunLike): string | null {
+  if (detail.latest?.result.acceptance !== 'accepted' || typeof detail.latest.record !== 'string') return null;
+  const digest = /^(?:rec:)?([a-f0-9]{64})$/.exec(detail.latest.record)?.[1];
+  return digest === undefined ? null : 'rec:' + digest;
+}
+
 /** The summary counts of the fixed screen lines; no node id, title or text appears here. */
 export function summaryLines(options: { copySha: string; goldSha: string; manualSha: string | null; cases: number; injected: number; repeat: number; hasVerify: boolean; rounds: RoundOutcome[]; totals: ReturnType<typeof aggregate>; untouched: number; catalogProvided?: boolean }): string[] {
   const valid = options.rounds.filter((r) => r.draftValid && (options.hasVerify ? r.verifyValid : true));
@@ -307,7 +318,12 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     const draftPrompt = options.draft.prompt.replaceAll('{copy}', join(options.out, 'mutated.json'));
     const draft = drivers.review(options.draft, draftPrompt, dir, 'draft');
     writeFileSync(join(dir, 'draft.client-status.json'), JSON.stringify({ code: draft.code }), { mode: 0o600 });
-    const draftJudged: ReturnType<typeof judgeRun> = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    let draftJudged: ReturnType<typeof judgeRun> = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    const draftRecord = draftJudged.ok ? acceptedDraftRecord(draftJudged.detail) : null;
+    // Legacy templates do not need record metadata they never consumed. Requested references must be proven, not guessed.
+    if (draftJudged.ok && options.verify?.prompt.includes('{draft_record}') && draftRecord === null) {
+      draftJudged = { ok: false, reason: '取不到运行', run: draftJudged.run, detail: draftJudged.detail };
+    }
     let round: RoundOutcome;
     if (draftJudged.ok) {
       writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
@@ -315,7 +331,9 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
         round = { n, draftPack: packOf(draftJudged.detail), draftValid: true, draftRun: draftJudged.run, verifyPack: '', verifyValid: true };
         round.score = score(gold, draftJudged.result, { ...(baseline === undefined ? {} : { baseline }), literal: answer });
       } else {
-        const verifyPrompt = options.verify.prompt.replaceAll('{copy}', join(options.out, 'mutated.json')).replaceAll('{draft_run}', draftJudged.run);
+        const substitutions = { copy: join(options.out, 'mutated.json'), draft_run: draftJudged.run, draft_record: draftRecord ?? '' };
+        // Expand only tokens in the original template, never token-looking text inside a substituted path.
+        const verifyPrompt = options.verify.prompt.replace(/\{(copy|draft_run|draft_record)\}/g, (_token, key: keyof typeof substitutions) => substitutions[key]);
         const verifyRun = drivers.review(options.verify, verifyPrompt, dir, 'verify');
         writeFileSync(join(dir, 'verify.client-status.json'), JSON.stringify({ code: verifyRun.code }), { mode: 0o600 });
         const verifyJudged: ReturnType<typeof judgeRun> = verifyRun.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });

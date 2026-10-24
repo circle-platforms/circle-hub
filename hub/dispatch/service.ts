@@ -1,3 +1,7 @@
+import {RETRY_RULES} from './retry-policy.ts';
+import {prepareEffectGate,EffectBoundaryError} from './effect-gate.ts';
+import {checkEffectBoundary,incompleteEffectBoundary,deny,type BoundaryFailure} from './boundary.ts';
+import {verifiedContent} from './content.ts';
 import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
@@ -21,6 +25,7 @@ function retrySafeOutcome(value:unknown):boolean {
   return outcome==='target_rejected'||outcome==='proven_not_executed';
 }
 export interface DispatchOptions {
+  recheckChecks?:import('../ports.ts').EffectCheckReplay;
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
@@ -65,7 +70,7 @@ export class DispatchService {
     if (!events.length) throw new Error('作业对你不可用');
     const probeIntent=eventOf(events,'probe_intent');
     const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || retrySafeOutcome(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
-    const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
+    const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete')??eventOf(events,'boundary_refused');
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
     const decision=eventOf(events,'dispose');const choice=decision?.body.detail.disposition;
@@ -147,7 +152,7 @@ export class DispatchService {
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
-    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
+    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;const ambiguous=false;
     try {
       await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
       const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-d.conformance.expiry_margin_ms-1000).toISOString(),items:[]};
@@ -157,32 +162,13 @@ export class DispatchService {
       const expectedIdentity=requestIdentity(missing.value,r.identity,r.time_scale_ms);
       checks.push(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms && !!expectedIdentity && at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))) && wireTime(at(missing.value,r.gc_before))>=expectedIdentity.since);
       if(!checks[0]) {const gaps=[...(at(missing.value,r.found)!==false?['探测编号没有取得查空回答']:[]),...(!expectedIdentity?['缺少日志身份、记账起点或完整主体']:[]),...(!(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms)?['目标时刻未越过探测截止及声明余量，不能保证按过期拒收']:[]),...(!Number.isFinite(wireTime(at(missing.value,r.gc_before))) || expectedIdentity && wireTime(at(missing.value,r.gc_before))<expectedIdentity.since?['缺少覆盖记账起点的有效保留边界']:[])];failure={missing_fact:gaps.join('；'),next_action:'管理员先核对目标与 Hub 时钟、时区和日志身份声明，取得越过截止及余量的目标时刻后再运行 conformance；本次未提交'};throw new Error('探测过期前提不成立');}
-      context.request_id = `${binding.job}:1`;
-      const first = Buffer.from(d.conformance.payloads[0],'base64'); const second = Buffer.from(d.conformance.payloads[1],'base64');
-      const refused = (v:unknown) => sameRequestIdentity(expectedIdentity,requestIdentity(v,d.receipt.identity,r.time_scale_ms)) && at(v,d.receipt.stage!) === d.conformance!.expected_stage && mapped(d.receipt.map,at(v,d.receipt.acceptance)) === 'not_accepted' && mapped(d.receipt.stages,at(v,d.receipt.stage!)) === 'target_rejected' && at(v,d.receipt.reached_device!) === false;
-      await this.journal.append(binding,'probe_intent','validate','completed',{request_id:context.request_id,not_after:context.not_after,sha256:sha256Hex(first),remote_lease:lease,request_identity:expectedIdentity,request_protocol_version:client.serverVersion,request_protocol_verified:r.protocol_versions.includes(client.serverVersion??'')},[missing.source]);
-      for (const payload of [first,second]) {
-        await this.journal.append(binding,'probe_attempt','validate','completed',{request_id:context.request_id,sha256:sha256Hex(payload)});
-        let reply:Exchange;
-        try{reply=await client.call('submit',{...context,payload_base64:payload.toString('base64'),sha256:sha256Hex(payload)});}
-        catch(error){checks.push(false);if(error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError){failure={missing_fact:'探测提交明确没有写出请求字节；未取得协议拒收事实',next_action:'管理员核对本地调用声明和连接后重新采证；本次没有调用效果'};break;}ambiguous=true;break;}
-        observations.push(reply);checks.push(refused(reply.value));
-        const remoteId=at(reply.value,d.receipt.id);
-        const safe=mapped(d.receipt.map,at(reply.value,d.receipt.acceptance))==='not_accepted' && mapped(d.receipt.stages,at(reply.value,d.receipt.stage!))==='target_rejected' && at(reply.value,d.receipt.reached_device!)===false && (remoteId===undefined || remoteId===null) && sameRequestIdentity(expectedIdentity,requestIdentity(reply.value,d.receipt.identity,r.time_scale_ms));
-        if(!safe){ambiguous=true;break;}
-        if(!checks.at(-1)){failure={missing_fact:'探测虽明确拒收，但没有取得预期受理阶段的过期拒收事实',next_action:'管理员核对拒收阶段原件及映射，确认截止检查位置；不得仅靠重跑补证'};break;}
-      }
-      if(ambiguous)await this.probeFollowup(by,binding,d,client);
-      else if(checks.length===3) {
-      const recorded = await this.read(binding,client,'query',context); observations.push(recorded);
-      checks.push(sameRequestIdentity(expectedIdentity,requestIdentity(recorded.value,r.identity,r.time_scale_ms)) && at(recorded.value,r.found) === true && at(recorded.value,r.request_id) === context.request_id && at(recorded.value,r.sha256) === sha256Hex(first) && mapped(r.map,at(recorded.value,r.state)) === 'target_rejected' && at(recorded.value,r.reached_device) === false && at(recorded.value,r.stage) === d.conformance.expected_stage && mapped(d.receipt.stages,at(recorded.value,r.stage)) === 'target_rejected');
-      }
+      failure={missing_fact:'只有只读查空原件，缺少已核验的过期拒收和同键去重事实；管理员提供的探测字节未经核验，不得外发，须补受限审计证据',next_action:'管理员从目标自己的受限审计记录只读取证，将完整协议事实、目标版本和证据引用登记到执行器前提；conformance 不提交探测字节'};
     } catch { checks.push(false);failure??={missing_fact:'探测所需的连接、租约或请求记录未完整取得；未确认四项协议事实',next_action:'管理员检查受限调用原件、目标连接和租约配置，恢复缺失的读取事实后再采证'}; }
     finally { if (lease) await this.release(binding,client,lease); }
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
     await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
-    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:!ambiguous && checks.length === 4 && checks.every(Boolean),...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
+    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:false,readonly_observed:checks.length===1&&checks[0],...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
     return this.status(by,binding.job);
   }
 
@@ -217,8 +203,11 @@ export class DispatchService {
     const d = registered.definition;
     await this.assertNoSecrets(d);
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
-    if (registrationMissing(d).length) throw new Error(`派发登记缺事实：${registrationMissing(d).join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
-    const input = await verifyInput(by, run, d, this.options.records, this.options.runs, this.options.workflows, this.now());
+    if (registrationMissing(d).filter(name=>name!=='environment').length) throw new Error(`派发登记缺事实：${registrationMissing(d).filter(name=>name!=='environment').join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
+    const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,recheck:this.options.recheckChecks,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
+    const provisional:JobBinding={run,job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
+    const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
+    const input=preflight.input;
     const previous = await this.options.records.store.getByKey('action', `dispatch.bytes:${input.sha256}`);
     const attempts = (await this.options.records.store.findMany<import('../records/api.ts').ActionBody>({ kind: 'action', key: 'dispatch.bytes', values: [input.sha256] })).filter(e => e.body.detail.phase === 'intent');
     if (previous) throw new Error('这份字节已有旧版派发意图；只能查询或对账，不能重交');
@@ -229,9 +218,10 @@ export class DispatchService {
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
-    if (!source?.bytes) throw new Error('核验字节不可读取，未提交');
-    const initial = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms+d.max_run_ms);
-    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
+    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE','缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
+    const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
+    if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
+    delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const secret=await this.secret(binding,d);if(secret===null)return this.credentialUnavailable(by,binding,true);
@@ -242,7 +232,7 @@ export class DispatchService {
       await session.connect();
       remote = await this.acquire(binding, d, session, this.context(binding));
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
-      const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source.bytes).toString('base64') };
+      const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source?.bytes??[]).toString('base64') };
       const precheck = await this.retryRead(binding, session, 'precheck', context, Infinity);
       if (!await this.assessConditions(binding,d.conditions,precheck,context,'precheck.evaluated')) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
@@ -253,8 +243,8 @@ export class DispatchService {
       await this.registry.admin(by);
       const ownerNow = await this.options.records.principals.get(input.user);
       if (!ownerNow || ownerNow.disabled) throw new Error('发起用户已经不可用；未提交');
-      const fresh = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms+d.max_run_ms);
-      if (!this.sameFences(initial, fresh)) throw new Error('派发前围栏已变；未提交，请重新证明基线');
+      let fresh:HolderSnapshot[];try{fresh=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{throw new EffectBoundaryError(deny(5,'LEASE_EXPIRED','资源租约已到期或不再覆盖窗口；请恢复租约并重证基线'));}
+      if (!this.sameFences(initial, fresh)) throw new EffectBoundaryError(deny(5,'FENCING_STALE','派发前围栏已变；请重新证明基线'));
       const currentProof = await verifyInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
       if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
       const notAfter = new Date(this.now().getTime() + d.submit_timeout_ms).toISOString();
@@ -277,7 +267,25 @@ export class DispatchService {
         requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
         await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
       }
-      const intentSemantics:{effect_class:EffectClass;retry_safety:RetrySafety;signing:Signing}={effect_class:'job',retry_safety:d.retry_safety,signing:'service_on_behalf'};
+      let beforeState:{bound:boolean;sha256:string|null;reference:string|null}={bound:false,sha256:null,reference:null};
+      const readBeforeState=async()=>{
+        const declaration=d.calls.submit.write?.before_state;if(!declaration)return;
+        const response=await session.declaredRead(declaration.call,context,'before_state');
+        const expected=bind(declaration.expected,context),actual=at(response.value,declaration.pointer);
+        const matched=same(expected,actual);
+        const conditionalCertified=declaration.conditional_write&&await this.certified(binding,d,session,'conditional_write');
+        await this.journal.append(binding,'before_state','read','completed',{matched,remote_lease:remote,expected_sha256:digestOfValue(expected),observed_sha256:actual===undefined?null:digestOfValue(actual),bound:matched&&conditionalCertified,conditional_write_declared:declaration.conditional_write,conditional_write_certified:conditionalCertified,...(declaration.conditional_write&&!conditionalCertified?{missing_fact:'目标这个版本的条件写尚未认证；只读比较不证明原子绑定',next_action:'管理员从目标受限审计和协议证据认证此版本的条件写前提；当前记录未绑定前状态'}:{})},[response.source]);
+        if(!matched)throw new EffectBoundaryError(deny(5,'FENCING_STALE','前状态与绑定值不符；请只读核对目标状态并重证基线'));
+        beforeState={bound:conditionalCertified,sha256:digestOfValue(actual),reference:response.source};
+        if(declaration.conditional_write)context.before_state=actual;
+      };
+      await readBeforeState();
+      const finalBoundary={...gate.context,
+        lease:async()=>{if(!pulse?.held())return {ok:false,code:'LEASE_EXPIRED',message:'目标租约心跳或确认时效中断；请恢复租约并重证基线'};const current=await this.options.leases.holderSnapshot(d.resources);return this.sameFences(initial,current)?{ok:true}:{ok:false,code:'FENCING_STALE',message:'Hub 围栏改变；请重证基线后开新修订'};},
+        content:async proof=>!!source?.bytes&&proof.sha256===input.sha256&&verifiedContent(source.bytes,input.sha256,source.mediaType),audience:async()=>!d.calls.submit.write?.audience} satisfies import('./boundary.ts').BoundaryContext;
+      const boundary=await checkEffectBoundary(finalBoundary);
+      if(!boundary.ok||boundary.checked!==9){const failure=boundary.ok?incompleteEffectBoundary(boundary):boundary;await stop();await this.release(binding,session,remote);return this.boundaryRefused(by,binding,failure);}
+      const intentSemantics:{effect_class:EffectClass;retry_safety:RetrySafety;signing:Signing}={effect_class:d.calls.submit.write?.effect_class??'job',retry_safety:d.calls.submit.write?.retry_safety??'unsafe',signing:d.calls.submit.write?.signing??'service_on_behalf'};
       const precheckSources=[...new Set((await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase)) || e.body.detail.phase==='device_probe').flatMap(e=>e.body.inputs))];
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
       if(!pulse.held())throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');
@@ -290,13 +298,14 @@ export class DispatchService {
           const row=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${use.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
           if(row.items[0]?.body.revoked||row.items[0]?.digest!==use.decision)throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
         }
-        const gate = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}`, tx);
-        if (!gate.created) throw new Error('作业已经恢复或关闭，不能再提交');
+        await gate.reserveBudget(boundary.row,tx);
+        const permitted = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}`, tx);
+        if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = attempt === 1 ? await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx) : { created: true };
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'validate', 'completed', { intent_key: key, verification_result:currentProof.result, request_id: context.request_id, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row:boundary.row.id,effect_duration_ms:d.max_run_ms,intent_key: key, verification_result:currentProof.result, request_id: context.request_id, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
-          before_state_bound: false, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources,...requestSources], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
+          before_state_bound: beforeState.bound,before_state:beforeState,fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources,...requestSources], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
       intended = true;
@@ -306,7 +315,26 @@ export class DispatchService {
       // Signals must not cancel an in-flight effect; SIGKILL is recovered from the already committed intent.
       const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore); process.on('SIGHUP',ignore);
       let answer: Exchange;
-      try { submitInvoked=true;answer = await session.call('submit', context,Math.max(1,Date.parse(notAfter)-this.now().getTime())); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP',ignore); }
+      try {
+        submitInvoked=true;
+        try{answer=await session.call('submit',context,Math.max(1,Date.parse(notAfter)-this.now().getTime()));}
+        catch(error){
+          if(error instanceof SubmissionNotSentError||error instanceof InvocationDefinitionError)throw error;
+          const rule=RETRY_RULES[intentSemantics.retry_safety];
+          const retryDeadline=rule.window?Math.min(Date.parse(notAfter),Date.parse(notAfter)-d.submit_timeout_ms+(d.premises.window_resend?.window_ms??0)):Date.parse(notAfter);
+          if(!rule.resend||this.now().getTime()>=retryDeadline||!pulse.held()||!await this.certified(binding,d,session,'retry_safety')||rule.window&&!await this.certified(binding,d,session,'window_resend'))throw error;
+          try{await readBeforeState();}catch{await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:'丢回复后前状态不再匹配或读不到；原请求是否执行须对账',next_action:'自动只读原请求记录，不把重发前提失败当作未执行'});throw error;}
+          const retryBoundary=await checkEffectBoundary({...finalBoundary,budget:async row=>{const used=await finalBoundary.budget(row);return {count:used.count-1,duration_ms:used.duration_ms-d.max_run_ms};}});
+          if(!retryBoundary.ok||retryBoundary.checked!==9){const failure=retryBoundary.ok?incompleteEffectBoundary(retryBoundary):retryBoundary;await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:failure.message,next_action:failure.fix},[]);throw error;}
+          await this.journal.append(binding,'resend','dispatch','completed',{outcome:'issued',request_id:context.request_id,intent_key:key,possibly_duplicated:rule.mark==='possible_duplicate',retry_once:true});
+          if(!pulse.held()||this.now().getTime()>=retryDeadline)throw error;
+          try{answer=await session.call('submit',context,Math.max(1,retryDeadline-this.now().getTime()));}
+          catch(retryError){
+            await this.journal.append(binding,'resend_failed','dispatch','unknown',{retry_locally_unsent:retryError instanceof SubmissionNotSentError||retryError instanceof InvocationDefinitionError,missing_fact:'第一次投递的执行事实尚未对账；第二次本地失败不能证明第一次未发出',next_action:'自动核对原请求记录；没有请求接口时交管理员按原投递事实处置'});
+            throw error; // Only the first invocation's failure can classify whether the original effect was sent.
+          }
+        }
+      } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP',ignore); }
       const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
       if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
@@ -329,6 +357,7 @@ export class DispatchService {
       await this.journal.append(binding, 'receipt', 'read', 'completed', { remote_id: remoteId, acceptance: 'accepted', outcome: 'issued' }, [answer.source]);
       return await this.observe(by, binding, d, session, remoteId, fresh, stop);
     } catch (error) {
+      if(error instanceof EffectBoundaryError&&!intended&&!eventOf(await this.journal.events(binding.job),'intent')){await stop();if(remote)await this.release(binding,session,remote);return this.boundaryRefused(by,binding,error.failure);}
       if (intended || eventOf(await this.journal.events(binding.job), 'intent')) {
         if((!submitInvoked || error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError) && remote) {await this.notSent(binding,session,remote,stop,'当前进程证明未调用提交或未写出请求字节',error instanceof SubmissionNotSentError?[error.source]:[]);return this.status(by,binding.job);}
         if (receiptOf(await this.journal.events(binding.job))) await this.pendingRead(binding);
@@ -341,6 +370,11 @@ export class DispatchService {
       }
       return await this.status(by, binding.job);
     } finally { await stop(); }
+  }
+  private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure):Promise<JobStatus>{
+    if(!(await this.journal.events(binding.job)).length)await this.journal.append(binding,'reservation','dispatch','completed',{binding,read_only:true});
+    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:failure.message,missing_fact:failure.message,next_action:failure.fix},[],undefined,undefined,failure.code);
+    return this.status(by,binding.job);
   }
   async resume(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by);

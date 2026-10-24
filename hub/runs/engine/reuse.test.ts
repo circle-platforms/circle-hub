@@ -93,7 +93,7 @@ test('an unchanged item is offered for carry-over; a changed item or one whose c
     cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }],
   };
   const refused = await h.service.submitResult(h.alice, wrong, h.call('sess-draft'));
-  assert.deepEqual(refused.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/reuse']]);
+  assert.deepEqual(refused.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/reuse'],...Array.from({length:3},()=>['not_covered','/items'])]);
 
   // carrying the unchanged items over: their judgments come from the predecessor record, the checks re-run here
   const second = {
@@ -149,7 +149,7 @@ test('a slot record written in one go (no context digest) is marked no_reuse and
   assert.ok(r2.items.every((i) => i.reuse === undefined), 'nothing written in one go is offered, not even an unchanged item with nothing to report');
   // a carry-over that was not offered is refused like any other
   const refused = await h.service.submitResult(h.alice, { ...firstSubmission(r2), items: [{ item: ITEM.c1, handling: 'handled', reuse: `rec:${(await h.service.getResult(h.alice, r1.run))!.record}#/partitions/delivered/0` }] }, h.call('sess-draft'));
-  assert.deepEqual(refused.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/reuse']]);
+  assert.deepEqual(refused.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/reuse'],...Array.from({length:3},()=>['not_covered','/items'])]);
 });
 
 test('a fact-only pack gets no carry-over offers: its results hold no judgment to carry', { skip }, async () => {

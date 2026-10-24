@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string; beforeIdentityMissing?:boolean } = {}) {
+export async function setupJournal(options: { lost?: boolean|'once'; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string; beforeStateChange?:boolean;beforeIdentityMissing?:boolean } = {}) {
   let queries = 0;
   const rows = new Map<string, Record<string, unknown>>();
   let c!: Awaited<ReturnType<typeof setup>>;
@@ -19,7 +19,8 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     return reply;
   };
   try {
-  c = await setup({serverVersion:options.serverVersion,mode: options.lost ? 'disconnect' : undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
+  c = await setup({serverVersion:options.serverVersion,mode:options.lost==='once'?'disconnect-once':options.lost?'disconnect':undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
+    if(name==='inspect_slot'&&options.beforeStateChange&&c.calls.includes('send_blob'))return {...value,build:'synthetic-after-write'};
     if (name === 'send_blob') return admit();
     if (name !== 'lookup_blob') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'lookup_blob').at(-1)!.params.arguments as Record<string,unknown>;
@@ -42,6 +43,7 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     reconciliation:{identity:{epoch:'/epoch',since:'/since',subject:'/principal'},protocol_versions:options.supportedVersions??['1'],pending_states:['received','starting'],found:'/found',state:'/state',request_id:'/request',sha256:'/digest',id:'/key',stage:'/phase',reached_device:'/touched',gateway_time:'/clock',gc_before:'/floor',time_scale_ms:1000,map:{started:'issued',rejected:'target_rejected',not_started:'proven_not_executed'}},
     conformance:{expected_stage:'admission',payloads:[Buffer.from('synthetic-one').toString('base64'),Buffer.from('synthetic-two').toString('base64')]},
     premises: options.uncertified ? {} : {request_journal:{version:'1',evidence:[`src:${proof.body.sha256}`]}} });
+  await c.freezeExecutor();
   return {...c,registered,proof,rows};
   } catch(error) { if(c)await c.close();throw error; }
 }

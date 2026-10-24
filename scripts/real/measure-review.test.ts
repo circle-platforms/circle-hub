@@ -430,3 +430,86 @@ test('closure B12 accepted submission reads and recovery retain the session Hub 
  const requests=JSON.parse(readFileSync(join(f.out,'r1/catalog/evidence-requests.json'),'utf8'));const gap=requests.find((r:any)=>r.input==='submission');
  assert.ok(gap.next_action.includes('--url '+JSON.stringify(url)));assert.equal(gap.follow_up.args[gap.follow_up.args.indexOf('--hub-url')+1],url);
 });
+
+/** One immutable fake run-show snapshot; result records and submission originals deliberately have different digests. */
+function draftRecordFixture(t: { after(fn: () => void): void }, over: { record?: unknown; acceptance?: string; prompt?: string; callsAccepted?: boolean; outputName?: string } = {}) {
+  const sourceFiles = fixtures(document(1), []);
+  t.after(() => rmSync(sourceFiles.out, { recursive: true, force: true }));
+  const files = over.outputName === undefined ? sourceFiles : { ...sourceFiles, out: join(sourceFiles.out, over.outputName) };
+  const verify: SessionSpec = { args: [], prompt: over.prompt ?? '复核 {copy}，初评运行 {draft_run}，验证结果 {draft_record}；再核对 {draft_record}' };
+  const delivered = [{ item: 'synthetic:c1', requirements: [{ requirement: 'literal', layers: [{ layer: 'static', ...staticFixture('pass') }], claims: [] }] }];
+  const shown = () => {
+    const value = JSON.parse(runDetail({ run: 'rn_draft_record', items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered, acceptance: over.acceptance }));
+    value.latest.record = Object.hasOwn(over, 'record') ? over.record : 'd'.repeat(64);
+    value.latest.result.submission = 'b'.repeat(64);
+    value.submissions = [{ record: 'rec:' + 'b'.repeat(64), result: value.latest.record }];
+    return JSON.stringify(value);
+  };
+  const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_draft_record', over.callsAccepted === false ? null : 'accepted'), run: shown }], verifies: [{
+    calls: callLine('rn_verify_record', 'accepted'), run: () => runDetail({ run: 'rn_verify_record', pack: 'case-review-verify@1.0.0', predecessor: 'rn_draft_record', items: 1, delivered }),
+  }] });
+  const screen: string[] = [];
+  return { ...files, verify, drivers, screen, run: () => measureReview({ ...options(files.out), source: files.source, plan: files.plan, verify }, drivers, line => screen.push(line)) };
+}
+
+for (const record of ['d'.repeat(64), 'rec:' + 'e'.repeat(64)]) test(`draft_record uses the accepted validation record ${record.startsWith('rec:') ? 'reference' : 'digest'} from the judged snapshot`, t => {
+  const f = draftRecordFixture(t, { record });
+  let shows = 0; const show = f.drivers.show; f.drivers.show = run => { shows++; return show(run); };
+  assert.equal(f.run(), 0);
+  const expected = record.startsWith('rec:') ? record : 'rec:' + record;
+  assert.equal(f.drivers.prompts[1], `复核 ${join(f.out, 'mutated.json')}，初评运行 rn_draft_record，验证结果 ${expected}；再核对 ${expected}`);
+  assert.equal(shows, 2, 'one snapshot per session, no second lookup when formatting the prompt');
+  assert.ok(!f.drivers.prompts[1].includes('rec:' + 'b'.repeat(64)), 'never substitute the submission original record');
+  assert.ok(!f.screen.join('\n').includes(expected.slice(4)), 'validation record digest stays off the fixed count lines');
+});
+
+for (const record of [undefined, 'rec:1', 'f'.repeat(63), 'rec:' + 'f'.repeat(64) + '#/partitions']) test(`draft_record refuses an unavailable or non-root result reference: ${String(record)}`, t => {
+  const f = draftRecordFixture(t, { record });
+  assert.equal(f.run(), 1);
+  assert.equal(f.drivers.prompts.length, 1, 'no verification session may receive a guessed reference');
+  assert.ok(f.verify.prompt.includes('{draft_record}'), 'invalid runs do not rewrite the session template');
+  assert.ok(f.screen.some(line => line.includes('初评 case-review@1.0.0 无效（取不到运行）')));
+  assert.ok(f.screen.some(line => line.includes('复核 未跑（初评无效）')));
+});
+
+for (const over of [{ acceptance: 'not_accepted' }, { callsAccepted: false }]) test(`an unaccepted draft never substitutes draft_record or starts verification: ${JSON.stringify(over)}`, t => {
+  const f = draftRecordFixture(t, over);
+  assert.equal(f.run(), 1);
+  assert.equal(f.drivers.prompts.length, 1);
+  assert.ok(f.verify.prompt.includes('{draft_record}'));
+  assert.ok(f.screen.some(line => line.includes('无效（没有受理）')));
+  assert.ok(!f.screen.join('\n').includes('d'.repeat(64)));
+});
+
+test('legacy verification templates still run when the snapshot has no usable validation record reference', t => {
+  const f = draftRecordFixture(t, { record: undefined, prompt: '复核 {copy} 的初评 {draft_run}' });
+  assert.equal(f.run(), 0);
+  assert.equal(f.drivers.prompts[1], `复核 ${join(f.out, 'mutated.json')} 的初评 rn_draft_record`);
+});
+
+
+test('a legacy template does not interpret draft_record text inside the substituted copy path', t => {
+  const f = draftRecordFixture(t, { record: undefined, prompt: '复核 {copy} 的初评 {draft_run}', outputName: 'literal-{draft_record}' });
+  assert.equal(f.run(), 0);
+  assert.equal(f.drivers.prompts[1], `复核 ${join(f.out, 'mutated.json')} 的初评 rn_draft_record`);
+});
+
+test('each of three fresh verification sessions gets its own round accepted result record', t => {
+  const files = fixtures(document(1), []);
+  t.after(() => rmSync(files.out, { recursive: true, force: true }));
+  const delivered = [{ item: 'synthetic:c1', requirements: [{ requirement: 'literal', layers: [{ layer: 'static', ...staticFixture('pass') }], claims: [] }] }];
+  const records = ['a', 'c', 'd'].map(char => char.repeat(64));
+  const drivers = fakeDrivers({
+    drafts: records.map((record, index) => ({ calls: callLine(`rn_draft_${index}`, 'accepted'), run: () => {
+      const value = JSON.parse(runDetail({ run: `rn_draft_${index}`, items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered }));
+      value.latest.record = record;
+      value.submissions = [{ record: 'rec:' + 'b'.repeat(64), result: record }];
+      return JSON.stringify(value);
+    } })),
+    verifies: records.map((_record, index) => ({ calls: callLine(`rn_verify_${index}`, 'accepted'), run: () => runDetail({ run: `rn_verify_${index}`, pack: 'case-review-verify@1.0.0', predecessor: `rn_draft_${index}`, delivered }) })),
+  });
+  const screen: string[] = [];
+  assert.equal(measureReview({ ...options(files.out), source: files.source, plan: files.plan, repeat: 3, verify: { args: [], prompt: '复核 {draft_record}' } }, drivers, line => screen.push(line)), 0);
+  assert.deepEqual(drivers.prompts.filter((_prompt, index) => index % 2 === 1), records.map(record => '复核 rec:' + record));
+  assert.ok(records.every(record => !screen.join('\n').includes(record)));
+});

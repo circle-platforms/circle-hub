@@ -39,7 +39,7 @@
 
 4. **能重复跑的驱动**：新文件 `scripts/real/measure-review.ts`，参数如下：
    `--source <脑图 json> --plan <计划 json> [--keep <n>] [--manual <片段>] [--case-rule marked|tagged] --draft <会话 json> [--verify <会话 json>] [--repeat 3] [--baseline <基线的 --out>] --out <目录>`
-   会话 JSON 是 `{ "args": [review-circle.ts 的端点和连接参数], "prompt": "<模板>" }`。模板里的 `{copy}` 换成副本路径，`{draft_run}` 换成这一次的初评运行。
+   会话 JSON 是 `{ "args": [review-circle.ts 的端点和连接参数], "prompt": "<模板>" }`。模板里的 `{copy}` 换成副本路径；复核模板里的 `{draft_run}` 换成这一次的初评运行，`{draft_record}` 换成这一次已受理提交的**验证结果记录**根引用 `rec:<64 位十六进制摘要>`，不带 `#` 指针，也不是提交原件的记录引用。它取自判定“初评有效”时同一份 `run show --json` 快照的 `latest.record`，只接受 `latest.result.acceptance` 为 `accepted` 的结果，不另取一次最新状态、也不猜摘要。复核模板使用 `{draft_record}` 却取不到合法记录引用时，本次初评按固定原因“取不到运行”记无效，不开复核；初评未受理仍记“没有受理”。模板没用这个占位符时沿用原来的判定和开会话行为。记录引用只进入私有复核输入与 `--out` 证据，不增加屏幕输出行或打印该记录摘要。
    - 先照 `inject-defects.ts` 写出副本和标准答案，再算第 2 条。`--out` 在仓库里面，或者副本超过 100 个用例（一次运行的上限，`packs/workflow/case-review/SKILL.md` 9 行），都拒绝。
    - 每一次：
      1. 用子进程跑 `review-circle.ts`，开一个新的初评会话。端点和密钥还是只由它读。

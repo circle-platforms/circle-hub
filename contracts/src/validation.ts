@@ -20,36 +20,8 @@ import { Claim } from './claim.ts';
 import { Coverage, IsoTime, UserId, ItemId, ProtocolError, RunId, Sha256, TraceId } from './common.ts';
 import { ReferenceUri, referenceUriOf } from './reference.ts';
 
-/** One concrete fact the process must obtain; whitespace never describes a missing fact. */
-export const MissingFact = z.string().regex(/\S/, 'name the missing fact');
-/** A nonblank external account identity supplied by the referenced mapping. */
-export const MappedIdentity=z.string().regex(/\S/,'name the mapped external identity').describe('External account identity bound by the referenced mapping');
-/** Named request recipients are accounts or mapped external identities, never a role placeholder. */
-export const ExitAudience = z.union([
-  z.strictObject({hub:z.literal(true)}),
-  z.strictObject({user:UserId}),
-  z.strictObject({external:z.strictObject({mapping:referenceUriOf('rec'),identity:MappedIdentity})}),
-]);
-export const UnknownExit = z.strictObject({
-  action:ExitActionSchema,
-  request_kind:RequestKindSchema.optional(),
-  audience:ExitAudience,
-  due:IsoTime.describe('Absolute next-execution time or the named request deadline; never inferred when reading history'),
-}).superRefine((exit,ctx)=>{
-  if(exit.action==='request'){
-    if(exit.request_kind===undefined)ctx.addIssue({code:'custom',path:['request_kind'],message:'a request exit names its request kind'});
-    if('hub'in exit.audience)ctx.addIssue({code:'custom',path:['audience'],message:'a request names a person, not the Hub'});
-  }else{
-    if(exit.request_kind!==undefined)ctx.addIssue({code:'custom',path:['request_kind'],message:'only a request exit names a request kind'});
-    if(!('hub'in exit.audience))ctx.addIssue({code:'custom',path:['audience'],message:'a non-request action is scheduled by the Hub; human work needs a request'});
-  }
-}).meta({allOf:[{if:{properties:{action:{const:'request'}},required:['action']},then:{properties:{request_kind:{},audience:{type:'object',not:{required:['hub'],properties:{hub:{}}}}},required:['request_kind']},else:{properties:{audience:{type:'object',properties:{hub:{const:true}},required:['hub']}},not:{required:['request_kind'],properties:{request_kind:{}}}}}]});
-export type UnknownExit=z.infer<typeof UnknownExit>;
-export const RecoveryGap=z.strictObject({reason:ReasonSchema,missing:MissingFact,exit:UnknownExit});
-/** JSON Schema carries the same unknown-boundary condition as the Zod admission refinement. */
-export function recoveryCondition(field:string,values:readonly string[],required:readonly string[]):Record<string,unknown>{
-  return {allOf:[{if:{properties:{[field]:{enum:[...values]}},required:[field]},then:{properties:Object.fromEntries(required.map(key=>[key,{}])),required:[...required]}}]};
-}
+export {MissingFact,MappedIdentity,ExitAudience,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
+import {MissingFact,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
 
 type Presence = 'required' | 'optional' | 'forbidden';
 /** What a layer terminal carries (V03 F[0]-F[1], R[4]; V04 R[1]); `unknown` marks the terminals counted as unknown. */
@@ -70,7 +42,7 @@ const STATIC_TERMINAL_RULES = {
 
 const DYNAMIC_TERMINAL_RULES = {
   pass: { code: 'forbidden', reason: 'forbidden', attribution: false, unknown: false },
-  fail: { code: 'required', reason: 'optional', attribution: true, unknown: false },
+  fail: { code: 'optional', reason: 'optional', attribution: true, unknown: false },
   no_verdict: { code: 'optional', reason: 'required', attribution: true, unknown: true },
   not_run: { code: 'optional', reason: 'required', attribution: true, unknown: true },
   incomplete: { code: 'optional', reason: 'required', attribution: true, unknown: false },
@@ -99,7 +71,7 @@ const layerFields = {
   missing:MissingFact.optional(),
   exit:UnknownExit.optional(),
   gaps:z.array(RecoveryGap).min(1).optional().describe('Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason'),
-  code: z.string().min(1).optional().describe('violation code; required when the terminal is violation or fail'),
+  code: z.string().min(1).optional().describe('violation code; required for a static violation, optional for observed dynamic failure'),
   tier: CheckTierSchema.optional(),
   reason: ReasonSchema.optional().describe('why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete'),
   attribution: AttributionSchema.optional().describe("only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)"),
@@ -221,7 +193,8 @@ export const ValidationResult = z
     not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),
   }).optional().describe('Dedicated contribution run receipt; ordinary submissions never write the knowledge layer'),
     run: RunId,
-    submission: Sha256.describe('digest of the submission as received, the idempotency key together with the run'),
+    submission: Sha256.describe('Digest of the received user submission; with system_input, digest of that action detail.input instead; legacy production uses the run record digest'),
+    system_input: referenceUriOf('rec').optional().describe('System-delivery input action; detail.input contains the exact canonical input whose digest is submission; never a user receipt'),
     acceptance: AcceptanceSchema,
     errors: z.array(ProtocolError).describe('every code that kept the submission from being accepted, item-level refutations with their fixes and rounds left, and items the submission did not cover'),
     rounds: Rounds,
@@ -252,6 +225,7 @@ const partitionCountShape = Object.fromEntries(PARTITION.map((p) => [p, count]))
 export const PartitionCounts = z.strictObject({
   ...partitionCountShape,
   unknown: count.describe('items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])'),
+  pending_unknown: count.optional().describe('Additional count, not a partition: items whose layers retain unresolved unknown gaps beside their primary terminal'),
 });
 export type PartitionCounts = z.infer<typeof PartitionCounts>;
 
@@ -262,7 +236,8 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
   for (const p of PARTITION) {
     for (const it of partitions[p]) if (it.requirements.some((r) => r.layers.some(isUnknownTerminal))) unknown++;
   }
-  return { ...counts, unknown };
+  const pending_unknown=PARTITION.reduce((sum,p)=>sum+partitions[p].filter(it=>it.requirements.some(r=>r.layers.some(l=>(l.gaps?.length??0)>0))).length,0);
+  return { ...counts, unknown, ...(pending_unknown>0?{pending_unknown}:{}) };
 }
 
 

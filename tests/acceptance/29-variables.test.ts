@@ -33,7 +33,7 @@ export default function(input:any){
  const bad=()=>[{verdict:'refute',code:'${PACK}.mismatch',statement:'合成绑定不一致',grounds:[],tier:'blocking'}];
  if(p.invalid)return bad();
  const payload=sources['src:'+p.sha256],manifest=sources['src:'+p.bed?.manifest_sha256];
- const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
+ const hash=(s:string)=>createHash(input.table.hash).update(s).digest('hex');
  if(typeof payload!=='string'||typeof manifest!=='string'||hash(payload)!==p.sha256||hash(manifest)!==p.bed.manifest_sha256)return bad();
  let m;try{m=JSON.parse(manifest);}catch{return bad();}if(m.id!==p.bed.id)return bad();
  let plan:any=null;if(p.mode==='verify'){
@@ -51,8 +51,15 @@ before(async () => {
     directory = await mkdtemp(join(tmpdir(), 'circle-hub-variables-'));
     const pack = await writePack(directory, { id: PACK, version: '1.0.0', kind: 'workflow', title: '合成变量核验', description: '确定性合成绑定核验，不生成产物', files: {
             'workflow.json': { json: { schema: 'workflow@1', inputs: [{ slot: 'proof', role: 'subject', description: '合成声明', accepts: ['application/json'], required: true, many: false }, { slot: 'payload', role: 'artifact_under_verification', description: '合成产物', accepts: ['text/plain'], required: true, many: false }, { slot: 'manifest', role: 'expected', description: '合成清单', accepts: ['application/json'], required: true, many: false }, { slot: 'plan', role: 'artifact_under_verification', description: '前驱核验结果', accepts: ['application/json'], required: false, many: false }], parameters: [], product: { id: bed.product.line, catalogs: [] }, subject: 'proof', projection: { module: 'functions/project.ts' } } },
-            'requirements.json': { json: { schema: 'requirements@1', requirements: [{ key: 'verified', name: '绑定', description: '合成逐项绑定', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: ['verified'], error_handling: [] }] } },
-            'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'verified', function: { module: 'functions/check.ts' }, reads: { roles: ['subject', 'artifact_under_verification', 'expected'] }, applies: 'item', judges: 'artifact_under_verification', tier: 'blocking', basis: '合成验收合同：绑定的产物摘要、清单及已满足前驱必须逐项相同' }] } },
+            'requirements.json': { json: { schema: 'requirements@1', requirements: [{ key: 'verified', name: '绑定', description: '合成逐项绑定', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: ['verified'], error_handling: [] }], effects: [{
+                id: 'submit_demo', resource_kind: 'executor', action: 'submit', effect_class: 'job',
+                parameters: { values: { target: ['demo-bed'], manifest_sha256: [sha256Hex(canonicalBytes({ id: 'demo-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: '192.0.2.' + n + '/24' }] })) }))], build: [bed.site.RELEASED], sha256: [sha256Hex('DEMO_EXECUTABLE_BYTES')], items: [['demo-case']], generator: [PACK + '@1.0.0'] } },
+                release: { requirements: ['verified'], artifact: 'verified' }, trigger: 'hub_template',
+                budget: { count: 1, duration_ms: { executor_max_run_ms: true } }, deadline_ms: 86400000,
+                optional: false, policy_checks: ['verified'],
+            }] } },
+            'policies/binding.json': { json: { schema: 'demo-variables.binding-policy@1', hash: 'sha256' } },
+            'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'verified', function: { module: 'functions/check.ts' }, table: 'policies/binding.json', reads: { roles: ['subject', 'artifact_under_verification', 'expected'] }, applies: 'item', judges: 'artifact_under_verification', tier: 'blocking', basis: '合成验收合同：绑定的产物摘要、清单及已满足前驱必须逐项相同' }] } },
             'slots.schema.json': { json: { schema: 'slots@1', item: {}, run: {} } }, 'SKILL.md': '# 合成绑定核验\n\n脚本化客户端提供字节；Hub 只核验绑定。\n', 'functions/project.ts': project, 'functions/check.ts': check,
             'samples/positive/ok.json': { json: { id: 'demo_positive', source: 'author', check: 'verified', note: '正例', subject: { fields: sampleData }, sources: { ['src:' + sampleData.sha256]: payloadSample, ['src:' + sampleData.bed.manifest_sha256]: manifestSample }, expect: [{ verdict: 'support', tier: 'blocking' }] } },
             'samples/negative/no.json': { json: { id: 'demo_negative', source: 'author', check: 'verified', note: '反例', subject: { fields: { invalid: true } }, expect: [{ verdict: 'refute', code: PACK + '.mismatch', tier: 'blocking' }] } },
@@ -126,6 +133,8 @@ test('a real verification run refuses drift before intent and a fresh verificati
     }) => { const data = { mode, sha256: psha, bed: { id: 'demo-bed', manifest_sha256: msha }, build: bed.site.RELEASED, ...(plan ? { plan_run: plan.run } : {}) }; const proof = await client.upload(canonicalBytes({ p: data }), 'demo-proof.json'); const answer = await client.call('start_run', { pack: PACK, product: bed.product.names[0], build: bed.site.RELEASED, inputs: { proof: { reference: proof }, payload: { reference: p }, manifest: { reference: m }, ...(plan ? { plan: { reference: plan.result } } : {}) }, ...(plan ? { predecessor: plan.run } : {}) }); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.result); return { run: answer.out.run!.run, result: answer.out.result!.reference }; };
     const plan = await start('plan');
     const verified = await start('verify', plan);
+    const detail=await bed.hub.deps.runs.getRun(owner,verified.run);assert.ok(detail?.latest);
+    assert.deepEqual(detail.latest.result.errors,[],JSON.stringify(detail.latest.result.errors));
     let submissions = 0;
     let submitted: any;
     let targetVarChanges = false;
@@ -167,7 +176,7 @@ test('a real verification run refuses drift before intent and a fresh verificati
     await k.variables.setVariable(by, 'DEMO_TARGET', 'demo-bed', 'DEMO_RESTORE');
     const fresh = await start('verify', plan);
     const result = await dispatch.dispatch(by, fresh.run, executor.id);
-    assert.equal(result.outcome, 'effective');
+    assert.equal(result.outcome, 'effective', JSON.stringify(result));
     assert.equal(submissions, 1);
     assert.ok(endpoint.calls.every(c => c.headers.authorization === 'Bearer ' + AUTH));
     await bed.hub.leases.release({ keys: base.resources, holder: { user: owner.id, run: plan.run } });

@@ -1,3 +1,4 @@
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { Independence, ItemHandling, Verdict } from '../../../contracts/generated/vocabulary.ts';
 // Layer terminals, requirement status and attribution (V01, V03, V04, W02 R[4]-R[5], W07 R[2]-R[3], T03 R[4]). Pure: the
 // evaluation hands in the check outcomes of one (item, requirement) and what the submission said about the item; nothing
@@ -16,7 +17,7 @@ import type {
   RequirementStatus,
 } from '../../../contracts/generated/vocabulary.ts';
 import type { ErrorHandlingRow, RequirementTemplate } from '../../../contracts/src/pack.ts';
-import type { LayerResult, RequirementResult } from '../../../contracts/src/validation.ts';
+import { UnknownExit, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
 import { valueAt } from './util.ts';
 
@@ -47,7 +48,7 @@ const UNKNOWN_TERMINAL = {
   timeout: 'unchecked',
   missing_input: 'unchecked',
   integrity_unproven: 'unchecked',
-  budget_exhausted: 'incomplete',
+  budget_exhausted: 'unchecked',
   declared_skip: 'incomplete',
   not_covered: 'incomplete',
   awaiting_step: 'incomplete',
@@ -121,7 +122,7 @@ export function staticTerminal(input: StaticInput): RawStatic {
   if (!input.hasProducer) return { terminal: 'unchecked', reason: 'no_check', ...none };
   const judgment = input.producer !== 'fact';
   if (!judgment && (input.checks === 0 || input.outcomes.length === 0)) {
-    return { terminal: 'unchecked', reason: 'no_check', ...none };
+    return { terminal: 'unchecked', reason: input.checks === 0 ? 'no_check' : 'check_error', ...none };
   }
   const refutes = input.outcomes.filter((o) => o.outcome.verdict === 'refute');
   if (refutes.length > 0) {
@@ -139,9 +140,12 @@ export function staticTerminal(input: StaticInput): RawStatic {
   return { terminal: judgment ? 'judgment' : 'pass', ...none };
 }
 
-/** The error handling row for a code: the exact code, else `*` (W02 F[7]). */
-export function routeOf(rows: readonly ErrorHandlingRow[], code: string): ErrorHandlingRow | undefined {
-  return rows.find((r) => r.code === code) ?? rows.find((r) => r.code === '*');
+/** Selector priority: exact code, then generated cause, then wildcard (W02 F[7]). */
+export function routeOf(rows: readonly ErrorHandlingRow[], code?: string, reason?: Reason, outcome?: JudgedOutcome): ErrorHandlingRow | undefined {
+  if(outcome)rows=rows.filter(row=>rowApplies(row,outcome));
+  const exact=code===undefined||code==='*'?undefined:rows.find(row=>row.code===code);
+  const cause=reason===undefined?undefined:rows.find(row=>row.reason===reason);
+  return exact??cause??rows.find(row=>row.code==='*');
 }
 
 /** Repair rounds of a requirement: the largest max_rounds of its repair rows, 0 without one (RequirementSummary.repair_rounds). */
@@ -179,7 +183,7 @@ export interface RoutedStatic {
  */
 export function rowApplies(row: ErrorHandlingRow, o: JudgedOutcome): boolean {
   if (row.action === 'repair') return o.judges === 'artifact_under_verification';
-  if (row.action === 'reject') return o.judges === 'artifact_under_verification' && o.outcome.tier === 'blocking';
+  if (row.action === 'reject') return row.code!==undefined&&o.outcome.verdict==='refute'&&o.outcome.code!==undefined&&o.judges === 'artifact_under_verification' && o.outcome.tier === 'blocking';
   return true;
 }
 
@@ -190,13 +194,13 @@ export function rowApplies(row: ErrorHandlingRow, o: JudgedOutcome): boolean {
  * unknown (keeps the violation, unattributed), reject keeps the violation and lets the partition decide. A refutation the
  * expectation names is the expected outcome and is never routed.
  */
-export function applyRouting(raw: RawStatic, template: RequirementTemplate, roundsUsed: number): RoutedStatic {
+export function applyRouting(raw: RawStatic, template: RequirementTemplate, roundsUsed: number, outcomes: readonly JudgedOutcome[] = []): RoutedStatic {
   const rounds = repairRounds(template);
   const roundsLeft = Math.max(0, rounds - roundsUsed);
   const exhausted = roundsUsed >= rounds;
   const routed: Routed[] = [];
-  for (const o of raw.unexpected) {
-    const row = routeOf(template.error_handling, o.outcome.code ?? '');
+  for (const o of [...raw.unexpected, ...outcomes.filter(o => o.outcome.verdict === 'unknown')]) {
+    const row = routeOf(template.error_handling, o.outcome.code, o.outcome.reason, o);
     if (row === undefined || !rowApplies(row, o)) continue;
     routed.push(row.action === 'repair' ? { outcome: o, action: 'repair', roundsLeft } : { outcome: o, action: row.action });
   }
@@ -210,7 +214,11 @@ export function applyRouting(raw: RawStatic, template: RequirementTemplate, roun
     action: null,
     expectedRefutation: raw.expectedRefutation,
   };
-  if (raw.terminal !== 'violation' || raw.primary === undefined || raw.expectedRefutation) return base;
+  if (raw.terminal !== 'violation' || raw.primary === undefined || raw.expectedRefutation) {
+    const unknown = routed.find(r => r.outcome.outcome.verdict === 'unknown');
+    if (unknown?.action === 'repair' && exhausted) return {...base, terminal:'incomplete', reason:'repair_exhausted',action:'repair',lead:unknown.outcome};
+    return base;
+  }
   const lead = routed.find((r) => r.outcome === raw.primary) ?? routed[0];
   if (lead === undefined) return base;
   base.action = lead.action;
@@ -238,6 +246,8 @@ const BY_REASON = {
   budget_exhausted: 'transient',
   integrity_unproven: 'data_gap',
 } as const satisfies Record<Reason, Attribution>;
+
+export {bindRecovery,EXIT_BY_REASON,type NamedRecoveryContext as RecoveryContext} from './recovery.ts';
 
 /** V04: attribution of a violation by the role of what the refuting check judges (A03). */
 const BY_ROLE = {
@@ -306,6 +316,7 @@ export function staticLayer(routed: RoutedStatic, expectation: Expectation): Lay
  * budget: EVERY_LAYER), shown by its static terminal; then incomplete with the same reason.
  */
 export function dynamicLayer(statics?: Pick<RoutedStatic, 'terminal' | 'reason'>): LayerResult {
+  if (statics?.reason === 'output_failed') return {layer:'dynamic',terminal:'not_run',reason:'output_failed',attribution:attributionByReason('output_failed')};
   if (statics !== undefined && statics.terminal === 'incomplete' && everyLayer(statics.reason)) {
     return { layer: 'dynamic', terminal: 'incomplete', reason: statics.reason, attribution: attributionByReason(statics.reason) };
   }
@@ -336,6 +347,7 @@ export interface StatusInput {
  */
 export function requirementStatus(input: StatusInput): { status: RequirementStatus; unsatisfied_reason?: UnsatisfiedReason } {
   if (!input.hasProducer) return { status: 'unsatisfied', unsatisfied_reason: 'no_producer' };
+  if (input.layers.some(layer=>!isUnsettled(layer)&&!meets(layer,input.expectation,input.expectedRefutation))) return {status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'};
   if (input.layers.some(isUnsettled)) return { status: 'pending' };
   if (!input.layers.every((l) => meets(l, input.expectation, input.expectedRefutation))) return { status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch' };
   if (input.independence !== null && !(input.independence === 'independent' && input.acceptsDeclared)) {
@@ -379,4 +391,24 @@ export function itemCell(requirements: readonly RequirementResult[]): ItemCell {
     }
   }
   return cell;
+}
+
+/** Explicit premise paths only: a dependency is never inferred from prose or a shared word. */
+export function waitForRepairs(results: RequirementResult[], repairs: Array<{requirement:string;pointer:string;exit:UnknownExit}>): void {
+  const boundary=(premise:string,pointer:string)=>premise===pointer||premise.startsWith(pointer+'/');
+  for(const result of results){
+    const waits=repairs.filter(repair=>repair.requirement!==result.requirement&&result.claims.some(claim=>claim.validity.premises.some(p=>p.startsWith('/')&&boundary(p,repair.pointer))));
+    if(!waits.length)continue;
+    let changed=false;
+    result.layers=result.layers.map(layer=>{
+      if(!isUnsettled(layer))return layer;
+      changed=true;
+      const waiting=waits.map(repair=>`等待要求项 ${repair.requirement} 的修复（${repair.pointer}）`).join('；');
+      const unknown=layer.layer==='static'?layer.terminal==='unchecked':layer.terminal==='no_verdict'||layer.terminal==='not_run';
+      const gaps=[...(layer.gaps??[]),...(unknown&&layer.reason&&layer.missing&&layer.exit?[{reason:layer.reason,missing:layer.missing,exit:layer.exit}]:[])];
+      const original=layer.reason?`原原因 ${labelOf('reason',layer.reason)}：${layer.missing??''}；`:layer.code?`原判定 ${layer.code}；`:'';
+      return {...layer,terminal:'incomplete' as const,reason:'awaiting_step' as const,missing:original+waiting,exit:waits[0].exit,attribution:'transient' as const,...(gaps.length?{gaps}:{})};
+    });
+    if(changed&&result.status!=='unsatisfied'){result.status='pending';delete result.unsatisfied_reason;}
+  }
 }

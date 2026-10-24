@@ -92,6 +92,22 @@
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等"
+    },
+    {
+      "id": "dispatch_policy",
+      "title": "派发参数绑定核验字节",
+      "function": {
+        "module": "functions/dispatch-policy.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "workbookSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "W03 F[0]、P11 R[3]：同一脚本与政策表在编译与写意图前重核，通用参数完全来自已重算的工作簿事实",
+      "table": "policies/dispatch.json"
     }
   ]
 }

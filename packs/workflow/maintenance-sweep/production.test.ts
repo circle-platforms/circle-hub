@@ -89,7 +89,8 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     const production = detail.production!;
     const result = production.result;
     assert.ok(ValidationResult.safeParse(result).success);
-    assert.deepEqual([result.acceptance, result.errors], ['accepted', []]);
+    assert.equal(result.acceptance,'accepted');assert.equal(result.errors.length,1);
+    assert.ok(result.errors.every(error=>error.code==='missing_input'&&error.requirement==='command_exists'&&error.path==='/cross_item'&&error.rounds_left===0&&error.fix?.includes('请求 rec:')));
     assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
 

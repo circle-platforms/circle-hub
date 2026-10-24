@@ -70,9 +70,9 @@ test('a refused digest stays refused after source recovery; a new submission can
   assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
 });
 
-async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number;nodePath?:string} = {}) {
+async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number;nodePath?:string;modern?:boolean} = {}) {
   const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},pack:{declaration:{producers:[...DEFAULT_PRODUCERS.map(p=>({...p,placement:'judgment_allowed'})),...((options.treeEntries||options.nodePath)?[extraProducer('large_tree',{entries:Array.from({length:options.treeEntries??1},(_,i)=>({kind:'behaviour',path:options.nodePath??'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))},undefined,'judgment_allowed')]:[])]}}}); t.after(()=>w.close());
-  const b = build('Rel_ACME_1_2_15');
+  const b = options.modern?{...build('rel_acme_10_6_1'),line:'10.6'}:build('Rel_ACME_1_2_15');
   w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)+(options.hiddenOriginal?'<!-- 仅原件中存在的合成说明 -->':'')),mediaType:'application/xml'});
   if(options.declaredRoot || options.wrappedDeclaration) {
     const upload = await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)),mediaType:'application/xml',origin:{upload:{session:'session-only',message:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false}});
@@ -573,7 +573,10 @@ test('credential-bearing session headers are refused before append and never rea
 test('append scans the actual session again before an identity can reuse a public record',async t=>{
   const w=await setup(t),layer=w.knowledge.layers.contributions,append=layer.append.bind(layer);
   t.mock.method(layer,'append',async(...[prepared,origin,tx]:Parameters<typeof append>)=>append(prepared,{...origin,session:'https://probe:synthetic-append-secret@192.0.2.44/v1'},tx));
-  await assert.rejects(w.service.submitResult(w.admin,w.args(),call),error=>error instanceof Error&&'admissionCode'in error&&error.admissionCode==='CREDENTIAL_IN_UPLOAD');
+  const interrupted=await w.service.submitResult(w.admin,w.args(),call);
+  assert.equal(interrupted.acceptance,'not_accepted');
+  assert.ok(interrupted.errors.some(e=>e.code==='check_error'));
+  assert.ok(!JSON.stringify(interrupted).includes('synthetic-append-secret'));
   assert.deepEqual(await layer.list(w.root,['/commands/system/show'],w.user),[]);
 });
 
@@ -598,4 +601,28 @@ for(const budget of [16384,2*1024*1024])test('contribution continuation progress
     if(page.next===null){complete=true;break;}assert.notEqual(page.next,cursor);cursor=page.next;
   }
   assert.ok(complete);assert.equal(seen.size,8);assert.ok(markers>=4);
+});
+
+test('a missing-session refusal does not become a cached contribution receipt for the corrected observer',async t=>{
+  const w=await setup(t,{modern:true});
+  const pack=(await w.workflows.byDigest(w.run.pack_digest))!;
+  pack.requirements.push({key:'independent',name:'合成独立复核',description:'合成会话边界',target:'run',required:false,done_rule:'bookkeeping',layers:['static'],accepted_producer:'independent_judgment',independent_of:'predecessor',accepts_declared_independence:true,checks:[],error_handling:[]});
+  pack.slots.run={independent:{codes:[{code:'synthetic',label:'合成判断'}],min:0,max:1}};
+  const inputs={subject:{reference:w.run.sources.find(s=>s.slot==='subject')!.reference},originals:{reference:w.run.sources.find(s=>s.slot==='originals')!.reference}};
+  const start=await w.service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:w.b.name,inputs},call);
+  assert.equal(start.call_result,'ok',JSON.stringify(start.errors));
+  const args={...w.args(),run:start.run!.run,cross_item:[{nature:'judgment',statement:'合成独立判断',grounds:[],code:'synthetic'}]};
+  const missing=await w.service.submitResult(w.admin,args,{...call,sessionId:null});
+  assert.equal(missing.acceptance,'not_accepted');
+  const corrected=await w.service.submitResult(w.admin,args,call);
+  assert.equal(corrected.acceptance,'accepted',JSON.stringify(corrected.errors));
+  assert.equal(corrected.result!.contributions?.stored.length,4);
+  const missingAgain=await w.service.submitResult(w.admin,args,{...call,sessionId:null});
+  assert.equal(missingAgain.acceptance,'not_accepted','an accepted contribution cache cannot replace the required session check');
+  assert.equal(missingAgain.errors[0].code,'SUBMISSION_SCHEMA_VIOLATION');
+  assert.deepEqual(await w.service.submitResult(w.admin,args,call),corrected,'a missing-session refusal does not duplicate a later valid contribution');
+  const freshArgs={...args,model:'synthetic-first-accepted'};
+  assert.equal((await w.service.submitResult(w.admin,freshArgs,call)).acceptance,'accepted');
+  const freshMissing=await w.service.submitResult(w.admin,freshArgs,{...call,sessionId:null});
+  assert.equal(freshMissing.acceptance,'not_accepted','a first accepted receipt cannot supply a missing caller session');
 });

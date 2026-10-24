@@ -3,7 +3,7 @@
 // builds an invalid record fails loudly instead of storing it.
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
-import { recordDigest, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
+import { IntegrityError, recordDigest, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
 import { ENGINE_COMPONENT } from './deps.ts';
 import { isObject } from './util.ts';
 
@@ -18,6 +18,7 @@ export const INDEX = {
   submissionRun: 'runs.submission.run',
   submissionDigest: 'runs.submission.digest',
   resultRun: 'runs.result.run',
+  resultSystemInput: 'runs.result.system_input',
   resultSubmission: 'runs.result.submission',
   actionRun: 'runs.action.run',
   actionSubmission: 'runs.action.submission',
@@ -31,17 +32,16 @@ export const SCHEMAS = {
   action: 'action@1',
 } as const;
 
-/** At most this many records are read when a whole list is needed (submissions of one run, successors of one run). */
-const MAX_LIST = 10_000;
-
 async function all<B>(page: (cursor: string | null) => Promise<Page<StoredRecord<B>>>): Promise<StoredRecord<B>[]> {
   const out: StoredRecord<B>[] = [];
   let cursor: string | null = null;
+  const seen=new Set<string>();
   do {
     const next: Page<StoredRecord<B>> = await page(cursor);
     out.push(...next.items);
     cursor = next.next;
-  } while (cursor !== null && out.length < MAX_LIST);
+    if(cursor!==null){if(seen.has(cursor))throw new IntegrityError('记录分页游标重复，不能形成完整范围',{fix:'管理员修复记录索引后重试，不截断已有结果'});seen.add(cursor);}
+  } while (cursor !== null);
   return out;
 }
 
@@ -151,21 +151,19 @@ export async function putResult(store: RecordStore, result: ValidationResult, cr
     body,
     created_at: createdAt,
     index: [
-      { key: INDEX.resultRun, value: body.run },
-      { key: INDEX.resultSubmission, value: `${body.run}:${body.submission}` },
+      {key:INDEX.resultRun,value:body.run},
+      ...(body.system_input?[{key:INDEX.resultSystemInput,value:body.system_input}]:[{ key: INDEX.resultSubmission, value: `${body.run}:${body.submission}` }]),
     ],
   }, tx);
 }
 
 export async function resultFor(store: RecordStore, run: string, submission: string): Promise<StoredRecord<ValidationResult> | null> {
-  const page = await store.find<ValidationResult>({ key: INDEX.resultSubmission, value: `${run}:${submission}`, kind: 'validation_result', limit: 1 });
+  const page = await store.find<ValidationResult>({ key: INDEX.resultSubmission, value: `${run}:${submission}`, kind: 'validation_result', limit: 1, newestFirst:true });
   return page.items[0] ?? null;
 }
 
-/** Every validation result of a run, oldest first. */
-export async function resultsOf(store: RecordStore, run: string): Promise<StoredRecord<ValidationResult>[]> {
-  return all((cursor) => store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: 500, cursor }));
-}
+/** Every validation result of a run, in record sequence. */
+export async function resultsOf(store:RecordStore,run:string):Promise<StoredRecord<ValidationResult>[]>{return all(cursor=>store.find<ValidationResult>({key:INDEX.resultRun,value:run,kind:'validation_result',limit:500,cursor}));}
 
 /** The latest accepted validation result of a run (an accepted submission or a production result). */
 export async function latestAccepted(store: RecordStore, run: string): Promise<StoredRecord<ValidationResult> | null> {

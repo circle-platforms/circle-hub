@@ -80,6 +80,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  token list [<用户>]                           列出令牌（不显示令牌值）',
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
     `  ${LOCAL_TOOLS_USAGE}`,
+    '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
@@ -104,6 +105,7 @@ async function tokenRules(options: CliOptions) {
   const tokens = options.operatorTokens === undefined ? {} : { tokens: options.operatorTokens };
   return {
     /** The enabled admin of the operator token, for a built-in state-changing command. */
+    member:(ctx:CliContext):Promise<Principal>=>rules.operatorMember(ctx,tokens),
     admin: (ctx: CliContext): Promise<Principal> => rules.operatorAdmin(ctx, tokens),
     /** The same, for a command that may cut off its own token (token revoke, user disable). */
     act: (ctx: CliContext): Promise<OperatorAct> => rules.operatorAct(ctx, tokens),
@@ -349,7 +351,18 @@ async function logsCommand(args: readonly string[], ctx: CliContext, options: Cl
 
 async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
-  if (sub !== 'show') throw new UsageError('run 的子命令是 show');
+  if(sub==='abandon'){
+    const {values,positionals}=parse(rest,{'answer-request':{type:'string'},reason:{type:'string'}},1);
+    if(!values['answer-request']||!values.reason)throw new UsageError('需要 --answer-request 和 --reason；此命令管理放弃整个运行，不停止远端执行或解除冻结');
+    const by=await (await tokenRules(options)).member(ctx);
+    const deps=await ctx.deps();
+    if(!deps.runs.abandonRun)throw new CliError('运行管理处置没有接线','由管理员补齐运行服务的 abandonRun 接口后重试');
+    const receipt=await deps.runs.abandonRun(by,positionals[0],values['answer-request'],values.reason);
+    out(ctx.io,'已记录管理放弃：运行 '+positionals[0]+'；处置来源 rec:'+receipt.decision+'；交付投影 rec:'+receipt.record+(receipt.created?'':'（已有回执，未增写）'));
+    out(ctx.io,'技术层只保留来源判定，未重新核验；要求项未满足（已放弃）；原效果和冻结记录不改写。');
+    return 0;
+  }
+  if (sub !== 'show') throw new UsageError('run 的子命令是 show 或 abandon');
   const { values, positionals } = parse(rest, { json: { type: 'boolean' }, as: { type: 'string' } }, 1);
   const by = await (await tokenRules(options)).viewer(ctx, values.as);
   let deps: ServerDeps;
@@ -371,11 +384,13 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   out(io, `运行 ${run.run}：任务包 ${run.pack}，开始于 ${run.started_at}`);
   out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
   out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
+  if(detail.management)out(io,'管理状态：已放弃；选择来源 rec:'+detail.management.record+(detail.management.result?'':'；管理投影等待 Hub 自动补齐')) ;
   out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
   const latest = detail.latest;
   if (latest === null) io.stdout('还没有校验结果');
   else {
-    out(io, countsLine(latest.result.acceptance, latest.result.acceptance === 'accepted' ? latest.result.partitions : undefined));
+    out(io, (latest.result.system_input?'系统交付；':'')+countsLine(latest.result.acceptance, latest.result.acceptance === 'accepted' ? latest.result.partitions : undefined));
+    if(latest.result.system_input)out(io,'系统交付输入摘要 '+latest.result.submission+'；来源 '+latest.result.system_input);
     for (const p of PARTITION) for (const item of latest.result.partitions[p]) out(io, `- ${labelOf('partition', p)} ${item.item} ${item.label}`);
   }
   return 0;

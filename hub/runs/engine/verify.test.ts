@@ -155,12 +155,10 @@ test('the same model family as the draft is not independent, whatever its config
   assert.equal(r.claims.find((c) => c.warrant.producer === 'model')!.warrant.independence, 'not_independent');
 });
 
-test('an unobserved session leaves independence unknown', { skip }, async () => {
-  const run = await verification(null);
-  const answer = await h.service.submitResult(h.alice, verdicts(run, VERIFIER), h.call('sess-verify-4'));
-  const r = verificationOf(answer.result!, ITEM.c1);
-  assert.deepEqual([r.status, r.unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
-  assert.equal(r.claims.find((c) => c.warrant.producer === 'model')!.warrant.independence, 'unknown');
+test('an unobserved session refuses an independent start before binding', { skip }, async () => {
+  const answer=await h.service.startRun(h.alice,{pack:'toy-verify',product:'Meadow',version:'3.2',inputs:{draft:{reference:handover},map:{reference:map}},predecessor:draft.run},h.call(null));
+  assert.equal(answer.call_result,'error');
+  assert.ok(answer.errors.some(e=>e.fix?.includes('Circle-Session-Id')));
 });
 
 test('a verdict inconsistent with the dispositions is a violation routed into repair, not a whole rejection', { skip }, async () => {
