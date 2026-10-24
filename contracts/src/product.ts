@@ -232,6 +232,7 @@ export const ProducerSlot = z.strictObject({
 
 /** Input of a producer function. A slot whose source could not be read and was declared optional is null. */
 export const ProducerInput = z.strictObject({
+  known_builds:z.array(z.string().min(1)).max(50000).optional().describe('Immutable product build-name inventory supplied by the Hub, never a client or environment variable'),
   build: KnownBuild.optional(),
   slots: z.record(SlotName, ProducerSlot.nullable()),
   lists: z.record(SlotName, z.array(ProducerSlot)).optional().describe('the batch of each list slot (many: true); the other slots are the same in every call'),
@@ -296,6 +297,7 @@ export type ProducerDiagnostic=z.infer<typeof ProducerDiagnostic>;
 export const ProducerGrammar=z.strictObject({id:Versioned,source:z.string().min(1),complete:z.boolean()});
 
 export const ProducerOutput = z.strictObject({
+  incomplete:z.strictObject({missing:z.string().regex(/\S/),next_action:z.string().regex(/\S/)}).optional().describe('Controlled missing-input recovery; no partial output is admitted'),
   grammar:ProducerGrammar.optional(),
   diagnostics:z.array(ProducerDiagnostic).optional(),
 
@@ -336,6 +338,7 @@ export const ProductDeclaration = z
     id: ProductId,
     title: z.string().min(1),
     variables: z.array(VariableDeclaration).optional(),
+    applicability:z.strictObject({grammar:Versioned,closed_sets:z.partialRecord(ApplicabilityFieldSchema.exclude(['memory','builds']),z.string().min(1)),build_validator:PackFunctionRef.optional()}).optional().describe('Published applicability-domain declarations; values come from the root variable snapshot'),
     names: z.array(z.string().min(1)).min(1).describe('every name of the product; each resolves to this line'),
     sync: SyncDeclaration.optional(),
     select_build: PackFunctionRef.optional().describe('SelectBuildInput -> SelectBuildOutput; without it the newest released build of the line is chosen'),

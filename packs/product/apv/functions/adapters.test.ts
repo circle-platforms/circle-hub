@@ -284,7 +284,22 @@ describe('the producers', () => {
       ['defect', '61002', 'b/4-5', { builds: ['Rel_APV_10_6_1_57'] }],
       ['defect', '61003', 'b/6', { builds: ['Rel_APV_10_6_1_57'] }],
     ]);
-    const fromNote = releaseNotes({ build: knownBuild, slots: { notes: slot('markdown@1', markdown(fixtureBytes('release-note.md'))) }, params: {} });
+    const rawNote = markdown(fixtureBytes('release-note.md'));
+    const fromRaw = releaseNotes({ build: knownBuild, slots: { notes: slot('markdown@1', rawNote) }, params: {} });
+    assert.ok(ProducerOutput.safeParse(fromRaw).success);
+    assert.equal(fromRaw.entries.length, 0);
+    assert.ok(fromRaw.warnings.some((warning) => warning.includes('缺的事实') && warning.includes('status') && warning.includes('发布页作者')));
+    const declaredNote = markdown(fixtureBytes('release-note.md'));
+    for (const section of declaredNote.sections) {
+      if (section.title.includes('已修复问题')) Object.assign(section, { status: 'fixed' });
+      else if (section.title.includes('遗留问题')) Object.assign(section, { status: 'known' });
+    }
+    for (const block of declaredNote.blocks) {
+      if (block.text.includes('Bug ID')) Object.assign(block, { columns: { bug: 0, text: 1 } });
+      else if (block.text.includes('编号')) Object.assign(block, { columns: { bug: 0, text: 1, module: 2 } });
+      else if (block.text.includes('问题单号')) Object.assign(block, { columns: { bug: 0, text: 1 } });
+    }
+    const fromNote = releaseNotes({ build: knownBuild, slots: { notes: slot('markdown@1', declaredNote) }, params: {} });
     assert.ok(ProducerOutput.safeParse(fromNote).success);
     assert.ok(fromNote.entries.length > 5 && fromNote.entries.every((e) => e.kind === 'defect' && e.path === null));
     assert.deepEqual(fixedBugEntries({ blocks: [] }, null), { entries: [], warnings: ['修复缺陷清单里没有认出缺陷编号'] });
@@ -316,7 +331,7 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     { fn: product.select_build!, input: { line: '10.6.1', candidates: [knownBuild], request: {} }, direct: select },
     { fn: product.producers[0].function, input: { build: knownBuild, slots: { tree: slot('xml@1', xml(fixtureBytes('command-tree.xml'))) }, params: {} }, direct: commandTree },
     ...(['APV','NSAE'] as const).map(family=>({fn:product.producers.find(p=>p.id==='manual-'+family.toLowerCase())!.function,input:{build:knownBuild,slots:{cli:slot('markdown@1',markdown(fixtureBytes('manual.md'))),app:null},params:{family,root:null,main:'book.adoc',attributes:{[family]:{}}}},direct:(input:unknown)=>familyManual(input as Parameters<typeof familyManual>[0])})),
-    { fn: product.producers.find(p=>p.id==='release-notes')!.function, input: { build: knownBuild, slots: { notes: slot('markdown@1', markdown(fixtureBytes('release-note.md'))) }, params: {} }, direct: releaseNotes },
+    { fn: { module: 'functions/producers.ts', export: 'releaseNotes' }, input: { build: knownBuild, slots: { notes: slot('markdown@1', markdown(fixtureBytes('release-note.md'))) }, params: {} }, direct: releaseNotes },
   ];
   for (const call of calls) {
     it(`${call.fn.module}#${call.fn.export ?? 'default'} gives the same answer as the direct call`, async () => {

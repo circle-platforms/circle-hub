@@ -148,7 +148,7 @@ export function commandIdentity(grammar:CommandGrammar,text:string):import('../.
    };
    const bound=bind(0,0);if(!bound)continue;
    const parameters=bound.map(({position,raw,value})=>{const param=signature.params[position];
-    const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='int'||param.type==='port'?{kind:'int',value:Number(value)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value}}:{kind:'text',value};
+    const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='ip_or_hostname'&&ipv4(value)?{kind:'address',value:{kind:'ipv4',value}}:param.type==='ip_or_hostname'&&ipv6(value)?{kind:'address',value:{kind:'ipv6',value}}:param.type==='int'||param.type==='port'?{kind:'int',value:Number(value)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value}}:{kind:'text',value};
     return {position,name:param.name,raw,type:{name:declaration.parameters[position].name,catalog_type:param.type!,declaration:`src:${grammar.tree_root}/xml@1/${declaration.parameters[position].selector}`,grammar:'apv-command-tree@2'},parsed};
    });
    identities.push({tree_root:grammar.tree_root,path:definition.path,signature:signature.reference,parameters});

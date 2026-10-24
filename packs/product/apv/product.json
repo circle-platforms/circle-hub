@@ -14,9 +14,9 @@
       "module": "functions/sync.ts"
     },
     "options": {
-      "include": [],
+      "include": "${var:APV_INCLUDE_PAGES}",
       "exclude": [],
-      "case_index": true,
+      "case_index": false,
       "min_line": "${var:APV_MIN_LINE}",
       "mainline_page_words": "${var:APV_MAINLINE_PAGE_WORDS}",
       "adoc": {
@@ -29,7 +29,7 @@
           "main": "${var:NSAE_ADOC_MAIN}"
         }
       },
-      "spec_index": true
+      "spec_index": false
     },
     "max_rounds": 10,
     "max_reads": 300
@@ -137,6 +137,8 @@
         "attributes": {
           "NSAE": "${var:APV_ADOC_ATTRIBUTES_NSAE}"
         },
+        "models": "${var:APV_MODELS}",
+        "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
@@ -180,6 +182,8 @@
         "attributes": {
           "APV": "${var:APV_ADOC_ATTRIBUTES_APV}"
         },
+        "models": "${var:APV_MODELS}",
+        "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
@@ -285,6 +289,18 @@
         ]
       },
       "default": null
+    },
+    {
+      "name": "APV_INCLUDE_PAGES",
+      "description": "Glob patterns over listing page names that opt platform, customer and patch pages into the sync; empty selects only the mainline pages",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
     },
     {
       "name": "APV_MAINLINE_PAGE_WORDS",
@@ -401,6 +417,44 @@
         }
       },
       "default": []
+    },
+    {
+      "name": "APV_MODELS",
+      "description": "Exact model identities permitted in structured applicability declarations; no synonym mapping",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "APV_PLATFORMS",
+      "description": "Exact platform identities permitted in structured applicability declarations; no synonym mapping",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
     }
-  ]
+  ],
+  "applicability": {
+    "closed_sets": {
+      "models": "APV_MODELS",
+      "platforms": "APV_PLATFORMS",
+      "components": "APV_COMPONENTS",
+      "licenses": "APV_LICENSES",
+      "deployment_forms": "APV_DEPLOYMENT_FORMS"
+    },
+    "build_validator": {
+      "module": "functions/naming.ts",
+      "export": "validateBuildNames"
+    },
+    "grammar": "apv-applicability@1"
+  }
 }

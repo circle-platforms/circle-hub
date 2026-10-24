@@ -1,3 +1,4 @@
+import {ApplicabilityFieldSchema} from '../generated/vocabulary.ts';
 import { VariableUse } from './variables.ts';
 // Shapes owned by the knowledge work package (K01-K05): the records of the content-addressed knowledge tree, its builds,
 // current-root moves, calibration sets and the two layers beside the tree. Register every record or pack-file schema in
@@ -261,6 +262,8 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
  * the producing product pack, every source with its basis and decider, and per entry the fragments that provide it.
  */
 export const TreeRootBody = z.strictObject({
+  known_builds:z.array(z.strictObject({name:z.string().min(1),record:Sha256})).max(50000).optional(),
+  applicability_context:z.strictObject({grammar:Versioned,closed_sets:z.partialRecord(ApplicabilityFieldSchema,z.array(z.string()))}).optional(),
   variables:z.array(VariableUse).optional(),
   product: ProductId,
   version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }).nullable(),
@@ -384,10 +387,44 @@ export const KnowledgeObservationBody = z.strictObject({
 });
 export type KnowledgeObservationBody = z.infer<typeof KnowledgeObservationBody>;
 
+// ---------------------------------------------------------------- seedlings (schema seedling@1, kind claim)
+
+/** One of the three fixed sources of a seedling (seedling@1, the kb-seedling task). */
+export const SeedlingSource = z.strictObject({
+  role: z.enum(['command-tree', 'cli-manual', 'app-manual']),
+  producer: z.string().min(1).describe('the producer id that read this source'),
+  slot: z.string().min(1).describe('the input slot the source was read through'),
+  external: z.string().min(1).describe('the external object id the source was read as'),
+  sha256: Sha256.describe('digest of the original bytes'),
+  revision: z.string().nullable().describe('the fixed SVN revision the adoc was read at (null for the command tree)'),
+});
+export type SeedlingSource = z.infer<typeof SeedlingSource>;
+
+/**
+ * One initial seedling of a product × version line (seedling@1, the kb-seedling task): a tree merged from exactly the
+ * command-tree XML of the line's current released build and the CLI and APP adoc manuals, by structure alone. The tree
+ * itself is an ordinary production: `root` is its root node digest and `composition` the tree_root@1 record its
+ * production wrote; this record adds what only the seedling path knows — the line, the three fixed sources with their
+ * original digests and adoc revisions, and the parent seedling it descends from (append-only lineage). The current
+ * seedling of a line is named by the seedling pointer (seedling/<product>/<line>), moved by compare-and-set.
+ */
+export const SeedlingBody = z.strictObject({
+  product: ProductId,
+  line: z.string().min(1).describe('the version line of the seedling'),
+  root: Sha256.describe('digest of the root node'),
+  composition: Sha256.describe('the tree_root@1 record the production wrote'),
+  build: z.string().min(1).describe('the released build whose command tree the seedling used'),
+  origin: z.array(SeedlingSource).min(1).max(3).describe('the fixed sources, sorted by role'),
+  parent: Sha256.nullable().describe('the previous seedling record of this line (null for the first)'),
+  basis: z.string().min(1).max(500).describe('why the seedling was produced, as one line of text'),
+});
+export type SeedlingBody = z.infer<typeof SeedlingBody>;
+
 export const schemas: Record<string, z.ZodType> = {
   'tree_node@1': TreeNodeBody,
   'knowledge-entry@1': KnowledgeEntryBody,
   'tree_root@1': TreeRootBody,
+  'seedling@1': SeedlingBody,
   'tree_root-rows@1': TreeRootRowsPart,
   'tree_root-unplaced@1': TreeRootUnplacedPart,
   'tree_root-sources@1': TreeRootSourcesPart,

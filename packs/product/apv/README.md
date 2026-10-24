@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1`: names `[APV, NSAE]`; deployment variables below; sync start `buildsite:listing:index`, plan `functions/sync.ts`, up to 10 rounds; producers `command-tree`, independent `manual-apv` and `manual-nsae`, `release-notes`, `cases`; each family manual has its own `root`, `main`, `attributes.<family>` references, directory metadata slot and one bounded complete chapter-list slot |
+| `product.json` | `product@1`: names `[APV, NSAE]`; deployment variables below; sync start `buildsite:listing:index`, plan `functions/sync.ts`, up to 10 rounds; producers `command-tree`, independent `manual-apv` and `manual-nsae` (the `release-notes`, `cases`, `specifications` and `unversioned-cases` producers were removed from the declaration on the owner's 10-24 revision: cases, defects and specifications are fed by Circle, not batch-produced; the functions stay for the per-use projection); each family manual has its own `root`, `main`, `attributes.<family>` references, directory metadata slot and one bounded complete chapter-list slot |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -122,6 +122,11 @@ Sync plan
   build numbers). No customer names are in the code.
 - Default: mainline listing pages of APV and NSAE. `include` / `exclude` are case-insensitive globs (`*`, `?`) over page
   names; exclude wins and also applies to hub pages. The result does not depend on the order of the hub pages given.
+  `include` itself is the pack-declared variable `APV_INCLUDE_PAGES` (`${var:APV_INCLUDE_PAGES}`, D01 R[12]; synthetic
+  default `[]` selects only the mainline pages).
+- An opted-in page also lists its newest build per version line, name family and platform, released or not (a Beta build
+  under test: `released_at` null, so an `includeUnreleased` sync can produce its root when the page links its command
+  tree; without a tree link the build is listed by name only, as the page states).
 - `syncBuilds` produces each base build that is released or the base of a released alias, has a command tree and is not
   in `existingRoots`; it lists every resolved alias (`{ alias, base, released, platform }`, `released` null for an
   unreleased alias) for the knowledge package to record, even when the base root exists, and why other released builds
@@ -141,8 +146,7 @@ Producers (K02, K04, C07)
   reachable only through direct calls of `produceManualEntries` or the default export: the producer reads markdown@1
   slots only, so no catalog span reaches a production. The release-note defects keep `path: null` under the default
   `code_only`: they stay unplaced at the root and nothing leaves the Hub; offering them to the bot's verified placement
-  proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
-  prevent internal defects and test case titles from leaving the Hub.
+  proposals (K04 R[6]) is an owner decision. `command-tree` keeps default `code_only` to prevent internal defects from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
   `data` is catalog-entry@1 without `reference`. STRING/XSTRING map to string, U16/U32 retain their unsigned
   numeric bounds, DOTTEDIP to IPv4, IPADDR to either address family, IPMASK to a mask or prefix length. Explicit
@@ -222,12 +226,16 @@ Producers (K02, K04, C07)
   a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
   number with no known head before it stays a command word. Value domains and worked examples become text entries at the
   matching head, else `unplaced`.
-- Release notes: sections whose heading names fixed issues (已修复问题, 修复的问题, 问题修复, 已解决问题, Fixed Issues,
-  Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
-  尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
-  whole words. The module is the child heading or a module column; items are list items, table rows (pipe, grid, HTML) or
-  paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
-  id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
+- Release notes: a section or a block is a defect list only when it declares `status` as exactly `fixed` or `known`.
+  The value is inherited from the nearest ancestor section that declares it. A heading's words are not a status, and a
+  value other than those two is not a status. With no declaration the producer emits no defect entry and names the
+  missing fact and the next step (the release-page author writes `status` before the next production). The module is
+  the child heading under that section, or the cell at a declared `columns.module` index. Items are list items, table
+  rows (pipe, grid, HTML) or paragraphs. A bug id is the whole cell at a declared `columns.bug` index when that cell
+  is the 2–9 digit token from `ids.ts` (`normalizeId`), or a bug marker `idsFromTitle` still reads in list and
+  paragraph text. Header words do not choose a column, and a headerless first cell is not a bug id. `columns.text`
+  and `columns.sequence` are the other declared indexes. The id is stored as `data.bug` (the same id a case lists in
+  `data.defects`). `data.status` is the declared `fixed` or `known`. The names `bug`, `status` and `defects` are
   legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
   for placement), so these defect entries stay unplaced under the root (K01 R[4]). `knowledge:facets` and
   `knowledge:index` count them with the entries hung on the tree, once each, and cite an unplaced entry at the root
@@ -782,10 +790,8 @@ a document twice or listed twice doubles nothing, a document alone gives its ent
 every document that carries `external` and does not guess the rest; a case with no command and a case with no command
 tree still produce an empty-path entry; a case id copied onto an expected-result leaf; hostile input; one batch at scale;
 the sandbox) and
-`cases-integration.test.ts` (the real registry, connectors and knowledge service: the sync produces both builds, the facet
-view by line and module, the index view by document with the entries' data and the impact view of the two builds (changed
-commands and exactly the cases filed on them) equal to the truth, the NSAE alias reads the APV base's root, a second sync
-skips every build, an agile outage lists no build and moves no current root).
+`cases-integration.test.ts` was removed with the case-index declaration (the owner's 10-24 revision: cases are fed per
+use by Circle, not batch-produced; see `docs/hub-r4-tasks/kb-seedling.md`).
 
 `functions/adapters.test.ts` tests the product.json entry points against the product@1 shapes (good, malformed and hostile
 input); `functions/sandbox.test.ts` and the adapters' sandbox suite run them in the Hub sandbox (skipped where sandbox-exec is
@@ -963,6 +969,8 @@ ROOT 的三种情形：
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
 
+1.4.4 起，发布说明的 `fixed` / `known` 只认章节或块上声明的 `status`，表的缺陷号、模块、正文和序号只认块上声明的列号。标题和表头文字不再决定状态或列。没有 `status` 时不产出缺陷条目，并写明缺的事实和下一步。清单和段落里的缺陷号仍经 `idsFromTitle` 读取，这一处不在本版范围内。
+
 
 ## Command grammar
 
@@ -989,7 +997,7 @@ The `specifications` producer runs only with `unversioned: true`. Supported Mark
 
 The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
 
-The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+The `unversioned-cases` and `specifications` declarations were removed from `product.json` on the owner's 10-24 revision (see `docs/hub-r4-tasks/kb-seedling.md`): cases, defects and specifications are no longer batch-produced into per-build or product-wide roots; Circle feeds them per use, and the functions (`cases.ts`, `specifications.ts`, `fixed-bugs.ts`) stay for that projection. Existing per-build roots are neither deleted nor extended by this change.
 
 Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
 
@@ -1006,3 +1014,19 @@ R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产
 command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:.../xml@1/... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
 
 R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例提交全部期望叶子的逐字引文及判断，由 Hub 核验身份、路径和引文；不可读原件保持未知并补读。quality-board 仅接 Hub 绑定的同根、同原件、已受理且有效的 case-review 记录；重复回执去重，同原件相互冲突的判断单计冲突并留在未判断中，不挑最后一句。含糊率分母仅为已判断数；零分母显示未判断并补评审，不能显示 0% 或判阈值通过。资源类型比例另按精确声明分母计算。旧结果不改写，新版本须重产新根和评审后再开看板。本次续接未运行验证。
+
+R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/defects[].bug/status/text，status 来自生成词表 release_status；complete 必须为 true，构建与冻结构建精确相等。HTML/Markdown 标题、文件角色及数字外形不再补 fixed/known，缺字段给来源维护人补原始 JSON 后重产。可选 version、released、module、system 只读声明，不从正文猜测。
+
+查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，APV 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
+
+主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本次续接未运行验证。
+
+## 结构声明与适用条件主张
+
+作者声明只认 apv-applicability@1 的完整 JSON 代码块，scope.section 与原解析章节路径精确相等，descendants:true 明确授权机械继承；不按正文连词、否定词、单位话题或型号词触发条件。模型不进入生产器：在现有 knowledge-contribution 运行中以 code=applicability_claim 提交 data.applicability_claim={entry,field,value,section,evidence}，evidence 为共享 QuoteEvidence（原件摘要、parser/路径、原始 byte span 和逐字 text），source 与该引文一致。Hub 核对锁定根上的具体条目、冻结闭集、构建语法/已知名单、原始字节和章节位置，受理后保存独立判断记录，保留模型/运行/提交/原件身份，不改写原条目的作者条件。字段语义仍是判断，引文存在不证明语义正确。
+
+APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYMENT_FORMS 都是精确部署闭集；空闭集不放行任何成员，大小写、全半角、空白或同义词不映射。构建不增加变量，由原包构建名语法和根中冻结的已知构建记录共同核对；数组保持原声明次序，不从文字推连续区间。内存只接显式字节边界及 inclusive，raw 必须在原引文内，不读“至少/大约/例外”等关系词。
+
+读取分开给 declaration_status 与 judgment_status。没有结构声明为 undeclared，没有已核主张为 unjudged，条件值 null 不代表无条件适用；旧条目声明出处未核时明确缺出处，不强填确定状态。分页或保留来源尚未核读完时判断状态保持未知，按 next/回注引用续读或由管理员恢复来源。相互冲突的作者字段和模型值都保留，不能挑有利值合并。主张只用于其受理时的相同组成与校验准则；上下文改变后按新组成重跑回注。
+
+缺原包、闭集或保真范围时走具名管理员请求并带期限；结构声明报错保留 missing/next_action，不以空结果冒充完整生产。旧根和记录不改写；旧关键词规则受影响的适用字段需用新包重产新根、新模型运行并按原件和前驱保留血缘。本次续接未运行验证、测量或真实模型。

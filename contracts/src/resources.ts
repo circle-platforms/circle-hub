@@ -929,9 +929,18 @@ function oneNamedGroup(pattern: string): boolean {
   return groups === 1;
 }
 const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:z.string().min(1).max(2000).refine(oneNamedGroup)});
-const probes = z.strictObject({devices:pointer.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
+/**
+ * Which of the bound manifest's devices commands are dispatched to (P07 R[1], C07 R[4]). Declared, never recognised: the
+ * pointer to the type field of one device and the closed set of declared type values that are dispatch targets, compared
+ * by exact equality. Only those devices need a probe seat; every other listed device keeps its manifest identity for the
+ * topology and the address bindings, is not probed and is not dispatched to. Absent: every listed device is a target.
+ */
+const dispatchTargets = z.strictObject({ type_field: pointer.refine(p => p !== '', { message: '派发目标的类型字段需要设备内的指针' }), types: z.array(z.string().min(1).max(200)).min(1).max(50) });
+const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
   const match = new RegExp(p.command_pattern);
   if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
+  if (p.dispatch_targets && p.devices === undefined) ctx.addIssue({code:'custom',message:'派发目标声明需要设备集合指针 devices'});
+  if (p.dispatch_targets && new Set(p.dispatch_targets.types).size !== p.dispatch_targets.types.length) ctx.addIssue({code:'custom',message:'派发目标的设备类型闭集不得重复取值'});
   for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
 });
 const base = z.strictObject({

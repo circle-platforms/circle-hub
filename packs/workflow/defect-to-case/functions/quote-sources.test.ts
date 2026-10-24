@@ -20,7 +20,7 @@ function subject(reference: string) {
 
 test('projection freezes configured field and both original digests, and fails closed without the setting', () => {
   const result = projected(); assert.ok(!('error' in result));
-  assert.deepEqual(result.items[0].fields.allowed_quote_sources, { defect, fix_field: 'repair_notes', manual });
+  assert.deepEqual(result.items[0].fields.allowed_quote_sources, { defect, fix_field: 'repair_notes', fix_notes: null, manual });
   for (const fix_field of [undefined, null, '', 2]) {
     const out = projected({ ...bug, fix_field }); assert.ok('error' in out);
     assert.match(out.error.message + out.error.fix, /settings\.bug_fix_field/);
@@ -40,6 +40,17 @@ test('only the configured field of this defect or the bound manual may supply qu
     assert.equal(out[0].verdict, 'refute', reference); assert.equal(out[0].tier, 'blocking');
     assert.equal(out[0].code, 'defect-to-case.quote_source_forbidden'); assert.match(out[0].statement, /修正/);
   }
+});
+test('a non-empty fix_notes comment is quotable when the configured field is absent', () => {
+  const model = { id: '910001', title: '合成缺陷', fix_field: null, fix_notes: [{ action: 'assigned', date: '2026-04-02', actor: 'synthetic-dev', comment: '合成分配说明', index: 1 }, { action: 'resolved', comment: '', index: 3 }], fields: {} };
+  const out = projected(model); assert.ok(!('error' in out));
+  assert.deepEqual(out.items[0].fields.allowed_quote_sources, { defect, fix_field: null, fix_notes: [0], manual });
+  const input = { item: { id: '910001', fields: out.items[0].fields }, slots: { cases: [{ data: { expected: [{ text: '合成', quote: { reference: `src:${defect}/json@1/p/fix_notes/0/comment`, text: '合成' } }] } }] } };
+  assert.equal(checkQuoteSources({ subject: quoteSubject(input) })[0].verdict, 'support');
+  const other = { item: { id: '910001', fields: out.items[0].fields }, slots: { cases: [{ data: { expected: [{ text: '合成', quote: { reference: `src:${defect}/json@1/p/fix_notes/1/comment`, text: '合成' } }] } }] } };
+  assert.equal(checkQuoteSources({ subject: quoteSubject(other) })[0].verdict, 'refute');
+  const neither = projected({ id: '910001', title: '合成缺陷', fields: { fix: '不能兜底' } });
+  assert.ok('error' in neither); assert.match(neither.error.fix, /settings\.bug_fix_actions/);
 });
 test('field names with escaped path characters are matched as one exact selector segment', () => {
   const out = projected({ ...bug, fix_field: 'repair/notes', fields: { 'repair/notes': '合成修复说明' } }); assert.ok(!('error' in out));

@@ -6,7 +6,7 @@ The client authors one case plan and generates an XLSX. The Hub verifies the pla
 
 subject is a KityMinder document; contract, inventory and profile are required published expected sources. Textual autoid selects exactly one case; absent/duplicate selections refuse startup. Items retain autoid, auto, priority, title and authored steps. Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
 
-The original runner contract is not converted. Every original member except contract_sha256 participates in sorted compact UTF-8 identity; unknown status/dispatch/kind/authority values, unsafe/non-integer numbers and non-BMP keys refuse the whole contract. Enabled non-internal, non-candidate entries alone are callable. Default text is not copied or evaluated; redacted parameters cannot be submitted. Identity must equal the declaration and profile expectation.
+The original runner contract is not converted. Every original member except contract_sha256 participates in sorted compact UTF-8 identity; unknown status/dispatch/kind/authority values, unsafe/non-integer numbers and non-BMP keys refuse the whole contract. Object names are read from the key `e` (`name` stays accepted; both present and different refuses). Enabled non-internal, non-candidate entries alone are callable. Default text is not copied or evaluated; redacted parameters cannot be submitted. Identity must equal the declaration. A runtime-contract@2 document must declare `original` (the original contract's canonical identity and byte digest): the additions are a Hub-side deployment declaration, removing them recovers the original identity, and the pinned original identity — not the recomputed @2 digest — is what the profile expects, the workbook identity row carries and check-runtime-contract --expect checks. The parameter role `executor_return` marks a required parameter the executor fills with the previous step's return (the two-argument checkpoints' `result`); the profile check exempts it and the generator refuses to let the model write it.
 
 runtime-profile@1 defines expected identity; workbook sheet/nine headers/identity marker/range/closing row/autoid shape; seat and host-method mappings; allowed combinations with parameter roles; device/host rejection lists; synthetic; required device_count from read-only precheck; optional fold_newlines pairs, default empty. Decision 35 considers every enabled pair; allowed contains only opened combinations with role coverage and any required explicit reviewed decision. External-format closed sets live in the pack's format tables. Dispatch must check the real current device count again.
 
@@ -159,3 +159,18 @@ samples are not evidence of completed remediation and this work-in-progress tree
 派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重绑后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
 
 新合成样例见 examples/runtime-contract-v2.json、runtime-profile-v2.json 和 command-identities-v2.json；类型/角色/效果引用逐字对应 typed-authority-source.json 的实际摘要，命令签名对应 command-tree-v2.xml 的实际摘要。它们是示例资源，不是已执行或已验证的结果；旧合约与旧工作簿夹具字节保留。
+
+## W10 第二步：冻结的已受理判据声明（3.0.2）
+
+`expected_grounded` 现在也认本次运行冻结的已受理判据声明（W10、B03 R[0]、决定 35 第 58 项）：
+
+- 声明由 Hub 在开新修订时冻结进 RunContext（`accepted_criteria`，全文加 `declaration`/`review` 的 `rec:` 引用与复核人账号）。包只读这些字段，按条目身份精确取本条目的声明，不扫任何正文。
+- 期望可以逐字取自新判据：`expects[i].quote.reference` 精确等于冻结声明的 `declaration`，`quote.text` 与冻结的 `new` 逐字相等（客户端的副本不算数，包比对冻结字节），`text` 是 `new` 的精确片段（同一 `quoteMatches`，只折叠引文空白）。三者有一处不符按 `expect_not_in_criterion` 退回该条，不整份拒收。
+- 没有冻结声明、声明属于别的条目、或引用不是任何冻结声明时，规则与之前完全一样：期望必须逐字出自它自己引的来源（`expect_not_in_quote`）。
+- 引文的引用是 `rec:`（记录引用，也就是判据声明的写法）而本次运行没有冻结这条声明时，没有可比对的冻结字节：按 `expect_not_in_criterion` 退回该条，并写明缺的事实（本运行冻结的声明）和下一步（由作者以外的账号复核接受后以本运行为前驱开新修订，或改回逐字出自期望来源的引文）。判定只看引用声明的方案，不读任何正文。
+- 新判据的引文（声明的 `grounds`）由 `expected_quotes`（quote@1）在本次运行自己的边界上重核（B03 R[3]）：`quoteSubject` 把这类期望的引文换成声明的 grounds，来源没有绑定到本次运行就是未知加补读出口，不当已通过。
+- 支持的结论写出声明、复核结果与复核人账号，`data.accepted_criteria` 带同样的引用，便于回执和运行页显示。
+
+测试：`functions/criterion-grounding.test.ts` 七条，用包已发布的 runtime-contract@2 样例（合约、配置、命令身份）作类型化夹具，改前（主线 `d5aa4a68`）整个文件因缺 `criteriaOf` 加载失败，改后七条全过；覆盖冻结声明逐字接地并写出声明/复核/复核人、未冻结或属于别条目的引用不接地、客户端副本与冻结字节不符按 `expect_not_in_criterion` 退回、同一条目里引文接地与判据接地并存、grounds 交 quote@1 在本次边界重核、以及缺 grounds/新判据/复核身份的声明不可用。
+
+未做（下一步）：整链合成验收“用例的期望和手册对不上 → 作者提交声明 → 作者以外的账号开复核运行接受 → 新修订通过；未接受时照旧不通过”还没有写；它要 case-compile 与 criterion-review 两个包在同一张合成台架上跑通，而 R5 的类型化夹具迁移尚未完成（本包 303 条里 128 条在主线就失败，原因是旧夹具的 profile/contract 不合 runtime-contract@2）。缺的事实：可跑通整链的类型化夹具与验收台架；下一步：R5 负责人完成夹具迁移后补这条验收。本次未运行该场景，不宣称已证明。

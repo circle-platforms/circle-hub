@@ -2,7 +2,7 @@
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
-import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS } from './contributions.ts';
+import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
@@ -135,6 +135,8 @@ const NodeEntry = z.strictObject({
   statement: z.string(),
   reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
   applicability: z.string(),
+  applicability_fields:ApplicabilityFields.optional(),
+  applicability_context:z.strictObject({composition:Sha256.nullable(),criteria_digest:Sha256.nullable()}).optional(),
   data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf'),
 });
 

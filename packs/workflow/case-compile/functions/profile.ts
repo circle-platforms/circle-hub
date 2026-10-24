@@ -30,7 +30,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (typeof value.synthetic !== 'boolean') issue('/synthetic', '没有明确的 synthetic 布尔声明');
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
-  if (runtime.contract_sha256 !== contract.digest) issue('/runtime/contract_sha256', '期望合约摘要与重算身份不符');
+  if (runtime.contract_sha256 !== contract.pinned.identity) issue('/runtime/contract_sha256', '期望合约摘要与网关钉住的原合约身份不符');
   if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少只读预检的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的台架不在清单里');
@@ -99,7 +99,9 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   for (const call of assertions) {
     const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');
     const method = runtimeMethod(contract, call.object, call.method);
-    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0])) issue('/allowed', '字面断言只能有一个期望参数，不能缺少其他必填参数');
+    // A required parameter filled by the executor (the previous step's return, e.g. the `result` of the two-argument
+    // checkpoints) is not the model's to write: only such parameters may be required besides the expectation.
+    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0] && call.parameters[p.name] !== 'executor_return')) issue('/allowed', '字面断言只能有一个期望参数，其他必填参数只能是由执行器提供上一步返回的参数');
   }
   const fold_newlines: RuntimeProfile['fold_newlines'] = [];
   if (value.fold_newlines !== undefined && !Array.isArray(value.fold_newlines)) issue('/fold_newlines', '折叠换行名单必须是对象和方法组合列表');
@@ -112,5 +114,5 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   if(value.denied!==undefined)issue('/denied','拒绝词表已退役；删除该字段，按 runtime-contract@2 的闭集角色、完整命令与效果授权重发');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed } };
 }

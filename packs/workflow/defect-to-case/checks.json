@@ -4,7 +4,10 @@
     {
       "id": "draft_shape",
       "title": "起草用例结构合规",
-      "function": { "module": "functions/checks.ts", "export": "checkDraftShape" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkDraftShape"
+      },
       "applies": "item",
       "judges": "artifact_under_verification",
       "tier": "blocking",
@@ -16,7 +19,10 @@
       "interpreter": "catalog@1",
       "table": "tables/commands.json",
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "commandSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
       "catalog": "commands@1",
       "judges": "artifact_under_verification",
       "tier": "blocking",
@@ -25,7 +31,10 @@
     {
       "id": "commands_refutation",
       "title": "反向用例预期反驳校验",
-      "function": { "module": "functions/checks.ts", "export": "checkCommandsRefutation" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkCommandsRefutation"
+      },
       "applies": "item",
       "catalog": "commands@1",
       "judges": "artifact_under_verification",
@@ -38,7 +47,10 @@
       "interpreter": "quote@1",
       "table": "tables/quotes.json",
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "quoteSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "quoteSubject"
+      },
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "要求项 grounded：每个期望结果带有逐字引文，引文必须逐字出现在缺陷修复说明或手册中"
@@ -57,33 +69,74 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
+      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 settings.bug_fix_actions 收进 fix_notes 的 comment，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
     },
     {
       "id": "grounded_reading",
       "title": "期望结果文字逐字核对",
-      "function": { "module": "functions/checks.ts", "export": "checkGroundedReading" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkGroundedReading"
+      },
       "applies": "item",
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 grounded：期望文字必须是自身引文的非空逐字片段，只忽略空白差异，不许改写"
+      "basis": "要求项 grounded：期望文字必须是自身引文的非空逐字片段，只忽略空白差异，不许改写",
+      "reads": {
+        "roles": [
+          "subject",
+          "expected"
+        ],
+        "max_bytes": 1048576
+      }
     },
     {
       "id": "duplicate_check",
       "title": "已索引用例去重检查",
-      "function": { "module": "functions/checks.ts", "export": "checkDuplicate" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkDuplicate"
+      },
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "duplicateSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "duplicateSubject"
+      },
       "catalog": "commands@1",
       "reads": {
-        "roles": ["expected"],
-        "types": ["knowledge:index"],
+        "roles": [
+          "expected"
+        ],
+        "types": [
+          "knowledge:index"
+        ],
         "max_bytes": 1048576,
-        "narrow": { "slot": "indexed_cases", "key_path": "/read_keys", "into": "/indexed_cases", "max_keys": 100, "max_entries": 5000 }
+        "narrow": {
+          "slot": "indexed_cases",
+          "key_path": "/read_keys",
+          "into": "/indexed_cases",
+          "max_keys": 100,
+          "max_entries": 5000
+        }
       },
       "judges": "artifact_under_verification",
       "tier": "advisory",
-      "basis": "要求项 not_duplicate：起草用例与已索引用例的规范化命令头集合、正反向标记及规范化标题都相同时为重复；未发现重复但在索引存在跳过文档时为未知（完整性未证明）"
+      "basis": "R7：只比较作者声明的完整命令身份、规范类型参数与期望引文身份，保留次序/重复/after；缺结构或范围事实为未知并补证"
+    },
+    {
+      "id": "refutation_catalog",
+      "title": "完整签名的预期成员关系",
+      "interpreter": "catalog@1",
+      "table": "tables/refutation-commands.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "refutationSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "R4/R7：只按冻结树完整签名核对显式成员主张，反向例外只来自精确类型声明"
     }
   ]
 }

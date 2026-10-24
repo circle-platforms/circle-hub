@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runtimeDocument, profileDocument } from '../testing/runtime.ts';
+import { runtimeDocument, profileDocument, signRuntime } from '../testing/runtime.ts';
 import { parseRuntimeContract, runtimeDigest } from './runtime-contract.ts';
 import { parseProfile } from './profile.ts';
 import { bedsOf } from './test-support.ts';
@@ -34,4 +34,36 @@ test('device count is an explicit precheck fact and folded methods must be allow
   assert.equal(parseProfile(raw, contract, bedsOf()).ok, true);
   raw.fold_newlines.push({ object: 'widget-seat', method: 'missing' });
   assert.equal(parseProfile(raw, contract, bedsOf()).ok, false);
+});
+
+// ---- the two-argument checkpoints' `result` (the case-compile-real-contract task) ----
+/** A contract whose assertion method is a two-argument checkpoint: required `result` (the executor provides the previous
+ *  step's return) and required `expected` (the literal expectation). */
+function checkpointDocuments() {
+  const contractDoc = runtimeDocument();
+  contractDoc.entries[2] = { ...contractDoc.entries[2], dispatch: 'checkpoint_two_argument', signature: { parameters: [
+    { name: 'result', kind: 'positional_or_keyword', required: true, default: null },
+    { name: 'expected', kind: 'positional_or_keyword', required: true, default: null },
+  ], required: ['result', 'expected'], optional: [], text: '(result, expected)' } };
+  const signed = signRuntime(contractDoc as unknown as Record<string, unknown>);
+  const profileDoc = profileDocument(signed as unknown as ReturnType<typeof runtimeDocument>);
+  delete (profileDoc as Record<string, unknown>).denied;
+  (profileDoc.allowed[2] as Record<string, unknown>).parameters = { result: 'executor_return', expected: 'literal_assertion' };
+  return { signed, profileDoc };
+}
+test("a two-argument checkpoint passes with result configured executor_return: the executor provides the previous return, not the model", () => {
+  const { signed, profileDoc } = checkpointDocuments();
+  const parsed = parseRuntimeContract(signed); assert.ok(parsed.ok); if (!parsed.ok) return;
+  const result = parseProfile(profileDoc, parsed.contract, bedsOf());
+  assert.equal(result.ok, true, JSON.stringify(result)); if (!result.ok) return;
+  assert.equal(result.profile.digest, parsed.contract.pinned.identity);
+});
+test('the same checkpoint without the executor role on result is refused, and an unknown role stays refused', () => {
+  const { signed, profileDoc } = checkpointDocuments();
+  const parsed = parseRuntimeContract(signed); assert.ok(parsed.ok); if (!parsed.ok) return;
+  const noRole = structuredClone(profileDoc); delete (noRole.allowed[2] as { parameters: Record<string, unknown> }).parameters.result;
+  const refused = parseProfile(noRole, parsed.contract, bedsOf());
+  assert.equal(refused.ok, false); if (!refused.ok) assert.ok(refused.problems.some((p) => p.pointer === '/allowed'));
+  const unknown = structuredClone(profileDoc); ((unknown.allowed[2] as unknown as { parameters: Record<string, string> }).parameters).result = 'model_writes';
+  assert.equal(parseProfile(unknown, parsed.contract, bedsOf()).ok, false);
 });

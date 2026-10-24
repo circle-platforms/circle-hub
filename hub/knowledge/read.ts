@@ -1,3 +1,4 @@
+import {applicabilityFields,applicabilityCriterion} from './applicability-fields.ts';
 // The reading side of the knowledge tree: permission (the reader is an admin, or a pack assigned to them binds the product of
 // the root; absent and forbidden are the same null, D05 R[3]), get_nodes pages with coverage, the TreeReader hub/refs resolves
 // tree and entry references with (grounds from the version's composition, B01 R[5], K02 R[2]), the closed catalog of a root
@@ -67,7 +68,7 @@ export function applicabilityText(applicability: Applicability | null, sources:r
     const next=conflicts.has(field)?'下一步：来源维护者核对这些片段，修订或明确保留矛盾后重新同步':'下一步：读取组成记录里的来源片段核对原文';
     parts.push(labelOf('applicability_field',field)+' 未声明（章节开头'+(conflicts.has(field)?'冲突，双方值和片段保留在组成记录':'条件未能结构化，原文保留')+'：'+location+'；'+next+'）');
   }
-  return parts.length?parts.join('；'):'未限定';
+  return parts.length?parts.join('；'):'未声明具体条件，不能据此判为无条件适用';
 }
 
 /** Source declarations are not target observations (K02 R[2], B01 F[4]). */
@@ -350,7 +351,7 @@ export class TreeReading {
           }
           let taken = start;
           for (; taken < entries.length; taken++) {
-            const one = Buffer.byteLength(entries[taken].content.statement, 'utf8') + canonicalSize(entries[taken].content.data);
+            const one = Buffer.byteLength(entries[taken].content.statement, 'utf8') + canonicalSize(entries[taken].content.data)+canonicalSize(applicabilityFields(entries[taken].content.data,entries[taken].content.applicability))+256;
             // A page always takes something, so that paging ends even when one entry alone is larger than the budget.
             if ((page.length > 0 || taken > start) && walk.bytes + size + one > pageBytes) break;
             size += one;
@@ -360,7 +361,7 @@ export class TreeReading {
             return false;
           }
           walk.bytes += size;
-          page.push(this.#nodeView(root, segments, digest, node, rows, entries.slice(start, taken)));
+          page.push(this.#nodeView(root, segments, digest, node, rows, entries.slice(start, taken),composition));
           if (taken < entries.length) {
             walk.split = `节点 ${path} 的条目分在几页里：这一页给出第 ${start + 1} 到第 ${taken} 个（共 ${entries.length} 个），其余在下一页`;
             walk.next = { o: walk.position, e: taken };
@@ -418,7 +419,7 @@ export class TreeReading {
     };
   }
 
-  #nodeView(root: string, segments: string[], digest: string, node: TreeNodeBody, rows: ReadonlyMap<string, ReadRow> | null, entries: EntryAt[]): NodeViews[number] {
+  #nodeView(root: string, segments: string[], digest: string, node: TreeNodeBody, rows: ReadonlyMap<string, ReadRow> | null, entries: EntryAt[],composition:CompositionView|null): NodeViews[number] {
     const path = pathOf(segments);
     return {
       path,
@@ -437,6 +438,8 @@ export class TreeReading {
           statement: content.statement,
           reference: treeReference(root, path, entry),
           applicability: placement === undefined ? applicability : `${applicability}；${placement.note}`,
+          applicability_fields:applicabilityFields(content.data,content.applicability),
+          applicability_context:{composition:composition?.record??null,criteria_digest:applicabilityCriterion(composition?.body.applicability_context,composition?.body.known_builds)},
           data: content.data,
         };
       }),

@@ -71,6 +71,8 @@ export interface KnowledgePlacement {
 }
 
 export interface Knowledge extends KnowledgePort {
+  /** The context this service was created with (the seedling production and tests of this package reach for it). */
+  readonly __context: KnowledgeContext;
   /**
    * KnowledgePort's reader; bound to `lock.composition` (the RootInfo.composition a run locked) its grounds come from that
    * composition alone, otherwise from every composition of the root (README decision 13; Needs: the port does not pass it).
@@ -205,6 +207,8 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
 
   return {
     // ------------------------------------------------ KnowledgePort
+    /** The context this service was created with (the seedling production and tests of this package reach for it). */
+    __context: context,
     async builds(product: string, filter: { line?: string; released?: boolean } = {}): Promise<KnownBuild[]> {
       return (await builds.known(product)).filter(
         (build) => (filter.line === undefined || build.line === filter.line) && (filter.released === undefined || (build.released_at !== null) === filter.released),

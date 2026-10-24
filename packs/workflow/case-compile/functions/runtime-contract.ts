@@ -7,7 +7,14 @@ export interface Problem { pointer: string; message: string; fix: string }
 export interface RuntimeParameter { name: string; kind: string; required: boolean; redacted: boolean }
 /** The legacy reader verifies signatures only; unknown/raw metadata never becomes typed authority. */
 export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[]; sourcePointer?: string; authority?: Authority | null }
-export interface RuntimeContract { runtimeVersion: string; digest: string; objects: string[]; enabled: RuntimeEntry[] }
+/**
+ * The gateway-facing identity of the contract: the pinned original identity (the gateway only accepts
+ * PINNED_CONTRACT_SHA256, which equals the original contract's canonical identity). For a runtime-contract@2 document
+ * that is `original.contract_sha256`; for an original-format document it is the document's own identity. `bytes` is the
+ * byte digest of the original file, as recorded by the @2 declaration (null when the document is the original itself).
+ */
+export interface PinnedIdentity { identity: string; bytes: string | null }
+export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[] }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
 const SHA = /^[a-f0-9]{64}$/;
 const pointer = (value: string): string => value.replaceAll('~', '~0').replaceAll('/', '~1');
@@ -34,6 +41,26 @@ export function runtimeDigest(value: Record<string, unknown>): string {
 }
 export function runtimeMethod(contract: RuntimeContract, object: string, method: string): RuntimeEntry | null {
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
+}
+/** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
+const ADDITIONS = ['types', 'roles', 'effects'];
+/**
+ * Removes the @2 additions (types, roles, effects, per-entry typed_authority and the original declaration itself) and
+ * restores the original schema and its contract_sha256: the recovered document must carry the original contract's
+ * canonical identity. Returns null when the value is not a @2 document with an original declaration.
+ */
+export function stripAdditions(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (value.schema !== 'runtime-contract@2' || !isRecord(value.original)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, member] of Object.entries(value)) {
+    if (key === 'schema' || key === 'contract_sha256' || key === 'original' || ADDITIONS.includes(key)) continue;
+    out[key] = key === 'entries' && Array.isArray(member)
+      ? member.map((entry) => isRecord(entry) ? Object.fromEntries(Object.entries(entry).filter(([field]) => field !== 'typed_authority')) : entry)
+      : member;
+  }
+  out.schema = FORMAT.contract_schema;
+  out.contract_sha256 = value.original.contract_sha256;
+  return out;
 }
 /** Whole-document refusal: no unknown format value can silently remove an unsafe entry from the integrity check. */
 export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion: string; digest: string }): ParsedRuntimeContract {
@@ -66,8 +93,12 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   for (const [i, object] of (Array.isArray(value.objects) ? value.objects : []).entries()) {
     const at = `/objects/${i}`;
     if (!isRecord(object)) { issue(at, '对象条目不是对象'); continue; }
-    if (!nonempty(object.name)) issue(`${at}/name`, '对象没有名称');
-    else { if (objects.has(object.name)) issue(`${at}/name`, '对象名重复'); objects.set(object.name, String(object.status)); }
+    // The name lives in `e` in the real contract; `name` stays accepted. Both present and different is a refusal:
+    // the reader never picks between two names.
+    const name = nonempty(object.e) ? String(object.e) : nonempty(object.name) ? String(object.name) : '';
+    if (nonempty(object.e) && nonempty(object.name) && object.e !== object.name) issue(`${at}/e`, '对象同时写了 e 和 name 且不相同，不改原件也不猜');
+    if (!name) issue(`${at}/e`, '对象没有名称');
+    else { if (objects.has(name)) issue(`${at}/e`, '对象名重复'); objects.set(name, String(object.status)); }
     if (!FORMAT.statuses.includes(String(object.status))) issue(`${at}/status`, '不认识的对象状态');
     if (object.reason !== undefined && typeof object.reason !== 'string') issue(`${at}/reason`, '禁用原因不是文字');
   }
@@ -115,6 +146,22 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   try { digest = runtimeDigest(value); } catch { /* Precise numeric/key problems were already listed above. */ }
   if (typeof value.contract_sha256 !== 'string' || !SHA.test(value.contract_sha256)) issue('/contract_sha256', '声明的合约摘要无效');
   else if (digest !== value.contract_sha256) issue('/contract_sha256', '重算合约摘要与声明值不一致');
-  if (expected && (expected.digest !== digest || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
-  return problems.length ? { ok: false, problems } : { ok: true, contract: { digest, runtimeVersion: String(runtime.minimum_version), objects: [...objects.keys()], enabled } };
+  // A @2 document must declare the original contract it was built on (canonical identity and byte digest). The
+  // gateway pins the original identity (PINNED_CONTRACT_SHA256); the @2 additions are a Hub-side deployment
+  // declaration whose removal must recover the original contract's identity.
+  let pinned: PinnedIdentity = { identity: digest, bytes: null };
+  if (value.schema === 'runtime-contract@2') {
+    const original = isRecord(value.original) ? value.original : null;
+    if (original === null || typeof original.contract_sha256 !== 'string' || !SHA.test(original.contract_sha256) || typeof original.sha256 !== 'string' || !SHA.test(original.sha256)) {
+      issue('/original', 'runtime-contract@2 必须显式带原合约的规范身份与字节摘要');
+    } else {
+      const recovered = stripAdditions(value);
+      let recoveredDigest = '';
+      try { recoveredDigest = recovered === null ? '' : runtimeDigest(recovered); } catch { /* listed below as a mismatch */ }
+      if (recoveredDigest !== original.contract_sha256) issue('/original', '去掉 @2 增补后恢复不出原合约的规范身份');
+      pinned = { identity: original.contract_sha256, bytes: original.sha256 };
+    }
+  }
+  if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
+  return problems.length ? { ok: false, problems } : { ok: true, contract: { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled } };
 }

@@ -497,7 +497,7 @@ async function startFresh(
   if(input.submission_due!==undefined&&Date.parse(input.submission_due)<=at.getTime())throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','提交期限必须晚于开始时刻',{path:'/submission_due',fix:'给出未来的 submission_due 后重新开始'})]);
   if(workflow.workflow.predecessor==='required'&&!input.predecessor)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包要求显式前驱运行',{path:'/predecessor',fix:'在 predecessor 中给出前驱运行后重新开始'})]);
   const parameters = checkParameters(workflow, input.parameters ?? {});
-  const defaulted=await defaultPredecessorInputs(ctx,workflow,predecessor,input.inputs);
+  const defaulted=await defaultPredecessorInputs(ctx,workflow,predecessor,input.inputs,user);
   input={...input,inputs:defaulted.inputs};
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);

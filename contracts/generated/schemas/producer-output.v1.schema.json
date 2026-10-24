@@ -2,6 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "incomplete": {
+      "description": "Controlled missing-input recovery; no partial output is admitted",
+      "type": "object",
+      "properties": {
+        "missing": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "next_action": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "missing",
+        "next_action"
+      ],
+      "additionalProperties": false
+    },
     "grammar": {
       "type": "object",
       "properties": {

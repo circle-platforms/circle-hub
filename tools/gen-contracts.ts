@@ -77,7 +77,7 @@ export const GENERATED_DIR = 'contracts/generated';
 interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
   'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
-  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason'], labels: true, resourceTags: true },
+  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/template-gap/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
@@ -824,12 +824,19 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
       'packs/workflow/case-compile/tables/declared-role.schema.json':'schemas/declared-parameter-role.v1.schema.json',
       'packs/workflow/case-compile/tables/typed-address.schema.json':'schemas/typed-address-value.v1.schema.json',
       'packs/workflow/template-gap/tables/category-judgment.schema.json':'schemas/category-judgment.v1.schema.json',
+      'packs/workflow/defect-to-case/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/defect-to-case/tables/expected-quote-identity.schema.json':'schemas/expected-quote-identity.v1.schema.json',
     })) if(files[source]!==undefined)packFiles[target]=files[source];
   } catch (error) {
     const problems = error instanceof ContractsError ? error.problems : [(error as Error).stack ?? String(error)];
     console.error(`cannot generate contracts (${problems.length} problem${problems.length > 1 ? 's' : ''}):`);
     for (const problem of problems) console.error(`  ${problem}`);
     return 2;
+  }
+  if(files['schemas/contribution-input.v1.schema.json']){
+    const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);const properties={...schema.properties};delete properties.kind;delete properties.statement;
+    const model=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8'));const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='document_output_kind').values;
+    packFiles['packs/workflow/knowledge-contribution/slots.schema.json']=JSON.stringify({schema:'slots@1',item:{contribution:{min:1,max:1,codes:kinds.map((value:{code:string;label:string})=>({code:value.code,label:value.label})),data:{type:'object',additionalProperties:false,required:['root','path','source'],properties}}},run:{}},null,2)+'\n';
   }
   const count = Object.keys(files).length + Object.keys(packFiles).length;
   if (args.includes('--check')) {

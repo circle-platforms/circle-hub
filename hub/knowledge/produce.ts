@@ -107,6 +107,8 @@ export interface ProduceInput {
   listingDigest?:string;
   retrySkipped?:boolean;
   refreshSources?:ReadonlySet<string>;
+  /** Run only these producer ids of the pack (the seedling production names its three); undefined runs all of the scope. */
+  producers?: readonly string[];
 }
 
 export interface ProduceResult {
@@ -508,8 +510,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     product=resolved.product;
     input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};
   }
-  input={...input,variables:productionVariableUses(product,build===null,input.variables??[])};
-  product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null)) } };
+  const productionUses=productionVariableUses(product,build===null,input.variables??[]),domainNames=new Set(Object.values(product.product.applicability?.closed_sets??{}));
+  input={...input,variables:(input.variables??[]).filter(use=>domainNames.has(use.name)||productionUses.includes(use))};
+  product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null) && (input.producers === undefined || input.producers.includes(p.id))) } };
   product.product.catalogs = product.product.catalogs.filter(catalog => catalog.producer === undefined || product.product.producers.some(producer => producer.id === catalog.producer));
   // The build's own identity goes into every record of the production, the failure included: it is checked first.
   // infoOf deliberately strips the KnownBuild root before validation.
@@ -532,7 +535,15 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
   const handed = info === null ? null : { ...info, root: null };
-  const handedDigest = buildDigest(handed);
+  const inventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct))inventory.set(row.body.build.name,row.record.digest);
+  if(inventory.size>50000)return result({reason:'已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产'});
+  context={...context,knownBuildInventory:[...inventory].sort(([a],[b])=>compareText(a,b)).map(([name,record])=>({name,record}))};
+  const applicabilityClosedSets:Record<string,string[]>={};
+  for(const [field,name]of Object.entries(product.product.applicability?.closed_sets??{})){
+    const uses=(input.variables??[]).filter(use=>use.name===name);if(!uses.length)continue;
+    try{const value=await context.records.variables?.valueAt(name,uses[0].decision);if(Array.isArray(value)&&value.every(v=>typeof v==='string'))applicabilityClosedSets[field]=[...value];}catch{return result({reason:'缺冻结适用条件变量 '+name+'；下一步管理员恢复该版本变量后重产'});}
+  }
+  const handedDigest = sha256Hex(canonicalize({build:handed,known_builds:context.knownBuildInventory.map(v=>v.name)}));
 
   const fail = async (reason: string): Promise<ProduceResult> => {
     const text = cutText(reason, MAX_REASON_TEXT);
@@ -899,6 +910,8 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         parts: parted ? { composition, unplaced: unplacedRows, sources: listRows, entryBytes } : null,
         body: (parts) => ({
           variables:input.variables??[],
+          known_builds:[...(context.knownBuildInventory??[])],
+          ...(product.product.applicability?{applicability_context:{grammar:product.product.applicability.grammar,closed_sets:applicabilityClosedSets}}:{}),
           product: lineProduct,
           version: info === null ? null : { line: info.line, build: info.name, family: info.family, platform: info.platform },
           build: recorded.build,
@@ -1355,7 +1368,7 @@ export function catalogCanon(data: Record<string, unknown>): string | null {
   if (parsed === null) return null;
   const signatures = parsed.signatures.map((signature) => ({
     params: signature.params.map((param) => {
-      const { description: _dropped, ...rest } = param;
+      const { description: _dropped, native_type: _nativeType, ...rest } = param;
       // Diagnostic paths and recovery prose identify observations; they do not change a parameter's syntax.
       return {...rest,...(rest.unchecked_constraints?{unchecked_constraints:rest.unchecked_constraints.map(({path:_path,next_action:_action,...constraint})=>constraint).sort((a,b)=>compareText(canonicalize(a),canonicalize(b)))}:{})};
     }),

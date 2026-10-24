@@ -204,10 +204,84 @@
                         "pack": {
                           "type": "string",
                           "pattern": "^[a-z][a-z0-9-]{1,40}$"
+                        },
+                        "slot": {
+                          "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "required": [
                         "pack"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "from_runs": {
+                      "type": "object",
+                      "properties": {
+                        "pack": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{1,40}$"
+                        }
+                      },
+                      "required": [
+                        "pack"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "index_default": {
+                      "type": "object",
+                      "properties": {
+                        "only_from": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "const": "build_defects"
+                                }
+                              },
+                              "required": [
+                                "source"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "const": "input_ids"
+                                },
+                                "slot": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]*$"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "slot"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Identifiers already present on another input slot’s external ids; an empty slot adds nothing"
+                            }
+                          ]
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 12,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "only_from",
+                        "fields"
                       ],
                       "additionalProperties": false
                     }
@@ -609,6 +683,20 @@
                       "external"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "run": {
+                        "type": "string",
+                        "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                        "description": "a run whose latest accepted submitted validation record this slot binds, when the slot declares from_runs"
+                      }
+                    },
+                    "required": [
+                      "run"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               },
@@ -643,6 +731,20 @@
                       },
                       "required": [
                         "external"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "run": {
+                          "type": "string",
+                          "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                          "description": "a run whose latest accepted submitted validation record this slot binds, when the slot declares from_runs"
+                        }
+                      },
+                      "required": [
+                        "run"
                       ],
                       "additionalProperties": false
                     }
@@ -1582,9 +1684,28 @@
                     "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
                   },
                   "reference": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 8192,
+                        "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                      },
+                      {
+                        "type": "string",
+                        "maxLength": 8192,
+                        "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                      },
+                      {
+                        "type": "string",
+                        "maxLength": 8192,
+                        "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "description": "present when the Hub copied a frozen predecessor input; absent when it bound an accepted validation record",
                     "type": "string",
-                    "maxLength": 8192,
-                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                    "const": "input"
                   }
                 },
                 "required": [
@@ -1948,6 +2069,121 @@
                     "applicability": {
                       "type": "string"
                     },
+                    "applicability_fields": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "enum": [
+                          "models",
+                          "platforms",
+                          "builds",
+                          "components",
+                          "memory",
+                          "licenses",
+                          "deployment_forms"
+                        ]
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "declaration_status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "declared",
+                                  "undeclared"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "judgment_status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "judged",
+                                  "unjudged"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "declaration_value": {},
+                          "judgments": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          },
+                          "legacy_value": {},
+                          "conflicted": {
+                            "type": "boolean"
+                          },
+                          "missing": {
+                            "type": "string"
+                          },
+                          "next_action": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "declaration_status",
+                          "judgment_status",
+                          "declaration_value",
+                          "judgments",
+                          "conflicted"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "required": [
+                        "models",
+                        "platforms",
+                        "builds",
+                        "components",
+                        "memory",
+                        "licenses",
+                        "deployment_forms"
+                      ]
+                    },
+                    "applicability_context": {
+                      "type": "object",
+                      "properties": {
+                        "composition": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "criteria_digest": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "composition",
+                        "criteria_digest"
+                      ],
+                      "additionalProperties": false
+                    },
                     "data": {
                       "description": "Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf",
                       "type": "object",
@@ -2015,7 +2251,8 @@
                                     "classification",
                                     "placement_proposal",
                                     "assertion",
-                                    "relation"
+                                    "relation",
+                                    "applicability_claim"
                                   ]
                                 },
                                 "statement": {
@@ -2138,6 +2375,140 @@
                                   "required": [
                                     "kind",
                                     "other"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "applicability_claim": {
+                                  "type": "object",
+                                  "properties": {
+                                    "entry": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{64}$"
+                                    },
+                                    "field": {
+                                      "type": "string",
+                                      "enum": [
+                                        "models",
+                                        "platforms",
+                                        "builds",
+                                        "components",
+                                        "memory",
+                                        "licenses",
+                                        "deployment_forms"
+                                      ]
+                                    },
+                                    "value": {},
+                                    "section": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "evidence": {
+                                      "type": "object",
+                                      "properties": {
+                                        "identity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "source_sha256": {
+                                              "type": "string",
+                                              "pattern": "^[0-9a-f]{64}$"
+                                            },
+                                            "parser": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                                            },
+                                            "path": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            },
+                                            "span": {
+                                              "type": "object",
+                                              "properties": {
+                                                "unit": {
+                                                  "type": "string",
+                                                  "const": "byte"
+                                                },
+                                                "offset": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "length": {
+                                                  "type": "integer",
+                                                  "minimum": 1,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "unit",
+                                                "offset",
+                                                "length"
+                                              ],
+                                              "additionalProperties": false,
+                                              "title": "source-span@1",
+                                              "description": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text."
+                                            }
+                                          },
+                                          "required": [
+                                            "source_sha256",
+                                            "parser",
+                                            "path",
+                                            "span"
+                                          ],
+                                          "additionalProperties": false,
+                                          "title": "expected-quote-identity@1",
+                                          "description": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding."
+                                        },
+                                        "text": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 1048576
+                                        }
+                                      },
+                                      "required": [
+                                        "identity",
+                                        "text"
+                                      ],
+                                      "additionalProperties": false,
+                                      "title": "quote-evidence@1",
+                                      "description": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary."
+                                    },
+                                    "admission": {
+                                      "type": "object",
+                                      "properties": {
+                                        "composition": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{64}$"
+                                        },
+                                        "criteria_digest": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{64}$"
+                                        },
+                                        "declarations": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "pattern": "^[0-9a-f]{64}$"
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "composition",
+                                        "criteria_digest",
+                                        "declarations"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": [
+                                    "entry",
+                                    "field",
+                                    "value",
+                                    "section",
+                                    "evidence",
+                                    "admission"
                                   ],
                                   "additionalProperties": false
                                 },
@@ -2382,7 +2753,8 @@
                                     "classification",
                                     "placement_proposal",
                                     "assertion",
-                                    "relation"
+                                    "relation",
+                                    "applicability_claim"
                                   ]
                                 },
                                 "submitted_by": {

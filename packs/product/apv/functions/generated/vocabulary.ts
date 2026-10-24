@@ -23,9 +23,13 @@ export const REASON = ['no_check', 'check_error', 'timeout', 'missing_input', 'd
 export type Reason = (typeof REASON)[number];
 export const REASON_LABEL = { 'no_check': '未装检查', 'check_error': '检查出错', 'timeout': '超时', 'missing_input': '缺输入', 'declared_skip': '模型声明跳过', 'not_covered': '提交未覆盖', 'awaiting_step': '在等某一步', 'output_failed': '出件失败', 'repair_exhausted': '修复轮数用完', 'budget_exhausted': '预算用完', 'integrity_unproven': '完整性未证明' } as const satisfies Record<Reason, string>;
 export function isReason(value: unknown): value is Reason { return typeof value === 'string' && (REASON as readonly string[]).includes(value); }
-export interface AxisValues { applicability_field: ApplicabilityField; declaration_status: DeclarationStatus; judgment_status: JudgmentStatus; type_declaration_status: TypeDeclarationStatus; command_parse_status: CommandParseStatus; reason: Reason; }
+export const RELEASE_STATUS = ['fixed', 'known'] as const;
+export type ReleaseStatus = (typeof RELEASE_STATUS)[number];
+export const RELEASE_STATUS_LABEL = { 'fixed': '已修复', 'known': '已知' } as const satisfies Record<ReleaseStatus, string>;
+export function isReleaseStatus(value: unknown): value is ReleaseStatus { return typeof value === 'string' && (RELEASE_STATUS as readonly string[]).includes(value); }
+export interface AxisValues { applicability_field: ApplicabilityField; declaration_status: DeclarationStatus; judgment_status: JudgmentStatus; type_declaration_status: TypeDeclarationStatus; command_parse_status: CommandParseStatus; reason: Reason; release_status: ReleaseStatus; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL, declaration_status: DECLARATION_STATUS_LABEL, judgment_status: JUDGMENT_STATUS_LABEL, type_declaration_status: TYPE_DECLARATION_STATUS_LABEL, command_parse_status: COMMAND_PARSE_STATUS_LABEL, reason: REASON_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL, declaration_status: DECLARATION_STATUS_LABEL, judgment_status: JUDGMENT_STATUS_LABEL, type_declaration_status: TYPE_DECLARATION_STATUS_LABEL, command_parse_status: COMMAND_PARSE_STATUS_LABEL, reason: REASON_LABEL, release_status: RELEASE_STATUS_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }
 
 // Business values come only from the published package table; they are not core vocabulary axes.

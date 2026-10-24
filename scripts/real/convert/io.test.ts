@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { staging, output } from './io.ts';
 import { checkContract } from './check-runtime-contract.ts';
 import { runtimeDocument, signRuntime } from '../../../packs/workflow/case-compile/testing/runtime.ts';
+import { contractCanonical } from '../../../packs/workflow/case-compile/functions/runtime-contract.ts';
+import { createHash } from 'node:crypto';
 test('staging refuses repositories and symlinked repository destinations without overwriting files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'convert-'));
   try { mkdirSync(join(dir, 'repo')); mkdirSync(join(dir, 'repo', '.git')); symlinkSync(join(dir, 'repo'), join(dir, 'link'));
@@ -21,6 +23,14 @@ test('contract checker rejects stale identity and changed bytes', () => {
   assert.throws(() => checkContract(bytes, 'b'.repeat(64)));
   assert.throws(() => checkContract(Buffer.from(JSON.stringify({ ...raw, complete: false })), raw.contract_sha256));
   const newer = signRuntime({ ...raw, atlas_snapshot: { revision: 2 } }); assert.throws(() => checkContract(bytes, newer.contract_sha256));
+});
+test('contract checker pins the original identity of a runtime-contract@2 document, not its recomputed digest', () => {
+  const original = runtimeDocument(); const originalIdentity = original.contract_sha256;
+  const bytes = Buffer.from(contractCanonical(original), 'utf8');
+  const v2 = signRuntime({ ...original, schema: 'runtime-contract@2', types: { fixture: true }, roles: {}, effects: {}, original: { contract_sha256: originalIdentity, sha256: createHash('sha256').update(bytes).digest('hex') } });
+  const checked = checkContract(Buffer.from(JSON.stringify(v2)), originalIdentity);
+  assert.equal(checked.contract.pinned.identity, originalIdentity);
+  assert.throws(() => checkContract(Buffer.from(JSON.stringify(v2)), v2.contract_sha256), /网关钉住/);
 });
 test('contract CLI keeps exact bytes in staging and prints only summary and publication command', () => {
   const dir = mkdtempSync(join(tmpdir(), 'convert-'));

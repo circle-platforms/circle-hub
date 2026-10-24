@@ -333,3 +333,7 @@ The source language is the closed `model-shape@1` structural subset listed in th
 - `ModelIdentity` holds explicit `model_id` and `model_family_id`; the observed session remains separate. Evidence states and qualifier marks stay in the existing generated `vocabulary.ts`; they are not duplicated or renamed here.
 
 Verification: `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`, `npm run typecheck`, `npm run test:docs`, and `node tools/gen-contracts.ts --check`. Shared-interface examples are synthetic. JSON/Zod parity tests prove shape consistency, not source existence, accepted judgment truth, target behavior or deployed availability.
+
+R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.native_type 保存原始类型名、声明引用和 grammar；它是来源证据，不进入语法影响比较。catalog@1 的 strict_signatures 让成员主张必须完整匹配执行签名，目录菜单及缺参数命令头不算执行成员。
+
+适用条件主张沿 document_output_kind.applicability_claim 与 ContributionInput 的受限载荷进入现有回注运行；admission 由 Hub 填写，客户端不得自报。ProducerInput.known_builds 与 tree_root 的构建记录/条件上下文冻结同一名册，生产器缓存键包含该输入。受控 ProducerOutput.incomplete 保留缺失事实与下一步，并产生具名、有期限的现有澄清请求。knowledge-contribution/slots.schema.json 由 gen-contracts 从单一 ContributionInput 与生成枚举产生，不手改。

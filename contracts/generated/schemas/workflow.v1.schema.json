@@ -62,7 +62,26 @@
             "type": "boolean"
           },
           "default_from_predecessor": {
-            "description": "When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win",
+            "description": "When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object",
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "slot": {
+                "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "from_runs": {
+            "description": "Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow",
             "type": "object",
             "properties": {
               "pack": {
@@ -72,6 +91,63 @@
             },
             "required": [
               "pack"
+            ],
+            "additionalProperties": false
+          },
+          "index_default": {
+            "description": "When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays",
+            "type": "object",
+            "properties": {
+              "only_from": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "build_defects"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "input_ids"
+                      },
+                      "slot": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "slot"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Identifiers already present on another input slot’s external ids; an empty slot adds nothing"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,40}$"
+                }
+              }
+            },
+            "required": [
+              "only_from",
+              "fields"
             ],
             "additionalProperties": false
           }

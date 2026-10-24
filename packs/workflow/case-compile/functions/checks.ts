@@ -12,13 +12,14 @@ import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
-interface CheckSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
+import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
+interface CheckSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const contract = parseRuntimeContract(raw.contract); const manifest = parseManifest(raw.manifest);
   const profile = contract.ok && manifest.ok ? parseProfile(raw.profile, contract.contract, manifest.beds) : null;
   const problems = [...(!contract.ok ? contract.problems.map((v) => ({ document: 'contract', pointer: v.pointer, message: v.message })) : []), ...(!manifest.ok ? manifest.problems.map((v) => ({ document: 'inventory', pointer: v.pointer, message: v.message })) : []), ...(profile && !profile.ok ? profile.problems.map((v) => ({ document: 'profile', pointer: v.pointer, message: v.message })) : [])];
-  return { command_identities:raw.command_identities,problems, case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
+  return { command_identities:raw.command_identities,problems, criteria: Array.isArray(raw.criteria) ? raw.criteria as FrozenItemCriterion[] : [], case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
@@ -64,7 +65,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -100,14 +101,34 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const out: Outcome[] = [];
   if (!slots.expects.length) return [refute(s, 'expect_without_source', '至少一条期望结果必须带逐字来源并指明它判断的步骤', '/data/expects')];
+  const byCriterion: Array<{ at: number; criterion: FrozenItemCriterion }> = [];
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
     if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符的有效原文；从引文选择可写片段', `${pointer}/text`));
-    if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望必须逐字来自原引文；普通断言文字不做地址扫描或隐式替换，请保留原文或先补结构化断言合约', `${pointer}/text`));
+    // W10 step two: an expectation may be taken from a criterion declaration the Hub froze into this run after an account
+    // other than the author accepted it. Such an expectation cites the declaration by its exact rec: reference, and both
+    // the quoted criterion and the expectation are compared with the frozen bytes, never with the plan's own copy.
+    const criterion = citedCriterion(s.criteria, expect.quote.reference);
+    if (criterion !== null) {
+      if (expect.quote.text !== criterion.new) out.push(refute(s, 'expect_not_in_criterion', `引用的判据文字与冻结的已受理声明 ${criterion.declaration} 不符；照开始运行答复里的新判据逐字抄写，或改回原引文`, `${pointer}/quote/text`));
+      else if (!quoteMatches(criterion.new, expect.text)) out.push(refute(s, 'expect_not_in_criterion', `期望必须是新判据（声明 ${criterion.declaration}）的逐字片段；不改写、不拼接、不加占位符`, `${pointer}/text`));
+      else byCriterion.push({ at: i, criterion });
+    } else if (expect.quote.reference.startsWith('rec:')) {
+      // The plan cites a record — a criterion declaration — that the Hub did not freeze into this run, so there are no
+      // frozen bytes to compare with. The scheme of a declared reference decides this, never a word in any text.
+      out.push(refute(s, 'expect_not_in_criterion', `期望引用记录 ${expect.quote.reference}，但本次运行没有冻结这条已受理判据声明；缺的事实：本运行冻结的声明；下一步：由作者以外的账号复核接受该声明后以本运行为前驱开新修订，或改回逐字出自期望来源的引文`, `${pointer}/quote/reference`));
+    } else if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) {
+      out.push(refute(s, 'expect_not_in_quote', '期望必须逐字来自原引文；普通断言文字不做地址扫描或隐式替换，请保留原文或先补结构化断言合约', `${pointer}/text`));
+    }
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));
   }
-  return out.length ? out : [support(s, `${slots.expects.length} 个期望结果都有逐字来源，文字出自替换后引文且判断的步骤合式`, { replacements: slots.replacements })];
+  if (out.length) return out;
+  const accepted = [...new Map(byCriterion.map((row) => [row.criterion.declaration, { declaration: row.criterion.declaration, review: row.criterion.review, reviewer: row.criterion.reviewer, expects: byCriterion.filter((other) => other.criterion.declaration === row.criterion.declaration).map((row) => row.at) }])).values()];
+  const told = accepted.length === 0
+    ? `${slots.expects.length} 个期望结果都有逐字来源，文字出自替换后引文且判断的步骤合式`
+    : `${slots.expects.length} 个期望结果都有逐字来源：${slots.expects.length - byCriterion.length} 条出自替换后引文，${byCriterion.length} 条逐字取自冻结的已受理判据声明（${accepted.map((row) => `声明 ${row.declaration}，复核 ${row.review}，复核人 ${row.reviewer}，期望 ${row.expects.map((at) => at + 1).join('/')} 条`).join('；')}）；新判据的引文在本次运行边界上另行逐字核对`;
+  return [support(s, told, { replacements: slots.replacements, ...(accepted.length ? { accepted_criteria: accepted } : {}) })];
 }
 
 /** commands_known accepts only frozen CommandIdentity evidence, never a text phrase lookup. */

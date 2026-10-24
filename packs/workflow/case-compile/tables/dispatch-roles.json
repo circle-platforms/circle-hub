@@ -36,7 +36,8 @@
     {
       "dispatch": "checkpoint_two_argument",
       "roles": [
-        "literal_assertion"
+        "literal_assertion",
+        "executor_return"
       ],
       "missing": null,
       "next": null,

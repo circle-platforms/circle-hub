@@ -1,3 +1,4 @@
+import {ContributionInput} from './contributions.ts';
 // Barrel of the Hub contracts. SCHEMA_REGISTRY is every record and pack-file shape that gets a generated JSON Schema.
 import type { z } from 'zod';
 import * as packSchemas from './pack.ts';
@@ -46,6 +47,7 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'contribution-input@1':ContributionInput,
     'claim@1': Claim,
     'record@1': RecordEnvelope,
     'run@1': RunRecord,

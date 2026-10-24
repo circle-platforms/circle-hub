@@ -6,7 +6,7 @@
 // table's text is only how K1 names a row: the fragment of a row is that row's own source line, with no range. A
 // fragment this module cannot resolve refuses the whole group instead of going out as a reference to nothing.
 import type { FragmentRef, ProducedEntry, Unplaced } from '../../../../../contracts/src/product.ts';
-import { produceManualEntries } from '../manual.ts';
+import { produceManualEntries,ApplicabilitySourceError } from '../manual.ts';
 import type { CommandCatalog } from '../cases-commands.ts';
 import { asStrings, isRecord } from '../util.ts';
 import { citesExample, citationFor, type Mapped } from './k1-model.ts';
@@ -49,6 +49,9 @@ export function catalogRefusal(family?: string): { code: string; message: string
 }
 
 export interface AdocEntryOptions {
+  known_builds?:readonly string[];
+  models?:readonly string[];
+  platforms?:readonly string[];
   components?:readonly string[];
   licenses?:readonly string[];
   deployment_forms?:readonly string[];
@@ -64,18 +67,21 @@ export interface AdocEntryOptions {
 
 export type Produced =
   | { ok: true; entries: ProducedEntry[]; unplaced: Unplaced[]; warnings: string[] }
-  | { ok: false; error: { code: string; message: string; next_action: string } };
+  | { ok: false; error: { code: string; message: string; next_action: string }; incomplete?:{missing:string;next_action:string} };
 
 /**
  * Places one family's mapped model with K1's own code and rewrites every fragment into the Hub's shape. Either every
  * fragment cites a verified line of a chapter file of this group, or the group produces nothing.
  */
 export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): Produced {
-  const placed = produceManualEntries(mapped.model, options.heads ?? null, {
+  let placed:ReturnType<typeof produceManualEntries>;
+  try{placed = produceManualEntries(mapped.model, options.heads ?? null, {
     name: options.name,
-    components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
+    known_builds:options.known_builds,
+    models:options.models,platforms:options.platforms,components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
     ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
   });
+  }catch(error){if(error instanceof ApplicabilitySourceError)return {ok:false,error:{code:error.code,message:error.message,next_action:error.next_action},incomplete:{missing:error.message,next_action:error.next_action}};throw error;}
   const unresolved: string[] = [];
   const fragmentOf = (fragment: { selector: string; range?: [number, number];applicability?:FragmentRef['applicability'] }, where: string): FragmentRef | null => {
     const cite = citationFor(mapped.model, fragment.selector, fragment.range);

@@ -108,6 +108,7 @@ export class WriteQueue {
 }
 
 export interface KnowledgeContext {
+  knownBuildInventory?:ReadonlyArray<{name:string;record:string}>;
   /** Whether the generic additional-root scope was explicitly declared, beyond automatic unversioned discovery. */
   additionalScopeRootsDeclared?: boolean;
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;

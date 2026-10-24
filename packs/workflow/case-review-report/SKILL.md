@@ -6,7 +6,8 @@
 
 ## 1. 开始运行
 
-- verifications 每块一条：那次复核 submit_result 回执中的 rec:<摘要>，不带 # 指针。
+- 这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。
+- verifications 每块一条：写那次复核的运行编号，或省略。省略时 Hub 按 predecessor 血缘里的 case-review-verify 运行缺省。Hub 把该运行的已受理结果解析成 rec:，并在回答里写明。不要问人要摘要。运行不存在、没有已受理提交、或不是 case-review-verify 运行时，按修正说明改。仍可直接写复核 submit_result 回执中的 rec:<摘要>，不带 # 指针。
 - target 必填，绑定各块评审的同一份脑图；被拒时按修正说明改用 src:<摘要>。
 - precondition_priority 与初评一致，默认 3；初评关闭这条规则时传 null。
 - 同一用例只能由一块交付，某块未完成但另一块已交付时以已交付者为准。

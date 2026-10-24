@@ -1,3 +1,4 @@
+import {applyApplicabilityJudgments} from './applicability-fields.ts';
 // A node page's cursor interleaves immutable tree entries with bounded, permission-filtered contribution pages.
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { digestOf, type Principal } from '../records/api.ts';
@@ -32,9 +33,10 @@ export async function contributionNodes(context:KnowledgeContext,reading:TreeRea
     if(!state.l&&i===0&&continuesNodeEntries(state.b))continue;
     let node=state.l?{...base.nodes[i],entries:[],children:[]}:nodes[i];
     if(state.l)nodes.push(node);
-    const remaining=Math.max(0,budget-512-canonicalSize(nodes));
+    const remaining=Math.max(0,budget-16384-canonicalSize(nodes));
     const page=await layer.page(query.root,node.path,reader,{cursor:i===state.n?state.r:null,bytes:remaining});
     if(page.items.length>0)node.contributions=page.items;
+    for(const entry of node.entries)applyApplicabilityJudgments(entry,page.items,page.next===null);
     if(page.next!==null){
       next=PREFIX+Buffer.from(JSON.stringify({q,b:state.b,n:i,r:page.next,l:true} satisfies Position)).toString('base64url');
       continued=true;break;

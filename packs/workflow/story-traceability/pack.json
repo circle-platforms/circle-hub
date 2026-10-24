@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "c83199aae939f23e1558eaad1bdb0ed9bcd486705d916afc154bb77ecea9173f",
-      "size": 3355
+      "sha256": "9308fa1b6b1847bed6c6e66a32f2b1999ebb7280ea202dbe3b7a83bd1611b834",
+      "size": 3719
     },
     {
       "path": "checks.json",
@@ -118,8 +118,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "af653f215edd5dfd795a9c5732ee35210f5b2cfd4ff4fffa74af849d48bc8103",
-      "size": 1347
+      "sha256": "8f014fc649b5a1b4ee477d208cdc333e9ce9f2552017eab5f00a81c38472b7d0",
+      "size": 1649
     }
   ]
 }

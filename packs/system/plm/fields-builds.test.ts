@@ -11,7 +11,7 @@ test('bug content echoes only the configured fix field name, with no existence c
     const result = content(detailProject({ ...bugInput, settings: { bug_fix_field: setting } }));
     assert.equal(result.fix_field, setting);
     const { fix_field, ...old } = result;
-    assert.deepEqual(old, { id: '910001', kind: 'bug', title: '合成缺陷', fields: { id: '910001', title: '合成缺陷', fix: '不能当默认字段', repair_notes: '合成修复说明' }, html_fields: ['repair_notes'] });
+    assert.deepEqual(old, { id: '910001', kind: 'bug', title: '合成缺陷', fields: { id: '910001', title: '合成缺陷', fix: '不能当默认字段', repair_notes: '合成修复说明' }, html_fields: ['repair_notes'], fix_notes: null, fix_notes_note: '缺少设置 settings.bug_fix_actions' });
   }
   for (const setting of [undefined, '', '   ', null, 3]) assert.equal(content(detailProject({ ...bugInput, settings: { bug_fix_field: setting } })).fix_field, null);
   const result = detailProject({ ...bugInput, settings: { bug_fix_field: 'repair_notes' } }) as { artifacts: Array<{ name: string; json: Record<string, unknown> }> };
@@ -61,9 +61,36 @@ test('malformed keys or responses refuse without guessing names or empty build l
   const badBuilds = buildsProject({ ...request('410'), responses: { builds: { json: {} } }, original: 'builds' }) as any;
   assert.equal(badBuilds.error.code, 'plm.no_records'); assert.match(badBuilds.error.message, /构建列表不是数组.*重新读取/);
 });
+test('fix notes keep only exact declared action codes and non-empty comments, in order', () => {
+  const actions = [
+    { id: 1, actor: 'synthetic-opener', action: 'opened', date: '2026-04-01 00:00:00', comment: '', extra: '' },
+    { id: 2, actor: 'synthetic-dev', action: 'assigned', date: '2026-04-02 00:00:00', comment: '<p>合成分配说明</p>', extra: '' },
+    { id: 3, actor: 'synthetic-dev', action: 'svncommited', date: '2026-04-03 00:00:00', comment: '合成提交说明', extra: '' },
+    { id: 4, actor: 'synthetic-dev', action: 'resolved', date: '2026-04-04 00:00:00', comment: '', extra: 'fixed' },
+    { id: 5, actor: 'synthetic-dev', action: 'edited', date: '2026-04-05 00:00:00', comment: '  合成编辑说明  ', extra: '' },
+    { id: 6, actor: 'synthetic-dev', action: 'Assigned', date: '2026-04-06 00:00:00', comment: '大小写不同不能收入', extra: '' },
+    { id: 7, actor: 'synthetic-dev', action: 'closed', date: '2026-04-07 00:00:00', comment: '未声明的动作不收入', extra: '' },
+  ];
+  const input = { external: { type: 'bug', key: '910001' }, original: 'detail', settings: { bug_fix_actions: '["assigned","svncommited","edited"]' }, responses: { detail: { ok: true, json: { data: [{ id: 910001, title: '合成缺陷', actions }] } } } };
+  const result = content(detailProject(input));
+  assert.equal(result.fix_notes_note, undefined);
+  assert.deepEqual(result.fix_notes, [
+    { action: 'assigned', date: '2026-04-02 00:00:00', actor: 'synthetic-dev', comment: '合成分配说明', index: 1 },
+    { action: 'svncommited', date: '2026-04-03 00:00:00', actor: 'synthetic-dev', comment: '合成提交说明', index: 2 },
+    { action: 'edited', date: '2026-04-05 00:00:00', actor: 'synthetic-dev', comment: '  合成编辑说明  ', index: 4 },
+  ]);
+  assert.deepEqual(result.fields.actions, actions);
+  assert.deepEqual(content(detailProject({ ...input, settings: { bug_fix_actions: '[]' } })).fix_notes, []);
+  for (const setting of ['not-json', '["assigned", 1]', { codes: ['assigned'] }]) {
+    const out = content(detailProject({ ...input, settings: { bug_fix_actions: setting } }));
+    assert.equal(out.fix_notes, null);
+    assert.match(out.fix_notes_note, /settings\.bug_fix_actions/);
+  }
+});
 test('profile declares the fix setting and the two-request build planner', () => {
   const profile = JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8'));
   assert.match(profile.reads.find((r: { name: string }) => r.name === 'bug').description, /settings\.bug_fix_field/);
+  assert.match(profile.reads.find((r: { name: string }) => r.name === 'bug').description, /settings\.bug_fix_actions/);
   const builds = profile.reads.find((r: { name: string }) => r.name === 'builds');
   assert.equal(builds.max_requests, 2); assert.equal(builds.request, undefined);
   assert.deepEqual(builds.plan, { module: 'functions/plm.ts', export: 'buildsPlan' });

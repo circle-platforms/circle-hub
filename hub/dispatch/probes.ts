@@ -25,8 +25,24 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   let manifest:unknown;
   try{manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{throw new PrecheckFactError('绑定清单不是有效的 UTF-8 JSON','管理员读取受限清单原件，修复清单格式并重新发布正确摘要后再采证');}
   const devices=spec.devices!==undefined?at(manifest,spec.devices):undefined;
+  if(!Array.isArray(devices) || !devices.length)throw new PrecheckFactError('绑定清单里没有可核对的设备集合','管理员核对设备集合指针与绑定清单，补齐设备清单后再采证');
+  // Which of the manifest's devices commands are dispatched to is declared, never recognised: without a declaration every
+  // listed device is a dispatch target; with one, exactly the devices whose declared type field equals one of the
+  // definition's declared target types (P07 R[1], C07 R[4]). Only targets need a probe seat; a device whose type the
+  // manifest does not declare cannot be placed and stops the precheck. No name or keyword decides anything here.
+  const declared=spec.dispatch_targets;
+  const typeOf=(device:unknown):string|null=>{
+    if(declared===undefined)return null;
+    const value=at(device,declared.type_field);
+    if(typeof value!=='string' || value==='')throw new PrecheckFactError('清单设备没有声明的类型字段，不能判断它是不是派发目标','管理员按清单模式补齐每台设备的类型字段（取值来自声明的闭集），或在执行器定义里改用显式派发座位声明后重新采证');
+    return value;
+  };
+  const targets=declared===undefined?devices:devices.filter(device=>declared.types.includes(typeOf(device) as string));
+  if(declared!==undefined && !targets.length)throw new PrecheckFactError('清单里没有一台设备声明为派发目标','管理员核对派发目标的类型闭集与清单的类型字段；没有派发目标就不能采证派发');
   const selected=spec.seats.map(seat=>at(manifest,seat.manifest.device));
-  if(!Array.isArray(devices) || !devices.length || devices.length!==selected.length || new Set(selected).size!==devices.length || devices.some(device=>!selected.includes(device)))throw new PrecheckFactError('缺少覆盖清单全部设备的一一对应探测座位','管理员核对设备集合指针、清单全部设备和各座位声明，补齐一一对应关系后再采证');
+  if(targets.length!==selected.length || new Set(selected).size!==targets.length || targets.some(device=>!selected.includes(device)))throw new PrecheckFactError(`缺少覆盖全部 ${targets.length} 个派发目标设备的一一对应探测座位`,'管理员核对设备集合指针、派发目标的类型闭集与各座位声明，为每个派发目标补一个座位、去掉非派发目标的座位后再采证');
+  // Listed for the precheck answer: manifest devices that are not dispatch targets, by manifest position and declared type.
+  const unprobed=devices.map((device,index)=>({device,index})).filter(row=>!targets.includes(row.device)).map(row=>({index:row.index,type:typeOf(row.device)}));
   if(typeof context.build!=='string')throw new PrecheckFactError('缺少锁定构建','管理员提供含锁定构建的预订运行，或在预检上下文登记已核实的构建身份后再采证');
   const names=new Set([context.build]);
   if(knowledge) {
@@ -61,7 +77,7 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     verified=verified && matched;
     if(refused)break probeLoop;
   }
-  const report=await records.artifacts.ingest({bytes:canonicalBytes({verified,assessments}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:assessments}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
-  await journal.append(binding,'result','read_back','completed',{reference:`src:${report.body.sha256}`,probe_assessments:assessments.length},assessments);
+  const report=await records.artifacts.ingest({bytes:canonicalBytes({verified,assessments,...(unprobed.length?{unprobed_non_targets:unprobed}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:assessments}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+  await journal.append(binding,'result','read_back','completed',{reference:`src:${report.body.sha256}`,probe_assessments:assessments.length,...(unprobed.length?{unprobed_non_targets:unprobed,note:`${unprobed.length} 台清单设备未探测（非派发目标，按声明的类型闭集判定）；它们只按清单身份参与拓扑与地址绑定，不派发命令`}:{})},assessments);
   return verified;
 }

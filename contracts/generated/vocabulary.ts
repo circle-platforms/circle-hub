@@ -64,7 +64,7 @@ export const AXES = {
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
   fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '不是这次运行的输入' }, { code: 'not_groundable', label: '这类记录不能作根据' }, { code: 'entry_unaddressed', label: '知识条目单独引用了，没写树地址' }, { code: 'malformed', label: '引用写法不对' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'too_large', label: '超过大小上限' }, { code: 'retain_only', label: '只保留、不可读' }, { code: 'unavailable', label: '暂时读不到' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
-  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }] },
+  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }, { code: 'applicability_claim', label: '适用条件主张' }] },
   task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
   relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
@@ -80,6 +80,7 @@ export const AXES = {
   command_parse_status: { label: '命令解析状态', owner: 'C07', values: [{ code: 'parsed', label: '命令已解析' }, { code: 'not_command', label: '不是命令' }, { code: 'parameters_unchecked', label: '参数未核' }] },
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
   knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
+  release_status: { label: '发布说明状态', owner: 'K02', values: [{ code: 'fixed', label: '已修复' }, { code: 'known', label: '已知' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -634,9 +635,9 @@ export function isFragmentRead(value: unknown): value is FragmentRead {
 }
 
 /** 按文档的产出种类 (K03) */
-export const DOCUMENT_OUTPUT_KIND = ['classification', 'placement_proposal', 'assertion', 'relation'] as const;
+export const DOCUMENT_OUTPUT_KIND = ['classification', 'placement_proposal', 'assertion', 'relation', 'applicability_claim'] as const;
 export type DocumentOutputKind = (typeof DOCUMENT_OUTPUT_KIND)[number];
-export const DOCUMENT_OUTPUT_KIND_LABEL = { 'classification': '分类', 'placement_proposal': '归位提议', 'assertion': '声明', 'relation': '关系' } as const satisfies { readonly [K in DocumentOutputKind]: string };
+export const DOCUMENT_OUTPUT_KIND_LABEL = { 'classification': '分类', 'placement_proposal': '归位提议', 'assertion': '声明', 'relation': '关系', 'applicability_claim': '适用条件主张' } as const satisfies { readonly [K in DocumentOutputKind]: string };
 export const DocumentOutputKindSchema = z.enum(DOCUMENT_OUTPUT_KIND);
 export function isDocumentOutputKind(value: unknown): value is DocumentOutputKind {
   return (DOCUMENT_OUTPUT_KIND as readonly unknown[]).includes(value);
@@ -777,6 +778,15 @@ export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
   return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
 }
 
+/** 发布说明状态 (K02) */
+export const RELEASE_STATUS = ['fixed', 'known'] as const;
+export type ReleaseStatus = (typeof RELEASE_STATUS)[number];
+export const RELEASE_STATUS_LABEL = { 'fixed': '已修复', 'known': '已知' } as const satisfies { readonly [K in ReleaseStatus]: string };
+export const ReleaseStatusSchema = z.enum(RELEASE_STATUS);
+export function isReleaseStatus(value: unknown): value is ReleaseStatus {
+  return (RELEASE_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -855,6 +865,7 @@ export interface AxisValues {
   command_parse_status: CommandParseStatus;
   declaration_status: DeclarationStatus;
   knowledge_count: KnowledgeCount;
+  release_status: ReleaseStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -935,6 +946,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   command_parse_status: COMMAND_PARSE_STATUS_LABEL,
   declaration_status: DECLARATION_STATUS_LABEL,
   knowledge_count: KNOWLEDGE_COUNT_LABEL,
+  release_status: RELEASE_STATUS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

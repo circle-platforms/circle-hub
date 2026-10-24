@@ -909,7 +909,7 @@ function startText(v: StartOut, context: TextContext): string {
     more: () => `要求项：${seeConsole(r.run)}`,
   });
   if(r.input_defaults?.length)blocks.push({
-    priority:1,head:['输入缺省绑定：'],entries:r.input_defaults.map(binding=>`- ${binding.slot} 按前驱 ${binding.predecessor} 的已受理结果 ${binding.reference} 绑定`),unit:'绑定',measure:'个',
+    priority:1,head:['输入缺省绑定：'],entries:r.input_defaults.map(binding=>binding.kind==='input'?`- ${binding.slot} 按前驱 ${binding.predecessor} 冻结的输入 ${binding.reference} 绑定`:`- ${binding.slot} 按前驱 ${binding.predecessor} 的已受理结果 ${binding.reference} 绑定`),unit:'绑定',measure:'个',
     more:()=>`绑定来历：${record===null?seeConsole(r.run):readCall(record+'#/input_defaults')}`,
   });
   const sources = r.sources.map((s) => sourceEntry(s, r.run));
@@ -996,7 +996,9 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const clip = new Clip(null, page);
     const statement = clip.field(entry.statement, CLIP.field, '条目陈述的超出部分', '读条目陈述全文：用 get_nodes 按那一行的引用读');
     const data = entry.data === undefined ? '' : `；数据 ${clip.field(JSON.stringify(entry.data), CLIP.data, '条目数据的超出部分')}`;
-    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}`, omitted: clip.omitted };
+    const fields=entry.applicability_fields;
+    const state=fields?'；条件状态 '+Object.entries(fields).map(([field,value])=>`${labelOf('applicability_field',field as import('../../contracts/generated/vocabulary.ts').ApplicabilityField)}：声明 ${value.declaration_status===null?'出处未核验':labelOf('declaration_status',value.declaration_status)}，判断 ${value.judgment_status===null?'尚未核读完':labelOf('judgment_status',value.judgment_status)}，声明值 ${value.declaration_value===null?'null':clip.field(JSON.stringify(value.declaration_value),CLIP.data,'声明值超出部分')}${value.judgments.length?'；判断引用 '+value.judgments.map(ref=>'rec:'+ref).join(' '):''}${value.conflicted?'；存在冲突，需复核':''}`).join('；'):'';
+    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}`, omitted: clip.omitted };
   });
   for (const view of node.contributions ?? []) {
     const clip = new Clip(`rec:${view.record}`);
@@ -1006,6 +1008,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
       entries.push({text:`  · [${labelOf('knowledge_layer',c.layer)}] ${clip.field(view.note??labelOf('validity_status',view.status),CLIP.field,'受限说明的超出部分')}；来源 ${c.source.reference}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}`,omitted:clip.omitted});
       continue;
     }
+    if(c.kind==='applicability_claim'&&c.applicability_claim){const a=c.applicability_claim;entries.push({text:`  · [适用条件主张 / 判断] ${labelOf('applicability_field',a.field)}：${clip.field(JSON.stringify(a.value),CLIP.field,'条件值超出部分')}；目标 ${a.entry}；章节 ${a.section.join(' / ')}；逐字引文 ${clip.field(a.evidence.text,CLIP.field,'引文超出部分')}；来源 ${c.source.reference}；模型 ${clip.field(c.model,CLIP.name,'模型标识超出部分')}；校验组成 rec:${a.admission.composition}；引用 rec:${view.record}`,omitted:clip.omitted});continue;}
     entries.push({ text: `  · [${labelOf('knowledge_layer', c.layer)} / ${labelOf('document_output_kind', c.kind)}] ${clip.field(c.statement, CLIP.field, '回注陈述的超出部分')}；来源 ${c.source.reference}（${labelOf('provenance_type',c.source.provenance)}）；适用 ${clip.field(applicabilityText(c.applicability),CLIP.name,'适用条件的超出部分')}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}${view.note === null ? '' : '；'+view.note}${c.relation === undefined ? '' : '；关系 '+labelOf('relation_kind',c.relation.kind)+' → '+c.relation.other.reference}`, omitted: clip.omitted });
   }
   const children = node.children.map((child) => {
