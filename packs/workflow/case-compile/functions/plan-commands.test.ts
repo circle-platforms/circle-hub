@@ -39,3 +39,16 @@ test('native catalog selection budget failures stay unknown with a split-plan re
  assert.ok(outcomes.some(row=>row.verdict==='unknown'&&row.missing?.includes('拆分计划')),JSON.stringify(outcomes));
  assert.ok(!outcomes.some(row=>row.verdict==='refute'));
 });
+test('optional model identity declarations are checked only by commands_known, not the contract, address or expectation prerequisites',()=>{
+ for(const declaration of [null,'synthetic invalid declaration',[{raw:'synthetic malformed declaration'}],[],[COMMAND_IDENTITIES[1]],[...COMMAND_IDENTITIES]]){
+  const value=input();value.data.command_identities=declaration;
+  const subject=planSubject(value.raw);
+  for(const check of [checkContractShape,checkAddresses,checkExpectedSources])assert.ok(check({subject}).every(row=>row.verdict==='support'),JSON.stringify(check({subject})));
+  const result=checkCommandsKnown({subject});assert.ok(result.some(row=>row.verdict==='refute'&&row.pointer==='/data/command_identities'&&row.statement.includes('可选')),JSON.stringify(result));
+ }
+ const valid=input();valid.data.command_identities=[COMMAND_IDENTITIES[0]];assert.ok(checkCommandsKnown({subject:planSubject(valid.raw)}).every(row=>row.verdict==='support'));
+});
+test('a model declaration on a host-only plan is compared with the empty derived identity set',()=>{
+ const value=input();value.data.steps=value.data.steps.slice(1);value.data.command_identities=[COMMAND_IDENTITIES[0]];value.data.expects[0].after=1;
+ const result=checkCommandsKnown({subject:planSubject(value.raw)});assert.ok(result.some(row=>row.verdict==='refute'&&row.pointer==='/data/command_identities'));
+});

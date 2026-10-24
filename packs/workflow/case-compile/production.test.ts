@@ -131,14 +131,15 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
       assert.equal(readAddress(bedsOf()[0],noLineage,'2026-10-23T02:00:00.000Z',address).kind,'off_bed');
     } finally { await temp.remove(); }
   });
-  it('generates from a satisfied plan then verifies the original artifact in a successor run', async () => {
-    const first = await hub.service.startRunDetailed(hub.alice, start(), call()); const planRun = first.answer.run!;
-    const sent = submission(planRun.run); const answer = await hub.service.submitResult(hub.alice, sent, call()); assert.equal(answer.acceptance, 'accepted');
+  it('satisfies every requirement through generation and successor verification without source or model command declarations', async () => {
+    const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;
+    const first = await hub.service.startRunDetailed(hub.alice, args, call()); const planRun = first.answer.run!;
+    const sent = submission(planRun.run);assert.equal(Object.hasOwn(sent.items[0].slots.plan[0].data,'command_identities'),false);assert.equal(Object.hasOwn(planRun.items[0].fields,'command_identities'),false); const answer = await hub.service.submitResult(hub.alice, sent, call()); assert.equal(answer.acceptance, 'accepted');
     const contract = Buffer.from(JSON.stringify(CONTRACT_DOC)); const profile = Buffer.from(JSON.stringify(PROFILE_DOC)); const inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
     const recipe = satisfiedRecipe({ run: first.answer, result: answer, submission: sent, contract, profile, inventory });
     const bytes = generateWorkbook(recipe);
     await hub.kit.artifacts.ingest({ bytes, mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', origin: { read: { object: 'fixture:workbook:synthetic' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [hub.alice.id], admins: true, packs: [], shareable: false }, name: 'fixture.xlsx' });
-    const second = await hub.service.startRunDetailed(hub.alice, { ...start(), predecessor: planRun.run, parameters: { ...start().parameters, plan_run: planRun.run }, inputs: { ...start().inputs, workbook: { reference: `src:${createHash('sha256').update(bytes).digest('hex')}` } } }, call());
+    const second = await hub.service.startRunDetailed(hub.alice, { ...args, predecessor: planRun.run, parameters: { ...args.parameters, plan_run: planRun.run }, inputs: { ...args.inputs, workbook: { reference: `src:${createHash('sha256').update(bytes).digest('hex')}` } } }, call());
     assert.equal(second.answer.call_result, 'ok', JSON.stringify(second.answer.errors));
     const verified = await hub.service.submitResult(hub.alice, submission(second.answer.run!.run), call()); assert.equal(verified.acceptance, 'accepted', JSON.stringify(verified.errors));
     const result = ValidationResult.parse(verified.result); const requirements = result.partitions.delivered[0].requirements; assert.ok(requirements.every((v) => v.status === 'satisfied'), JSON.stringify(requirements));

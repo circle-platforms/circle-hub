@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "26517caed2285cd07dd100b7323b3af0f488c999df1cfdc385cf577bc25d422d",
-      "size": 8248
+      "sha256": "98a12955f3b906284cf12a1f9d4aa0b25f33b4d90dfd70ccf682e3d53169ccc8",
+      "size": 8563
     },
     {
       "path": "checks.json",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "934fb4f537807f82d910d6dcd42af6eb0ac52323341368c3243c1c76601531eb",
-      "size": 17703
+      "sha256": "d11cbd33dbfeab572fe80afc8f0e70daf80ad163b7d4002141da750dcc8f43e8",
+      "size": 18190
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -128,8 +128,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "ec36bb52da9fa0b376cdef2bddfb1624b3196c529a6e1d416db63c95a41eb5b6",
-      "size": 5292
+      "sha256": "0051324350a314cbde09ead71f94829a9f6e68fb14eeae93b36486f36a08c805",
+      "size": 5575
     },
     {
       "path": "functions/profile.ts",
@@ -163,8 +163,8 @@
     },
     {
       "path": "functions/slots.ts",
-      "sha256": "b11a74635cd0884cfa93c1b64518dfe60430d207144803980da9f43e4e776397",
-      "size": 5249
+      "sha256": "9e4971fe1ce2e88232da12967405cf9a0dbbc48c93f2b1dc5ef0f502f8ea134c",
+      "size": 4842
     },
     {
       "path": "functions/subject.ts",
@@ -218,43 +218,43 @@
     },
     {
       "path": "samples/negative/typed-address-member.json",
-      "sha256": "f3022ffea216e120f885ad28c53fde1e38dfbcd099984878dc3f560955719e48",
-      "size": 27658
+      "sha256": "6ec4e39c3cf83385914e1a1754932afb225a334428a5a6e4a42c176f1f854bc5",
+      "size": 25926
     },
     {
       "path": "samples/negative/typed-bed_addresses.json",
-      "sha256": "d3a46f367ee44c789bbee26ac3eae3235c3032d7528cf9644e621235c62fb9a1",
-      "size": 23236
+      "sha256": "1486c21f9a42962f59bafc4eec9569b6d16043e4d4c7bbc02dac474d9c13d4e0",
+      "size": 22351
     },
     {
       "path": "samples/negative/typed-commands_catalog.json",
-      "sha256": "97bc600997bbe0be981d1d14ee9fc56913b3f5c29dc7428cf033aa9983426360",
-      "size": 23250
+      "sha256": "7002825b017911200db03b518fcf76e0536baa56d722cde829b85aca66b842f6",
+      "size": 22365
     },
     {
       "path": "samples/negative/typed-contract_shape.json",
-      "sha256": "b30791bbd2584c626208014fa999a7d480091e829fd92aec5541cb519217860b",
-      "size": 23246
+      "sha256": "55903a07db41d721502433325fc062f17a835f19256d944495fa92fe2bd1e634",
+      "size": 22361
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "512e58596f125361b32dd9bdaa1fcc7ad8bb6193e952723940ceaa96c00981c8",
-      "size": 40152
+      "sha256": "e7191b18b000fc04a4113f43dd2943da7739ad94f9730ef1b392498947a6b2f9",
+      "size": 39267
     },
     {
       "path": "samples/negative/typed-effect-budget.json",
-      "sha256": "2c8c2cd4d3af6cf01ebc39200fe8dcc1809b8b427f8b7735e837477520a64753",
-      "size": 23236
+      "sha256": "91ef591d48a90d6cd1a4fa26df3549c6d105f762b333a9a7281119c1995456c2",
+      "size": 22351
     },
     {
       "path": "samples/negative/typed-expected_sources.json",
-      "sha256": "5ac9ec12d005ad53fc1b911b178f757bf40942324ece01a87562b2cac601b99a",
-      "size": 23233
+      "sha256": "c217950d13f213aa095091244743e3e286bfe5138600ee36824584fc521904be",
+      "size": 22348
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "26243fa1304010663aa5896bd48e8b06e97993d20526da9382963d3623e6d189",
-      "size": 40156
+      "sha256": "82ca235b0aca2b17a793a0a38830161276e00f874dbf8af45e6eadd77af111c4",
+      "size": 39271
     },
     {
       "path": "samples/positive/quote.json",
@@ -263,48 +263,48 @@
     },
     {
       "path": "samples/positive/typed-address-member.json",
-      "sha256": "2eb2265be64ec59efc7f2c9e4352013ddb2c89e5b6605815ec4d1fb8f1cb5727",
-      "size": 27610
+      "sha256": "9847adebaf96da4af60ed6e2bf22a08573c958868b206246dbd91fadd7384bac",
+      "size": 25878
     },
     {
       "path": "samples/positive/typed-bed_addresses.json",
-      "sha256": "1a80621ba5c3fc68cf78e7034c96379d561a2779e34d0e3e26a9feb4510ed844",
-      "size": 23190
+      "sha256": "e7b7e05d96207e1ff3fc2ee5ab441267ead91fd9d076e65ca68492347a5c3eb6",
+      "size": 22305
     },
     {
       "path": "samples/positive/typed-commands_catalog.json",
-      "sha256": "031f2dec2e67fd18129d9d320dbf0196ec52cb3acd058779774fa868e30ad4e0",
-      "size": 23196
+      "sha256": "207c361132bb3e30bf3c53d71f4ffee629561222c93cfcf3d489a8f7f97e133e",
+      "size": 22311
     },
     {
       "path": "samples/positive/typed-contract_shape.json",
-      "sha256": "92982414613714b03f233d8bda94423a87826737369289bac4a209a75e751a0e",
-      "size": 23192
+      "sha256": "7ab3735c7ec1968a59c535a19dc2b663eb4b0a2eba32d6363e2958fc50e002ca",
+      "size": 22307
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "0f602aec5bfd75d3e39d300d04dc1a1f0c280f72132f1dd1dc0be714f43df480",
-      "size": 40106
+      "sha256": "74da7ce6efaa0699f0cc35cd71031e851c70d9e96643d4541985b323d693453c",
+      "size": 39221
     },
     {
       "path": "samples/positive/typed-effect-budget.json",
-      "sha256": "33e2f3ab91a328fdd84352bd42f6190a43c3ceb7dce182331afd4a0f7cfbe7e9",
-      "size": 23191
+      "sha256": "95e6d54bf2cec592290c1c199c0372d78bd833890a790fa0c67bd82580b0f632",
+      "size": 22306
     },
     {
       "path": "samples/positive/typed-expected_sources.json",
-      "sha256": "5a34eb5cd6b48e9c6ab267ea0d2423d7936e09d920387b006c9c074488eb7a49",
-      "size": 23196
+      "sha256": "ede7d3bde3ea7e630842d5553b2136d7606bd18f6e2bc972116be76a49c31099",
+      "size": 22311
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c389d44b5c2917cd5c290990d2bcec463d21722409e040ae90fd1438ce3b73a1",
-      "size": 40110
+      "sha256": "eebfcabbec91adad0ef1637dc5c1c808fd6d3c110dac3ca786f0528a9eb5d756",
+      "size": 39225
     },
     {
       "path": "slots.schema.json",
-      "sha256": "836ae0692a3561f1a090b41a3e63ee23eb51c593512d96f98abfd2a9134ac2a6",
-      "size": 3867
+      "sha256": "8e3f356cc37f9283f17789cd0b538aba862e6759672d5330257871424aa71a94",
+      "size": 3992
     },
     {
       "path": "tables/codes.json",
@@ -358,7 +358,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "fdf019324ca089e780e8396b60b2e815b1c440b611ec50542486a8fdbe103186",
+      "sha256": "31de9930d8770e24754b0a5774148a6681461af4eb182b33abc11aa3b0c643ea",
       "size": 555
     },
     {

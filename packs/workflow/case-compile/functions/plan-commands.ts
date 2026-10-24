@@ -19,7 +19,8 @@ export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfi
 export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null}{
  const lines=deviceCommandLines(contract,profile,slots);
  const problems:CommandProblem[]=[],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:'unknown'|'refute'='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
- if(!lines.length)return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[]}:null};
+ const declarations=(identities:CommandIdentity[]):void=>{ if(slots.command_identities!==undefined){if(!Array.isArray(slots.command_identities)){note('/command_identities','模型提交的可选命令身份声明不是列表','refute');return;}const declared=slots.command_identities.map(identityOf);if(declared.some(identity=>identity===null))note('/command_identities','模型提交的命令身份结构或类型化值不一致','refute');else{const supplied=new Set(declared.map(identity=>identityKey(identity!))),actual=new Set(identities.map(identityKey));if(supplied.size!==actual.size||[...actual].some(key=>!supplied.has(key)))note('/command_identities','模型提交的命令身份不等于锁定目录对计划命令的完整解析','refute');}}};
+ if(!lines.length){declarations([]);return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[]}:null};}
  if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],byLine,problems,catalog:null};}
  if(typeof raw.missing==='string'){note('/command_catalog',raw.missing);return {identities:[],byLine,problems,catalog:null};}
  const catalog=raw as unknown as CommandCatalog;const definitions:CommandDefinition[]=[],candidates=new Set<CatalogEntry>();
@@ -33,6 +34,6 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
   if(identity)byLine.set(line,identity);else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
  }
  const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];
- if(slots.command_identities?.length){const declared=slots.command_identities.map(identityOf);if(declared.some(identity=>identity===null))note('/command_identities','模型提交的命令身份结构或类型化值不一致','refute');else{const supplied=new Set(declared.map(identity=>identityKey(identity!))),actual=new Set(identities.map(identityKey));if([...actual].some(key=>!supplied.has(key)))note('/command_identities','模型提交的命令身份不等于锁定目录对计划命令的完整解析','refute');}}
+ declarations(identities);
  return {identities,byLine,problems,catalog:{root:catalog.root,complete:catalog.complete,entries:[...candidates],covered_lines:[...new Set(lines.map(value=>value.line))]}};
 }

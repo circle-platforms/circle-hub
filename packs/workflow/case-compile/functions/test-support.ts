@@ -43,7 +43,7 @@ export const MANIFEST_DOC = {
 export function contractOf(doc: unknown = CONTRACT_DOC): RuntimeContract { const r = parseRuntimeContract(doc); if (!r.ok) throw new Error(JSON.stringify(r.problems)); return r.contract; }
 export function bedsOf(doc: unknown = MANIFEST_DOC): ManifestBed[] { const r = parseManifest(doc); if (!r.ok) throw new Error(JSON.stringify(r.problems)); return r.beds; }
 export const QUOTE = { reference: `src:${'a'.repeat(64)}/kityminder@1/s/c-1-e1`, text: '健康检查间隔设置成功' };
-export function goodData(): PlanSlots { return { command_identities:structuredClone(COMMAND_IDENTITIES) as CommandIdentity[], bucket: 'bed-a', blocks: [], replacements: [], steps: [
+export function goodData(): PlanSlots { return { bucket: 'bed-a', blocks: [], replacements: [], steps: [
   { object: 'widget-seat', method: 'configure', args: ['widget health interval 60'], keywords: {} },
   { object: 'widget-host', method: 'shell', args: ['echo 192.0.2.90'], keywords: {} },
   { object: 'widget-clock', method: 'pause', args: ['1'], keywords: {} },

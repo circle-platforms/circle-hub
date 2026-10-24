@@ -132,7 +132,7 @@
           },
           "command_identities": {
             "type": "array",
-            "description": "完整 CommandIdentity 列表，必须与冻结 data.command_identities 经显式类型化地址替换的结构身份一致；函数按生成的共享接口核验每项",
+            "description": "可选的模型身份声明；通常省略。Hub 从 steps 的完整设备命令行按锁定树解析 CommandIdentity，不要求模型填写类型值。若主动声明，commands_known 逐项核结构并与 Hub 解析身份集合完全比对，不一致记违规；不得用声明代替解析",
             "items": {
               "type": "object"
             }
