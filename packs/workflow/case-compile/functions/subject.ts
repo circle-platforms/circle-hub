@@ -7,7 +7,51 @@ import { parseManifest } from './manifest.ts';
 import { readSlots } from './slots.ts';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
 import type { LeaseRow } from './bed.ts';
-export interface PlanSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[] }
+/**
+ * One criterion declaration the Hub froze into this run after an account other than the author accepted it (W10, B03
+ * R[0]): the whole text is resolved by the core, the pack only reads the fields it needs and compares them exactly.
+ */
+export interface FrozenItemCriterion {
+  /** Where the criterion was in the sources bound to the declaring run. */
+  criterion: string;
+  assertion: string;
+  old: string;
+  /** The accepted new criterion: an expectation may be a verbatim fragment of exactly this text. */
+  new: string;
+  /** The quotes that carry the new criterion; each one is re-verified verbatim in this run's own boundary (B03 R[3]). */
+  grounds: Array<{ reference: string; quote: string }>;
+  /** rec: of the declaration in the submission, and of the review result; the account that accepted it. */
+  declaration: string;
+  review: string;
+  reviewer: string;
+  target: string;
+}
+
+/**
+ * The frozen accepted criterion declarations of one item, by exact field shape and exact item identity. Nothing is read
+ * out of any text: a declaration the core did not freeze for this item does not exist as far as this pack is concerned.
+ */
+export function criteriaOf(context: unknown, item: string): FrozenItemCriterion[] {
+  const accepted = isRecord(context) && Array.isArray(context.accepted_criteria) ? context.accepted_criteria : [];
+  const out: FrozenItemCriterion[] = [];
+  for (const value of accepted) {
+    if (!isRecord(value) || value.item !== item) continue;
+    const grounds = Array.isArray(value.grounds)
+      ? value.grounds.filter(isRecord).map((ground) => ({ reference: typeof ground.reference === 'string' ? ground.reference : '', quote: typeof ground.quote === 'string' ? ground.quote : '' })).filter((ground) => ground.reference !== '' && ground.quote !== '')
+      : [];
+    const text = (name: string): string => (typeof value[name] === 'string' ? (value[name] as string) : '');
+    if (text('new') === '' || text('declaration') === '' || text('review') === '' || text('reviewer') === '' || grounds.length === 0) continue;
+    out.push({ criterion: text('criterion'), assertion: text('assertion'), old: text('old'), new: text('new'), grounds, declaration: text('declaration'), review: text('review'), reviewer: text('reviewer'), target: text('target') });
+  }
+  return out;
+}
+
+/** The frozen declaration an expectation cites, by exact reference equality; null when it cites none of them. */
+export function citedCriterion(criteria: readonly FrozenItemCriterion[], reference: string): FrozenItemCriterion | null {
+  return criteria.find((criterion) => criterion.declaration === reference) ?? null;
+}
+
+export interface PlanSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
 export function planDataOf(record: Record<string, unknown>): unknown {
   const slots = isRecord(record.slots) ? record.slots : {};
   const plan = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
@@ -21,7 +65,8 @@ export function planSubject(input: unknown): PlanSubject {
   const frozen = isRecord(group) ? group : {};
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
-  return { command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '', location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString() };
+  const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
+  return { command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
 export function quoteSubject(input: unknown): unknown {
@@ -29,7 +74,13 @@ export function quoteSubject(input: unknown): unknown {
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
   if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };
-  return { item: subject.item, quotes: read.slots.expects.map((v) => v.quote) };
+  // An expectation taken from a frozen accepted criterion cites the declaration, which quote@1 cannot read as a source:
+  // what has to be verbatim in an expected source of this run is the declaration's own grounds (W10 step two, B03 R[3]).
+  const quotes = read.slots.expects.flatMap((v) => {
+    const criterion = citedCriterion(subject.criteria, v.quote.reference);
+    return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
+  });
+  return { item: subject.item, quotes };
 }
 
 /** Authored source text is distinct from the model's final step values. */
