@@ -798,6 +798,16 @@ describe('original', () => {
     });
   });
 
+  test('an unmatched suffix names the suffix filter with or without a prefix', async () => {
+    await withOriginals(async admin => {
+      for (const prefix of [[], ['--external', 'agile:']]) {
+        const empty = await expectOk(admin, ['original', 'list', ...prefix, '--suffix', '.synthetic-missing']);
+        assert.match(empty.text, /后缀/);
+        assert.ok(!empty.text.includes('以这个前缀开头'));
+      }
+    });
+  });
+
   test('exports a stored original to a new file with mode 0600, printing only size and digest', async () => {
     await withOriginals(async (admin) => {
       const dir = await mkdtemp(join(tmpdir(), 'circle-hub-original-'));

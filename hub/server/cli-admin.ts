@@ -1071,7 +1071,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
       }
       cursor = lines.length >= limit ? null : page.next;
     } while (cursor !== null);
-    if (lines.length === 0) session.out(values.external === undefined ? '还没有读过的原件' : '没有外部标识以这个前缀开头的原件');
+    if (lines.length === 0) session.out(values.suffix !== undefined ? (values.external === undefined ? '没有符合指定后缀的原件' : '没有同时符合指定前缀和后缀的原件') : values.external === undefined ? '还没有读过的原件' : '没有外部标识以这个前缀开头的原件');
     for (const line of lines) session.out(line);
     return 0;
   }
