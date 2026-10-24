@@ -1,5 +1,6 @@
 // executor@1 is local until the shared contracts owner adopts the shape.
 import { z } from 'zod';
+import {SecretReference} from '../../contracts/src/variables.ts';
 import { isIP } from 'node:net';
 import { X509Certificate } from 'node:crypto';
 import { ActionResultSchema, AcceptanceSchema, EffectOutcomeSchema, DynamicTerminalSchema, RetrySafetySchema } from '../../contracts/generated/vocabulary.ts';
@@ -29,6 +30,7 @@ const probes = z.strictObject({devices:pointer.optional(),command_pattern:z.stri
   for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
 });
 export const ExecutorDefinition = z.strictObject({
+  credential: SecretReference.optional(),
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
   retry_safety: RetrySafetySchema.refine(v=>v==='unsafe' || v==='dedup_window').default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
@@ -137,6 +139,7 @@ function countPayloadBindings(value: unknown): number {
 
 export function registrationMissing(d: ExecutorDefinition): string[] {
   const missing: string[] = [];
+  if (!d.credential)missing.push('credential');
   if (!d.proof.warrant_id) missing.push('proof.warrant_id');
   if (!d.manifest_sha256) missing.push('manifest_sha256');
   if (!d.resources.length) missing.push('resources');

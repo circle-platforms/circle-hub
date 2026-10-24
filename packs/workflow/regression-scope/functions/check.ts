@@ -27,6 +27,7 @@ interface DetailRow {
 }
 
 interface Outcome {
+  missing?: string;
   verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   code?: string;
   statement: string;
@@ -117,7 +118,7 @@ function inScope(subject: unknown): Outcome[] {
     const reasons = reasonsOf(item, details);
     const title = typeof item.label === 'string' && item.label !== '' ? item.label : item.id;
     if (reasons === null || reasons.length === 0) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的范围原因`, grounds: [], tier: TIER, item: item.id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`用例 ${item.id} 没有可读的范围原因`), reason: 'check_error', statement: `用例 ${item.id} 没有可读的范围原因`, grounds: [], tier: TIER, item: item.id });
       continue;
     }
     const grounds = groundsOf(item);
@@ -144,7 +145,7 @@ function inScope(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
+  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('回归范围的检查里没有用例'), reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
   return out;
 }
 
@@ -236,7 +237,7 @@ function uncovered(subject: unknown): Outcome[] {
   const truncated = note?.truncated === true;
   const changedPaths = typeof note?.changed_paths === 'number' ? note.changed_paths : derived.length;
   const out: Outcome[] = derived.map((row) => ({
-    verdict: 'unknown' as const,
+    verdict: 'unknown' as const, missing: '尚未取得本检查所需的事实：' + (uncoveredStatement(row.path, row.change, skippedTo)),
     reason: 'missing_input' as const,
     statement: uncoveredStatement(row.path, row.change, skippedTo),
     grounds: [],
@@ -244,7 +245,7 @@ function uncovered(subject: unknown): Outcome[] {
   }));
   if (derived.length === 0 && skippedTo > 0) {
     out.push({
-      verdict: 'unknown',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`后一构建的索引缺少 ${skippedTo} 份列出的文档，列出的变更路径虽然都有用例，也不能据此说没有遗漏。`),
       reason: 'missing_input',
       statement: `后一构建的索引缺少 ${skippedTo} 份列出的文档，列出的变更路径虽然都有用例，也不能据此说没有遗漏。`,
       grounds: [],
@@ -253,7 +254,7 @@ function uncovered(subject: unknown): Outcome[] {
   }
   if (truncated) {
     out.push({
-      verdict: 'unknown',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`影响视图被截断，列出的路径不是全部（变更路径共 ${changedPaths} 条），完整性无法证明。`),
       reason: 'integrity_unproven',
       statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${changedPaths} 条），完整性无法证明。`,
       grounds: [],
@@ -275,7 +276,7 @@ function uncovered(subject: unknown): Outcome[] {
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
   if (check === 'uncovered_changes') return [...diffSummaries(subject), ...uncovered(subject)];
   if (check === 'in_scope') return inScope(subject);
-  return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: TIER }];
+  return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('这个函数没有对应的检查'), reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: TIER }];
 }
 
 export default function check(input: unknown): unknown {
@@ -285,6 +286,6 @@ export default function check(input: unknown): unknown {
       const id = typeof raw.check === 'string' ? raw.check : null;
       return checkOutcomes(id, raw.subject);
     },
-    (message): Outcome[] => [{ verdict: 'unknown', reason: 'check_error', statement: `回归范围的检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message): Outcome[] => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`回归范围的检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `回归范围的检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

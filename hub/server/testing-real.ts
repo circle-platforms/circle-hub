@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../connectors/testing/credentials.ts';
 // createTestHub(): the Hub assembled from the REAL packages in-process (hub/server/assemble/hub.ts: pack registry, run
 // engine, knowledge, connectors) on a temporary PostgreSQL, listening on a loopback port. The external systems are the
 // connectors' synthetic stub servers (hub/connectors/testing, loopback only), and the packs under packs/ that have a
@@ -303,10 +304,10 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
         await hub.registry.activate(admin.principal, packId);
       },
       addResource(input) {
-        return hub.connectors.admin.addResource(admin.principal, input);
+        return addSyntheticResource(records, hub.packs, hub.connectors, admin.principal, input);
       },
       setCredential(resource, name, value) {
-        return hub.connectors.admin.setCredential(admin.principal, resource, name, value);
+        return setSyntheticCredential(records, hub.connectors, admin.principal, resource, name, value);
       },
       async knowledgeSync(product, sync = {}) {
         const handle = (await hub.packs.productByName(product)) ?? (await hub.packs.productById(product));

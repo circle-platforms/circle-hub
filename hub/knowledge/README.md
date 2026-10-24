@@ -933,3 +933,13 @@ version and digest. Historical versions without a matching current handle are re
 through the public manifest-verifying pack reader. Non-product handles, absent or
 corrupt files and invalid declarations produce positioned admission refusals; an
 unverified edited extraction never grants permission.
+
+Review closure: impact credential exclusions are counted across the entire scan on
+every page; a final page cannot hide exclusions from an earlier offset. Complete
+bindings reject duplicate placement paths, including duplicates within a page.
+Automatic source acceptance uses the configured administrator (the public sync
+administrator requirement is unchanged). A failed acceptance/verification attempt
+writes `knowledge.credential.acceptance-failed` evidence and links it to the named
+administrator request, without copying exception text or credential values. An
+unrecognized historical reason stays explicitly unrecognized, with a registered
+awaiting-step reason and automatic retry/reproduction as its next action.

@@ -192,7 +192,19 @@
               "required": [
                 "action"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "not": {
+                "required": [
+                  "reason",
+                  "action"
+                ],
+                "properties": {
+                  "reason": {},
+                  "action": {
+                    "const": "reject"
+                  }
+                }
+              }
             }
           },
           "requires_discrimination": {

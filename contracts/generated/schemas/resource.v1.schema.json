@@ -61,10 +61,18 @@
         "pattern": "^[a-z][a-z0-9_]{0,31}$"
       },
       "additionalProperties": {
-        "type": "string",
-        "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$"
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$"
+          },
+          {
+            "type": "string",
+            "pattern": "^\\$\\{secret:[A-Z][A-Z0-9_]{0,63}\\}$"
+          }
+        ]
       },
-      "description": "vault entry of each credential the system pack declares"
+      "description": "named secret reference of each credential; legacy vault entry names are decoded only for history"
     },
     "credential_digests": {
       "type": "object",

@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from './testing/credentials.ts';
 // The running Hub and the CLI are two processes over one records kit and one vault; here they are two connector instances
 // (the kit's, and ones made with `make()`, each with its own memory). The running Hub ends a stop it holds in memory when
 // the CLI resets the login or sets a credential: it reads the session entry again before it refuses, so its next read logs
@@ -63,7 +64,7 @@ async function agileSetting(t: { after: (fn: () => Promise<void>) => void }, opt
     await agile.close();
     await k.close();
   });
-  const resource = await k.connectors.admin.addResource(k.admin, {
+  const resource = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, {
     system_pack: 'agile-test',
     name: '合成敏捷平台',
     environment: 'test',
@@ -71,8 +72,8 @@ async function agileSetting(t: { after: (fn: () => Promise<void>) => void }, opt
     allow_plaintext: [agile.origin],
     settings: { roots: ['7714'] },
   });
-  await k.connectors.admin.setCredential(k.admin, resource.id, 'username', 'reader');
-  await k.connectors.admin.setCredential(k.admin, resource.id, 'password', options.stored ?? PASSWORD);
+  await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'username', 'reader');
+  await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'password', options.stored ?? PASSWORD);
   const read = (connectors: Connectors = k.connectors) => connectors.reader.read('agile:tree:7714', { principal: k.user, purpose: 'test' });
   return { k, agile, resource, read };
 }
@@ -100,8 +101,8 @@ async function keyedSetting(t: { after: (fn: () => Promise<void>) => void }, sto
     await k.close();
   });
   k.packs.set(await writePack(k.packRoot, { id: 'keyed-store', system: keyedStoreSystem(), functions: DOCSTORE_FUNCTIONS }));
-  const resource = await k.connectors.admin.addResource(k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': store.origin }, allow_plaintext: [store.origin] });
-  await k.connectors.admin.setCredential(k.admin, resource.id, 'token', stored);
+  const resource = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': store.origin }, allow_plaintext: [store.origin] });
+  await setSyntheticCredential(k.records, k.connectors, k.admin, resource.id, 'token', stored);
   const read = (connectors: Connectors = k.connectors) => connectors.reader.read('manual:file:spec/a.md', { principal: k.user, purpose: 'test' });
   return { k, store, resource, read };
 }
@@ -182,7 +183,7 @@ test('a new password set from the CLI ends the stop; the other process takes the
   assert.equal(agile.logins, 3, 'a refused password is tried once across both processes');
   assert.equal((await other.admin.loginStatus(k.admin, resource.id))?.stopped, true);
   // A third process (the CLI) sets the new password: both stops end; one login, the other process uses its token.
-  await k.make().admin.setCredential(k.admin, resource.id, 'password', CHANGED);
+  await setSyntheticCredential(k.records, k.make(), k.admin, resource.id, 'password', CHANGED);
   ok(await read());
   ok(await read(other));
   assert.equal(agile.logins, 4);
@@ -190,13 +191,13 @@ test('a new password set from the CLI ends the stop; the other process takes the
   assert.equal(agile.logins, 4);
 });
 
-test('a login in flight when the CLI sets a new password keeps no result: no stop, and the next read logs in once with the new value', async (t) => {
+test('a login in flight finishes on its captured version and cannot stop the next credential version', async (t) => {
   const { k, agile, resource, read } = await agileSetting(t, { stored: 'Old#Pass00', loginDelayMs: 1000 });
   agile.setPassword(CHANGED);
   const pending = read();
   await until(() => agile.logins === 1, 'the login at the source');
-  await k.make().admin.setCredential(k.admin, resource.id, 'password', CHANGED);
-  failure(await pending, /结果不用/);
+  await setSyntheticCredential(k.records, k.make(), k.admin, resource.id, 'password', CHANGED);
+  failure(await pending, /LOGIN_FAILED/);
   assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.stopped, false, 'refused with a value that is gone: nothing stopped');
   ok(await read());
   assert.equal(agile.logins, 2, 'one login, with the new value');
@@ -220,7 +221,7 @@ test('a static credential the source refused: it stays stopped in both processes
   failure(await read(), /CREDENTIAL_REFUSED/);
   assert.equal(store.requests.length, 2);
   // A changed value set from the CLI: the running Hub sends it at its next read.
-  await k.make().admin.setCredential(k.admin, resource.id, 'token', RIGHT_KEY);
+  await setSyntheticCredential(k.records, k.make(), k.admin, resource.id, 'token', RIGHT_KEY);
   ok(await read());
   assert.equal(store.requests.length, 3);
   assert.equal(store.requests[2].headers['x-api-key'], `Bearer ${RIGHT_KEY}`);
@@ -236,19 +237,19 @@ test('after a value was accepted, a value the CLI sets goes out one request at a
   ok(await read());
   ok(await read());
   assert.equal(store.requests.length, 2);
-  await k.make().admin.setCredential(k.admin, resource.id, 'token', WRONG_KEY);
+  await setSyntheticCredential(k.records, k.make(), k.admin, resource.id, 'token', WRONG_KEY);
   for (const outcome of await Promise.all([read(), read(), read()])) failure(outcome, /CREDENTIAL_REFUSED/);
   const carried = store.requests.filter((request) => request.headers['x-api-key'] === `Bearer ${WRONG_KEY}`);
   assert.equal(carried.length, 1, 'one request carried the new value, not one per read in flight');
   assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.stopped, true);
 });
 
-test('a static request in flight when the CLI sets the right value: refused, but nothing is stopped and the next read sends the new value', async (t) => {
+test('a static request in flight is refused on its captured version and the next read sends the new version', async (t) => {
   const { k, store, resource, read } = await keyedSetting(t, WRONG_KEY, 1000);
   const pending = read();
   await until(() => store.requests.length === 1, 'the request at the source');
-  await k.make().admin.setCredential(k.admin, resource.id, 'token', RIGHT_KEY);
-  failure(await pending, /这次不停止/);
+  await setSyntheticCredential(k.records, k.make(), k.admin, resource.id, 'token', RIGHT_KEY);
+  failure(await pending, /CREDENTIAL_REFUSED/);
   assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.stopped, false);
   ok(await read());
   assert.equal(store.requests.length, 2);
@@ -290,7 +291,7 @@ test('reads of two processes that overlap one refused login: one attempt in tota
   failure(await second, /登录已停止/);
   assert.equal(agile.logins, 1, 'the other process waited for the login in flight instead of sending the same password');
   assert.equal((await other.admin.loginStatus(k.admin, resource.id))?.stopped, true);
-  assert.ok(k.log.some((event) => event.event === 'login_waiting'));
+  const count=agile.requests.length;failure(await read(other),/LOGIN_FAILED/);assert.equal(agile.requests.length,count,'shared stop persists after both overlapping reads finish');
 });
 
 test('two credentials set in one call: the stop ends once both are stored, and the one login carries both new values', async (t) => {
@@ -300,7 +301,7 @@ test('two credentials set in one call: the stop ends once both are stored, and t
     await agile.close();
     await k.close();
   });
-  const resource = await k.connectors.admin.addResource(k.admin, {
+  const resource = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, {
     system_pack: 'agile-test',
     name: '合成敏捷平台',
     environment: 'test',
@@ -308,16 +309,16 @@ test('two credentials set in one call: the stop ends once both are stored, and t
     allow_plaintext: [agile.origin],
     settings: { roots: ['7714'] },
   });
-  await k.connectors.admin.setCredentials(k.admin, resource.id, { username: 'reader', password: PASSWORD });
+  await setSyntheticCredentials(k.records, k.connectors, k.admin, resource.id, { username: 'reader', password: PASSWORD });
   const read = () => k.connectors.reader.read('agile:tree:7714', { principal: k.user, purpose: 'test' });
   failure(await read(), /LOGIN_FAILED/);
   failure(await read(), /登录已停止/);
-  await k.make().admin.setCredentials(k.admin, resource.id, { username: 'reader2', password: CHANGED });
+  await setSyntheticCredentials(k.records, k.make(), k.admin, resource.id, { username: 'reader2', password: CHANGED });
   ok(await read());
   const logins = agile.requests.filter((request) => request.path === '/oauth/login/').map((request) => request.json as { username: string; password: string });
   assert.deepEqual(logins, [
     { username: 'reader', password: passwordDigest(PASSWORD) },
     { username: 'reader2', password: passwordDigest(CHANGED) },
   ]);
-  assert.equal(k.log.filter((event) => event.event === 'credential_set').length, 4, 'every value is logged as set (never the value)');
+  assert.deepEqual((await k.records.variables.list(k.admin)).map(v=>v.version),[2,2],'each named credential has two versions');
 });

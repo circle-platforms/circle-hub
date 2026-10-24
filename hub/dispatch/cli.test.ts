@@ -10,11 +10,11 @@ import { definition } from './testing/definition.ts';
 function session(c: Awaited<ReturnType<typeof setup>>) {
   const lines: string[] = [];
   return { lines, out: (s: string) => lines.push(s), err: (s: string) => lines.push(s), admin: async () => c.admin,
-    records: async () => c.kit, hub: async () => ({ dispatch: c.service, records: c.kit }), options: { readSecret: async () => 'synthetic-second-key' }, ctx: { io: { cwd: c.kit.dataDir } } };
+    records: async () => c.kit, hub: async () => ({ dispatch: c.service, records: c.kit }), options: { readSecret: async () => {throw new Error('stdin must not be read');} }, ctx: { io: { cwd: c.kit.dataDir } } };
 }
-test('executor registration reads a key only through the injected stdin boundary and prints no endpoint or secret', async t => {
+test('executor registration never reads stdin and accepts named credential references and prints no endpoint or secret', async t => {
   const c = await setup(); t.after(() => c.close()); const s = session(c);
-  const file = join(c.kit.dataDir, 'executor.json'); await writeFile(file, JSON.stringify(definition(c.endpoint.endpoint)));
+  const file = join(c.kit.dataDir, 'executor.json'); await writeFile(file, JSON.stringify({...definition(c.endpoint.endpoint),credential:'${secret:DEMO_AUTH}'}));
   assert.equal(await executorCommand(s, ['add', file]), 0);
   assert.equal(await executorCommand(s, ['list']), 0);
   assert.ok(!s.lines.join('\n').includes(c.endpoint.endpoint)); assert.ok(!s.lines.join('\n').includes('synthetic-second-key'));
@@ -62,7 +62,7 @@ test('new update keys are checked before any definition is authorized', async t 
   await writeFile(file, JSON.stringify({ ...c.executor.definition, precheck_context: { marker: 'synthetic-second-key' } }));
   await assert.rejects(executorCommand(s, ['update', c.executor.id, file, '--secret']));
   assert.equal((await c.registry.get(c.executor.id))!.digest, c.executor.digest);
-  assert.equal(await c.kit.vault.getText(`executor.${c.executor.id}.bearer`), 'synthetic-secret');
+  assert.equal(await c.kit.vault.has(`executor.${c.executor.id}.bearer`),false);const [material]=await c.kit.variables.recentSecrets();assert.equal(material.value,'synthetic-secret');
 });
 
 test('exported audit metadata contains configured pointers and both byte and shared canonical hashes', async t => {

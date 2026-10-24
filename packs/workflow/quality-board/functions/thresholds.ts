@@ -71,7 +71,7 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
       const fields = fieldsOf(value.fields);
       if (fields === null || ignored.length > 0) {
         const why = fields === null ? `条目 ${id} 的字段不是质量看板的形状（任务包缺陷）` : `阈值参数 ${ignored.join('、')} 的取值无效（应是 0 到 1 的数）`;
-        out.push({ verdict: 'unknown', reason: 'check_error', statement: why, grounds: [], tier: TIER, item: id, pointer });
+        out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (why), reason: 'check_error', statement: why, grounds: [], tier: TIER, item: id, pointer });
         continue;
       }
       const violations = violationsOf(fields, thresholds);
@@ -106,10 +106,10 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
         });
       }
     } catch (error) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `阈值检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`阈值检查出错（任务包缺陷）：${internalError(error)}`), reason: 'check_error', statement: `阈值检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '阈值检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('阈值检查的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '阈值检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -117,6 +117,6 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
 export default function thresholdsCheck(input: unknown): unknown {
   return guarded<unknown>(
     () => thresholdOutcomes(isRecord(input) ? input.subject : undefined),
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `阈值检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`阈值检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `阈值检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

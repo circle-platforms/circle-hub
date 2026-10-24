@@ -386,6 +386,34 @@
       ],
       "additionalProperties": false
     },
+    "variables": {
+      "description": "exact named deployment decisions used by this read",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "decision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "at",
+          "name",
+          "decision"
+        ],
+        "additionalProperties": false
+      }
+    },
     "reason": {
       "anyOf": [
         {

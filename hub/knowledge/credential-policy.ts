@@ -54,7 +54,7 @@ export function knowledgeSourceLoader(context:KnowledgeContext,by:Principal,purp
     if(accepted?.bytes){await clearRequests(context,sha);return;}
    }catch{
     const at=context.now().toISOString();
-    const action=await context.store.putAction({action:ACTION.read,run:null,item:null,inputs:[`src:${sha}`,`rec:${load.artifact.digest}`],component:COMPONENTS.sync,lease:null,started_at:at,ended_at:at,result:'error',error_code:'SOURCE_UNAVAILABLE',acceptance:null,codes:[],detail:{automatic:true,administrator:administrator.id,reason:'check_error',operation:'acceptFindings',missing:'缺少自动接受成功的事实',next_action:'管理员核对扫描、接受权限和撤回决定，显式核对或修正来源后重新同步'}},[{key:'knowledge.credential.acceptance-failed',value:sha}]);
+    const action=await context.store.putAction({action:ACTION.read,run:null,item:null,inputs:[`src:${sha}`,`rec:${load.artifact.digest}`],component:COMPONENTS.sync,lease:null,started_at:at,ended_at:at,result:'error',error_code:'SOURCE_UNAVAILABLE',acceptance:null,codes:[],detail:{automatic:true,administrator:administrator.id,reason:'check_error',operation:'acceptFindings',missing:'缺少自动接受后来源可读的核验事实',next_action:'管理员核对扫描、接受权限、撤回决定和原件完整性，恢复来源后重新同步'}},[{key:'knowledge.credential.acceptance-failed',value:sha}]);
     failedAcceptance=action.digest;
    }
   }

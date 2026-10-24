@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/adoc/entries.ts",
-      "sha256": "c00924dc96a3590812f264b89a60742feff619c2add449a45995a72e42e6a1c2",
-      "size": 8696
+      "sha256": "6b1e6ee6d69ca381c4501c8502e7e5e75e03f526e854ba88428501810136981d",
+      "size": 8537
     },
     {
       "path": "functions/adoc/families.ts",

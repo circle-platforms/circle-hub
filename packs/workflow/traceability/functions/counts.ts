@@ -42,7 +42,7 @@ export function countsOutcome(
 ): CheckOutcome {
   const read = factsOf(subject);
   if (read === null || read.items.length === 0) {
-    return { verdict: 'unknown', reason: 'check_error', statement: '追溯统计的被判对象里没有条目或没有视图事实（任务包缺陷）', grounds: [], tier: TIER };
+    return { verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('追溯统计的被判对象里没有条目或没有视图事实（任务包缺陷）'), reason: 'check_error', statement: '追溯统计的被判对象里没有条目或没有视图事实（任务包缺陷）', grounds: [], tier: TIER };
   }
   const { items, facts } = read;
   const grounds = [facts.views.defects.source, facts.views.cases.source];
@@ -114,6 +114,6 @@ export default function countsCheck(input: unknown): unknown {
         checkInput.unread_sources as ReadonlyArray<{ reference: string; reason: string }> | undefined,
       ),
     ],
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `追溯统计出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`追溯统计出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `追溯统计出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }
