@@ -82,8 +82,9 @@ export async function documentScope(context: KnowledgeContext, product: string, 
             const production = await productionOf(context, composition);
             const skipped = production?.detail.problem_chunks ? await readProblemRows(context, production.detail.problem_chunks.skipped) : composition.body.skipped ?? [];
             for (const row of skipped) {
-                const parsed = ReasonSchema.safeParse(row.reason_code), reason = parsed.success ? parsed.data : 'missing_input';
-                candidates.set(`${row.external}\0${composition.record}`, { external: row.external, at: [composition.record], producer: row.producer, slot: row.slot, reason, explanation: `生产时缺少可入根的资料（${labelOf('reason', reason)}）`, ...(production ? { observation: `rec:${production.record.digest}` } : {}), next_action: '下轮同步自动重试；管理员可按生产动作恢复共享读取条件或修正资料/生产器' });
+                const parsed = ReasonSchema.safeParse(row.reason_code), reason = parsed.success ? parsed.data : ReasonSchema.parse('awaiting_step');
+                const explanation = parsed.success ? `生产时缺少可入根的资料（${labelOf('reason', reason)}）` : `旧生产行的原因码不在当前词表：${JSON.stringify(row.reason_code ?? null)}；缺少可核验的单份原因`;
+                candidates.set(`${row.external}\0${composition.record}`, { external: row.external, at: [composition.record], producer: row.producer, slot: row.slot, reason, explanation, ...(production ? { observation: `rec:${production.record.digest}` } : {}), next_action: parsed.success ? '下轮同步自动重试；管理员可按生产动作恢复共享读取条件或修正资料/生产器' : '下轮同步自动重试并重新生产这份来源，以取得当前词表内的单份原因；管理员核对生产器后重读范围' });
             }
             if ((composition.body.skipped_count ?? 0) > skipped.length && production) {
                 // Legacy bounded summaries: the original listed ids minus actually used sources identify every missing member.
