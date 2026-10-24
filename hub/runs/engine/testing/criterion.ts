@@ -20,7 +20,7 @@ export async function criterionHarness(pg:TemporaryPostgres,options:{leases?:boo
  }};
  const workflow=await h.workflows.add(await writePack(dir,spec));h.workflows.assign(h.alice.id,workflow.pack.id);
  const subject=await h.upload(h.alice,Buffer.from(JSON.stringify({value:'旧判据；依据'})),'application/json');
- const expected=await h.upload(h.alice,Buffer.from('旧判据；依据'),'text/plain');
+ const expected=await h.upload(h.alice,Buffer.from('旧判据；依据\n另一判据；第二依据'),'text/plain');
  const start=async()=>{const answer=await h.service.startRun(h.alice,{pack:workflow.pack.id,inputs:{subject:{reference:subject},expected:{reference:expected}}},h.call('criterion-author'));assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));return answer.run!;};
  const proposal={item:'one',criterion:expected,assertion:'合成判据更正',old:'旧判据',new:'新判据',grounds:[{reference:expected,quote:'依据'}]};
  const submit=(run:string,changes:unknown[],by=h.alice,session='criterion-author')=>h.service.submitResult(by,{run,model:'Scripted',items:[{item:'one',handling:'handled',slots:{}}],criterion_changes:changes},h.call(session));

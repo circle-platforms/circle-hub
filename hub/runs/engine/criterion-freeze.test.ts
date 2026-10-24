@@ -19,7 +19,7 @@ test('acceptance after start cannot enter that snapshot but late acceptance ente
  const {h,draft,request}=await setup(t);h.advance(2*86400000);const before=await revision(h,draft.run);await judgment(h,draft.run,request);assert.equal(await criterionOf(h,before.run),'旧判据');const after=await revision(h,before.run);assert.equal(await criterionOf(h,after.run),'新判据');const again=await revision(h,after.run);assert.equal((await runById(h.kit.store,again.run))!.body.accepted_criteria?.length,1);assert.equal(await criterionOf(h,again.run),'新判据');
 });
 test('distinct accepted submissions each need their own review before both freeze',async t=>{
- const {h,draft,request}=await setup(t);const second={...h.proposal,criterion:h.expected+'/text@1/l/1',assertion:'第二处合成判据'};assert.equal((await h.submit(draft.run,[second])).acceptance,'accepted');
+ const {h,draft,request}=await setup(t);const second={...h.proposal,criterion:h.expected+'/text@1/l/2',old:'另一判据',assertion:'第二处合成判据'};assert.equal((await h.submit(draft.run,[second])).acceptance,'accepted');
  const requests=await criterionRequests(h,draft.run);assert.equal(requests.length,2);assert.notEqual(requests[0].source,requests[1].source);await judgment(h,draft.run,request);
  const first=await revision(h,draft.run);assert.equal((await runById(h.kit.store,first.run))!.body.accepted_criteria?.length,1);
  await judgment(h,draft.run,requests.find(row=>row.record!==request.record)!);const both=await revision(h,first.run);assert.equal((await runById(h.kit.store,both.run))!.body.accepted_criteria?.length,2);
