@@ -273,9 +273,10 @@ export class DispatchService {
         const response=await session.declaredRead(declaration.call,context,'before_state');
         const expected=bind(declaration.expected,context),actual=at(response.value,declaration.pointer);
         const matched=same(expected,actual);
-        await this.journal.append(binding,'before_state','read','completed',{matched,remote_lease:remote,expected_sha256:digestOfValue(expected),observed_sha256:actual===undefined?null:digestOfValue(actual),bound:matched&&declaration.conditional_write},[response.source]);
+        const conditionalCertified=declaration.conditional_write&&await this.certified(binding,d,session,'conditional_write');
+        await this.journal.append(binding,'before_state','read','completed',{matched,remote_lease:remote,expected_sha256:digestOfValue(expected),observed_sha256:actual===undefined?null:digestOfValue(actual),bound:matched&&conditionalCertified,conditional_write_declared:declaration.conditional_write,conditional_write_certified:conditionalCertified,...(declaration.conditional_write&&!conditionalCertified?{missing_fact:'目标这个版本的条件写尚未认证；只读比较不证明原子绑定',next_action:'管理员从目标受限审计和协议证据认证此版本的条件写前提；当前记录未绑定前状态'}:{})},[response.source]);
         if(!matched)throw new EffectBoundaryError(deny(5,'FENCING_STALE','前状态与绑定值不符；请只读核对目标状态并重证基线'));
-        beforeState={bound:declaration.conditional_write,sha256:digestOfValue(actual),reference:response.source};
+        beforeState={bound:conditionalCertified,sha256:digestOfValue(actual),reference:response.source};
         if(declaration.conditional_write)context.before_state=actual;
       };
       await readBeforeState();
@@ -320,12 +321,18 @@ export class DispatchService {
         catch(error){
           if(error instanceof SubmissionNotSentError||error instanceof InvocationDefinitionError)throw error;
           const rule=RETRY_RULES[intentSemantics.retry_safety];
-          if(!rule.resend||this.now().getTime()>=Date.parse(notAfter)||!pulse.held()||!await this.certified(binding,d,session,'retry_safety')||rule.window&&!await this.certified(binding,d,session,'window_resend'))throw error;
+          const retryDeadline=rule.window?Math.min(Date.parse(notAfter),Date.parse(notAfter)-d.submit_timeout_ms+(d.premises.window_resend?.window_ms??0)):Date.parse(notAfter);
+          if(!rule.resend||this.now().getTime()>=retryDeadline||!pulse.held()||!await this.certified(binding,d,session,'retry_safety')||rule.window&&!await this.certified(binding,d,session,'window_resend'))throw error;
           try{await readBeforeState();}catch{await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:'丢回复后前状态不再匹配或读不到；原请求是否执行须对账',next_action:'自动只读原请求记录，不把重发前提失败当作未执行'});throw error;}
           const retryBoundary=await checkEffectBoundary({...finalBoundary,budget:async row=>{const used=await finalBoundary.budget(row);return {count:used.count-1,duration_ms:used.duration_ms-d.max_run_ms};}});
           if(!retryBoundary.ok){await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:retryBoundary.message,next_action:retryBoundary.fix},[]);throw error;}
           await this.journal.append(binding,'resend','dispatch','completed',{outcome:'issued',request_id:context.request_id,intent_key:key,possibly_duplicated:rule.mark==='possible_duplicate',retry_once:true});
-          answer=await session.call('submit',context,Math.max(1,Date.parse(notAfter)-this.now().getTime()));
+          if(!pulse.held()||this.now().getTime()>=retryDeadline)throw error;
+          try{answer=await session.call('submit',context,Math.max(1,retryDeadline-this.now().getTime()));}
+          catch(retryError){
+            await this.journal.append(binding,'resend_failed','dispatch','unknown',{retry_locally_unsent:retryError instanceof SubmissionNotSentError||retryError instanceof InvocationDefinitionError,missing_fact:'第一次投递的执行事实尚未对账；第二次本地失败不能证明第一次未发出',next_action:'自动核对原请求记录；没有请求接口时交管理员按原投递事实处置'});
+            throw error; // Only the first invocation's failure can classify whether the original effect was sent.
+          }
         }
       } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP',ignore); }
       const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';

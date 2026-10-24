@@ -146,7 +146,7 @@
           ],
           "additionalProperties": false
         },
-        "window_resend": {
+        "conditional_write": {
           "type": "object",
           "properties": {
             "version": {
@@ -167,6 +167,36 @@
           "required": [
             "version",
             "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "window_resend": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "evidence": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^src:[a-f0-9]{64}$"
+              }
+            },
+            "window_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400000000
+            }
+          },
+          "required": [
+            "version",
+            "evidence",
+            "window_ms"
           ],
           "additionalProperties": false
         }

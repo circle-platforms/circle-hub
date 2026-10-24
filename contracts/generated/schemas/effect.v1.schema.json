@@ -222,7 +222,30 @@
             },
             "code": {
               "type": "string",
-              "minLength": 1
+              "enum": [
+                "SUBMISSION_SCHEMA_VIOLATION",
+                "REFERENCE_UNRESOLVED",
+                "REFERENCE_AMBIGUOUS",
+                "QUOTE_MISMATCH",
+                "SOURCE_UNPARSEABLE",
+                "SOURCE_UNAVAILABLE",
+                "IDEMPOTENCY_MISMATCH",
+                "IDENTITY_UNMAPPED",
+                "RUN_SUPERSEDED",
+                "CREDENTIAL_IN_UPLOAD",
+                "LEASE_UNAVAILABLE",
+                "LEASE_EXPIRED",
+                "FENCING_STALE",
+                "SOURCE_ABSENT",
+                "EFFECT_NOT_ALLOWED",
+                "EFFECT_PARAMETER_OUT_OF_RANGE",
+                "EFFECT_RELEASE_UNMET",
+                "EFFECT_BUDGET_EXHAUSTED",
+                "BOUNDARY_POLICY_DENIED",
+                "PACK_POLICY_DENIED",
+                "EFFECT_CONTENT_UNVERIFIED",
+                "AUDIENCE_VISIBILITY_EXCEEDED"
+              ]
             },
             "row": {
               "type": [

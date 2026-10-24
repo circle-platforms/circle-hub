@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean|'once'; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string; beforeIdentityMissing?:boolean } = {}) {
+export async function setupJournal(options: { lost?: boolean|'once'; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string; beforeStateChange?:boolean;beforeIdentityMissing?:boolean } = {}) {
   let queries = 0;
   const rows = new Map<string, Record<string, unknown>>();
   let c!: Awaited<ReturnType<typeof setup>>;
@@ -20,6 +20,7 @@ export async function setupJournal(options: { lost?: boolean|'once'; absent?: bo
   };
   try {
   c = await setup({serverVersion:options.serverVersion,mode:options.lost==='once'?'disconnect-once':options.lost?'disconnect':undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
+    if(name==='inspect_slot'&&options.beforeStateChange&&c.calls.includes('send_blob'))return {...value,build:'synthetic-after-write'};
     if (name === 'send_blob') return admit();
     if (name !== 'lookup_blob') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'lookup_blob').at(-1)!.params.arguments as Record<string,unknown>;

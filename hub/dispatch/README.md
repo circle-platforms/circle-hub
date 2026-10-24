@@ -225,9 +225,9 @@ A historical definition without a write declaration retains the existing job/ser
 
 政策版本和所用执行器解析后摘要必须与开跑快照相符，缺环境也在此拒绝；别的执行器更新不影响。包政策重核通过 runs 的只读端口复用 evaluate 的被判对象、冻结包脚本与表，不增加提交或修复轮。内容只发绑定原件，不重新生成外发内容；摘要、支持事实和当前完整凭据扫描都须相符。XLSX 同时解析完整模型、逐个读取有界安全解压的所有成员，扫描原文及 XML 模型；未知二进制成员或任何不完整扫描都拒绝。作业的 audience 固定 null，没有通知/评论的外部受众空间，第九款在此不启用受众写入。
 
-声明 before_state 时，在提交的同一远端租约下只读一次并比较绑定值；不相等就未发出。仅在 conditional_write 为真且提交参数恰好带一次 before_state 时记已绑定；只读比较通过而目标不支持条件写，仍记未绑定前状态。写声明的 target_key 用同一份核验事实绑定并取摘要。
+声明 before_state 时，在提交的同一远端租约下只读一次并比较绑定值；不相等就未发出。仅在 conditional_write 为真、premises.conditional_write 的目标版本与证据已认证、提交参数恰好带一次 before_state 时记已绑定；只读比较通过而目标不支持条件写，仍记未绑定前状态。写声明的 target_key 用同一份核验事实绑定并取摘要。
 
-丢回复按 `Record<RetrySafety, …>` 的全表处理。same_key_safe 须 premises.retry_safety 的版本与受限证据认证；dedup_window 还须 premises.window_resend 的显式认证，并在原投递截止前；duplicate_tolerant 认证后最多再发一次，追加 possible_duplicate；unsafe 和任何前提未认证的类只读原请求/结果，不重发。重发复用相同意图键、请求号、截止与原字节，再核 P11（自身已花的意图预算不重复扣）。任何重发前提失败都不能抹去第一次投递：继续原请求对账。
+丢回复按 `Record<RetrySafety, …>` 的全表处理。same_key_safe 须 premises.retry_safety 的版本与受限证据认证；dedup_window 还须 premises.window_resend 的显式认证及 window_ms 时长，并在该窗口与原投递截止的较早者之前；duplicate_tolerant 认证后最多再发一次，追加 possible_duplicate；unsafe 和任何前提未认证的类只读原请求/结果，不重发。重发复用相同意图键、请求号、截止与原字节，再核 P11（自身已花的意图预算不重复扣）。任何重发前提失败都不能抹去第一次投递：继续原请求对账。
 
 effect@1 随意图、回执、终局与处置追加快照，保存上个快照摘要，原 action detail 保持可读。未分配意图的边界拒绝，其请求号、截止、动作摘要为 null；未声明或未观察到的目标主体也保留 null，不冒称实际账号已认证。未决快照明确缺的执行事实，出口指向具名发起管理员的 disposition 请求及持久化期限。
 

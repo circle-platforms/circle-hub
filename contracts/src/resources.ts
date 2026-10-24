@@ -15,7 +15,7 @@ import {MissingFact,UnknownExit,recoveryCondition} from './recovery.ts';
 import {isIP} from 'node:net';
 import {X509Certificate} from 'node:crypto';
 import { SecretReference, VariableUse, referencesIn, resolve as resolveExecutorReferences, VariableInputError } from './variables.ts';
-import type {ProtocolCode} from '../generated/protocol.ts';
+import {PROTOCOL_CODES,type ProtocolCode} from '../generated/protocol.ts';
 import { AcceptanceSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
@@ -931,7 +931,7 @@ const base = z.strictObject({
   environment:EnvironmentSchema.optional(),
   retry_safety: RetrySafetySchema.default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
-  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),retry_safety:certificate.optional(),window_resend:certificate.optional() }).default({}),
+  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),retry_safety:certificate.optional(),conditional_write:certificate.optional(),window_resend:certificate.extend({window_ms:z.number().int().min(1).max(86400000000)}).optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !h.toLowerCase().startsWith('mcp-') && !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),
   precheck_context: z.record(z.string(), z.unknown()).default({}),
@@ -1043,7 +1043,7 @@ export const EffectRecord=z.strictObject({
  content_sha256:Sha256.nullable(),before_state:z.strictObject({bound:z.boolean(),sha256:Sha256.nullable(),reference:z.string().nullable()}),
  writing_identity:z.strictObject({credential:SecretReference.nullable(),on_behalf_of:UserId,subject:z.unknown()}),
  audience:z.null(),outcome:EffectOutcomeSchema,marks:z.array(EffectMarkSchema),previous:Sha256.nullable(),
- boundary:z.strictObject({clause:z.number().int().min(1).max(9),code:z.string().min(1),row:z.string().nullable()}).nullable(),
+ boundary:z.strictObject({clause:z.number().int().min(1).max(9),code:z.enum(Object.keys(PROTOCOL_CODES) as [ProtocolCode,...ProtocolCode[]]),row:z.string().nullable()}).nullable(),
  missing:MissingFact.optional(),exit:UnknownExit.optional(),
 }).superRefine((effect,ctx)=>{if(effect.outcome==='unknown'){if(!effect.missing)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown effect names its missing fact'});if(!effect.exit)ctx.addIssue({code:'custom',path:['exit'],message:'an unknown effect names its next action'});}}).meta(recoveryCondition('outcome',['unknown'],['missing','exit']));
 export type EffectRecord=z.infer<typeof EffectRecord>;
