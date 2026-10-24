@@ -60,7 +60,10 @@ describe('the documents of the agile tree', () => {
     assert.equal(tree.counts.badId.count, 1, 'the leaf whose id the platform cannot serve');
     assert.equal(tree.counts.emptyFolders.count, corpus.emptyFolders.length);
     assert.deepEqual([...tree.counts.emptyFolders.examples].sort(), [...corpus.emptyFolders].sort());
-    assert.ok(tree.counts.noLine.examples.length > 0 && tree.counts.beforeMinLine.examples.length > 0);
+    assert.ok(tree.counts.noLine.examples.length > 0);
+    assert.equal(tree.counts.beforeMinLine.count,0,'null imposes no lower bound');
+    const bounded=caseTree({[CASE_TREE_ID]:treeRead(treeContent(corpus))},caseIndexOptions({case_index:true,min_line:'10.6.142'}));
+    assert.equal(bounded.status,'ready');if(bounded.status==='ready')assert.equal(bounded.counts.beforeMinLine.count,20,'an explicit synthetic floor still exercises earlier-document exclusion');
     for (const id of corpus.emptyFolders) assert.ok(!tree.documents.some((doc) => doc.id === id), id);
   });
 
@@ -181,7 +184,7 @@ describe('the sync plan with the case index', () => {
   it('the note counts the documents and why the others are not listed', () => {
     assert.match(on.output.note ?? '', /用例文档：读到 3 个根，产品的根 2 个（APV、NSAE）/);
     assert.match(on.output.note ?? '', /上级目录里没有版本线 5 份/);
-    assert.match(on.output.note ?? '', /早于 10\.4\.2 的 20 份/);
+    assert.doesNotMatch(on.output.note ?? '', /早于/);
     assert.match(on.output.note ?? '', /另有 1 个根不是产品的根/);
     assert.match(on.output.note ?? '', /空目录 2 个/);
   });
