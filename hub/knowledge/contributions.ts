@@ -133,11 +133,11 @@ export class ContributionLayer {
     if (scope.root !== input.root || scope.product === null) return fail('回注必须使用本次运行锁定的产品和根；缺少与锁定根的对应关系，按 start_run 的 root 原样填写，或为目标根另开运行','REFERENCE_UNRESOLVED');
     if(input.feeding!==undefined){
       const layer=this.#context.feeding;if(!layer)return fail('缺喂入核验服务；管理员恢复后重试');
-      const value=await layer.prepare(reader,input.feeding,{product:scope.product,root:scope.root,run:scope.run,classifications:scope.classifications});
+      const value=await layer.prepare(reader,input.feeding,{composition:scope.composition,product:scope.product,root:scope.root,run:scope.run,classifications:scope.classifications});
       if(value.schema==='retraction@1')return fail('撤回请使用管理员喂入撤回入口，不得伪装对象回注');
       const ref=parseReference(input.source.reference);if(ref.scheme!=='src'||ref.sha256!==value.source.bytes)return fail('回注主引文必须指向同一喂入原件');
       await layer.quote(reader,{reference:input.source.reference,text:input.source.quote});
-      const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model'});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
+      const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model',record:await layer.originalRecord(reader,value)});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
       const node=await this.#reading.nodeAt(input.root,pathSegments(input.path));if(!node)return fail('归位路径在锁定树苗中不存在');
       const fragment=await this.#reading.treeReader({composition:scope.composition}).read(input.root,input.path,null,{user:reader.id,role:reader.role});if(!fragment)return fail('归位节点当前不可读');
       scanPublicText([input.statement,JSON.stringify(value),scope.model??'',scope.session??'']);
@@ -180,7 +180,7 @@ export class ContributionLayer {
         await pending;
       }
     };
-    const quote = async (quoted: ContributionInput['source']): Promise<KnowledgeContributionBody['source']> => {
+    const quote = async (quoted: ContributionInput['source']): Promise<import('zod').z.infer<typeof ContributionSource>> => {
       const resolved = await scope.resolve(quoted.reference);
       if (!resolved.ok) return fail(`${resolved.message}；缺少可核对的运行内原文。恢复读取条件后重交；未绑定该源或根时另开运行绑定它，片段不存在时用 get_nodes 返回的引用修正`, resolved.code ?? 'REFERENCE_UNRESOLVED');
       if (resolved.value.text === null || !quoteMatches(resolved.value.text, quoted.quote)) return fail(`引文没有逐字出自所引片段 ${resolved.value.reference}；用 get_nodes 重新读取这个引用，逐字修正引文后重交`, 'QUOTE_MISMATCH');

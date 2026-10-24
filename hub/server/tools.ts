@@ -320,6 +320,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     errors: [],
     acceptance: 'accepted',
     reference: `src:${sha256}`,
+    feeding_objects:[sha256],
     sha256,
     size: artifact.body.size,
     media_type: artifact.body.media_type,
@@ -476,9 +477,10 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     if (!(error instanceof ReferenceSyntaxError)) throw error;
     return { answer: errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]) };
   }
+  let contributionNote:string|null=null;
   if(parsed.scheme==='rec'){
     const layer=(deps.knowledge as typeof deps.knowledge&{layers?:{contributions:ContributionLayer}}).layers?.contributions;
-    const view=await layer?.readView(parsed.record,call.principal);
+    const view=await layer?.readView(parsed.record,call.principal);contributionNote=view?.note??null;
     if(view?.status==='credential_unreadable'){
       if(cursor!==null){const problem=pageCursorProblem(reference,cursor);if(problem!==null)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/cursor',problem,CURSOR_FIX)])};}
       // A dynamic access marker is not a rewritten record. Never send a redacted body under the original digest.
@@ -508,17 +510,20 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     const problem = pageCursorProblem(result.reference, cursor);
     if (problem !== null) return { answer: errorAnswer('get_nodes', [violation('get_nodes', '/cursor', problem, CURSOR_FIX)]) };
   }
-  if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;await deps.knowledge.feeding?.observeSource(call.principal,parsed.sha256,{product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}
+  let feedingReceipt:import('../knowledge/feeding.ts').FeedingReceipt|undefined;
+  if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;feedingReceipt=await deps.knowledge.feeding?.observeSource(call.principal,parsed.sha256,{composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}
+  const feedingState=parsed.scheme==='rec'?await deps.knowledge.feeding?.recordState(parsed.record,call.principal):null;
+  const derivedNote=[result.note,contributionNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
     reference: result.reference,
     read_tier: result.readTier,
     readable: result.readable,
     ...(result.readable && result.text !== null && result.readTier === 'model_readable' ? { text: result.text } : {}),
     ...(parsed.scheme === 'src' ? { sha256: parsed.sha256 } : {}),
-    ...(result.summary !== null ? { structure: result.summary } : {}),
-    ...(result.note !== null ? { note: result.note } : {}),
+    ...(result.summary!==null||feedingState?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{})}}:{}),
+    ...(derivedNote?{note:derivedNote}:{}),
   };
-  return { answer: { call_result: 'ok', errors: [], content }, text: { cursor } };
+  return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };
 }
 
 const HANDLERS: Record<ToolName, Handler> = {
@@ -578,6 +583,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.context.adminNote(`the text of the ${name} answer could not be laid out: ${describeError(error)}`);
     text = fallbackText(name, value, context);
   }
+  if('feeding_pending'in value&&Array.isArray(value.feeding_pending))for(const pending of value.feeding_pending as Array<{missing:string;next_action:string}>)text+='\n喂入未知：'+pending.missing+'；下一步：'+pending.next_action;
   if('feeding_objects'in value)text+='\n喂入清单：'+JSON.stringify(value.feeding_objects)+('feeding_offset'in value?'；冻结序号：'+JSON.stringify(value.feeding_offset):'；缺冻结序号：旧运行需另开运行');
   // D05 R[0], display rule 11: content is plain text, the JSON is structuredContent; no second block repeats it.
   return {

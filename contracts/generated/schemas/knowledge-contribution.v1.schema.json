@@ -124,8 +124,7 @@
               "type": "string",
               "enum": [
                 "observed",
-                "projected",
-                "declared"
+                "projected"
               ]
             },
             "records": {

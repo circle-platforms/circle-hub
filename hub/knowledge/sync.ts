@@ -240,7 +240,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     return finish();
   }
   if(!dryRun)await saveSyncCheckpoint(context,checkpointKey,loader,{sync,pending,required_builds:[...requiredBases],done:output.done&&pending.length===0});
-  if(!dryRun&&context.feeding)for(const page of await loader.captured())await context.feeding.observeSource(by,page.sha256,{product:productId,sourceRecord:page.artifact,requested:page.id});
+  if(!dryRun&&context.feeding)for(const page of await loader.captured()){const receipt=await context.feeding.observeSource(by,page.sha256,{product:productId,sourceRecord:page.artifact,requested:page.id});for(const pending of receipt.pending)report.warnings.push('喂入未核对：'+pending.missing+'；下一步：'+pending.next_action);}
   const listingDigest=sha256Hex(canonicalize((await loader.captured()).map(page=>({id:page.id,artifact:page.sha256})).sort((a,b)=>compareText(a.id,b.id))));
   report.plan.done = output.done;
   report.plan.note = output.note === undefined ? null : cutText(output.note, 1000);

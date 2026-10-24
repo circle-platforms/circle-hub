@@ -22,7 +22,7 @@ export type KnowledgeStructureObject =
 
 /** The read shape the views consume: a cut of the layer at a frozen offset. */
 export interface FeedingCut {
-  /** The frozen sequence position this cut stops at (exclusive); records after it are not read. Null: no offset frozen, read everything. */
+  /** The frozen sequence position this cut stops at (inclusive); records after it are not read. Null: no offset frozen, read everything. */
   offset: number | null;
   /** Objects of the five kinds keyed by digest, minus objects a retraction before the offset invalidated. */
   objects: Map<string, KnowledgeStructureObject>;

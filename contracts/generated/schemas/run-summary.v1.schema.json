@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "feeding_offset": {
-      "description": "喂入层与锁根一起冻结的追加序号，历史运行缺此字段时不伪造零序号",
+      "description": "Append-only feeding horizon frozen with the root; missing on a historical run remains unknown",
       "type": "object",
       "properties": {
         "schema": {
@@ -42,7 +42,7 @@
       "title": "feeding-offset@1"
     },
     "feeding_objects": {
-      "description": "本次运行实际读过的喂入对象清单",
+      "description": "Objects actually consumed by this run",
       "type": "array",
       "items": {
         "type": "string",

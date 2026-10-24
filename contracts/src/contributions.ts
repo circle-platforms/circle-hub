@@ -29,8 +29,9 @@ export const ContributionInput=z.strictObject({
 }).superRefine((v,ctx)=>{if((v.kind==='applicability_claim')!==(v.applicability_claim!==undefined))ctx.addIssue({code:'custom',path:['applicability_claim'],message:'only applicability_claim carries a typed field claim'});if((v.kind==='relation')!==(v.relation!==undefined))ctx.addIssue({code:'custom',path:['relation'],message:'only a relation output has a relation endpoint'});});
 export type ContributionInput=z.infer<typeof ContributionInput>;
 export const ContributionSource=ContributionQuote.extend({
-  fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected','declared']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
+  fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
 });
+const FeedingContributionSource=ContributionSource.extend({provenance:ProvenanceTypeSchema.extract(['observed','projected','declared'])});
 // Central STORED relation shape for K3; this never mutates either endpoint.
 export const ContributionRelationRecord=z.strictObject({kind:RelationKindSchema,other:ContributionSource});
 export const KNOWLEDGE_CONTRIBUTION_SCHEMA='knowledge-contribution@1';
@@ -38,7 +39,7 @@ export const KNOWLEDGE_CONTRIBUTION_SCHEMA='knowledge-contribution@1';
 export const isKnowledgeContributionSchema=(schema:string):boolean=>schema.startsWith(KNOWLEDGE_CONTRIBUTION_SCHEMA.split('@')[0]+'@');
 export const KnowledgeContributionBody=z.strictObject({
   layer:KnowledgeLayerSchema.extract(['contribution']),product:ProductId,root:Sha256,path:TreePath,
-  cited_fragment:Sha256,kind:DocumentOutputKindSchema,statement:z.string().min(1),source:ContributionSource,
+  cited_fragment:Sha256,kind:DocumentOutputKindSchema,statement:z.string().min(1),source:FeedingContributionSource,
   relation:ContributionRelationRecord.optional(),
   applicability_claim:AdmittedApplicabilityClaim.optional(),feeding:KnowledgeStructureSchema.optional(),feeding_record:Sha256.optional(),
   submitted_by:UserId,session:z.string().nullable(),submitted_at:IsoTime,
@@ -46,7 +47,7 @@ export const KnowledgeContributionBody=z.strictObject({
   basis_rank:BasisRankSchema,applicability:Applicability.nullable(),
 });
 export type KnowledgeContributionBody=z.infer<typeof KnowledgeContributionBody>;
-export const WithheldContributionSource=ContributionSource.omit({quote:true});
+export const WithheldContributionSource=FeedingContributionSource.omit({quote:true});
 export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true,applicability_claim:true,feeding:true,feeding_record:true}).extend({
   source:WithheldContributionSource,relation:ContributionRelationRecord.omit({other:true}).extend({other:WithheldContributionSource}).optional(),
 });

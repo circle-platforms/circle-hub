@@ -13,7 +13,7 @@ import { Submission } from './submission.ts';
 import { PartitionCounts, ValidationResult, partitionCountsOf } from './validation.ts';
 import type { EffectClass } from '../generated/vocabulary.ts';
 
-const Envelope=BaseEnvelope.extend({feeding_objects:z.array(Sha256).optional(),feeding_offset:FeedingOffsetSchema.optional()});
+const Envelope=BaseEnvelope.extend({feeding_objects:z.array(Sha256).optional(),feeding_offset:FeedingOffsetSchema.optional(),feeding_pending:z.array(z.strictObject({source:Sha256,missing:z.string(),next_action:z.string()})).optional()});
 
 export interface ToolDefinition {
   name: string;
@@ -153,6 +153,8 @@ const KnowledgeNode = z.strictObject({
   entries: z.array(NodeEntry),
   contributions: z.array(KnowledgeContributionPageView).max(MAX_NODE_CONTRIBUTIONS).optional().describe('A bounded page of contributions beside the tree; continue with next; not part of the root digest'),
   backlinks: Backlinks.optional(),
+  feeding_objects:z.array(z.strictObject({object:Sha256,reference:referenceUriOf('rec')})).max(100).optional(),
+  feeding_complete:z.boolean().optional(),
   feeding_structure: z.string().optional().describe('The knowledge-structure@1 contract document (the feeding shapes beside seedlings, kb-feeding), returned on the root path `/` so the model reads the one shape it may feed against; not part of the root digest'),
 });
 

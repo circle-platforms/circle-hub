@@ -224,7 +224,7 @@ export async function bindExpected(
           // A meta artifact that is not JSON gives no label.
         }
       }
-      await ctx.deps.knowledge.feeding?.observeSource(user,chosen.artifact.body.sha256,{product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,requested:wanted.external});
+      await ctx.deps.knowledge.feeding?.observeSource(user,chosen.artifact.body.sha256,{composition,product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,requested:wanted.external});
       const reference = `src:${chosen.artifact.body.sha256}`;
       if (out.sources.some((s) => s.reference === reference)) continue;
       out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });

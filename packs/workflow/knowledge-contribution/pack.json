@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
@@ -73,13 +73,13 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "bfb66b3512dca5a33f3ff65e9cecf739a4eb2740a70bb073a30b144904cfed0a",
-      "size": 6409
+      "sha256": "67a9dc410bc6fa7db6e59b1342d4ed5c914172df6797d463b0b79d126bd2a7e3",
+      "size": 247041
     },
     {
       "path": "tables/knowledge-structure.json",
-      "sha256": "4731720fefe50f0316254cc251a937ca1d15cc8674a286ecc4592b6110fde944",
-      "size": 181463
+      "sha256": "6dc5b2082b37278412e7f115854e05cf5ec48e14821c6db9fb9917a1b1ec6cd6",
+      "size": 226262
     },
     {
       "path": "tables/quotes.json",
@@ -113,7 +113,7 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "9f689a49fed16200f951a28564c989db1b88c9b902656a9e8cd174c4723668d2",
+      "sha256": "00513e21cf671e409cf95ae8b3465c223226b0b6451af602caaf77d4d8fead6c",
       "size": 1490
     },
     {

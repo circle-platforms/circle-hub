@@ -434,6 +434,10 @@
     "verify_command": {
       "module": "functions/feeding.ts",
       "export": "verifyCommand"
+    },
+    "classifications": {
+      "module": "functions/feeding.ts",
+      "export": "classificationValues"
     }
   }
 }
