@@ -45,3 +45,5 @@ None.
 ## 参数结构语法 2（R4 / U22，包 1.1.0）
 
 `lumen-endpoint-parameters@2` 是本包给合成 API 参考声明的完整八列语法，列名和顺序必须精确为 `name | type | optional | minimum | maximum | minLength | maxLength | values`。type 只支持 contracts 已声明的 int/string/enum/port；optional 是精确 JSON 布尔 `true`/`false`，不能从说明推断。数值约束是完整非负安全 JSON 整数，空单元格代表该约束未声明；enum 的 values 是非空且无重复的 JSON 字符串数组，其余类型的该列必须空。错列、错值或未知 type 拒绝该 endpoint 的目录生产，并给来源作者在下次同步前修订的出口；不把坏参数忽略成无参 endpoint。旧三列中文说明表不再是参数语法。1.0.0 的旧结果不改，参数域和 optional 字段按旧规则限定；1.1.0 重产新根，真实迁移由集成者另行授权。
+
+参数表缺席不当作零参数：零参数同样需要显式空表。缺字段、非法字段、重复端点或截断均使 grammar.complete=false，核心目录保留未完整核对状态；补结构字段后重产。本次续接未运行验证。

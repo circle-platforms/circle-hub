@@ -10,6 +10,7 @@ import type { CatalogParamType } from '../../../../contracts/src/tables.ts';
 import { asArray, asString, isRecord, tableRows } from './common.ts';
 
 const PARSER = 'markdown@1';
+const GRAMMAR={id:'lumen-endpoint-parameters@2',source:'product:lumen-api/README.md',complete:false};
 const TITLE = /^(GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9_{}./-]*)$/;
 const NAME = /^[a-z][a-z0-9_]{0,40}$/;
 const MAX_ENDPOINTS = 2000;
@@ -52,7 +53,7 @@ export function endpointPath(method: string, path: string): string {
 export function produceEndpoints(input: unknown): ProducerOutput {
   const slots = isRecord(input) && isRecord(input.slots) ? input.slots : {};
   const spec = isRecord(slots.spec) ? slots.spec : null;
-  if (spec === null) return { entries: [], warnings: ['没有接口参考'] };
+  if (spec === null) return { grammar:GRAMMAR, entries: [], warnings: ['没有接口参考'] };
   if (spec.parser !== PARSER || !isRecord(spec.model)) return { entries: [], warnings: [`接口参考不是 Markdown（解析器 ${String(spec.parser)}）`] };
   const build = isRecord(input) && isRecord(input.build) && typeof input.build.name === 'string' ? input.build.name : null;
   const sections = asArray(spec.model.sections);
@@ -78,6 +79,7 @@ export function produceEndpoints(input: unknown): ProducerOutput {
     const own = asArray(section.blocks).map((k) => (typeof k === 'number' ? blocks[k] : undefined)).filter(isRecord);
     const summary = own.find((b) => b.kind === 'paragraph' && typeof b.text === 'string')?.text as string | undefined;
     const table = own.find((b) => b.kind === 'table' && typeof b.text === 'string');
+    if(table===undefined){warnings.push(`${key}：缺显式参数表（零参数也须声明空表）；下一步由来源作者补完整参数结构后重产`);continue;}
     const params: Param[] = [];
     let invalid = false;
     if (table !== undefined) {
@@ -105,7 +107,7 @@ export function produceEndpoints(input: unknown): ProducerOutput {
     });
   }
   if (entries.length === 0) warnings.push('接口参考里没有 “<方法> <路径>” 形式的章节');
-  return { entries, warnings };
+  return { grammar:{...GRAMMAR,complete:warnings.length===0}, entries, warnings };
 }
 
 export default function (input: unknown): unknown {
