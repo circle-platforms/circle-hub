@@ -288,3 +288,10 @@ test('the Hub\'s own knowledge views are external object types to bind but no ex
   assert.ok(!readsOutside('application/json'));
   assert.equal(KNOWLEDGE_VIEW_SYSTEM, VIEW_SYSTEM, 'the server names the views\' system as hub/knowledge does');
 });
+
+test('historical transitional layers disclose unwritten exits without mutating the result', () => {
+  const legacy = { layer: 'static', terminal: 'unchecked', reason: 'missing_input' } as const;
+  const before = JSON.stringify(legacy);
+  assert.match(terminalText(legacy), /出口未写/);
+  assert.equal(JSON.stringify(legacy), before);
+});

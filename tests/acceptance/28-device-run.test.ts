@@ -52,7 +52,11 @@ async function start(args: Record<string, unknown>): Promise<z.infer<typeof Star
   const answer = await client.call('start_run', args); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.run); if (args.pack === 'case-compile') itemIds.set(answer.out.run.run, answer.out.run.items[0].id); return answer.out;
 }
 async function booking(): Promise<string> {
-  return (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }], hours: 1 } } })).run!.run;
+  const booked = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
+  const held = (await bed.hub.leases.view('bed/')).entries;
+  assert.ok(held.length > 0);
+  assert.ok(held.every(row => row.until === null), 'bookings last until the owning lineage releases them');
+  return booked;
 }
 async function release(booked: string) {
   await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, predecessor: booked, parameters: { action: 'release', booking: booked } });

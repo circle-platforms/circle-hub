@@ -231,10 +231,11 @@ test('an install interrupted mid-download leaves nothing that blocks the next on
   const { digestHeader } = await import('./local-tools.ts');
   let releaseFile: (() => void) | undefined;
   const gate = new Promise<void>((resolve) => { releaseFile = resolve; });
+  let fileRequested = false;
   const server = createServer(async (req, res) => {
     const base = `/local-tools/${ref}`;
     const path = req.url === base ? 'pack.json' : (req.url ?? '').slice(base.length + 1);
-    if (path !== 'pack.json') await gate;
+    if (path !== 'pack.json') { fileRequested = true; await gate; }
     const bytes = await readFile(join(source.dir, path));
     res.writeHead(200, { 'content-digest': digestHeader(bytes), etag: `"${sha256Hex(bytes)}"` });
     res.end(bytes);
@@ -253,14 +254,13 @@ test('an install interrupted mid-download leaves nothing that blocks the next on
   child.stderr.on('data', (chunk) => { childErr += chunk; });
   const prefix = `.${ref}-`;
   try {
-    let appeared = false;
+    let downloading = false;
     for (let i = 0; i < 50; i += 1) {
-      const names = await readdir(into).catch(() => [] as string[]);
-      if (names.some((name) => name.startsWith(prefix))) { appeared = true; break; }
+      if (fileRequested) { downloading = true; break; }
       if (child.exitCode !== null || child.signalCode !== null) break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    assert.equal(appeared, true, childErr);
+    assert.equal(downloading, true, childErr);
     child.kill('SIGINT');
     const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
     const names = await readdir(into).catch(() => [] as string[]);

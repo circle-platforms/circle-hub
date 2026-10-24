@@ -46,7 +46,7 @@ export function overallCheck(input: unknown): CheckOutcome[] {
       :sourceGaps.length>0?'缺少初评 Hub 核对支持事实；'+(typeof fields.source_gap_fix==='string'?fields.source_gap_fix:'下一步：按原回执补齐处置支持事实并重交复核后重开终稿')+'（'+sourceGaps.slice(0,3).map(gap=>String(gap.item).slice(0,50)).join('、')+'）'
       :'第 '+blocks.join('、')+' 块没有可读结论或等级';
 
-    return [{ verdict: 'unknown', reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: sourceGaps.length>0&&typeof fields.source_gap_fix==='string'?fields.source_gap_fix:'把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
+    return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`${why}，整体结论未知：先补齐再出终稿`), reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: sourceGaps.length>0&&typeof fields.source_gap_fix==='string'?fields.source_gap_fix:'把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
   }
   if (claim.code !== computed.verdict) {
     return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: `整体结论应是 ${computed.verdict}（各块取最差），主张写的是 ${String(claim.code)}`, grounds: [], tier: TIER, data: { fix: `把结论主张的码改成 ${computed.verdict}` } }];

@@ -108,6 +108,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
     const d = structuredClone(opened.declarations);
     return {
       pack: opened.handle,
+      owner: info.owner,
       manifest: structuredClone(info.manifest),
       workflow: d.workflow,
       requirements: d.requirements.requirements,

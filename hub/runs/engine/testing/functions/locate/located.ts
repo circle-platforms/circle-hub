@@ -9,6 +9,6 @@ interface Subject {
 export default function located(input: unknown): unknown {
   const subject = ((input as { subject?: Subject }).subject ?? {}) as Subject;
   const path = subject.fields?.path ?? [];
-  if (path.length < 2) return [{ verdict: 'unknown', reason: 'missing_input', missing: '用例的上层分组路径', statement: '用例上面没有分组，定位不出', grounds: subject.location ? [subject.location] : [], tier: 'advisory' }];
+  if (path.length < 2) return [{ verdict: 'unknown', missing: '用例上级分组的路径', reason: 'missing_input', statement: '用例上面没有分组，定位不出', grounds: subject.location ? [subject.location] : [], tier: 'advisory' }];
   return [{ verdict: 'support', statement: `用例在 ${path.slice(1).join(' / ')} 下`, grounds: subject.location ? [subject.location] : [], tier: 'advisory', data: { document: subject.fields?.document ?? null, group: path[path.length - 1] } }];
 }

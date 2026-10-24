@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { after, before, test } from 'node:test';
 import type { RunSummary } from '../../../contracts/src/run.ts';
+import { LayerResult } from '../../../contracts/src/validation.ts';
 import type { ItemResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, sandboxSkip, type Harness, type HarnessOptions } from './testing/harness.ts';
@@ -19,6 +20,14 @@ after(async () => {
   await postgres?.stop();
 });
 
+function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'exit' | 'gaps'>[] {
+  return layers.map(layer => {
+    LayerResult.parse(layer);
+    if (layer.reason) { assert.ok(layer.missing); assert.ok(layer.exit); }
+    const { missing, exit, gaps, ...fields } = layer;
+    return fields;
+  });
+}
 const IDS = [ITEM.c1, ITEM.c2, ITEM.c3, ITEM.c4];
 
 async function reviewed(options: HarnessOptions, prepare?: (h: Harness) => void): Promise<{ h: Harness; run: RunSummary; result: ValidationResult; counts: Record<string, number> }> {
@@ -57,6 +66,8 @@ test('a check function that throws is unknown (check error, V01 R[6]): unchecked
       const { partition, item } = itemOf(result, id);
       const fragile = item.requirements.find((r) => r.requirement === 'fragile')!;
       assertLayers(fragile.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], id);
+      assert.deepEqual(fragile.layers[0].exit?.audience,{user:h.review.owner});
+      assert.equal(fragile.layers[0].exit?.request_kind,'repair');
       assert.equal(fragile.status, 'pending');
       // an unknown is delivered as it is (V05 R[3]: only incomplete layers make an item incomplete)
       assert.equal(partition, 'delivered');

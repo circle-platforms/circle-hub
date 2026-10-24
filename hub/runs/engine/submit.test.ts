@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { RunSummary } from '../../../contracts/src/run.ts';
 import { SubmitResultOutput } from '../../../contracts/src/tools.ts';
-import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
+import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import type { ActionBody } from '../../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { INDEX } from './store.ts';
@@ -28,6 +28,20 @@ after(async () => {
   await h?.close();
   await postgres?.stop();
 });
+
+function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'exit' | 'gaps'>[] {
+  return layers.map(layer => {
+    LayerResult.parse(layer);
+    if (layer.reason !== undefined) {
+      assert.ok(layer.missing);
+      assert.equal(layer.exit?.action, 'request');
+      assert.equal(layer.exit?.request_kind, 'repair');
+      assert.deepEqual(layer.exit?.audience, { user: h.alice.id });
+    }
+    const { missing, exit, gaps, ...fields } = layer;
+    return fields;
+  });
+}
 
 const TRACE = '0af7651916cd43dd8448eb211c80319c';
 const TITLES: Record<string, string> = { [ITEM.c1]: '设置 3 区浇灌 15 分钟', [ITEM.c2]: '查看分区状态', [ITEM.c3]: '设置 9 区应报错', [ITEM.c4]: '没有期望结果的用例' };
