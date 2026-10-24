@@ -210,6 +210,11 @@
       "path": "product.json",
       "sha256": "d3c18ea3e4956e5b76a7ab536dc99154c06f778251e5d62c55c7f3f02df33bce",
       "size": 9491
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     }
   ]
 }

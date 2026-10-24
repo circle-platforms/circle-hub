@@ -52,6 +52,11 @@
       "size": 5836
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
       "path": "functions/lines.ts",
       "sha256": "8c12649ec999a77a61d116cccb2e009039a9f16b3f44faae9aaaf7b09c71c64e",
       "size": 4005
@@ -245,6 +250,11 @@
       "path": "tables/findings-quotes.json",
       "sha256": "17812479ae6fbb944b571f407333c1a0956970f0cb7f4842cb5866c4d12449bf",
       "size": 571
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "tables/structure-node-ids.json",

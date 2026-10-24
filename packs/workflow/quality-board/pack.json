@@ -122,6 +122,11 @@
       "size": 4378
     },
     {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
+    },
+    {
       "path": "workflow.json",
       "sha256": "ea882f9665fa75ba4002e22aea43f09e78c9d38fb448fcfea2e912821e43737c",
       "size": 1824

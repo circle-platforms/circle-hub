@@ -47,6 +47,11 @@
       "size": 1745
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
       "path": "functions/projection.ts",
       "sha256": "15efa9b3b03c318648d9c68970298e1637bba365941011dc104fa223add341b9",
       "size": 7534
@@ -150,6 +155,11 @@
       "path": "tables/quotes.json",
       "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
       "size": 764
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "workflow.json",
