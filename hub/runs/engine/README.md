@@ -300,6 +300,46 @@ Pack audit (read only; no pack changes in this task):
 partitions, coverage bookkeeping and the next submission's remaining real repair budget. It covers item/run checks,
 one or every item absent, mixed valid/invalid artifacts, and run-level finals' retained metadata.
 
+## Repetition policy (V07)
+
+The pure aggregation lives in `repetition.ts` (rounds in, one summary out; no records, no dispatch, no clock). This is
+what is wired to it:
+
+- **Declaration** (`contracts/src/pack.ts`): a requirement may write `repetition {count 1..10, aggregation, k?, fresh_context?,
+  baseline_first?, window_seconds?}`, and only a requirement that declares a dynamic layer may write it (a static check
+  runs once). A workflow declares `work_class` (verification, reproduction, web); a requirement that writes nothing takes
+  the class default (verification and reproduction: 3 rounds over `all`; web: 2 rounds, `first_pass`), and a workflow with
+  no class runs one round and still reports `1/1`. An effect row declares `repetition`: the rounds it dispatches.
+  `budget.count` stays a pure upper bound on writes and never doubles as a round count (integrator decision 1).
+- **Publication** (`hub/runs/packs/validate.ts`): a frozen count above one that no effect row authorizes refuses
+  publication with `effects.repetition_budget`, naming the row and both ways out (raise the row's `repetition`, or lower
+  the count) — integrator decision 5. An impossible policy (a count over 10, `k` outside k-of-n or over the count, a
+  repetition on a static requirement) is refused by the shape itself.
+- **Freezing** (`repetitionSummary`, one projection with two callers): `packSummary` in the packs package and
+  `requirementSummary` at start_run carry the same effective policy — count, aggregation, k, `basis`
+  (`explicit` / `work_class` / `single_round`), which parts the pack wrote, and the round-shaping declarations — so a
+  listing and a frozen run cannot disagree. A dispatch row's written count wins over the requirement and the class
+  (V07 R[5]); `dispatchCountOf` takes the smallest count among the rows that release the requirement.
+- **Aggregation** (`dispatch-results.ts`): every job of an item is one round, in journal order, and the policy frozen with
+  the run aggregates them. A round whose terminal is settled (pass, or fail with a code) is judged against the
+  requirement's expectation by the same `meets` the status uses; an unsettled round has no judgment. The dynamic layer
+  then carries `rounds`, `distribution {count, by_terminal}`, `intermittent` and one `observation` sentence, and the
+  aggregate's terminal, code and missing fact. Rounds that never ran stay in the denominator and are named as missing,
+  with the rerun-these-rounds exit (V07 R[0]–R[3]); a determined mix of meeting and missing rounds is `intermittent`, an
+  observation and never an attribution (V04 R[0]). A run stored before the field existed aggregates its one round as 1/1.
+- **Display** (`hub/server/claims.ts`): `terminalLabel` puts the observed distribution beside the dynamic terminal
+  (display rule 16), e.g. `通过（3/3 次未见失败）`.
+
+Not wired yet, and the next step of this item: per-round dispatch in `hub/dispatch` (one effect per round with the round
+in the intent key order, at most one successful dispatch per (subject, round), the first pass stopping the rest, a fresh
+lease and session per round when `fresh_context`, the environment and per-device read-only probe before each round when
+`baseline_first` — a round that fails it is `not_run` with `integrity_unproven`, not a failure — the window measured from
+the first round's written intent with a round started outside it left in the denominator as `budget_exhausted`,
+`job dispatch` running all frozen rounds in one command with each round passing the pre-effect boundary, `job resume`
+only reconciling rounds already started, and `job status` listing rounds). Until that lands a subject is dispatched once,
+so the aggregation sees one round; the target's own per-round report and the `unattributed` attribution of a missing
+aggregate (V04 R[1], V08 hypotheses) also wait for it.
+
 ## Limits
 
 - Exact values can cite sources of the locked root only through `tree:` references (the port does not list the root's source

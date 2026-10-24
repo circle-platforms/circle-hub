@@ -83,9 +83,37 @@ export const StaticLayerResult = z
   .strictObject({ layer: z.literal('static' satisfies Layer), terminal: StaticTerminalSchema, ...layerFields })
   .superRefine((r, ctx) => checkTerminal(STATIC_TERMINAL_RULES, r, ctx)).meta(recoveryCondition('terminal',STATIC_TERMINAL.filter(t=>STATIC_TERMINAL_RULES[t].reason==='required'),['missing','exit','reason']));
 
+/**
+ * V07 R[3]: what the rounds of the dynamic layer showed. Every round stays listed with its own terminal, code and
+ * whether it met the expectation; the distribution counts the frozen rounds, so an early stop still shows the
+ * denominator. `intermittent` is the determined mix of meeting and missing rounds (V07 R[0]) — an observation, not an
+ * attribution (V04 R[0]).
+ */
+export const RoundObservation = z.strictObject({
+  round: z.number().int().min(1),
+  terminal: DynamicTerminalSchema,
+  code: z.string().min(1).optional(),
+  meets: z.boolean().nullable().describe('null when the round has no judgment'),
+});
+export type RoundObservation = z.infer<typeof RoundObservation>;
+
+export const ObservationDistribution = z.strictObject({
+  count: z.number().int().min(1).describe('the frozen round count, whether or not every round ran'),
+  by_terminal: z.record(DynamicTerminalSchema, z.number().int().min(0)),
+  early_stop: z.number().int().min(0).optional().describe('rounds not run because the policy stopped at the first pass'),
+});
+export type ObservationDistribution = z.infer<typeof ObservationDistribution>;
+
+const repetitionFields = {
+  rounds: z.array(RoundObservation).optional(),
+  distribution: ObservationDistribution.optional(),
+  intermittent: z.boolean().optional(),
+  observation: z.string().min(1).optional().describe('display rule 16: the observed distribution in one sentence'),
+};
+
 /** Terminal state of the dynamic layer of one (item, requirement). */
 export const DynamicLayerResult = z
-  .strictObject({ layer: z.literal('dynamic' satisfies Layer), terminal: DynamicTerminalSchema, ...layerFields })
+  .strictObject({ layer: z.literal('dynamic' satisfies Layer), terminal: DynamicTerminalSchema, ...layerFields, ...repetitionFields })
   .superRefine((r, ctx) => checkTerminal(DYNAMIC_TERMINAL_RULES, r, ctx)).meta(recoveryCondition('terminal',DYNAMIC_TERMINAL.filter(t=>DYNAMIC_TERMINAL_RULES[t].reason==='required'),['missing','exit','reason']));
 
 /** Terminal state of one (item, requirement, layer). A layer the requirement does not declare has no entry: the screen says "not applicable". */
@@ -246,7 +274,7 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
 /** Read-only historical shape: omissions are preserved, not backfilled into old append-only records. */
 export const StoredLayerResult=z.discriminatedUnion('layer',[
   z.strictObject({layer:z.literal('static' satisfies Layer),terminal:StaticTerminalSchema,...layerFields}).superRefine((r,ctx)=>checkTerminal(STATIC_TERMINAL_RULES,r,ctx,false)),
-  z.strictObject({layer:z.literal('dynamic' satisfies Layer),terminal:DynamicTerminalSchema,...layerFields}).superRefine((r,ctx)=>checkTerminal(DYNAMIC_TERMINAL_RULES,r,ctx,false)),
+  z.strictObject({layer:z.literal('dynamic' satisfies Layer),terminal:DynamicTerminalSchema,...layerFields,...repetitionFields}).superRefine((r,ctx)=>checkTerminal(DYNAMIC_TERMINAL_RULES,r,ctx,false)),
 ]);
 const StoredRequirementResult=RequirementResult.safeExtend({layers:z.array(StoredLayerResult)});
 const storedRequirementFields={requirements:z.array(StoredRequirementResult)};

@@ -579,3 +579,21 @@ test('read-only review publication forbids the declared predecessor result defau
  const defaulted=editJson<Json>(review,'workflow.json',file=>{file.inputs[0].default_from_predecessor={pack:'synthetic-author'};});
  await refused(defaulted,'workflow.predecessor_default',{file:'workflow.json',field:'/inputs'});
 });
+
+test('V07: a frozen round count above one needs an effect row that authorizes it', async () => {
+  const dynamic = (repetition: unknown) => requirements((file) => {
+    Object.assign(file.requirements[0], { layers: ['dynamic'], checks: [], observation: 'synthetic.observe@1', error_handling: [] });
+    if (repetition !== undefined) file.requirements[0].repetition = repetition;
+  });
+  // One round needs no authorization: the class default of a pack without a work class, or a written count of one.
+  await accepted(dynamic(undefined));
+  await accepted(dynamic({ count: 1, aggregation: 'all' }));
+  // More rounds than any effect row authorizes is a deterministic refusal, naming the row and the two ways out.
+  await refused(dynamic({ count: 3, aggregation: 'all' }), 'effects.repetition_budget', { field: '/requirements/0/repetition/count' });
+  await refused(dynamic({ count: 3, aggregation: 'k_of_n', k: 2 }), 'effects.repetition_budget');
+  // The shape rules: a static requirement does not repeat, k belongs to k-of-n alone, and the count is 1 to 10.
+  await refused(requirements((file) => { file.requirements[0].repetition = { count: 3, aggregation: 'all' }; }), 'requirements.shape');
+  await refused(dynamic({ count: 3, aggregation: 'all', k: 2 }), 'requirements.shape');
+  await refused(dynamic({ count: 3, aggregation: 'k_of_n' }), 'requirements.shape');
+  await refused(dynamic({ count: 11, aggregation: 'all' }), 'requirements.shape');
+});

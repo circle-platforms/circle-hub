@@ -279,7 +279,7 @@ export function isUnsettled(layer: LayerResult): boolean {
 }
 
 /** Whether a settled terminal meets the expectation; a violation meets a refute expectation only when every refutation is expected. */
-function meets(layer: LayerResult, expectation: Expectation, expectedRefutation: boolean, producer?: AcceptedProducer): boolean {
+export function meets(layer: LayerResult, expectation: Expectation, expectedRefutation: boolean, producer?: AcceptedProducer): boolean {
   if (layer.layer === 'static') {
     if (layer.terminal === 'pass') return expectation.outcome === 'support';
     if (layer.terminal === 'judgment') return producer !== 'fact' && expectation.outcome === 'support';
