@@ -203,4 +203,4 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
 export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;
 /** Derived read view: historical originals stay unchanged. */
-export type RunRecordView = RunRecord & {requirements:RequirementSummary[]};
+export type RunRecordView = RunRecord & {requirements:RequirementSummary[];criterion_changes?:z.infer<typeof CriterionNotice>[]};

@@ -1,4 +1,4 @@
-import {freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
+import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
@@ -380,7 +380,9 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        return { answer: okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest))??undefined), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
+        const answer=okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest))??undefined),notices=await criterionNotices(ctx,existing.body);
+        if(notices.length)answer.run!.criterion_changes=notices;
+        return {answer,production,runRecord:existing.digest,...await gapsOf(ctx,existing.body)};
       }
       return fresh();
     });

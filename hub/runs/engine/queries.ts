@@ -1,3 +1,4 @@
+import {criterionNotices} from './criterion-changes.ts';
 import { isReason,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { abandonDecision } from './management.ts';
 import { requestsOf } from './requests.ts';
@@ -64,7 +65,8 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const selected=management?managementResult:technicalLatest;
   const latest=selected!==null&&(!owner&&selected.body.acceptance!=='accepted')?null:selected;
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
-  return { run: await withRulingSummary(ctx,stored.body),submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  const notices=await criterionNotices(ctx,stored.body);
+  return { run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 

@@ -4,7 +4,7 @@ import type {RunRecord} from '../../../contracts/src/run.ts';
 import type {ValidationResult} from '../../../contracts/src/validation.ts';
 import type {EngineContext} from './deps.ts';
 import {createRequestService,type RequestView} from '../../requests/api.ts';
-import type {Principal,Transaction,StoredRecord} from '../../records/api.ts';
+import type {Principal,Transaction,StoredRecord,Page} from '../../records/api.ts';
 import {authorAccountsOf,lineageOf} from './lineage.ts';
 import {runById} from './store.ts';
 import {authorAccount} from './independence.ts';
@@ -49,7 +49,7 @@ export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,s
    const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:'判据变更声明尚未由作者以外的账号复核：'+change.assertion,next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+'作者以外的账号以 start_run 开复核运行，显式绑定声明提交及期望片段：'+JSON.stringify(input)+'；缺原件读权时由管理员补授权或由有权的非作者复核；接受以后以声明运行为前驱开新修订',source,code:'awaiting_step',item:change.item,declaration:pointer});
    request={...created.body,record:created.digest,answered_by:null};
   }
-  result.errors.push({code:'awaiting_step',item:change.item,path:pointer,message:'判据变更声明等待作者以外的账号复核',fix:`缺失事实：声明尚未复核；请求 rec:${request.record}，受众 ${request.audience}，期限 ${request.due}；${request.next_action}`});
+  result.errors.push({code:'awaiting_step',item:change.item,path:pointer,message:`判据变更声明：${change.assertion}；旧值 ${change.old}；新值 ${change.new}；等待作者以外的账号复核`,fix:`缺失事实：声明尚未复核；请求 rec:${request.record}，受众 ${request.audience}，期限 ${request.due}；${request.next_action}`});
  }
 }
 export async function prepareCriterionReview(ctx:EngineContext,user:Principal,workflow:LoadedWorkflow,bound:readonly BoundSource[],previous:RunRecord|null):Promise<{marker:NonNullable<RunRecord['criterion_review']>;context:NonNullable<import('../../../contracts/src/pack.ts').RunContext['criterion_review']>}|null>{
@@ -82,7 +82,7 @@ export async function answerCriterionReview(ctx:EngineContext,run:RunRecord,resu
 async function answerAt(ctx:EngineContext,request:string,at:string):Promise<{source:string;summary:Record<string,unknown>;superseded:boolean}|null>{
  let cursor:string|null=null;
  do{
-  const page=await ctx.deps.records.store.find<any>({kind:'action',key:'runs.request.answer',value:request,limit:100,cursor,newestFirst:true});
+  const page:Page<StoredRecord<any>>=await ctx.deps.records.store.find<any>({kind:'action',key:'runs.request.answer',value:request,limit:100,cursor,newestFirst:true});
   for(const record of page.items)if(record.created_at<=at){const detail=record.body.detail;if(!isObject(detail)||typeof detail.answer!=='string')continue;return {source:detail.answer,summary:isObject(detail.criterion_answer)?detail.criterion_answer:{},superseded:detail.superseded===true};}
   cursor=page.next;
  }while(cursor!==null);
@@ -91,7 +91,8 @@ async function answerAt(ctx:EngineContext,request:string,at:string):Promise<{sou
 function declarationRef(request:RequestView):string{return 'rec:'+request.source+'#'+request.declaration;}
 async function noticeAt(ctx:EngineContext,request:RequestView,at:string):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice|null>{
  const change=await requestChange(ctx,request),answer=await answerAt(ctx,request.record,at);
- if(!change||!request.declaration||answer?.superseded)return null;
+ if(!change||!request.declaration)throw new Refusal([protocolError('REFERENCE_UNRESOLVED','判据请求的声明原件或位置缺失',{fix:'管理员从可信备份恢复请求所引的提交记录和声明位置，再重新核验'})]);
+ if(answer?.superseded)return null;
  const summary=answer?.summary??{};
  return {...change,request:'rec:'+request.record,declaration:declarationRef(request),audience:request.audience,due:request.due,answered:answer!==null,expired:request.due<at,...(typeof summary.accepted==='boolean'?{accepted:summary.accepted}:{}),...(typeof summary.reviewer==='string'?{reviewer:summary.reviewer}:{}),...(typeof summary.reason==='string'?{reason:summary.reason}:{}),next_action:typeof summary.accepted==='boolean'?(summary.accepted?'接受以后以声明运行为前驱开新运行；本次冻结以后才接受的只进后续修订':'保留原判据；若有新依据，由作者重交声明并请非作者账号重新复核'):request.next_action};
 }

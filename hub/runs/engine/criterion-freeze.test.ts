@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test,before,after} from 'node:test';
 import {startPostgres} from '../../testing/postgres.ts';
 import {criterionHarness} from './testing/criterion.ts';
 import {installReview,judgment,criterionRequests,revision} from './testing/criterion-review.ts';
 import {runById} from './store.ts';
-async function setup(t:any){const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());await installReview(h);const draft=await h.start();await h.submit(draft.run,[h.proposal]);const request=(await criterionRequests(h,draft.run))[0];return {h,draft,request};}
+let pg:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());
+async function setup(t:any){const h=await criterionHarness(pg);t.after(()=>h.close());await installReview(h);const draft=await h.start();await h.submit(draft.run,[h.proposal]);const request=(await criterionRequests(h,draft.run))[0];return {h,draft,request};}
 async function criterionOf(h:Awaited<ReturnType<typeof criterionHarness>>,run:string){await h.submit(run,[]);const result=(await h.service.getResult(h.alice,run))!.result;return Object.values(result.partitions).flat()[0].requirements[0].claims.find(claim=>claim.warrant.producer==='function')?.statement.data?.used_criterion;}
 test('only accepted declarations at start freeze refs in the record and full text in check context',async t=>{
  const {h,draft,request}=await setup(t);const review=await judgment(h,draft.run,request),next=await revision(h,draft.run),stored=(await runById(h.kit.store,next.run))!.body;

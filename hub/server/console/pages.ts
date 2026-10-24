@@ -112,7 +112,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
     const why = 'code' in item ? code(item.code) : 'reason' in item ? labelOf('reason', item.reason) : '';
     const head = [
       html`${code(item.item)}<br>${item.label}`,
-      html`${code(item.location)}${item.carried_over ? html`<br>沿用 ${code(item.carried_over)}` : ''}`,
+      html`${code(item.location)}${item.replaced_criteria?.map(change=>html`<details><summary>被取代的判据</summary>${definitions([['位置',code(change.criterion)],['旧值',pre(change.old)],['新值',pre(change.new)],['声明',code(change.declaration)],['复核结果',code(change.review)],['复核人',code(change.reviewer)]])}</details>`)??''}${item.carried_over ? html`<br>沿用 ${code(item.carried_over)}` : ''}`,
       why,
       itemCells(item.requirements),
     ];
@@ -324,6 +324,7 @@ ${section('来源', sources)}
 ${section('要求项', requirements)}
 ${section(`条目（${run.items.length}）`, items)}
 ${projectedFields}
+${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','受众 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍等作者以外的账号复核；新修订不带这条声明':'请求还没有回答；等作者以外的账号复核',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
 ${section('分区清单', results)}
 ${commentary}
 ${section('未回答的请求', table(['请求','种类','受众','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}

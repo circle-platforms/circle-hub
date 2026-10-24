@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test,before,after} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {startPostgres} from '../../testing/postgres.ts';
 import {criterionHarness} from './testing/criterion.ts';
@@ -7,7 +7,9 @@ import {createRequestService} from '../../requests/api.ts';
 import {artifactShareKey} from '../../records/api.ts';
 import {runById} from './store.ts';
 
-async function setup(t:any){const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const loaded=await h.workflows.add(fileURLToPath(new URL('../../../packs/workflow/criterion-review/',import.meta.url)));for(const user of [h.admin,h.alice,h.bob])h.workflows.assign(user.id,loaded.pack.id);const draft=await h.start();await h.submit(draft.run,[h.proposal]);const request=(await createRequestService(h.kit).all(draft.run)).find(row=>row.declaration)!;return{h,draft,request};}
+let pg:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());
+async function setup(t:any){const h=await criterionHarness(pg);t.after(()=>h.close());const loaded=await h.workflows.add(fileURLToPath(new URL('../../../packs/workflow/criterion-review/',import.meta.url)));for(const user of [h.admin,h.alice,h.bob])h.workflows.assign(user.id,loaded.pack.id);const draft=await h.start();await h.submit(draft.run,[h.proposal]);const request=(await createRequestService(h.kit).all(draft.run)).find(row=>row.declaration)!;return{h,draft,request};}
 async function review(f:Awaited<ReturnType<typeof setup>>,by:any=f.h.admin){const answer=await f.h.service.startRun(by,{pack:'criterion-review',predecessor:f.draft.run,inputs:{declaration:{reference:'rec:'+f.request.source},evidence:[{reference:f.h.expected}]}},f.h.call('criterion-author'));assert.equal(answer.call_result,'ok',JSON.stringify(answer));return answer.run!;}
 async function decision(f:Awaited<ReturnType<typeof setup>>,run:any,by:any,code='accept',quote='依据'){
  return f.h.service.submitResult(by,{run:run.run,model:'Scripted',items:run.items.map((item:any)=>({item:item.id,handling:'handled',slots:{review:[{text:'账号确认',code,location:item.location,data:{reason:'合成复核理由'},quotes:[{reference:f.h.expected,text:quote}]}]}}))},f.h.call('criterion-author'));
@@ -41,4 +43,9 @@ test('an accepted review submission whose requirement is unsatisfied leaves the 
  const started=await f.h.service.startRun(f.h.admin,{pack:'criterion-review',predecessor:f.draft.run,inputs:{declaration:{reference:'rec:'+f.request.source},evidence:[{reference:unrelated}]}},f.h.call());assert.equal(started.call_result,'ok');
  const r=started.run!,answer=await f.h.service.submitResult(f.h.admin,{run:r.run,model:'Scripted',items:r.items.map(item=>({item:item.id,handling:'handled',slots:{review:[{text:'确认',code:'accept',location:item.location,data:{reason:'合成理由'},quotes:[{reference:unrelated,text:'无关期望'}]}]}}))},f.h.call());assert.equal(answer.acceptance,'accepted');
  const stored=await f.h.service.getResult(f.h.admin,r.run);assert.ok(Object.values(stored!.result.partitions).flat().some(row=>row.requirements.some(requirement=>requirement.status==='unsatisfied')));assert.equal((await createRequestService(f.h.kit).all(f.draft.run)).find(row=>row.record===f.request.record)!.answered_by,null);
+});
+test('incomplete author lineage reports the missing account fact and a named recovery step',async t=>{
+ const f=await setup(t);const {putRun,runById}=await import('./store.ts'),{newId}=await import('../../records/api.ts');const original=(await runById(f.h.kit.store,f.draft.run))!;const id=newId('run');await putRun(f.h.kit.store,{...original.body,run:id,predecessor:newId('run')},original.created_at);await f.h.submit(id,[f.h.proposal]);const request=(await createRequestService(f.h.kit).all(id)).find(row=>row.declaration)!;
+ const r=await review({...f,draft:{...f.draft,run:id},request}),answer=await decision(f,r,f.h.admin);assert.equal(answer.acceptance,'accepted');const result=(await f.h.service.getResult(f.h.admin,r.run))!.result;
+ assert.ok(result.errors.some(error=>error.message.includes('作者账号')&&error.fix?.includes(f.h.admin.id)),JSON.stringify(result.errors));assert.equal((await createRequestService(f.h.kit).all(id)).find(row=>row.record===request.record)!.answered_by,null);
 });

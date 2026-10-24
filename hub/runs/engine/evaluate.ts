@@ -854,13 +854,21 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         } else layers.push(layer);
       }
       const missingSessions=[...(input.author?.missingSessions??[]),...(run.session===undefined?[`运行 ${run.run} 的开始会话（原运行者 ${run.runner??run.configurer??'记录未给出'}）`]:[])];
-      if(t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
+      if(!t.independence_by_account&&t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
         const runner=run.runner??run.configurer;
         if(!runner)throw new Error('历史独立性缺少具名受众');
         const missing=`缺少被判工作来源会话：${missingSessions.join('；')}`;
         const gap={reason:'missing_input' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:runner},due:new Date(ctx.now().getTime()+86400000).toISOString()}};
         for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
         errors.push({code:'missing_input',message:missing,item:it.id,requirement:t.key,fix:'请所列原运行者带 Circle-Session-Id，以原工作为 predecessor 开新修订并重新提交，再对新修订开复核运行'});
+      }
+      if(t.independence_by_account&&independence==='unknown'){
+        const administrator=administrators[0]?.id;if(!administrator)throw new Error('作者账号恢复请求缺少具名管理员');
+        const next='管理员 '+administrator+' 从可信备份恢复缺失的运行记录与 runner/configurer 身份，再核验账号并重开复核；不能补造历史身份';
+        const missing='缺少完整的作者账号血缘，无法证明复核者不是任一作者；下一步：'+next;
+        const gap={reason:'integrity_unproven' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:administrator},due:run.submission_due??new Date(ctx.now().getTime()+86400000).toISOString()}};
+        for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
+        errors.push({code:'integrity_unproven',message:missing,item:it.id,requirement:t.key,fix:next});
       }
       const status = requirementStatus({
         producer:t.accepted_producer,
