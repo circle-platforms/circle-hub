@@ -1,3 +1,4 @@
+import { createDocumentCache } from '../../refs/api.ts';
 import { abandonRun } from './management.ts';
 import { maintainRuns } from './maintenance.ts';
 import { requestsOf } from './requests.ts';
@@ -27,11 +28,12 @@ function clipped(text: string): string {
  * The engine context of one call: what it logs also goes to the call's admin note, as `<what>: <detail>`, so that a reason
  * reaches the call it belongs to even when two calls share a trace id. A note that cannot be kept never changes an answer.
  */
-function forCall(ctx: EngineContext, call: CallContext): EngineContext {
+function forCall(ctx: EngineContext, call: CallContext|undefined): EngineContext {
+  const scoped={...ctx,documents:createDocumentCache(32)};
   const note = call?.adminNote;
-  if (typeof note !== 'function') return ctx;
+  if (typeof note !== 'function') return scoped;
   return {
-    ...ctx,
+    ...scoped,
     log: (entry) => {
       ctx.log(entry);
       try {
@@ -41,6 +43,12 @@ function forCall(ctx: EngineContext, call: CallContext): EngineContext {
       }
     },
   };
+}
+
+/** Parsed sources can be much larger than their immutable bytes. A service instance must never own them across calls. */
+async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,operation:(scoped:EngineContext)=>Promise<T>):Promise<T>{
+  const scoped=forCall(ctx,call);
+  try{return await operation(scoped);}finally{scoped.documents.dispose?.();}
 }
 
 export interface RunsEngine extends RunsService {
@@ -69,9 +77,11 @@ export interface RunsEngine extends RunsService {
 
 export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   const ctx = createEngineContext(deps);
+  // Only an operation-owned context may retain parsed inputs, including in future service methods.
+  ctx.documents.dispose?.();
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
-  const maintain=():Promise<void>=>ongoing??=(maintainRuns(ctx).finally(()=>{ongoing=null;}));
+  const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current)).finally(()=>{ongoing=null;}));
   return {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
@@ -83,20 +93,20 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}await ongoing;},
     listRequests(user,run) { return requestsOf(ctx,user,run); },
     async startRun(user, input, context) {
-      return (await startRun(forCall(ctx, context), user, input, context, { host: 'local_circle' })).answer;
+      return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer);
     },
     startRunDetailed(user, input, context) {
-      return startRun(forCall(ctx, context), user, input, context, { host: 'local_circle' });
+      return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}));
     },
     async startHubRun(configurer, input, context) {
       if (configurer.role !== 'admin') return refused([unavailableError('/pack')]);
-      return startRun(forCall(ctx, context), configurer, input, context, { host: 'hub' });
+      return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}));
     },
     submitResult(user, args, context) {
-      return submitResult(forCall(ctx, context), user, args, context);
+      return withDocuments(ctx,context,current=>submitResult(current,user,args,context));
     },
     resolveReference(user, input, context) {
-      return previewReference(forCall(ctx, context), user, input, context);
+      return withDocuments(ctx,context,current=>previewReference(current,user,input,context));
     },
     getRun(user, run): Promise<RunDetail | null> {
       return getRun(ctx, user, run);

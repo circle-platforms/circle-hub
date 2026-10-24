@@ -1,0 +1,1 @@
+<commands><item name="widget health interval"><arguments><arg name="seconds" type="U16" optional="false" /></arguments></item></commands>

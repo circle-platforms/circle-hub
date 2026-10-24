@@ -54,8 +54,10 @@ items are paged away. `uncovered_changes` is one unknown (`missing_input`) per c
 that has no case in the later build, with no item, so it is a cross-item claim. The statement says this is not a
 failure. When `skipped.to` is above zero, the statement and the run note say the later build's index lacks that many
 listed documents. A truncated view adds an unknown of `integrity_unproven` and does not claim that the list is
-complete. A bound view that names no catalog adds one conclusion line (`catalog-hint`): the changes were then counted
-by entry kind alone, and another producer's entries on the same path may be mixed in.
+complete. A bound view that names no catalog (or one other than `commands@1`) is refused at projection with the fix
+spelled out; the changes would otherwise be counted by entry kind alone and another producer's entries on the same
+path could be mixed in. An empty scope with a fully read note is a deterministic support (`回归范围是空的`), not an
+unknown; only a subject without a note stays a check error.
 
 The uncovered list is computed before the priority filter and stored on the projection note. Filtering a case out does
 not make its path uncovered. `include_added: false` drops added paths from the scope and from the uncovered list. An

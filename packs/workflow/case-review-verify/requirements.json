@@ -100,6 +100,16 @@
           "code": "case-review-verify.suggestion_incomplete",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.verdict_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.level_missing",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },

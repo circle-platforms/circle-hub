@@ -40,6 +40,16 @@
       ],
       "required": false,
       "many": true
+    },
+    {
+      "slot": "facets",
+      "role": "subject",
+      "description": "构建的用例计数视图 by=line,module,has_expected,vague_expected,negative,test_type_status；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid；必须由新包按精确 resource 声明重产",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": true
     }
   ],
   "parameters": [

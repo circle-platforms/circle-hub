@@ -17,6 +17,7 @@ import { registerHooks } from 'node:module';
 import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 
 type Value = { code: string; label: string };
 type Axis = { axis: string; label: string; owner: string; values: Value[] };
@@ -73,14 +74,66 @@ export class WriteError extends Error {
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
-interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean }
+interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
-  'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','judgment_status'], labels: true },
-  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','judgment_status'], labels: true },
+  'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
+  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason'], labels: true, resourceTags: true },
+  'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
+  'packs/workflow/template-gap/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
+  'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/maintenance-sweep/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
   'packs/workflow/regression-scope/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
   'packs/workflow/case-review-report/functions/generated/vocabulary.ts': { axes: ['requirement_status', 'reason', 'static_terminal', 'dynamic_terminal', 'unsatisfied_reason', 'layer'], labels: true },
 };
+
+const RESOURCE_TAG_SOURCE = 'packs/workflow/case-review/tables/resource-tags.json';
+function resourceTagSnapshot(root: string): {tableText:string;code:string} {
+  const text=readFileSync(join(root,RESOURCE_TAG_SOURCE),'utf8');
+  const table:unknown=JSON.parse(text);
+  if(!isRecord(table)||Object.keys(table).some(key=>!['schema','id','version','origin','tags'].includes(key))||table.schema!=='resource-tags@1'||typeof table.id!=='string'||typeof table.version!=='string'||typeof table.origin!=='string'||!Array.isArray(table.tags)||table.tags.length===0||table.tags.length>1000)throw new ContractsError(['resource-tags@1: invalid declared table']);
+  const ids=new Set<string>(),texts=new Set<string>();
+  for(const tag of table.tags){
+    if(!isRecord(tag)||Object.keys(tag).some(key=>!['id','text','label','test_type','negative'].includes(key))||typeof tag.id!=='string'||tag.id.length===0||typeof tag.text!=='string'||tag.text.length===0||tag.text.length>200||typeof tag.label!=='string'||typeof tag.test_type!=='boolean'||typeof tag.negative!=='boolean'||tag.negative&&!tag.test_type)throw new ContractsError(['resource-tags@1: invalid declared member']);
+    if(ids.has(tag.id)||texts.has(tag.text))throw new ContractsError(['resource-tags@1: ids and exact texts must each be unique']);
+    ids.add(tag.id);texts.add(tag.text);
+  }
+  const source={id:table.id,version:table.version,sha256:createHash('sha256').update(text).digest('hex')};
+  const code=`\n// Business values come only from the published package table; they are not core vocabulary axes.
+export const RESOURCE_TAG_TABLE = ${JSON.stringify(source)} as const;
+export const RESOURCE_TAGS = ${JSON.stringify(table.tags)} as const;
+for(const tag of RESOURCE_TAGS)Object.freeze(tag);Object.freeze(RESOURCE_TAGS);
+export type ResourceTag = (typeof RESOURCE_TAGS)[number];
+export type ResourceTagId = ResourceTag['id'];
+export type TestTypeId = Extract<ResourceTag,{test_type:true}>['id'];
+export const TEST_TYPE_IDS = RESOURCE_TAGS.filter(tag=>tag.test_type).map(tag=>tag.id) as readonly TestTypeId[];
+export const RESOURCE_TAG_TEXTS = Object.freeze(RESOURCE_TAGS.map(tag=>tag.text));
+Object.freeze(TEST_TYPE_IDS);
+export const TEST_TYPE_LABELS = Object.fromEntries(RESOURCE_TAGS.filter(tag=>tag.test_type).map(tag=>[tag.id,tag.label])) as Record<TestTypeId,string>;
+export function declaredResourceTag(value:unknown):ResourceTag|null { return typeof value==='string'?RESOURCE_TAGS.find(tag=>tag.text===value)??null:null; }
+export interface ResourceTagIssue { index:number|null; raw:unknown; allowed:readonly string[] }
+export interface ResourceTagDeclaration {
+  table:typeof RESOURCE_TAG_TABLE; status:DeclarationStatus; valid:boolean; present:boolean; raw:unknown;
+  ids:ResourceTagId[]; types:TestTypeId[]; negative:boolean|null; issues:ResourceTagIssue[];
+  missing:string|null; next_action:string|null;
+}
+export function declareResourceTags(value:unknown):ResourceTagDeclaration {
+  const present=value!==undefined;
+  const values=value===undefined?[]:Array.isArray(value)?value:[];
+  const issues:ResourceTagIssue[]=present&&!Array.isArray(value)?[{index:null,raw:value,allowed:RESOURCE_TAG_TEXTS}]:[];
+  const matched:ResourceTag[]=[];
+  values.forEach((raw,index)=>{const tag=declaredResourceTag(raw);if(tag===null)issues.push({index,raw,allowed:RESOURCE_TAG_TEXTS});else matched.push(tag);});
+  const valid=issues.length===0;
+  const ids=RESOURCE_TAGS.filter(tag=>matched.some(found=>found.id===tag.id)).map(tag=>tag.id);
+  const types=valid?TEST_TYPE_IDS.filter(id=>ids.includes(id)):[];
+  const status:DeclarationStatus=types.length>0?'declared':'undeclared';
+  return {table:RESOURCE_TAG_TABLE,status,valid,present,raw:value===undefined?null:value,ids,types,
+    negative:status==='declared'?matched.some(tag=>tag.negative):null,issues,
+    missing:status==='declared'?null:'缺少有效的作者测试类型声明：resource 必须只含发布闭集的精确标签，且至少包含一项测试类型',
+    next_action:status==='declared'?null:'作者从发布闭集选择精确原文修改 resource 后重新核验；确需其他标签时由包作者发布扩展闭集的新版本'};
+}
+`;
+  return {tableText:text,code};
+}
 
 /** Package-local runtime targets, rendered from the same model values as contracts/generated/vocabulary.ts. */
 export function packVocabularyFiles(root: string = REPO_ROOT): Record<string, string> {
@@ -106,6 +159,11 @@ export function packVocabularyFiles(root: string = REPO_ROOT): Record<string, st
       out.push('export type AxisName = keyof AxisValues;\n');
       out.push(`const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { ${names.map(name => `${name}: ${upper(name)}_LABEL`).join(', ')} };\n`);
       out.push('export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }\n');
+    }
+    if(target.resourceTags){
+      const tags=resourceTagSnapshot(root);out.push(tags.code);
+      const destination=path.slice(0,path.indexOf('/functions/'))+'/tables/resource-tags.json';
+      if(destination!==RESOURCE_TAG_SOURCE)files[destination]=tags.tableText;
     }
     files[path] = out.join('');
   }
@@ -759,6 +817,14 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
   try {
     files = await generate(root);
     packFiles = packVocabularyFiles(root);
+    for (const [target,source] of Object.entries({
+      'packs/workflow/template-gap/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-type.schema.json':'schemas/declared-parameter-type.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-role.schema.json':'schemas/declared-parameter-role.v1.schema.json',
+      'packs/workflow/case-compile/tables/typed-address.schema.json':'schemas/typed-address-value.v1.schema.json',
+      'packs/workflow/template-gap/tables/category-judgment.schema.json':'schemas/category-judgment.v1.schema.json',
+    })) if(files[source]!==undefined)packFiles[target]=files[source];
   } catch (error) {
     const problems = error instanceof ContractsError ? error.problems : [(error as Error).stack ?? String(error)];
     console.error(`cannot generate contracts (${problems.length} problem${problems.length > 1 ? 's' : ''}):`);

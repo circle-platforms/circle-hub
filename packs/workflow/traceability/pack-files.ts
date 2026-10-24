@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'traceability',
-  version: '1.0.6',
+  version: '1.0.7',
   kind: 'workflow',
   title: '追溯矩阵',
   description: '构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果',

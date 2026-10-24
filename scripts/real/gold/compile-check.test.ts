@@ -261,6 +261,11 @@ test('public product declarations supply commands@1 metadata without importing f
   for (const v of [{}, {schema:'product@1',catalogs:[]}, {schema:'product@1',catalogs:[{id:'commands@1',complete:true}]}]) assert.throws(() => commandCatalogDeclaration(v));
 });
 // Pointer comparisons use synthetic exports, public subject ordering and independently chosen failures.
+function pointerCheck(f:ReturnType<typeof fixture>) {
+  const result=compileCheck(f);
+  assert.ok(result.position_comparisons.length,'the target refutation positions were compared');
+  return {...result,comparison:{...result.comparison,equal:result.position_comparisons.every(row=>row.equal)}};
+}
 function pointerFixture() {
   const f = fixture();
   for (const row of f.run.latest!.result!.partitions.delivered!) {
@@ -278,74 +283,75 @@ function refutes(f: ReturnType<typeof fixture>, requirement: number, pointers: s
 test('function parameter pointers compare at the judged step and distinguish a different step', () => {
   const f = pointerFixture(); data(f).steps[0].params.address = '192.0.2.250';
   refutes(f,1,['/data/steps/0/params/address']);
-  assert.equal(compileCheck(f).comparison.equal,true);
-  refutes(f,1,['/data/steps/0']); assert.equal(compileCheck(f).comparison.equal,true);
-  refutes(f,1,['/data/steps/3/params/backend']); assert.equal(compileCheck(f).comparison.equal,false);
+  assert.equal(pointerCheck(f).comparison.equal,true);
+  refutes(f,1,['/data/steps/0']); assert.equal(pointerCheck(f).comparison.equal,true);
+  refutes(f,1,['/data/steps/3/params/backend']); assert.equal(pointerCheck(f).comparison.equal,false);
 });
 test('catalog phrase indices follow step and parameter declaration order, skipping empty values and using defaults', () => {
   const f = pointerFixture();
   f.contract.objects[0].methods.push({name:'commands',params:[{name:'first',type:'string',command:true},{name:'skip',type:'string',command:true},{name:'last',type:'string',command:true,default:'missing two'}]});
   data(f).steps = [{object:'dut',method:'save',params:{}},{object:'dut',method:'commands',params:{skip:'  ',first:' missing one '}},{object:'dut',method:'cli',params:{line:'missing three'}}];
   refutes(f,2,['/phrases/0','/phrases/1','/phrases/2']);
-  assert.equal(compileCheck(f).comparison.equal,true,JSON.stringify(compileCheck(f).comparison));
+  assert.equal(pointerCheck(f).comparison.equal,true,JSON.stringify(pointerCheck(f).comparison));
   refutes(f,2,['/phrases/0','/phrases/1','/phrases/3']);
-  assert.equal(compileCheck(f).comparison.equal,false);
+  assert.equal(pointerCheck(f).comparison.equal,false);
 });
 test('quote indices skip empty reference/text and function/quote checks have separate positions', () => {
   const f = pointerFixture();
   const refs = [...f.sources.keys()];
   data(f).expects = [{text:'missing',quote:{reference:'',text:''}},{text:'invented one',quote:{reference:refs[0],text:'invented one'}},{text:'invented two',quote:{reference:refs[1],text:'invented two'}}];
   refutes(f,3,['/data/expects/0','/quotes/0/text','/quotes/1/text']);
-  assert.equal(compileCheck(f).comparison.equal,true,JSON.stringify(compileCheck(f).comparison));
+  assert.equal(pointerCheck(f).comparison.equal,true,JSON.stringify(pointerCheck(f).comparison));
   refutes(f,3,['/data/expects/0','/quotes/1/text','/quotes/0/text']);
-  assert.equal(compileCheck(f).comparison.equal,false);
+  assert.equal(pointerCheck(f).comparison.equal,false);
 });
 test('only the first ten refutations of each check are compared, in order', () => {
   const f = pointerFixture();
   data(f).steps = Array.from({length:15},(_,i) => ({object:'dut',method:'save',params:{extra:i}}));
   const pointers = data(f).steps.map((_,i) => `/data/steps/${i}/params/extra`);
   refutes(f,0,pointers);
-  assert.equal(compileCheck(f).comparison.equal,true);
+  assert.equal(pointerCheck(f).comparison.equal,true);
   pointers[14] = '/data/steps/999'; refutes(f,0,pointers);
-  assert.equal(compileCheck(f).comparison.equal,true);
+  assert.equal(pointerCheck(f).comparison.equal,true);
   [pointers[0],pointers[1]] = [pointers[1],pointers[0]]; refutes(f,0,pointers);
-  assert.equal(compileCheck(f).comparison.equal,false);
+  assert.equal(pointerCheck(f).comparison.equal,false);
 });
 test('the ten-diagnostic cap is applied before merging several parameter failures on a step', () => {
   const f = pointerFixture();
   f.contract.objects[0].methods.push({name:'two',params:[{name:'a',type:'int'},{name:'b',type:'int'}]});
   data(f).steps = Array.from({length:7},() => ({object:'dut',method:'two',params:{a:'wrong',b:'wrong'}}));
   refutes(f,0,Array.from({length:5},(_,i) => [`/data/steps/${i}/params/a`,`/data/steps/${i}/params/b`]).flat());
-  assert.equal(compileCheck(f).comparison.equal,true,JSON.stringify(compileCheck(f).comparison));
+  assert.equal(pointerCheck(f).comparison.equal,true,JSON.stringify(pointerCheck(f).comparison));
 });
 test('block, bucket, model-written plan and whole-plan pointers normalize to their judged units', () => {
   const blocks = pointerFixture(); data(blocks).blocks = ['setup','invalid'];
-  refutes(blocks,0,['/data/blocks/1']); assert.equal(compileCheck(blocks).comparison.equal,true);
+  refutes(blocks,0,['/data/blocks/1']); assert.equal(pointerCheck(blocks).comparison.equal,true);
   const bucket = pointerFixture(); data(bucket).bucket = 'missing';
-  refutes(bucket,1,['/data/bucket']); assert.equal(compileCheck(bucket).comparison.equal,true);
+  refutes(bucket,1,['/data/bucket']); const bucketResult=pointerCheck(bucket);assert.equal(bucketResult.comparison.equal,false);
+  const bucketPosition=bucketResult.position_comparisons.find(p=>p.requirement==='bed_addresses'&&p.check==='function')!;assert.deepEqual(bucketPosition.gold,['/bucket']);assert.deepEqual(bucketPosition.hub,['/bucket']);assert.equal(bucketPosition.unknown,true);
   const plan = pointerFixture(); (data(plan) as unknown as Record<string,unknown>).plan_json = '{}';
-  refutes(plan,4,['/data/plan_json']); assert.equal(compileCheck(plan).comparison.equal,true);
+  refutes(plan,4,['/data/plan_json']); assert.equal(pointerCheck(plan).comparison.equal,true);
   const shape = pointerFixture(); (data(shape) as unknown as Record<string,unknown>).steps = null;
   const rows = shape.run.latest!.result!.partitions.delivered![0].requirements;
   for (const r of rows.slice(1)) { r.layers[0].terminal = 'unchecked'; r.layers[0].reason = '形状不可读'; r.status = 'pending'; }
-  refutes(shape,0,['/data/steps']); assert.equal(compileCheck(shape).comparison.equal,true);
+  refutes(shape,0,['/data/steps']); assert.equal(pointerCheck(shape).comparison.equal,true);
 });
-test('unknown conclusions do not compare their positions', () => {
+test('unknown conclusions remain differences with their missing fact', () => {
   const f = pointerFixture(); delete f.run.run.lease_context; data(f).steps[2].params.target = '192.0.2.250';
   const r = f.run.latest!.result!.partitions.delivered![0].requirements[1];
   r.layers[0].terminal = 'unchecked'; r.layers[0].reason = '缺少冻结的租约视图'; r.status = 'pending'; r.claims = [{pointer:'/data/steps/999',statement:{text:'未知',verdict:'unknown'}}]; rebind(f);
-  assert.equal(compileCheck(f).comparison.equal,true);
+  assert.equal(compileCheck(f).comparison.equal,false);
 });
 test('expectation and backend violations use the public 1.2.0 codes', () => {
   const f = fixture(); data(f).expects[0].text = 'invented';
   assert.ok(compileCheck(f).stepVerdicts.some(v => v.code === 'case-compile.expect_not_in_quote'));
   assert.equal(checkBedAddress(f.bed.beds[0],'192.0.2.80','backend').code,'case-compile.backend_not_server');
 });
-test('an unknown interpreter check does not compare positions inside an otherwise refuted requirement', () => {
+test('unknown interpreter evidence cannot erase a known positional comparison', () => {
   const f = pointerFixture(); data(f).expects[0].text = 'invented expectation'; data(f).expects[0].quote.text = 'invented quote';
   refutes(f,3,['/data/expects/0']);
   f.run.latest!.result!.partitions.delivered![0].requirements[3].claims.push({pointer:'/quotes/999/text',statement:{text:'未知',verdict:'unknown'}});
-  assert.equal(compileCheck(f).comparison.equal,true);
+  assert.equal(compileCheck(f).comparison.equal,false);
 });
 
 test('expected-text containment and source quotation both align Chinese hard wraps under decision 37', () => {
@@ -372,4 +378,14 @@ for (const [quote, expected, verdict] of [
   assert.equal(rows.length, 2);
   assert.equal(rows.find(v => v.check !== 'quote')!.verdict, verdict);
   assert.equal(rows.find(v => v.check === 'quote')!.verdict, 'pass');
+});
+
+test('pack findings missing requirement status is a difference rather than an implicit match',()=>{
+ const f=fixture();delete (f.run.latest!.result!.partitions.delivered![0].requirements[0] as {status?:string}).status;
+ assert.ok(!compileCheck(f).comparison.equal);
+});
+
+test('pack findings two identical unknown per-position verdicts are still unresolved',()=>{
+ const row:StepVerdict={item:'synthetic',stepIndex:1,pointer:'/steps/0',checkType:'contract',verdict:'unknown',reason:'缺合成输入'};
+ const result=compareCompileVerdicts([row],[row]);assert.equal(result.equal,false);assert.match(result.differences.join(' '),/缺合成输入/);
 });

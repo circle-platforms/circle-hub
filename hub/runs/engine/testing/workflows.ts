@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../../contracts/src/pack.ts';
+import { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../../contracts/src/pack.ts';
 import type { PackSummary } from '../../../../contracts/src/run.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
 import type { LoadedWorkflow, WorkflowStore } from '../../../ports.ts';
@@ -33,6 +33,7 @@ export class FakeWorkflowStore implements WorkflowStore {
       requirements: RequirementsFile.parse(await json('requirements.json')).requirements,
       checks: ChecksFile.parse(await json('checks.json')).checks,
       slots: SlotsFile.parse(await json('slots.schema.json')),
+      ledger: listed.has('ledger.json') ? LedgerFile.parse(await json('ledger.json')) : null,
       knowledge: listed.has('knowledge.json') ? KnowledgeFile.parse(await json('knowledge.json')) : null,
       instructions: instructions.toString('utf8'),
       instructionsDigest: createHash('sha256').update(instructions).digest('hex'),
@@ -89,7 +90,7 @@ export class FakeWorkflowStore implements WorkflowStore {
         products: [],
         inputs: latest.workflow.inputs,
         parameters: latest.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
-        requirements: latest.requirements.map(requirementSummary),
+        requirements: latest.requirements.map(t=>requirementSummary(t,latest.ledger,latest.checks,`${latest.pack.id}@${latest.pack.version}`)),
       });
     }
     return out;

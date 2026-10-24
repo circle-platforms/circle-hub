@@ -7,31 +7,63 @@
       "data": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "priority": { "type": "integer" },
-          "negative": { "type": "boolean" },
-          "expects_refutation": { "type": "boolean" },
-          "preconditions": { "type": "array" },
-          "steps": { "type": "array" },
+          "title": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "negative": {
+            "type": "boolean"
+          },
+          "expects_refutation": {
+            "type": "boolean"
+          },
+          "preconditions": {
+            "type": "array"
+          },
+          "steps": {
+            "type": "array"
+          },
           "expected": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["text", "quote"],
+              "required": [
+                "text",
+                "quote"
+              ],
               "properties": {
-                "text": { "type": "string" },
+                "text": {
+                  "type": "string"
+                },
                 "quote": {
                   "type": "object",
-                  "required": ["text", "reference"],
+                  "required": [
+                    "text",
+                    "reference"
+                  ],
                   "properties": {
-                    "text": { "type": "string", "description": "修复说明或手册里的逐字原文" },
-                    "reference": { "type": "string", "description": "引用" }
+                    "text": {
+                      "type": "string",
+                      "description": "修复说明或手册里的逐字原文"
+                    },
+                    "reference": {
+                      "type": "string",
+                      "description": "引用"
+                    }
                   }
                 }
               }
             }
           },
-          "tags": { "type": "array" }
+          "tags": {
+            "type": "array",
+            "description": "旧字段仅保留原文，不作为类型声明；请在 resource 写发布闭集的精确标签"
+          },
+          "resource": {
+            "type": "array"
+          }
         }
       }
     }

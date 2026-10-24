@@ -360,6 +360,19 @@ test('batched record reads retain integrity checks, insertion order and complete
   await assert.rejects(kit.store.findMany({key:'batch.test',values:['one']}),IntegrityError);
 });
 
+test('batch first matches equal oldest per-value reads, including duplicates, missing values and damaged records', async t => {
+  const kit = await openTestRecords({ postgres }); t.after(() => kit.close());
+  const first = await kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { n: 1 }, index: [{ key: 'first.batch', value: 'x' }, { key: 'first.batch', value: 'y' }] });
+  await kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { n: 2 }, index: [{ key: 'first.batch', value: 'x' }] });
+  const original = pg.Client.prototype.query; let queries = 0;
+  t.mock.method(pg.Client.prototype, 'query', function (this: pg.Client, ...args: unknown[]) { queries++; return Reflect.apply(original, this, args); });
+  const found = await kit.store.findFirstMany({ key: 'first.batch', values: ['x', 'y', 'missing', 'x'], kind: 'action' });
+  assert.equal(queries, 1); assert.deepEqual([...found].map(([key, row]) => [key, row.digest]), [['x', first.digest], ['y', first.digest]]);
+  assert.equal((await kit.store.findFirstMany({ key: 'first.batch', values: [] })).size, 0);
+  await sql(kit.database, "SET session_replication_role = 'replica'; UPDATE records SET body='{\"n\":3}' WHERE digest='" + first.digest + "'");
+  await assert.rejects(kit.store.findFirstMany({ key: 'first.batch', values: ['x'] }), IntegrityError);
+});
+
 test('the pool never falls back to a password file or PG* variables when the server asks for a password', async () => {
   const { password: _password, ...withoutPassword } = postgres.config;
   const db = new Database(createPool(withoutPassword, 1));

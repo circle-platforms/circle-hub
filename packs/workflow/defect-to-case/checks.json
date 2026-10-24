@@ -75,6 +75,12 @@
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "duplicateSubject" },
       "catalog": "commands@1",
+      "reads": {
+        "roles": ["expected"],
+        "types": ["knowledge:index"],
+        "max_bytes": 1048576,
+        "narrow": { "slot": "indexed_cases", "key_path": "/read_keys", "into": "/indexed_cases", "max_keys": 100, "max_entries": 5000 }
+      },
       "judges": "artifact_under_verification",
       "tier": "advisory",
       "basis": "要求项 not_duplicate：起草用例与已索引用例的规范化命令头集合、正反向标记及规范化标题都相同时为重复；未发现重复但在索引存在跳过文档时为未知（完整性未证明）"

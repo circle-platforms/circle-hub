@@ -129,6 +129,13 @@
                 }
               }
             }
+          },
+          "command_identities": {
+            "type": "array",
+            "description": "完整 CommandIdentity 列表，必须与冻结 data.command_identities 经显式类型化地址替换的结构身份一致；函数按生成的共享接口核验每项",
+            "items": {
+              "type": "object"
+            }
           }
         }
       }

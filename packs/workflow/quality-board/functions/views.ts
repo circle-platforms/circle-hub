@@ -1,4 +1,4 @@
-import { labelOf } from './generated/vocabulary.ts';
+import { isDeclarationStatus, labelOf } from './generated/vocabulary.ts';
 // Reading a bound input as the facet view the board needs: facet-view@1, kind case, by covering line, module, has_expected,
 // vague_expected, negative (the caller may add more, e.g. priority). The model is authoritative; the external id is not
 // re-parsed. A view that is not this one, or is malformed, is a refusal the caller can fix.
@@ -9,7 +9,7 @@ const COMMANDLESS_CASES = labelOf('knowledge_count', 'commandless_cases');
 const HEX = /^[0-9a-f]{64}$/;
 
 /** The by fields the board's metrics are defined over. */
-export const REQUIRED_BY = ['line', 'module', 'has_expected', 'negative'];
+export const REQUIRED_BY = ['line', 'module', 'has_expected', 'negative', 'test_type_status'];
 
 export type ViewFailure = { ok: false; code: string; message: string; fix: string };
 export type ViewRead = { ok: true; view: FacetViewData } | ViewFailure;
@@ -49,6 +49,8 @@ export function readFacetView(input: BoundInput, slot: string, requiredBy: reado
     if (!requiredBy.every((field) => field in values)) return failure(`视图的第 ${k + 1} 行缺少分组字段`);
     if (!Object.values(raw.values).every(isScalar)) return failure(`视图的第 ${k + 1} 行有非标量的取值`);
     if (requiredBy.includes('tags') && !(raw.values.tags === null || typeof raw.values.tags === 'string')) return failure('标签取值必须为文字或空');
+    if(requiredBy.includes('test_type_status')&&(!isDeclarationStatus(values.test_type_status)||(values.test_type_status==='declared'?typeof values.negative!=='boolean':values.negative!==null)))return failure('测试类型声明状态与负向值不一致；用新版本 APV 包重产根后重读');
+    if(requiredBy.includes('tag_valid')&&(typeof values.tag_valid!=='boolean'||typeof values.resource_empty!=='boolean'))return failure('标签视图缺少有效性与空资源字段；用新版本 APV 包重产根后重读');
     rows.push({ values: raw.values as Record<string, Scalar>, count: raw.count as number });
   }
   if (!Number.isInteger(model.total) || (model.total as number) < 0) return failure('视图的 total 不是非负整数');

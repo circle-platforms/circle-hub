@@ -213,3 +213,58 @@ describe('commandUnchanged field difference formatting in statement', () => {
     assert.match(section, /另有 \d+ 处/);
   });
 });
+
+describe('an empty sweep and skipped sources', () => {
+  const note = (extra: { [key: string]: unknown } = {}): { [key: string]: unknown } => ({
+    kind: 'maintenance-sweep',
+    skipped_to: 0,
+    skipped_from: 0,
+    truncated: false,
+    changed_paths: 0,
+    ignore_fields: [],
+    message: '没有需要维护的用例。',
+    details: [],
+    diff: [],
+    ...extra,
+  });
+
+  it('command_exists with zero items and no skipped sources: a deterministic empty-scope support, no unknown', () => {
+    const outcomes = checkOutcomes('command_exists', { items: [], note: note() });
+    const empty = outcomes.find((o) => o.statement.includes('没有需要维护的用例'));
+    assert.ok(empty, JSON.stringify(outcomes));
+    assert.equal(empty.verdict, 'support');
+    assert.equal(outcomes.some((o) => o.verdict === 'unknown'), false, JSON.stringify(outcomes));
+  });
+
+  it('command_unchanged with zero items and a note: a deterministic empty-scope support', () => {
+    const outcomes = checkOutcomes('command_unchanged', { items: [], note: note() });
+    const empty = outcomes.find((o) => o.statement.includes('没有需要维护的用例'));
+    assert.ok(empty, JSON.stringify(outcomes));
+    assert.equal(empty.verdict, 'support');
+    assert.equal(outcomes.some((o) => o.verdict === 'unknown'), false, JSON.stringify(outcomes));
+  });
+
+  it('skipped_from > 0: one unknown naming the skipped documents the view reports and the next step', () => {
+    const outcomes = checkOutcomes('command_exists', {
+      items: [],
+      note: note({
+        skipped_from: 2,
+        view_notes: ['构建 10.6.1 的根有 2 份列出的来源没有用上（生产器 case-index），这些来源会给出的条目不在这个根里，是未知，不是没有'],
+      }),
+    });
+    const unknown = outcomes.find((o) => o.verdict === 'unknown');
+    assert.ok(unknown, JSON.stringify(outcomes));
+    assert.match(unknown.statement, /2 份/);
+    assert.match(unknown.statement, /生产器 case-index/);
+    assert.match(unknown.statement, /构建 10\.6\.1/);
+    assert.match(unknown.missing ?? '', /下一步/);
+    assert.equal(unknown.reason, 'missing_input');
+  });
+
+  it('skipped_from = 0 with items present: no unconditional unknown any more', () => {
+    const subject = makeSubject([{ path: '/commands/show', fields: [{ path: '/help', before: '旧', after: '新' }] }]);
+    (subject.note as { [key: string]: unknown }).skipped_from = 0;
+    const outcomes = checkOutcomes('command_exists', subject);
+    assert.equal(outcomes.some((o) => o.verdict === 'unknown' && o.statement.includes('索引没有收录的用例')), false, JSON.stringify(outcomes));
+  });
+});

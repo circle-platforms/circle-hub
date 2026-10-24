@@ -42,7 +42,10 @@ test('hint disclosure changes no check claims at zero or a positive count', () =
 test('a projected empty scope does not fabricate a check error', () => {
   const view = buildImpact([]);
   const result = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view }, facetInput(view)] }) as { items: unknown[]; groups: unknown[] };
-  assert.deepEqual(checkOutcomes('in_scope', { items: result.items, note: result.groups[0] }), []);
+  const outcomes = checkOutcomes('in_scope', { items: result.items, note: result.groups[0] });
+  assert.equal(outcomes.length, 1, JSON.stringify(outcomes));
+  assert.equal(outcomes[0].verdict, 'support');
+  assert.match(outcomes[0].statement, /回归范围是空的/);
 });
 
 test('skipped facet sources refuse rather than disclose a false zero', () => {

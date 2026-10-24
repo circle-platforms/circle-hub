@@ -32,7 +32,8 @@
       "accepted_producer": "fact",
       "checks": [
         "cited_commands",
-        "command_claims"
+        "command_claims",
+        "negative_commands"
       ],
       "expected": {
         "overrides": [

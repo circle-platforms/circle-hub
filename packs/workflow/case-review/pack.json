@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.1.0",
+  "version": "1.1.16",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f9d7284ac8d4cce07f3609907920392df7d3d60e05a8810468cf52511325aa91",
-      "size": 11449
+      "sha256": "d5ef641f7405053f389894beba3cd6f65cee9e31786ae277249432d9fcc603d6",
+      "size": 12199
     },
     {
       "path": "checks.json",
-      "sha256": "d09708d9d0ea434d14c91c709d8e71edbdabc704fa27502fdf81ec8567fc20bf",
-      "size": 3716
+      "sha256": "afc5bde3f02a7b7e41df7ca1282c70e33558c2323d5152d233e3708a3d867ecf",
+      "size": 4132
     },
     {
       "path": "examples/start-run.json",
@@ -33,18 +33,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "0b6ee19e7e569ac3be57c034407ec66f16e5f88672fde8c8dfaafe6fb04a5b44",
-      "size": 8485
+      "sha256": "f0dc86b51c2cb6d274b5024b4af6207a0310cd5d8f80a93ce7bcd351e147937d",
+      "size": 10754
     },
     {
       "path": "functions/common.ts",
       "sha256": "d5101160a09a43ffa0c4c02a69cd45bd76d166aa428500e404d59b9f902a49b0",
       "size": 4131
-    },
-    {
-      "path": "functions/expected-quality.ts",
-      "sha256": "9dc02d1a422ffc5810317940e706fcf4db1088fd40f9ddfba64a17132efa40b4",
-      "size": 2786
     },
     {
       "path": "functions/expected-sources.ts",
@@ -57,14 +52,19 @@
       "size": 5836
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
       "path": "functions/lines.ts",
-      "sha256": "8c12649ec999a77a61d116cccb2e009039a9f16b3f44faae9aaaf7b09c71c64e",
-      "size": 4005
+      "sha256": "23e60be80031d29d4892b4ffaf8b111a3418a90a189ce96bfafae7387b36f48d",
+      "size": 2865
     },
     {
       "path": "functions/project.ts",
-      "sha256": "136fd931841ce9d6de794a35ffba0bb4e4d660b4a7460e6d53d8bb3727617508",
-      "size": 27495
+      "sha256": "e9eaac8a49ed8c250d234463cb926466d6fe56c1add35e6d3230c7d98275c897",
+      "size": 27685
     },
     {
       "path": "functions/projection.ts",
@@ -73,23 +73,23 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "95be8f43d37ed6eb2559a067d3841139e6f8f8ef2c4b5f1164a666b1e3e6f955",
-      "size": 8518
+      "sha256": "8fa9207fa246910a793fc4be8ba0bf1ea9f92fc8f1a847b9bc6c1542112d6ad9",
+      "size": 6322
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "904bb959100618930d7087123fd333743b805cdd71340747620fe8a2eeb84eef",
-      "size": 3885
+      "sha256": "ec212f7032b4ba0aa09638b3ab2700e4ce763f16780a8fe9a6f3a851b77d74cc",
+      "size": 3874
     },
     {
       "path": "functions/tags.ts",
-      "sha256": "da839702a5d6b7e488ffa55276cada65a288d17aad61a25eea65a6e5f09ab483",
-      "size": 4639
+      "sha256": "178e954ef4d0918b5b6597248da3c2a25c2a2f1761d25179ef8fa503a03f8e60",
+      "size": 1686
     },
     {
       "path": "functions/template-coverage.ts",
-      "sha256": "2d0d199729ccb49833b75909e0534f4eb9e891b1a14fc8d6f3aa13421123ab50",
-      "size": 10599
+      "sha256": "3cb4fbaf1b0996d1b64bc3c0398503d2c51a47435518e85172df9e04549eccdf",
+      "size": 5549
     },
     {
       "path": "functions/text.ts",
@@ -98,13 +98,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "858e34d3096e84acf21fc8d8ae67f3e1a85332fe5302e73b9b3b59967a793ef0",
-      "size": 12966
+      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
+      "size": 12339
     },
     {
       "path": "requirements.json",
-      "sha256": "2e6bb4f8d58d6404a68fa8b1651482701004584933e51e4c813ca3f8be1855ad",
-      "size": 4776
+      "sha256": "cc72ecfa3207eae62b130fbe3e5d422733052437c232fba5f344806cb6a68286",
+      "size": 4805
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -120,6 +120,11 @@
       "path": "samples/negative/claims_contradicted.json",
       "sha256": "915242d7722dc915dc97d294e72676ffabc57b65539a2bbdd6a17604f6d4535e",
       "size": 1533
+    },
+    {
+      "path": "samples/negative/negative_command_missing.json",
+      "sha256": "e5804f97be5d35511077fad67974df2bc2430ca1ecdb99b3999c2172cf15803f",
+      "size": 1495
     },
     {
       "path": "samples/negative/node_ids_shared.json",
@@ -187,6 +192,11 @@
       "size": 1620
     },
     {
+      "path": "samples/positive/negative_command_present.json",
+      "sha256": "ff539d9eb13d9263d953f65def2db22f641781663918667cbbe006bc10346d71",
+      "size": 1518
+    },
+    {
       "path": "samples/positive/node_ids_unique.json",
       "sha256": "c71888c99d5482cdb934eb3caee8cbd988e5c3bdc930eb7309f05b1c2da2a52d",
       "size": 2214
@@ -233,13 +243,13 @@
     },
     {
       "path": "tables/cited-commands.json",
-      "sha256": "c8fdf064dce3b390766bf36e0a8110b0718e0553ec0b945c736e397119485834",
-      "size": 1552
+      "sha256": "43b92d0d5f164dd24180fd438d4ec9cb533edcf5d65ce1af1176a5a3019c86fb",
+      "size": 1673
     },
     {
       "path": "tables/codes.json",
-      "sha256": "e81b5bd6c074e58d017545e711556c07fc363f8eb3588ff9825bfc7ace025c25",
-      "size": 12370
+      "sha256": "50e9d4d5c0d3e717e4600df19a5ecf06f21a2f1320938f2df31a297222e1253e",
+      "size": 12244
     },
     {
       "path": "tables/command-claims.json",
@@ -250,6 +260,11 @@
       "path": "tables/findings-quotes.json",
       "sha256": "17812479ae6fbb944b571f407333c1a0956970f0cb7f4842cb5866c4d12449bf",
       "size": 571
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "tables/structure-node-ids.json",
@@ -263,18 +278,23 @@
     },
     {
       "path": "tables/template-v3-coverage.json",
-      "sha256": "c0b565791ef2bc38321bb5b2b9bbca9015b007deaa7d68aa31e3e17c0c275759",
-      "size": 678
+      "sha256": "1978a8d80e80623e9e80085202810c7905aeb4bc75370e59a17655d620e63484",
+      "size": 901
     },
     {
       "path": "tables/template-v3.json",
-      "sha256": "53a6e4417b5253b195c80c922704601e1eab33af63f3261e9e23fb61805caace",
-      "size": 6439
+      "sha256": "14d6e7ea0fded942bf4aa6fb9d9a84a22ad5ea33bd918e8b410d2a2c6c4c2d74",
+      "size": 4820
     },
     {
       "path": "workflow.json",
       "sha256": "ce5d1815ed859e774b5ef15e427426da5cf7754806255c61dcc830487a53b33d",
       "size": 5953
+    },
+    {
+      "path": "functions/expected-quality.ts",
+      "sha256": "9dc02d1a422ffc5810317940e706fcf4db1088fd40f9ddfba64a17132efa40b4",
+      "size": 2786
     }
   ]
 }

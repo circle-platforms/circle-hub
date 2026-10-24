@@ -166,7 +166,7 @@ Each phase ends with independent review (against the model and this brief) and a
 
 ## 9. Acceptance scenarios (synthetic, in `tests/acceptance`)
 
-Scenarios 1–16 below were the initial set written with this brief; later scenarios were added as the build grew and live only in `tests/acceptance/` (numbered files, with the added ones recorded on the progress page). 
+Scenarios 1–16 below were the initial set written with this brief; later scenarios were added as the build grew and live only in `tests/acceptance/` (numbered files, with the added ones recorded on the progress page).
 
 1. A normal review: all items delivered; per-requirement terminal states and satisfaction counts correct; the dynamic layer shows "not applicable".
 2. A quotation that does not match: the whole submission is not accepted, stored verbatim, the receipt carries the fix and the rounds left; a corrected resubmission is accepted and the first cause stays visible.

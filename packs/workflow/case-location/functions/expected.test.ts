@@ -78,14 +78,38 @@ describe('expected sources', () => {
 });
 
 it('binds bug-to-case identifiers as defects and states the convention without unknown-kind warnings', () => {
-  const out = sourcesFor(['bug to case 90101 合成标题', 'bug to case-需求20931 合成标题', 'PLM90102 合成标题']);
+  const out = sourcesFor(['bug to case 90101 合成标题', 'bug to case-需求20931 合成标题']);
   assert.deepEqual(out.sources.map(source => source.external), ['plm:bug:90101', 'plm:story:20931']);
   assert.match(out.sources[0].reason, /标题里“bug to case”后面的编号.*按缺陷号读/);
-  assert.deepEqual(out.warnings.map(warning => warning.data?.ids), [['90102']]);
+  assert.equal(out.warnings.length, 0, JSON.stringify(out.warnings));
 });
 
 it('reads normalized identities while its reasons retain zero-padded original spellings', () => {
   const out = sourcesFor(['bug 001234 合成标题', 'bug 00 合成标题', 'bug 1 合成标题']);
   assert.deepEqual(out.sources.map(source => source.external), ['plm:bug:1234']);
   assert.match(out.sources[0].reason, /001234/);
+});
+
+describe('unmarked ids are read both ways', () => {
+  it('binds an unmarked id as both a story and a bug when no range and no mark decides its kind', () => {
+    const out = sourcesFor(['33001 证书链校验']);
+    assert.deepEqual(
+      out.sources.map((s) => s.external),
+      ['plm:story:33001', 'plm:bug:33001'],
+    );
+    assert.ok(out.sources.every((s) => s.reason.includes('没有标明类型')));
+    assert.match(out.warnings[0]?.message ?? '', /分别读取，存在的那一个决定种类/);
+  });
+
+  it('a kind decided by a mark or a declared range stays a single read, not two', () => {
+    const marked = sourcesFor(['需求33001 证书链校验']);
+    assert.deepEqual(marked.sources.map((s) => s.external), ['plm:story:33001']);
+    const ranged = sourcesFor(['33001 证书链校验'], { id_ranges: { story: { max: 49999 }, bug: { min: 50000 } } });
+    assert.deepEqual(ranged.sources.map((s) => s.external), ['plm:story:33001']);
+  });
+
+  it('two reads of one unmarked id do not double-count against the source cap', () => {
+    const out = sourcesFor(['33001 证书链校验']);
+    assert.equal(out.sources.filter((s) => s.external.endsWith(':33001')).length, 2);
+  });
 });

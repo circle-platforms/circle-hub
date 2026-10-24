@@ -26,13 +26,14 @@ describe('shared with other packs and the contracts', () => {
     const random = seeded(91);
     for (let k = 0; k < 2000; k++) spellings.push(random.pick(spellings) + randomText(random, 4));
     for (const tag of spellings) {
-      const expected = normalizeTag(tag).canonical === 'Negative';
-      assert.equal(negativeOf([tag, 'Function']) === true, expected, JSON.stringify(tag));
+      const expected = normalizeTag(tag).canonical === 'negative';
+      assert.equal(negativeOf([tag]) === true, expected, JSON.stringify(tag));
     }
     assert.equal(negativeOf([]), null);
     assert.equal(negativeOf([' ', '　']), null, 'blank tags are no tags');
-    assert.equal(negativeOf(['Function']), false);
-    assert.equal(tagKey(' [Negative-Case] '), 'negativecase');
+    assert.equal(negativeOf(['Function']), null);
+    assert.equal(negativeOf(['functional']), false);
+    assert.equal(tagKey(' [Negative-Case] '), ' [Negative-Case] ');
   });
 
   it('document ids the agile system pack reads, and the list limit of product@1', () => {

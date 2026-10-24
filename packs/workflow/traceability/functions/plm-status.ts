@@ -7,6 +7,7 @@ export interface DefectSystemInfo {
   status: string | null;
   unknownReason: string | null;
   isClosed: boolean;
+  unconnectedSystem?: string;
 }
 
 /** Parses closed status values from check.table, falling back to tables/closed-statuses.json. */
@@ -96,7 +97,8 @@ export function defectSystemInfoOf(
     if (systems.includes('bugzilla')) {
       return {
         status: null,
-        unknownReason: '系统为 bugzilla，不从 PLM 查询',
+        unknownReason: null,
+        unconnectedSystem: 'bugzilla',
         isClosed: false,
       };
     }
@@ -156,6 +158,7 @@ export function defectSystemInfoOf(
 }
 
 export function defectSystemText(info: DefectSystemInfo): string {
+  if (info.unconnectedSystem) return `状态未读：系统未接入（${info.unconnectedSystem}）`;
   if (info.status !== null) return `缺陷系统：${info.status}`;
   return info.unknownReason ? `缺陷系统：未知（${info.unknownReason}）` : '缺陷系统：未知';
 }

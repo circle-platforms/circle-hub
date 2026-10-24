@@ -9,7 +9,7 @@ import type { PackManifest, RequirementTemplate, SlotsFile, WorkflowFile } from 
 import type { KnownBuild, ProductDeclaration } from '../../contracts/src/product.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import type { ItemProjection, PackSummary, RunRecord, RunSummary } from '../../contracts/src/run.ts';
+import type { ItemProjection, PackSummary, RunRecord, RunRecordView, RunSummary } from '../../contracts/src/run.ts';
 import { Submission } from '../../contracts/src/submission.ts';
 import type { ResolveReferenceInput, StartRunInput } from '../../contracts/src/tools.ts';
 import { partitionCountsOf, type Partitions, type RequirementResult, type ValidationResult } from '../../contracts/src/validation.ts';
@@ -63,8 +63,8 @@ export interface FakePack {
 }
 
 const REQUIREMENTS: PackSummary['requirements'] = [
-  { key: 'structure', name: '结构', description: '用例结构完整', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 2 },
-  { key: 'findings', name: '发现', description: '评审发现', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'judgment', repair_rounds: 2 },
+  { key: 'structure', name: '结构', description: '用例结构完整', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 2, rules: [], run_interpreters: [] },
+  { key: 'findings', name: '发现', description: '评审发现', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'judgment', repair_rounds: 2, rules: [], run_interpreters: [] },
 ];
 
 /**
@@ -458,7 +458,7 @@ type SubmitOut = Untraced<z.infer<typeof SubmitResultOutput>>;
 type ResolveOut = Untraced<z.infer<typeof ResolveReferenceOutput>>;
 
 interface StoredRun {
-  record: RunRecord;
+  record: RunRecordView;
   recordDigest: string;
   submissions: RunSubmissionView[];
   results: Map<string, { record: string; result: ValidationResult }>;
@@ -553,7 +553,7 @@ export class FakeRuns implements RunsService {
     const subject = sources[0].reference;
     const run = this.#nextId();
     const instructions = '按规程逐条评审每个合成用例。';
-    const record: RunRecord = {
+    const record: RunRecordView = {
       run,
       pack: summary.pack,
       pack_digest: pack.digest,
@@ -799,9 +799,9 @@ export class FakeRuns implements RunsService {
       production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
   }
 
-  async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecord>> {
+  async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {
     const scripted = this.script.take('listRuns');
-    if (scripted !== undefined) return scripted.value as Page<RunRecord>;
+    if (scripted !== undefined) return scripted.value as Page<RunRecordView>;
     const admin = await isAdmin(this.#records, user);
     const active = await isActive(this.#records, user);
     const all = [...this.runs.values()]

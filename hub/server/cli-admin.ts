@@ -25,7 +25,7 @@ import { KnowledgeError, createKnowledgeReader, formatSyncReport, knowledgeSync,
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
-import { parsePackRef, type PackProblem } from '../runs/api.ts';
+import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
@@ -49,7 +49,7 @@ export interface AdminCommandOptions {
 }
 
 export const PACK_USAGE =
-  'pack publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
+  'pack publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
 export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
@@ -332,6 +332,16 @@ function packIdOf(ref: string, what: string): string {
 async function packCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
+    case 'shapes': {
+      const {positionals,values}=parse(rest,{as:{type:'string'}},1);
+      const viewer=await session.viewer(values.as);
+      const pack=packIdOf(positionals[0],'查看判定形状');
+      const hub=await session.hub();
+      const shapes=await unruledShapes(hub.records.store,viewer,pack);
+      if(!shapes.length)session.out('没有未裁定的形状');
+      for(const shape of shapes)session.out(`${shape.requirement}\t${shape.interpreter}\t${shape.count}\t${shape.latest_run}`);
+      return 0;
+    }
     case 'publish': {
       const { positionals, values } = parse(rest, { stage: { type: 'boolean' }, 'answer-request':{type:'string',multiple:true} }, 1);
       const source = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);

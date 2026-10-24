@@ -1,3 +1,5 @@
+import { readCommandIdentity, commandKey } from './command-identity.ts';
+import { authorClassification } from './classification.ts';
 // Item projection of the template-gap pack (W01): every mind map bound to the input slot `documents` is one item. Its fields
 // say which categories of the team case template (tables/template-v3.json) the cases of the document show, with the ids of
 // those cases as evidence, which categories are missing, and which the run parameter `skipped` declares skipped.
@@ -11,6 +13,7 @@ import type { CaseIndex } from './index.ts';
 import { compareText, readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
 import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts';
+import {declareResourceTags,RESOURCE_TAG_TABLE} from './generated/vocabulary.ts';
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
 import { categoryFacts, MAX_EVIDENCE, readTemplate, type Template } from './template.ts';
 import { clip, collapseWhitespace, isBlank, isWhiteSpace, textOf, utf8Length } from './text.ts';
@@ -71,7 +74,7 @@ function rootText(nodes: readonly unknown[]): string {
   return isRecord(root.data) ? (textOf(root.data.text) ?? '') : '';
 }
 
-type Document = { uploaded: boolean; id: string; sha256: string; title: string; path: string[]; cases: DocumentCases };
+type Document = { uploaded: boolean; id: string; sha256: string; title: string; path: string[]; cases: DocumentCases; source: Record<string, unknown> };
 
 type SkipEntry = Skip & { document: string | null };
 
@@ -95,7 +98,7 @@ function readSkips(raw: unknown, template: Template, documents: readonly Documen
   if (raw === undefined) return [];
   const ids = documents.map((document) => document.id);
   const listed = `${ids.slice(0, CASE_LIMITS.maxNamed).join('、')}${ids.length > CASE_LIMITS.maxNamed ? ` 等 ${ids.length} 份` : ''}`;
-  const fix = `skipped 的每一项写模板里的类别编号和用户给出的理由（不能只有空白）；document 写这次运行里的文档编号（${listed}），或者不写 document，让这一项对所有文档生效；同一份文档的同一个类别和命令只写一项；command 写已绑定索引的命令路径，仅跳过该命令，不写 command 则对整份文档和它的每个命令生效`;
+  const fix = `skipped 的每一项写模板里的类别编号和用户给出的理由（不能只有空白）；document 写这次运行里的文档编号（${listed}），或者不写 document，让这一项对所有文档生效；同一份文档的同一个类别和命令只写一项；command 写已绑定索引的完整 CommandIdentity，仅跳过该命令，不写 command 则对整份文档和它的每个命令生效`;
   if (!Array.isArray(raw)) return failure('skip_invalid', '参数 skipped 不是数组', fix);
   const known = new Set(template.categories.map((category) => category.id));
   const inRun = new Set(ids);
@@ -113,20 +116,21 @@ function readSkips(raw: unknown, template: Template, documents: readonly Documen
     if (entry.document !== undefined && typeof entry.document !== 'string') return void problems.push(`${at}的 document 不是文字`);
     const document = typeof entry.document === 'string' ? skipTarget(entry.document, bySha) : null;
     if (document !== null && !inRun.has(document)) return void problems.push(`${at}写的文档 ${clip(entry.document as string, 60).text} 不在这次运行里`);
-    if (entry.command !== undefined && (typeof entry.command !== 'string' || isBlank(entry.command) || !commandCategories.has(category))) return void problems.push(`${at}的 command 要写已解析的命令路径，category 只允许 command 组的类别`);
-    const command = typeof entry.command === 'string' ? entry.command : undefined;
-    const targets = (document === null ? ids : [document]).filter(id => command === undefined || [...(admitted.get(id)?.commands.map(c => c.command) ?? []), ...(admitted.get(id)?.pending_commands ?? [])].includes(command));
+    const command = entry.command === undefined ? undefined : readCommandIdentity(entry.command);
+    if (entry.command !== undefined && (command === null || !commandCategories.has(category))) return void problems.push(`${at}的 command 要写完整 CommandIdentity，category 只允许 command 组`);
+    const identity = command ?? undefined;
+    const targets = (document === null ? ids : [document]).filter(id => identity === undefined || [...(admitted.get(id)?.commands.flatMap(c => c.identity ? [c.identity] : []) ?? []), ...(admitted.get(id)?.pending_identities ?? [])].some(i => commandKey(i) === commandKey(identity)));
     if (!targets.length || command !== undefined && document !== null && !targets.includes(document)) return void problems.push(`${at}的命令不在该文档的已绑定索引里；绑定包含该命令的 case_index 后重跑`);
     for (const target of targets) {
       const prefix = `${target}\u0000${category}\u0000`;
-      const key = `${prefix}${command ?? ''}`;
+      const key = `${prefix}${identity ? commandKey(identity) : ''}`;
       const earlier = named.get(key);
-      if (earlier !== undefined) return void problems.push(`${at}和第 ${earlier + 1} 项都对文档 ${target} 跳过类别 ${category}${command === undefined ? '' : `（命令 ${command}）`}`);
+      if (earlier !== undefined) return void problems.push(`${at}和第 ${earlier + 1} 项都对文档 ${target} 跳过类别 ${category}${command === undefined ? '' : `（命令 ${identity?.path}）`}`);
       const overlap = command === undefined ? [...named.keys()].find(k => k.startsWith(prefix)) : named.has(prefix) ? prefix : undefined;
       if (overlap !== undefined) return void problems.push(`${at}与第 ${(named.get(overlap) ?? 0) + 1} 项对同一文档、类别和命令重复跳过`);
       named.set(key, index);
     }
-    out.push({ category, reason: entry.reason, document, ...(command !== undefined ? { command } : {}) });
+    out.push({ category, reason: entry.reason, document, ...(identity !== undefined ? { command: identity } : {}) });
   });
   if (problems.length === 0) return out;
   const shown = problems.slice(0, LIMITS.maxSkipProblems).join('；');
@@ -151,7 +155,7 @@ function summaryOf(fields: DocumentFields, template: Template): string {
     const parts = [`用例 ${fields.caseCount} 个`];
     const command = fields.command_coverage;
     if (command) {
-      const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0;
+      const partial = (command.missing_identities?.length ?? 0) > 0 || (command.unclassified?.length ?? 0) > 0 || command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0;
       const missing = command.commands.filter(row => row.missing.length > 0).length;
       if (command.uploaded) parts.push('按命令：上传文件不在索引里');
       else if (command.rule_mismatch) parts.push('按命令：规则不一致，用默认 marked 重跑');
@@ -161,7 +165,9 @@ function summaryOf(fields: DocumentFields, template: Template): string {
       else if (!command.documentIndexed) parts.push('按命令：文档不在索引里');
       else parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${command.commands.length === 0 ? '；用例未解析出命令' : ''}`);
     }
-    if (fields.missing.length > 0) parts.push(`缺 ${fields.missing.length} 个模板类别${note}：${fields.missing.map(name).join('、')}`);
+    if (!fields.scope_complete) parts.push('用例范围未完整读取，不能判缺类别；修复原件解析后重读');
+    else if (fields.unclassified.length > 0) parts.push(`未分类用例 ${fields.unclassified.length} 个；缺逐用例类别判断，先由客户端补主张或作者补 category_ids，再提交核验；不判缺类别`);
+    else if (fields.missing.length > 0) parts.push(`缺 ${fields.missing.length} 个模板类别${note}：${fields.missing.map(name).join('、')}`);
     else if (uncovered > 0) parts.push(`模板类别没有缺失（${uncovered} 个声明跳过）`);
     else parts.push(`${fields.categories.length} 个模板类别都已覆盖`);
     if (fields.skipped.length > 0) {
@@ -234,7 +240,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     const nodes = model.nodes as unknown[];
     const cases = casesOf(id, nodes, warnings, { caseRule });
     const metaTitle = isRecord(raw.meta) && typeof raw.meta.title === 'string' && !isBlank(raw.meta.title) ? raw.meta.title : null;
-    documents.push({ uploaded: typeof raw.external !== 'string' || !raw.external.startsWith('agile:mindmap:'), id, sha256: typeof raw.sha256 === 'string' ? raw.sha256 : '', title: metaTitle ?? rootText(nodes), path: foldersOf(raw.meta), cases });
+    documents.push({ uploaded: typeof raw.external !== 'string' || !raw.external.startsWith('agile:mindmap:'), id, sha256: typeof raw.sha256 === 'string' ? raw.sha256 : '', title: metaTitle ?? rootText(nodes), path: foldersOf(raw.meta), cases, source: { sha256: raw.sha256, model: raw.model } });
   }
   if (documents.length === 0) return failure('invalid_input', `输入槽 ${SUBJECT_SLOT} 里没有要检查的脑图`, '在 inputs.documents 里给出至少一份脑图', warnings.list());
 
@@ -280,10 +286,13 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     );
   }
 
+  try { for (const document of documents) authorClassification(template, document.cases.cases); }
+  catch (error) { return failure('invalid_input', error instanceof Error ? error.message : 'category_ids 结构不合法', '在原件中用 category_ids 声明模板闭集中的精确编号，不转换标签同义词'); }
+  const classifications = new Map(documents.map(d => [d.id, authorClassification(template, d.cases.cases)]));
   const fullFacts = new Map(documents.map(document => [document.id, categoryFacts(template, document.cases, { evidenceLimit: Infinity })]));
   const memberships = new Map(documents.map(document => [document.id, caseCategories(template, document.cases, fullFacts.get(document.id))]));
   const revisions = new Map(documents.map(document => [document.id, caseRevisionNodes(document.cases)]));
-  const commandSkips = (id: string): Skip[] => skips.filter(s => s.document === null || s.document === id).map(({ category, reason, command }) => ({ category, reason, ...(command !== undefined ? { command } : {}) })).sort((a,b) => template.categories.findIndex(c => c.id === a.category) - template.categories.findIndex(c => c.id === b.category) || compareText(a.command ?? '', b.command ?? ''));
+  const commandSkips = (id: string): Skip[] => skips.filter(s => s.document === null || s.document === id).map(({ category, reason, command }) => ({ category, reason, ...(command !== undefined ? { command } : {}) })).sort((a,b) => template.categories.findIndex(c => c.id === a.category) - template.categories.findIndex(c => c.id === b.category) || compareText(a.command ? commandKey(a.command) : '', b.command ? commandKey(b.command) : ''));
   const lock = isRecord(input.context) ? input.context : {};
   const items: DocumentItem[] = documents.map((document) => {
     const categories = fullFacts.get(document.id)!.map(fact => ({ ...fact, evidence: fact.evidence.slice(0, MAX_EVIDENCE) }));
@@ -300,13 +309,22 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
       marked_only,
       data: { case_rule: caseRule, marked_only },
       categories,
+      classifications: classifications.get(document.id)!.cases,
+      classification_status: classifications.get(document.id)!.unclassified.length ? 'unclassified' : 'classified',
+      unclassified: classifications.get(document.id)!.unclassified,
+      scope_complete: !warnings.list().some(w => w.document === document.id && ['template-gap.model_malformed', 'template-gap.depth_limit'].includes(w.code)),
+
+      case_resources:document.cases.cases.map(c=>({case:c.id,present:c.resource!==undefined,resource:c.resource??null})),
+      tag_table:RESOURCE_TAG_TABLE,
+      tag_undeclared_cases:document.cases.cases.filter(c=>declareResourceTags(c.resource).status==='undeclared').length,
       command_coverage: commandCoverage(template, document.id, memberships.get(document.id)!, caseIndex, commandSkips(document.id), document.uploaded, lock, caseRule, revisions.get(document.id)),
-      missing: categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
+      missing: classifications.get(document.id)!.unclassified.length || warnings.list().some(w => w.document === document.id && ['template-gap.model_malformed','template-gap.depth_limit'].includes(w.code)) ? [] : categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
       skipped,
     };
     return { id: document.id, label: itemLabel(document.title), summary: summaryOf(fields, template), location: locations.get(document.id) as ItemLocation, fields };
   });
   const groups: Record<string, unknown>[] = items.map((item) => ({
+    classification_source: documents.find(d => d.id === item.id)!.source,
     command_cases: memberships.get(item.id)!,
     command_nodes: revisions.get(item.id)!,
     command_skips: commandSkips(item.id),

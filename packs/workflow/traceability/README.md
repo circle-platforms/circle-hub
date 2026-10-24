@@ -22,10 +22,10 @@ by construction (absence is not proof).
 
 ## The answer
 
-- **Items** are the defects of the build: id = the bug id after the id normalisation (below), label = the defect summary
+- **Items** are the defects of the build: id = system plus the normalised bug id when the system is known (plain id when unspecified), label = the defect summary
   from the entry statement, summary = status and case count (`已修复；2 个用例`, `已知（未修复）；无已索引用例（未知）`);
   the defect entries naming more than one system append the systems and the collision note
-  (`系统 bugzilla、plm（两个系统的缺陷号可能撞号）`).
+  (`系统 bugzilla、plm 已确认同号撞号`).
 - **traced** (per item): the claim statement uniformly starts with `缺陷 X（发布说明：…；缺陷系统：…）：…`.
   Support when at least one case entry carries the id — the claim statement lists up to the first 5
   cases (`<document>:<node> <title>`, sorted by numeric document then string case id, with `另有 M 个` when > 5), all cases
@@ -33,7 +33,7 @@ by construction (absence is not proof).
   and the case entries. Otherwise
   unknown (missing input): the reason says no indexed case names the defect, that the index is incomplete by construction,
   and how many listed sources were not read / whether the index view was cut. When the defect system status cannot be read
-  or verified (unspecified defect system, bugzilla, source unavailable, record without status, unreturned id), it is recorded as unknown with a distinct reason, never assumed unclosed. Two advisory refutations guard integrity:
+  or verified (unspecified defect system, source unavailable, record without status, unreturned id), it is recorded as unknown with a distinct reason, never assumed unclosed. Two advisory refutations guard integrity:
   `status_conflict` (the same bug is listed as fixed in one entry and known in another — this happens in real release notes;
   the cases are still listed, the status is left to the defect system) and `join_mismatch` (a listed case's raw defect ids do
   not carry the bug — the check re-verifies the join against the raw ids instead of trusting the frozen fields).
@@ -47,11 +47,7 @@ by construction (absence is not proof).
 - **Id normalisation** (`ids.ts`): a pure run of ASCII digits loses its leading zeros (`0074001` = `74001`, `000` = `0`);
   anything else compares exactly as written. Bug and story numberings never meet: the case view is keyed by the `defects`
   field, which holds bug ids only.
-- **Two defect systems share one numbering join** (since 1.0.2): the product pack writes `data.system` on fixed-bug entries
-  (`plm`, `bugzilla`, `unknown`). The matrix joins by the normalised number alone and cannot tell which system a number
-  belongs to: a number the two systems share is one row (the systems are listed in `data.systems` and in the summary and
-  the check statement, with the note 两个系统的缺陷号可能撞号). The cases' side is unaffected: it is keyed by the numbers the
-  documents carry.
+- **System-qualified identity**: named systems form separate rows (`system:id`). A number in two named systems is a definite collision. An unqualified case joins only when the number belongs to one read defect identity; otherwise it remains listed for source clarification.
 - **The join is computed once** by the projection (`matrix.ts`) and frozen in the item fields; the check applies the traced
   rule to the frozen fields and re-verifies every listed case against its raw defect ids. `matrix.ts` is tested against an
   independent double-loop join on a random corpus of 2,000 defects.
@@ -87,7 +83,7 @@ node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
   summaries, groups, refusals, budgets), the check outcomes, the run-level counts.
 - `functions/sandbox.test.ts` (needs macOS `sandbox-exec`): every entry point gives the same output inside the Hub sandbox.
 - `pack.test.ts`: the manifest and declarations; the publish check offline.
-- `publish.test.ts` (temporary PostgreSQL): the real registry publishes the staged pack (5 samples pass, both polarities per
+- `publish.test.ts` (temporary PostgreSQL): the real registry publishes the staged pack (6 samples pass, both polarities per
   check) and refuses a wrong or missing sample.
 - `production.test.ts` (temporary PostgreSQL): a production run end to end with a fake knowledge reader — the items, the
   summaries, the per-item layers and claims, the run-level counts, the `statuses` parameter, and the pack kept from users it
@@ -113,3 +109,9 @@ node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
 
 - Is `status_conflict` the right call for a bug listed as both fixed and known (advisory refutation), or should the matrix
   keep the defect at one status by a rule (e.g. fixed wins)?
+
+## hub-pack-findings 第 1 条（已确认的切分）
+
+本次按系统与编号分别投影；已知同号跨系统为 traceability.id_collision 提示档反驳，不把缺系统的用例任意连到某一边。未知系统仅在编号唯一归属一个已读系统时连接；Bugzilla 明确显示“状态未读：系统未接入”，统计单列 status_unread，不算临时状态未知。无条目的启动拒绝按 skipped、缺条目内容、truncated、当前视图空集、状态过滤的实际事实分别说明。SKILL 要求客户端先按本构建的原始编号用 only= 收窄缺陷视图，再绑定开跑；当前不会把既有 CheckReads 误当作可发新查询的动态接口。
+
+待 hub-read-absence / hub-view-scope 合入：用标准缺席观察与视图范围完成 traceability.untraced 确定反驳。当前不自造缺席证据，不把未知当通过。

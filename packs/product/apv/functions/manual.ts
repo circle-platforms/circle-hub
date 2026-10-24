@@ -1,30 +1,14 @@
 import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated/vocabulary.ts';
-// Producer of manual entries, from either form of the CLI manual:
-// - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
-//   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
-//   - a signature hangs at its command node only when the command exists in the build's command tree (a DIRECT call
-//     without a catalog places by the literal, unchecked; a PRODUCTION with no tree slot or a non-xml@1 tree keeps
-//     every signature at its section node, warns with the missing fact and the next action, and lists no drift) (`/commands` nodes
-//     are built by the command-tree producer alone).
-//   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists
-//     and every command of a multi-command row exists (then the row hangs at their nearest common ancestor when that
-//     is at least one word deeper than /commands — /commands itself is not a placement); rows without a signature
-//     (parameter rows, value rows whose bold word is one bare word) form the table's remainder, which follows the
-//     current command or hangs at the section node;
-//   - the blocks after an anchor, up to the next anchor or heading, describe that command and follow its placement;
-//   - every other block hangs at its section node under the manual namespace `/manual/<手册>/<章节路径>` (the preamble at
-//     the namespace root); no manual paragraph is left at the tree root.
-//   What an entry's digest covers (kind, statement, data, applicability) never depends on the build's tree: the literals
-//   the author marked (bold, backticks, quotes, command lines in code blocks, signatures) are recorded as written in
-//   prose/code in `data.command_literals`, signatures in `data.signature_literals` groups, never resolved in entry data.
-//   Placement still uses the tree (the existence checks),
-//   so two builds share the manual subtree exactly when their trees place the manual's signatures the same way (K01
-//   R[1]); the complete literals are checked by the shared relation evaluator using the product declaration.
-// - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
-// Signatures are definitions and the text under a command (descriptions, value domains, examples) behaviours (K02 R[3]);
-// `data.form` says signature or text.
+// R4: source markup/AST identifies candidate boundaries, never command identity.
+// apv-manual-signature@2 (README#command-grammar) requires an exact machine column role
+// or a complete standalone signature candidate, followed by verification of every path,
+// variant, parameter position and optional flag against the locked build grammar.
+// No tree => citable section text and a concrete recovery, never synthetic command paths.
+// Free prose, emphasis, CJK/Latin shape, numeric tokens, prompts and longest prefixes do
+// not establish commands. JSON is a direct-call transition input with the same tree binding.
+// Applicability extraction belongs to its separate task; this module's R4 changes concern commands.
 import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
-import { type CommandCatalog } from './cases-commands.ts';
+import { type CommandCatalog, resolvePhrase } from './cases-commands.ts';
 import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
 import { canonicalJson, asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
@@ -40,9 +24,6 @@ const SIGNATURE: EntryKind = 'definition';
 const TEXT: EntryKind = 'behaviour';
 const MAX_VARIANTS = 64;
 const MAX_DEPTH = 8;
-const WORD = /^[A-Za-z0-9?][A-Za-z0-9_.?:/+-]{0,63}$/;
-const NUMBER = /^[0-9]+$/;
-const CJK = /[　-〿㐀-䶿一-鿿＀-￯]/;
 const NOISE_BLOCKS = new Set(['thematic_break']);
 
 export type ManualParam = { name: string; required: boolean };
@@ -99,8 +80,9 @@ function groupTokens(chars: readonly Rich[]): RichToken[] | null {
   let current: Rich[] = [];
   const flush = (): void => {
     if (current.length === 0) return;
-    const first = current.find((rich) => /[A-Za-z0-9?]/.test(rich.ch)) ?? current[0];
-    tokens.push({ text: current.map((rich) => rich.ch).join(''), role: first.role });
+    const roles=new Set(current.filter(rich=>rich.ch!==' '&&rich.ch!=='\t').map(rich=>rich.role));
+    const role:Role=roles.size===1?current.find(rich=>rich.ch!==' '&&rich.ch!=='\t')!.role:'plain';
+    tokens.push({ text: current.map((rich) => rich.ch).join(''), role });
     current = [];
   };
   for (const rich of chars) {
@@ -129,7 +111,7 @@ function alternativesOf(token: string): string[][] | null {
     .slice(1, -1)
     .split('|')
     .map((part) => part.trim().split(/\s+/).filter((word) => word !== ''));
-  return parts.length > 0 && parts.every((words) => words.length > 0 && words.every((word) => WORD.test(word))) ? parts : null;
+  return parts.length > 0 && parts.every((words) => words.length > 0 && words.every((word) => word.length > 0)) ? parts : null;
 }
 
 function paramsOf(tokens: string[], required: boolean, depth: number, out: ManualParam[]): boolean {
@@ -153,7 +135,7 @@ function paramsOf(tokens: string[], required: boolean, depth: number, out: Manua
  */
 export function parseAnchor(text: string, heads: ReadonlySet<string> | null = null): Anchor | null {
   const s = stripNul(text).trim();
-  if (!s.startsWith('**') || s.length > 2000 || /[\r\n]/.test(s) || CJK.test(s)) return null;
+  if (!s.startsWith('**') || s.length > 2000 || /[\r\n]/.test(s)) return null;
   const chars = richText(s);
   const tokens = chars === null ? null : groupTokens(chars);
   if (tokens === null || tokens.length === 0 || tokens[0].role !== 'bold') return null;
@@ -173,7 +155,7 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
   let leading = true;
   let keyDone = false;
   for (const token of head) {
-    if (WORD.test(token) && !/[\/]/.test(token)) {
+    if (!token.startsWith('[') && !token.startsWith('{') && !token.startsWith('<')) {
       choices.push([[token]]);
       if (!keyDone) words.push(token);
       leading = false;
@@ -190,7 +172,7 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
   const params: ManualParam[] = [];
   if (!paramsOf(paramTokens, true, 0, params)) return null;
   let variants: string[][] | null = null;
-  if (choices.some((choice) => choice.length > 1)) {
+  if (head.some(token=>token.startsWith('{')||token.startsWith('['))) {
     let lists: string[][] = [[]];
     for (const choice of choices) {
       const next: string[][] = [];
@@ -198,11 +180,12 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
       lists = next;
       if (lists.length > MAX_VARIANTS) break;
     }
-    variants = lists.length > MAX_VARIANTS ? null : lists;
+    if(lists.length>MAX_VARIANTS)return null;
+    if(lists.length===1){words.splice(0,words.length,...lists[0]);}else variants=lists;
   }
   // With known heads, some spelling of the command (a variant or the key) must start with a known first word.
   const firsts = [words[0], ...(variants ?? []).map((variant) => variant[0] ?? '')];
-  if (heads !== null && !firsts.some((word) => heads.has(word.toLowerCase()))) return null;
+  // Heads are not sufficient evidence of identity; the locked grammar is checked by the producer.
   return { words, variants, signature: canonicalSignature(s), params };
 }
 
@@ -212,12 +195,10 @@ export function parseAnchor(text: string, heads: ReadonlySet<string> | null = nu
  * still ends the command before it: its blocks describe another command.
  */
 export function looksLikeSignature(text: string): boolean {
-  const s = stripNul(text).trim();
-  if (!s.startsWith('**') || /[\r\n]/.test(s) || CJK.test(s)) return false;
-  // A bold paragraph with parameter or group syntax, or with a slash inside or between its bold runs (a head the
-  // tree cannot name: ip/ipv6, or two glued commands), is written as a signature: it ends the current command and
-  // hangs at its section (closure finding 18).
-  return /[<>{}[\]|]/.test(s) || /\*\*[^*]+\*\*[/／]+/.test(s) || /\*\*[^*/]*[/／][^*]*\*\*/.test(s);
+  // This recognizes only a declared markup candidate. Tree identity is checked separately.
+  if(parseAnchor(text)!==null)return true;
+  const source=text.trim();
+  return source.startsWith('**')&&[...source].some(ch=>'<>{}[]|/'.includes(ch));
 }
 
 function commandPath(words: readonly string[]): string | null {
@@ -260,110 +241,37 @@ type Block = { kind: string; section: number; text: string; selector: string };
 
 const MANUAL_NS = 'manual';
 const DEFAULT_MANUAL_NAME = 'manual';
-const LITERAL_FIRST = /^[a-z?][a-z0-9_.?-]{0,63}$/;
-const MAX_LITERAL = 200;
-const MAX_LITERAL_WORDS = 16;
-/** The emphasis and quote marks an author puts around a command literal. */
-const SPAN_MARKS: Array<[string, string]> = [
-  ['**', '**'],
-  ['`', '`'],
-  ['“', '”'],
-  ['‘', '’'],
-  ['「', '」'],
-  ['『', '』'],
-];
-
-/**
- * The literal inside a marked span, as written (white space collapsed); null when it does not look like a command:
- * no CJK text, at most 200 characters and 16 words, the first word a CLI word as written (lower case).
- */
-export function commandLiteral(span: string): string | null {
-  const text = squeeze(span);
-  if (text === '' || text.length > MAX_LITERAL || CJK.test(text)) return null;
-  const words = text.split(' ');
-  if (words.length > MAX_LITERAL_WORDS || !LITERAL_FIRST.test(words[0])) return null;
-  return text;
-}
-
-/** The marked spans of a prose block that look like command literals, in first-seen order. */
-function proseLiterals(text: string): string[] {
-  const out: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    let matched = false;
-    for (const [open, close] of SPAN_MARKS) {
-      if (!text.startsWith(open, i)) continue;
-      matched = true;
-      // The closer is searched only within the span's bound, so unmatched openers cost a bounded window each.
-      const window = text.slice(i + open.length, i + open.length + MAX_LITERAL + close.length + 1);
-      const found = window.indexOf(close);
-      const at = found < 0 ? -1 : i + open.length + found;
-      if (at >= 0 && at - i - open.length <= MAX_LITERAL) {
-        const literal = commandLiteral(text.slice(i + open.length, at));
-        if (literal !== null) {
-          out.push(literal);
-          i = at + close.length;
-          break;
-        }
-      }
-      // A rejected or unterminated span is stepped into, not over: the marks inside it still count.
-      i += open.length;
-      break;
-    }
-    if (!matched) i++;
-  }
-  return out;
-}
-
-/** The command lines of a code block: a line with a prompt gives the command as written after it. */
-function codeLiterals(text: string): string[] {
-  const out: string[] = [];
-  for (const line of text.split('\n')) {
-    const prompt = PROMPT.exec(line);
-    if (prompt === null) continue;
-    const literal = commandLiteral(prompt[1]);
-    if (literal !== null) out.push(literal);
-  }
-  return out;
+/** A literal is a complete tree-typed command, not a word-shape classification. */
+export function commandLiteral(span: string, catalog: CommandCatalog | null = null): string | null {
+  return catalog!==null&&resolvePhrase(catalog,span)!==null?span:null;
 }
 
 /** The catalog path of these exact words, or null when the tree has no such command (no abbreviations). */
 function existingPath(catalog: CommandCatalog, words: readonly string[]): string | null {
   let node = catalog.root;
   for (const word of words) {
-    const next = node.children.get(word.toLowerCase());
+    const next = node.children.get(word);
     if (next === undefined) return null;
     node = next;
   }
   return node.path;
 }
 
-/** A head word never contains a slash: two bold runs glued by a plain character are two commands. */
-const HEAD_WORD = /^[A-Za-z][A-Za-z0-9_-]*$/;
-
-/**
- * The tree path of an anchor: the exact key words when the command exists; for a signature with head alternatives, the
- * key node (the nearest common node of the variants, K01 R[3]) when EVERY variant exists in the tree (the tree models
- * the alternatives as items below it), spelled from a variant's path; without a tree the literal decides, unchecked.
- * Null when the tree lacks the command.
- */
+/** A marked signature's exact heads, variants, arity and optional positions must all exist in the locked tree. */
 function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null, options: Pick<ManualOptions, 'noTree'> = {}): string | null {
-  // A direct call without a tree places by the literal, unchecked (the README says so); a production with an
-  // unusable tree passes noTree, which keeps every signature at its section node (no synthetic /commands path).
-  if (catalog === null) return options.noTree === true ? null : commandPath(anchor.words);
-  const direct = existingPath(catalog, anchor.words);
-  if (direct !== null) return direct;
-  if (anchor.variants === null) return null;
-  const key = anchor.words.map((word) => word.toLowerCase());
-  // Only the variants that EXTEND the key decide existence: the alternatives a leading optional group adds
-  // ([no] …) are not words of the tree.
-  const extending = anchor.variants.filter((variant) => variant.length >= key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
-  if (extending.length === 0) return null;
-  const variantPaths = extending.map((variant) => existingPath(catalog, variant));
-  if (variantPaths.some((path) => path === null)) return null;
-  const at = 0;
-  // The key node exists: it is an ancestor of every variant's node, and the builder stores every ancestor.
-  return (variantPaths[at] as string).split('/').slice(0, 2 + key.length).join('/');
+  if (catalog === null) return null;
+  const variants=anchor.variants??[anchor.words];
+  const paths:string[]=[];
+  for(const words of variants){
+    let node=catalog.root;
+    for(const word of words){const next=node.children.get(word);if(!next)return null;node=next;}
+    if(node.path===null||!node.signatures?.some(signature=>signature.params.length===anchor.params.length&&signature.params.every((param,k)=>!param.unchecked_constraints?.length&&(param.optional===true)===!anchor.params[k].required)))return null;
+    paths.push(node.path);
+  }
+  const canonical=existingPath(catalog,anchor.words);if(canonical!==null)return canonical;
+  const common=paths[0].split('/');
+  while(!paths.every(path=>path===common.join('/')||path.startsWith(common.join('/')+'/')))common.pop();
+  return common.length>2?common.join('/'):null;
 }
 
 /** The longest common prefix of the word lists (case-insensitive), spelled as the first list writes it. */
@@ -372,7 +280,7 @@ function commonPrefix(lists: readonly string[][]): string[] {
   const out: string[] = [];
   for (let k = 0; k < lists[0].length; k++) {
     const word = lists[0][k].toLowerCase();
-    if (lists.every((list) => k < list.length && list[k].toLowerCase() === word)) out.push(lists[0][k]);
+    if (lists.every((list) => k < list.length && list[k] === word)) out.push(lists[0][k]);
     else break;
   }
   return out;
@@ -695,6 +603,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const entryContexts=new Map<ProducedEntry,{section:number;text:string;heading?:boolean}>();
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
+  if (catalog === null) warnings.push('缺锁定构建命令树的完整语法；命令身份未核对；下一步：包作者在下次生产前绑定命令树后重产');
+  const acceptedAnchor=(text:string):Anchor|null=>{const candidate=parseAnchor(text);return candidate!==null&&anchorPathOf(candidate,catalog)!==null?candidate:null;};
   const sections: Section[] = asArray(model.sections).map((value) => {
     if (!isRecord(value)) return { title: '', parent: null, selector: null, path: null };
     const parent = Number.isInteger(value.parent) ? (value.parent as number) : null;
@@ -896,8 +806,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (!literals.includes(literal)) entry.data.command_literals = [...literals, literal].sort(compareText);
   };
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
-    const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
-    const unique = [...new Set(found)].sort(compareText);
+    const found = kind === 'code_block' && catalog !== null ? text.split('\n').filter(line=>resolvePhrase(catalog,line)!==null) : [];
+    if(found.length)entry.data.command_lines=found;
+    const unique = [...new Set(found.map(line=>resolvePhrase(catalog!,line)!.split('/').slice(2).map(segment=>decodeURIComponent(segment)).join(' ')))].sort(compareText);
     if (unique.length === 0) return;
     entry.data.command_literals = unique;
   };
@@ -945,7 +856,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (index === 0 || section.selector === null) return;
     const title = section.title.replace(/^\s*[0-9]+(?:\.[0-9]+)*[.．、]?\s+/, '');
     if (!title.trimStart().startsWith('**')) return;
-    const anchor = parseAnchor(title, heads);
+    const anchor = acceptedAnchor(title);
     if (anchor === null) return;
     // Only a node the build's command tree has; without a tree the literal decides, unchecked. A signature whose
     // command is missing stays a definition entry at its section node.
@@ -958,171 +869,16 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     entries.push(entry);
   });
 
-  /**
-   * Whether an anchor parsed from a table cell is a row signature, decided from the manual alone (K02 R[3]): a
-   * definition comes only from a signature, and a bare single bold word is a value, a parameter name or a term, not a
-   * command. A cell counts when its head has two or more words, or carries parameter or group syntax; a header that
-   * names commands (命令/Command) keeps even one-word rows as signatures.
-   */
-  const isRowSignature = (anchor: Anchor, headerNamesCommands: boolean): boolean =>
-    // In a command column every anchor shape counts (closure 19: 命令/command/commands as a word of the header cell).
-    // In every other column only a cell with parameter or group syntax is a signature (K02 R[3]): a bare bold run,
-    // one word or many, is a value, a parameter name or a term (round robin, enable, rr, VIP).
-    headerNamesCommands || anchor.params.length > 0 || anchor.variants !== null;
-
-  /** A bold cell is a value of the CURRENT command (closure finding 2): its words extend the current command's
-   * words by exactly the command's parameter names, or the cell is one enumerated alternative of the current
-   * signature's variant group. Such rows are value rows, kept in the remainder, never signatures. */
-/** The variant-group alternatives of an anchor as tails after its key words (null when it has none). */
-  const variantTailsOf = (anchor: Anchor): string[] | null => {
-    if (anchor.variants === null) return null;
-    const key = anchor.words.length;
-    const tails = anchor.variants.map((variant) => variant.slice(key).join(' ').toLowerCase()).filter((tail) => tail !== '');
-    return tails.length > 0 ? tails : null;
-  };
-
-  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null, currentParams: readonly { name: string }[] = []): boolean => {
-    if (currentWords === null) return false;
-    const lowered = currentWords.map((word) => word.toLowerCase());
-    if (cellAnchor.params.length > 0 && cellAnchor.words.length === lowered.length + cellAnchor.params.length
-      && cellAnchor.words.slice(0, lowered.length).every((word, k) => word.toLowerCase() === lowered[k])) {
-      const tail = cellAnchor.words.slice(lowered.length).map((word) => word.toLowerCase());
-      return tail.every((word) => cellAnchor.params.some((param) => param.name.toLowerCase() === word || param.name.toLowerCase().split(/[\s_-]+/u).includes(word)));
-    }
-    if (cellAnchor.params.length === 0 && variantTail !== null) {
-      const text = cellAnchor.words.join(' ').toLowerCase();
-      if (variantTail.some((option) => option === text)) return true;
-    }
-    // A cell whose HEAD equals one of the current signature's parameter names (with or without its value syntax,
-    // weight / weight <1-100>), or one enumerated alternative of its variant group, is a value row (c3 item 5,
-    // previous finding 2's asked rule).
-    const headText = cellAnchor.words.map((word) => word.toLowerCase()).join(' ');
-    if (headText !== '' && !lowered.includes(headText) && currentParams.some((param) => param.name.toLowerCase() === headText)) return true;
-    if (variantTail !== null && headText !== '' && !lowered.includes(headText) && variantTail.some((option) => option === headText)) return true;
-    return false;
-  };
-
-  /**
-   * The signatures of one table cell: the whole cell is one signature, or a list of signatures joined by bare
-   * connectives (与/和/及/或、顿号、逗号、斜线). A bold span inside prose is not a signature (a mention: it is recorded
-   * in command_literals only).
-   */
-  /**
-   * The bold runs of one cell with the PLAIN text between them. A bold run is a maximal `**…**` span; a between-run
-   * is read only outside parameter syntax: emphasis `*…*`, group brackets {}, [], <> and their contents are skipped,
-   * so a slash or comma inside a parameter never becomes a split point (closure findings 1 and 16).
-   */
-  const boldRuns = (cell: string): Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> => {
-    const out: Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> = [];
-    let at = 0;
-    let between = '';
-    let guard = 0;
-    while (at < cell.length && guard++ < 10000) {
-      const open = cell.indexOf('**', at);
-      if (open < 0) break;
-      const close = cell.indexOf('**', open + 2);
-      if (close < 0) break;
-      const nextOpen = cell.indexOf('**', close + 2);
-      if (nextOpen < 0) {
-        // The tail after the last bold close rides with the signature ONLY when it is signature syntax (emphasis
-        // marks, escaped marks, parameter brackets with their contents, white space): plain words and notes after
-        // the head make the whole cell prose (closure c3 item 1) — they are never re-wrapped in bold.
-        const tail = cell.slice(close + 2);
-        let tailScan = 0;
-        let tailOk = true;
-        while (tailScan < tail.length) {
-          const ch = tail[tailScan]!;
-          if (ch === '\\') { tailScan += tail[tailScan + 1] === '*' ? 2 : 1; continue; }
-          if (ch === '{' || ch === '[' || ch === '<') {
-            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
-            const end = tail.indexOf(closeCh, tailScan + 1);
-            if (end < 0) { tailOk = false; break; }
-            tailScan = end + 1;
-            continue;
-          }
-          if (ch === '*' || /\s/u.test(ch)) { tailScan += 1; continue; }
-          tailOk = false;
-          break;
-        }
-        if (!tailOk) {
-          out.push({ bold: '', between, start: open, end: cell.length, proseTail: true });
-        } else {
-          out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between, start: open, end: cell.length });
-        }
-        between = '';
-        at = cell.length;
-      } else {
-        // Split the mid at its last signature syntax: the parameters ride with their run VERBATIM, the remaining
-        // run is the separator (a connective, or prose — the caller decides), never part of this piece.
-        const mid = cell.slice(close + 2, nextOpen);
-        let midScan = 0;
-        let syntaxEnd = 0;
-        while (midScan < mid.length) {
-          const ch = mid[midScan]!;
-          if (ch === '\\') { midScan += mid[midScan + 1] === '*' ? 2 : 1; syntaxEnd = midScan; continue; }
-          if (ch === '{' || ch === '[' || ch === '<') {
-            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
-            const end = mid.indexOf(closeCh, midScan + 1);
-            if (end < 0) break;
-            midScan = end + 1;
-            syntaxEnd = midScan;
-            continue;
-          }
-          if (ch === '*') { midScan += 1; syntaxEnd = midScan; continue; }
-          if (/\s/u.test(ch)) { midScan += 1; continue; }
-          break;
-        }
-        const syntax = mid.slice(0, syntaxEnd);
-        out.push({ bold: cell.slice(open + 2, close) + syntax, between, start: open, end: close + 2 + syntaxEnd });
-        between = mid.slice(syntaxEnd).trim();
-        at = nextOpen;
-      }
-    }
-    return out;
-  };
+  const variantTailsOf = (anchor: Anchor): string[] | null => anchor.variants?.map(variant=>variant.slice(anchor.words.length).join(' '))??null;
 
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
-    if (!cell.includes('**')) return [];
+    if (!headerNamesCommands || !cell.includes('**')) return [];
     // The pieces of one cell: bold runs with the parameter syntax that rides with them, split ONLY at a plain
     // connective run (与/和/及/或、顿号、逗号；斜线只在命令列). A bold span that follows another with NO separator
     // rides with it (a bold keyword or parameter — README 151-153: an anchor may span several runs); a prose run
     // ends the list, the bold runs before it stay signatures and the rest of the cell is the row's prose.
-    const runs = boldRuns(cell);
-    if (runs.length === 0) return [];
-    if (runs.some((run) => run.proseTail === true)) return [];
-    // Text before the FIRST bold run (先执行 **demo pool create**) is prose: the whole cell is prose and its bold
-    // span is a mention (c3 item 3) — a definition comes only from a signature cell.
-    const firstRun = runs[0]!;
-    if (cell.slice(0, firstRun.start).trim() !== '') return [];
-    const out: Anchor[] = [];
-    let acceptedEnd = -1;
-    let outStart = -1;
-    for (const [k, run] of runs.entries()) {
-      if (k > 0) {
-        const connective = run.between.trim() !== '' && (/^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between)));
-        const prose = run.between.trim() !== '' && !connective;
-        if (prose) break;
-        if (run.between.trim() === '' && acceptedEnd >= 0) {
-          // Fold into one signature: re-parse the cell from the first run's bold open through this run's syntax.
-          const merged = parseAnchor(cell.slice(outStart, run.end), heads);
-          if (merged !== null && isRowSignature(merged, headerNamesCommands)) {
-            out.pop();
-            out.push(merged);
-            acceptedEnd = run.end;
-            continue;
-          }
-          return [];
-        }
-      }
-      // Parse THIS run's own syntax, bold marks intact (re-wrapping run.bold would double the closing stars of a
-      // ***-closed run; slicing from the cell start would swallow the connective before it).
-      const anchor = parseAnchor(cell.slice(run.start, run.end), heads);
-      if (anchor === null || !isRowSignature(anchor, headerNamesCommands)) return [];
-      out.push(anchor);
-      acceptedEnd = run.end;
-      if (outStart < 0) outStart = run.start;
-    }
-    return out;
+    const anchor=acceptedAnchor(cell);
+    return anchor===null?[]:[anchor];
   };
 
   /** The rows of a pipe table, or null when the block is not one (grid, multiline and simple tables are not split). */
@@ -1171,7 +927,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
     const fragment: FragmentRef = { parser: parserOf(options), selector: block.selector };
-    const anchor = block.kind === 'paragraph' ? parseAnchor(text, heads) : null;
+    const anchor = block.kind === 'paragraph' ? acceptedAnchor(text) : null;
     if (anchor !== null) {
       // A signature whose command is not in the build's tree is still a signature: it hangs at its section node, and
       // the blocks after it follow it there (same data as at a command node: the tree only chooses the path).
@@ -1203,8 +959,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const name = header[cellIndex] ?? '';
           // A closed list only (c3 item 3): 命令说明/命令模式/命令功能 DESCRIBE or qualify the command and are
           // value columns, where a bold span is a value or a mention, never a signature.
-          const COMMAND_COLUMN_HEADERS = /^(?:命令|命令格式|命令名称|命令行|CLI 命令|命令行格式|Command|Commands|Command Syntax)$/i;
-          return COMMAND_COLUMN_HEADERS.test(name.trim());
+          return name === 'command_signature@2';
         };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
@@ -1217,7 +972,6 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           // filtered-out anchor never shifts the column a surviving anchor reports (cursor regression of 916e6222).
           const anchorsOf = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex)));
           const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
-            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, current?.variantTails ?? null, current?.params ?? []))
             .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
             // A bare bold word is a value, parameter name or term: the row stays in the remainder. Its bold spans are
@@ -1251,7 +1005,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
           rowEntry.data.signature_literals=found.map(({anchor:some})=>({primary:some.words.join(' '),alternatives:[...new Set((positiveVariantsOf(some)??[some.words]).map(words=>words.join(' ')))].sort(compareText)}));
           const signatureCells=new Set(found.map(item=>item.cell));
-          row.cells.forEach((cell,index)=>{if(!signatureCells.has(index))for(const literal of proseLiterals(cell))putLiteral(rowEntry,literal);});
+
           split.push(rowEntry);
         }
         const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
@@ -1340,10 +1094,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 
 /** A signature's literals are its command words and variants (never the parameters): what read time can match. */
 function positiveVariantsOf(anchor: Anchor): string[][] | null {
-  if (anchor.variants === null) return null;
-  const key = anchor.words.map((word) => word.toLowerCase());
-  const extending = anchor.variants.filter((variant) => variant.length >= key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
-  return extending.length > 0 ? extending : anchor.variants;
+  // Every variant was fully verified against its own native tree path, including explicit no forms.
+  return anchor.variants;
 }
 
 function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): ProducedEntry {
@@ -1356,14 +1108,7 @@ function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): Pr
   return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
 }
 
-const PROMPT = /^\s*[^\s>#()]{0,64}(?:\([^)]{0,64}\))?[>#]\s*(\S.*)$/;
-
-/** Index of the first head word that is not a command word, or a number after the first word (an example value); -1 when none. */
-function exampleWordAt(words: readonly string[]): number {
-  return words.findIndex((word, i) => !WORD.test(word) || (i > 0 && NUMBER.test(word)));
-}
-
-function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
+function fromCatalog(catalog: ManualCatalog, warnings: string[], grammar:CommandCatalog|null): ManualResult {
   const entries: ProducedEntry[] = [];
   const unplaced: Unplaced[] = [];
   const index = new Map<string, { path: string; words: string[] }>();
@@ -1375,7 +1120,7 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
       invalid++;
       return;
     }
-    const words = asStrings(value.head_tokens).flatMap((token) => squeeze(token).split(' ')).filter((word) => word !== '');
+    const words = asStrings(value.head_tokens);
     if (words.length === 0 || words.some((word) => word.length > 64)) {
       invalid++;
       return;
@@ -1386,39 +1131,21 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
   // The catalog also lists worked example lines as signatures (quoted values, numbers after a known head). They are
   // never commands (K01 R[3]: no synthetic paths): an example goes to the longest known head before its first value,
   // else it is unplaced. A number with no known head before it stays a command word.
-  const known = new Set(listed.filter((item) => exampleWordAt(item.words) < 0).map((item) => item.words.join(' ').toLowerCase()));
+  if(grammar===null)warnings.push('JSON 过渡输入缺锁定构建命令树；下一步：包作者在下次直接调用前绑定命令树后重产');
   for (const { k, value, words } of listed) {
     const fragments: FragmentRef[] = [{ parser: JSON_PARSER, selector: `p/signatures/${k}/signature_verbatim` }];
     const signature = canonicalSignature(value.signature_verbatim);
-    const at = exampleWordAt(words);
-    if (at >= 0) {
-      let head: string[] | null = null;
-      for (let n = at; n > 0 && head === null; n--) if (known.has(words.slice(0, n).join(' ').toLowerCase())) head = words.slice(0, n);
-      const path = head === null ? null : commandPath(head);
-      if (head !== null && path !== null) {
-        entries.push({ kind: TEXT, path, statement: signature, data: { words: head, form: 'text', example: true }, fragments, applicability: null });
-        continue;
-      }
-      if (!words.every((word) => WORD.test(word))) {
-        unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: TEXT, text: signature });
-        continue;
-      }
-    }
-    const path = commandPath(words);
-    if (path === null) {
-      unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: SIGNATURE, text: signature });
-      continue;
-    }
-    const params = asArray(value.params)
-      .filter((param): param is { name: string; required: unknown } => isRecord(param) && typeof param.name === 'string' && param.name !== '')
-      .map((param) => ({ name: param.name, required: param.required !== false }));
+    const rawParams=asArray(value.params);
+    const valid=rawParams.every(param=>isRecord(param)&&typeof param.name==='string'&&param.name!==''&&typeof param.required==='boolean');
+    const params=rawParams.map(param=>({name:(param as Record<string,unknown>).name as string,required:(param as Record<string,unknown>).required as boolean}));
+    const variants=asArray(value.head_variants).map(variant=>asStrings(variant));
+    const anchor:Anchor={words,signature,params,variants:variants.length?variants:null};
+    const path=valid?anchorPathOf(anchor,grammar):null;
+    if(path===null){unplaced.push({fragment:fragments[0],section:words.join(' '),kind:TEXT,text:signature});warnings.push('JSON 签名未完整对上锁定树语法；下一步：来源作者在下次生产前补精确路径和参数声明后重产');continue;}
     const data: { [key: string]: unknown } = { words, form: 'signature', signature, params };
-    const variants = asArray(value.head_variants)
-      .map((variant) => asStrings(variant))
-      .filter((variant) => variant.length > 0);
     if (variants.length > 0) data.variants = variants;
     entries.push({ kind: SIGNATURE, path, statement: signature, data, fragments, applicability: null });
-    const key = words.join(' ').toLowerCase();
+    const key = words.join(' ');
     if (!index.has(key)) index.set(key, { path, words });
   }
 
@@ -1426,7 +1153,7 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
     if (!isRecord(value) || typeof value.desc !== 'string') return;
     const head = squeeze(asString(value.head) ?? '');
     const param = squeeze(asString(value.param) ?? '');
-    const found = index.get(head.toLowerCase());
+    const found = index.get(head);
     const desc = squeeze(value.desc);
     if (found === undefined || param === '') {
       unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/value_domains/${k}` }, section: head, kind: TEXT, text: desc });
@@ -1447,12 +1174,9 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
     const lines = asStrings(value.lines).map((line) => stripNul(line).trimEnd());
     const text = lines.filter((line) => line.trim() !== '').join('\n');
     if (text === '') return;
-    let found: { path: string; words: string[] } | undefined;
-    const prompt = lines.map((line) => PROMPT.exec(line)).find((match) => match !== null);
-    if (prompt) {
-      const words = squeeze(prompt[1]).toLowerCase().split(' ');
-      for (let n = Math.min(words.length, 16); n > 0 && found === undefined; n--) found = index.get(words.slice(0, n).join(' '));
-    }
+    const paths=grammar===null?[]:lines.map(line=>resolvePhrase(grammar,line)).filter((path):path is string=>path!==null);
+    const distinct=[...new Set(paths)];const path=distinct.length===1?distinct[0]:null;
+    const found=path===null?undefined:{path,words:path.split('/').slice(2)};
     if (found === undefined) {
       unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/worked_examples/${k}` }, section: '', kind: TEXT, text });
       return;
@@ -1483,9 +1207,9 @@ function isMarkdown(value: unknown): value is MarkdownModel {
 export function produceManualEntries(input: MarkdownModel | ManualCatalog, heads: readonly string[] | null = null, options: ManualOptions = {}): ManualResult {
   const warnings: string[] = [];
   try {
-    const known = heads === null ? null : new Set(asStrings(heads).map((head) => squeeze(head).split(' ')[0].toLowerCase()).filter((head) => head !== ''));
-    if (isCatalog(input)) return fromCatalog(input, warnings);
-    if (isMarkdown(input)) return fromMarkdown(input, known !== null && known.size > 0 ? known : null, options, warnings);
+    const known = null;
+    if (isCatalog(input)) return fromCatalog(input, warnings, options.catalog ?? null);
+    if (isMarkdown(input)) return fromMarkdown(input, null, options, warnings);
     return { entries: [], unplaced: [], warnings: ['输入既不是 markdown@1 模型，也不是手册命令目录（ist.manual-command-catalog）'] };
   } catch (error) {
     return { entries: [], unplaced: [], warnings: [...warnings, internalError(error)] };

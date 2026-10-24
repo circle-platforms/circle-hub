@@ -286,6 +286,7 @@ describe('the real knowledge reader', () => {
       pack: {
         functions: { 'cases-node.ts': CASES_WITH_NODE },
         declaration: {
+          catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'commands', complete: true, case_sensitive: false }],
           producers: [...DEFAULT_PRODUCERS, { id: 'cases', title: '用例', function: { module: 'functions/cases-node.ts' }, inputs: { cases: { source: 'cases', many: true } } }],
         },
       },
@@ -312,7 +313,7 @@ describe('the real knowledge reader', () => {
     const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
     // The world's reader user runs the pack (the admin of the same database assigns it).
 
-    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=catalog@1';
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1';
     // The knowledge reader names the reader of the product's pack: the world's reader user (same database).
     const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'regression-scope', inputs: { impact: { external: reference }, facets: { external: 'knowledge:facets:acme:Rel_WDG_7_7_8?kind=case&by=commands' } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));

@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { boardGold } from './board.ts';
+import { boardGold, measuredUnplaced } from './board.ts';
 import scenario from '../accept/quality-board.ts';
 import type { LoggedTurn } from '../lib/accept.ts';
 
@@ -51,7 +51,7 @@ test('raw tags remain intact and independent type coverage drives scenario compa
   assert.ok(s.check(turns(line.replace('1 个用例没有解析出命令', '0 个用例没有解析出命令'))).some((c) => !c.ok));
 });
 
-test('board CLI discloses document gaps and only counts and hashes on screen', async () => {
+test('full board CLI reports deferred semantic rules without inventing quality counts', async () => {
   const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -64,16 +64,10 @@ test('board CLI discloses document gaps and only counts and hashes on screen', a
     writeFileSync(join(dir, 'cases/a.json'), JSON.stringify(map));
     writeFileSync(join(dir, 'cases/b.json'), JSON.stringify(map));
     writeFileSync(join(dir, 'cases/c.json'), JSON.stringify({ root: { data: { text: '没有用例的合成文档' } } }));
-    const args = ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'synthetic', '--build', 'Synthetic_10_7', '--types', '--out', join(dir, 'gold.json')];
-    const run = spawnSync(process.execPath, args, { encoding: 'utf8' });
-    assert.equal(run.status, 0, run.stderr);
-    assert.doesNotMatch(run.stdout, /合成|Synthetic|Negative|10\.7/);
-    assert.match(run.stdout, /清单 3 份，导出的脑图 3 份，其中不在树里 2 份，没有用例 1 份/);
-    const result = JSON.parse(readFileSync(join(dir, 'gold.json'), 'utf8'));
-    assert.equal(result.types, true);
-    assert.equal(result.totals.cases, 2);
-    writeFileSync(join(dir, 'tree.json'), JSON.stringify([branch('10.8', '另一个合成模块', 'a')]));
-    assert.equal(spawnSync(process.execPath, args, { encoding: 'utf8' }).stdout, run.stdout, 'renaming line/module must not change the screen digest');
+    const args = ['scripts/real/gold/board.ts','--tree',join(dir,'tree.json'),'--cases-dir',join(dir,'cases'),'--docs',join(dir,'docs.json'),'--product','synthetic','--build','Synthetic_10_7','--types','--out',join(dir,'gold.json')];
+    const run=spawnSync(process.execPath,args,{encoding:'utf8'});
+    assert.equal(run.status,1);assert.match(run.stderr,/非命令看板指标缺口/);
+    assert.doesNotMatch(run.stdout+run.stderr,/合成文档|Synthetic_10_7|Negative/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -125,7 +119,7 @@ test('--case-commands writes the independent unplaced count into the gold', () =
       { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }], steps: [] },
       { key: 'doc-b#c3', document: 'doc-b', node: 'c3', comparable: true, paths: [], steps: [] },
     ] }));
-    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F', '--case-commands', join(dir, 'cc.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--placement-only', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F', '--case-commands', join(dir, 'cc.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
     assert.equal(report.unplaced, 1, 'doc-a has one comparable case with no parsed path; doc-b is not in this build');
@@ -142,9 +136,9 @@ test('--case-commands counts the Hub definition: every case of the listed docume
     writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
     writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
     writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
-    const base = ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F'];
+    const base = ['scripts/real/gold/board.ts', '--placement-only', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F'];
     // A plain unplaced case, a step-placed case and an id-less unplaced case: the Hub's null row counts all three
-    // (commands come from the title and labels only; steps never place a case).
+    // (legacy rows lack placement_paths, so they retain the historical title/ancestor scope).
     const cases = [
       { key: 'doc-a#c1', document: 'doc-a', node: 'c1', comparable: true, paths: [], steps: [] },
       { key: 'doc-a#c2', document: 'doc-a', node: 'c2', comparable: true, paths: [], steps: [{ path: '/commands/widget/pool/add', abbreviated: false, via_no: false, words: 3 }] },
@@ -169,29 +163,18 @@ test('--case-commands counts the Hub definition: every case of the listed docume
   }
 });
 
-test('--placement sends both facets and placement without needing --types or --case-commands (quality-board 1.1.0 requires the slot)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gold-board-placement-'));
-  try {
-    mkdirSync(join(dir, 'cases'));
-    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify({ root: { data: { text: '合成' }, children: [{ data: { id: 'c1', text: 'widget pool add p1', resource: ['Functional'], priority: 2 }, children: [] }] } }));
-    writeFileSync(join(dir, 'docs.json'), JSON.stringify(['doc-a']));
-    writeFileSync(join(dir, 'tree.json'), JSON.stringify([{ id: 'n', label: '10.7', children: [{ id: 'm', label: '10.7-R1 合成', children: [{ id: 'g', label: '合成模块', children: [{ id: 'doc-a', label: '文档甲', children: [] }] }] }] }]));
-    const run = spawnSync(process.execPath, ['scripts/real/gold/board.ts', '--tree', join(dir, 'tree.json'), '--cases-dir', join(dir, 'cases'), '--docs', join(dir, 'docs.json'), '--product', 'apv', '--build', 'Synthetic_10_7_F', '--placement', '--out', join(dir, 'out.json')], { encoding: 'utf8' });
-    assert.equal(run.status, 0, run.stderr);
-    const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
-    assert.equal(report.placement, true, 'the gold asks the scenario to bind placement');
-    assert.equal(Object.hasOwn(report,'unplaced'), false, 'binding placement does not invent an independent count');
-    const checked=scenario(report).check(turns('运行 run_synthetic\n1 个用例没有解析出命令'));
-    const count=checked.find(check=>check.name==='Hub 写出未归位用例数');
-    assert.ok(count);assert.equal(count.ok,true);
-    assert.equal(scenario(report).check(turns('运行 run_synthetic')).find(check=>check.name==='Hub 写出未归位用例数')?.ok,false);
-    const measured={...report,unplaced:0};
-    assert.equal(scenario(measured).check(turns('运行 run_synthetic\n0 个用例没有解析出命令')).find(check=>check.name==='未归位用例数与独立依据一致')?.ok,true);
-    assert.equal(scenario(measured).check(turns('运行 run_synthetic\n1 个用例没有解析出命令')).find(check=>check.name==='未归位用例数与独立依据一致')?.ok,false);
-    assert.ok(!('types' in report) || report.types !== true, 'no --types was given');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test('an unmeasured placement binding does not invent a count or enable deferred quality gold',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'gold-board-binding-'));
+ try{
+  mkdirSync(join(dir,'cases'));writeFileSync(join(dir,'cases/doc-a.json'),JSON.stringify(map));
+  writeFileSync(join(dir,'docs.json'),'["doc-a"]');writeFileSync(join(dir,'tree.json'),'[]');
+  const r=spawnSync(process.execPath,['scripts/real/gold/board.ts','--tree',join(dir,'tree.json'),'--cases-dir',join(dir,'cases'),'--docs',join(dir,'docs.json'),'--product','synthetic','--build','Synthetic_10_7','--placement','--out',join(dir,'out.json')],{encoding:'utf8'});
+  assert.equal(r.status,1);assert.match(r.stderr,/非命令看板指标缺口/);
+  const report={product:'synthetic',build:'Synthetic_10_7',placement:true};
+  assert.equal(scenario(report).check(turns('运行 run_synthetic\n1 个用例没有解析出命令')).find(c=>c.name==='Hub 写出未归位用例数')?.ok,true);
+  assert.equal(scenario(report).check(turns('运行 run_synthetic')).find(c=>c.name==='Hub 写出未归位用例数')?.ok,false);
+  assert.equal(scenario({...report,unplaced:0}).check(turns('运行 run_synthetic\n1 个用例没有解析出命令')).find(c=>c.name==='未归位用例数与独立依据一致')?.ok,false);
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });
 
 test('the board locator keeps the pack label limits and the pack no-ids rule (closure item 7 probes)', () => {
@@ -220,4 +203,29 @@ test('the published module limit is independent of input truncation and id norma
  for(const label of ['合'.repeat(41),'A1B-CD2: '+'合'.repeat(41),'模块x1234','2025 计划'])assert.equal(at(label),null,label);
  assert.equal(at('模块123'),'模块123');assert.equal(at('缺陷10.7'),'缺陷10.7');
  assert.equal(at('合'.repeat(40)+' '.repeat(1000)+'尾部'),'合'.repeat(40));
+});
+
+
+test('placement-only count prefers complete paths without invoking legacy text metrics',()=>{
+ const command={path:'/commands/show/pools',abbreviated:false,via_no:false,words:2};
+ const input={schema:'case-commands-gold@1',tree_sha256:'a'.repeat(64),documents:['synthetic-doc'],document_cases:{'synthetic-doc':2},cases:[
+  {document:'synthetic-doc',comparable:true,paths:[],steps:[command],placement_paths:[command]},
+  {document:'synthetic-doc',comparable:false,paths:[],steps:[],placement_paths:[]},
+ ]};
+ assert.equal(measuredUnplaced(input,new Set(['synthetic-doc'])),1);
+ assert.equal(measuredUnplaced({...input,cases:input.cases.map(({placement_paths,...row})=>row)},new Set(['synthetic-doc'])),2,'legacy input retains only its declared scope');
+ for(const invalid of [null,{},[{path:'/commands/show/pools'}]])assert.throws(()=>measuredUnplaced({...input,cases:[{...input.cases[0],placement_paths:invalid},input.cases[1]]},new Set(['synthetic-doc'])));
+});
+
+
+test('placement-only CLI emits no invented quality metrics and requires no free-text source',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'board-placement-only-'));
+ try{
+  const command={path:'/commands/show/pools',abbreviated:false,via_no:false,words:2};
+  writeFileSync(join(dir,'docs.json'),'["synthetic-doc"]');
+  writeFileSync(join(dir,'commands.json'),JSON.stringify({schema:'case-commands-gold@1',tree_sha256:'a'.repeat(64),documents:['synthetic-doc'],document_cases:{'synthetic-doc':1},cases:[{document:'synthetic-doc',comparable:true,paths:[],steps:[command],placement_paths:[command]}]}));
+  const child=spawnSync(process.execPath,['scripts/real/gold/board.ts','--placement-only','--docs',join(dir,'docs.json'),'--case-commands',join(dir,'commands.json'),'--out',join(dir,'out.json')],{encoding:'utf8'});
+  assert.equal(child.status,0,child.stderr);const answer=JSON.parse(readFileSync(join(dir,'out.json'),'utf8'));
+  assert.equal(answer.unplaced,0);assert.equal(answer.placement,true);assert.equal(answer.totals,undefined);assert.equal(answer.groups,undefined);assert.ok(answer.omitted.length);
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });

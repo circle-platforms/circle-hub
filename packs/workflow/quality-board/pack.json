@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "2.0.0",
+  "version": "2.0.5",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -18,28 +18,23 @@
     },
     {
       "path": "functions/board.ts",
-      "sha256": "3c68ddd115ec439b8271c0d0683509f802d18e313299fe23bbf1be274e0fba8a",
-      "size": 9653
+      "sha256": "e7e40bcb25d47f91f2428e5babd9f00fb0d0f0d15f309a87f01bf67c9361ff32",
+      "size": 10863
     },
     {
       "path": "functions/coverage.ts",
-      "sha256": "55265c0ca0b59c7d3bbb899c6f43334bbce27670c0584eef145e21387e0e7dd0",
-      "size": 1928
+      "sha256": "ddf66617f1f2cc05a1ded567673f91282249a8ecf5fb4121ca4d8aa25b98c2e3",
+      "size": 2705
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "fdc8c92aef9e683e41bfb857564c19787388f9f1af84f7ca6c0ee8ec44ccf59f",
-      "size": 1488
-    },
-    {
-      "path": "functions/judgments.ts",
-      "sha256": "1d5b11bf75c39e8c9c410296e4f2e68af35ac1addfe7315b2f168a4cfad782eb",
-      "size": 5044
+      "sha256": "7b1bc63dd7dc065ea749c7fb47636ef3ad57b56ef76226a83cb088224fb72848",
+      "size": 5762
     },
     {
       "path": "functions/project.ts",
-      "sha256": "c52d8652becbeb861393b2d4450a422aeb6a28a8e9106854f7900f4e6c9151e5",
-      "size": 8709
+      "sha256": "532051e8adbbb32e9b6bee0ab090e1bcfd5405f5ac3c6087face584a1ebc721b",
+      "size": 8767
     },
     {
       "path": "functions/subject.ts",
@@ -48,13 +43,13 @@
     },
     {
       "path": "functions/tag-table.ts",
-      "sha256": "94439ad3f9ac2397922999efd9d4548412f7d6c9ac455ff471da64a60425b507",
-      "size": 1033
+      "sha256": "74fbe5744f9993bdebf5e31d47b71c6cfec571dd0c4b92dba5a11fce69f66359",
+      "size": 166
     },
     {
       "path": "functions/tags.ts",
-      "sha256": "185b8d3e5a217a4daee76707d75becadbd05df7003e1ae9af215ec6093e4433c",
-      "size": 3387
+      "sha256": "a70f8733b39e395bb6c6490d579aab7d0029d3da11fcd6487e21aba5415c9972",
+      "size": 826
     },
     {
       "path": "functions/text.ts",
@@ -63,23 +58,23 @@
     },
     {
       "path": "functions/thresholds.ts",
-      "sha256": "0d00202805a1d282242c5866a74445a470483a38363237649a00638ae3dad0c0",
-      "size": 7593
+      "sha256": "9449b5ffe05817c9a0f184484f65bbc034cdc1ef04803716eba72ef0cfe4b0ce",
+      "size": 8208
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "625fb91de7b6b645040dc449b5147d3c528a4cc7090dcc5bef0309b8295f1055",
-      "size": 6047
+      "sha256": "ed374b21fa2995aaf03f78062a335f31c5ac670f743ef6a0c80901b54f917647",
+      "size": 6387
     },
     {
       "path": "functions/types.ts",
-      "sha256": "6411f0ddb785c8e1aae9fe65de1a2f635fa9afed5bf7fe63904fed0d2f4eba0f",
-      "size": 3059
+      "sha256": "82f116b858b595eb30c27284759515af4418a402ee160c23292fb4a6499fa241",
+      "size": 3226
     },
     {
       "path": "functions/views.ts",
-      "sha256": "f795da2b84ba85abf5dd31be8bb4ed90351d8d903d58a2350447a3c7b41370c6",
-      "size": 4763
+      "sha256": "3700cbd51a33f7a5ef369db159e3be017901d6b14323b768cd51cfaa2289a2fe",
+      "size": 5331
     },
     {
       "path": "requirements.json",
@@ -123,13 +118,23 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "3a89368d5783b782b207de268845c45d96e5bf1d99054771094f47ad52ae969a",
-      "size": 3776
+      "sha256": "af42c3978183991069575811241fab20d288468839f971c42bd0a7391ea0b6eb",
+      "size": 4378
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "workflow.json",
-      "sha256": "d25b80c43d8f61d14cfc94a8980da818d06a483d164c75a9eecfbc895365286f",
-      "size": 2475
+      "sha256": "74d2bcfc68a9142c0bd05586544a63241f57b3d5eead43ff82386c49b4b79979",
+      "size": 2877
+    },
+    {
+      "path": "functions/judgments.ts",
+      "sha256": "1d5b11bf75c39e8c9c410296e4f2e68af35ac1addfe7315b2f168a4cfad782eb",
+      "size": 5044
     }
   ]
 }

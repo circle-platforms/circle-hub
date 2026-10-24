@@ -15,7 +15,7 @@ function read(subject: unknown): { counts: GroupCounts; facts: RunFacts } | null
   if (!isRecord(subject) || !Array.isArray(subject.items) || !isRecord(subject.context)) return null;
   const groups = Array.isArray(subject.context.groups) ? subject.context.groups : [];
   if (!isRecord(groups[0]) || !isRecord(groups[0].view)) return null;
-  const counts: GroupCounts = { cases: 0, missing: 0, vague: 0, negative: 0 };
+  const counts: GroupCounts = { cases: 0, missing: 0, vague: 0, negative: 0,negative_denominator:0,type_unclassified:0 };
   for (const value of subject.items) {
     if (!isRecord(value)) return null;
     const fields = fieldsOf(value.fields);
@@ -24,6 +24,7 @@ function read(subject: unknown): { counts: GroupCounts; facts: RunFacts } | null
     counts.missing += fields.counts.missing;
     counts.vague += fields.counts.vague;
     counts.negative += fields.counts.negative;
+    counts.negative_denominator!+=fields.counts.negative_denominator!;counts.type_unclassified!+=fields.counts.type_unclassified!;
   }
   return { counts, facts: groups[0] as unknown as RunFacts };
 }
@@ -47,15 +48,16 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
     missing: counts.missing,
     vague: counts.vague,
     negative: counts.negative,
+    negative_denominator:counts.negative_denominator,type_unclassified:counts.type_unclassified,
     ratios: {
       missing: { num: counts.missing, den: counts.cases },
       vague: { num: counts.vague, den: quality.judged },
-      negative: { num: counts.negative, den: counts.cases },
+      negative: { num: counts.negative, den: counts.negative_denominator! },
     },
     display: {
       missing: displayOf(counts.missing, counts.cases),
       vague: quality.judged===0?null:displayOf(counts.vague, quality.judged),
-      negative: displayOf(counts.negative, counts.cases),
+      negative: counts.negative_denominator===0?null:displayOf(counts.negative, counts.negative_denominator!),
     },
     view: { total: view.total, truncated: view.truncated, skipped: view.skipped, listed_rows: view.listed_rows },
   };
