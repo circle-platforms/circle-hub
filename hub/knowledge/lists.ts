@@ -177,7 +177,7 @@ const elementKey = (source: ParsedSource): { sha256: string; media_type: string;
 });
 
 /** SHA-256 of the canonical JSON of the build exactly as a producer receives it (ProducerInput.build). */
-export function buildDigest(build: KnownBuild): string {
+export function buildDigest(build: KnownBuild | null): string {
   return sha256Hex(canonicalize(build));
 }
 
@@ -185,7 +185,7 @@ export interface MemoKeyInput {
   pack: string;
   producer: Producer;
   /** The build as the function receives it. */
-  build: KnownBuild;
+  build: KnownBuild | null;
   list: string;
   batch: { index: number; of: number };
   elements: readonly ParsedSource[];
@@ -254,7 +254,7 @@ export interface ListCallContext {
   product: ProductHandle;
   producer: Producer;
   /** The build as the function receives it, and its digest. */
-  build: KnownBuild;
+  build: KnownBuild | null;
   buildDigest: string;
   slots: ReadonlyMap<string, ParsedSource | null>;
   list: string;
@@ -428,7 +428,7 @@ export async function callBatch(ctx: ListCallContext, batch: { index: number; of
 
 
 /** Single-slot calls of variable-consuming products reuse the same verified output store as list batches. */
-export async function callSingleProducer(context:KnowledgeContext,product:ProductHandle,producer:Producer,build:KnownBuild,slots:ReadonlyMap<string,ParsedSource|null>,totals:CallTotals):Promise<{ok:true;value:ProducerOutputType}|{ok:false;reason:string}>{
+export async function callSingleProducer(context:KnowledgeContext,product:ProductHandle,producer:Producer,build:KnownBuild | null,slots:ReadonlyMap<string,ParsedSource|null>,totals:CallTotals):Promise<{ok:true;value:ProducerOutputType}|{ok:false;reason:string}>{
   // Empty cannot be a slot name, so this key cannot collide with a list call.
   const batch={index:0,of:1};
   const key=memoKey({pack:product.digest,producer,build,list:'',batch,elements:[],slots});

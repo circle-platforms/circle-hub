@@ -56,9 +56,9 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
     const rows = allSources.slice(i,i+500), part = await w.kit.store.put({kind:'tree_root',schema:SCHEMAS.sourcesPart,provenance:'projected',body:{rows}});
     root.parts.sources.push({record:part.digest,rows:rows.length,first:rows[0].sha256,last:rows.at(-1)!.sha256});
   }
-  const sourceList=canonicalBytes([...build.sources.cases as string[],...empty.map(row=>row.external)]);
+  const sourceList=canonicalBytes([...build!.sources.cases as string[],...empty.map(row=>row.external)]);
   await w.kit.objects.put(sourceList,'application/json');
-  root.build.sources.cases={list:sha256Hex(sourceList),count:2999};
+  root.build!.sources.cases={list:sha256Hex(sourceList),count:2999};
   const composition = await w.kit.store.withTransaction(tx => w.knowledge.store.putRoot(root,tx));
   const action = await w.kit.store.get<ActionBody>(produced.action); assert.ok(action);
   await w.knowledge.store.putAction({...action.body,detail:{...action.body.detail,build:root.build,composition:composition.digest}},[{key:INDEX.produceRoot,value:produced.root},{key:INDEX.produce,value:`acme/${build.name.toLowerCase()}`},{key:INDEX.produceProduct,value:'acme'}]);

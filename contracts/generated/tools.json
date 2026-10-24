@@ -1124,6 +1124,11 @@
               },
               "description": "how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read"
             },
+            "unversioned_root": {
+              "description": "product-wide knowledge root locked for this run",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
             "root": {
               "description": "knowledge root locked for this run",
               "type": "string",
@@ -8937,6 +8942,11 @@
                   "description": "pack id@version"
                 },
                 "pack_digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "unversioned_root": {
+                  "description": "product-wide knowledge root locked for this run",
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
                 },

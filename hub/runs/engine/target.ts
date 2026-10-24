@@ -21,6 +21,7 @@ export interface Target {
   buildName: string | null;
   line: string | null;
   root: RootInfo | null;
+  unversionedRoot?: RootInfo<null> | null;
   basis: Claim[];
 }
 
@@ -36,7 +37,7 @@ function unresolved(path: string, message: string, options: string[], fix?: stri
 }
 
 function basisClaim(input: {
-  field: 'product' | 'version' | 'build';
+  field: 'product' | 'version' | 'build' | 'unversioned_root';
   text: string;
   data: Record<string, unknown>;
   provenance: ProvenanceType;
@@ -218,5 +219,15 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       at,
     }),
   );
-  return { product, build, buildName, line: build.line, root, basis };
+  const unversionedRoot = await knowledge.unversionedRoot?.(pid) ?? null;
+  if (unversionedRoot !== null && (unversionedRoot.product !== pid || unversionedRoot.build !== null)) throw unresolved('/product', '不分版本的根与产品范围不符', [], '请管理员修复产品根指针后重开运行');
+  basis.push(basisClaim({
+    field: 'unversioned_root',
+    text: unversionedRoot === null ? '这条产品线还没有不分版本的根；下一步：同步这条产品线' : '产品线不分版本的当前根',
+    data: { value: unversionedRoot?.root ?? null, root: unversionedRoot?.root ?? null, composition: unversionedRoot?.composition ?? null },
+    provenance: 'projected', warrant: { producer: 'function', id: 'runs.unversioned_root@1' },
+    grounds: unversionedRoot === null ? [] : [treeReference(unversionedRoot.root, '/')],
+    bound: unversionedRoot === null ? [product.digest] : [product.digest, unversionedRoot.root, unversionedRoot.composition], at,
+  }));
+  return { product, build, buildName, line: build.line, root, unversionedRoot, basis };
 }
