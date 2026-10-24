@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "a56a3706a6dd25fba5d4b0770a7d846da29ed562add4377a4a5c7a8ef66b5154",
-      "size": 4180
+      "sha256": "13145d2b65454cd0321d1f26048a5decaf3a0c77d1c02298f1e311e951b2c47e",
+      "size": 5006
     },
     {
       "path": "examples/bed-topology.json",
@@ -128,8 +128,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "a1bee0ac48aeb991af3600c9685d25e92233c901702a90694e987ce554407965",
-      "size": 4955
+      "sha256": "ec36bb52da9fa0b376cdef2bddfb1624b3196c529a6e1d416db63c95a41eb5b6",
+      "size": 5292
     },
     {
       "path": "functions/profile.ts",
@@ -168,8 +168,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "8a3b6f4a583bf7a38449154c09570022fb71f624bb55b7ed36c19b35b8479519",
-      "size": 8495
+      "sha256": "5b505a7403deaba1d602531728ff10ef0bc10ba320b582c177cceb05bdb9734f",
+      "size": 9184
     },
     {
       "path": "functions/text.ts",
@@ -238,7 +238,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "605f4eba010426b20b1f913d50087601871e9a1d83538838b2ac711d329f741b",
+      "sha256": "512e58596f125361b32dd9bdaa1fcc7ad8bb6193e952723940ceaa96c00981c8",
       "size": 40152
     },
     {
@@ -253,7 +253,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "871a38a233ad2d0ee4ed519788bb13dea6b0339104723c9e3f443f536ac289d7",
+      "sha256": "26243fa1304010663aa5896bd48e8b06e97993d20526da9382963d3623e6d189",
       "size": 40156
     },
     {
@@ -283,7 +283,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "336289202d32963101964e30a851a27fe097608bc764e5cb1977cfb32fb4b1a5",
+      "sha256": "0f602aec5bfd75d3e39d300d04dc1a1f0c280f72132f1dd1dc0be714f43df480",
       "size": 40106
     },
     {
@@ -298,7 +298,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c6c510125a38c0e320b122b0676f1c01c960162515593327b23e2801c4e9f03b",
+      "sha256": "c389d44b5c2917cd5c290990d2bcec463d21722409e040ae90fd1438ce3b73a1",
       "size": 40110
     },
     {
@@ -358,7 +358,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "4daeaefc9ca7945c54543ec390b9531af1310215d0e2d25bb80647ae2c3ede17",
+      "sha256": "fdf019324ca089e780e8396b60b2e815b1c440b611ec50542486a8fdbe103186",
       "size": 555
     },
     {

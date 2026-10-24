@@ -33,3 +33,9 @@ test('a plan without device CLI still carries an empty locked grammar receipt fo
  const outcome=checkCommandsKnown({subject:planSubject(value.raw)})[0];assert.equal(outcome.verdict,'support',JSON.stringify(outcome));
  assert.deepEqual((outcome.data as any).command_catalog,{root:COMMAND_CATALOG.root,complete:true,entries:[],covered_lines:[]});
 });
+test('native catalog selection budget failures stay unknown with a split-plan recovery',()=>{
+ const value=input();(value.raw as any).catalog_missing='目录选择超出 128 条命令；拆分计划后重核';
+ const outcomes=checkCommandsKnown({subject:planSubject(value.raw)});
+ assert.ok(outcomes.some(row=>row.verdict==='unknown'&&row.missing?.includes('拆分计划')),JSON.stringify(outcomes));
+ assert.ok(!outcomes.some(row=>row.verdict==='refute'));
+});

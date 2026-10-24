@@ -76,7 +76,11 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const started=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
     const run=started.answer.run!, sent=submission(run.run,data=>{delete data.command_identities;data.expects[0].quote.reference=`src:${sha(bytes)}/kityminder@1/${expected.selector}`;});
     sent.items[0].item=run.items[0].id;
-    const accepted=await hub.service.submitResult(hub.alice,sent,call());assert.equal(accepted.acceptance,'accepted',JSON.stringify(accepted.errors));
+    const beforeFull=hub.knowledge.fullCatalogReads,beforeSelected=hub.knowledge.selectedCatalogReads,beforeTree=hub.knowledge.treeReads.length;
+    const accepted=await hub.service.submitResult(hub.alice,sent,call());
+    assert.equal(hub.knowledge.fullCatalogReads,beforeFull,'submission must not load the complete catalog');
+    assert.equal(hub.knowledge.selectedCatalogReads-beforeSelected,1,'all checks share one selected grammar read');
+    assert.ok(hub.knowledge.treeReads.length-beforeTree<=1,'only the single selected command can become a tree source');assert.equal(accepted.acceptance,'accepted',JSON.stringify(accepted.errors));
     const requirements=Object.values(accepted.result!.partitions).flat().flatMap(item=>item.requirements);
     for(const key of ['commands_known','contract_methods','bed_addresses','expected_grounded'])assert.equal(requirements.find(row=>row.requirement===key)?.status,'satisfied',JSON.stringify(requirements));
     sent.items[0].slots.plan[0].data.steps[0].args=['widget unknown 60'];

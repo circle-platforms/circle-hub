@@ -11,12 +11,17 @@ import type {CommandIdentity} from '../../../../contracts/generated/shared-inter
 import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
 export interface CommandCatalog {root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
 export interface CommandProblem {document:string;pointer:string;message:string;verdict:'unknown'|'refute'}
-export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null}{
+export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots):Array<{line:string;pointer:string}>{
  const lines:Array<{line:string;pointer:string}>=[];
  for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer});}
+ return lines;
+}
+export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null}{
+ const lines=deviceCommandLines(contract,profile,slots);
  const problems:CommandProblem[]=[],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:'unknown'|'refute'='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
  if(!lines.length)return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[]}:null};
  if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],byLine,problems,catalog:null};}
+ if(typeof raw.missing==='string'){note('/command_catalog',raw.missing);return {identities:[],byLine,problems,catalog:null};}
  const catalog=raw as unknown as CommandCatalog;const definitions:CommandDefinition[]=[],candidates=new Set<CatalogEntry>();
  for(const entry of catalog.entries){if(!isRecord(entry)||!Array.isArray(entry.words)||entry.words.some(word=>typeof word!=='string'||!word)||!Array.isArray(entry.signatures)||typeof entry.reference!=='string')continue;const path='/commands/'+entry.words.map(encodeURIComponent).join('/'),ref='tree:'+catalog.root+path;
   if(entry.reference!==ref&&!(entry.reference.slice(0,ref.length+1)===ref+'@'&&entry.reference.slice(ref.length+1).length===64))continue;
