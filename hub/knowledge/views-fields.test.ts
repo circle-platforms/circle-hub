@@ -183,7 +183,7 @@ describe('the fields parameter of the index view', () => {
         applicability: null,
       });
     }
-    const store = { entry: async (digest: string) => contents.get(digest) ?? null };
+    const store = { entries: async (digests: readonly string[]) => new Map(digests.flatMap(d => contents.has(d) ? [[d, contents.get(d)!] as const] : [])) };
     const body = {
       product: 'acme',
       version: { line: '1.2', build: A, family: 'ACME', platform: null },

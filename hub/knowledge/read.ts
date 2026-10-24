@@ -112,11 +112,11 @@ interface EntryAt {
 
 export class TreeReading {
   readonly #context: KnowledgeContext;
-  readonly #products = new Map<string, { products: Set<string>; at: number }>();
-  readonly #views = new Lru<string, CompositionView>(8);
-  readonly #unplaced = new Lru<string,Map<string,ReadRow>>(8,64*1024*1024);
+  readonly #products = new Lru<string, { products: Set<string>; at: number }>(64,Number.POSITIVE_INFINITY,true);
+  readonly #views = new Lru<string, CompositionView>(8,Number.POSITIVE_INFINITY,true);
+  readonly #unplaced = new Lru<string,Map<string,ReadRow>>(8,64*1024*1024,true);
   readonly #unplacedPending = new Map<string,Promise<Map<string,ReadRow>>>();
-  readonly #catalogs = new Lru<string, CatalogView | null>(8);
+  readonly #catalogs = new Lru<string, CatalogView | null>(8,Number.POSITIVE_INFINITY,true);
 
   #relations: LinkReading | null = null;
 
@@ -128,7 +128,7 @@ export class TreeReading {
 
   // ------------------------------------------------------------ permission
 
-  /** Products a root was produced for (kept 30 s; a root does not lose a product). */
+  /** Products a root was produced for, memoized within this read; the mapping is append-only. */
   async productsOfRoot(root: string): Promise<Set<string>> {
     const cached = this.#products.get(root);
     const now = Date.now();

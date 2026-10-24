@@ -127,8 +127,8 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
 
 export class LinkReading {
   readonly #context:KnowledgeContext;readonly #builds:Builds;
-  readonly #cache=new Lru<string,RelationFacts>(4,64*1024*1024);
-  readonly #compact=new Lru<string,CompactRelations>(4,64*1024*1024);
+  readonly #cache=new Lru<string,RelationFacts>(4,64*1024*1024,true);
+  readonly #compact=new Lru<string,CompactRelations>(4,64*1024*1024,true);
   constructor(context:KnowledgeContext,builds:Builds){this.#context=context;this.#builds=builds;}
   async compositionFor(root:string,reader:Principal,composition?:string|null):Promise<CompositionView|null>{
     if(composition){const body=await this.#context.store.composition(composition);return body?.root===root&&await this.#allowed(body.product,reader)?new CompositionView(this.#context.store,composition,body):null;}

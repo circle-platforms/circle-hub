@@ -67,10 +67,12 @@ export interface RecordReader {
   read(digest: string, reader: ReaderIdentity): Promise<RecordRead | null> | RecordRead | null;
 }
 
-/** Parsed documents keyed by source digest, parser and media type. Safe to share: bytes behind a digest never change. */
+/** Parsed documents keyed by digest, parser and media type. The owning read/evaluation must dispose them when done. */
 export interface DocumentCache {
   get(key: string): ParsedDocument | undefined;
   set(key: string, document: ParsedDocument): void;
+  /** Terminal release by the owner of one read/evaluation; late callbacks cannot repopulate the cache. */
+  dispose?():void;
 }
 
 export interface ResolveDiagnostic {
@@ -155,8 +157,11 @@ export function isGroundable(scheme: ReferenceScheme, recordKind: RecordKind | n
 
 export function createDocumentCache(maxEntries = 16): DocumentCache {
   const entries = new Map<string, ParsedDocument>();
+  let disposed=false;
   return {
+    dispose(){disposed=true;entries.clear();},
     get(key) {
+      if(disposed)return undefined;
       const document = entries.get(key);
       if (document) {
         entries.delete(key);
@@ -165,6 +170,7 @@ export function createDocumentCache(maxEntries = 16): DocumentCache {
       return document;
     },
     set(key, document) {
+      if(disposed)return;
       entries.delete(key);
       entries.set(key, document);
       while (entries.size > maxEntries) entries.delete(entries.keys().next().value!);

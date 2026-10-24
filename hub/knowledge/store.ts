@@ -1,10 +1,11 @@
 // Record I/O of the knowledge package over the records store: nodes and entries (tree_node), compositions and their parts
 // (tree_root), current-root moves (root_pointer), builds, calibration sets and layers (claim), and its own actions (loads
-// of list sources, memoized producer calls, productions, plan rounds, judgments). Content-addressed reads are cached: what
-// is behind a node, entry or part digest never changes, and every read is re-verified against its digest.
+// of list sources, memoized producer calls, productions, plan rounds, judgments). Read payloads are memoized within one
+// operation only. Immutable addressing permits reuse during that operation, not permanent retention in the service.
 import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
 import { z } from 'zod';
 import {
+  CompositionContentRow,
   KnowledgeBuildBody,
   KnowledgeCalibrationBody,
   KnowledgeEntryBody,
@@ -21,10 +22,12 @@ import {
 import type { BuildInfo } from '../../contracts/src/product.ts';
 import type { ActionKind, ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
-import { IntegrityError, RECORD_SCHEMAS, canonicalize, sha256Hex } from '../records/api.ts';
+import { IntegrityError, RECORD_SCHEMAS, canonicalize, createCanonicalEncoder, sha256Hex } from '../records/api.ts';
 import type { ActionBody, FindQuery, IndexEntry, RecordStore, StoredRecord, Transaction } from '../records/api.ts';
-import { cutText, entryDigest, nodeDigest, type EntryContent } from './digest.ts';
+import { cutText, entryDigest, entryCanonical, nodeDigest, type EntryContent } from './digest.ts';
 import { KnowledgeError } from './errors.ts';
+import { currentReadCache } from './read-cache.ts';
+import { visitRowsPart } from './rows-stream.ts';
 import type { BuiltNode } from './tree.ts';
 
 /** Schemas of the record bodies this package writes. Actions use the records package's action@1. */
@@ -51,6 +54,17 @@ export const PART_SHAPES = {
 } as const;
 export type PartSchema = keyof typeof PART_SHAPES;
 export type PartBody<S extends PartSchema> = z.infer<(typeof PART_SHAPES)[S]>;
+
+// The pinned Zod version exposes a public compiled parser. It clones outputs and falls back to the original parser
+// for unsupported paths or invalid inputs, preserving the schema's transformations and error behavior.
+const CONTENT_ROW_READER = z.compile(CompositionContentRow);
+const ENTRY_READER = z.compile(KnowledgeEntryBody);
+const ROOT_READER = z.compile(TreeRootBody);
+const PART_READERS = {
+  [SCHEMAS.rowsPart]: z.compile(TreeRootRowsPart),
+  [SCHEMAS.unplacedPart]: z.compile(TreeRootUnplacedPart),
+  [SCHEMAS.sourcesPart]: z.compile(TreeRootSourcesPart),
+} as const;
 
 /** The indexed key of a contradiction relation between two claims (B01 R[2]): a claim record whose body says
  * relation: 'contradicts' and the other claim's tree address. The candidate layer (another terminal) proposes these;
@@ -222,44 +236,34 @@ function checked<B>(schema: string, body: B): B {
  * `maxWeight` in total (an entry heavier than that alone is not kept).
  */
 export class Lru<K, V> {
-  readonly #max: number;
-  readonly #maxWeight: number;
-  readonly #map = new Map<K, { value: V; weight: number }>();
-  #weight = 0;
-  constructor(max: number, maxWeight = Number.POSITIVE_INFINITY) {
-    this.#max = Math.max(1, max);
-    this.#maxWeight = maxWeight;
+  readonly #max:number;
+  readonly #maxWeight:number;
+  readonly #operationOnly:boolean;
+  readonly #persistent={map:new Map<K,{value:V;weight:number}>(),weight:0};
+  constructor(max:number,maxWeight=Number.POSITIVE_INFINITY,operationOnly=false){
+    this.#max=Math.max(1,max);this.#maxWeight=maxWeight;this.#operationOnly=operationOnly;
   }
-  get size(): number {
-    return this.#map.size;
+  #state():{map:Map<K,{value:V;weight:number}>;weight:number}|undefined {
+    if(!this.#operationOnly)return this.#persistent;
+    const scope=currentReadCache();if(!scope||scope.closed)return undefined;
+    let state=scope.states.get(this);
+    if(!state){state={map:new Map(),weight:0};scope.states.set(this,state);}
+    return state as {map:Map<K,{value:V;weight:number}>;weight:number};
   }
-  get weight(): number {
-    return this.#weight;
-  }
-  get(key: K): V | undefined {
-    const held = this.#map.get(key);
-    if (held !== undefined) {
-      this.#map.delete(key);
-      this.#map.set(key, held);
-    }
+  get size():number{return this.#state()?.map.size??0;}
+  get weight():number{return this.#state()?.weight??0;}
+  get(key:K):V|undefined {
+    const state=this.#state(),held=state?.map.get(key);
+    if(held!==undefined){state!.map.delete(key);state!.map.set(key,held);}
     return held?.value;
   }
-  set(key: K, value: V, weight = 0): void {
-    this.delete(key);
-    if (weight > this.#maxWeight) return;
-    this.#map.set(key, { value, weight });
-    this.#weight += weight;
-    while (this.#map.size > this.#max || this.#weight > this.#maxWeight) {
-      const oldest = this.#map.keys().next().value as K;
-      this.delete(oldest);
-    }
+  set(key:K,value:V,weight=0):void {
+    const state=this.#state();if(!state)return;
+    this.delete(key);if(weight>this.#maxWeight)return;
+    state.map.set(key,{value,weight});state.weight+=weight;
+    while(state.map.size>this.#max||state.weight>this.#maxWeight){const oldest=state.map.keys().next().value as K;this.delete(oldest);}
   }
-  delete(key: K): void {
-    const held = this.#map.get(key);
-    if (held === undefined) return;
-    this.#weight -= held.weight;
-    this.#map.delete(key);
-  }
+  delete(key:K):void {const state=this.#state(),held=state?.map.get(key);if(held===undefined)return;state!.weight-=held.weight;state!.map.delete(key);}
 }
 
 /** Most skipped external ids of one list a generate action keeps, so that the next sync can try them again. */
@@ -373,8 +377,12 @@ export interface StoredBuild {
 
 const PAGE = 500;
 
+declare const rowsReadBrand: unique symbol;
+export interface RowsReadHandle { readonly [rowsReadBrand]: true ;}
+
 export class KnowledgeStore {
   readonly records: RecordStore;
+  readonly #rowsReads = new WeakMap<RowsReadHandle, Set<string>>();
   readonly #nodes: Lru<string, TreeNodeBody>;
   readonly #entries: Lru<string, EntryContent>;
   readonly #compositions: Lru<string, TreeRootBody>;
@@ -383,13 +391,16 @@ export class KnowledgeStore {
   /** Part content keys seen in this process -> the record holding that content. */
   readonly #partKeys = new Lru<string, string>(20_000);
 
-  constructor(records: RecordStore, options: { nodes?: number; entries?: number; compositions?: number; parts?: number; partBytes?: number } = {}) {
+  constructor(records: RecordStore, options: { nodes?: number; entries?: number; entryBytes?:number; compositions?: number; parts?: number; partBytes?: number } = {}) {
     this.records = records;
-    this.#nodes = new Lru(options.nodes ?? 50_000);
-    this.#entries = new Lru(options.entries ?? 50_000);
-    this.#compositions = new Lru(options.compositions ?? 8);
-    this.#parts = new Lru(options.parts ?? 48, options.partBytes ?? 64 * 1024 * 1024);
+    this.#nodes = new Lru(options.nodes ?? 50_000,Number.POSITIVE_INFINITY,true);
+    this.#entries = new Lru(options.entries ?? 50_000,options.entryBytes??8*1024*1024,true);
+    this.#compositions = new Lru(options.compositions ?? 8,Number.POSITIVE_INFINITY,true);
+    this.#parts = new Lru(options.parts ?? 48, options.partBytes ?? 64 * 1024 * 1024,true);
   }
+
+  /** Logical cache weights, not a claim about resident process memory. */
+  get cachedEntries():{entries:number;bytes:number}{return {entries:this.#entries.size,bytes:this.#entries.weight};}
 
   /** Parts held by the cache and the bytes of their JSON text (for tests and the console). */
   get cachedParts(): { parts: number; bytes: number } {
@@ -486,12 +497,13 @@ export class KnowledgeStore {
     );
   }
 
-  #verifiedEntry(record: StoredRecord<unknown>, digest: string): KnowledgeEntryBody {
-    const body = KnowledgeEntryBody.safeParse(record.body);
-    if (!body.success || record.schema !== SCHEMAS.entry || entryDigest(body.data) !== digest) {
+  #verifiedEntry(record: StoredRecord<unknown>, digest: string,encoder=createCanonicalEncoder()): {body:KnowledgeEntryBody;weight:number} {
+    const body = ENTRY_READER.safeParse(record.body);
+    const serialized=body.success?entryCanonical(body.data,encoder.text):null;
+    if (!body.success || record.schema !== SCHEMAS.entry || sha256Hex(serialized!) !== digest) {
       throw new IntegrityError('知识条目记录与它的摘要不符', { detail: { entry: digest, record: record.digest } });
     }
-    return body.data;
+    return {body:body.data,weight:256+serialized!.length*2};
   }
 
   /** The content behind an entry digest, verified, or null. */
@@ -501,16 +513,33 @@ export class KnowledgeStore {
     const page = await this.records.find<unknown>({ key: INDEX.entry, value: digest, kind: 'tree_node', limit: 1 }, tx);
     const record = page.items[0];
     if (record === undefined) return null;
-    const body = this.#verifiedEntry(record, digest);
+    const {body,weight} = this.#verifiedEntry(record, digest);
     const content: EntryContent = { kind: body.kind, statement: body.statement, data: body.data, applicability: body.applicability };
-    this.#entries.set(digest, content);
+    this.#entries.set(digest, content,weight);
     return content;
+  }
+
+  /** Bounded batch of entry contents; keep the same oldest record and verify its requested entry digest. */
+  async entries(digests: readonly string[], tx?: Transaction,options:{cache?:boolean}={}): Promise<Map<string, EntryContent>> {
+    const out = new Map<string, EntryContent>();
+    const encoder=createCanonicalEncoder();
+    const missing: string[] = [];
+    for (const digest of new Set(digests)) { const cached = this.#entries.get(digest); if (cached !== undefined) out.set(digest, cached); else missing.push(digest); }
+    for (let i = 0; i < missing.length; i += 256) {
+      const found = await this.records.findFirstMany<unknown>({ key: INDEX.entry, values: missing.slice(i, i + 256), kind: 'tree_node' }, tx);
+      for (const [digest, record] of found) {
+        const {body,weight} = this.#verifiedEntry(record, digest,encoder);
+        const content: EntryContent = { kind: body.kind, statement: body.statement, data: body.data, applicability: body.applicability };
+        out.set(digest, content); if(options.cache!==false)this.#entries.set(digest, content,weight);
+      }
+    }
+    return out;
   }
 
   /** Products an entry was produced for. */
   async entryProducts(digest: string): Promise<string[]> {
     const records = await this.all<unknown>({ key: INDEX.entry, value: digest, kind: 'tree_node' });
-    return [...new Set(records.map((record) => this.#verifiedEntry(record, digest).product))];
+    return [...new Set(records.map((record) => this.#verifiedEntry(record, digest).body.product))];
   }
 
   // ------------------------------------------------------------ compositions and productions
@@ -539,7 +568,7 @@ export class KnowledgeStore {
     if (cached !== undefined) return cached;
     const record = await this.records.get<unknown>(recordDigest);
     if (record === null || record.kind !== 'tree_root' || record.schema !== SCHEMAS.root) return null;
-    const body = TreeRootBody.safeParse(record.body);
+    const body = ROOT_READER.safeParse(record.body);
     if (!body.success) throw new IntegrityError('知识树组成记录不符合 tree_root@1', { detail: { record: recordDigest } });
     this.#compositions.set(recordDigest, body.data);
     return body.data;
@@ -567,6 +596,43 @@ export class KnowledgeStore {
   }
 
   /** A part record, verified against its schema; null when absent. `cache: false` reads it without keeping it (scans). */
+  /** Verified bytes, then one schema-checked composition row at a time. No part graph is cached by a scan. */
+  rowsRead(): RowsReadHandle {
+    const handle = Object.freeze({}) as RowsReadHandle; this.#rowsReads.set(handle, new Set()); return handle;
+  }
+
+  async forEachRowsPart(digest: string, consume: (row: CompositionContentRow) => void): Promise<void> {
+    return this.forEachRowsParts([digest], consume);
+  }
+
+  async forEachRowsParts(digests: readonly string[], consume: (row: CompositionContentRow) => void, read?: RowsReadHandle): Promise<void> {
+    const validated = read === undefined ? undefined : this.#rowsReads.get(read);
+    if (read !== undefined && validated === undefined) throw new TypeError('行读取凭据不属于此知识存储');
+    const records = await this.records.getTexts(digests);
+    for (const digest of digests) {
+      const record = records.get(digest);
+      if (record === undefined) throw new Error(`composition part ${digest} is missing`);
+      if (record.kind !== 'tree_root' || record.schema !== SCHEMAS.rowsPart) throw new IntegrityError('知识树组成的分段记录种类或模式不对', { detail: { record: digest, schema: SCHEMAS.rowsPart } });
+      try {
+        visitRowsPart(record.bodyText, value => {
+          // JSON rows with no applicability/placement transformations need validation, not another deep clone.
+          // Preserve Zod's record/prototype normalization and complex optional shapes through its ordinary parser.
+          const raw = value as Partial<CompositionContentRow> | null;
+          if (raw && raw.applicability === null && raw.applicability_sources === undefined && raw.placement === undefined &&
+            !Object.hasOwn(raw, '__proto__') && raw.data && !Object.hasOwn(raw.data, '__proto__')) {
+            if (!validated?.has(digest) && !CONTENT_ROW_READER.validate(raw)) throw new IntegrityError('知识树组成的分段行不符合合约', { detail: { record: digest } });
+            consume(raw as CompositionContentRow);
+          } else {
+            const row = CONTENT_ROW_READER.safeParse(value);
+            if (!row.success) throw new IntegrityError('知识树组成的分段行不符合合约', { detail: { record: digest } });
+            consume(row.data);
+          }
+        });
+      } catch (error) { if (error instanceof IntegrityError) throw error; throw new IntegrityError('知识树组成的分段记录不符合 tree_root-rows@1', { detail: { record: digest }, cause: error }); }
+      validated?.add(digest); records.delete(digest);
+    }
+  }
+
   async part<S extends PartSchema>(schema: S, digest: string, options: { cache?: boolean } = {}): Promise<PartBody<S> | null> {
     const cacheKey = `${schema}\u0000${digest}`;
     const cached = this.#parts.get(cacheKey);
@@ -574,7 +640,7 @@ export class KnowledgeStore {
     const record = await this.records.get<unknown>(digest);
     if (record === null) return null;
     if (record.kind !== 'tree_root' || record.schema !== schema) throw new IntegrityError('知识树组成的分段记录种类或模式不对', { detail: { record: digest, schema } });
-    const parsed = PART_SHAPES[schema].safeParse(record.body);
+    const parsed = PART_READERS[schema].safeParse(record.body);
     if (!parsed.success) throw new IntegrityError(`知识树组成的分段记录不符合 ${schema}`, { detail: { record: digest } });
     // Weighed by the length of its JSON text, a stand-in for its size in memory.
     if (options.cache !== false) this.#parts.set(cacheKey, parsed.data, JSON.stringify(record.body).length);

@@ -23,7 +23,7 @@ export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, Prepa
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
-export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical.ts';
+export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
@@ -176,10 +176,15 @@ export interface RecordStore {
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
+  /** Verified envelope/body text for streaming consumers; the consumer must validate JSON syntax and its body schema. */
+  getText(digest: string, tx?: Transaction): Promise<(Omit<StoredRecord, 'body'> & { bodyText: string ;}) | null>;
+  getTexts(digests: readonly string[], tx?: Transaction): Promise<Map<string, Omit<StoredRecord, 'body'> & { bodyText: string ;}>>;
   /** Batched verified reads; missing/invalid digests are absent from the map. */
   getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   /** All indexed records for these values in insertion order, in one query (no per-value query or truncation). */
   findMany<B = unknown>(query: {key: string; values: readonly string[]; kind?: RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]>;
+  /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
+  findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
@@ -393,6 +398,8 @@ export interface Artifacts {
    * written.
    */
   ingest(input: IngestInput): Promise<SourceArtifact>;
+  /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
+  ingestTransferred(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
   /** Resolve and verify the entire input graph once, select current accepted sources in bulk and scan only those bytes once. */
   prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage>;

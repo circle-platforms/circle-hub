@@ -223,7 +223,11 @@ export class RecordArtifacts implements Artifacts {
     this.#options = options;
   }
 
-  async ingest(input: IngestInput): Promise<SourceArtifact> {
+  ingest(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, false); }
+
+  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, true); }
+
+  async #ingest(input: IngestInput, consume: boolean): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
@@ -241,7 +245,11 @@ export class RecordArtifacts implements Artifacts {
       throw new LimitError(`文件 ${size} 字节，超过上限 ${this.#options.maxBytes} 字节；不会截断保存`, { detail: { size, limit: this.#options.maxBytes } });
     }
     // Admission facts must describe the exact immutable snapshot written after asynchronous source checks.
-    const bytes = Uint8Array.from(input.bytes);
+    let bytes: Uint8Array;
+    if (consume && input.bytes.buffer instanceof ArrayBuffer && input.bytes.byteOffset === 0 && input.bytes.byteLength === input.bytes.buffer.byteLength) {
+      try { bytes = structuredClone(input.bytes, { transfer: [input.bytes.buffer] }); }
+      catch (error) { if ((error as Error).name !== 'DataCloneError') throw error; bytes = Uint8Array.from(input.bytes); }
+    } else bytes = Uint8Array.from(input.bytes);
     const sha256 = sha256Hex(bytes);
     let coverage = input.derivedCoverage;
     let prepared = coverage === undefined ? undefined : this.#coverage.get(coverage);

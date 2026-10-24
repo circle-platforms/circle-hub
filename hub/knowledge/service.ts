@@ -21,6 +21,7 @@ import { KnowledgeStore } from './store.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
 import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
+import { withReadCache } from './read-cache.ts';
 
 export interface KnowledgeOptions {
   additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
@@ -210,15 +211,18 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     currentRoot: (product, line) => builds.currentRoot(product, line),
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
-    catalog: (root, catalogId): Promise<CatalogView | null> => reading.catalog(root, catalogId),
-    treeReader: (lock?: TreeLock | null): TreeReader => reading.treeReader(lock ?? null),
-    getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>{
+    catalog: (root, catalogId): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId)),
+    treeReader: (lock?: TreeLock | null): TreeReader => {
+      const reader=reading.treeReader(lock??null);
+      return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};
+    },
+    getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>withReadCache(async()=>{
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
       return contributionNodes(context,reading,contributions,query,reader);
-    },
-    diffRoots: (from, to): Promise<RootDiff | null> => reading.diff(from, to),
-    diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => reading.diffEntries(from, to, diffOptions),
+    }),
+    diffRoots: (from, to): Promise<RootDiff | null> => withReadCache(()=>reading.diff(from, to)),
+    diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => withReadCache(()=>reading.diffEntries(from, to, diffOptions)),
 
     // ------------------------------------------------ extras
     produceTree: (input) => produceTree(context, input),
@@ -233,7 +237,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       const account = await requireAdmin(context, by, '移动当前根');
       return builds.reconcileLine(product, line, account);
     },
-    provenanceOf: (reference, reader) => reading.provenanceOf(reference, reader),
+    provenanceOf: (reference, reader) => withReadCache(()=>reading.provenanceOf(reference, reader)),
     calibration: {
       state: (kind, model) => calibration.state(kind, model),
       threshold: (kind, model) => calibration.threshold(kind, model),
