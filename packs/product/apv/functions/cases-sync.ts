@@ -8,7 +8,7 @@
 //   changed list re-runs every batch of that build: the Hub keys a stored producer call by the whole build, list included.
 //   Over the role's limit the documents of the oldest lines (earliest release-train date) are left out first;
 // - `case_tree`: agile:tree:roots, where the case producer finds each document's title and folders.
-// A build whose list is empty gets neither role. Documents without a located line, before min_line, with an id the agile
+// A build whose list is empty gets neither role. Documents without a located line join the product-wide scope; uncovered located documents do too. Documents before min_line, with an id the agile
 // pack cannot read, and leaves no folder lists (empty folders) are not listed; the note counts them by reason with example
 // ids. While the tree is not read, cannot be read or is incomplete (a configured root not read, a root title unknown), the
 // builds that would list documents are not listed at all (sync.ts): a root produced now would lose every case it had.

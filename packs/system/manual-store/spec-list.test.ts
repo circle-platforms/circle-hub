@@ -30,3 +30,10 @@ test('explicit empty folders list reads nothing and invalid paths refuse before 
  assert.deepEqual(dav.specListPlan({settings:{spec_folders:[]}}).requests,[]);
  assert.throws(()=>dav.specListPlan({settings:{spec_folders:['../private']}}),/spec_folders.*下一步/);
 });
+test('listing titles come from WebDAV displayname and searches retain each folder for equal filenames',()=>{
+ const model=xmlParser.parse(Buffer.from('<D:multistatus xmlns:D="DAV:"><D:response><D:href>/spec/</D:href></D:response><D:response><D:href>/spec/neutral.md</D:href><D:propstat><D:prop><D:displayname>NSAE synthetic specification</D:displayname></D:prop></D:propstat></D:response></D:multistatus>')).model;
+ const projected:any=dav.specListProject({settings:{spec_folders:['spec']},responses:{list:{ok:true,model}}});
+ assert.equal(content(projected).files[0].title,'NSAE synthetic specification');
+ const planned=dav.searchPlan({round:2,external:{type:'spec-search',key:'demo'},settings:{spec_folders:['spec','design']},responses:{'list-0':{ok:true,model:listing('/spec/',['/spec/demo.md'])},'list-1':{ok:true,model:listing('/design/',['/design/demo.md'])}}});
+ assert.deepEqual(planned.requests.map(r=>r.params?.path),['spec/demo.md','design/demo.md']);
+});

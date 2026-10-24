@@ -18,7 +18,7 @@ export function specificationScope(read:Record<string,unknown>):{fetch:string[];
  const files=result.model.files;
  if(files.some(file=>!isRecord(file)||typeof file.path!=='string'||typeof file.name!=='string'||file.path.split('/').some(p=>!p||p==='.'||p==='..'||/[;\\\u0000-\u001f]/.test(p))))return {fetch:[],note:'规格目录清单含无效成员，不移动不分版本的根；下一步修正目录成员后重读'};
  const selected=files.filter(file=>productDocument(file.name+' '+(typeof file.title==='string'?file.title:'')));
- const ids=[...new Set(selected.map(file=>'manual:file:'+file.path))].sort();
+ const ids=[...new Set(selected.map(file=>'manual:file:'+file.path.split('/').map(encodeURIComponent).join('/')))].sort();
  return {fetch:[],sources:{spec_documents:ids,spec_catalog:SPEC_LIST},note:`规格文档：不分版本 ${ids.length} 份；不属于这条产品线 ${files.length-selected.length} 份（仍可按原引用读取，未挂本树）`};
 }
 /** Specifications use K1 section production and K02 applicability, with no command catalog or build selection. */
@@ -29,7 +29,7 @@ export function specifications(input:unknown):ProducerOutput {
  const catalog=isRecord(input.slots)&&isRecord(input.slots.catalog)&&isRecord(input.slots.catalog.model)?input.slots.catalog.model:null;
  for(const document of documents){
   if(!isRecord(document)||typeof document.external!=='string'||!document.external.startsWith('manual:file:')||document.parser!=='markdown@1'||typeof document.sha256!=='string')throw new TypeError('规格文档缺少可引用的 Markdown 章节模型；下一步将源转为受支持的章节格式后重产');
-  const path=document.external.slice('manual:file:'.length);
+  const path=decodeURIComponent(document.external.slice('manual:file:'.length).split('@')[0]);
   const listed=catalog&&Array.isArray(catalog.files)?catalog.files.find(f=>isRecord(f)&&f.path===path):null;
   const title=isRecord(listed)&&typeof listed.title==='string'?listed.title:'';
   const params=isRecord(input.params)?input.params:{};
