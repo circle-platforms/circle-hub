@@ -1,4 +1,4 @@
-import {frozenCriteria} from './criterion-changes.ts';
+import {replacedCriteria,frozenCriteria} from './criterion-changes.ts';
 import {authorAccountsOf} from './lineage.ts';
 import {accountIndependenceOf,authorAccount} from './independence.ts';
 import {attachParentRecovery} from './parent-recovery.ts';
@@ -1063,6 +1063,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   }
 
   const partitions = partitionItems(partitionInputs, items.map((it) => it.id));
+  const replacements=await replacedCriteria(ctx,criteria);
+  for(const row of Object.values(partitions).flat()){const changes=replacements.filter(change=>change.item===row.item).map(({item,...change})=>change);if(changes.length)row.replaced_criteria=changes;}
   const max = templates.reduce((m, t) => Math.max(m, repairRounds(t)), 0);
   const usedRounds = Math.min(max, templates.reduce((m, t) => Math.max(m, Math.min(input.roundsUsed.get(t.key) ?? 0, repairRounds(t))), 0));
   const handled = items.filter((it) => handlingOf(it.id) === 'handled').length;

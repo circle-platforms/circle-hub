@@ -139,3 +139,15 @@ export async function criterionNotices(ctx:EngineContext,run:RunRecord):Promise<
  for(const request of await requestService(ctx).all(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
  return result;
 }
+
+/** Each new declaration reports the effective prior value without editing that declaration's original old quote. */
+export async function replacedCriteria(ctx:EngineContext,criteria:import('../../../contracts/src/criterion.ts').FrozenCriterion[]):Promise<Array<import('zod').z.infer<typeof import('../../../contracts/src/criterion.ts').ReplacedCriterion>&{item:string}>>{
+ const out=[];
+ for(const change of criteria){
+  const parsed=parseReference(change.declaration);const source=parsed.scheme==='rec'?await ctx.deps.records.store.get<Submission>(parsed.record):null;
+  const run=source?await runById(ctx.deps.records.store,source.body.run):null;
+  const prior=(await frozenCriteria(ctx,run?.body.accepted_criteria??[])).find(before=>criterionKey(before.item,before.target)===criterionKey(change.item,change.target));
+  out.push({item:change.item,criterion:change.target,old:prior?.new??change.old,new:change.new,declaration:change.declaration,review:change.review,reviewer:change.reviewer});
+ }
+ return out;
+}
