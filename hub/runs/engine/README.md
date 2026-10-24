@@ -729,3 +729,23 @@ pass and at most three times. Only structured onAttempt evidence can set that si
 cannot. Rechecks preserve the originally observed session, frozen input and distinct-submission repair charge. Continued
 failure appends a recomputable system-delivery input and a real administrator repair request, retaining old bytes and
 technical terminals. A fresh parent execution observation supplies the actual answer record after recovery.
+
+## Task coverage
+
+| Task | Runtime path | Synthetic regression |
+| --- | --- | --- |
+| 1 | Shared recovery rules and strict write boundary | recovery, exits, unknown-missing |
+| 2 | Cause routing and located per-requirement errors | unknown-routing, request-gaps, cross-exits |
+| 3 | Preserved skipped reasons and distinct-body charges | skipped-reasons, submit |
+| 4 | Durable requests, hypothesis records and answer sources | requests, request-readers, registry |
+| 5 | Frozen submission due date and system delivery | deadlines, system-input, abandon |
+| 6 | Interrupted actions, startup/minute recovery and bounded parent retries | interrupted, parent-recovery |
+| 7 | Empty checks, output failure, retained gaps and explicit premises | fragile, terminal-gaps, terminals |
+| 8 | Declaration admission, required catalogs and observed source acceptance | start-requirements, standing-sources, registry |
+| 9 | Snapshot-bound product/diff pages and call-log cursors | server console-pagination |
+| 10 | Read-only journal binding, reconciliation and dynamic projection | dispatch read-runs, engine dispatch-results |
+| 11 | Observed sessions and cache policy before receipt reuse | session-boundary, contributions, cache-policy |
+| 12 | Bound target facts survive skipped/omitted artifact handling | target-facts, production-handling, independent oracle |
+
+The workbook client permits only its declared pre-generation workbook-input gap; it still requires every other plan
+prerequisite and the exact bound byte identities. The successor verification, not generation, supplies dispatch evidence.
