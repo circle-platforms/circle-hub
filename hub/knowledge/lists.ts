@@ -1,4 +1,4 @@
-import type { ActionResult } from '../../contracts/generated/vocabulary.ts';
+import type { ActionResult, Reason } from '../../contracts/generated/vocabulary.ts';
 // List slots (product@1 ProducerSource many): every external object a build lists in one role, read through the
 // ExternalReaderPort with bounded concurrency in the admin's context, checked and parsed like any source, handed to the
 // producer in batches. Loading has two steps: a read gives the stored record and its size without its bytes, so a batch is
@@ -69,28 +69,30 @@ export class ListLoader {
   readonly #maxAgeMs: number;
   readonly #gate: Semaphore;
   readonly #record: boolean;
+  readonly #refresh:ReadonlySet<string>;
   /** Loads answered from a stored record, and reads through the port. */
   reused = 0;
   read = 0;
 
   /** `record: false` (a dry run) writes no read action for a fresh read. */
-  constructor(context: KnowledgeContext, loader: SourceLoader, options: { maxAgeSeconds: number; concurrency: number; record?: boolean }) {
+  constructor(context: KnowledgeContext, loader: SourceLoader, options: { maxAgeSeconds: number; concurrency: number; record?: boolean; refresh?:ReadonlySet<string> }) {
     this.#context = context;
     this.#loader = loader;
     this.#maxAgeMs = Math.max(0, options.maxAgeSeconds) * 1000;
     this.#gate = new Semaphore(options.concurrency);
     this.#record = options.record !== false;
+    this.#refresh=options.refresh??new Set();
   }
 
   /** Never rejects: an object that cannot be read is a failed peek the caller skips. */
-  peek(external: string, options: { maxAgeSeconds?: number } = {}): Promise<ElementPeek> {
+  peek(external: string, options: { maxAgeSeconds?: number;slot?:string } = {}): Promise<ElementPeek> {
     const maxAgeMs = options.maxAgeSeconds === undefined ? this.#maxAgeMs : Math.max(0, options.maxAgeSeconds) * 1000;
     return this.#gate.run(async () => {
-      if (maxAgeMs > 0) {
+      if (maxAgeMs > 0 && !this.#refresh.has(external)) {
         const stored = await this.#stored(external, maxAgeMs).catch(() => null);
         if (stored !== null) return { ok: true, external, load: stored, reused: true, startedAt: this.#context.now().toISOString() };
       }
-      return this.#fresh(external);
+      return this.#fresh(external,options.slot);
     });
   }
 
@@ -98,17 +100,17 @@ export class ListLoader {
    * The bytes of a peeked element, checked and parsed. A stored read that no longer passes a check now (the record became
    * unreadable after withdrawal or its policy changed) is read again through the port. Never rejects.
    */
-  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number): Promise<ElementLoad> {
+  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number,slot?:string): Promise<ElementLoad> {
     return this.#gate.run(async () => {
-      const first = await this.#check(peek.load, maxBytes);
+      const first = await this.#check(peek.load, maxBytes,slot);
       if (first.ok) {
         if (peek.reused) this.reused++;
         return { ok: true, value: first.value, reused: peek.reused };
       }
       if (!peek.reused) return { ok: false, reason: first.reason };
-      const again = await this.#fresh(peek.external);
+      const again = await this.#fresh(peek.external,slot);
       if (!again.ok) return { ok: false, reason: again.reason };
-      const second = await this.#check(again.load, maxBytes);
+      const second = await this.#check(again.load, maxBytes,slot);
       return second.ok ? { ok: true, value: second.value, reused: false } : { ok: false, reason: second.reason };
     });
   }
@@ -120,9 +122,9 @@ export class ListLoader {
     return this.materialize(peek, maxBytes);
   }
 
-  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number): Promise<Loaded<ParsedSource>> {
+  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number,slot?:string): Promise<Loaded<ParsedSource>> {
     try {
-      const readable = await this.#loader.readable(load, maxBytes);
+      const readable = await this.#loader.readable(load, maxBytes,{slot});
       if (!readable.ok) return readable;
       return this.#loader.parse(readable.value);
     } catch (error) {
@@ -131,12 +133,12 @@ export class ListLoader {
   }
 
   /** A read through the port, recorded (unless a dry run) so that the next load within max_age_seconds uses it again. */
-  async #fresh(external: string): Promise<ElementPeek> {
+  async #fresh(external: string,slot?:string): Promise<ElementPeek> {
     const startedAt = this.#context.now().toISOString();
     this.read++;
     let load: ExternalLoad;
     try {
-      load = await this.#loader.read(external);
+      load = await this.#loader.read(external,slot);
     } catch (error) {
       return { ok: false, external, reason: `${external}：读取或核对时出错（${describeError(error)}）` };
     }
@@ -144,11 +146,11 @@ export class ListLoader {
     if (this.#record) {
       const body = load.artifact.body;
       try {
-        await this.#context.store.putRead(
+        await this.#loader.recordReadOnce(external,load.artifact.digest,()=>this.#context.store.putRead(
           { external, revision: load.revision, artifact: load.artifact.digest, sha256: body.sha256, size: body.size, media_type: body.media_type },
           startedAt,
           this.#context.now().toISOString(),
-        );
+        ));
       } catch {
         // Without the record the next production reads the object again; the read itself stands.
       }
@@ -224,7 +226,7 @@ function memoKeyOf(input: Omit<MemoKeyInput, 'build'> & { build: string }): stri
 /** What a batch's calls gave: one output per call that succeeded (with its elements), the documents isolated as failing. */
 export interface BatchCalls {
   outputs: Array<{ elements: ParsedSource[]; output: ProducerOutputType }>;
-  failed: Array<{ element: ParsedSource; reason: string }>;
+  failed: Array<{ element: ParsedSource; reason: string; reason_code:Reason }>;
 }
 
 export type BatchOutcome = ({ ok: true } & BatchCalls) | { ok: false; reason: string };
@@ -260,6 +262,7 @@ export interface ListCallContext {
   list: string;
   totals: CallTotals;
   state: ListState;
+  retryFailures?:boolean;
 }
 
 /** The producer limits of this production as a canonical record: stored failures stand only for the same limits. */
@@ -272,6 +275,7 @@ async function storedOutcome(context: KnowledgeContext, key: string): Promise<St
   try {
     const memo = await context.store.memoOutcome(key);
     if (memo === null) return null;
+    if (!memo.ok && memo.detail.failure.reason_code!=='check_error')return null;
     if (!memo.ok) return canonicalize(memo.detail.failure.limits) === canonicalize(limitsOf(context)) ? { ok: false, reason: memo.detail.failure.reason } : null;
     const bytes = await context.records.objects.get(memo.detail.output.sha256);
     if (bytes === null) return null;
@@ -332,7 +336,7 @@ async function storeFailure(ctx: ListCallContext, key: string, startedAt: string
     producer: producer.id,
     batch,
     elements: elements.length,
-    failure: { reason: cutText(reason, 1000), limits: limitsOf(context) },
+    failure: { reason: cutText(reason, 1000), reason_code:'check_error', limits: limitsOf(context) },
   };
   try {
     await context.store.putAction(memoAction(ctx, startedAt, elements, 'error', detail), [{ key: INDEX.memo, value: key }]);
@@ -341,15 +345,15 @@ async function storeFailure(ctx: ListCallContext, key: string, startedAt: string
   }
 }
 
-type CallResult = { ok: true; output: ProducerOutputType } | { ok: false; reason: string; isolatable: boolean };
+type CallResult = { ok: true; output: ProducerOutputType } | { ok: false; reason: string; isolatable: boolean; timeout:boolean };
 
 /** One call for exactly these elements: the stored outcome when the memo key recurs, else the sandbox (its outcome is stored). */
 async function callOnce(ctx: ListCallContext, batch: { index: number; of: number }, part: readonly ParsedSource[]): Promise<CallResult> {
   const key = memoKeyOf({ pack: ctx.product.digest, producer: ctx.producer, build: ctx.buildDigest, list: ctx.list, batch, elements: part, slots: ctx.slots });
   const stored = await storedOutcome(ctx.context, key);
-  if (stored !== null) {
+  if (stored !== null && (stored.ok || !ctx.retryFailures)) {
     ctx.totals.reused++;
-    if (!stored.ok) return { ok: false, reason: stored.reason, isolatable: true };
+    if (!stored.ok) return { ok: false, reason: stored.reason, isolatable: true, timeout:false };
     if (part.length > 0) ctx.state.succeeded = true;
     return { ok: true, output: stored.output };
   }
@@ -363,10 +367,10 @@ async function callOnce(ctx: ListCallContext, batch: { index: number; of: number
   });
   if (!run.ok) {
     if (run.timeout && ++ctx.totals.timeouts > ctx.context.limits.maxTimedOutCalls) {
-      return { ok: false, reason: `生产器 ${ctx.producer.id} 在这次生产里已经有 ${ctx.totals.timeouts} 次调用超过时间上限（最多 ${ctx.context.limits.maxTimedOutCalls} 次）：${run.reason}`, isolatable: false };
+      return { ok: false, reason: `生产器 ${ctx.producer.id} 在这次生产里已经有 ${ctx.totals.timeouts} 次调用超过时间上限（最多 ${ctx.context.limits.maxTimedOutCalls} 次）：${run.reason}`, isolatable: false, timeout:run.timeout };
     }
-    if (run.isolatable) await storeFailure(ctx, key, startedAt, batch, part, run.reason);
-    return { ok: false, reason: run.reason, isolatable: run.isolatable };
+    if (run.isolatable && !run.timeout) await storeFailure(ctx, key, startedAt, batch, part, run.reason);
+    return { ok: false, reason: run.reason, isolatable: run.isolatable, timeout:run.timeout };
   }
   if (part.length > 0) ctx.state.succeeded = true;
   if (!(await storeOutput(ctx, key, startedAt, batch, part, run.value))) ctx.totals.warnings.push(`生产器 ${ctx.producer.id} 第 ${batch.index + 1} 批的输出没能存下复用，下次生产会再算一遍`);
@@ -411,7 +415,7 @@ export async function callBatch(ctx: ListCallContext, batch: { index: number; of
     if (!run.isolatable || part.length === 0) return stop(run.reason);
     const proof = await probe();
     if (!proof.ok) return stop(`${run.reason}；空的一批也失败（${proof.reason}），是生产器本身的问题`);
-    if (part.length === 1) return { ok: true, outputs: [], failed: [{ element: part[0], reason: cutText(`生产器 ${producer.id} 处理这份源文件时失败：${run.reason}`, 1000) }] };
+    if (part.length === 1) return { ok: true, outputs: [], failed: [{ element: part[0], reason_code:run.timeout?'timeout':'check_error', reason: cutText(`生产器 ${producer.id} 处理这份源文件时失败：${run.reason}`, 1000) }] };
     const middle = Math.ceil(part.length / 2);
     const left = await attempt(part.slice(0, middle), true);
     if (!left.ok) return left;

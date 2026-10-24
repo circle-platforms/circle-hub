@@ -53,6 +53,7 @@ export function facetViewOf(rows: FacetRow[], overrides: ViewOverrides = {}): Re
     kind: 'case',
     by: overrides.by ?? BY,
     rows: rows.map((row) => ({ values: row.values, count: row.count })),
+    totals: {empty:Object.fromEntries((overrides.by??BY).map(field=>[field,rows.filter(row=>row.values[field]===null||row.values[field]===undefined).reduce((n,row)=>n+row.count,0)]))},
     total: overrides.total ?? rows.reduce((sum, row) => sum + row.count, 0),
     truncated: overrides.truncated ?? false,
     skipped: overrides.skipped ?? 0,

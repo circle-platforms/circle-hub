@@ -42,6 +42,8 @@ const produced = async (t: { after: (fn: () => Promise<void>) => void }): Promis
   const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15') });
   assert.equal(result.ok, true, result.reason ?? '');
   const root = result.root as string;
+  const production = await w.knowledge.store.latestProduction(w.product.product.id, 'Rel_ACME_1_2_15');
+  await w.knowledge.moveRoot(w.product.product.id, '1.2', null, root, production!.record.digest, {by:w.admin});
   const node = (await w.knowledge.getNodes({ root, paths: [PATH], depth: 0 }, w.admin))?.nodes[0];
   const entry = node?.entries[0]?.entry as string | undefined;
   assert.ok(typeof entry === 'string', JSON.stringify(node).slice(0, 300));
@@ -108,7 +110,7 @@ describe('cited_fragment_changed compares the cited root X with the reader\'s ro
     const yRoot = await editedRoot(w);
     // Outside a run there is no lock: the reader's root is the line's current-root pointer, which now names Y.
     const cause = (await w.knowledge.store.productionsOfRoot(yRoot))[0]!.record.digest;
-    const moved = await w.knowledge.moveRoot(w.product.product.id, '1.2', null, yRoot, cause);
+    const moved = await w.knowledge.moveRoot(w.product.product.id, '1.2', w.root, yRoot, cause);
     assert.equal(moved.moved, true, JSON.stringify(moved).slice(0, 200));
     const read = await w.knowledge.treeReader().read(w.root, PATH, w.entry, { user: w.user.id, role: 'user' as const });
     const validity = read!.validity as { status: string; cited_root?: string; reader_root?: string; conditions: Array<{ condition: string; source: string }> };

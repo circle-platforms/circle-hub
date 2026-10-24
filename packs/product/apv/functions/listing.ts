@@ -92,18 +92,20 @@ function parseDate(text: string): { iso: string | null; partial: boolean; length
 }
 
 function parseBuildTime(text: string): string | null {
-  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(squeeze(text));
-  if (!match) return null;
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (!validDate(year, month, day)) return null;
-  const date = `${year}-${pad2(month)}-${pad2(day)}`;
-  if (match[4] === undefined) return date;
-  const [hour, minute, second] = [Number(match[4]), Number(match[5]), Number(match[6] ?? '0')];
+  const value=squeeze(text);
+  const reverse=/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s+(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(value);
+  const match=/^(\d{4})([-/])(\d{1,2})\2(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(value);
+  if(!reverse&&!match)return null;
+  const [year,month,day]=reverse?[Number(reverse[4]),Number(reverse[5]),Number(reverse[6])]:[Number(match![1]),Number(match![3]),Number(match![4])];
+  if(!validDate(year,month,day))return null;
+  const date=`${year}-${pad2(month)}-${pad2(day)}`;
+  if(!reverse&&match![5]===undefined)return date;
+  const [hour,minute,second]=reverse?[Number(reverse[1]),Number(reverse[2]),Number(reverse[3]??'0')]:[Number(match![5]),Number(match![6]),Number(match![7]??'0')];
   if (hour > 23 || minute > 59 || second > 59) return null;
   return `${date}T${pad2(hour)}:${pad2(minute)}:${pad2(second)}`;
 }
 
-type Header = { name: string; built: string | null; released: string | null; basedOn: string | null; note: string | null; problems: string[] };
+type Header = { raw: string; name: string; built: string | null; released: string | null; basedOn: string | null; note: string | null; problems: string[] };
 
 /** Parses one entry line; null when the line is not an entry. */
 function parseHeader(text: string): Header | null {
@@ -118,7 +120,7 @@ function parseHeader(text: string): Header | null {
   const close = text.indexOf(')', found.index);
   if (close < 0) {
     problems.push(`构建 ${name} 的构建时间没有右括号`);
-    return { name, built: null, released: null, basedOn: null, note: null, problems };
+    return { raw: text, name, built: null, released: null, basedOn: null, note: null, problems };
   }
   const inside = text.slice(found.index + found[0].length, close);
   const built = parseBuildTime(inside);
@@ -142,7 +144,7 @@ function parseHeader(text: string): Header | null {
     released = date.iso;
     rest = squeeze(rest.slice(0, release.index) + ' ' + rest.slice(after + date.length));
   }
-  return { name, built, released, basedOn, note: rest === '' ? null : rest, problems };
+  return { raw: text, name, built, released, basedOn, note: rest === '' ? null : rest, problems };
 }
 
 function basename(href: string): string {
@@ -265,6 +267,7 @@ export function parseListing(model: HtmlModel, context: ListingContext = {}): Li
         line: parts.line,
         number: parts.number,
         built: header.built,
+        ...(header.built===null ? {failure:'构建时间格式无法识别；请修正构建站列表后重新同步', built_raw: header.raw} : {}),
         released: header.released,
         basedOn: header.basedOn,
         files: filesOf(header.name, draft.links, warnings),

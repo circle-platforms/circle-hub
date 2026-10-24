@@ -146,12 +146,14 @@ describe('on a temporary copy', () => {
     const link = `${root}-link`;
     symlinkSync(root, link, 'dir');
     try {
+      const output = join(root, 'linked-generated.json');
       const code = `import { generate } from ${JSON.stringify(join(repo, 'tools', 'gen-contracts.ts'))};
-        process.stdout.write(JSON.stringify(await generate(process.argv[1])));`;
-      // This call returns the complete schema snapshot; bound capture to its actual expected serialized size.
-      const result = evaluate(code, [link], Buffer.byteLength(JSON.stringify(expected))+1024);
+        import {writeFileSync} from 'node:fs';
+        writeFileSync(process.argv[2],JSON.stringify(await generate(process.argv[1])));`;
+      // Keep the exact snapshot comparison independent of stdout size and bound unexpected child output.
+      const result = evaluate(code, [link,output], Buffer.byteLength(JSON.stringify(expected))+1024);
       assert.equal(result.status, 0, result.stderr);
-      assert.deepEqual(JSON.parse(result.stdout), expected);
+      assert.deepEqual(JSON.parse(readFileSync(output,'utf8')), expected);
     } finally {
       unlinkSync(link);
     }

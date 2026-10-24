@@ -197,6 +197,19 @@
                     },
                     "many": {
                       "type": "boolean"
+                    },
+                    "default_from_predecessor": {
+                      "type": "object",
+                      "properties": {
+                        "pack": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{1,40}$"
+                        }
+                      },
+                      "required": [
+                        "pack"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1550,6 +1563,35 @@
             "predecessor": {
               "type": "string",
               "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+            },
+            "input_defaults": {
+              "description": "Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings",
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "slot": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "predecessor": {
+                    "type": "string",
+                    "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                  },
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  }
+                },
+                "required": [
+                  "slot",
+                  "predecessor",
+                  "reference"
+                ],
+                "additionalProperties": false
+              }
             },
             "session": {
               "description": "client session id observed from the request header",

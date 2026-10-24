@@ -872,3 +872,13 @@ reference boundary for a consumer that quotes the accepted new text itself. The 
 accepted declaration's `/new` fragment in the run that froze it, with current reader permissions and the review digest
 bound; it has not been implemented or presumed authorized. This does not block checks from comparing the already-frozen
 text through RunContext. The case-compile second stage remains deferred.
+
+## Declared predecessor input defaults
+
+An input slot opts in with `default_from_predecessor: {pack: <workflow id>}`. The declaration is valid only for an artifact-under-verification slot accepting JSON; media type alone never opts a slot in. Missing opted-in slots use one selection of the predecessor's latest accepted submitted validation record. Lookup follows every result page and verifies the original submission exists. Production, system-input and abandonment deliveries are excluded. The existing predecessor owner/admin guard and independent-session/lineage checks still apply; a read-only share adds no predecessor authority.
+
+Explicit bindings, including explicit arrays, are not replaced. Unopted slots retain their existing required/optional behavior. `input_defaults` freezes each defaulted slot, predecessor and full `rec:` reference in the run and start reply; the text names the same binding. Client-key replay returns that frozen selection. No accepted submitted result refuses before input binding with the existing missing-input schema code and a concrete resubmit-then-review step. The Hub never interprets a package name or guesses a package-specific error code.
+
+Predecessor defaults recognize only own input properties as explicit values and create selected bindings as ordinary data properties. Valid slot names do not inherit JavaScript object methods or setters.
+
+The complete predecessor-result scan, including submission-existence reads, holds the predecessor’s existing `submit:<run>` key. Pagination therefore serializes with submissions in the same engine; a queued submission becomes eligible for the next selection after the current scan releases the key. The existing submission guard scopes this serialization to one engine process.

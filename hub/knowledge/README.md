@@ -113,7 +113,7 @@ catalogs, grounds and provenance.
    producer (equal spans at two places of a manual keep both fragments).
 7. **Placement** (K04). Code places by source structure (entries with a path). The Hub calls no model (owner decision
    2026-10-22): the production assembly injects no placer, so entries without a path and the producers' `unplaced`
-   spans stay unplaced at the root, marked 未归位, and the production records `placement.spans` 0. The judgment flow
+   spans stay unplaced at the root, marked 未挂到树上位置的条目, and the production records `placement.spans` 0. The judgment flow
    below is the shape the bot's placement proposals will be verified against, exercised in this package's tests with a
    scripted judge: from the root down, one choice question per level among the
    children of the node (option names are the child names where the service takes them, the first line of each child's
@@ -347,7 +347,7 @@ catalogs, grounds and provenance.
     so in a note. *Facets*: distinct entries of the kind, the rows hung
     on the tree and the unplaced rows of the root (K01 R[4]: they stay under the root, marked unplaced). An entry counts
     once; one that is also hung keeps that path. An unplaced entry is cited at `/`, the existing tree reference
-    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.
+    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未挂到树上位置的条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.
     A list field counts once per distinct element, a missing field, null and an empty list count as null, a value that is
     not a scalar as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total`
     only (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
@@ -367,7 +367,7 @@ catalogs, grounds and provenance.
     big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
     bound and the entry cap only guards an injected bigger one.
     An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
-    (`未归位条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
+    (`未挂到树上位置的条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
     entries fit the budget, and a listed entry not held is read in a second scan of the same entries. The answer is built, checked against its schema (the built object
@@ -467,7 +467,7 @@ catalogs, grounds and provenance.
 - Builds whose line the caller did not ask for are not filtered by the driver: the plan function receives the line and
   is the authority.
 - Spans that stop at the root are not hung on the root (K01 R[4], K04 R[3]); deeper stops hang on that node.
-- Placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report. The Hub calls no model (owner decision 2026-10-22): even declared entries are never placed by the Hub — they stay unplaced, marked 未归位 — and the Hub will only offer them to the bot for placement proposals and verify each proposal with deterministic rules (not implemented yet).
+- Placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report. The Hub calls no model (owner decision 2026-10-22): even declared entries are never placed by the Hub — they stay unplaced, marked 未挂到树上位置的条目 — and the Hub will only offer them to the bot for placement proposals and verify each proposal with deterministic rules (not implemented yet).
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.
@@ -841,6 +841,109 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 
 合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。
 
+View-scope task 7: sync source-load failures retain the core parser identity, safe ParseError message, original-byte
+offset and constructor-defined recovery instruction. Raw parser-library detail and source text are not copied into
+the sync report. No supporting parser is distinguished from a registered parser rejecting invalid bytes.
+
+View-scope task 8: case-only ambiguous build spellings are returned as explicit candidates to an authorized product
+reader rather than guessed or called absent. Empty declared catalogs retain completeness. After root permission
+checks, invalid/mismatched/out-of-range node cursors give REFERENCE_UNRESOLVED with a restart-from-first-page fix;
+unreadable roots remain neutral. Listing parser failures carry a determined failure field and do not become plan builds.
+
+计划可用 sync-plan-output@1 的可选 failed_builds 把来源、原始构建资料、注册原因码和修复动作交给核心。
+同步把它记为失败 generate 动作和无根构建（已有成功构建及其根不被替换）；store.buildFailures 可按产品、
+构建和根查询，未产根使用 root:null。失败计入同步计数，dryRun 不写记录。原因码在产品计划构造处确定。
+
+读树条目的有效性同时列出 unevaluated：缺读者组成/当前根、原件核验事实或声明的目标适用事实时，
+不能给 valid。原件按锁定的来源记录重新核验档位，确定的撤回或凭据不可读照实列出；未能评估的条件
+带缺失事实、补取动作、具名管理员、请求引用和期限，核对请求去重存成动作。负面条件仍优先于
+not_evaluated，只有适用检查全已评估且没有失效事实才给 valid。没有 expiry 字段的树条目不虚构到期条件。
+
+归位提议沿用 placement_proposal 回注通道。准入从锁定组成的原条目/片段找到生产器，按组成记的包版本和
+摘要读取已发布的 product.json，所有相关生产器都须声明 judgment_allowed；不得用新版本的允许去改旧
+组成的权限。目标路径存在和引文逐字核验沿用 K2，未归位条目在根下的引用也可核验；Hub 不调用模型、
+不把提议改成自己的事实或直接修改根。
+
+视图分页：index、facets、impact 接受 after，next 给带根修订的完整续读 id。游标绑定查询、组成、根；
+同一索引键也可跨页，不再永久只留 2000 条。页内的 totals 是整个范围的计数，不可逐页相加。
+分面组合超过计算上限、单项超过页预算、JSON 原型保留键无法安全交付时整份拒绝，并给出减少 by、
+fields 或 only 的具体办法。运行输入经 completeKnowledgeView 续读所有页，校验修订、查询范围和前进；
+即使输入带 after 也从首页读全；超过 16 MiB 或仍有未交付内容时要求收窄，绝不绑定尾页或截断页。整份合并也有公开结构上限；同一键
+超过绑定上限时须换用本次条目所需的具体索引字段和取值。源码与测试只用合成资源。
+
+生产器恢复：超时失败不进入跨生产的失败记忆；旧的未带确定原因码的失败记忆也不复用。
+被隔离的超时记 reason_code:timeout、retry:true。单份文档超过批次字节预算时独立调用；沙箱硬输入上限
+仍生效，不为它放宽。每次同步重读所有上次跳过来源，成功输出仍可复用；同步不复用失败输出。
+单文档生产器错误登记 producer_error 修复请求，交具名管理员联系该版本包作者核对和发布修正。
+
+根和答复仍保留有界摘要；生产动作的 problem_chunks 保留全部 skipped、refused、warnings，分块是
+按内容寻址的管理员原件，含源文件记录引用、字节摘要和行数。重试从完整分块取来源，兼容旧记录时
+若旧摘要没有列全，就重读该列表而不猜漏掉的是哪些文档。分块缺失或摘要不符明确拒绝并要求恢复。
+
+同步恢复：连接器失败只透传已有的 read-manifest 摘要，知识侧验证该清单再用固定码和 HTTP 状态，
+不匹配错误文字。确定的 404 保存为带来源观察的失败生产动作和无根构建；同一包、输入、列表不变时
+保留失败结论，列表变化后自动重查。403 给具名管理员请求，联系构建站负责人开放访问。可选来源缺失
+在组成警告及生产动作 missing 的 conclusion/observation 留下确定事实。buildFailures 可查无根失败动作。
+
+缺基础构建的别名把 required_builds 放回计划 options，再跑一轮计划；仍缺时登记具名核对请求，不声称
+使用一个不存在的根。计划受轮数/读数限制时把已读原件引用、待取页和所需基础构建保存为检查点；
+下次同包与同选项接着取，不从首页反复耗尽预算。检查点不把旧观察说成新读取。
+
+Knowledge.scheduleSync 是显式启用的进程内周期接口：同产品同步仍串行，周期结束再排下一次，stop
+取消以后不再启动；意外失败登记管理员修复请求。这里只实现和验证接口，没有配置真实部署或定时器。
+
+凭据处理使用 KnowledgeOptions.credentialAcceptance：autoAcceptSources 逐项指定 systemPack 和生产器 slot，
+默认空名单；deadlineHours 默认 72。系统包身份取自已验证的 read-manifest，不能按外部标识前缀猜。
+仅共享、Hub 原件且原请求档位明确为 model_readable 的普通命中可按名单自动受理；明确 retain_only
+（包括真实凭据回显）、个人来源、缺来源身份的观察均不自动接受。接受后重读连接器，让原投影自己完成，
+不把被拦住的原始响应冒充派生内容。管理员撤回不会被自动策略覆盖。
+
+records.artifacts.scanFindings 为管理员分页返回检测类与位置，绝不返回值。acceptFindings 的 detectors
+选择是增量接受；只在完整扫描的全部检测类均有有效决定时解除扫描造成的保留。默认旧调用仍不接受
+截断摘要；完整维护扫描另有 100000 命中的硬界限，超出时要求拆分/转换来源，不放行。派生覆盖也用
+完整扫描，超过旧展示上限的合法覆盖不再被人为丢掉；明确要求保留的档位始终保留。
+
+未受理来源登记给具名管理员的有期限请求；到期追加核对请求，不等同接受。同步开始及来源复核会推进
+到期处理，已核验有效的接受会关闭对应请求。视图最后一步仍被保留时，答复给被排除引用、完整分块
+清单及管理员请求和动作；完整清单没有只留前十条。实际部署名单及 variables 接线由集成者配置，本任务
+没有读取或修改任何在用的配置、凭据或系统。
+
+视图 scope 声明主组成、额外组成、各来源的用途（生产器/槽位）、每个组成未纳入的来源、在额外根
+覆盖的来源、确定略去与待核对来源、缺失可选来源及未归位数；影响视图另有两侧未归位用例数。
+来源观察完整存成每块至多 2000 行、通常不超过 512 KiB 的不可变原件，公开链接用字节摘要，不用读者专属记录摘要；资料多
+不会只留前几条。scope.complete 只说范围元数据已枚举，不代表未列出的企业资料都已覆盖。
+
+KnowledgeOptions.additionalScopeRoots(product) 返回 {root, composition} 数组，逐项核验属于该产品。
+额外根只供这一步核对“是否确实略去”；把其中条目合到视图由 kb-unversioned 接线。本接口未配置且
+有待归属来源时 omitted_documents 为 null，来源进 pending_documents，并登记具名管理员请求，不能
+把缺配置解释成确定略去。没有候选的当前根仍可声明自身的确定范围，不声称全系统穷尽。
+
+视图按命名构建锁定组成和缓存键；根摘要相同但未归位内容不同的两份组成不再串用。来源清单与页内
+条目用同一组成，防止索引来自一个构建、范围声明却来自另一个构建。
+
+已合入 kb-unversioned：默认 additionalScopeRoots 从产品不分版本指针取得组成；运行读取沿已锁定快照，不用当前指针替换旧根。显式额外根回调仍核对产品与组成。
+第 10 条已接入合并后的 catalog-entry@1：地址角色只由显式资料提供，主机名类型由目录核验；未知参数约束保留在签名中，检查输出在顶层 missing 说明事实，exit 由 Hub 按原因补。未打标签用例仍明确“正负向和测试类型未声明”。
+
+第 10 条续接：本次合入 hub-redesign 的 be27627f（含 d2236556）。目录未核对约束由通用签名字段保留，
+不会在 catalogData 边界丢掉；未知结果的 missing 位于顶层，未预填 exit。参数定位与修复说明不作为目录
+语法差异，生产警告保留完整 XML 参数路径，参数元数据用相对重载片段的路径，避免元素移位制造变更。
+
+Placement permission uses the validated declaration of the exact producing product
+version and digest. Historical versions without a matching current handle are read
+through the public manifest-verifying pack reader. Non-product handles, absent or
+corrupt files and invalid declarations produce positioned admission refusals; an
+unverified edited extraction never grants permission.
+
+Review closure: impact credential exclusions are counted across the entire scan on
+every page; a final page cannot hide exclusions from an earlier offset. Complete
+bindings reject duplicate placement paths, including duplicates within a page.
+Automatic source acceptance uses the configured administrator (the public sync
+administrator requirement is unchanged). A failed acceptance/verification attempt
+writes `knowledge.credential.acceptance-failed` evidence and links it to the named
+administrator request, without copying exception text or credential values. An
+unrecognized historical reason stays explicitly unrecognized, with a registered
+awaiting-step reason and automatic retry/reproduction as its next action.
+
 
 ### Product-wide production
 
@@ -937,6 +1040,8 @@ Needs：依赖按实际交给函数的完整参数记录，不推断函数内部
 
 `var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
 
+合入 1d399f68 的 read-absence 通道时，保留视图的第二根/组成快照与完整续读绑定，同时保留读取端确定码、重试、私有诊断及失败 manifest。源加载把连接器成功返回的 SOURCE_ABSENT 当作缺席观察而非正文：核对清单的调用人、外部对象、完成状态和支持应答，只有相符的 HTTP 或声明缺席根据才进入来源结论；清单缺失、对象或主体不符、支持键缺失、403 等都不形成缺席事实。失败清单通道不变，404 的无根记录与列表变化后的重查继续生效。节点游标在权限核对后给 /cursor 与从首页重读的修正，无权者仍中性。
+
 Applicability now also records explicit components (with/without), numeric memory bounds in bytes with endpoint flags
 and raw source spelling, licenses and deployment forms. Lists sort and deduplicate before hashing. Existing entries
 without these fields keep their digest. `inherited` stores generated applicability_field codes only; selectors and
@@ -972,3 +1077,35 @@ and request source/producer repair followed by automatic resync and a new run.
 They never infer that no entries exist from a source that did not produce.
 
 适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
+
+## 同步报告与视图的条目计数
+
+同步报告的 `entry_counts` 和分面/索引视图 `totals.entry_counts` 使用同一个口径：
+`total = placed + unplaced`，按内容身份去重。身份包含种类、陈述、数据和适用条件的规范 JSON；
+不是仅按文字。同一内容的多来源、多片段不增加条目数。所选根范围内，只要有一个树上位置，
+就归入 `placed`，不再计入 `unplaced`；一个内容挂在多个节点也只算一个。
+没有位置的标签由生成词表 `knowledge_count.tree_unplaced_entries` 提供：未挂到树上位置的条目。
+
+旧报告把已挂载的 `(路径, 内容)` 行数叫作条目总数，却另报没有位置的内容行数；
+后者可以大于前者，且同一内容可能两边都有。现在报告同时写明内容总数、已有位置数和树上挂载处数，
+没有位置的数采用上述互斥分类。例如三处挂载、四行没有位置的内容，去重并让已有位置优先后，
+实际是五个内容条目：两个有位置、三个没有位置。
+
+这次只修汇总与文字，不改组成记录、根节点、引用、分组或存储摘要。历史组成/根的
+`counts.entries` 及生产结果 `entries` 仍是挂载行数，原来的 `counts.unplaced` 和
+生产/同步结果 `unplaced` 仍是无位置内容行数；需要内容总数的消费者应读新的 `entry_counts`。
+同步报告按每个根统计全部种类，构建根和不分版本根分别报告。
+视图按请求种类统计锁定的根范围，合并不分版本根时跨根去重，保留原先构建根优先的载体选择；
+同一内容在任一所选根有位置，汇总就计为有位置，这不改变引用载体。
+因此不能直接相加两个根的报告。分面 `total` 等于内容总数；索引 `total_entries` 仍只数
+携带所选索引键/筛选值的条目，新 `entry_counts` 则数该种类全部条目。汇总在明细截断或排除前计算。
+
+看板“未归位（没有命令归属的用例）”另按 `by=commands` 的空组数算，不以树上位置判断，
+标签来自 `knowledge_count.commandless_cases`。它和没有树上位置的数不必相等；上述五个条目
+可以有四个没有命令归属。看板业务规则保持不变。
+
+合入主线 48592b83 时，视图页保留 unversioned 的独立来源和总数，也保留 after/next、only、scope 完整清单与凭据档位约束。索引与分面在两份固定组成上合并枚举；影响视图在变化路径之后分页交付不分版本附着条目，运行完整绑定同时校验两根范围。范围清单沿同一锁定组成生成，不因续读期间的同步而换到新根。生产超时、完整问题分块、失败构建及恢复检查点与不分版本同步并存；适用条件冲突和未核对条件都保留。
+普通构建的额外根仍只参与来源归属核对，不冒充不分版本范围。自动发现不分版本根与显式声明通用额外范围分开记录；无可用不分版本根且通用范围未声明时，待核对来源和具名请求保留，不把它改成确定略去。
+独立命令 gold 同步保留 paths（标题/祖先）、steps（直接步骤）测量，并另存 placement_paths（标题、祖先与该用例正文的并集）；前置叶节点和嵌套用例正文不串入外层。命令索引和回归范围比较优先使用这份完整集合，仍兼容未带新字段的旧测量输入。索引只给首个规范归位引用，不证明列举了全部树挂载；比较器核对完整 data.commands、该引用的根与首路径，以及不分版本来源标记；独立脚本不导入 Hub 或包函数。
+
+本次合并同时保留视图的 scope/next、锁定组成与按页偏移的截断判断，以及按内容身份去重的 entry_counts。计数在过滤明细和分页之前完成，任一所选根已有位置就计为 placed；续页和完整绑定保留同一计数。命令归属空组仍由 commandless_cases 单独计量，不与 tree_unplaced_entries 混用。

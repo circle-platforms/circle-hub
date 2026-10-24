@@ -733,3 +733,13 @@ test('a nested pack receives no sandbox diagnostic that it could copy into tool 
   assert.ok(!(await bytesOf(w, content.artifact)).toString().includes(marker));
   assert.ok(JSON.stringify(w.k.log).includes(marker), 'only the administrator log keeps the nested diagnostic');
 });
+
+test('the reader port retains the 404 manifest and returns a determined absence',async t=>{
+ const w=await world(t);
+ const result=await w.k.connectors.reader.read('manual:file:spec/synthetic-absent.md',w.ctx);
+ assert.equal(result.ok,true);if(!result.ok)return;
+ assert.equal(result.absent?.code,'SOURCE_ABSENT');assert.equal(result.absent?.object,result.id);
+ assert.match(result.manifest??'',/^[0-9a-f]{64}$/);
+ const record=await w.k.records.store.get(result.manifest!);assert.equal(record?.schema,'read-manifest@1');
+ const manifest=ReadManifest.parse(record!.body);assert.equal(manifest.external,result.id);assert.equal(manifest.result,'completed');assert.equal(manifest.error_code,null);assert.equal(manifest.requests.at(-1)?.status,404);
+});

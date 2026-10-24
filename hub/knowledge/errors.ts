@@ -7,6 +7,7 @@ export interface KnowledgeErrorOptions {
   code?: ProtocolCode | null;
   detail?: Record<string, unknown>;
   cause?: unknown;
+  fix?: string;
 }
 
 export class KnowledgeError extends Error {
@@ -17,7 +18,7 @@ export class KnowledgeError extends Error {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'KnowledgeError';
     this.code = options.code ?? null;
-    this.fix = this.code === null ? null : PROTOCOL_CODES[this.code].fix;
+    this.fix = options.fix ?? (this.code === null ? null : PROTOCOL_CODES[this.code].fix);
     this.detail = Object.freeze({ ...(options.detail ?? {}) });
   }
 }

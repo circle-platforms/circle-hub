@@ -49,7 +49,7 @@ Needs: none.
 
 Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
 `fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
-The current 1.3.2 manifest signs the read description and function bytes together; raw originals remain unchanged.
+Since 1.3.2 the manifest signs the read description and function bytes together (the current version is in `pack.json`); raw originals remain unchanged.
 
 复核 3：构建 content 每条新增 fields，逐字保留原始记录的全部 JSON 标量字段（含数字 id、name、布尔、null）；数组和对象不混作标量。顶层 id/name/stories 维持已有接口，原始 name 不 trim、不另取字段兜底。原件不变，workflow 通过 name 与绑定视图和可信构建上下文核对同构建、同根，再在条目 data/陈述中指明选中记录。
 

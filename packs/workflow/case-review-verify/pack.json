@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "95d549dcc95396edb8651b596550afdbdecdf4bdc6a6cb910d8e66065ff873cd",
-      "size": 9622
+      "sha256": "6251b603a5ea37725936e111a7f3f2e0383e15dbe6bb82f38c9cb6263fea5124",
+      "size": 9775
     },
     {
       "path": "checks.json",
@@ -213,8 +213,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "c82c8f8e3942e3642f206354f8fa50c726fd2c25ea4ef6ae81b2f9fcbdd1d0d0",
-      "size": 4856
+      "sha256": "9727c2230378ef27cbf3aa232dcb36c2fcebe5f9600c767de3ac0efca62c66dc",
+      "size": 4970
     }
   ]
 }

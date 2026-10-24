@@ -364,15 +364,15 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
             SOURCE_ABSENT:'未读到要求的锁定修订；由资源管理员核对对象修订后重读，需要改修订时开始新运行',
           };
           const fix=fixes[outcome.code];
-          if(fix)return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_FAILED',message:outcome.code==='SOURCE_ABSENT'?'未读到要求的锁定修订':outcome.code==='SOURCE_HTTP_STATUS'?(outcome.message??CONNECTOR_ERRORS[outcome.code]):CONNECTOR_ERRORS[outcome.code],fix}};
+          if(fix)return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_FAILED',message:outcome.code==='SOURCE_ABSENT'?'未读到要求的锁定修订':outcome.code==='SOURCE_HTTP_STATUS'?(outcome.message??CONNECTOR_ERRORS[outcome.code]):CONNECTOR_ERRORS[outcome.code],fix}};
         }
-        if(!outcome.ok && outcome.disclosable===true && (outcome.code==='READ_LIMIT' || outcome.code==='RESPONSE_TOO_LARGE'))return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_LIMIT',message:outcome.reason,fix:'由资源管理员调整声明或缩小读取范围后重新完整读取'}};
+        if(!outcome.ok && outcome.disclosable===true && (outcome.code==='READ_LIMIT' || outcome.code==='RESPONSE_TOO_LARGE'))return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_LIMIT',message:outcome.reason,fix:'由资源管理员调整声明或缩小读取范围后重新完整读取'}};
         if(!outcome.ok && outcome.disclosable===true && outcome.redirect) {
           const observation=outcome.redirect;
           const message=`来源明确给出 HTTP ${observation.status} 重定向，Location：${observation.location??(observation.location_redacted?'不可安全回显，请管理员核对原来源响应':'来源没有给出')}；本次没有跟随该地址`;
-          return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,redirect:observation,inputError:{code:'SOURCE_REDIRECT_REFUSED',message,fix:'由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读'}};
+          return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,redirect:observation,inputError:{code:'SOURCE_REDIRECT_REFUSED',message,fix:'由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读'}};
         }
-        if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}`,...(outcome.disclosable!==false && outcome.retry?{retry:outcome.retry}:{}) };
+        if (!outcome.ok) return { ok: false, id: subject.id, manifest:outcome.manifest, reason: `${outcome.code}：${outcome.reason}`,...(outcome.disclosable!==false && outcome.retry?{retry:outcome.retry}:{}) };
         return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
