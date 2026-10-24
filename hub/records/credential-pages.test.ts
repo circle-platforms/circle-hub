@@ -30,3 +30,14 @@ test('administrators page every finding without values and can accept detector c
  await kit.artifacts.revokeFindings(admin,artifact.body.sha256,'合成撤回核对');assert.equal((await kit.artifacts.source(user,artifact.body.sha256))?.bytes,null);
  await assert.rejects(()=>kit.artifacts.acceptFindings(admin,artifact.body.sha256,'合成自动重试',{detectors:['password_assignment','bearer_credential'],automatic:true}),/撤回/);
 });
+
+test('automatic and manual detector acceptance have distinct immutable audit receipts without values',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
+ for(const automatic of [false,true]){
+  const artifact=await kit.artifacts.ingest({bytes:Buffer.from('password = SyntheticCredential'+(automatic?'A':'B')+'#72'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:'+String(automatic)}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+  const accepted=await kit.artifacts.acceptFindings(admin,artifact.body.sha256,'合成示例接受',{detectors:['password_assignment'],automatic});
+  const rows=await kit.store.find<any>({key:'authz.scan-accept.receipt',value:accepted.authorization.digest,kind:'action',limit:10});
+  assert.equal(rows.items.length,1);assert.equal(rows.items[0].body.detail.automatic,automatic);assert.deepEqual(rows.items[0].body.detail.detectors,['password_assignment']);
+  assert.ok(!JSON.stringify(rows.items).includes('SyntheticCredential'));assert.equal(rows.items[0].body.detail.administrator,admin.id);
+ }
+});

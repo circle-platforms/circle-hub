@@ -388,6 +388,11 @@ export class RecordArtifacts implements Artifacts {
       return this.#acceptFindings(by,sha256,note,options);
     });
   }
+  async #recordFindingsAcceptance(by:Principal,sha256:string,authorization:AuthorizationRecord,automatic:boolean,detectors:readonly string[]):Promise<void>{
+    const at=this.#options.now().toISOString();
+    await this.#store.put<ActionBody>({kind:'action',schema:RECORD_SCHEMAS.action,provenance:'observed',body:{action:'read',run:null,item:null,inputs:[`src:${sha256}`,`rec:${authorization.digest}`],component:'records.scan-accept@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{sha256,authorization:authorization.digest,automatic,detectors:[...detectors].sort(),administrator:by.id}},index:[{key:'authz.scan-accept.receipt',value:authorization.digest},{key:'authz.scan-accept.source',value:sha256},{key:'authz.scan-accept.automatic',value:String(automatic)}]});
+  }
+
   async #acceptFindings(by: Principal, sha256: string, note?: string | null,options:{detectors?:readonly string[];automatic?:boolean}={}): Promise<FindingsAcceptance> {
     if (!isSha256(sha256)) throw new TypeError('sha256 must be a lowercase hex SHA-256');
     validNote(note);
@@ -425,6 +430,7 @@ export class RecordArtifacts implements Artifacts {
       const decisions=await this.#authorizations.resourceConfigs(classes.map(detector=>`${scanAcceptanceKey(sha256)}/${detector}`));
       const complete=classes.every(detector=>decisions.get(`${scanAcceptanceKey(sha256)}/${detector}`)?.body.bound===classDigest(detector));
       if(complete)authorization=await this.#authorizations.configureResource(by,scanAcceptanceKey(sha256),scanDigest(full.scan),reason);
+      await this.#recordFindingsAcceptance(by,sha256,authorization!,options.automatic===true,selected);
       return {authorization:authorization!,scan:full.scan,detectors:selected,complete};
     }
     // The decision covers the current scanner's findings of the stored bytes, never a finding list someone hands in.
@@ -438,6 +444,7 @@ export class RecordArtifacts implements Artifacts {
     }
     const reason = findingsNote(note, [...contexts,...scanWithMatches(bytes).matches]);
     const authorization = await this.#authorizations.configureResource(by, scanAcceptanceKey(sha256), scanDigest(scan), reason);
+    await this.#recordFindingsAcceptance(by,sha256,authorization,options.automatic===true,[...new Set(scan.findings.map(finding=>finding.detector))]);
     return { authorization, scan };
   }
 
