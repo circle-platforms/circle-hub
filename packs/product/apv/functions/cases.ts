@@ -187,6 +187,7 @@ export function cases(input: unknown): ProducerOutput {
   const warnings: string[] = [];
   try {
     const record = isRecord(input) ? input : {};
+    const rawPhrases=isRecord(record.params)&&record.params.command_phrases===true;
     const slots = isRecord(record.slots) ? record.slots : {};
     const lists = isRecord(record.lists) ? record.lists : {};
     const batch = isRecord(record.batch) ? record.batch : null;
@@ -194,13 +195,13 @@ export function cases(input: unknown): ProducerOutput {
     const count = (value: unknown, add: number): string => (typeof value === 'number' && Number.isSafeInteger(value) ? String(value + add) : '?');
     const where = batch === null ? '' : `第 ${count(batch.index, 1)}/${count(batch.of, 0)} 批：`;
     if (elements.length === 0) {
-      if (batch === null || batch.of === 1) warnings.push('这个构建没有列出用例文档');
+      if (batch === null || batch.of === 1) warnings.push(rawPhrases?'这个不分版本范围没有列出用例文档':'这个构建没有列出用例文档');
       return { entries: [], warnings };
     }
     const tree = isRecord(slots.tree) ? slots.tree : null;
     let catalog: CommandCatalog;
     if (tree === null || tree.parser !== 'xml@1') {
-      warnings.push(`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
+      warnings.push(rawPhrases?`${where}不分版本范围不带命令树，这一批 ${elements.length} 份文档的命令短语照录，用例条目保留为未归位`:`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
       catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
     } else {
       const built = commandCatalog(tree.model as XmlModel);
@@ -213,7 +214,7 @@ export function cases(input: unknown): ProducerOutput {
     const identity = elementDocuments(elements, record.build);
     if (identity.anonymous > 0) warnings.push(`${where}${identity.anonymous} 份文档的内容没有写明是敏捷平台的哪份文档（不是 ${CASE_PREFIX}<编号> 读到的内容），它们的用例的文档编号、版本线、发布火车、模块和目录里的编号记为未知`);
     if (identity.unlisted > 0) warnings.push(`${where}${identity.unlisted} 份文档写明的编号不在这个构建的用例文档清单里，按未知文档处理`);
-    return produce(elements, identity.documents, folders, catalog, where, warnings);
+    return produce(elements, identity.documents, folders, catalog, where, warnings,rawPhrases);
   } catch (error) {
     return { entries: [], warnings: [...warnings, internalError(error)] };
   }
@@ -221,7 +222,7 @@ export function cases(input: unknown): ProducerOutput {
 
 type Located = { line: string | null; train: string | null; module: string | null };
 
-function produce(elements: readonly unknown[], documents: ReadonlyArray<string | null>, folders: Map<string, Folder> | null, catalog: CommandCatalog, where: string, warnings: string[]): ProducerOutput {
+function produce(elements: readonly unknown[], documents: ReadonlyArray<string | null>, folders: Map<string, Folder> | null, catalog: CommandCatalog, where: string, warnings: string[],rawPhrases=false): ProducerOutput {
   const counts = { documents: 0, cases: 0, filed: 0, toPlace: 0, noPhrase: 0, unresolved: 0, noCase: 0, notMindmap: 0, repeated: 0, malformed: 0, deep: 0, notInTree: 0 };
   const parsers = new Set<string>();
   // 1. The case nodes of every usable document: a known document once, an unknown one wherever it is.
@@ -346,6 +347,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         autoid: node.autoid === null ? null : storable(node.autoid, MAX_TAG),
       };
       const statement = caseStatement(data);
+      if(rawPhrases)data.command_phrases=[...new Set([node.title,...node.path].flatMap(text=>[...text.matchAll(/(?<![A-Za-z0-9_])[a-z][a-z0-9_.?:/-]*(?:[ \t]+[A-Za-z0-9_<>{}\[\].?:/=-]+)*/g)].map(match=>match[0])))];
       const fragments = [{ slot: LIST_SLOT, source: doc.sha256, parser: PARSER, selector: node.selector }];
       for (const path of paths.length === 0 ? [null] : paths) entries.push({ kind: KIND, path, statement, data, fragments, applicability: null });
     });

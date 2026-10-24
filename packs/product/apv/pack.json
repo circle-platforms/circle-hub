@@ -98,13 +98,13 @@
     },
     {
       "path": "functions/cases-sync.ts",
-      "sha256": "f17bf1d351e26e72d00151dfdbfab27f97902daf704586bc3802eb65d1dfc83f",
-      "size": 15635
+      "sha256": "0198b01dddf1c43d79365ec28b44dda74f6509f52bb1ba1fc1c0532ee9d72d20",
+      "size": 16692
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "be0cf8c28c7f72ef22f41f06e6b13939cc0148fb28188c566101e877f8ee9f5b",
-      "size": 21323
+      "sha256": "ef757a0f3b1b866517ba7c6bfd83c109ed96486c0f702cc83a15360f86c28d94",
+      "size": 21864
     },
     {
       "path": "functions/command-tree.ts",
@@ -193,8 +193,8 @@
     },
     {
       "path": "functions/sync.ts",
-      "sha256": "45795368c24e44630f030b62a9bab0e8ebfd8c03349531002702270ae0d63ab6",
-      "size": 14907
+      "sha256": "76e178b52a4fc3d30128c2ca3997b59b1ea7421ed8fd78d73460c339678ea344",
+      "size": 16181
     },
     {
       "path": "functions/types.ts",
@@ -208,8 +208,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "39a7485f22bbb18940e3a2ba520437a2f75b9b3df6ebc3d53714b6f51a2d824a",
-      "size": 9189
+      "sha256": "d3c18ea3e4956e5b76a7ab536dc99154c06f778251e5d62c55c7f3f02df33bce",
+      "size": 9491
     }
   ]
 }

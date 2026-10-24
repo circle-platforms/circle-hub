@@ -248,6 +248,30 @@
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
       }
+    },
+    {
+      "id": "unversioned-cases",
+      "title": "没有覆盖构建的用例文档",
+      "unversioned": true,
+      "function": {
+        "module": "functions/cases.ts",
+        "export": "cases"
+      },
+      "inputs": {
+        "documents": {
+          "source": "unversioned_case_documents",
+          "many": true,
+          "batch": 40,
+          "optional": true
+        },
+        "folders": {
+          "source": "case_tree",
+          "optional": true
+        }
+      },
+      "params": {
+        "command_phrases": true
+      }
     }
   ],
   "variables": [
@@ -342,41 +366,8 @@
       },
       "default": {}
     },
-    {
-      "name": "APV_COMPONENTS",
-      "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    },
-    {
-      "name": "APV_LICENSES",
-      "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    },
-    {
-      "name": "APV_DEPLOYMENT_FORMS",
-      "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
-      "schema": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "default": []
-    }
+    {"name": "APV_COMPONENTS", "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_LICENSES", "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_DEPLOYMENT_FORMS", "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []}
   ]
 }
