@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "ed374b21fa2995aaf03f78062a335f31c5ac670f743ef6a0c80901b54f917647",
-      "size": 6387
+      "sha256": "6acade14c928fc251f625962b7b2cd7b1d81d05257a69b8d24b06f32039f3258",
+      "size": 6435
     },
     {
       "path": "functions/types.ts",

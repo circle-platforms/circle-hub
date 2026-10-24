@@ -1,3 +1,4 @@
+import type {CommandIdentity,ExpectedQuoteIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 // Coverage and equality are independent: a visible complete duplicate is provable even in an incomplete view.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -6,7 +7,7 @@ import {buildCompactIndex,MAX_INDEX_PER_KEY,onlyOfExternal} from './compact-inde
 import {SYNTHETIC_CATALOG,SYNTHETIC_INDEX_VIEW,makeDuplicateDraft} from '../testing/fixtures.ts';
 const path='/commands/show/health/detail';
 function run(changes:Record<string,unknown>={},duplicate=false,external:string|null=null){
- const draft=makeDuplicateDraft();draft.id=duplicate?'duplicate':'distinct';if(!duplicate)draft.expected[0].identity!.span.offset++;
+ const draft=makeDuplicateDraft();draft.id=duplicate?'duplicate':'distinct';if(!duplicate)(draft.expected[0].identity as ExpectedQuoteIdentity).span.offset++;
  const view={...structuredClone(SYNTHETIC_INDEX_VIEW),only:[path],cut_keys:[],...changes};
  const compact=buildCompactIndex(view,64*1024*1024,external);
  return {compact,out:checkDuplicate({subject:{item:'synthetic',drafts:[draft],indexed_cases:compact},catalog:SYNTHETIC_CATALOG})[0]};
@@ -38,7 +39,7 @@ test('legacy cap inference and explicit empty cut keys remain distinct',()=>{
 test('complete source may omit a genuinely empty requested key',()=>{assert.equal(run({entries:{},keys:{}}).out.verdict,'support');});
 test('source skipping and outside scope disclose independent actions',()=>{const {out}=run({skipped:3,only:['other']});assert.match(out.statement,/3 份文档.*新根/);assert.match(out.statement,/草稿命令.*only/);});
 test('one duplicate does not suppress another draft whose coverage is incomplete',()=>{
- const duplicate=makeDuplicateDraft(),other=makeDuplicateDraft();other.id='other';other.expected[0].identity!.span.offset++;
+ const duplicate=makeDuplicateDraft(),other=makeDuplicateDraft();other.id='other';(other.expected[0].identity as ExpectedQuoteIdentity).span.offset++;
  const compact=buildCompactIndex({...SYNTHETIC_INDEX_VIEW,truncated:true,only:[path],cut_keys:[]});
  const out=checkDuplicate({subject:{drafts:[duplicate,other],indexed_cases:compact},catalog:SYNTHETIC_CATALOG});assert.equal(out[0].verdict,'refute');assert.equal(out[1].verdict,'unknown');assert.equal(out[1].data?.draft_id,'other');
 });

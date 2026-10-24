@@ -543,7 +543,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     const uses=(input.variables??[]).filter(use=>use.name===name);if(!uses.length)continue;
     try{const value=await context.records.variables?.valueAt(name,uses[0].decision);if(Array.isArray(value)&&value.every(v=>typeof v==='string'))applicabilityClosedSets[field]=[...value];}catch{return result({reason:'缺冻结适用条件变量 '+name+'；下一步管理员恢复该版本变量后重产'});}
   }
-  const handedDigest = sha256Hex(canonicalize({build:handed,known_builds:context.knownBuildInventory.map(v=>v.name)}));
+  const handedDigest = sha256Hex(canonicalize({build:handed,known_builds:context.knownBuildInventory!.map(v=>v.name)}));
 
   const fail = async (reason: string): Promise<ProduceResult> => {
     const text = cutText(reason, MAX_REASON_TEXT);
