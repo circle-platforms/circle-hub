@@ -189,8 +189,15 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
     tail = tail.slice(0, tail.length - trailing.length);
   }
   let kind: PageKind;
-  if (tail.length === 1 && /^patch[0-9]+(?:\.[0-9]+)?$/.test(tail[0])) kind = 'patch';
-  else if (extra.length === 0 && tail.length === 0) kind = platform === null ? 'mainline' : 'platform';
+  // apv-pages@1 (declared for the owner's R6 rule, 2026-10-24): a page name is a patch page when its last tail token is
+  // exactly `patch` or `patch<n[.n]>` (a whole token, never a prefix), a mainline or platform page when every tail token
+  // is in the declared mainline word list (a closed declaration of the product, not a guess), and a customer page when
+  // its tail is exactly `customer_<identifier>`.
+  // Anything else is not a declared page form and is null: the retired rule matched a `patch` prefix and fell back to
+  // "customer" for whatever tokens were left.
+  const last = tail[tail.length - 1];
+  if (last !== undefined && /^patch(?:[0-9]+(?:\.[0-9]{1,3})?)?$/.test(last)) kind = 'patch';
+  else if (extra.length === 0 && tail.every((token) => mainlineWords.includes(token))) kind = platform === null ? 'mainline' : 'platform';
   else if (tail.length === 2 && tail[0] === 'customer' && /^[A-Za-z0-9]+$/.test(tail[1])) kind = 'customer';
   else return null;
   return { family, line, platform, kind, tokens };

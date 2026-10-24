@@ -56,12 +56,16 @@ describe('version lines', () => {
   it('treats 10.6, 10.6.0 and 010.6 as one line and keeps others apart', () => {
     assert.equal(lineKey('10.6.0'), '10.6');
     assert.equal(lineKey('010.6'), '10.6');
-    assert.equal(lineKey(' 10.6.1 '), '10.6.1');
+    // No folding: a value written with spaces is not the declared numeric form, and is kept exactly as written.
+    assert.equal(lineKey(' 10.6.1 '), ' 10.6.1 ');
     assert.equal(lineKey('10.6.100'), '10.6.100');
     assert.ok(sameLine('10.6', '10.6.0'));
     assert.ok(!sameLine('10.6.1', '10.6'));
     assert.ok(!sameLine(null, '10.6'));
-    assert.equal(lineKey('10.6.DEMOQUALIFIER'), '10.6.demoqualifier');
+    // U24 normalizes only what the owner declared (leading zeroes, a trailing .0); case is not folded, so a qualifier
+    // written in another case is another line identity.
+    assert.equal(lineKey('10.6.DEMOQUALIFIER'), '10.6.DEMOQUALIFIER');
+    assert.ok(!sameLine('10.6.DEMOQUALIFIER', '10.6.demoqualifier'));
   });
 
   it('orders lines numerically', () => {
@@ -76,13 +80,18 @@ describe('listing page names', () => {
       ['rel_apv_10_6', { family: 'APV', line: '10.6', platform: null, kind: 'mainline', tokens: ['rel', 'apv', '10', '6'] }],
       ['rel_nsae_10_6_1', { family: 'NSAE', line: '10.6.1', platform: null, kind: 'mainline', tokens: ['rel', 'nsae', '10', '6', '1'] }],
       ['rel_apv_10_6_demoqualifier', { family: 'APV', line: '10.6', platform: null, kind: 'mainline', tokens: ['rel', 'apv', '10', '6', 'demoqualifier'] }],
-      ['apv_10_6_2_special', { family: 'APV', line: '10.6.2', platform: null, kind: 'customer', tokens: ['apv', '10', '6', '2', 'special'] }],
+      // apv-pages@1: no fallback customer kind. A tail that is neither a declared mainline word, a whole `patch` token
+      // nor `customer_<identifier>` is not a declared page form.
+      ['apv_10_6_2_special', null],
+      ['rel_apv_10_6_1_customer_examplebank', { family: 'APV', line: '10.6.1', platform: null, kind: 'customer', tokens: ['rel', 'apv', '10', '6', '1', 'customer', 'examplebank'] }],
+      ['rel_apv_10_6_1_patch2', { family: 'APV', line: '10.6.1', platform: null, kind: 'patch', tokens: ['rel', 'apv', '10', '6', '1', 'patch2'] }],
+      ['rel_apv_10_6_1_patchwork', null],
       ['rel_apv_10_6_1_hg_uos', { family: 'APV', line: '10.6.1', platform: 'hg-uos', kind: 'platform', tokens: ['rel', 'apv', '10', '6', '1', 'hg', 'uos'] }],
       ['rel_nsae_10_6_1_ft_kylinv10', { family: 'NSAE', line: '10.6.1', platform: 'ft-kylinv10', kind: 'platform', tokens: ['rel', 'nsae', '10', '6', '1', 'ft', 'kylinv10'] }],
       ['rel_apv_10_6_1_zx_neokylin', { family: 'APV', line: '10.6.1', platform: 'zx-neokylin', kind: 'platform', tokens: ['rel', 'apv', '10', '6', '1', 'zx', 'neokylin'] }],
-      ['rel_apv_10_6_1_examplebank_poc', { family: 'APV', line: '10.6.1', platform: null, kind: 'customer', tokens: ['rel', 'apv', '10', '6', '1', 'examplebank', 'poc'] }],
-      ['rel_apv_10_6_1_45', { family: 'APV', line: '10.6.1', platform: null, kind: 'customer', tokens: ['rel', 'apv', '10', '6', '1', '45'] }],
-      ['rel_apv-hg-u_10_6_1_24_tenantx', { family: 'APV', line: '10.6.1', platform: 'hg-u', kind: 'customer', tokens: ['rel', 'apv', 'hg', 'u', '10', '6', '1', '24', 'tenantx'] }],
+      ['rel_apv_10_6_1_examplebank_poc', null],
+      ['rel_apv_10_6_1_45', null],
+      ['rel_apv-hg-u_10_6_1_24_tenantx', null],
       [
         'rel_apv_10_6_0_100_1_1_examplebank_patch',
         { family: 'APV', line: '10.6.0', platform: null, kind: 'patch', tokens: ['rel', 'apv', '10', '6', '0', '100', '1', '1', 'examplebank', 'patch'] },
