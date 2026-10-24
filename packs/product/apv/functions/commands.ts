@@ -12,7 +12,7 @@ export type CommandDefinition = { path: string; words: readonly string[]; signat
 export type GrammarNode = { children: Map<string, GrammarNode>; path: string | null; signatures?: readonly CatalogSignature[] };
 export type CommandGrammar = { root: GrammarNode; size: number; heads: string[]; definitions?:readonly CommandDefinition[]; tree_root?:string };
 const node = (): GrammarNode => ({children:new Map(),path:null,signatures:[]});
-type Token = {value:string;quoted:boolean};
+type Token = {value:string;quoted:boolean;raw:string};
 
 /** Complete lexical analysis, preserving whether a token is an argument literal. */
 export function commandTokens(text:string):Token[]|null {
@@ -21,13 +21,14 @@ export function commandTokens(text:string):Token[]|null {
   for(let at=0;at<text.length;){
     if(text[at]===' '||text[at]==='\t'){at++;continue;}
     if(text[at]==='\r'||text[at]==='\n'||text.charCodeAt(at)===0)return null;
+    const start=at;
     const quoted=text[at]==='"'||text[at]==="'";let value='';
     if(quoted){
       const quote=text[at++];let closed=false;
       while(at<text.length){const c=text[at++];if(c==='\r'||c==='\n'||c.charCodeAt(0)===0)return null;if(c===quote){closed=true;break;}if(c==='\\'){if(text[at]!==quote&&text[at]!=='\\')return null;value+=text[at++];}else value+=c;}
       if(!closed||at<text.length&&text[at]!==' '&&text[at]!=='\t')return null;
     }else while(at<text.length&&text[at]!==' '&&text[at]!=='\t'){if(text[at]==='\r'||text[at]==='\n'||text.charCodeAt(at)===0)return null;value+=text[at++];}
-    out.push({value,quoted});if(out.length>320)return null;
+    out.push({value,quoted,raw:text.slice(start,at)});if(out.length>320)return null;
   }
   return out;
 }
@@ -138,15 +139,15 @@ export function commandIdentity(grammar:CommandGrammar,text:string):import('../.
   const args=tokens.slice(definition.words.length);
   for(const signature of definition.signatures){
    if(!signature.reference||!signatureMatches(signature,args))continue;
-   const bind=(p:number,t:number):Array<{position:number;raw:string}>|null=>{
+   const bind=(p:number,t:number):Array<{position:number;raw:string;value:string}>|null=>{
     if(p===signature.params.length)return t===args.length?[]:null;
     const param=signature.params[p];
-    if(t<args.length&&accepts(param,args[t].value)){const tail=bind(p+1,t+1);if(tail)return [{position:p,raw:args[t].value},...tail];}
+    if(t<args.length&&accepts(param,args[t].value)){const tail=bind(p+1,t+1);if(tail)return [{position:p,raw:args[t].raw,value:args[t].value},...tail];}
     return param.optional===true?bind(p+1,t):null;
    };
    const bound=bind(0,0);if(!bound)continue;
-   const parameters=bound.map(({position,raw})=>{const param=signature.params[position];
-    const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='int'||param.type==='port'?{kind:'int',value:Number(raw)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value:raw}}:{kind:'text',value:raw};
+   const parameters=bound.map(({position,raw,value})=>{const param=signature.params[position];
+    const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='int'||param.type==='port'?{kind:'int',value:Number(value)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value}}:{kind:'text',value};
     return {position,name:param.name,raw,type:{name:param.type!,catalog_type:param.type!,declaration:signature.reference!,grammar:'apv-command-tree@2'},parsed};
    });
    identities.push({tree_root:grammar.tree_root,path:definition.path,signature:signature.reference,parameters});
