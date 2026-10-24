@@ -1,3 +1,4 @@
+import {frozenCriteria} from './criterion-changes.ts';
 import {authorAccountsOf} from './lineage.ts';
 import {accountIndependenceOf,authorAccount} from './independence.ts';
 import {attachParentRecovery} from './parent-recovery.ts';
@@ -297,7 +298,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const hasItemJudgments = itemTemplates.some((t) => isJudgment(t) && itemSlotKeys.has(t.key));
   const artifactRequirements = new Set(itemTemplates.filter(t => t.checks.some(id => checks.get(id)?.judges === 'artifact_under_verification')).map(t => t.key));
   const sets = closedSets(workflow);
-  const context = runContextOf(run);
+  const criteria=await frozenCriteria(ctx,run.accepted_criteria??[]);
+  const context = {...runContextOf(run),...(criteria.length?{accepted_criteria:criteria}:{})};
 
   const handlingOf = (id: string): Handling => {
     if (input.carried.has(id)) return 'handled';

@@ -54,7 +54,7 @@ export function createRequestService(records:Pick<RecordsKit,'store'>,now:()=>Da
   const ctx:RequestContext={deps:{records},now,canReadRun:options.canReadRun,transaction:options.transaction};
   return {
     // inspect/all are trusted internal reads, never untrusted client entry points.
-    inspect:async(id:string):Promise<RequestView|null>=>{if(!Sha256.safeParse(id).success)return null;const record=await records.store.get(id);if(record?.kind!=='request'||record.schema!=='request@1')return null;const parsed=Request.safeParse(record.body);if(!parsed.success)return null;const answer=await records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:id,limit:1});return{...parsed.data,record:id,answered_by:answer.items[0]?.body.detail.answer??null};},
+    inspect:async(id:string):Promise<RequestView|null>=>{if(!Sha256.safeParse(id).success)return null;const record=await records.store.get(id);if(record?.kind!=='request'||record.schema!=='request@1')return null;const parsed=Request.safeParse(record.body);if(!parsed.success)return null;const answer=await records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:id,limit:1,newestFirst:true});return{...parsed.data,record:id,answered_by:answer.items[0]?.body.detail.answer??null};},
     all:(run?:string)=>requestRecords(ctx,run),
     write:(input:RequestBody)=>putRequest(ctx,input),
     list:(by:Principal,run?:string)=>requestsOf(ctx,by,run),

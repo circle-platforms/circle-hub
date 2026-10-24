@@ -5,7 +5,8 @@ import type {ValidationResult} from '../../../contracts/src/validation.ts';
 import type {EngineContext} from './deps.ts';
 import {createRequestService,type RequestView} from '../../requests/api.ts';
 import type {Principal,Transaction,StoredRecord} from '../../records/api.ts';
-import {authorAccountsOf} from './lineage.ts';
+import {authorAccountsOf,lineageOf} from './lineage.ts';
+import {runById} from './store.ts';
 import {authorAccount} from './independence.ts';
 import {canViewRun,recordReader,identityOf} from './readers.ts';
 import {parseReference,formatReference} from '../../refs/api.ts';
@@ -75,4 +76,66 @@ export async function answerCriterionReview(ctx:EngineContext,run:RunRecord,resu
   if(!isObject(data)||typeof data.accepted!=='boolean'||typeof data.reason!=='string')continue;
   await safeAnswer(ctx,request,result.digest,{accepted:data.accepted,reason:data.reason,reviewer:account,review:'rec:'+result.digest},tx);
  }
+}
+
+/** Answers are append-only. Select the latest one that existed at the caller's snapshot cutoff. */
+async function answerAt(ctx:EngineContext,request:string,at:string):Promise<{source:string;summary:Record<string,unknown>;superseded:boolean}|null>{
+ let cursor:string|null=null;
+ do{
+  const page=await ctx.deps.records.store.find<any>({kind:'action',key:'runs.request.answer',value:request,limit:100,cursor,newestFirst:true});
+  for(const record of page.items)if(record.created_at<=at){const detail=record.body.detail;if(!isObject(detail)||typeof detail.answer!=='string')continue;return {source:detail.answer,summary:isObject(detail.criterion_answer)?detail.criterion_answer:{},superseded:detail.superseded===true};}
+  cursor=page.next;
+ }while(cursor!==null);
+ return null;
+}
+function declarationRef(request:RequestView):string{return 'rec:'+request.source+'#'+request.declaration;}
+async function noticeAt(ctx:EngineContext,request:RequestView,at:string):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice|null>{
+ const change=await requestChange(ctx,request),answer=await answerAt(ctx,request.record,at);
+ if(!change||!request.declaration||answer?.superseded)return null;
+ const summary=answer?.summary??{};
+ return {...change,request:'rec:'+request.record,declaration:declarationRef(request),audience:request.audience,due:request.due,answered:answer!==null,expired:request.due<at,...(typeof summary.accepted==='boolean'?{accepted:summary.accepted}:{}),...(typeof summary.reviewer==='string'?{reviewer:summary.reviewer}:{}),...(typeof summary.reason==='string'?{reason:summary.reason}:{}),next_action:typeof summary.accepted==='boolean'?(summary.accepted?'接受以后以声明运行为前驱开新运行；本次冻结以后才接受的只进后续修订':'保留原判据；若有新依据，由作者重交声明并请非作者账号重新复核'):request.next_action};
+}
+/** Hydrate only declarations named by the frozen refs; private review result bodies are never disclosed. */
+export async function frozenCriteria(ctx:EngineContext,refs:NonNullable<RunRecord['accepted_criteria']>,seen=new Set<string>()):Promise<import('../../../contracts/src/criterion.ts').FrozenCriterion[]>{
+ const out:import('../../../contracts/src/criterion.ts').FrozenCriterion[]=[];
+ for(const ref of refs){
+  if(seen.has(ref.declaration))throw new Refusal([protocolError('REFERENCE_UNRESOLVED','已接受声明的引用形成循环',{fix:'管理员核对声明链，从最后可证明的声明重新复核后开新修订'})]);
+  const parsed=parseReference(ref.declaration),record=parsed.scheme==='rec'?await ctx.deps.records.store.get(parsed.record):null,body=Submission.safeParse(record?.body);
+  const pointer=parsed.scheme==='rec'?parsed.pointer:undefined;
+  if(!record||!body.success||!pointer||!/^\/criterion_changes\/(0|[1-9][0-9]*)$/.test(pointer))throw new Refusal([protocolError('REFERENCE_UNRESOLVED','冻结声明原记录或位置不可读',{fix:'管理员从可信备份恢复声明记录并重新核验；不回填原运行'})]);
+  const change=body.data.criterion_changes?.[declarationIndex(pointer)];if(!change)throw new Refusal([protocolError('REFERENCE_UNRESOLVED','冻结声明的位置不存在',{fix:'管理员恢复原记录并重新核验声明位置'})]);
+  let target=change.criterion;
+  const sourceRun=await runById(ctx.deps.records.store,body.data.run);
+  const before=sourceRun?.body.accepted_criteria?.find(prior=>prior.declaration+'/new'===change.criterion);
+  if(before){const chain=new Set(seen);chain.add(ref.declaration);target=(await frozenCriteria(ctx,[before],chain))[0].target;}
+  out.push({...change,...ref,target});
+ }
+ return out;
+}
+/** Start-time snapshot. Only a same-pack revision inherits criterion changes; a read-only review never does. */
+export async function freezeCriteria(ctx:EngineContext,previous:RunRecord|null,pack:string,at:string):Promise<{refs:NonNullable<RunRecord['accepted_criteria']>;requests:string[];criteria:import('../../../contracts/src/criterion.ts').FrozenCriterion[];notices:import('../../../contracts/src/criterion.ts').CriterionNotice[]}>{
+ const empty={refs:[],requests:[],criteria:[],notices:[]};
+ if(!previous||previous.predecessor_access==='view'||previous.pack.split('@')[0]!==pack)return empty;
+ const chain=await lineageOf(ctx.deps.records.store,previous.run);
+ const candidates:RequestView[]=[];
+ for(const run of chain){if(run.pack.split('@')[0]!==pack||run.predecessor_access==='view')break;for(const request of await requestService(ctx).all(run.run)){const record=await ctx.deps.records.store.get(request.record);if(request.declaration&&record&&record.created_at<=at)candidates.push(request);}}
+ // Oldest first means a newly accepted replacement wins; an unanswered proposal cannot cancel a frozen acceptance.
+ candidates.reverse();const notices:import('../../../contracts/src/criterion.ts').CriterionNotice[]=[],requests:string[]=[],effective=new Map<string,import('../../../contracts/src/criterion.ts').FrozenCriterion>();
+ for(const prior of await frozenCriteria(ctx,previous.accepted_criteria??[]))effective.set(criterionKey(prior.item,prior.target),prior);
+ for(const request of candidates){
+  const notice=await noticeAt(ctx,request,at);if(!notice)continue;notices.push(notice);requests.push(request.record);
+  const answer=await answerAt(ctx,request.record,at);
+  if(!answer||notice.accepted!==true||!notice.reviewer)continue;
+  const frozen=(await frozenCriteria(ctx,[{declaration:notice.declaration,review:'rec:'+answer.source,reviewer:notice.reviewer}]))[0];
+  effective.set(criterionKey(frozen.item,frozen.target),frozen);
+ }
+ const criteria=[...effective.values()],refs=criteria.map(({declaration,review,reviewer})=>({declaration,review,reviewer}));
+ return {refs,requests,criteria,notices};
+}
+/** Public request status of this run plus the predecessor decisions visible at its immutable start cutoff. */
+export async function criterionNotices(ctx:EngineContext,run:RunRecord):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice[]>{
+ const result=[] as import('../../../contracts/src/criterion.ts').CriterionNotice[];
+ for(const id of run.criterion_requests??[]){const request=await requestService(ctx).inspect(id);if(request){const notice=await noticeAt(ctx,request,run.started_at);if(notice)result.push(notice);}}
+ for(const request of await requestService(ctx).all(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
+ return result;
 }

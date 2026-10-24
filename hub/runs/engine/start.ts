@@ -1,4 +1,4 @@
-import {prepareCriterionReview} from './criterion-changes.ts';
+import {freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
@@ -521,6 +521,7 @@ async function startFresh(
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const criterionReview=await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null);
+  const criterionSnapshot=workflow.workflow.predecessor_access==='view'?{refs:[],requests:[],criteria:[],notices:[]}:await freezeCriteria(ctx,predecessor?.body??null,workflow.pack.id,startedAt);
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
   // The lease view is taken BEFORE the projection runs, so the projection sees real rows, none of them this run's own
   // acquisitions. Rows this run's lineage already holds (the holder run sits in the predecessor chain, same user; D04
@@ -536,6 +537,7 @@ async function startFresh(
     leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
   }
   const context: RunContext = {
+    ...(criterionSnapshot.criteria.length?{accepted_criteria:criterionSnapshot.criteria}:{}),
     ...(criterionReview?{criterion_review:criterionReview.context}:{}),
     product: target.product?.product.id ?? null,
     names: target.product?.product.names ?? [],
@@ -583,7 +585,7 @@ async function startFresh(
       items,
     );
     items = items.map((it) => {
-      const reuse = offers.get(it.id);
+      const reuse = criterionSnapshot.criteria.some(change=>change.item===it.id)?undefined:offers.get(it.id);
       return reuse === undefined ? it : { ...it, reuse };
     });
   }
@@ -600,6 +602,8 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const record: RunRecord = RunRecord.parse({
     ...(effectRegistry??{}),
+    ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
+    ...(criterionSnapshot.requests.length?{criterion_requests:criterionSnapshot.requests}:{}),
     run: runId,
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,
@@ -674,7 +678,7 @@ async function startFresh(
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
   if(predecessor!==null)await answerSuccessorRequests(ctx,predecessor.body,stored);
   return {
-    answer: okAnswer(record, result),
+    answer: {...okAnswer(record, result),run:{...summaryOf(record),...(criterionSnapshot.notices.length?{criterion_changes:criterionSnapshot.notices}:{})}},
     production: result,
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),

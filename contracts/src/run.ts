@@ -1,4 +1,4 @@
-import {AcceptedCriterionRef} from './criterion.ts';
+import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
@@ -99,6 +99,7 @@ export const SlotSchema = z.strictObject({
 export type SlotSchema = z.infer<typeof SlotSchema>;
 
 export const RunSummary = z.strictObject({
+  criterion_changes:z.array(CriterionNotice).optional(),
   run: RunId,
   pack: z.string(),
   pack_digest: Sha256,
@@ -141,7 +142,7 @@ const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs
 const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_interpreters:true}).superRefine((row,ctx)=>{
   if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
 });
-export const RunRecord = RunSummary.extend({
+export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
   accepted_criteria:z.array(AcceptedCriterionRef).optional(),
   criterion_requests:z.array(Sha256).optional(),
   criterion_review:z.strictObject({submission:Sha256,requests:z.array(Sha256)}).optional(),
