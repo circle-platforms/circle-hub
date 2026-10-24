@@ -1,5 +1,5 @@
 // Shared V03 recovery rules. Intent binding never creates a request or performs an action.
-import {labelOf,type Reason} from '../../../contracts/generated/vocabulary.ts';
+import {labelOf,ReasonSchema,type Reason} from '../../../contracts/generated/vocabulary.ts';
 import {UnknownExit,isUnknownTerminal,type LayerResult} from '../../../contracts/src/validation.ts';
 import type {CheckOutcome} from '../../../contracts/src/tables.ts';
 
@@ -50,6 +50,7 @@ function bindNamedRecovery(layer: LayerResult, context: NamedRecoveryContext, ou
 
 /** Compatibility input for the earlier pure-intent helper, not an execution context. */
 export interface RecoveryContext {now:Date;runner:string;owner:string|null;admin:string|null;trustedCore?:boolean}
+const heldInputReasons=ReasonSchema.extract(['awaiting_step','missing_input']);
 export function bindRecovery(layer:LayerResult,context:NamedRecoveryContext,outcomes?:readonly CheckOutcome[]):LayerResult;
 export function bindRecovery(layer:LayerResult,outcomes:readonly CheckOutcome[],context:RecoveryContext):LayerResult;
 export function bindRecovery(layer:LayerResult,second:NamedRecoveryContext|readonly CheckOutcome[],third?:RecoveryContext|readonly CheckOutcome[]):LayerResult{
@@ -66,7 +67,7 @@ export function bindRecovery(layer:LayerResult,second:NamedRecoveryContext|reado
       const held=Array.isArray(outcome.data?.unread_sources)&&outcome.data.unread_sources.some((row:unknown)=>row!==null&&typeof row==='object'&&'reason'in row&&row.reason==='credential_unreadable');
       if(outcome.data?.sandbox==='SANDBOX_UNAVAILABLE'){gap.exit={action:'reevaluate',audience:{hub:true},due};procedure='Hub 在沙箱恢复后自动重评';}
       else if(outcome.reason==='missing_input'&&outcome.data?.why==='unavailable'){gap.exit={action:'reread',audience:{hub:true},due};procedure='Hub 重读已绑定的来源片段后自动重评';}
-      else if((outcome.reason==='awaiting_step'||outcome.reason==='missing_input')&&held){gap.exit={action:'request',request_kind:'disposition',audience:{user:context.admin},due};procedure='具名管理员接受这份普通来源后 Hub 自动重评';}
+      else if(heldInputReasons.safeParse(outcome.reason).success&&held){gap.exit={action:'request',request_kind:'disposition',audience:{user:context.admin},due};procedure='具名管理员接受这份普通来源后 Hub 自动重评';}
       else if(outcome.reason==='integrity_unproven'&&outcome.data?.why==='integrity_unproven'){gap.exit={action:'request',request_kind:'repair',audience:{user:context.admin},due};procedure='具名管理员从可信备份恢复与摘要一致的字节后重新核验，不重读损坏的原件';}
     }
     gap.missing+='；下一步：'+procedure;
