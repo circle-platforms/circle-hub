@@ -1,6 +1,6 @@
 {
   "id": "knowledge-contribution",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "model_readable": "model_readable",
   "axes": {
     "entry_kind": [
@@ -41,6 +41,10 @@
       {
         "code": "relation",
         "label": "关系"
+      },
+      {
+        "code": "applicability_claim",
+        "label": "适用条件主张"
       }
     ],
     "relation_kind": [

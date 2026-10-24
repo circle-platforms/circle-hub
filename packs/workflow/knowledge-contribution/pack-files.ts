@@ -1,3 +1,5 @@
+import {readFileSync} from 'node:fs';
+import {contributionSlots} from '../../../tools/slot-schema.ts';
 // Derive the output vocabulary from the model; never maintain a second enumeration in this pack.
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -6,24 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { READ_TIER, ENTRY_KIND, DOCUMENT_OUTPUT_KIND, RELATION_KIND, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { manifestProblems, signManifest } from '../case-review/packaging.ts';
 const directory = fileURLToPath(new URL('./', import.meta.url));
-export function slots() {
-  const quote = { type: 'object', additionalProperties: false, required: ['reference', 'quote'],
-    properties: { reference: { type: 'string' }, quote: { type: 'string' } } };
-  return {
-    schema: 'slots@1',
-    item: { contribution: {
-      min: 1, max: 1,
-      codes: DOCUMENT_OUTPUT_KIND.map(code => ({ code, label: labelOf('document_output_kind', code) })),
-      data: { type: 'object', additionalProperties: false, required: ['root', 'path', 'source'], properties: {
-        root: { type: 'string' }, path: { type: 'string' }, source: quote,
-        relation: { type: 'object', additionalProperties: false, required: ['kind', 'other'],
-          properties: { kind: { enum: RELATION_KIND }, other: quote } },
-      } },
-    } },
-    run: {},
-  };
+export function slots(){
+ const schema=JSON.parse(readFileSync(new URL('../../../contracts/generated/schemas/contribution-input.v1.schema.json',import.meta.url),'utf8'));
+ return contributionSlots(schema,DOCUMENT_OUTPUT_KIND.map(code=>({code,label:labelOf('document_output_kind',code)})));
 }
-export const VERSION = '1.1.5';
+export const VERSION = '1.1.6';
 export function generated() {
   const axis = (name: string, values: readonly string[]) => values.map(code => ({code,label:labelOf(name as 'entry_kind',code as never)}));
   return {id:'knowledge-contribution',version:VERSION, model_readable:READ_TIER.find(code=>code==='model_readable'), axes: {entry_kind:axis('entry_kind',ENTRY_KIND),document_output_kind:axis('document_output_kind',DOCUMENT_OUTPUT_KIND),relation_kind:axis('relation_kind',RELATION_KIND),read_tier:axis('read_tier',READ_TIER)}};
