@@ -266,6 +266,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const interpreter=getInterpreter(declared.interpreter);
     if(allowed && interpreter && !interpreter.validateTable(declared.table).length) runtimeChecks.set(`@runtime.${index}`,declared);
   }
+  const unruledChecks=(submission?.checks ?? []).map((check,index)=>({check,index})).filter(({check})=>workflow.requirements.some(t=>t.key===check.requirement && t.run_table) && !workflow.ledger?.shapes.some(row=>row.requirement===check.requirement && row.interpreter===check.interpreter));
   const templates = workflow.requirements.map(t=>({...t,checks:[...t.checks,...[...runtimeChecks].filter(([,check])=>check.requirement===t.key).map(([id])=>id)]}));
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
@@ -824,6 +825,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
+      if ((raw.terminal==='pass'||raw.terminal==='judgment') && unruledChecks.some(({check})=>check.requirement===t.key)) raw={...raw,terminal:'judgment'};
       if ((raw.reason === 'declared_skip' || raw.reason === 'not_covered') && roundsLeftOf(t) === 0) raw = {...raw, reason:'repair_exhausted'};
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0, outcomes);
       const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
@@ -855,6 +857,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         errors.push({code:'missing_input',message:missing,item:it.id,requirement:t.key,fix:'请所列原运行者带 Circle-Session-Id，以原工作为 predecessor 开新修订并重新提交，再对新修订开复核运行'});
       }
       const status = requirementStatus({
+        producer:t.accepted_producer,
         layers,
         hasProducer,
         expectation,
@@ -984,6 +987,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // ---- cross-item claims: Hub facts of run-level checks and of run-level requirements, then the submitted entries
   const crossBound = [...baseBound, ...itemDigests];
   const cross: Claim[] = [];
+  for(const {check,index} of unruledChecks)cross.push(judgmentClaim({
+    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版台账裁定`,
+    data:{requirement:check.requirement,interpreter:check.interpreter},model:submission!.model,
+    marks:['decision_shape_unruled'],grounds:[],resolutions:[],bound:[...crossBound,input.submissionDigest,receivedDigest(run).digest],
+  }));
   const factOf = (o: CheckOutcome, check: CheckEntry, requirement: string): Claim =>
     factClaim({
       ...(o.item !== undefined && itemIds.has(o.item) ? { item: o.item } : {}),

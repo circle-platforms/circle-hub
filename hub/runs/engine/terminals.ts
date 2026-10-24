@@ -279,9 +279,10 @@ export function isUnsettled(layer: LayerResult): boolean {
 }
 
 /** Whether a settled terminal meets the expectation; a violation meets a refute expectation only when every refutation is expected. */
-function meets(layer: LayerResult, expectation: Expectation, expectedRefutation: boolean): boolean {
+function meets(layer: LayerResult, expectation: Expectation, expectedRefutation: boolean, producer?: AcceptedProducer): boolean {
   if (layer.layer === 'static') {
-    if (layer.terminal === 'pass' || layer.terminal === 'judgment') return expectation.outcome === 'support';
+    if (layer.terminal === 'pass') return expectation.outcome === 'support';
+    if (layer.terminal === 'judgment') return producer !== 'fact' && expectation.outcome === 'support';
     if (layer.terminal === 'violation') return expectation.outcome === 'refute' && expectedRefutation;
     return false;
   }
@@ -329,6 +330,7 @@ export function dynamicLayer(statics?: Pick<RoutedStatic, 'terminal' | 'reason'>
 export type IndependenceFinding = 'independent' | Extract<Independence, 'not_independent' | 'unknown'>;
 
 export interface StatusInput {
+  producer?: AcceptedProducer;
   layers: LayerResult[];
   hasProducer: boolean;
   expectation: Expectation;
@@ -347,9 +349,9 @@ export interface StatusInput {
  */
 export function requirementStatus(input: StatusInput): { status: RequirementStatus; unsatisfied_reason?: UnsatisfiedReason } {
   if (!input.hasProducer) return { status: 'unsatisfied', unsatisfied_reason: 'no_producer' };
-  if (input.layers.some(layer=>!isUnsettled(layer)&&!meets(layer,input.expectation,input.expectedRefutation))) return {status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'};
+  if (input.layers.some(layer=>!isUnsettled(layer)&&!meets(layer,input.expectation,input.expectedRefutation,input.producer))) return {status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'};
   if (input.layers.some(isUnsettled)) return { status: 'pending' };
-  if (!input.layers.every((l) => meets(l, input.expectation, input.expectedRefutation))) return { status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch' };
+  if (!input.layers.every((l) => meets(l, input.expectation, input.expectedRefutation,input.producer))) return { status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch' };
   if (input.independence !== null && !(input.independence === 'independent' && input.acceptsDeclared)) {
     return { status: 'unsatisfied', unsatisfied_reason: 'independence_unknown' };
   }

@@ -802,3 +802,8 @@ Their grounds point to the stored submission's sample list. The admission of tha
 validate action (linked by submission record and argument digest); this avoids a circular result/action digest reference.
 An admitted outside-author contrast establishes discriminating power. Otherwise the runtime conclusion is conditional and
 its discriminating power is not established; a requirement asking for discrimination remains unsatisfied.
+
+Shapes outside the locked requirement ledger are not executed. A cross-item judgment records only the requirement and
+interpreter, marked `decision_shape_unruled`; the package owner can rule on it in the next published version. No ruling
+request is created. Template violations, incompleteness and unchecked facts keep priority over that judgment. A judgment
+cannot satisfy a fact-only requirement, even when its expected outcome is support; it is unsatisfied with outcome_mismatch.
