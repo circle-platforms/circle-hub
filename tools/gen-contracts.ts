@@ -406,6 +406,10 @@ function renderProtocol(model: Model, codes: Codes): string {
  */
 const SHARED_PRIMITIVES: Readonly<Record<string,string>> = {
   'contract:common/Sha256':'Common.Sha256',
+  'contract:common/UserId':'Common.UserId',
+  'contract:common/RunId':'Common.RunId',
+  'contract:common/IsoTime':'Common.IsoTime',
+  'contract:product/Applicability':'Product.Applicability',
   'contract:common/Versioned':'Common.Versioned',
   'contract:common/ItemId':'Common.ItemId',
   'contract:reference/ReferenceUri':'Reference.ReferenceUri',
@@ -422,9 +426,9 @@ export function renderSharedInterfaces(input: unknown): string | undefined {
   const source=spec as Record<string,unknown> & {definitions:unknown[]};
   const axes=new Map(list(input.vocabulary).filter(isRecord).map(a=>[a.axis,a]));
   const names=new Set<string>();const ids=new Set<string>();
-  const reserved=new Set(['Common','Reference','Tables','V','SharedInterfaceSchemas','z']);
+  const reserved=new Set(['Common','Reference','Tables','Product','V','SharedInterfaceSchemas','z']);
   const bindings=new Set(reserved);
-  const out=[HEADER,"import { z } from 'zod';","import * as V from './vocabulary.ts';","import * as Common from '../src/common.ts';","import * as Reference from '../src/reference.ts';","import * as Tables from '../src/tables.ts';",''];
+  const out=[HEADER,"import { z } from 'zod';","import * as V from './vocabulary.ts';","import * as Common from '../src/common.ts';","import * as Reference from '../src/reference.ts';","import * as Tables from '../src/tables.ts';","import * as Product from '../src/product.ts';",''];
   const entries:Array<[string,string]>=[];
   const compile=(raw:unknown,at:string,depth=0):string=>{
     if(depth>32||!isRecord(raw))return fail(at,'needs a shape object within depth 32');
@@ -547,7 +551,7 @@ async function loadContracts(root: string, generated: Record<string, string>): P
     }
     const shared = generated['shared-interfaces.ts'] === undefined ? undefined : await import(tagged(pathToFileURL(join(root, GENERATED_DIR, 'shared-interfaces.ts')).href));
     const sharedSchemas = shared?.SharedInterfaceSchemas ?? {};
-    for (const id of Object.keys(sharedSchemas)) if (id in contracts.SCHEMA_REGISTRY) throw new ContractsError([`shared interface schema ${id} clashes with the record registry`]);
+    for (const id of Object.keys(sharedSchemas)) if (id in contracts.SCHEMA_REGISTRY && sharedSchemas[id]!==contracts.SCHEMA_REGISTRY[id]) throw new ContractsError([`shared interface schema ${id} clashes with the record registry`]);
     return { contracts, exporters, sharedSchemas };
   } catch (error) {
     throw new ContractsError([`contracts/src/index.ts failed to load with the regenerated vocabulary and protocol: ${(error as Error).message}`]);

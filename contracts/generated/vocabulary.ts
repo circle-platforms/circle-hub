@@ -66,7 +66,7 @@ export const AXES = {
   fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '不是这次运行的输入' }, { code: 'not_groundable', label: '这类记录不能作根据' }, { code: 'entry_unaddressed', label: '知识条目单独引用了，没写树地址' }, { code: 'malformed', label: '引用写法不对' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'too_large', label: '超过大小上限' }, { code: 'retain_only', label: '只保留、不可读' }, { code: 'unavailable', label: '暂时读不到' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
   document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }, { code: 'applicability_claim', label: '适用条件主张' }] },
   task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
-  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
+  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }, { code: 'covers', label: '覆盖' }] },
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
   work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
@@ -81,6 +81,9 @@ export const AXES = {
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
   knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
   release_status: { label: '发布说明状态', owner: 'K02', values: [{ code: 'fixed', label: '已修复' }, { code: 'known', label: '已知' }] },
+  composition_basis: { label: '组成依据', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
+  binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
+  binding_basis: { label: '版本绑定依据', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -653,9 +656,9 @@ export function isTaskOutputKind(value: unknown): value is TaskOutputKind {
 }
 
 /** 关系种类 (K03) */
-export const RELATION_KIND = ['same_subject', 'contradicts'] as const;
+export const RELATION_KIND = ['same_subject', 'contradicts', 'covers'] as const;
 export type RelationKind = (typeof RELATION_KIND)[number];
-export const RELATION_KIND_LABEL = { 'same_subject': '说的是同一件事', 'contradicts': '互相矛盾' } as const satisfies { readonly [K in RelationKind]: string };
+export const RELATION_KIND_LABEL = { 'same_subject': '说的是同一件事', 'contradicts': '互相矛盾', 'covers': '覆盖' } as const satisfies { readonly [K in RelationKind]: string };
 export const RelationKindSchema = z.enum(RELATION_KIND);
 export function isRelationKind(value: unknown): value is RelationKind {
   return (RELATION_KIND as readonly unknown[]).includes(value);
@@ -787,6 +790,33 @@ export function isReleaseStatus(value: unknown): value is ReleaseStatus {
   return (RELEASE_STATUS as readonly unknown[]).includes(value);
 }
 
+/** 组成依据 (K01) */
+export const COMPOSITION_BASIS = ['release_record', 'device_echo', 'source_structure', 'declared'] as const;
+export type CompositionBasis = (typeof COMPOSITION_BASIS)[number];
+export const COMPOSITION_BASIS_LABEL = { 'release_record': '发布记录', 'device_echo': '设备回显', 'source_structure': '来源结构', 'declared': '声明' } as const satisfies { readonly [K in CompositionBasis]: string };
+export const CompositionBasisSchema = z.enum(COMPOSITION_BASIS);
+export function isCompositionBasis(value: unknown): value is CompositionBasis {
+  return (COMPOSITION_BASIS as readonly unknown[]).includes(value);
+}
+
+/** 版本绑定状态 (K03) */
+export const BINDING_STATUS = ['bound', 'undeclared', 'conflict'] as const;
+export type BindingStatus = (typeof BINDING_STATUS)[number];
+export const BINDING_STATUS_LABEL = { 'bound': '已绑定', 'undeclared': '未声明', 'conflict': '冲突' } as const satisfies { readonly [K in BindingStatus]: string };
+export const BindingStatusSchema = z.enum(BINDING_STATUS);
+export function isBindingStatus(value: unknown): value is BindingStatus {
+  return (BINDING_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 版本绑定依据 (K03) */
+export const BINDING_BASIS = ['source_structure', 'declared'] as const;
+export type BindingBasis = (typeof BINDING_BASIS)[number];
+export const BINDING_BASIS_LABEL = { 'source_structure': '来源结构', 'declared': '声明' } as const satisfies { readonly [K in BindingBasis]: string };
+export const BindingBasisSchema = z.enum(BINDING_BASIS);
+export function isBindingBasis(value: unknown): value is BindingBasis {
+  return (BINDING_BASIS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -866,6 +896,9 @@ export interface AxisValues {
   declaration_status: DeclarationStatus;
   knowledge_count: KnowledgeCount;
   release_status: ReleaseStatus;
+  composition_basis: CompositionBasis;
+  binding_status: BindingStatus;
+  binding_basis: BindingBasis;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -947,6 +980,9 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   declaration_status: DECLARATION_STATUS_LABEL,
   knowledge_count: KNOWLEDGE_COUNT_LABEL,
   release_status: RELEASE_STATUS_LABEL,
+  composition_basis: COMPOSITION_BASIS_LABEL,
+  binding_status: BINDING_STATUS_LABEL,
+  binding_basis: BINDING_BASIS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */
