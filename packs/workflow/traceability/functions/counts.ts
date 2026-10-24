@@ -10,7 +10,7 @@ const TIER = 'advisory' as const;
 
 interface CountsItem {
   id: string;
-  fields: { bug?: unknown; systems?: unknown; conflict?: unknown; cases?: unknown };
+  fields: { bug?: unknown; systems?: unknown; conflict?: unknown; cases?: unknown;declaration_status?:unknown };
 }
 
 function factsOf(raw: unknown): { items: CountsItem[]; facts: RunFacts } | null {
@@ -78,6 +78,7 @@ export function countsOutcome(
 
   const data: Record<string, unknown> = {
     defects,
+    release_status_undeclared:items.filter(item=>item.fields.declaration_status==='undeclared').length,
     traced,
     untraced,
     conflicts,
@@ -99,6 +100,7 @@ export function countsOutcome(
   }
   let statement = `缺陷 ${defects} 个：已追溯 ${traced} 个，未追溯 ${untraced} 个；其中已关闭缺陷 ${closedDefects} 个：已追溯 ${closedTraced} 个，未追溯 ${closedUntraced} 个；缺陷系统状态未知 ${statusUnknown} 个（不算已关闭也不算未关闭）`;
   if (statusUnread > 0) statement += `；状态未读：系统未接入 ${statusUnread} 个（不算已关闭也不算未关闭）`;
+  const undeclared=items.filter(item=>item.fields.declaration_status==='undeclared').length;if(undeclared>0)statement+='；发布说明状态未声明 '+undeclared+' 个；已修复判断未知，下一步发布页或缺陷系统维护者补原始状态后重产';
   if (conflicts > 0) statement += `；其中状态矛盾的缺陷 ${conflicts} 个`;
   if (facts.views.defects.skipped > 0) statement += `；缺陷索引有 ${facts.views.defects.skipped} 份列出的来源没有读取`;
   if (facts.views.cases.skipped > 0) statement += `；用例索引有 ${facts.views.cases.skipped} 份列出的来源没有读取，其中的用例不在计数里`;

@@ -1,10 +1,11 @@
 // The run parameters of the pack (workflow.json declares them): the defect statuses to include. The engine checks the value
 // against its schema; this reader is defensive anyway (a direct call, a sample) and reports what it ignores.
+import {RELEASE_STATUS} from './generated/vocabulary.ts';
 import { compareText } from './text.ts';
 
 export type Parameters = { statuses: string[]; ignored: string[] };
 
-export const STATUSES = ['fixed', 'known'] as const;
+export const STATUSES = RELEASE_STATUS;
 export const DEFAULT_STATUSES: readonly string[] = [...STATUSES].sort(compareText);
 
 /** Reads the statuses parameter: absent is the default (fixed and known); anything else is refused by the caller. */

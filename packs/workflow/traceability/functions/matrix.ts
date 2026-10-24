@@ -1,3 +1,4 @@
+import {isReleaseStatus,RELEASE_STATUS_LABEL} from './generated/vocabulary.ts';
 // The join of the traceability matrix: the defects of the build (the defect index of its release notes) against the case
 // index keyed by the defect ids the case documents carry. Ids compare after the digit normalisation of ids.ts; both sides
 // are grouped by the normalised id first, so the join is a lookup, not a cross product. Deterministic: every list is sorted
@@ -7,9 +8,9 @@ import { clip, compareText, strings } from './text.ts';
 import type { CaseRef, IndexViewData, MatrixRow, ViewEntry } from './types.ts';
 
 /** The defect statuses an entry may carry (data.status of a release-note defect entry). */
-export const STATUS_TEXT: Readonly<Record<string, string>> = { fixed: '已修复', known: '已知（未修复）' };
+export const STATUS_TEXT: Readonly<Record<string, string>> = RELEASE_STATUS_LABEL;
 /** The short forms, for the conflict enumeration. */
-export const STATUS_SHORT: Readonly<Record<string, string>> = { fixed: '已修复', known: '已知' };
+export const STATUS_SHORT: Readonly<Record<string, string>> = RELEASE_STATUS_LABEL;
 
 /** The status part of a summary or a statement: one status, or the conflict spelled out. */
 export function statusText(statuses: readonly string[]): string {
@@ -59,18 +60,22 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
   }
   // The defects, grouped by the normalised id: one bug may be written with leading zeros in one entry and plain in another.
   const groups = new Map<string, { bug:string; system:string|null; ids: Set<string>; entries: Map<string, ViewEntry> }>();
-  for (const [raw, digests] of Object.entries(defects.keys)) {
+  const buckets=Object.entries(defects.keys),indexed=new Set(buckets.flatMap(([,digests])=>digests));
+  const unkeyed=Object.keys(defects.entries).filter(digest=>!indexed.has(digest)&&defects.entries[digest].data.identity_declaration_status==='undeclared');if(unkeyed.length)buckets.push(['',unkeyed]);
+  for (const [raw, digests] of buckets) {
     const norm = normalizeId(raw);
     for (const digest of digests) {
       const entry = defects.entries[digest];
       if (entry === undefined) continue;
       const status = entry.data.status;
-      if (typeof status !== 'string' || !statuses.includes(status)) continue;
+      const declared=entry.data.declaration_status==='declared'&&isReleaseStatus(status);
+      if(declared&&!statuses.includes(status))continue;
       const system=typeof entry.data.system==='string'&&entry.data.system!==''&&entry.data.system!=='unknown'?entry.data.system:null;
-      const key=JSON.stringify([system,norm]);
+      const missingIdentity=entry.data.bug===null||entry.data.identity_declaration_status==='undeclared';
+      const key=JSON.stringify([system,missingIdentity?digest:norm]);
       let group=groups.get(key);
-      if(group===undefined)groups.set(key,(group={bug:norm,system,ids:new Set(),entries:new Map()}));
-      group.ids.add(raw);
+      if(group===undefined)groups.set(key,(group={bug:missingIdentity?'':norm,system,ids:new Set(),entries:new Map()}));
+      if(!missingIdentity)group.ids.add(raw);
       group.entries.set(digest, entry);
     }
   }
@@ -82,7 +87,9 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
     const collisionSystems=[...new Set(peers.flatMap(g=>g.system===null?[]:[g.system]))].sort(compareText);
     const ambiguous:CaseRef[]=[];
     const entries = [...group.entries.entries()].sort(([a], [b]) => compareText(a, b));
-    const statusList = [...new Set(entries.map(([, entry]) => entry.data.status as string))].sort(compareText);
+    const declaredEntries=entries.filter(([,entry])=>entry.data.declaration_status==='declared'&&isReleaseStatus(entry.data.status));
+    const declaration_status=declaredEntries.length===entries.length?'declared' as const:'undeclared' as const;
+    const statusList = [...new Set(declaredEntries.map(([, entry]) => entry.data.status as string))].sort(compareText);
     const systemList = [...new Set(entries.map(([, entry]) => entry.data.system).filter((system): system is string => typeof system === 'string' && system !== ''))].sort(compareText);
     const bucket = byBug.get(bug);
     const caseRefs: CaseRef[] = [];
@@ -96,7 +103,10 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
     }
     rows.push({
       bug,
-      identity:group.system===null?bug:encodeURIComponent(group.system)+':'+bug,
+      declaration_status,
+      ...(bug===''?{identity_declaration_status:'undeclared' as const}:{}),
+      ...(declaration_status==='undeclared'?{missing:'发布说明缺陷条目的原始结构状态'+(bug===''?'及缺陷身份':''),next_action:'发布页或缺陷系统维护者补原始 status、身份和所属构建，重读来源并重产；依赖已修复状态的判断补齐前保持未知'}:{}),
+      identity:bug===''?'undeclared:'+entries[0][0]:group.system===null?bug:encodeURIComponent(group.system)+':'+bug,
       ...(collisionSystems.length>1?{collision_systems:collisionSystems,collision_references:peers.flatMap(g=>[...g.entries.values()].map(e=>e.reference)).sort(compareText)}:{}),
       ...(ambiguous.length?{ambiguous_cases:ambiguous.sort((a,b)=>compareText(a.reference,b.reference))}:{}),
       ids: [...group.ids].sort(compareText),

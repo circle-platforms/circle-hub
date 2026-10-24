@@ -20,7 +20,7 @@ function fieldsOf(item: Item): MatrixRow | null {
   const cases = fields.cases;
   if (
     typeof fields.bug !== 'string' ||
-    fields.bug === '' ||
+    fields.bug === ''&&fields.identity_declaration_status!=='undeclared' ||
     !Array.isArray(fields.ids) ||
     !Array.isArray(fields.statuses) ||
     (fields.statuses as unknown[]).some((s) => typeof s !== 'string') ||
@@ -110,6 +110,7 @@ function tracedStatement(fields: MatrixRow, info: DefectSystemInfo): string {
 
 function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: number; truncated: boolean }, info: DefectSystemInfo): CheckOutcome {
   const pointer = `/items/${at}/fields`;
+  if(fields.declaration_status==='undeclared')return {verdict:'unknown',reason:'missing_input',missing:fields.missing??'缺发布说明的结构状态',statement:'已修复状态未声明；下一步：'+fields.next_action,grounds:fields.references,tier:TIER,item:item.id,pointer,data:{...fields,status:null,fixed:null}};
   const caseGrounds = fields.cases.map((c) => c.reference);
   const grounds = [...fields.references, ...caseGrounds];
   // The join re-verified against the raw ids of each listed case, not trusted. A slim view (fields=document,node,title)

@@ -62,7 +62,7 @@ describe('projectItems', () => {
   it('marks a known defect in the label of its status and a conflict in its summary', () => {
     const out = asItems(project([defectEntry({ bug: '7003', status: 'known' }), defectEntry({ bug: '7004', status: 'known' }), defectEntry({ bug: '7004', status: 'fixed' })], []));
     const [known, conflict] = out.items;
-    assert.equal(known.summary, '已知（未修复）；无已索引用例（未知）');
+    assert.equal(known.summary, '已知；无已索引用例（未知）');
     assert.equal(conflict.summary, '状态矛盾（已修复、已知）；无已索引用例（未知）');
     assert.equal(conflict.fields.conflict, true);
   });

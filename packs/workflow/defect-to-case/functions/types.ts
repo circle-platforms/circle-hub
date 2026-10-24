@@ -6,6 +6,7 @@ import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 export const PACK = 'defect-to-case';
 
 export const CODES = {
+  NOT_FIXED: `${PACK}.not_fixed`,
   SHAPE_INVALID: `${PACK}.shape_invalid`,
   DUPLICATE_DRAFT: `${PACK}.duplicate_draft`,
   NEGATIVE_ACCEPTED: `${PACK}.negative_accepted`,
