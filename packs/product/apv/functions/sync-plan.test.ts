@@ -13,8 +13,8 @@ const newLine = [...parseListing(html(fixtureBytes('listing-apv-new-line.html'))
 const TREE = { name: 't.xml', href: 't.xml' };
 
 describe('planSync', () => {
-  it('selects the mainline pages of both families by default', () => {
-    const plan = planSync({ index });
+  it('selects both families and explicitly configured additional mainline words', () => {
+    const plan = planSync({ index,options:{mainline_page_words:['tls13']} });
     assert.deepEqual(
       plan.pages.map((page) => [page.page, page.family, page.line, page.kind, page.from]),
       [

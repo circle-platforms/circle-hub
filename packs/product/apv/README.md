@@ -628,16 +628,7 @@ accepted.
   `product.json`, or the group is refused (`apv.adoc.family_not_a_name`). The conditional branches are reported per family,
   and any family's expansion failure fails the group and returns no partial result, so the old knowledge root does not
   move.
-- What a family records about its attribute set is only what this producer was given: whether the parameter named the
-  family (`attributes.declared` — an explicit empty set is declared, and a synthetic set is as declared as a real one), the
-  set it ran with (`attributes.values`, which the composition record also carries) and a note saying which set was used.
-  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `variables` of
-  apv-deployment-conventions step one, which this task only reads. Until that record exists, "this family's attribute set
-  is not configured" is not written here; a family the parameter names no key for produces with the pack default (all
-  unset, like today's markdown), its note says exactly that and names the `variables` step as the way to tell a
-  configured set from an unconfigured one, and nothing is recorded as unknown. The real attribute names and values are
-  deployment data: the integrator collects them read-only from the source and overrides the parameter through that
-  mechanism.
+- The family helper records only what it was given: `attributes.declared`, `attributes.values` and a note. It does not infer deployment provenance. The published family producers receive resolved values; the Hub root composition's `variables` records each reference and its immutable configuration decision, not an invented producer claim about its origin. Real sync refuses missing variables before any read. Only direct synthetic samples and dry runs may exercise absent/default attributes. Real attribute names and values remain deployment data supplied explicitly by the integrator.
 
 ## Deviations from the brief and the task
 
@@ -905,3 +896,7 @@ ROOT 的三种情形：
 每族独立生产器只引用本族 ROOT、MAIN 和属性变量。改一族属性时，Hub 重核组成记录，输入不变的另一族生产调用复用；合成测试核对了另一族条目摘要不变。ROOT 模板改变会改变传给函数的来源清单和构建输入，按完整输入重核，不猜函数内分支。
 
 属性来源由 Hub 组成记录的 `variables` 固定；生产器不自己宣称“从部署取得”。试运行不写知识结果，读取仍留审计。合成默认值和上述测试都不构成真实手册验收，真实属性、目录、主文件和主线词由集成者核对并写部署数据。
+
+当前包版本为 1.4.0：部署约定和按族 adoc 接线已进入包声明。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
+
+在 Literal links 的生产器范围中，`source_producers` 为 `manual-apv` 与 `manual-nsae`，`target_producers` 仍为 `command-tree`；两族共用同一套关系规则和规范化器。
