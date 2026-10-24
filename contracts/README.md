@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 61 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 72 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -305,3 +305,10 @@ Their owners must fix the generated types; this branch does not edit the pack's 
 The check-work contract now names both `CHECK_LIMITS_MIN` and `CHECK_LIMITS_MAX`; source-only tests anchor each bound
 to the independent sandbox protocol constants and reject values below the lower bound. `MappedIdentity` describes a
 mapped external account; it deliberately has its own diagnostic instead of reusing the missing-fact field type.
+
+
+## Predecessor input defaults
+
+`WorkflowInput.default_from_predecessor` explicitly declares `{pack: <workflow id>}`. Only artifact-under-verification inputs accepting `application/json` may declare it. Absent declarations never opt in; explicit bindings always win. The runtime selects only an accepted validation of a real predecessor submission, preserving the existing predecessor access and lineage guards. The optional declaration is also returned in input-slot summaries.
+
+`RunSummary.input_defaults` freezes `{slot, predecessor, reference}` for every Hub-selected default. References name complete validation records without fragments; historical and explicitly bound runs omit this field. The record and tool reply use the same frozen facts. Cross-field declaration eligibility, unique defaulted slot names and the no-fragment requirement are runtime refinements beyond the generated JSON Schema; callers must still pass these checks.

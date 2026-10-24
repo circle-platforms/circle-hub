@@ -133,8 +133,20 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   const locked = (read: ViewRead) => {
     const view = viewOf(read.view);
     sameSnapshot(read, view, '全部索引分片');
+    sameCounts(view, '索引分页或分片');
     return view;
   };
+  /**
+   * The deduplicated entry counts of the locked scope (`totals.entry_counts`: total, placed on the tree, not placed).
+   * Every page, every only= shard and the facets view count the same entries, so a difference means another snapshot.
+   */
+  function sameCounts(view: any, what: string): void {
+    const whole = initial.totals?.entry_counts, mine = view.totals?.entry_counts;
+    if (!object(whole) || !object(mine)) return; // An older Hub does not carry the counts: nothing to compare.
+    // Field by field: a parsed answer may order its members differently than the canonical bytes of another view.
+    if (whole.total !== mine.total || whole.placed !== mine.placed || whole.unplaced !== mine.unplaced)
+      fail(`同一快照的条目计数（${what}）`, '视图的 totals.entry_counts 与首页不同（总数、已挂到树上位置、未挂到树上位置）；构建在导出中被重新生产或同步过，换空目录重新导出');
+  }
   // ---- the key list: page the index by its own continuation id, then cross-check it against the facets view
   const pages: any[] = [initial];
   const keys = new Set<string>(Object.keys(initial.keys));
@@ -183,6 +195,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   const facetRead = await deps.facets(facetId);
   const facet = facetViewOf(facetRead.view);
   sameSnapshot(facetRead, facet, '文档分面');
+  sameCounts(facet, '文档分面');
   addRows(facet);
   facetTotal = facet.total; facetEmpty = facet.totals.empty[KEY_FIELD]; facetTruncated = facet.truncated;
   let facetNext = nextOf(facet);
@@ -198,6 +211,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
     }
     const page = facetViewOf(read.view);
     sameSnapshot(read, page, '文档分面');
+    sameCounts(page, '文档分面分页');
     if (page.total !== facetTotal || page.totals.empty[KEY_FIELD] !== facetEmpty)
       fail('每页一致的分面总数', '分面续页的 total 或空组计数与首页不同；换空目录重新导出同一构建');
     facetPages++;

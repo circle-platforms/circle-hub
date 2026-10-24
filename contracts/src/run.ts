@@ -13,7 +13,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
+import { ContextBuild, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -68,6 +68,7 @@ export const InputSlotSummary = z.strictObject({
   accepts: z.array(z.string()).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
+  default_from_predecessor: PredecessorInputDefault.optional(),
 });
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 
@@ -94,6 +95,14 @@ export const SlotSchema = z.strictObject({
 });
 export type SlotSchema = z.infer<typeof SlotSchema>;
 
+/** A default selected by the Hub at start_run; the full record identity is retained, never a fragment. */
+export const InputDefault = z.strictObject({
+  slot: z.string().min(1),
+  predecessor: RunId,
+  reference: referenceUriOf('rec').refine(reference=>!reference.includes('#'),'a complete validation record is required'),
+});
+export type InputDefault = z.infer<typeof InputDefault>;
+
 export const RunSummary = z.strictObject({
   run: RunId,
   pack: z.string(),
@@ -114,6 +123,7 @@ export const RunSummary = z.strictObject({
   instructions: z.string().describe('the pack procedure, plain text'),
   instructions_digest: Sha256,
   predecessor: RunId.optional(),
+  input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>row.slot)).size===rows.length,'defaulted slots are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings'),
   session: z.string().optional().describe('client session id observed from the request header'),
   started_at: IsoTime,
   submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),

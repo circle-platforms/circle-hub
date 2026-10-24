@@ -284,6 +284,14 @@ test('refuses a facets view of another snapshot, of another field or with unread
   }
 });
 
+test('refuses a view whose deduplicated entry counts differ from the first page', async t=>{
+  const f=fixture(t);
+  const counts={total:4,placed:3,unplaced:1};
+  f.deps.index=async()=>({view:{...f.view(),totals:{entry_counts:counts}},root});
+  f.deps.facets=async()=>({view:{...f.facet([['synthetic-doc',1]],1),totals:{empty:{document:0},entry_counts:{...counts,total:9}}},root});
+  await assert.rejects(exportBuild(f.options,f.deps),e=>e instanceof ExportError&&e.missing.startsWith('同一快照的条目计数')&&/重新生产或同步/.test(e.action));
+});
+
 test('stops on snapshot changes between index shards',async t=>{
   const f=fixture(t);let reads=0;
   f.deps.facets=async()=>({view:f.facet([['synthetic-doc',1]],1),root});
@@ -365,8 +373,7 @@ test('exports a truncated build whose entries are unplaced, withheld by the scan
   assert.equal(first.truncated,true,'the byte budget truncates the discovery read');
   assert.equal(first.total_keys,documents.length+1);
   assert.equal(first.total_entries,documents.length+2);
-  assert.ok(first.notes.some(note=>note.startsWith('未归位条目 2 个')));
-  assert.ok(first.notes.some(note=>/凭据扫描命中/.test(note)),'the withheld entry is named, not silently dropped');
+  assert.deepEqual(first.totals?.entry_counts,{total:23,placed:21,unplaced:2},'the structured counts: every case entry, placed on the tree or not');
   assert.ok(!Object.keys(first.keys).includes('zzz-unplaced'),'the cut key is not on the first page');
   // The fact the old route got wrong: no walk of the tree names the unplaced entry, however deep it goes.
   const walked=new Set<string>();

@@ -113,7 +113,7 @@ catalogs, grounds and provenance.
    producer (equal spans at two places of a manual keep both fragments).
 7. **Placement** (K04). Code places by source structure (entries with a path). The Hub calls no model (owner decision
    2026-10-22): the production assembly injects no placer, so entries without a path and the producers' `unplaced`
-   spans stay unplaced at the root, marked 未归位, and the production records `placement.spans` 0. The judgment flow
+   spans stay unplaced at the root, marked 未挂到树上位置的条目, and the production records `placement.spans` 0. The judgment flow
    below is the shape the bot's placement proposals will be verified against, exercised in this package's tests with a
    scripted judge: from the root down, one choice question per level among the
    children of the node (option names are the child names where the service takes them, the first line of each child's
@@ -347,7 +347,7 @@ catalogs, grounds and provenance.
     so in a note. *Facets*: distinct entries of the kind, the rows hung
     on the tree and the unplaced rows of the root (K01 R[4]: they stay under the root, marked unplaced). An entry counts
     once; one that is also hung keeps that path. An unplaced entry is cited at `/`, the existing tree reference
-    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.
+    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未挂到树上位置的条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.
     A list field counts once per distinct element, a missing field, null and an empty list count as null, a value that is
     not a scalar as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total`
     only (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
@@ -371,7 +371,7 @@ catalogs, grounds and provenance.
     them — a consumer that needs every key of a truncated index follows the view's own `next` continuation and
     cross-checks the counts against the facets view of the same scan.
     When any entries of the kind are unplaced, a note says how many
-    (`未归位条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
+    (`未挂到树上位置的条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
     entries fit the budget, and a listed entry not held is read in a second scan of the same entries. The answer is built, checked against its schema (the built object
@@ -471,7 +471,7 @@ catalogs, grounds and provenance.
 - Builds whose line the caller did not ask for are not filtered by the driver: the plan function receives the line and
   is the authority.
 - Spans that stop at the root are not hung on the root (K01 R[4], K04 R[3]); deeper stops hang on that node.
-- Placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report. The Hub calls no model (owner decision 2026-10-22): even declared entries are never placed by the Hub — they stay unplaced, marked 未归位 — and the Hub will only offer them to the bot for placement proposals and verify each proposal with deterministic rules (not implemented yet).
+- Placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report. The Hub calls no model (owner decision 2026-10-22): even declared entries are never placed by the Hub — they stay unplaced, marked 未挂到树上位置的条目 — and the Hub will only offer them to the bot for placement proposals and verify each proposal with deterministic rules (not implemented yet).
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.
@@ -1082,9 +1082,37 @@ They never infer that no entries exist from a source that did not produce.
 
 适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
 
+## 同步报告与视图的条目计数
+
+同步报告的 `entry_counts` 和分面/索引视图 `totals.entry_counts` 使用同一个口径：
+`total = placed + unplaced`，按内容身份去重。身份包含种类、陈述、数据和适用条件的规范 JSON；
+不是仅按文字。同一内容的多来源、多片段不增加条目数。所选根范围内，只要有一个树上位置，
+就归入 `placed`，不再计入 `unplaced`；一个内容挂在多个节点也只算一个。
+没有位置的标签由生成词表 `knowledge_count.tree_unplaced_entries` 提供：未挂到树上位置的条目。
+
+旧报告把已挂载的 `(路径, 内容)` 行数叫作条目总数，却另报没有位置的内容行数；
+后者可以大于前者，且同一内容可能两边都有。现在报告同时写明内容总数、已有位置数和树上挂载处数，
+没有位置的数采用上述互斥分类。例如三处挂载、四行没有位置的内容，去重并让已有位置优先后，
+实际是五个内容条目：两个有位置、三个没有位置。
+
+这次只修汇总与文字，不改组成记录、根节点、引用、分组或存储摘要。历史组成/根的
+`counts.entries` 及生产结果 `entries` 仍是挂载行数，原来的 `counts.unplaced` 和
+生产/同步结果 `unplaced` 仍是无位置内容行数；需要内容总数的消费者应读新的 `entry_counts`。
+同步报告按每个根统计全部种类，构建根和不分版本根分别报告。
+视图按请求种类统计锁定的根范围，合并不分版本根时跨根去重，保留原先构建根优先的载体选择；
+同一内容在任一所选根有位置，汇总就计为有位置，这不改变引用载体。
+因此不能直接相加两个根的报告。分面 `total` 等于内容总数；索引 `total_entries` 仍只数
+携带所选索引键/筛选值的条目，新 `entry_counts` 则数该种类全部条目。汇总在明细截断或排除前计算。
+
+看板“未归位（没有命令归属的用例）”另按 `by=commands` 的空组数算，不以树上位置判断，
+标签来自 `knowledge_count.commandless_cases`。它和没有树上位置的数不必相等；上述五个条目
+可以有四个没有命令归属。看板业务规则保持不变。
+
 合入主线 48592b83 时，视图页保留 unversioned 的独立来源和总数，也保留 after/next、only、scope 完整清单与凭据档位约束。索引与分面在两份固定组成上合并枚举；影响视图在变化路径之后分页交付不分版本附着条目，运行完整绑定同时校验两根范围。范围清单沿同一锁定组成生成，不因续读期间的同步而换到新根。生产超时、完整问题分块、失败构建及恢复检查点与不分版本同步并存；适用条件冲突和未核对条件都保留。
 普通构建的额外根仍只参与来源归属核对，不冒充不分版本范围。自动发现不分版本根与显式声明通用额外范围分开记录；无可用不分版本根且通用范围未声明时，待核对来源和具名请求保留，不把它改成确定略去。
 独立命令 gold 同步保留 paths（标题/祖先）、steps（直接步骤）测量，并另存 placement_paths（标题、祖先与该用例正文的并集）；前置叶节点和嵌套用例正文不串入外层。命令索引和回归范围比较优先使用这份完整集合，仍兼容未带新字段的旧测量输入。索引只给首个规范归位引用，不证明列举了全部树挂载；比较器核对完整 data.commands、该引用的根与首路径，以及不分版本来源标记；独立脚本不导入 Hub 或包函数。
+
+本次合并同时保留视图的 scope/next、锁定组成与按页偏移的截断判断，以及按内容身份去重的 entry_counts。计数在过滤明细和分页之前完成，任一所选根已有位置就计为 placed；续页和完整绑定保留同一计数。命令归属空组仍由 commandless_cases 单独计量，不与 tree_unplaced_entries 混用。
 
 ## Complete empty product-wide roots
 

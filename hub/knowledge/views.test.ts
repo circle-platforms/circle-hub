@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 // The knowledge views as external objects (impact-view@1, facet-view@1, index-view@1) and KnowledgePort.diffEntries,
 // checked against answers computed by hand on two small trees: every change kind, attached entries on both sides, a change
 // of cases only (not a change of definitions), truncation, alias builds and product names, permission refusal, malformed
@@ -412,7 +413,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
       { values: { status: null }, count: 1 },
     ]);
     assert.equal(byStatus.total, 3);
-    assert.ok(byStatus.notes.includes('未归位条目 2 个，标在根下，计入合计'));
+    assert.ok(byStatus.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下，计入合计'));
 
     const byDefects = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=case&by=defects`));
     assert.deepEqual(byDefects.rows, [
@@ -431,7 +432,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.deepEqual(byList.keys['7'], sorted(hung.entry, loose.entry));
     assert.deepEqual(byList.keys['8'], [loose.entry]);
     assert.deepEqual([byList.total_keys, byList.total_entries], [2, 2]);
-    assert.ok(byList.notes.includes('未归位条目 2 个，标在根下'));
+    assert.ok(byList.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下'));
 
     const byCaseStatus = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=case&key=status`));
     assert.deepEqual(Object.keys(byCaseStatus.keys), ['fixed', 'known']);
@@ -449,20 +450,20 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.equal(fixed.data.bug, '61001');
     assert.equal(known.data.status, 'known');
     assert.deepEqual([defectStatus.total_keys, defectStatus.total_entries], [2, 2]);
-    assert.ok(defectStatus.notes.includes('未归位条目 2 个，标在根下'));
+    assert.ok(defectStatus.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下'));
 
     const byBug = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=bug&only=61001,999`));
     assert.deepEqual(byBug.keys, { '61001': [fixed.entry] });
     assert.equal(byBug.entries['61001'] === undefined, true);
     assert.equal(byBug.entries[fixed.entry].reference, `tree:${root}/@${fixed.entry}`);
     assert.ok(byBug.notes.some((note) => note === '这些取值没有条目：999'));
-    assert.ok(byBug.notes.includes('未归位条目 2 个，标在根下'));
+    assert.ok(byBug.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下'));
 
     const impact = ImpactView.parse(await readJson(w, `knowledge:impact:acme:${A}..${B}`));
     assert.ok(impact.changes.length > 0);
     const statements = new Set(Object.values(impact.entries).map((entry) => entry.statement));
     for (const text of ['没有命令的用例', '没有缺陷编号的用例', '已修复 61001', '已知 70412']) assert.equal(statements.has(text), false, text);
-    assert.equal(impact.notes.some((note) => note.startsWith('未归位')), false);
+    assert.equal(impact.notes.some((note) => note.startsWith(labelOf('knowledge_count', 'tree_unplaced_entries'))), false);
   });
 
   test('facets and index over 60000 unplaced entries finish within a few seconds', { timeout: 300_000 }, async (t) => {
@@ -500,7 +501,7 @@ export default function many(input: any): unknown {
       { values: { status: 'known' }, count: 30_000 },
     ]);
     assert.equal(facets.total, 60_000);
-    assert.ok(facets.notes.includes('未归位条目 60000 个，标在根下，计入合计'));
+    assert.ok(facets.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 60000 个，标在根下，计入合计'));
     assert.ok(facetMs < 8_000, `facets took ${facetMs.toFixed(0)} ms`);
     const indexStarted = performance.now();
     const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
@@ -513,7 +514,7 @@ export default function many(input: any): unknown {
     assert.equal(index.truncated, true);
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
-    assert.ok(index.notes.includes('未归位条目 60000 个，标在根下'));
+    assert.ok(index.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 60000 个，标在根下'));
     assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 
