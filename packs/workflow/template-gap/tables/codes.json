@@ -107,5 +107,12 @@
       "when": "按命令覆盖采用默认 marked 的用例键，而运行采用 tagged，不能按索引键核验命令覆盖",
       "fix": "用默认 case_rule 重跑：不传 case_rule 或设为 marked；不靠知识同步修复规则不一致"
     }
+  ],
+  "checks": [
+    {
+      "code": "template-gap.undeclared_tag",
+      "when": "作者 resource 含不在发布闭集中的精确原文，提示档结构违规",
+      "fix": "从发布闭集选择精确原文修正 resource 后重新核验；不猜对应值"
+    }
   ]
 }

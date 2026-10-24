@@ -24,6 +24,8 @@ export type CaseNode = {
   path: string[];
   priority: number | string | null;
   tags: string[];
+  /** Original author field, without text conversion or trimming. */
+  resource?: unknown;
   expectedCount: number;
   /** Some expected text is not blank. */
   hasExpected: boolean;
@@ -136,7 +138,7 @@ export function caseNodes(model: unknown): CaseScan {
       path.reverse();
       const tags: string[] = [];
       for (const entry of Array.isArray(visit.data.resource) ? (visit.data.resource as unknown[]) : []) {
-        const tag = textOf(entry);
+        const tag = typeof entry === 'string' ? entry : null;
         if (tag !== null) tags.push(tag);
       }
       const autoid = textOf(visit.data.autoid);
@@ -149,6 +151,7 @@ export function caseNodes(model: unknown): CaseScan {
         path,
         priority: priorityOf(visit.data),
         tags,
+        resource: visit.data.resource,
         expectedCount: 0,
         hasExpected: false,
         vague: true,

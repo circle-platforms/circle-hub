@@ -16,7 +16,7 @@ export function coverageSubject(input: unknown): CoverageSubject {
     document: typeof fields.document === 'string' ? fields.document : null,
     skipped: [],
   };
-  if (Array.isArray(fields.categories)) {
+  if (fields.tag_undeclared_cases===0 && Array.isArray(fields.categories)) {
     out.covered = fields.categories.filter(isRecord).filter((category) => typeof category.id === 'string' && category.present === true).map((category) => category.id as string);
   }
   if (Array.isArray(fields.skipped)) {

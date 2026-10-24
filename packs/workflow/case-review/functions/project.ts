@@ -15,7 +15,7 @@
 // without any case is the only refusal (W01 R[3]); a result above the output limit is refused with a fix.
 // Passes over the visited nodes (walk, flags from the leaves up, roles, items) keep a document linear in its size.
 import { PACK, failure, guarded, isRecord, warningSink, type WarningSink } from './common.ts';
-import { canonicalTags } from './tags.ts';
+import { declareResourceTags } from './tags.ts';
 import { clip, collapseWhitespace, isBlank, isWhiteSpace, selectorSegment, textOf, utf8Length } from './text.ts';
 import type { CaseItem, CaseRule, GroupEntry, ItemLocation, ProjectionOutput, ProjectionResult, Warning } from './types.ts';
 
@@ -308,7 +308,7 @@ function projectDocument(
       const label = labelOf(visit.text);
       const tags: string[] = [];
       for (const entry of Array.isArray(visit.data.resource) ? (visit.data.resource as unknown[]) : []) {
-        const tag = textOf(entry);
+        const tag = typeof entry === 'string' ? entry : null;
         if (tag === null) stats.nonTextTags += 1;
         else pushLimited(tags, keep(tag));
       }
@@ -316,7 +316,8 @@ function projectDocument(
         untagged.count += 1;
         if (untagged.nodes.length < LIMITS.maxNamed) untagged.nodes.push(location.selector);
       }
-      const tagsNormalized = canonicalTags(tags);
+      const tagDeclaration = declareResourceTags(visit.data.resource);
+      const tagsNormalized = tagDeclaration.types;
       const autoid = textOf(visit.data.autoid);
       const note = visit.data.note;
       const nested = within[v] !== -1;
@@ -333,13 +334,16 @@ function projectDocument(
           degree: degreeOf(visit.data),
           tags,
           tagsNormalized,
+          resource: visit.data.resource ?? null,
+          resourcePresent: Object.hasOwn(visit.data,'resource'),
+          tagDeclaration,
           expected: [],
           expectedCount: 0,
           steps: [],
           preconditions: [],
           autoid: autoid === null || isBlank(autoid) ? null : autoid,
           automated: (autoid !== null && !isBlank(autoid)) || (typeof visit.data.auto === 'string' && visit.data.auto.trim().toUpperCase() === 'YES'),
-          negative: tags.some((tag) => !isBlank(tag)) ? tagsNormalized.includes('Negative') : null,
+          negative: tagDeclaration.negative,
           hasNote: typeof note === 'string' && !isBlank(note),
           nested,
         },

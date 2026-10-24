@@ -1,0 +1,17 @@
+{
+  "schema": "resource-tags@1",
+  "id": "team-resource-tags",
+  "version": "1",
+  "origin": "所有者 2026-10-24 R2：resource 是作者声明标签字段；每个 id 只声明一个精确原文。六种类型沿模板 v3 的类型 id；其他标签在本表逐项声明，不由文字外形推断。",
+  "tags": [
+    {"id": "functional", "text": "functional", "label": "功能测试", "test_type": true, "negative": false},
+    {"id": "configuration", "text": "configuration", "label": "配置测试", "test_type": true, "negative": false},
+    {"id": "integration", "text": "integration", "label": "集成测试", "test_type": true, "negative": false},
+    {"id": "compatibility", "text": "compatibility", "label": "兼容性测试", "test_type": true, "negative": false},
+    {"id": "negative", "text": "negative", "label": "反向测试", "test_type": true, "negative": true},
+    {"id": "stress", "text": "stress", "label": "压力测试", "test_type": true, "negative": false},
+    {"id": "resource_r2add", "text": "R2ADD", "label": "其他声明标签 R2ADD", "test_type": false, "negative": false},
+    {"id": "resource_20260301add", "text": "20260301ADD", "label": "其他声明标签 20260301ADD", "test_type": false, "negative": false},
+    {"id": "resource_sample", "text": "release-label", "label": "其他声明标签（合成样例）", "test_type": false, "negative": false}
+  ]
+}

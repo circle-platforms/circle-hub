@@ -10,52 +10,17 @@ import {
   titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
+import {declaredResourceTag,declareResourceTags} from './generated/vocabulary.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const CATEGORY_MAP: Record<string, CanonicalCategory> = {
-  functional: 'Functional',
-  function: 'Functional',
-  functions: 'Functional',
-  func: 'Functional',
-  功能: 'Functional',
-  功能测试: 'Functional',
-  基本功能: 'Functional',
-  configuration: 'Configuration',
-  configure: 'Configuration',
-  config: 'Configuration',
-  配置: 'Configuration',
-  配置测试: 'Configuration',
-  integration: 'Integration',
-  integrate: 'Integration',
-  集成: 'Integration',
-  集成测试: 'Integration',
-  compatibility: 'Compatibility',
-  compat: 'Compatibility',
-  兼容: 'Compatibility',
-  兼容性: 'Compatibility',
-  negative: 'Negative',
-  neg: 'Negative',
-  负向: 'Negative',
-  反向: 'Negative',
-  异常: 'Negative',
-  stress: 'Stress',
-  pressure: 'Stress',
-  压力: 'Stress',
-  压测: 'Stress',
-};
-
+/** Exact membership in the declared type field; no prefix, suffix or synonym recovery. */
 export function normalizeTag(tag: string): CanonicalCategory | null {
-  const norm = normalizeText(tag).replace(/^[\[\(\{【（<]+/, '').replace(/[\]\)\}】）>]+$/, '');
-  const direct = CATEGORY_MAP[norm];
-  if (direct) return direct;
-  for (const [k, v] of Object.entries(CATEGORY_MAP)) {
-    if (norm === k || norm.startsWith(k) || norm.endsWith(k)) return v;
-  }
-  return null;
+  const declaration=declaredResourceTag(tag);
+  return declaration?.test_type===true?declaration.id:null;
 }
 
 /** Check 1: draft_shape - validates team case structure rules */
@@ -169,44 +134,10 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
       });
     }
 
-    // Tags check
-    if (!draft.tags || draft.tags.length === 0) {
-      outcomes.push({
-        verdict: 'refute',
-        code: CODES.SHAPE_INVALID,
-        statement: `${prefix}缺少标签：至少需要包含一个属于团队模板类别的标签`,
-        grounds: [],
-        tier: 'blocking',
-        ...own,
-      });
-    } else {
-      let hasNegativeTag = false;
-      for (const t of draft.tags) {
-        const canonical = normalizeTag(t);
-        if (!canonical) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.SHAPE_INVALID,
-            statement: `${prefix}标签“${t}”不属于团队模板类别（${CANONICAL_CATEGORIES.join('、')}）`,
-            grounds: [],
-            tier: 'blocking',
-            ...own,
-          });
-        } else if (canonical === 'Negative') {
-          hasNegativeTag = true;
-        }
-      }
-      if (hasNegativeTag && draft.negative !== true) {
-        outcomes.push({
-          verdict: 'refute',
-          code: CODES.SHAPE_INVALID,
-          statement: `${prefix}包含反向标签（Negative），但 negative 未标记为 true`,
-          grounds: [],
-          tier: 'blocking',
-          ...own,
-        });
-      }
-    }
+    const declaration=declareResourceTags(draft.resource);
+    if(declaration.issues.length)outcomes.push({verdict:'refute',code:CODES.SHAPE_INVALID,tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,statement:`${prefix}未声明的标签；允许的精确原文：${declaration.issues[0].allowed.join('、')}。作者选择闭集原文修正 resource 后重新核验`,data:{table:declaration.table,issues:declaration.issues}});
+    else if(declaration.status==='undeclared')outcomes.push({verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action});
+    if(declaration.negative!==null&&draft.negative!==declaration.negative)outcomes.push({verdict:'refute',code:CODES.SHAPE_INVALID,tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/negative`,statement:`${prefix}negative 与 resource 的精确类型声明不一致；按已声明类型修正派生标记后重新核验`});
 
     // Duplicate check within submission
     const normTitle = normalizeText(draft.title);
@@ -225,11 +156,11 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
     seenSignatures.add(sig);
   }
 
-  if (outcomes.length > 0) return outcomes;
-  return [
+  if (outcomes.some(outcome=>outcome.tier==='blocking')) return outcomes;
+  return [...outcomes,
     {
       verdict: 'support',
-      statement: `${drafts.length} 个起草用例符合团队用例结构规范`,
+      statement: outcomes.length?`${drafts.length} 个起草用例的主体结构已核对；标签声明的问题另列，不表示标签通过`:`${drafts.length} 个起草用例符合团队用例结构规范`,
       grounds: [],
       tier: 'blocking',
       ...own,
@@ -339,11 +270,16 @@ export function checkCommandsRefutation(input: unknown): CheckOutcome[] {
     const draft = drafts[i];
     const prefix = `第 ${i + 1} 个起草用例`;
 
+    const declaration=declareResourceTags(draft.resource);
+    if(declaration.status!=='declared'){
+      outcomes.push({verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action});
+      continue;
+    }
     for (const step of draft.steps) {
       if (!step.command || !step.command.trim()) continue;
       const { matched, head } = matchCatalogCommand(step.command, catalog);
 
-      if (draft.expects_refutation === true && draft.negative === true) {
+      if (draft.expects_refutation === true && declaration.negative === true) {
         if (matched) {
           outcomes.push({
             verdict: 'refute',

@@ -5,10 +5,10 @@
 //   finding whose cited evidence all resolves into hint sources (historical test lists, A03 R[6]) has no ground for a
 //   statement about the product; a command line it cites without `present` must be one the case writes (lines.ts), else it
 //   is the model's statement and goes back for repair, never a fact about the case;
-// - tags (tagSpelling), over the structure subjects of the run ({ subjects }, subject.ts): a category tag written unlike the
-//   usual spelling of its category in the same document is an inconsistent field format, advisory, named with both spellings.
+// - tags (tagSpelling): exact author resource declarations against the published closed set, advisory.
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { PACK, isRecord } from './common.ts';
+import {declareResourceTags} from './generated/vocabulary.ts';
 import { quotableLines, quotedFromCase } from './lines.ts';
 
 export const HINT_ONLY = `${PACK}.hint_only`;
@@ -86,36 +86,22 @@ export function findingSources(input: unknown): CheckOutcome[] {
   return out;
 }
 
-type Variant = { tag: string; usual: string; category: string };
-
-const isVariant = (value: unknown): value is Variant => isRecord(value) && typeof value.tag === 'string' && typeof value.usual === 'string' && typeof value.category === 'string';
-
+/** Literal author-field validation; neither document frequency nor spelling resemblance supplies a declaration. */
 export function tagSpelling(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const subjects = Array.isArray(subject.subjects) ? subject.subjects : [];
-  const out: CheckOutcome[] = [];
-  subjects.forEach((s, i) => {
-    if (!isRecord(s) || out.length >= MAX_OUTCOMES) return;
-    const own = typeof s.id === 'string' && s.id !== '' ? { item: s.id } : {};
-    const grounds = typeof s.location === 'string' ? [s.location] : [];
-    const variants = (Array.isArray(s.tagVariants) ? s.tagVariants : []).filter(isVariant);
-    if (variants.length === 0) {
-      out.push({ verdict: 'support', statement: '标签的写法与本文档同一类别最常用的写法一致', grounds, tier: 'advisory', ...own });
-      return;
+  return subjects.filter(isRecord).slice(0,MAX_OUTCOMES).map((s,i):CheckOutcome=>{
+    const own=typeof s.id==='string'?{item:s.id}:{};
+    const grounds=typeof s.location==='string'?[s.location]:[];
+    const declaration=declareResourceTags(s.resourcePresent===false?undefined:Object.hasOwn(s,'resource')?s.resource:s.tags);
+    if(declaration.issues.length){
+      return {verdict:'refute',code:TAG_VARIANT,tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,
+        statement:`未声明的标签：${declaration.issues.map(issue=>JSON.stringify(issue.raw)).join('、')}；允许的精确原文：${declaration.issues[0].allowed.join('、')}。作者从闭集选择原文修正 resource 后重新核验，不推测应选哪项`,
+        data:{table:declaration.table,issues:declaration.issues}};
     }
-    const named = variants.slice(0, 6).map((v) => `“${v.tag}”（本文档 ${v.category} 类最常用的写法是“${v.usual}”）`);
-    out.push({
-      verdict: 'refute',
-      code: TAG_VARIANT,
-      statement: `标签写法与本文档不一致：${named.join('、')}${variants.length > 6 ? ' 等' : ''}；改成本文档的写法`,
-      grounds,
-      tier: 'advisory',
-      ...own,
-      pointer: `/subjects/${i}/tagVariants`,
-      data: { variants: variants.slice(0, 20) },
-    });
+    if(declaration.status==='undeclared')return {verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action,data:{table:declaration.table,status:declaration.status}};
+    return {verdict:'support',tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,statement:'resource 的标签逐项等于发布闭集声明的原文，测试类型已声明',data:{table:declaration.table,types:declaration.types}};
   });
-  return out;
 }
 
 function total(run: (input: unknown) => CheckOutcome[], name: string, tier: CheckOutcome['tier']): (input: unknown) => unknown {

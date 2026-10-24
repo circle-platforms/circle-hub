@@ -159,8 +159,8 @@
     },
     {
       "code": "case-review.tag_variant",
-      "when": "检查 tags：一个用例的类别标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）写法和本文档这一类别最常用的写法不同",
-      "fix": "改成本文档这一类别最常用的写法（陈述里给出了）"
+      "when": "resource 含未声明的标签或形状违规；精确原文闭集为 functional、configuration、integration、compatibility、negative、stress 及表中明确声明的其他标签",
+      "fix": "作者从 tables/resource-tags.json 选择精确原文修正 resource 后重核；不按相似文字推荐值"
     }
   ],
   "findings": [
