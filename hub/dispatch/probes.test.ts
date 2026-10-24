@@ -90,8 +90,8 @@ async function bindBed(c: Awaited<ReturnType<typeof setup>>, manifest: unknown, 
 const seatsFor = (indexes: number[]) => indexes.map(index => probes.seats[0]).map((seat, at) => ({ ...seat, seat: `synthetic-${indexes[at]}`, index: indexes[at], manifest: { ...seat.manifest, device: `/devices/${indexes[at]}` } }));
 
 test('only declared dispatch targets need a probe seat; the other manifest devices are listed as unprobed', async t => {
-  const c = await setup({ extraTools: ['inspect_seat'], alter: (name) => {
-    if (name !== 'inspect_seat') return undefined;
+  const c = await setup({ extraTools: ['inspect_seat'], alter: (name, value) => {
+    if (name !== 'inspect_seat') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'inspect_seat').at(-1)!.params.arguments as Record<string, unknown>;
     return { output: args.command === 'inspect version' ? 'version: synthetic-build' : `address: 192.0.2.${Number(args.seat) + 1}/24` };
   } }); t.after(() => c.close());
@@ -104,8 +104,8 @@ test('only declared dispatch targets need a probe seat; the other manifest devic
 });
 
 test('a declared dispatch target without a probe seat still refuses the precheck', async t => {
-  const c = await setup({ extraTools: ['inspect_seat'], alter: (name) => {
-    if (name !== 'inspect_seat') return undefined;
+  const c = await setup({ extraTools: ['inspect_seat'], alter: (name, value) => {
+    if (name !== 'inspect_seat') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'inspect_seat').at(-1)!.params.arguments as Record<string, unknown>;
     return { output: args.command === 'inspect version' ? 'version: synthetic-build' : `address: 192.0.2.${Number(args.seat) + 1}/24` };
   } }); t.after(() => c.close());

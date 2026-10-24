@@ -1,6 +1,6 @@
 # 判据变更声明复核
 
-本任务复核判断请求所指的那份提交里的声明。它不是前驱的已受理结果，必须按 next_action 显式绑定 declaration 的 rec: 和 evidence 里的期望原件，predecessor 为声明运行。src 输入绑定整份原件（不带解析器或选择器），rec 输入可绑定片段；quotes 仍指向声明所引的精确片段。
+本任务不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。本任务复核判断请求所指的那份提交里的声明。它不是前驱的已受理结果，必须按 next_action 显式绑定 declaration 的 rec: 和 evidence 里的期望原件，predecessor 为声明运行。src 输入绑定整份原件（不带解析器或选择器），rec 输入可绑定片段；quotes 仍指向声明所引的精确片段。
 
 逐条读旧判据、新判据、断言和依据，起草接受或不接受、理由与引文。接受与否必须由当前账号的主人确认；模型只起草，不能替人确认。作者账号不算独立，即便换会话或模型族也不算。
 

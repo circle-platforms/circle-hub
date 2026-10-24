@@ -32,14 +32,18 @@ test('profile check refuses missing extra duplicate roleless and undocumented un
 test('profile drafts never guess parameter semantics or environment mappings', () => {
   const { contract, manifest } = setup(); const draft = draftProfile({ ready: true, device_count: 2 }, manifest, contract);
   assert.equal(draft.allowed.length, 6); assert.ok(draft.allowed.every((v) => Object.values(v.parameters).every((role) => role === null)));
-  assert.equal(draft.seats, null); assert.equal(draft.denied.device, null);
+  assert.equal(draft.seats, null); assert.equal('denied' in draft, false, 'the retired denial word list is not drafted');
   assert.throws(() => draftProfile({ ready: false, device_count: 2 }, manifest, contract));
   assert.throws(() => draftProfile({ ready: true }, manifest, contract));
 });
 
-test('deployment publication refuses empty command screens and synthetic identity markers', () => {
+test('deployment publication refuses the retired denial word list and synthetic identity markers', () => {
   const { profile, contract, manifest } = setup(); const deployed = { ...profile, synthetic: false };
   const bad = structuredClone(deployed); const seat = (bad.allowed as Array<{ object: string; parameters: Record<string, string> }>).find(call => Object.values(call.parameters).includes('device_cli'))!; seat.parameters = {}; assert.throws(() => checkProfile(bad, manifest, contract), /无角色|--check/);
+  // R5 retired the denial word list: a profile that still carries it is refused, and one without it needs no screen text.
+  for (const denied of [{ device: [], host: [] }, { device: ['reboot'], host: ['shutdown'] }]) {
+    assert.throws(() => checkProfile({ ...deployed, denied }, manifest, contract), /拒绝词表已退役/);
+  }
   assert.throws(() => checkProfile({ ...deployed, synthetic: true }, manifest, contract), /synthetic.*false.*--check/);
   assert.equal(checkProfile(deployed, manifest, contract).synthetic, false);
 });

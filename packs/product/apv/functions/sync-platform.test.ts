@@ -15,7 +15,7 @@ type Read = { ok: boolean; media_type: string | null; parser: string | null; mod
 const HTML_TYPE = 'text/html; charset=ISO-8859-1';
 
 /** The synthetic index: one link to the opted-in platform page (a mainline page would be selected on its own). */
-const INDEX = () => html(latin1('<html><body><A HREF=http://192.0.2.10/builds/rel_apv_hg_k_10_5.html>rel_apv_hg_k_10_5 builds</A><BR><BR></body></html>'));
+const INDEX = () => html(latin1('<html><body><A HREF=http://192.0.2.10/builds/rel_apv_zx_u_10_8.html>rel_apv_zx_u_10_8 builds</A><BR><BR></body></html>'));
 
 /** One red released entry of a listing page, with the links the page states. */
 const released = (name: string, built: string, date: string, links: string[]): string =>
@@ -45,27 +45,27 @@ function runSync(pages: Record<string, string>, options: Record<string, unknown>
 
 describe('an opted-in platform page lists its newest build per line, family and platform, released or not', () => {
   const output = runSync({
-    rel_apv_hg_k_10_5: [
-      released('Beta_APV-HG-K_10_5_0_585', '2026-09-28 10:00:00', '2026-10-01', ['/builds/command_tree-Beta_APV-HG-K_10_5_0_585.xml']).trim(),
-      unreleased('Beta_APV-HG-K_10_5_0_586', '2026-10-15 10:00:00', ['/builds/command_tree-Beta_APV-HG-K_10_5_0_586.xml']).trim(),
+    rel_apv_zx_u_10_8: [
+      released('Beta_APV-ZX-U_10_8_0_901', '2026-09-28 10:00:00', '2026-10-01', ['/builds/command_tree-Beta_APV-ZX-U_10_8_0_901.xml']).trim(),
+      unreleased('Beta_APV-ZX-U_10_8_0_902', '2026-10-15 10:00:00', ['/builds/command_tree-Beta_APV-ZX-U_10_8_0_902.xml']).trim(),
     ].join('\n'),
-  }, { include: ['rel_apv_hg_k_10_5'] });
+  }, { include: ['rel_apv_zx_u_10_8'] });
   const byName = new Map(output.builds.map((b) => [b.name, b]));
 
   it('lists the released build and the newest unreleased Beta build of the platform line', () => {
-    assert.deepEqual(byName.get('Beta_APV-HG-K_10_5_0_585'), {
-      name: 'Beta_APV-HG-K_10_5_0_585',
+    assert.deepEqual(byName.get('Beta_APV-ZX-U_10_8_0_901'), {
+      name: 'Beta_APV-ZX-U_10_8_0_901',
       family: 'APV',
-      line: '10.5',
-      base: 'Beta_APV-HG-K_10_5_0_585',
-      platform: 'hg-k',
+      line: '10.8',
+      base: 'Beta_APV-ZX-U_10_8_0_901',
+      platform: 'zx-u',
       built_at: '2026-09-28T10:00:00Z',
       released_at: '2026-10-01T00:00:00Z',
-      sources: { tree: 'buildsite:file:/builds/command_tree-Beta_APV-HG-K_10_5_0_585.xml' },
+      sources: { tree: 'buildsite:file:/builds/command_tree-Beta_APV-ZX-U_10_8_0_901.xml' },
     });
-    const newest = byName.get('Beta_APV-HG-K_10_5_0_586');
+    const newest = byName.get('Beta_APV-ZX-U_10_8_0_902');
     assert.deepEqual([newest?.platform, newest?.released_at, newest?.base, newest?.sources], [
-      'hg-k', null, 'Beta_APV-HG-K_10_5_0_586', { tree: 'buildsite:file:/builds/command_tree-Beta_APV-HG-K_10_5_0_586.xml' },
+      'zx-u', null, 'Beta_APV-ZX-U_10_8_0_902', { tree: 'buildsite:file:/builds/command_tree-Beta_APV-ZX-U_10_8_0_902.xml' },
     ], '未发布的最新构建照样列出，页面链接了命令树，带树来源');
   });
 
@@ -77,11 +77,11 @@ describe('an opted-in platform page lists its newest build per line, family and 
 
 describe('the newest unreleased build without a command-tree link is listed by name only, as the page states', () => {
   const output = runSync({
-    rel_apv_hg_k_10_5: [unreleased('Beta_APV-HG-K_10_5_0_587', '2026-10-20 09:00:00', ['/builds/DemoOS-Beta_APV-HG-K_10_5_0_587.array']).trim()].join('\n'),
-  }, { include: ['rel_apv_hg_k_10_5'] });
-  const build = output.builds.find((b) => b.name === 'Beta_APV-HG-K_10_5_0_587');
+    rel_apv_zx_u_10_8: [unreleased('Beta_APV-ZX-U_10_8_0_903', '2026-10-20 09:00:00', ['/builds/DemoOS-Beta_APV-ZX-U_10_8_0_903.array']).trim()].join('\n'),
+  }, { include: ['rel_apv_zx_u_10_8'] });
+  const build = output.builds.find((b) => b.name === 'Beta_APV-ZX-U_10_8_0_903');
 
   it('lists the build with no release and no sources', () => {
-    assert.deepEqual([build?.platform, build?.released_at, build?.base, build?.sources], ['hg-k', null, 'Beta_APV-HG-K_10_5_0_587', {}]);
+    assert.deepEqual([build?.platform, build?.released_at, build?.base, build?.sources], ['zx-u', null, 'Beta_APV-ZX-U_10_8_0_903', {}]);
   });
 });

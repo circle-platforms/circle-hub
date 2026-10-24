@@ -69,6 +69,9 @@ describe('on a temporary copy', () => {
     cpSync(join(repo, 'tools', 'gen-contracts.ts'), join(root, 'tools', 'gen-contracts.ts'));
     writeFileSync(join(root, 'package.json'), '{ "type": "module" }\n');
     symlinkSync(join(repo, 'node_modules'), join(root, 'node_modules'), 'dir');
+    // The generator also reads the declared resource-tag table and writes package-local vocabulary snapshots and copied
+    // schema tables under packs/, so the copy carries them; drift and the written/removed counts include those files.
+    cpSync(join(repo, 'packs'), join(root, 'packs'), { recursive: true });
     script = join(root, 'tools', 'gen-contracts.ts');
   });
   after(() => {
