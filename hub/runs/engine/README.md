@@ -653,12 +653,11 @@ times. Continued failure creates a finite request to an enabled named administra
 and the existing `run abandon` retry command. An identical retry completes that choice without repeating it; the actual
 recovered delivery record answers its repair request. Internal write causes remain in administrator notes.
 
-Validation compatibility finding: `tests/acceptance/oracle/differential.test.ts` still starts a driving pack with a static
-fact requirement lacking a check and dynamic fact requirements lacking observation declarations. New admission now
-correctly refuses that pack, so its random differential run does not execute; its 19 pure reference-rule tests pass.
-The driver also documents legacy zero-round behavior. Integrator Claude must align that separate scenario driver and
-its independent expectations with the new admission, round and unknown-error rules, retaining explicit legacy replay
-coverage. This task does not bypass admission or weaken those old comparisons to produce a green result.
+The oracle differential driver now separates fresh-admission rejection from synthetic legacy-run playback. Target facts
+come from its frozen original, while artifact checks read submitted slots. Random cases start with true zero counters;
+fixed repeat cases supply their independently counted per-requirement charges. The oracle computes unknown/skip errors
+and W07 target-fact handling independently. Its pre-existing cross-layer status difference remains a separately named
+regression, without changing the engine's status precedence.
 
 A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
 extend is refused for the whole request before effects, and release still requires the same user and predecessor
@@ -698,3 +697,8 @@ The following commits connect these exits to durable requests and automatic main
 Supplementary recovery gaps keep their own cause codes and receipt rows even beside a settled violation. Request
 projection fills remaining rounds and uses the received submission's actual item order for paths; it never treats a
 projection index or an invented slot as a submitted location. The primary terminal and partition do not change.
+
+Receipt reuse is gated by the current same-owner successor state and the frozen workflow's session requirement. A
+settled contribution receipt does not stand in for a missing caller session; refused calls keep their own receipt and
+charge no session-repair round. Cached success cannot revive a superseded run. Ordinary settled contribution retries
+still reuse their original receipt and do not append effects.

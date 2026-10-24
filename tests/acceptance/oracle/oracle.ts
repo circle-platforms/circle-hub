@@ -84,6 +84,7 @@ export interface RunDescription {
   checks: CheckDescription[];
   /** Submissions made to this run before the one validated now (CHOICE-10: each one is a repair round). */
   roundsUsed: number;
+  chargedRounds?:Record<string,number>;
   /** The author an independent judgment must be independent of: the predecessor run's accepted submission; null when unknown. */
   author: Party | null;
 }
@@ -139,7 +140,7 @@ export interface ExpectedItem {
 
 /** The parts of an `errors` entry the rules fix. `kind` says which rule produced it. */
 export interface ExpectedError {
-  kind: 'protocol' | 'refutation' | 'not_covered';
+  kind: 'protocol' | 'refutation' | 'not_covered' | 'unknown';
   code?: string;
   item?: string;
   requirement?: string;
@@ -281,11 +282,15 @@ function incomplete(r: RequirementDescription, reason: Reason, extra: Partial<Ex
   return { requirement: r.key, layers: allLayers(r, { terminal: 'incomplete', reason, attribution: attributionOfReason(reason), ...extra }), status: 'pending' };
 }
 
+function usedFor(run:RunDescription,r:RequirementDescription):number{
+  return run.chargedRounds?.[r.key]??(r.checks.some(id=>run.checks.some(c=>c.id===id&&c.judges==='artifact_under_verification'))?run.roundsUsed:0);
+}
+
 function evaluate(run: RunDescription, submission: SubmissionDescription, r: RequirementDescription, item: RunDescription['items'][number], outcomes: CheckOutcomes): Evaluation {
   const handling = submission.items[item.id];
   const needsArtifact = r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification'));
-  if (needsArtifact && handling === undefined) return { result: incomplete(r, 'not_covered'), repair: null, reject: null };
-  if (needsArtifact && handling?.handling === 'skipped') return { result: incomplete(r, 'declared_skip'), repair: null, reject: null };
+  if (needsArtifact && handling === undefined) return { result: incomplete(r, usedFor(run,r)>=repairRounds(r)?'repair_exhausted':'not_covered'), repair: null, reject: null };
+  if (needsArtifact && handling?.handling === 'skipped') return { result: incomplete(r, usedFor(run,r)>=repairRounds(r)?'repair_exhausted':'declared_skip'), repair: null, reject: null };
 
   const checks = new Map(run.checks.map((c) => [c.id, c]));
   const listed: { outcome: Outcome; check: CheckDescription }[] = [];
@@ -293,7 +298,7 @@ function evaluate(run: RunDescription, submission: SubmissionDescription, r: Req
     const check = checks.get(id);
     if (check === undefined) throw new Error(`requirement ${r.key} names the unknown check ${id}`);
     const got = outcomes[id]?.[item.id] ?? [];
-    // Outside the oracle: the model does not say what an installed check's silence about an item is (README, not covered).
+    // This generator supplies explicit outcomes; dedicated engine tests pin silence to check_error under V03 R[11].
     if (got.length === 0) throw new Error(`check ${id} returned no outcome for item ${item.id}`);
     for (const o of got) listed.push({ outcome: o.verdict === 'refute' && check.tier !== null ? { ...o, tier: check.tier } : o, check });
   }
@@ -336,7 +341,7 @@ function evaluate(run: RunDescription, submission: SubmissionDescription, r: Req
       // Refutations of the subject remain violations attributed to author_input and consume no repair rounds.
       const isRepair = row?.action === 'repair' && u.check.judges === 'artifact_under_verification';
       const budget = isRepair ? rowRounds(row) : 0;
-      if (isRepair && run.roundsUsed >= budget) {
+      if (isRepair && usedFor(run,r) >= budget) {
         // W02 R[5]: the rounds of this code are used up. Every declared layer is incomplete; errors still name it.
         return {
           result: incomplete(r, 'repair_exhausted'),
@@ -357,10 +362,11 @@ function evaluate(run: RunDescription, submission: SubmissionDescription, r: Req
       }
       staticLayer = { layer: 'static', terminal: 'violation', code: u.outcome.code, tier: u.outcome.tier, attribution: attributionOf(row, u.check.judges) };
       met = false;
+      if(row?.action==='unknown')repair={kind:'refutation',code:u.outcome.code,item:item.id,requirement:r.key};
       if (isRepair) {
         // Recorded either way. An accepted submission lists it only once the rounds are used up (W02 R[5]); a submission
         // that is not accepted lists it with the rounds left (W08 R[1]).
-        repair = { kind: 'refutation', code: u.outcome.code, item: item.id, requirement: r.key, rounds_left: Math.max(0, budget - run.roundsUsed) };
+        repair = { kind: 'refutation', code: u.outcome.code, item: item.id, requirement: r.key, rounds_left: Math.max(0, budget - usedFor(run,r)) };
       }
       // W02 F[7], V05 R[2]: reject only a blocking code of a check that judges the artifact under verification.
       if (row?.action === 'reject' && u.outcome.tier === 'blocking' && u.check.judges === 'artifact_under_verification') reject = u.outcome.code;
@@ -425,8 +431,7 @@ export function expected(run: RunDescription, submission: SubmissionDescription,
   validate(run);
   const checks = new Map(run.checks.map((c) => [c.id, c]));
   const max = runMaxRounds(run);
-  const repairable = run.requirements.filter((r) => r.checks.some((id) => checks.get(id)?.judges === 'artifact_under_verification'));
-  const used = Math.min(max, Math.max(0, ...repairable.map((r) => Math.min(run.roundsUsed, repairRounds(r)))));
+  const used = Math.min(max, Math.max(0, ...run.requirements.map((r) => Math.min(usedFor(run,r),repairRounds(r)))));
   const rounds = { used, max };
   const zero = { ...(Object.fromEntries(PARTITION.map((p) => [p, 0])) as Record<Partition, number>), unknown: 0 };
 
@@ -460,16 +465,34 @@ export function expected(run: RunDescription, submission: SubmissionDescription,
       if (e.reject !== null) errors.push({ kind: 'refutation', code: e.reject, item: item.id, requirement: run.requirements[i].key });
     }
 
+    // V03 R[10] and W07 R[2]-R[3]: every unresolved fact and missing artifact is visible with its own budget.
+    for(const [i,r] of run.requirements.entries()){
+      const left=Math.max(0,repairRounds(r)-usedFor(run,r));
+      const handling=submission.items[item.id]?.handling;
+      const needsArtifact=r.producer!=='fact'||r.checks.some(id=>checks.get(id)?.judges==='artifact_under_verification');
+      for(const id of r.checks){
+        if(handling!=='handled'&&checks.get(id)?.judges==='artifact_under_verification')continue;
+        for(const outcome of outcomes[id]?.[item.id]??[])if(outcome.verdict==='unknown')errors.push({kind:'unknown',code:outcome.reason,item:item.id,requirement:r.key,rounds_left:left});
+      }
+      if(handling!=='handled'&&needsArtifact)errors.push({kind:'not_covered',code:left===0?'repair_exhausted':handling==='skipped'?'declared_skip':'not_covered',item:item.id,requirement:r.key,rounds_left:left});
+      for(const layer of evaluations[i].result.layers){
+        if(!layer.reason||!['unchecked','no_verdict','not_run','incomplete'].includes(layer.terminal))continue;
+        const existing=errors.find(e=>e.item===item.id&&e.requirement===r.key&&(e.code===layer.reason||layer.code!==undefined&&e.code===layer.code));
+        if(existing)existing.rounds_left??=left;
+        else errors.push({kind:'unknown',code:layer.reason,item:item.id,requirement:r.key,rounds_left:left});
+      }
+    }
+
     // V05 R[3] in its order (steps 1-3 need effects and dispositions, which these scenarios do not carry).
     let partition: Partition = 'delivered';
     let code: string | undefined;
     let reason: Reason | undefined;
     const omitted = submission.items[item.id] === undefined && run.requirements.some(r => r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification')));
-    if (omitted) errors.push({ kind: 'not_covered', item: item.id, rounds_left: Math.max(0, max - rounds.used) });
+    if (omitted){const judgments=run.requirements.filter(r=>r.producer!=='fact'&&r.checks.length>0);errors.push({kind:'not_covered',code:'core.coverage.shortfall',item:item.id,rounds_left:judgments.length?Math.min(...judgments.map(r=>Math.max(0,repairRounds(r)-usedFor(run,r)))):0});}
     if (submission.items[item.id] === undefined && run.requirements.some(r => r.required && (r.producer !== 'fact' || r.checks.some(id => run.checks.some(c => c.id === id && c.judges === 'artifact_under_verification'))))) {
       // Step 4 and W07 R[3]: the submission does not cover the item; named in errors (CHOICE-12: with the run's rounds left).
       partition = 'incomplete';
-      reason = 'not_covered';
+      reason = run.requirements.some((r,i)=>r.required&&requirements[i].layers.some(l=>l.terminal==='incomplete'&&l.reason==='repair_exhausted'))?'repair_exhausted':'not_covered';
     } else {
       const stopped = run.requirements
         .map((r, i) => ({ r, layers: requirements[i].layers }))
