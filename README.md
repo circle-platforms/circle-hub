@@ -20,7 +20,7 @@ This is the design that milestone 1 is building; [Status](#status) says what exi
 
 - **Task packs** say what to review and how a result is checked: requirement templates, slot schemas, checks, a procedure for the model and the pack's own deterministic functions. Product, workflow and system packs are separate, and product knowledge lives only in packs, never in the core.
 - **Verified results.** On submission the Hub resolves every exact value to a reference, checks quotations verbatim against the sources, re-runs the pack's checks in a sandbox and computes a terminal state for every item, requirement and layer. Each item lands in exactly one partition, and unknown stays unknown.
-- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; placement that needs judgment is proposed by a bot and verified by the Hub (not implemented yet), and the Hub calls no model. A run locks the root it reads.
+- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; knowledge that needs judgment stays on the client and enters through separate contribution runs, checked verbatim by the Hub, and the Hub calls no model. A run locks the root it reads.
 
 The contracts define six tools: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference` and `submit_result`. Records are append-only and everything else is derived from them. Circle is to connect through an ordinary MCP server entry and shows no Hub-specific interface.
 
@@ -28,7 +28,7 @@ The design authority is the generic model in [contracts/model.json](contracts/mo
 
 ## Status
 
-Milestone 1 is under construction, and nothing here is a supported release. The model, the contracts generated from it and the [architecture brief](docs/hub-r4-architecture.md) are in place, and the packages of the first phase are being built under `hub/`. The MCP server, the read-only console, the knowledge tree, the read-only connectors, the packs and a persistent single-machine deployment listening on loopback come in later phases; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
+Milestone 1 is built and deployed, and nothing here is a supported release. The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, read-only console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment listening on loopback are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
 
 ## Run the checks
 

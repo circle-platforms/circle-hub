@@ -4,7 +4,7 @@ nav_order: 5
 
 # 通用模型
 
-设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 10 版，11 组 73 个元素，64 个词表轴，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
+设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 10 版，11 组 73 个元素，词表轴的实数以生成物为准，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
 
 ```sh
 node tools/show-element.ts B01 W06          # 元素的定义、字段与规则
@@ -17,7 +17,7 @@ node tools/show-element.ts --pending        # 待定项与决定
 
 ## Hub 做什么
 
-Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共用同一组工具。模型的循环、规划、填槽和归因提议都在客户端；Hub 只运行确定性函数，不调用任何模型，不生成内容。需要判断的知识处理属于 bot（用 Circle 内核）：bot 提交归位提议，Hub 用确定性规则核验（路径存在、引文逐字出自原件、不越过声明）；这条流程尚未实现。它分发任务包，锁定运行用到的版本，在边界校验交回的结果，把精确值解析成引用，并把一切记成只追加的记录。共享目标上的效果只由 Hub 发出；第一个里程碑不做效果。
+Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共用同一组工具。模型的循环、规划、填槽和归因提议都在客户端；Hub 只运行确定性函数，不调用任何模型，不生成内容。需要判断的知识处理在客户端（用 Circle 内核）：候选留在 Circle 本地，成为事实后经独立回注运行交 Hub，Hub 用确定性规则核验（路径存在、引文逐字出自原件、不越过声明；已实现）。它分发任务包，锁定运行用到的版本，在边界校验交回的结果，把精确值解析成引用，并把一切记成只追加的记录。共享目标上的效果只由 Hub 经派发边界发出。
 
 ## 三条不变量
 
@@ -61,7 +61,7 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 
 ## 词表
 
-53 个轴，每轴是一个封闭集合，由 `npm run gen:contracts` 生成到 `contracts/generated/vocabulary.ts`：每轴有类型、zod 枚举和中文标签。代码只经 `labelOf(轴, 代码)` 取标签，不手写枚举，也不自造词。读一份校验结果最常用的几轴如下（取自模型第 5 版，取值以生成物为准；文档检查 `.github/checks` 核对这张表与生成物一致），完整的轴用 `node tools/show-element.ts --vocab <轴>` 查看：
+词表的每个轴是一个封闭集合（全部轴用 `node tools/show-element.ts --vocab` 查看），由 `npm run gen:contracts` 生成到 `contracts/generated/vocabulary.ts`：每轴有类型、zod 枚举和中文标签。代码只经 `labelOf(轴, 代码)` 取标签，不手写枚举，也不自造词。读一份校验结果最常用的几轴如下（取值以生成物为准；文档检查 `.github/checks` 核对这张表与生成物一致）：
 
 | 轴 | 标签 | 取值 |
 |---|---|---|
@@ -80,7 +80,7 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 
 ## 第一个里程碑用到哪些
 
-各包实现哪些元素见架构文档第 4 节。只用六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。留在合约里、这个里程碑不实现的有：效果写入与租约（B06、D04，D03 的写声明），处置与请求（B07），动态层检查（P07），触发与常设义务（W09；由 Hub 执行的知识同步除外，见架构文档第 6 节），假设集（V08），浏览器与设备执行器（D07 的执行器部分），以及 xlsx 与 zip 解析。D03 的读部分与 D07 的资源部分由 connectors 包实现。候选按决定 25 留在客户端本地，成为事实后通过单独的回注运行交 Hub 核验，不提供写本人候选层的入口。
+各包实现哪些元素见架构文档第 4 节。只用六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。留在合约里、尚未实现的有：假设集（V08）和浏览器执行器（D07 的浏览器部分）。效果写入与租约（B06、D04，D03 的写声明）、处置与请求（B07）、动态层检查（P07）、设备执行器（D07 的执行器部分）和 xlsx 与 zip 解析已随上真实台架一轮实现（见进度页）；W09 的常设义务以由 Hub 执行的知识同步为先例（见架构文档第 6 节）。D03 的读部分与 D07 的资源部分由 connectors 包实现。候选按决定 25 留在客户端本地，成为事实后通过单独的回注运行交 Hub 核验，不提供写本人候选层的入口。
 
 ## 已定的决定
 
