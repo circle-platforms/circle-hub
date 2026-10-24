@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "answer_action": {
+      "type": "string",
+      "enum": [
+        "reread",
+        "reconcile",
+        "observe",
+        "request",
+        "rerun",
+        "reevaluate"
+      ]
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "pack_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "job": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 8192,
+        "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+      }
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "clarification",
+        "repair",
+        "disposition",
+        "judgment"
+      ]
+    },
+    "audience": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "due": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "missing": {
+      "type": "string"
+    },
+    "next_action": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "type": "string"
+    },
+    "requirement": {
+      "type": "string"
+    },
+    "declaration": {
+      "description": "JSON Pointer into the immutable source submission",
+      "type": "string",
+      "pattern": "^\\/criterion_changes\\/(?:0|[1-9][0-9]*)$"
+    }
+  },
+  "required": [
+    "kind",
+    "audience",
+    "due",
+    "missing",
+    "next_action",
+    "source",
+    "code"
+  ],
+  "additionalProperties": false
+}

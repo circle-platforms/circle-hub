@@ -65,7 +65,7 @@ test('a missing key with skipped sources is incomplete, never evidence of absenc
 import { computeScopeCases } from './scope-cases.ts';
 test('mixed-case definition paths survive independent extraction and both consumers', () => {
   const path = '/commands/widget/SSL';
-  const original = caseCommandsGold('<commands><menu name="widget"><item name="SSL"/></menu></commands>', [{ document: 'synthetic-doc', map: { root: { data: { text: 'root' }, children: [{ data: { id: 'cap', text: 'widget ssl', resource: ['Functional'] } }] } } }]);
+  const original = caseCommandsGold('<commands><menu name="widget"><item name="SSL"/></menu></commands>', [{ document: 'synthetic-doc', map: { root: { data: { text: 'root' }, children: [{ data: { id: 'cap', text: 'widget SSL', resource: ['Functional'] } }] } } }]);
   assert.equal(original.cases[0].paths[0].path, path);
   const root = 'a'.repeat(64); const entry = sha256('mixed-case');
   const raw = { schema: 'index-view@1', product: 'synthetic', build: { build:'synthetic',root }, kind: 'case', key: 'document', keys: { 'synthetic-doc': [entry] }, entries: { [entry]: { entry, kind: 'case', data: { document: 'synthetic-doc', node: 'cap', commands: [path] }, reference: `tree:${root}${path}@${entry}` } }, total_keys:1,total_entries:1,notes:[],truncated: false, skipped: 0, cut_keys: [] };

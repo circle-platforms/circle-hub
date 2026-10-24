@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { layoutAt } from './layout.ts';
 import { runCommand, type CommandRunner } from './process.ts';
 import { rehearse, treeEntries } from './rehearse.ts';
-import { libpqAvailable, LIBPQ_MISSING, removeDir, tempDir } from './test-support.ts';
+import { libpqAvailable, LIBPQ_MISSING, removeDir, tempDir, syntheticKeychain, recordingRunner } from './test-support.ts';
 
 const libpq = await libpqAvailable();
 
@@ -135,4 +135,38 @@ test('c3 vault set aside preserves only sealed files with unique archives and an
   }
   assert.notEqual(paths[0],paths[1]);assert.equal(await readFile(join(layout.db,'sentinel'),'utf8'),'db');assert.equal(await readFile(join(layout.objects,'sentinel'),'utf8'),'objects');
  }finally{await removeDir(root);}
+});
+
+test('synthetic-keychain rehearsal compares restored data and loses both keys without host tools', { skip: libpq ? false : LIBPQ_MISSING }, async () => {
+  const parent = await tempDir();
+  const security = join(parent, 'security-stub');
+  await writeFile(security, 'Synthetic command placeholder; never executed', { mode: 0o600 });
+  let simulated: ReturnType<typeof syntheticKeychain> | undefined;
+  const recorded = recordingRunner(call => {
+    if (call.command !== security) return undefined;
+    if (!simulated) {
+      assert.equal(call.args[0], 'create-keychain');
+      const file = call.args.at(-1)!;
+      assert.ok(file.startsWith(parent + '/'));
+      simulated = syntheticKeychain(file, security);
+    }
+    return simulated.runner(call.command, call.args, call.options);
+  });
+  try {
+    const report = await rehearse({ parent, records: 6, objects: 2, security, runner: recorded.runner });
+    assert.equal(report.ok, true, report.differences.join('\n'));
+    assert.deepEqual(report.differences, []);
+    assert.equal(report.rows, 8);
+    assert.equal(report.objects, 2);
+    assert.equal(report.vaultFiles, 3);
+    assert.equal(report.refused, 11);
+    assert.deepEqual(report.keyLoss, { skipped: false, items: 2, backupHits: 0, remaining: 0, setAsideFiles: 3 });
+    assert.equal(simulated?.items.size, 0);
+    assert.ok(recorded.calls.every(call => call.command !== '/usr/bin/security' && call.command !== '/bin/launchctl'));
+    const receipt = JSON.stringify(report);
+    for (const call of simulated!.calls) {
+      for (const value of (call.options.input ?? '').match(/[0-9a-f]{64}/g) ?? []) assert.ok(!receipt.includes(value));
+    }
+    await assert.rejects(access(report.root));
+  } finally { await removeDir(parent); }
 });

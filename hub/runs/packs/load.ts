@@ -3,7 +3,7 @@
 import { readFileSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PackKind } from '../../../contracts/generated/vocabulary.ts';
-import { ChecksFile, KnowledgeFile, packPathProblem, RequirementsFile, SlotsFile, WorkflowFile, type PackManifest } from '../../../contracts/src/pack.ts';
+import { ChecksFile, LedgerFile, KnowledgeFile, packPathProblem, RequirementsFile, SlotsFile, WorkflowFile, type PackManifest } from '../../../contracts/src/pack.ts';
 import { ProductDeclaration } from '../../../contracts/src/product.ts';
 import { SystemProfile } from '../../../contracts/src/resources.ts';
 import { IntegrityError, sha256Hex } from '../../records/api.ts';
@@ -47,6 +47,7 @@ export function parseDeclarations(kind: PackKind, files: ReadonlyMap<string, Uin
     requirements: shaped(RequirementsFile, files, 'requirements.json'),
     checks: shaped(ChecksFile, files, 'checks.json'),
     slots: shaped(SlotsFile, files, 'slots.schema.json'),
+    ledger: files.has('ledger.json') ? shaped(LedgerFile, files, 'ledger.json') : null,
     knowledge: files.has('knowledge.json') ? shaped(KnowledgeFile, files, 'knowledge.json') : null,
     instructions,
     instructionsDigest: sha256Hex(skill),

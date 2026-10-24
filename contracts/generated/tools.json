@@ -259,6 +259,9 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "independence_by_account": {
+                      "type": "boolean"
+                    },
                     "key": {
                       "type": "string"
                     },
@@ -303,6 +306,22 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "locked rule@version identities that judge this requirement"
+                    },
+                    "run_interpreters": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                      },
+                      "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
                     }
                   },
                   "required": [
@@ -312,7 +331,9 @@
                     "layers",
                     "done_rule",
                     "accepted_producer",
-                    "repair_rounds"
+                    "repair_rounds",
+                    "rules",
+                    "run_interpreters"
                   ],
                   "additionalProperties": false
                 }
@@ -772,6 +793,120 @@
         "run": {
           "type": "object",
           "properties": {
+            "criterion_changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "item": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "criterion": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                  },
+                  "assertion": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "old": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "new": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "grounds": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reference": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                          "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                        },
+                        "quote": {
+                          "type": "string",
+                          "pattern": "\\S"
+                        }
+                      },
+                      "required": [
+                        "reference",
+                        "quote"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "request": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  },
+                  "declaration": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  },
+                  "audience": {
+                    "type": "string",
+                    "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                  },
+                  "due": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "expired": {
+                    "type": "boolean"
+                  },
+                  "superseded_by": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  },
+                  "accepted": {
+                    "type": "boolean"
+                  },
+                  "reviewer": {
+                    "type": "string",
+                    "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "next_action": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "item",
+                  "criterion",
+                  "assertion",
+                  "old",
+                  "new",
+                  "grounds",
+                  "request",
+                  "declaration",
+                  "audience",
+                  "due",
+                  "answered",
+                  "expired",
+                  "next_action"
+                ],
+                "additionalProperties": false
+              }
+            },
             "run": {
               "type": "string",
               "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
@@ -1230,6 +1365,9 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "independence_by_account": {
+                    "type": "boolean"
+                  },
                   "key": {
                     "type": "string"
                   },
@@ -1274,6 +1412,22 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "locked rule@version identities that judge this requirement"
+                  },
+                  "run_interpreters": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    },
+                    "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
                   }
                 },
                 "required": [
@@ -1283,7 +1437,9 @@
                   "layers",
                   "done_rule",
                   "accepted_producer",
-                  "repair_rounds"
+                  "repair_rounds",
+                  "rules",
+                  "run_interpreters"
                 ],
                 "additionalProperties": false
               }
@@ -3272,6 +3428,155 @@
             ],
             "additionalProperties": false
           }
+        },
+        "checks": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requirement": {
+                "type": "string",
+                "minLength": 1
+              },
+              "interpreter": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              "table": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "samples": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expect": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "verdict": {
+                            "type": "string",
+                            "enum": [
+                              "support",
+                              "refute",
+                              "unknown",
+                              "abstain"
+                            ]
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "tier": {
+                            "type": "string",
+                            "enum": [
+                              "blocking",
+                              "advisory"
+                            ]
+                          },
+                          "item": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "verdict"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "item",
+                    "expect"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "requirement",
+              "interpreter",
+              "table",
+              "samples"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "criterion_changes": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "criterion": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+              },
+              "assertion": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "old": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "new": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "grounds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reference": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                      "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                    },
+                    "quote": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": [
+                    "reference",
+                    "quote"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "criterion",
+              "assertion",
+              "old",
+              "new",
+              "grounds"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -3279,7 +3584,40 @@
         "model",
         "items"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
     },
     "outputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3556,6 +3894,49 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 200
+                      },
+                      "replaced_criteria": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "criterion": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "old": {
+                              "type": "string"
+                            },
+                            "new": {
+                              "type": "string"
+                            },
+                            "declaration": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "review": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "reviewer": {
+                              "type": "string",
+                              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                            }
+                          },
+                          "required": [
+                            "criterion",
+                            "old",
+                            "new",
+                            "declaration",
+                            "review",
+                            "reviewer"
+                          ],
+                          "additionalProperties": false
+                        }
                       },
                       "label": {
                         "type": "string"
@@ -4864,6 +5245,49 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 200
+                      },
+                      "replaced_criteria": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "criterion": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "old": {
+                              "type": "string"
+                            },
+                            "new": {
+                              "type": "string"
+                            },
+                            "declaration": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "review": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "reviewer": {
+                              "type": "string",
+                              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                            }
+                          },
+                          "required": [
+                            "criterion",
+                            "old",
+                            "new",
+                            "declaration",
+                            "review",
+                            "reviewer"
+                          ],
+                          "additionalProperties": false
+                        }
                       },
                       "label": {
                         "type": "string"
@@ -6178,6 +6602,49 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 200
+                      },
+                      "replaced_criteria": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "criterion": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "old": {
+                              "type": "string"
+                            },
+                            "new": {
+                              "type": "string"
+                            },
+                            "declaration": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "review": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "reviewer": {
+                              "type": "string",
+                              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                            }
+                          },
+                          "required": [
+                            "criterion",
+                            "old",
+                            "new",
+                            "declaration",
+                            "review",
+                            "reviewer"
+                          ],
+                          "additionalProperties": false
+                        }
                       },
                       "label": {
                         "type": "string"
@@ -7504,6 +7971,49 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 200
+                      },
+                      "replaced_criteria": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "criterion": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "old": {
+                              "type": "string"
+                            },
+                            "new": {
+                              "type": "string"
+                            },
+                            "declaration": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "review": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                            },
+                            "reviewer": {
+                              "type": "string",
+                              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                            }
+                          },
+                          "required": [
+                            "criterion",
+                            "old",
+                            "new",
+                            "declaration",
+                            "review",
+                            "reviewer"
+                          ],
+                          "additionalProperties": false
+                        }
                       },
                       "label": {
                         "type": "string"
