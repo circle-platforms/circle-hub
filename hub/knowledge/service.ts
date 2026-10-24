@@ -42,6 +42,8 @@ export interface KnowledgeOptions {
   /** Default admin context of syncs and productions that name none. */
   admin?: Principal | null;
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
+  /** Reads the feeding layer beside seedlings (kb-feeding); absent when nothing was fed yet. */
+  feeding?:import('./feeding-types.ts').FeedingReader;
 }
 
 export interface BuildCalibrationInput {
@@ -125,6 +127,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     },
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
+    feedingReader: options.feeding,
     credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };
@@ -134,7 +137,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
-  const feeding=new FeedingLayer(context,reading);context.feeding=feeding;
+  const feeding=new FeedingLayer(context,reading);context.feeding=feeding;context.feedingReader??=feeding;
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
   const relations = new LinkReading(context, builds);

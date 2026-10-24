@@ -1,3 +1,7 @@
+import type {FeedingCut,KnowledgeStructureObject} from './feeding-types.ts';
+export type {FeedingCut,FeedingReader,KnowledgeStructureObject} from './feeding-types.ts';
+export {FEEDING_INDEX} from './feeding-types.ts';
+export {RecordFeedingReader,boundLines} from './feeding-reader.ts';
 import {runById,canViewRun} from '../runs/api.ts';
 import {pathSegments} from '../refs/api.ts';
 // Append-only feeding beside immutable tree content. The record insertion sequence is the frozen horizon (gaps are valid).
@@ -25,7 +29,7 @@ interface Source {artifact:SourceArtifact;bytes:Uint8Array;parser:string;model:u
 export class FeedingLayer {
  readonly context:KnowledgeContext;readonly reading:TreeReading;
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
- async offset(tx?:Transaction):Promise<number>{const page=await this.context.records.store.find({key:LOG,value:'1',kind:'claim',limit:1,newestFirst:true},tx);if(!page.items.length)return 0;return this.position(page.items[0].digest,tx);}
+ async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
  private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
  private async all(key:string,value:string,tx?:Transaction){return this.context.store.all<ClaimBody>({key,value,kind:'claim'},tx);}
  private body(record:StoredRecord<ClaimBody>):Record<string,any>|null{const claim=Claim.safeParse(record.body);if(!claim.success||!object(claim.data.statement.data))return null;return KnowledgeStructureSchema.safeParse(claim.data.statement.data.feeding??claim.data.statement.data).data as Record<string,any>??null;}
@@ -91,7 +95,7 @@ export class FeedingLayer {
  private async bindings(principal:Principal,row:Projection,source:Source,scope:FeedingScope,tx:Transaction){
   const candidates=[...new Set(row.lines)],line=candidates.length===1?candidates[0]:null;
   const evidenceSource=scope.metaSource?await this.source(principal,scope.metaSource):source;
-  const evidenceParser=scope.metaSource?'json@1':evidenceSource.parser,evidenceSelector=scope.metaSource?'p/directory_labels':row.selector;
+  const evidenceParser=scope.metaSource?'json@1':evidenceSource.parser,evidenceSelector=scope.metaSource?'p/ancestors':row.selector;
   let fragment=this.context.parsers.get(evidenceParser)!.parse(evidenceSource.bytes).locate(evidenceSelector);
   let selector=evidenceSelector,parser=evidenceParser;if(!fragment?.text){parser='json@1';selector='p';fragment=this.context.parsers.get(parser)!.parse(evidenceSource.bytes).locate(selector);}if(!fragment?.text)fail('绑定来源片段不存在或为空');
   const evidence={reference:'src:'+evidenceSource.artifact.body.sha256+'/'+parser+'/'+selector,text:fragment.text};
@@ -116,7 +120,7 @@ export class FeedingLayer {
  }
  private sourceKey(body:Record<string,any>){if(!body.source||body.schema==='fed-note@1')return null;const {bytes:_bytes,revision:_revision,...identity}=body.source;return sha256Hex(canonicalize({product:body.product,identity}));}
  private async sourceHead(body:Record<string,any>,source:Source,tx:Transaction){const key=this.sourceKey(body);if(!key)return;await this.context.records.store.lock('knowledge.feeding.head:'+key,tx);const old=(await this.context.records.store.find<any>({key:'knowledge.feeding.head',value:key,kind:'action',limit:1,newestFirst:true},tx)).items[0];if(old?.body.detail?.object===body.object)return;await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:this.context.now().toISOString(),ended_at:this.context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{object:body.object,source_record:source.artifact.digest,parent:old?.digest??null}},index:[{key:'knowledge.feeding.head',value:key}]},tx);}
- private async changed(body:Record<string,any>){const key=this.sourceKey(body);if(!key)return [];const head=(await this.context.records.store.find<any>({key:'knowledge.feeding.head',value:key,kind:'action',limit:1,newestFirst:true})).items[0];return head&&head.body.detail?.object!==body.object?[head.digest]:[];}
+ private async changed(body:Record<string,any>,offset=Number.MAX_SAFE_INTEGER){const key=this.sourceKey(body);if(!key)return [];let head:StoredRecord<any>|undefined;for(const row of await this.context.store.all<any>({key:'knowledge.feeding.head',value:key,kind:'action'}))if(await this.position(row.digest)<=offset)head=row;return head&&head.body.detail?.object!==body.object?[head.digest]:[];}
  async upload(principal:Principal,artifact:SourceArtifact,scope:FeedingScope={}):Promise<FeedingReceipt>{
   if(!('upload'in artifact.body.origin)||artifact.body.author.user===null||artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('上传出处必须是当前上传者的 Hub 原件');
   const body={schema:'fed-note@1',object:artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:artifact.body.sha256},by:artifact.body.author.user,run:null,at:artifact.body.captured_at};
@@ -131,10 +135,10 @@ export class FeedingLayer {
   for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;const source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});return Boolean(source?.bytes&&source.readTier==='model_readable');}
   return false;
  }
- async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound),...await this.changed(body)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
- private async withdrawals(id:string,entry:string,run:string|null=null,bound:readonly string[]=[]){
+ async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
+ private async withdrawals(id:string,entry:string,run:string|null=null,bound:readonly string[]=[],offset=Number.MAX_SAFE_INTEGER){
   const rows=await this.all(RETRACT,'1'),found:string[]=[];
-  for(const row of rows){const body=this.body(row);if(!body)continue;if(body.objects?.some((target:string)=>target===id||bound.includes(target))||body.entries?.some((target:string)=>target===entry||bound.includes(target))||run!==null&&body.runs?.includes(run))found.push(row.digest);}
+  for(const row of rows){if(await this.position(row.digest)>offset)continue;const body=this.body(row);if(!body)continue;if(body.objects?.some((target:string)=>target===id||bound.includes(target))||body.entries?.some((target:string)=>target===entry||bound.includes(target))||run!==null&&body.runs?.includes(run))found.push(row.digest);}
   return [...new Set(found)];
  }
  private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record)fail('撤回记录不存在');}for(const id of 'runs'in body?body.runs:[]){if(!await runById(this.context.records.store,id))fail('撤回运行不存在');}}
@@ -196,6 +200,17 @@ export class FeedingLayer {
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+this.key(body)+':'+principal.id,[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
  async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
+ async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.freeze',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
+ async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
+  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);
+  const objects=new Map<string,KnowledgeStructureObject>(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
+  for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);}
+  for(const id of objects.keys()){retracted.delete(id);const rows=await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
+   for(const row of await this.all('knowledge.feeding.usage.object',id)){if(await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
+   if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
+  }
+  return entries.length?{offset,objects,bindings,retracted,contradicted,usages}:null;
+ }
  async bindingsFor(principal:Principal,id:string,offset=Number.MAX_SAFE_INTEGER){if(!await this.visible(id,principal))return null;const rows=[];for(const record of await this.all(BINDING,id)){if(await this.position(record.digest)>offset)continue;const body=this.body(record);if(body)rows.push({record:record.digest,body,claim:record.body});}const structure=rows.filter(row=>row.body.basis==='source_structure'),declared=rows.filter(row=>row.body.basis==='declared');return {items:rows.sort((a,b)=>Number(a.body.basis==='declared')-Number(b.body.basis==='declared')),conflict:rows.some(row=>row.body.state==='conflict')||declared.some(row=>{const same=structure.filter(source=>source.claim.validity.bound.length===row.claim.validity.bound.length&&source.claim.validity.bound.every((v,i)=>v===row.claim.validity.bound[i]));return same.some(source=>source.body.state==='bound')&&!same.some(source=>source.body.state==='bound'&&source.body.line===row.body.line);}),candidates:[...new Set(rows.flatMap(row=>row.body.state==='conflict'?row.body.candidates:row.body.line?[row.body.line]:[]))]};}
  async refreshRetractionTodos():Promise<void>{
   for(const record of await this.all('knowledge.feeding.annotation','1')){

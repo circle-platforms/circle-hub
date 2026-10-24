@@ -56,6 +56,7 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
     if (Object.values(allowed!.parameters).some((v) => v === 'literal_assertion')) reject(`/steps/${i}`, '断言只写进 expects，不能直接写在 steps');
     const bound = bindArguments(method!, step, `/steps/${i}`, new Set(Object.entries(allowed!.parameters).filter(([, role]) => role === 'executor_return').map(([name]) => name))); if (bound.problems.length) reject(bound.problems[0].pointer, bound.problems[0].message);
     for (const value of bound.values) {
+      if ((allowed!.unsupplied ?? []).includes(value.name)) reject(value.pointer, '该参数已声明永不传入');
       if (!Object.hasOwn(allowed!.parameters, value.name)) reject(value.pointer, '参数没有角色，请在配置里给它定角色');
       if (allowed!.parameters[value.name] === 'executor_return') reject(value.pointer, '该参数由执行器提供上一步的返回，模型不能填写');
       if (allowed!.parameters[value.name] === 'wait' && (!/^[0-9]+$/.test(String(value.value)) || Number(value.value) < 1 || profile.max_wait_seconds === null || Number(value.value) > profile.max_wait_seconds || value.pointer.includes('/keywords/') && Object.values(allowed!.parameters).every((role) => role === 'wait'))) reject(value.pointer, '等待必须是配置上限内的正整数位置参数');

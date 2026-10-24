@@ -2,7 +2,7 @@ import { requestRecords } from './requests.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 // Read existing dispatch observations only. No planning, dispatching or resubmission lives here.
 import { z } from 'zod';
-import { DynamicTerminalSchema, NatureSchema, QualifierMarkSchema, labelOf, type Reason } from '../../../contracts/generated/vocabulary.ts';
+import { DynamicTerminalSchema, NatureSchema, QualifierMarkSchema, ReasonSchema, labelOf, type DynamicTerminal, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
@@ -12,10 +12,11 @@ import type { EngineContext } from './deps.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { bindRecovery, expectationFor, meets, requirementStatus } from './terminals.ts';
 import { aggregate, INTERMITTENT_MARK, repetitionSummary, type RoundOutcome } from './repetition.ts';
-import type { DynamicTerminal } from '../../../contracts/generated/vocabulary.ts';
+import { earlyStopSentence } from '../../dispatch/rounds.ts';
 
 const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional()});
-const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row)});
+const RoundNote=z.object({round:z.number().int(),terminal:DynamicTerminalSchema,code:z.string().optional(),meets:z.boolean().nullable().optional(),reason:ReasonSchema.optional(),early_stop:z.boolean().optional(),pending:z.boolean().optional(),lost:z.boolean().optional()});
+const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row),rounds:z.array(RoundNote).optional()});
 export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.verification_run===run?job.verification_item===item:job.plan_run===run&&job.items.includes(item);}
 export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,result:ValidationResult,jobs?:RunJob[]):Promise<boolean>{
   if(!ctx.deps.dispatch&&!jobs)return false;
@@ -83,7 +84,13 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       const frozenPolicy=run.requirements.find(row=>row.key===requirement.requirement)?.repetition;
       const policy=frozenPolicy??repetitionSummary({layers:template.layers,declared:template.repetition});
       const roundRefutation=staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code));
-      const rounds:RoundOutcome[]=relevant.map((job,at)=>{
+      const noted=relevant.flatMap(job=>(reports.get(job.job)?.rounds??[]).map(note=>({job:job.job,note})));
+      const byRound=new Map<number,typeof noted[number]>();
+      for(const entry of noted)byRound.set(entry.note.round,entry);
+      const rounds:RoundOutcome[]=byRound.size>0?[...byRound.values()].map(({note})=>{
+        const settled=note.terminal==='pass'||note.terminal==='fail';
+        return {round:note.round,terminal:note.terminal,...(note.code?{code:note.code}:{}),...(settled?{meets:note.meets===true}:{})};
+      }):relevant.map((job,at)=>{
         const row=(reports.get(job.job)?.rows??[]).find(r=>r.item===item.item);
         const terminal:DynamicTerminal=row?.dynamic_terminal??(job.status.outcome==='not_dispatched'||job.status.outcome==='proven_not_executed'||job.status.outcome==='target_rejected'?'not_run':'no_verdict');
         const settled=terminal==='pass'||terminal==='fail';
@@ -91,13 +98,26 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
         return {round:at+1,terminal,...(row?.code?{code:row.code}:{}),...(settled?{meets:meets(roundLayer,expectation,roundRefutation,template.accepted_producer)}:{})};
       });
       const rolled=aggregate(rounds,{count:policy.count,aggregation:policy.aggregation,...(policy.k===undefined?{}:{k:policy.k})});
+      const early=noted.filter(entry=>entry.note.early_stop===true).length;
+      const passedRound=noted.find(entry=>entry.note.meets===true)?.note.round;
       requirement.layers=requirement.layers.map(layer=>{
         if(layer.layer!=='dynamic')return layer;
-        const enriched={...layer,terminal:rolled.terminal,...(rolled.code===undefined?{}:{code:rolled.code}),rounds:rolled.distribution.rounds,distribution:{count:rolled.distribution.count,by_terminal:rolled.distribution.byTerminal},...(rolled.marks.includes(INTERMITTENT_MARK)?{intermittent:true}:{}),observation:rolled.text};
-        // The aggregate's missing fact is used only where the recovery binding did not already write a richer one.
-        if(rolled.missing!==undefined&&enriched.missing===undefined)enriched.missing=rolled.missing;
-        return enriched;
-      });
+        const openReason=noted.find(entry=>entry.note.terminal===rolled.terminal&&(entry.note.reason==='budget_exhausted'||entry.note.reason==='integrity_unproven'))?.note.reason;
+        const unsettled=rolled.terminal==='not_run'||rolled.terminal==='no_verdict'||rolled.terminal==='incomplete';
+        const reason:Reason=openReason==='budget_exhausted'||openReason==='integrity_unproven'?openReason:layer.reason??'integrity_unproven';
+        const base=unsettled&&layer.reason===undefined?bindRecovery({layer:'dynamic',terminal:rolled.terminal,reason},{runner:run.runner??run.configurer!,owner:admin.id,administrator:admin.id,due,location:`作业 ${relevant.map(j=>j.job).join('、')} / ${item.item}`},[{verdict:'unknown',reason,missing:rolled.missing??'缺轮次判定',statement:'派发观察尚未证明完整性',grounds:[],tier:'advisory'}]):layer;
+        const enriched={...base,terminal:rolled.terminal,...(rolled.terminal==='pass'||rolled.code===undefined?{}:{code:rolled.code}),...(unsettled?{reason}:{}),rounds:rolled.distribution.rounds,distribution:{count:rolled.distribution.count,by_terminal:rolled.distribution.byTerminal,...(early>0?{early_stop:early}:{})},...(rolled.marks.includes(INTERMITTENT_MARK)?{intermittent:true}:{}),observation:early>0&&passedRound!==undefined?earlyStopSentence(passedRound,early):rolled.text};
+        if(rolled.outcome==='meets'||enriched.terminal==='pass'){delete enriched.attribution;if(enriched.terminal==='pass'){delete enriched.reason;delete enriched.missing;delete enriched.exit;delete enriched.code;}}
+        else if(rolled.outcome==='misses')enriched.attribution='unattributed';
+        if(rolled.missing!==undefined&&enriched.missing===undefined&&enriched.terminal!=='pass')enriched.missing=rolled.missing;
+        return enriched as LayerResult;
+      }) as typeof requirement.layers;
+      if(byRound.size>0){
+        const parts=['pass','fail','no_verdict','not_run','incomplete'].flatMap(name=>{const found=rolled.distribution.byTerminal[name as DynamicTerminal];return found>0?[`${found} 次${labelOf('dynamic_terminal',name as DynamicTerminal)}`]:[];});
+        const grounds=relevant.flatMap(job=>job.status.result?[job.status.result]:[]);
+        requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`目标报告：${rolled.distribution.count} 次里 ${parts.join('、')}${rolled.marks.includes(INTERMITTENT_MARK)?'（间歇）':''}`,verdict:'unknown',data:{distribution:rolled.distribution.byTerminal,count:rolled.distribution.count}},qualifier:{nature:'unknown',provenance:'projected',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},grounds,warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest],premises:[]}}));
+      }
+      if(rolled.outcome==='misses'&&byRound.size>0)await writeHypothesis(ctx,run,item.item,requirement.requirement);
       const status=requirementStatus({producer:template.accepted_producer,layers:requirement.layers,hasProducer:!((terminal==='pass'||terminal==='fail')&&template.accepted_producer==='fact'&&rows.some(r=>!r.accepted_as_fact)),expectation,expectedRefutation:staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code)),independence:requirement.unsatisfied_reason==='independence_unknown'?'unknown':null,acceptsDeclared:template.accepts_declared_independence===true});
       delete requirement.unsatisfied_reason;Object.assign(requirement,status);
       if(abandonDisposed){requirement.status='unsatisfied';requirement.unsatisfied_reason='abandoned';}
@@ -106,4 +126,12 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
   }
   result.partitions=partitionItems(inputs,run.items.map(i=>i.id));
   return true;
+}
+
+/** V04 R[1] / V08: the three causes of a miss stay a hypothesis set and never become the attribution. */
+async function writeHypothesis(ctx:EngineContext,run:RunRecord,item:string,requirement:string):Promise<void>{
+  const marker=`${run.run}:${item}:${requirement}`;
+  const prior=await ctx.deps.records.store.find({kind:'claim',key:'runs.hypothesis.item',value:marker,limit:1});
+  if(prior.items.length)return;
+  await ctx.deps.records.store.put({kind:'claim',schema:'hypothesis-set@1',provenance:'projected',created_at:ctx.now().toISOString(),body:{run:run.run,item,requirement,question:'汇总不合期望',hypotheses:[{statement:'被测对象缺陷',status:'open'},{statement:'环境',status:'open'},{statement:'执行上下文',status:'open'}],residual:{statement:'其他',status:'open'}},index:[{key:'runs.hypothesis.item',value:marker}]});
 }

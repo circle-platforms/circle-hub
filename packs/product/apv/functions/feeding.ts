@@ -20,7 +20,7 @@ export default function project(input:unknown):unknown{
  const s=input.source,model=isRecord(input.model)?input.model:{},meta=isRecord(input.meta)?input.meta:{};
  const root=typeof input.root==='string'?input.root:null,base={product:input.product,root,path:null};
  // Only complete directory-folder names are parsed. Titles and descriptions are never fed to documentLines/locate.
- const directory=strings(meta.directory_labels,'目录标签'),lines=[...new Set(directory.map(folderLine).filter((line):line is string=>line!==null).map(lineKey))];
+ const directory=strings(meta.ancestors,'目录祖先'),lines=[...new Set(directory.map(folderLine).filter((line):line is string=>line!==null).map(lineKey))];
  const rows:Array<{body:Record<string,unknown>;identity:unknown;lines:string[];selector:string;grammar:string;conflict:boolean}>=[];
  if(s.system==='agile'&&input.parser==='kityminder@1'){
   const scan=caseNodes(model);if(scan.malformed||scan.deep)throw Error('脑图结构或位置不完整；修正原件后整份重读');
