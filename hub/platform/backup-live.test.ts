@@ -5,7 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { chmod, cp, link, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { after, describe, test } from 'node:test';
+import { after, afterEach, describe, test } from 'node:test';
 import { createBackup, listBackups, MANIFEST_FILE, verifyBackup, type BackupManifest } from './backup.ts';
 import { isMissingOrEmpty, listFiles } from './files.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
@@ -13,17 +13,20 @@ import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './p
 import { treeEntries, writeSyntheticPacks } from './rehearse.ts';
 import { assertRestorable, restoreBackup, setAside } from './restore.ts';
 import { inspectRole, roleFixHint, rolePrivileges, type RoleReport } from './roles.ts';
-import { withSession } from './sql.ts';
+import { withSession, summarizeTables } from './sql.ts';
 import { libpqAvailable, LIBPQ_MISSING, ownerTables, removeDir, socketPort, tempDir } from './test-support.ts';
 
 const libpq = await libpqAvailable();
 const roots: string[] = [];
 const clusters: PostgresControl[] = [];
 
-after(async () => {
-  for (const control of clusters) await control.stop().catch(() => {});
-  for (const root of roots) await removeDir(root);
-});
+// Each case owns independent roots. Do not retain clusters until file end: macOS has a small system-wide SHMMNI.
+async function cleanup(): Promise<void> {
+  for (const control of clusters.splice(0)) await control.stop().catch(() => {});
+  for (const root of roots.splice(0)) await removeDir(root);
+}
+afterEach(cleanup);
+after(cleanup);
 
 async function liveRoot(): Promise<{ layout: Layout; control: PostgresControl }> {
   const root = await tempDir();
@@ -85,6 +88,39 @@ async function putVaultEntry(layout: Layout, name: string, bytes: Uint8Array): P
 const manifestOf = async (dir: string): Promise<BackupManifest> => JSON.parse(await readFile(join(dir, MANIFEST_FILE), 'utf8')) as BackupManifest;
 
 describe('backups of a live data root', { skip: libpq ? false : LIBPQ_MISSING }, () => {
+  test('backup evidence restores rows objects vault bytes and modes into a distinct data root', async () => {
+    const { layout, control } = await liveRoot();
+    await storeObject(layout, Buffer.from('synthetic immutable object'));
+    await putVaultEntry(layout, 'synthetic-one', Buffer.from([0, 255, 17, 0, 128]));
+    await putVaultEntry(layout, 'synthetic-two', Buffer.from('synthetic sealed bytes'));
+    const before = {
+      tables: await withSession(control.connector, control.target.database, summarizeTables),
+      objects: await treeEntries(layout.objects),
+      vault: await treeEntries(layout.vault),
+      config: await treeEntries(layout.config),
+    };
+    const backup = await createBackup({ layout, postgres: control, label: 'distinct-root-evidence', libpqBin: libpq! });
+    await control.stop();
+    const target = layoutAt(join(await tempDir(), 'restored'));
+    roots.push(join(target.root, '..'));
+    assert.notEqual(target.root, layout.root);
+    await ensureLayout(target);
+    const restored = createPostgres({ layout: target, port: socketPort() });
+    clusters.push(restored);
+    const receipt = await restoreBackup({ layout: target, backupDir: backup.dir, postgres: restored, libpqBin: libpq! });
+    assert.equal(receipt.rows, 50);
+    assert.deepEqual(await withSession(restored.connector, restored.target.database, summarizeTables), before.tables);
+    assert.deepEqual(await treeEntries(target.objects), before.objects);
+    assert.deepEqual(await treeEntries(target.vault), before.vault);
+    assert.deepEqual(await treeEntries(target.config), before.config);
+    await withSession(restored.applicationConnector, restored.target.database, s => s.query("INSERT INTO synthetic_records (body) VALUES ('isolated destination')"));
+    const count = (database: PostgresControl) => withSession(database.applicationConnector, database.target.database, s => s.query('SELECT count(*)::int AS n FROM synthetic_records'));
+    assert.equal(Number((await count(restored))[0].n), 51);
+    await restored.stop();
+    await control.start();
+    assert.equal(Number((await count(control))[0].n), 50, 'the original database remains independent');
+  });
+
   test('temporaries of the records stores and Finder metadata are never part of a backup', async () => {
     const { layout, control } = await liveRoot();
     const object = await storeObject(layout, Buffer.from('synthetic object'));
