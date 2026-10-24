@@ -89,7 +89,7 @@ test('a family the parameter names no key for produces with the pack default and
   assert.deepEqual(Object.keys(nsae.attributes.values), []);
   assert.match(nsae.attributes.note, /参数里没有这一族的键/);
   assert.match(nsae.attributes.note, /包的默认值/);
-  assert.match(nsae.attributes.note, /param_sources/);
+  assert.match(nsae.attributes.note, /组成记录.*variables/);
   // The producer claims no origin it cannot know: the note names the set it used and the Hub's record, nothing else.
   assert.ok(!nsae.attributes.note.includes('部署'), nsae.attributes.note);
   assert.ok(!nsae.attributes.note.includes('集成者'), nsae.attributes.note);
