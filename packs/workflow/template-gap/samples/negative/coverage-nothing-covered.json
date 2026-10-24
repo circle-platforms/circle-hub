@@ -2,25 +2,83 @@
   "id": "nearly_nothing_covered",
   "source": "author",
   "check": "coverage",
-  "note": "用例都没有测试类型标签，文字里只显示了命令的添加；跳过了数据库：其余 22 个类别缺失",
+  "note": "合成原件的显式类别声明；不从正文匹配，期望由删去/加回的闭集声明预先决定",
   "subject": {
     "item": "880001",
-    "location": "src:2215a5b7603f58061e7d3141e51ce96c6fb14b7b99792b9045b1984650ef9f75/kityminder@1/n/r0sample0001",
+    "location": "src:57a63f0c22dc872a7c003202e6fb38b9edcd9eb458f45919f39f09e6f71057a4/kityminder@1/n/r",
     "document": "880001",
-    "covered": [
-      "command_add"
-    ],
-    "skipped": [
-      {
-        "category": "database",
-        "reason": "不涉及数据库"
+    "source": {
+      "sha256": "57a63f0c22dc872a7c003202e6fb38b9edcd9eb458f45919f39f09e6f71057a4",
+      "model": {
+        "doubleEncoded": false,
+        "meta": {},
+        "nodes": [
+          {
+            "id": "r",
+            "text": "合成分类范围",
+            "data": {
+              "id": "r",
+              "text": "合成分类范围"
+            },
+            "children": [
+              1
+            ],
+            "parent": null,
+            "depth": 0,
+            "selector": "n/r",
+            "extra": null
+          },
+          {
+            "id": "c0",
+            "text": "合成事项 0",
+            "data": {
+              "id": "c0",
+              "text": "合成事项 0",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "functional"
+              ]
+            },
+            "children": [
+              2
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c0",
+            "extra": null
+          },
+          {
+            "id": "e0",
+            "text": "合成结果",
+            "data": {
+              "id": "e0",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 1,
+            "depth": 2,
+            "selector": "n/e0",
+            "extra": null
+          }
+        ],
+        "duplicateIds": [],
+        "missingIds": 0,
+        "nulRemoved": 0,
+        "surrogatesReplaced": 0
       }
-    ]
+    },
+    "case_rule": "marked",
+    "claims": [],
+    "skipped": [],
+    "scope_complete": true
   },
   "expect": [
     {
       "verdict": "refute",
-      "code": "core.coverage.shortfall",
+      "code": "template-gap.category_shortfall",
       "item": "880001",
       "tier": "advisory"
     }

@@ -1,291 +1,110 @@
-# template-gap 1.2.0: document categories and command coverage
+# template-gap 1.2.0: declared and judged template categories
 
-This workflow is a production run: both requirements are facts, computed and stored at start_run. It fills no item
-slot, generates no cases and calls no model. The documents are the judged subject. Both checks are static,
-bookkeeping and advisory: a missing category is a factual gap, not an instruction to change the source in the Hub.
-Model elements: W01/W02, C04/C05, K02, T01/T02; decision 35 item 19.
+R1, owner ruling 2026-10-24, supersedes the previous keyword implementation. The Hub calls no model. Each document is one
+item. `coverage` is a judgment requirement: original author `category_ids` or submitted per-case `CategoryJudgment` supplies
+the semantic classification. Hub checks the generated shape, closed ids, source identity, raw quotation and case ownership,
+then computes sets. `command_coverage` reports that conditional set calculation against complete producer identities.
+The checks do not prove the semantic correctness or recall of a model classification. Independent review remains necessary.
 
-## R1 migration preparation
+## Declared scope and category policy
 
-Owner ruling R1 (2026-10-24) supersedes the legacy text-category behavior described below. That behavior is still wired
-in this preparation commit and is not a compliant replacement for category judgments. The affected requirements are
-`coverage` and `command_coverage`; historical results remain unchanged. Do not treat the preparation as a completed R1 migration.
+The 24 rows of `tables/template-v3.json` contain only id, label, group and model-readable description. They are a published
+closed declaration, not a program. All 24 remain required by `template-v3-coverage.json`; the nine command-group categories
+remain required per command identity. Descriptions, titles, steps, ancestors, test-type tags and expected text never select
+categories. `category_ids` and `test_type_ids` are independent fields, per model 13. There is no Functional-to-functional mapping.
 
-`functions/category-evidence.ts` checks only a quotation's exact text and ownership in the parsed document. Its input node
-index must already have been resolved against the bound original. The nearest case boundary must equal the claimed case;
-ancestor, sibling and nested-case quotations are rejected even when they contain identical text. Case boundaries come
-from `casesOf`, not from text matching. The batch verifier builds ownership once per document. No case folding, Unicode
-normalization or whitespace normalization is applied. This is a mechanical citation check, never a category judgment,
-and it is not yet connected to projection or validation.
+`casesOf` retains the existing structural `case_rule`: marked by default; tagged restricts the document scope. An author's
+category_ids is read from the original case node's data, not from caller-added projected fields. Its nonempty array must
+contain exact declaration ids. Wrong case, spaces, synonyms, unknown ids and malformed arrays are structural errors. Duplicate
+ids are deduplicated. Absence is unclassified. A group's declarations are not inherited by cases. Nested cases own their text.
 
-Needs: the integrator's M1 model/generated-contract commit supplies the category declaration and judgment shapes and
-unclassified representation. After merging that commit, this task will connect explicit categories and accepted per-case
-judgments, remove the legacy matcher/table rules, and block missing-category claims while classification is incomplete.
-R2 (`kw-tags-exact`) and R4 (`kw-command-grammar`) consume the same contracts; this task will use those contracts directly,
-without inventing a parallel schema or waiting for either implementation branch. The next action belongs to this task's
-implementer after the integrator announces the model commit. New versions and runs replace no historical record.
+## Judgment submission and quotation identity
 
-## Inputs and the locked scope
+The existing submit_result item slot `coverage` is a SlotClaim list; each data object is the generated CategoryJudgment shape.
+It contains the exact case item id, category_id, QuoteEvidence and explicit ModelIdentity. The package bundles the generated
+category-judgment@1 schema byte-for-byte; a test checks the copy against contracts/generated. A nonempty accepted claim supplies
+classification for that case. An empty claim list supplies none. A document entirely classified by author fields can submit
+coverage:[]; it does not need invented model judgments. A new run is no longer a wholly factual production run.
 
-- `documents`: required, many, subject; agile:mindmap or a JSON upload. A document is one item. Around 30 ordinary
-  documents fit a batch; large maps or command fan-out require smaller batches.
-- Product binding requires `commands@1`. The caller supplies product and build; the pack names no product.
-- `case_index`: optional, one, expected, accepts knowledge:index. Read
-  `knowledge:index:<product>:<same build>?kind=case&key=document&only=<agile document ids>&fields=document,node,commands,title,path_labels`.
-  only must equal the agile documents of this run, no more or fewer; uploads are excluded. An all-upload run need not
-  bind an index. Missing case_index is a recoverable evidence gap for agile documents, never an empty index.
-- Admission checks index-view@1, case/document, root and product identity, required fields, entry identities/tree
-  references, exact only, and completeness facts. Contradictions refuse the whole start_run with
-  `template-gap.index_invalid`; its fix names the locked build and exact only. No partial result is accepted then.
+The frozen context holds the bound source digest and parser model. The function read declaration obtains the original subject
+text through the existing permission/integrity boundary. SHA-256 of its UTF-8 bytes must equal the bound original digest before
+raw offsets are used. Transformed text is an evidence gap requiring an original-byte reading path; it is never silently accepted.
+The source-quotes scanner retains ECMA-404 JSON token locations after JSON.parse validates the syntax. It handles ordinary and
+double-encoded KityMinder documents and maps spans back to the original bytes. The selector must resolve within the same case;
+the byte span must belong to that selected node or its descendants' text, and to the same nearest case boundary. Ancestors,
+siblings, nested cases, borrowed identical text, absent references, wrong digests/parsers/spans and modified quotations fail.
+NUL/invalid-surrogate replacement cannot establish exact original quotation evidence. No Unicode, case or whitespace folding
+is used. The earlier case-local verifier remains a mechanical text/ownership helper, never a category classifier.
 
-The index is frozen in context.groups with its source receipt. Command paths are opaque values already parsed by the
-product producer. This workflow does not scan titles, steps or expected results to infer commands. The current upstream
-producer extracts commands from titles and ancestors. Extending the scanned texts requires the per-case revision
-contract below before this consumer can accept the expanded index safely.
+Fresh claims are checked in the current submission. Their judgments are linked to the accepted validation record through the
+normal result/slot lineage. Caller-supplied AcceptedCategoryJudgment references are not trusted as acceptance and do not bypass
+these checks. Subsequent consumers must resolve the actual accepted result; a self-referential receipt is not fabricated.
 
-## The unchanged 24-category requirement
+## Coverage, completeness and recovery
 
-`coverage` uses the admitted template-v3-coverage.json table and coverage@1. All 24 categories remain required, including
-the nine command categories; they do not disappear because an index or command is missing. categoryFacts still recognizes
-categories by the existing canonical test-type tags and literal keywords. The case-review template table is untouched;
-parity.test.ts retains its declared required-flag difference.
+First classify each case, then aggregate in the frozen declared scope. Fields disclose classification_status, classifications,
+unclassified, scope_complete, category counts/evidence, missing and skipped separately. A display evidence list is capped at
+20 ids; counts and membership use all cases. No unclassified case is counted as a missing category. Missing/unchecked scope
+blocks a missing-category claim. Existing observed categories may still be disclosed with their source and limitations.
 
-The default case_rule is marked (tags or the team's case marker); tagged remains available for document-level coverage.
-An untagged marked candidate is counted as a case, with no invented test-type tag. marked_only discloses such cases;
-untagged retains the existing restrictive-tagged-rule disclosure. The separate hub-pack-findings follow-up owns the
-broader untagged-count and always-present covered changes; this task does not implement them.
+The client follows SKILL.md: read the unclassified cases, judge with raw quotes, submit, repair rejected evidence and resubmit.
+A missing original triggers re-read; failure to obtain the required fact after the stated bounded action is a design gap for
+integrator Claude before the final report. Check unknowns name missing facts and an actionable next step; the existing engine
+binds a named exit by reason. They are not converted into support, refutation or a completed classification.
 
-## Command identity and revision matching
+## Complete command identity and index revision
 
-`command_coverage` requires marked, the product producer's default case-key rule. tagged produces the definite
-`template-gap.case_rule_mismatch` conclusion, with a next action to rerun using the default (omit case_rule or use marked).
-Knowledge sync cannot fix a rule mismatch. Uploads always get not_indexed instead of being mistaken for indexed agile data.
+Bind case_index to the locked root/product and exact agile-document only set, requesting document,node,commands,
+command_identities,title,path_labels. Uploads have no agile identity and remain not_indexed. Headers and ordered path_labels
+must equal the current case revision exactly; changed or unmatched cases cannot contribute stale memberships. A shared graph
+retains headers/ancestors without copying them per case. A step edit that expands the producer's scan scope requires a complete
+per-case revision contract first; the current header contract cannot prove those extended inputs unchanged.
 
-Cases connect by (document, case key), plus exact title and ordered path_labels. The case key is the existing
-case-review-compatible identity; no new key/command parser was added. Headers use exact code-unit equality, without NFKC, whitespace folding or trimming. Labels keep their ancestor order. If a stable key has a different title or ancestor label,
-it is not a matching current case revision: withhold its old command membership, report it among unmatched cases, and
-require knowledge sync and a new read/run. Multiple index entries for one matching key count the case once per command.
-Conflicting revisions under one key are also unmatched, not arbitrarily selected.
+Per the integrator's R1/R4 handoff, data.commands stays a path string list and must equal the paths derived from
+command_identities. R4's producer supplies CommandIdentity objects. Groups compare model 13 identityRules.command: locked tree
+root, full path, exact signature and typed parameters by declared position/name, type declaration and canonical parsed value.
+Raw parameter spelling and role evidence are retained annotations. Path equality alone cannot merge distinct identities.
+Old roots without command_identities are missing complete identity evidence, even when commands exists; re-produce with the
+new producer, re-read the index and start a new run. Truncation, skipped sources, unmatched revisions, missing identities and
+unclassified cases preserve known observations and block unsupported shortfalls/full-coverage claims.
 
-A shared parent-pointer graph freezes case headers/ancestors once; expected-result leaf text is omitted from that graph.
-Node texts are compared exactly as read; nothing is normalized. A long shared title is not copied into every case's path. The existing
-long-label/deep-tree tests still run within their original time bounds and the projection's 8 MiB output cap.
-Truncated producer titles/label lists are not accepted by prefix matching: after one sync/re-read still cannot establish
-identity, report the field-fidelity/capability gap. Do not silently guess a command or loop forever on sync.
+skipped contains exact category, the user's verbatim reason, optional document and optional complete CommandIdentity command.
+A command skip matches only that identity; a path string is invalid. Document skips apply to all identities of that document.
+Unknown, overlapping or inapplicable targets refuse start_run. Explicit skipped categories remain separate from unclassified.
 
-## Command facts, evidence and skips
+## Consumers, history and new lineage
 
-For each command named by a matched current case of the document, fields.command_coverage contains:
+Affected active requirements: template-gap coverage and command_coverage. case-review's templateCoverage utility is exported
+but absent from that pack's checks; its old direct-call results are affected, not its literal/catalog/level checks. The utility
+now reads exact author labels from bound originals and directs model judgment acceptance to this workflow.
 
-- unique matching case count;
-- all nine categories from template-v3.json whose group is command, whether present or absent;
-- per-category case count, sorted evidence case ids (at most 20), and their sorted tree: references;
-- missing categories and declared skips, plus completeness and unmatched-case facts.
-
-Full category membership comes from categoryFacts before display evidence is capped. It is reused for document and
-command reports; command/category universes are not taken from the item's display rows. The command subject builder
-reconstructs from frozen index/case facts, so dropping a display command/category cannot make it optional. Facts cite the
-locked tree and cases; the original index-view receipt remains in frozen groups. JSON entry enumeration order does not
-change the items or pure check conclusions. Real source-byte changes still change their src: provenance; positional or
-numbered duplicate case keys retain the existing document-order limitation.
-
-skipped entries are `{category, reason, document?, command?}`. Only the user's explicit declaration is allowed, with a
-nonblank reason. No command means the existing document skip and all its commands. A command means only that exact indexed
-path and a command-group category; it does not skip document-level coverage or another command. Unknown targets and
-conflicting/overlapping declarations refuse start_run as skip_invalid, rather than being dropped. Skips are listed apart
-and never manufacture observed cases.
-
-## Conclusions and recovery
-
-- Every command with all nine categories observed or explicitly skipped: support.
-- Complete evidence but missing categories: refute `template-gap.command_shortfall`, data.missing names the categories.
-- A complete index omits an agile document: refute `template-gap.not_indexed`, naming root/build. Uploads get the same
-  code with the action to rerun using the agile document id.
-- All cases match but none has a parsed command: refute `template-gap.no_commands`, with the case count and the action
-  to put commands into titles/ancestors, sync and rerun.
-- No bound index: transitional unknown, data.missing includes case_index, with the binding/rerun action.
-- skipped sources, truncation/cut keys, unmatched case revisions: known command supports survive; potential
-  shortfalls become missing-input unknowns. Only matched current cases contribute command paths. An additional document conclusion discloses orphaned keys, unmatched count/ids, skipped
-  sources, truncation and the view's verbatim unplaced notes, because more commands may be unread. It never says full coverage.
-
-Unplaced entries remain in the index. Notes are preserved verbatim for disclosure and never determine completeness.
-IndexView has no typed unplaced-entry count: unplacedRoot stays null instead of parsing prose. A typed whole-root count
-is a need from the contracts/knowledge owner; until then the raw notes carry that disclosure.
-
-Every package-generated unknown carries missing facts, next_action and recovery: action, document/build (or failed check)
-object, event deadline and one-attempt bound. Deadline: before this round's final report; rerun immediately once facts
-are supplied. Sync/re-read once, then report a definite source, field-fidelity or index-read capability gap if still
-incomplete. The six MCP tools have no sync tool: the client must request the authorized integrator's sync and follow its
-receipt before rerunning, or state that capability gap. The Hub does not invoke a model or perform an undeclared action.
-SKILL.md specifies the continuation; an unknown is not a successful final verification.
-
-Summaries stay within 480 characters. Calculated complete reports say “按命令：N 个命令，K 个缺类别”. Partial reports label
-only read commands/potential gaps; unbound/unsupported modes say not calculated or rule mismatch, without presenting
-unknown coverage as zero. The all-missing, five-digit-case-count worst cases remain tested.
-
-## Unversioned documents: handoff to kb-unversioned
-
-A document moved to the product's unversioned scope will never appear in a version-build index. not_indexed therefore
-has a conditional action: obtain the unversioned root from its run receipt/knowledge entry point, then use get_nodes on
-`tree:<unversioned root>/` to inspect that scope. Until kb-unversioned lands, report that missing capability instead of
-repeatedly trying other builds. This package currently accepts only the locked version root as case_index; it does not
-pretend an unversioned root is a build root. After kb-unversioned merges, its owner/integrator must update the concrete
-root-discovery interface, this next-action text, and the cross-scope binding/index contract if command coverage is to
-include those entries. No fictional `knowledge:index:...:unversioned` address is promised here.
-
-## Published samples and transitional examples
-
-There are 13 author samples: coverage has two positives/four negatives, command_coverage two positives/five negatives.
-They pass the real publication check and retain author_samples_only. No external evidence or real-bed proof is claimed.
-
-**合约缺口：当前样例合约不收“期望未知”。** samples/positive only permits support; samples/negative requires a refutation.
-Pure unknown and support-plus-document-unknown therefore cannot be published as those sample polarities. By integrator
-authorization, four paired scenes live in examples/command_*.json, with synthetic mindmap/index inputs, exact check
-subjects and independently declared before/after expectations. Both synthetic conformance tests and production runs on
-the real registry/engine check them; every unknown must carry missing facts plus action, object and deadline, and the
-restored side must resolve to support or refutation.
-
-The integrator's model revision must add **期望过渡未知** samples, including the recovery obligation/expiry and resolved
-counterpart; after generation/admission support exists, move these pairs into samples/ and rerun publication. The current
-pack does not invent an undeclared polarity or turn an unknown into a false refutation to satisfy admission.
-
-## Verification and ownership
-
-Run `npx tsc --noEmit`, `node --test --test-concurrency=1 "packs/workflow/template-gap/**/*.test.ts"`, and
-`node packs/workflow/template-gap/api.ts check`. `node .../testing/examples.ts` rewrites the upload example and paired
-scenes then signs; `api.ts sign` refreshes pack.json. Tooling/tests/testing/README are excluded from published files.
-
-Tests cover root/only/schema admission, multi-command/multi-entry deduplication, scoped skips, evidence limits, 9-class
-removal/restoration, case/index permutations, monotone known support under new unmatched cases, stable-key title/label
-drift, default-rule mismatch, bounded unknown recovery, publication, sandbox limits, and production runs over agile
-documents plus an upload with temporary PostgreSQL and synthetic knowledge/read ports. Tests skip explicitly where OS
-isolation is unavailable; a skip is not a pass. No real environment, system, deployment or model is used.
-
-## Remaining package decisions
-
-The case rule and identities remain shared with case-review: a tagged group that loses all child cases can itself become
-a case; duplicate/id-less keys depend on document order; uploads are named by source SHA and change identity on byte
-permutation. Those limits were not redefined here. Advisory keyword matches and user-declared skips do not replace a
-judgment of applicability; the existing engine need to mark declared-skip-dependent support remains.
-
-## Disclosure continuity
-
-The numbered disclosures below retain their citation identities. Historical observations are not new real-system
-verification. Current command coverage, binding and recovery rules above take precedence over the original scope.
-Unresolved core requests remain handoffs; this package does not claim to have implemented them.
+No historical run, result, source or root is overwritten. The integrator performs authorized real re-production with the new
+pack/model/root/run lineage, and appends legacy_keyword_rules annotations naming affected fields and old/new rules. Development
+uses synthetic originals and scripted claims only. This version is signed locally, not published or deployed.
 
 ## Decisions and deviations
 
-1. **Every category of template v3 is required** (brief 6a: the gap check runs against the whole template; 6b: removing
-   every case of a category must make that category missing). case-review requires only the six test types, because with all
-   24 required every document of its real sample missed 8 to 23 categories (median 19) and four categories matched in none:
-   whether a per-command or per-feature category applies needs the commands of the feature. Decision 35 item 19 confirms all 24 required and adds nine-category per-command coverage; the check stays advisory, the summary names every gap, and a category that does not apply is declared
-   skipped by the user. Open question 1 is decided.
-2. **No error handling row vs `* → unknown`.** coverage@1 gives exactly one refutation code, `core.coverage.shortfall`.
-   Earlier engine behavior turned a `* → unknown` row into `unchecked` (`integrity_unproven`, attribution `data_gap`, status
-   pending, counted in `unknown`). On 2026-10-22, the owner unified the engine behavior with the reference (Decision 6):
-   action `unknown` keeps the terminal as `violation`, records code and tier, leaves attribution empty (`unattributed`,
-   待归因), and requirement status `unsatisfied`, with unknown count 0 (记未知保留反驳，归责待定). With `error_handling: []`,
-   the violation is attributed to `author_input`. Both leave the gap a violation and the requirement unsatisfied (no longer
-   a behavioral deviation); `engine.test.ts` verifies both.
-3. **Additions to the brief's fields and parameter:** `fields.untagged` (untagged nodes written like cases: not counted, so a
-   missing test type may be a missing tag) and optional `document` and `command` scopes of a skip (several documents in one run).
-4. **The case rule is case-review's, not quite the brief's.** The brief defines a case as a node with a non-empty `resource`
-   and a priority whose children are its expected results. Inherited from case-review (its deviations 1 to 3, measured on its
-   real sample): a tagged node without a priority is a case (6 in the sample; dropping them would hide cases); steps and
-   priority-3 preconditions are read (43% of tagged cases use case → step → expected). On 2026-10-22, the owner unified the
-   default case rule across packs to `marked` (docs/hub-r4-tasks/union-case-rule.md): untagged candidate cases carrying the
-   case priority are counted as cases (with `tags: []`, evaluating template gaps normally); `case_rule: tagged` remains
-   available as a restrictive switch. Kept for evidence parity with case-review.
-5. **A tagged group node changes role with what is below it** (case-review's rule, kept for parity): a tagged priority-1 node
-   that holds cases is a group; with no case below it, it is a case. So 6b's relations fail at such a node in both directions:
-   removing every Functional case below a Function-tagged group turns the group into a Functional case (functional stays
-   present, the group as evidence); adding a case below a tagged priority-1 node that was the only Stress case turns it into
-   a group (stress goes missing). A rule that does not look below needs the owner and case-review: "always a group" matches
-   case-review's sample (all 8 such nodes hold cases) but drops a node written as a case with priority 1 (case-review's fixture
-   has one and counts it); "always a case" (the brief) turns the 8 real groups into cases. `cases.test.ts` pins both
-   directions; open question 2.
-6. **Numbered copies and id-less cases follow document order** (W01 R[2]: such identities are the pack's own and not carried
-   across revisions). Copies of a shared id are `#1`, `#2` and cases without an id `@<node index>` in document order, so
-   reordering moves these evidence ids (and the item fingerprint); presence, counts, missing and the summary do not change.
-   case-review numbers the same way and the evidence must name its item ids, so both would change together (open question 3).
-7. **An upload is named by its bytes** (`upload-<SHA-256 prefix>`): the same map with its cases reordered is another upload,
-   so the item id and the document part of every evidence id differ, while the facts are equal. A name that ignores order
-   (the root id, which a copied template may share; a digest of an order-free form) is open question 4. Agile documents are
-   named by their platform id and are not affected.
-8. **Evidence: sorted, at most 20** (case-review: document order, 50): the report must not depend on the order of the cases,
-   and the item stays small (about 6 KB of JSON per document of the synthetic map).
-9. **The template is imported as JSON by the projection** (`with { type: 'json' }`, admitted by the import scan and the
-   sandbox): the projection's input is fixed by the engine, so the table cannot be passed in like case-review does.
-10. **Two documents with one root id are refused** (`root_ambiguous`) rather than located at another node: a location names
-    no source (engine Needs 6), and a root is what a document item is.
-11. **Samples are all `author`**: there are no returned counterexamples or retained deliveries for a new pack, so the check is
-    honestly marked `author_samples_only` (warning `publish.author_samples_only`). The engine applies the mark to claims (done in 437cbad5; the regular passing engine.test.ts assertion checks author_samples_only).
-12. **A skip that cannot be applied refuses the run** (W01 R[3] reserves the refusal for sources that cannot be projected;
-    this is the caller's own parameter, like a document given twice, which the schema cannot check). A warning would reach
-    only the admin log and the parse action (the engine shows warnings to nobody else), so the user's declaration would be
-    dropped without notice.
-13. **A skip rests on the user's declaration.** SKILL.md allows a skip only when the user says the category does not apply,
-    with the user's words as the reason; the model's own view goes into its marked commentary. The resulting support is still
-    a fact claim (nature fact, provenance projected, no mark), which this pack cannot change (Needs, runs-engine).
-
-## Limits
-
-- The categories other than the six test types are found by keywords (as in case-review): a group named after a category
-  counts for every case in it, and whether a per-command category applies needs the commands of the feature.
-- About half of the real cases are untagged (case-review README): under the default marked rule they are counted and projected as cases; under the restrictive tagged rule they are disclosed and not counted.
-- A run takes about 30 documents: the bound inputs of a run are one sandbox input (32 MiB; a 3,000-node document is about
-  0.8 MB of parsed model), above which the function never runs and the engine answers with its generic refusal; and every
-  document adds a source line and an item line to the start_run text (30,000 characters, then paged).
-- The evidence lists are in the run record (`items[n].fields`). The start_run text supplies rec:<digest>#/items/<n>
-  links through its text context (done in 3086bf44); SKILL.md step 3 reads those fields. A typed run-record field in
-  StartRunOutput remains needed so clients need not recover that reference from prose.
+1. **Required policy:** all 24 categories here; case-review's legacy utility requires the six declared test types only.
+5. **Structural case rule:** removing children can change a tagged group into a case. No category is inferred from its tag.
+6. **Evidence scope:** same nearest case boundary; citations establish presence, never semantic truth.
+7. **Complete identities:** opaque complete producer identities, no command parser or text classifier in this workflow.
+13. **Migration:** generated M1 interfaces from hub-redesign 5a9eb7bf; no local model fields or private status axes.
 
 ## Needs from other packages
 
-- **knowledge index / producer and integrator**: before hub-view-scope item 3 expands command scanning to steps/expected
-  results, declare a per-case revision covering every exact text the producer scans (for example declared pre-order
-  subtree text or a digest under a declared rule). The index must carry it, this consumer must freeze and compare it,
-  and a step edit after sync must become unmatched in a regression test. Title/ancestor equality alone is insufficient.
-  Until that contract and the matching consumer change merge together, the new scan scope is not admissible here;
-  this is an integration dependency, not an assertion that step revisions are already checked.
-
-- **server / assembly** (implemented): text context includes StartRunDetail.runRecord and toolText receives that context
-  (3086bf44); item links are available in start_run text. Publishing still uses a staged pack copy because README/api/tests
-  are development files; this is packaging guidance, not an unresolved server failure.
-- **contracts**: (1) a run record reference in `StartRunOutput` (today only `result.reference`, the validation result, which
-  has no `/items`), so that reading item fields does not depend on how the server writes text; (2) an optional `path` in
-  `PackError`: a projection refusal is always reported at `/inputs/<subject>`, also `skip_invalid`, whose cause is in
-  `/parameters/skipped`; (3) a way for a workflow to say that it binds no product line (generic capability is done; this pack now requires commands@1 and therefore binds a product/build).
-- **runs-packs** (historical generic capability, no longer this pack’s binding): a workflow that names no product and requires no catalog is bound to no product line. `boundProducts` returns none for it, so `list_task_packs` shows no products, `readableProducts` grants nothing and `start_run` refuses a `product` argument at `/product`; This pack now requires commands@1 and binds a product/build; engine.test.ts guards that current binding.
-- **runs-engine**: (1) T02 R[1] claim marks are implemented (437cbad5): publishCheckMarks(workflow) reaches claims,
-  and engine.test.ts checks author_samples_only as an ordinary passing test. (2) Mark a support that rests on declared skips (`data.skipped` not empty) with
-  `conditional_on_judgment` (以判断为前提), so that a gap the user declared away does not read as a plain fact. (3) Refuse an
-  oversized projection input with the split fix: `serializeInput` (hub/rules) throws a RangeError above 32 MiB and the
-  projection call answers `任务包的投影函数没有给出条目…请联系任务包作者`. (4) Observation: on 2026-10-22, action `unknown` was aligned with the reference to keep terminal `violation`, record code and tier, leave attribution empty (`unattributed`), and leave requirement status `unsatisfied` (记未知保留反驳，归责待定); a location that resolves in several sources of a `many`
-  slot refuses the run (FragmentRef names no source; engine Needs 6).
-- **rules**: coverage@1's support statement `N 个必须覆盖的成员都已覆盖（其中 K 个写明了跳过理由）` calls the skipped members
-  covered while `data.covered` leaves them out; a wording such as `N 个必须覆盖的成员：M 个已覆盖，K 个写明了跳过理由` would
-  match. Optionally a typed sandbox error for an oversized input, so the engine can tell it from a function error.
-- **case-review**: `functions/template-coverage.ts:15` has the same arrow pattern, which is quadratic on a run of dashes or of
-  U+FEFF; the linear form here (`/ ?(?:→|⟶|⇒|=>|—>|–>|(?<!-)-+>) ?/gu`) gives the same forms on folded texts
-  (`template.test.ts`). The connectors' agile meta is `{title, folders, found}` (hub/connectors README) while case-review reads
-  `ancestors`; this pack reads `folders`, then `ancestors`; one name should be settled. Decisions 5 and 6 are shared rules:
-  change them in both packs together.
-- **packs integrator**: case-review and this pack hold one copy each of the template v3 categories and of the case rule;
-  `parity.test.ts` fails when they part (the required flag is the one declared difference). Change both together.
+- R2 writes the independent author fields and exact test-type rules; R4 produces full command identities and canonical parsed
+  values. This package consumes the shared generated contracts directly, without importing implementation branches.
+- R9 freezes independent category answers and rebuilds client/gold scenarios; it must not import this classifier as its oracle.
+- StartRunOutput and PackError retain their existing generic boundaries. The older quadratic arrow matcher was removed from
+  template classification, rather than optimized into another semantic heuristic. coverage@1 remains a policy format and the
+  legacy exported subject utility; active coverage uses a function to preserve completeness and judgment provenance.
+- 期望过渡未知样例的合约缺口：keep transitional examples paired with their recovery while the publication contract requires
+  deterministic positive/negative samples. No new sample interface is invented. kb-unversioned is the historical cross-package
+  follow-up name; the existing unversioned-root route must be read explicitly, never substituted for the locked case index.
 
 ## Open questions
 
-1. **已定（决定 35 第 19 项）**：24 个类别全部必选，另按命令核验 9 个类别。
-2. A tagged priority-1 node: a group while it holds cases (now, case-review), always a group, or always a case (the brief)?
-3. Number copies of a shared id and id-less cases by their content instead of document order, in both packs?
-4. Name an upload by something its order does not change (its root id, or a digest of an order-free form)?
-5. `* → unknown` (the brief) or no row (this pack)? Decided on 2026-10-22 (Decision 6): the engine unifies `unknown` routing to keep refutations as `violation` with attribution `unattributed` (记未知保留反驳，归责待定). With or without the row, a gap is a violation and status is unsatisfied.
-6. **Count untagged cases by default**: decided by the owner on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md). The default
-   case_rule is unified to marked across all packs (template-gap, case-review, case-review-verify), counting untagged candidate
-   nodes as cases with `tags: []`; `tagged` remains available as a restrictive parameter.
-7. Is 20 evidence ids per category enough for the console?
-
-Deletion-only stale rows are disclosed as orphaned keys, excluded from current command membership and never treated as missing facts.
-Command skips on orphan-only commands refuse; skips on unmatched current revisions remain visible as pending_skips until sync and rerun.
+4. Independent semantic recall is established by R9 annotations and review, not by quotation checks.
+5. Real deployment counts and legacy annotations belong to the integrator's authorized read/re-production run.
+6. An unavailable exact byte view is a concrete interface gap; do not accept normalized offsets or endlessly retry it.
+7. Expanded producer scan inputs require their full revision identity before acceptance by this consumer.

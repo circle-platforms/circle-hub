@@ -345,7 +345,7 @@ it('locks the command catalog and judges both requirements over agile documents 
   const drift = renamed(before, before.rootId, '修订后的合成脑图标题');
   const maps = [complete, short, noCommands, absent, drift];
   const ids = maps.map((_, i) => `98000${i + 1}`);
-  const entries = maps.flatMap((source, i) => i === 3 ? [] : assignedCases(i === 4 ? before : source, ids[i]!, () => i === 2 ? [] : ['CLI/widget/probe']));
+  const entries = maps.flatMap((source, i) => i === 3 ? [] : assignedCases(i === 4 ? before : source, ids[i]!, () => i === 2 ? [] : ['/CLI/widget/probe']));
   const view = indexView(entries, ids);
   const external = bindIndex(view).external!;
   bed.agile.documents.set(external, { bytes: new TextEncoder().encode(JSON.stringify(view)), title: '合成用例索引', folders: [] });

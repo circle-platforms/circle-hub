@@ -235,7 +235,7 @@ export function casesOf(
       }
       if (!isTagged(visit.data)) markedOnly += 1;
       caseOf[v] = cases.length;
-      cases.push({ id: caseIdentity(visit), nodeId: rawIdOf(visit.data), visit: v, title: visit.text, tags, steps: [], expected: [], preconditions: [] });
+      cases.push({ id: caseIdentity(visit), nodeId: rawIdOf(visit.data), visit: v, title: visit.text, tags, ...(Object.hasOwn(visit.data, 'category_ids') ? { category_ids: visit.data.category_ids } : {}), steps: [], expected: [], preconditions: [] });
     } else if (role[v] === INNER) {
       const owner = within[v];
       if (role[owner] !== CASE) continue; // inside a candidate: not a case
