@@ -69,3 +69,6 @@ export type { FileContent, PackDescription, WrittenManifest, WrittenPack } from 
 
 export {recheckEffectChecks} from './engine/recheck-effect.ts';
 export { packSchema } from './engine/slots.ts';
+
+export {runById} from './engine/store.ts';
+export {canViewRun} from './engine/readers.ts';

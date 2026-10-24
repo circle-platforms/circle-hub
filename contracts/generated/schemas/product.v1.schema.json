@@ -422,6 +422,67 @@
         ],
         "additionalProperties": false
       }
+    },
+    "feeding": {
+      "description": "Native-source projection and declared grammar callbacks for feeding; no Hub business parser",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        },
+        "normalize_line": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        },
+        "verify_command": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -9,6 +9,7 @@ import type { StartRunInput } from '../../../contracts/src/tools.ts';
 import type { z } from 'zod';
 import type { Principal } from '../../records/api.ts';
 import type { LoadedWorkflow, ProductHandle, RootInfo } from '../../ports.ts';
+import {parseReference} from '../../refs/api.ts';
 import { treeReference } from '../../refs/api.ts';
 import { callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -129,7 +130,18 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   ];
 
   // ---- build and root
-  const withRoot = async (): Promise<KnownBuild[]> => (await knowledge.builds(pid, input.version !== undefined ? { line: input.version } : undefined)).filter((b) => b.root !== null);
+  let structuralLines:string[]=[];
+  if(workflow.workflow.feeding?.require_version&&input.version===undefined&&input.build===undefined&&knowledge.feeding){
+    for(const supplied of Object.values(input.inputs).flat()){
+      if('reference'in supplied){const ref=parseReference(supplied.reference);if(ref.scheme==='src')structuralLines.push(...await knowledge.feeding.sourceLines(user,ref.sha256,{product:pid}));}
+      else if('external'in supplied&&await ctx.deps.external.accepts(supplied.external,{principal:user,purpose:'按来源结构选择版本'})){
+        const read=await ctx.deps.external.read(supplied.external,{principal:user,purpose:'按来源结构选择版本'});if(!read.ok)continue;const chosen=read.artifacts.find(row=>row.name==='content')??read.artifacts.find(row=>row.name==='original');if(chosen)structuralLines.push(...await knowledge.feeding.sourceLines(user,chosen.artifact.body.sha256,{product:pid,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(row=>row.name==='meta')?.artifact.body.sha256}));
+      }
+    }
+    structuralLines=[...new Set(structuralLines)];if(structuralLines.length!==1)throw unresolved('/version',structuralLines.length?'来源结构存在多个版本层，不能自动选择':'来源结构未声明版本；缺版本事实，请在 start_run 指定版本', [...new Set((await knowledge.builds(pid)).map(build=>build.line))]);
+  }
+  const requestedLine=input.version??structuralLines[0];
+  const withRoot = async (): Promise<KnownBuild[]> => {const out=[];for(const build of await knowledge.builds(pid)){if(requestedLine!==undefined){const a=await knowledge.feeding?.seedFor(pid,requestedLine),b=await knowledge.feeding?.seedFor(pid,build.line);if(a&&b?a.root!==b.root:build.line!==requestedLine)continue;}if(build.root!==null||await knowledge.seedlingRoot?.(pid,build.line))out.push(build);}return out;};
   let build: KnownBuild;
   let buildName: string;
   let buildText: string;
@@ -186,7 +198,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       buildWarrant = { producer: 'function', id: DEFAULT_RULE };
     }
   }
-  const root = await knowledge.rootOfBuild(pid, buildName);
+  const root = await knowledge.seedlingRoot?.(pid,build.line)??await knowledge.rootOfBuild(pid, buildName);
   if (root === null) throw unresolved('/build', `构建 ${buildName} 还没有知识根`, (await withRoot()).map((b) => b.name), '换一个已产出知识根的构建');
   const ground = treeReference(root.root, '/');
   basis.push(
@@ -195,7 +207,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       text: `版本线 ${build.line}`,
       data: { value: build.line },
       provenance: input.version !== undefined ? 'declared' : 'projected',
-      warrant: input.version !== undefined ? human : { producer: 'function', id: LINE_RULE },
+      warrant: input.version !== undefined ? human : { producer: 'function', id: structuralLines.length?'hub.feeding.source_structure@1':LINE_RULE },
       grounds: [ground],
       bound: [root.root, root.composition],
       at,

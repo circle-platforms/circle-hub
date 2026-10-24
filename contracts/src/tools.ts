@@ -1,16 +1,19 @@
+import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
 import { Submission } from './submission.ts';
 import { PartitionCounts, ValidationResult, partitionCountsOf } from './validation.ts';
 import type { EffectClass } from '../generated/vocabulary.ts';
+
+const Envelope=BaseEnvelope.extend({feeding_objects:z.array(Sha256).optional(),feeding_offset:FeedingOffsetSchema.optional()});
 
 export interface ToolDefinition {
   name: string;

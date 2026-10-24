@@ -414,6 +414,7 @@ const SHARED_PRIMITIVES: Readonly<Record<string,string>> = {
   'contract:common/ItemId':'Common.ItemId',
   'contract:reference/ReferenceUri':'Reference.ReferenceUri',
   'contract:reference/Ground':'Reference.Ground',
+  'contract:reference/SrcUri':"Reference.referenceUriOf('src')",
   'contract:reference/RecUri':"Reference.referenceUriOf('rec')",
   'contract:reference/TreePath':'Reference.TreePath',
   'contract:tables/CatalogParamType':'Tables.CatalogParamType',

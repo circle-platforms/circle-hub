@@ -1,3 +1,4 @@
+import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
@@ -130,6 +131,8 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  feeding_offset:FeedingOffsetSchema.optional().describe('喂入层与锁根一起冻结的追加序号，历史运行缺此字段时不伪造零序号'),
+  feeding_objects:z.array(Sha256).optional().describe('本次运行实际读过的喂入对象清单'),
   criterion_changes:z.array(CriterionNotice).optional(),
   run: RunId,
   pack: z.string(),

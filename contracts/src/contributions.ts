@@ -1,3 +1,4 @@
+import {KnowledgeStructureSchema} from './feeding.ts';
 import {QuoteEvidenceSchema} from '../generated/shared-interfaces.ts';
 import {ApplicabilityFieldSchema,DeclarationStatusSchema,JudgmentStatusSchema} from '../generated/vocabulary.ts';
 // K03/P10 document contributions are ordinary workflow artifacts, not Hub-local candidates.
@@ -24,11 +25,11 @@ export type ApplicabilityFields=z.infer<typeof ApplicabilityFields>;
 export const ContributionInput=z.strictObject({
   kind:DocumentOutputKindSchema,statement:z.string().min(1).max(65536),
   root:Sha256,path:TreePath,source:ContributionQuote,relation:ContributionRelation.optional(),
-  applicability_claim:ApplicabilityClaimInput.optional(),
+  applicability_claim:ApplicabilityClaimInput.optional(),feeding:KnowledgeStructureSchema.optional(),
 }).superRefine((v,ctx)=>{if((v.kind==='applicability_claim')!==(v.applicability_claim!==undefined))ctx.addIssue({code:'custom',path:['applicability_claim'],message:'only applicability_claim carries a typed field claim'});if((v.kind==='relation')!==(v.relation!==undefined))ctx.addIssue({code:'custom',path:['relation'],message:'only a relation output has a relation endpoint'});});
 export type ContributionInput=z.infer<typeof ContributionInput>;
 export const ContributionSource=ContributionQuote.extend({
-  fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
+  fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected','declared']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
 });
 // Central STORED relation shape for K3; this never mutates either endpoint.
 export const ContributionRelationRecord=z.strictObject({kind:RelationKindSchema,other:ContributionSource});
@@ -39,24 +40,24 @@ export const KnowledgeContributionBody=z.strictObject({
   layer:KnowledgeLayerSchema.extract(['contribution']),product:ProductId,root:Sha256,path:TreePath,
   cited_fragment:Sha256,kind:DocumentOutputKindSchema,statement:z.string().min(1),source:ContributionSource,
   relation:ContributionRelationRecord.optional(),
-  applicability_claim:AdmittedApplicabilityClaim.optional(),
+  applicability_claim:AdmittedApplicabilityClaim.optional(),feeding:KnowledgeStructureSchema.optional(),feeding_record:Sha256.optional(),
   submitted_by:UserId,session:z.string().nullable(),submitted_at:IsoTime,
   model:z.string().describe('client-declared integration model/configuration, not an evidence grade'),
   basis_rank:BasisRankSchema,applicability:Applicability.nullable(),
 });
 export type KnowledgeContributionBody=z.infer<typeof KnowledgeContributionBody>;
 export const WithheldContributionSource=ContributionSource.omit({quote:true});
-export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true,applicability_claim:true}).extend({
+export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true,applicability_claim:true,feeding:true,feeding_record:true}).extend({
   source:WithheldContributionSource,relation:ContributionRelationRecord.omit({other:true}).extend({other:WithheldContributionSource}).optional(),
 });
 export const KnowledgeContributionView=z.union([
-  z.strictObject({record:Sha256,contribution:KnowledgeContributionBody,status:ValidityStatusSchema.extract(['valid','cited_fragment_changed']),note:z.string().nullable()}),
+  z.strictObject({record:Sha256,contribution:KnowledgeContributionBody,status:ValidityStatusSchema.extract(['valid','cited_fragment_changed','grounds_withdrawn']),note:z.string().nullable()}),
   z.strictObject({record:Sha256,contribution:WithheldContributionBody,status:ValidityStatusSchema.extract(['credential_unreadable']),note:z.string()}),
 ]);
 export type KnowledgeContributionView=z.infer<typeof KnowledgeContributionView>;
 export const MAX_NODE_CONTRIBUTIONS=100;
 /** A bounded node page can defer a large body to its separately paginated immutable record. */
 export const KnowledgeContributionPageView=z.union([KnowledgeContributionView,z.strictObject({
-  record:Sha256,contribution:z.never().optional(),status:ValidityStatusSchema.extract(['valid','cited_fragment_changed','credential_unreadable']),note:z.string(),
+  record:Sha256,contribution:z.never().optional(),status:ValidityStatusSchema.extract(['valid','cited_fragment_changed','credential_unreadable','grounds_withdrawn']),note:z.string(),
 })]);
 export type KnowledgeContributionPageView=z.infer<typeof KnowledgeContributionPageView>;

@@ -206,29 +206,6 @@
       }
     },
     {
-      "id": "cases",
-      "title": "用例（敏捷平台的测试脑图，按用例涉及的命令归档）",
-      "function": {
-        "module": "functions/cases.ts",
-        "export": "cases"
-      },
-      "inputs": {
-        "documents": {
-          "source": "case_documents",
-          "many": true,
-          "batch": 40,
-          "optional": true
-        },
-        "tree": {
-          "source": "tree"
-        },
-        "folders": {
-          "source": "case_tree",
-          "optional": true
-        }
-      }
-    },
-    {
       "id": "specifications",
       "title": "产品线不分版本的规格章节",
       "unversioned": true,
@@ -252,30 +229,6 @@
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
-      }
-    },
-    {
-      "id": "unversioned-cases",
-      "title": "没有覆盖构建的用例文档",
-      "unversioned": true,
-      "function": {
-        "module": "functions/cases.ts",
-        "export": "cases"
-      },
-      "inputs": {
-        "documents": {
-          "source": "unversioned_case_documents",
-          "many": true,
-          "batch": 40,
-          "optional": true
-        },
-        "folders": {
-          "source": "case_tree",
-          "optional": true
-        }
-      },
-      "params": {
-        "command_phrases": true
       }
     }
   ],
@@ -469,6 +422,18 @@
       "export": "validateBuildNames"
     },
     "grammar": "apv-applicability@1"
+  },
+  "feeding": {
+    "project": {
+      "module": "functions/feeding.ts"
+    },
+    "normalize_line": {
+      "module": "functions/feeding.ts",
+      "export": "normalizeLine"
+    },
+    "verify_command": {
+      "module": "functions/feeding.ts",
+      "export": "verifyCommand"
+    }
   }
 }
-

@@ -14,7 +14,7 @@ export interface KnowledgeRecords {
   store: RecordStore;
   artifacts: Artifacts;
   pointers: Pointers;
-  principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
+  principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'tokens'>>;
   /** Content-addressed bytes: the stored outputs of producer calls (memoized batches) and the bytes of computed views. */
   objects: Pick<ObjectStore, 'put' | 'get'>;
 }
@@ -113,6 +113,7 @@ export interface KnowledgeContext {
   additionalScopeRootsDeclared?: boolean;
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
+  feeding?:import('./feeding.ts').FeedingLayer;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

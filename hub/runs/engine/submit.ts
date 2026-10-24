@@ -505,7 +505,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const prepared = workflow.workflow.contribution === undefined ? undefined : new Map<string, PreparedContribution>();
   const refusals=new Map<string,string>();
   const admission=capability===undefined?undefined:{requirement:capability.requirement,outcomes:new Map<string,CheckOutcome[]>()};
-  const contributionScope: ContributionScope = {
+  const contributionScope: ContributionScope = {run:run.run,classifications:workflow.workflow.feeding?.classifications,
           additionalRoots: run.unversioned_root ? [{ root: run.unversioned_root, composition: (()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='unversioned_root')?.statement.data?.composition;return typeof value==='string'?value:null;})() }] : [],
           model:submission.model,session:sessionOf(call),
           composition:(()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='build'&&c.statement.data?.root===run.root)?.statement.data?.composition;return typeof value==='string'?value:null;})(),

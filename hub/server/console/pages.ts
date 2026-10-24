@@ -84,10 +84,11 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   }
   const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label><button type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p>${link('/console/runs', '下一页', { pack, cursor: listing.next })}</p>`;
+  const feedingTodos=await ctx.deps.knowledge.feeding?.todos(ctx.principal)??[];
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   return {
     status: 200,
-    body: page(ctx.chrome('运行'), html`${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('已到期未回答的请求',table(['请求','运行 / 包摘要','受众','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
+    body: page(ctx.chrome('运行'), html`${section('知识喂入待办',table(['来源','缺什么','下一步'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action]),'没有待办'))}${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('已到期未回答的请求',table(['请求','运行 / 包摘要','受众','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
   };
 }
 

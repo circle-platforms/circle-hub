@@ -582,6 +582,7 @@ async function validateProduct(c: Collector, policy: ImportPolicy): Promise<Pack
   const entries: FunctionEntry[] = [];
   if (product.sync) entries.push(functionEntry(product.sync.plan, 'product.json', '/sync/plan'));
   if (product.select_build) entries.push(functionEntry(product.select_build, 'product.json', '/select_build'));
+  if(product.feeding)for(const [key,fn]of Object.entries(product.feeding))if(fn)entries.push(functionEntry(fn,'product.json','/feeding/'+key));
   product.producers.forEach((p, i) => entries.push(functionEntry(p.function, 'product.json', `/producers/${i}/function`)));
   for (const p of await scanFunctions(c.files, entries, policy)) c.add(p);
   return { kind: 'product', product };

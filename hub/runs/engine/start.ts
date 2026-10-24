@@ -525,7 +525,9 @@ async function startFresh(
   return ctx.lock(`submit:${runId}`,async()=>{
   const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
+  const feedingOffset=await ctx.deps.knowledge.feeding?.freeze(user,runId,target.root?.root??null);
+  const feedingScope={product:target.product?.product.id??null,root:target.root?.root??null,run:runId,line:target.line,feeding_offset:feedingOffset,declaredLine:workflow.workflow.feeding?.declared_line_parameter?parameters[workflow.workflow.feeding.declared_line_parameter] as string:undefined};
+  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const criterionReview=await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null);
@@ -545,6 +547,7 @@ async function startFresh(
     leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
   }
   const context: RunContext = {
+    ...(feedingOffset?{feeding_offset:feedingOffset}:{}),
     ...(criterionSnapshot.criteria.length?{accepted_criteria:criterionSnapshot.criteria}:{}),
     ...(criterionReview?{criterion_review:criterionReview.context}:{}),
     product: target.product?.product.id ?? null,
@@ -613,6 +616,7 @@ async function startFresh(
     ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
     ...(criterionSnapshot.requests.length?{criterion_requests:criterionSnapshot.requests}:{}),
     run: runId,
+    ...(feedingOffset?{feeding_offset:feedingOffset}:{}),
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,
     ...(target.product !== null ? { product: target.product.product.id } : {}),

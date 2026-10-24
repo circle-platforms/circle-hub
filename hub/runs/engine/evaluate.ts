@@ -208,6 +208,7 @@ export function productNamesOf(run: Pick<RunRecord, 'target_basis'>): string[] {
 /** The facts about a run that checks and pack functions may use, from the frozen run record. */
 export function runContextOf(run: RunRecord): RunContext {
   return {
+    ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),
     product: run.product ?? null,
     names: productNamesOf(run),
     line: run.version ?? null,
@@ -367,6 +368,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     };
   }
 
+  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable')await ctx.deps.knowledge.feeding!.observeSource(principalOf(reader),sha,{product:run.product,root:run.root,run:run.run,line:run.version});return value;}};}
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
@@ -565,10 +567,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           binding: source, boundText: bound.text,
           read: async external => {
             const principal = principalOf(resolveCtx.reader);
-            const read = await ctx.deps.external.read(external, { principal, run: run.run, purpose: `检查 ${check.id} 条目 ${item ?? ''} 收窄读取`, ...(run.build ? { build: run.build } : {}) });
+            const read = await ctx.deps.external.read(external, { principal, run: run.run, purpose: `检查 ${check.id} 条目 ${item ?? ''} 收窄读取`,feeding_offset:run.feeding_offset, ...(run.build ? { build: run.build } : {}) });
             if (!read.ok) { onError(new Error(read.reason), check.id); throw new Error('narrow read unavailable'); }
             const chosen = read.artifacts.find(a => a.name === 'content') ?? read.artifacts.find(a => a.name === 'original');
             if (!chosen) throw new Error('narrow read has no content');
+            await ctx.deps.knowledge.feeding?.observeSource(principal,chosen.artifact.body.sha256,{product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256});
             const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function' });
             if (!content) throw new Error('narrow read unavailable');
             return { text: content.bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(content.bytes), reference: `src:${chosen.artifact.body.sha256}`, revision: read.revision, manifest: read.manifest };

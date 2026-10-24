@@ -64,7 +64,7 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
   const mayRead = async (record: StoredRecord): Promise<boolean> => {
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
-    if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) return (await contributions?.read(record.digest, account)) != null;
+    if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) return (await contributions?.read(record.digest, account)) != null;
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
     if (account.role === 'admin') return true;
     const run = runOfRecord(record.kind, record.body, record.schema);

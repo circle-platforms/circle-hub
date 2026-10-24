@@ -1,3 +1,4 @@
+import {FeedingLayer} from './feeding.ts';
 import {scheduleSync} from './sync-schedule.ts';
 import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
@@ -133,6 +134,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
+  const feeding=new FeedingLayer(context,reading);context.feeding=feeding;
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
   const relations = new LinkReading(context, builds);
@@ -209,6 +211,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
     __context: context,
+    feeding,
     async builds(product: string, filter: { line?: string; released?: boolean } = {}): Promise<KnownBuild[]> {
       return (await builds.known(product)).filter(
         (build) => (filter.line === undefined || build.line === filter.line) && (filter.released === undefined || (build.released_at !== null) === filter.released),
@@ -223,6 +226,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       return { ...info, source_count: body.sources.length + (body.parts?.sources ?? []).reduce((n, p) => n + p.rows, 0) };
     },
     currentRoot: (product, line) => builds.currentRoot(product, line),
+    async seedlingRoot(product,line){const seed=await feeding.seedFor(product,line);if(!seed)return null;const info=(await builds.rootInfo(seed.root)).find(info=>info.composition===seed.composition&&info.build!==null);return info as RootInfo|null??null;},
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
     catalog: (root, catalogId): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId)),

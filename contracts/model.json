@@ -5011,6 +5011,36 @@
      }
     },
     {
+     "name": "FeedingQuote",
+     "id": "feeding-quote@1",
+     "meaning": "Feeding uses an exact src selector quotation, as the approved page specifies. Raw-byte QuoteEvidence remains accepted when the parser can prove byte ranges. Missing byte maps are not guessed; no whitespace folding or new content parser is used.",
+     "schema": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/QuoteEvidence"
+       },
+       {
+        "type": "object",
+        "properties": {
+         "reference": {
+          "$ref": "contract:reference/SrcUri"
+         },
+         "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1048576
+         }
+        },
+        "required": [
+         "reference",
+         "text"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    {
      "name": "FedCase",
      "id": "fed-case@1",
      "meaning": "Content identity hashes the canonical caseStatement projection (autoid, priority, resources, original steps and expectations). Source, root, commands, bindings and annotations do not enter identity; repeated bytes from multiple documents remain one object.",
@@ -5193,7 +5223,7 @@
            "maxLength": 200
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5217,7 +5247,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5239,7 +5269,7 @@
            "$ref": "contract:product/Applicability"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5267,7 +5297,7 @@
            "maxLength": 1048576
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5292,7 +5322,7 @@
            "$ref": "contract:reference/TreePath"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5456,7 +5486,7 @@
            "maxLength": 200
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5480,7 +5510,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5502,7 +5532,7 @@
            "$ref": "contract:product/Applicability"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5530,7 +5560,7 @@
            "maxLength": 1048576
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5695,7 +5725,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5717,7 +5747,7 @@
            "$ref": "contract:product/Applicability"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5745,7 +5775,7 @@
            "maxLength": 1048576
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5767,7 +5797,7 @@
            "$ref": "#/$defs/CommandIdentity"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5788,7 +5818,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5955,7 +5985,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -5977,7 +6007,7 @@
            "$ref": "contract:product/Applicability"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -6005,7 +6035,7 @@
            "maxLength": 1048576
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -6149,7 +6179,7 @@
            ]
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -6173,7 +6203,7 @@
            "$ref": "contract:common/Sha256"
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -6197,7 +6227,7 @@
            "maxLength": 1048576
           },
           "quote": {
-           "$ref": "#/$defs/QuoteEvidence"
+           "$ref": "#/$defs/FeedingQuote"
           }
          },
          "required": [
@@ -6256,7 +6286,7 @@
           "type": "object",
           "properties": {
            "quote": {
-            "$ref": "#/$defs/QuoteEvidence"
+            "$ref": "#/$defs/FeedingQuote"
            },
            "grammar": {
             "$ref": "contract:common/Versioned"
@@ -6318,7 +6348,7 @@
           "type": "object",
           "properties": {
            "quote": {
-            "$ref": "#/$defs/QuoteEvidence"
+            "$ref": "#/$defs/FeedingQuote"
            },
            "grammar": {
             "$ref": "contract:common/Versioned"
@@ -6392,7 +6422,7 @@
           "type": "object",
           "properties": {
            "quote": {
-            "$ref": "#/$defs/QuoteEvidence"
+            "$ref": "#/$defs/FeedingQuote"
            },
            "grammar": {
             "$ref": "contract:common/Versioned"

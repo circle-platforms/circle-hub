@@ -27,6 +27,7 @@ export interface BoundSource {
   sha256: string;
   /** The Hub record the source was bound by, and the run that record belongs to (a handover when it is the predecessor). */
   record: { digest: string; run: string | null } | null;
+  sourceRecord?:string;metaSource?:string;requested?:string;
 }
 
 interface Read {
@@ -37,6 +38,7 @@ interface Read {
   external: string | null;
   meta: Record<string, unknown> | null;
   record: { digest: string; run: string | null } | null;
+  sourceRecord?:string;metaSource?:string;requested?:string;
 }
 
 const mediaAccepted = (slot: WorkflowInput, mediaType: string): boolean => slot.accepts.filter((a) => a.includes('/')).some((a) => a.toLowerCase() === essence(mediaType));
@@ -66,6 +68,7 @@ export async function bindInputs(
   build?:string,
   variables?:VariableSnapshot,
   unversioned?: ExternalReadContext['unversioned'],
+  feeding?:import('../../knowledge/feeding.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -166,7 +169,7 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
+    const readContext={ feeding_offset:feeding?.feeding_offset,principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
     const records = {artifacts,store};
     let requestId = id;
     let merged: Awaited<ReturnType<typeof mergeIndexBindings>> | null = null;
@@ -229,6 +232,7 @@ export async function bindInputs(
       binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType,...(read.coverage?{coverage:read.coverage}:{}), ...(title !== null ? { label: title } : {}) },
       external,
       meta,
+      sourceRecord:chosen.artifact.digest,metaSource:metaArtifact?.artifact.body.sha256,requested:id,
       record: null,
     };
   };
@@ -259,6 +263,7 @@ export async function bindInputs(
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
+      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSource(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,requested:read.requested});
       out.push({
         slot: slot.slot,
         role: slot.role,

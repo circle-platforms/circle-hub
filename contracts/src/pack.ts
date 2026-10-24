@@ -3,6 +3,7 @@
 // The runs package validates a pack against these shapes at publish, freezes the parts a run uses at start_run and runs the
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
+import {FeedingOffsetSchema} from './feeding.ts';
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
@@ -298,6 +299,7 @@ export const LeaseContextRow = z.strictObject({
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
+  feeding_offset:FeedingOffsetSchema.optional(),
   accepted_criteria:z.array(FrozenCriterion).optional(),
   criterion_review:z.strictObject({submission:z.string(),declarations:z.array(z.strictObject({pointer:z.string(),request:z.string()}))}).optional(),
   product: z.string().nullable(),
@@ -565,6 +567,7 @@ export const WorkflowFile = z
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
+    feeding:z.strictObject({require_version:z.boolean().optional(),classifications:z.array(z.string().min(1)).max(1000).optional(),declared_line_parameter:Key.optional()}).optional(),
     contribution: z.strictObject({slot:Key,requirement:Key}).optional().describe('a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification'),
     outputs: WorkflowOutputs.optional().describe('task-specific outputs stay in ordinary run submissions'),
     leases: z

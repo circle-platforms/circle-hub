@@ -2,6 +2,53 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "feeding_offset": {
+      "description": "喂入层与锁根一起冻结的追加序号，历史运行缺此字段时不伪造零序号",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "feeding-offset@1"
+        },
+        "run": {
+          "type": "string",
+          "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null",
+              "const": null
+            }
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "schema",
+        "run",
+        "root",
+        "offset"
+      ],
+      "additionalProperties": false,
+      "title": "feeding-offset@1"
+    },
+    "feeding_objects": {
+      "description": "本次运行实际读过的喂入对象清单",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
     "criterion_changes": {
       "type": "array",
       "items": {
