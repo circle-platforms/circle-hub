@@ -1,4 +1,10 @@
 // Deployment vocabularies are synthetic and supplied as producer options, never shipped product values.
+//
+// Applicability is read only from the declared structure (apv-applicability@1, carried as applicability-state@1) and from
+// verified claims with their quotes; reading conditions out of prose phrases was retired, so a closed vocabulary passed
+// as a producer option licenses no phrase extraction any more. A sentence that names a vocabulary member is still just a
+// sentence: the entry stays `undeclared` / `unjudged` and the run counts what it declared and inherited per field. The
+// declared paths themselves are covered by applicability-claims, applicability-report and applicability-variables.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markdown } from '../testing/test-support.ts';
@@ -6,52 +12,67 @@ import { produceManualEntries } from './manual.ts';
 import type { ManualOptions } from './types.ts';
 import { manual as producer } from './producers.ts';
 
-const closed={components:['Card-A','Card-B'],licenses:['Permit-A','Permit-B'],deployment_forms:['Form-A','Form-B']};
-function entry(text:string,options:ManualOptions=closed){
-  const out=produceManualEntries(markdown('# Synthetic chapter\n\n'+text+'\n'),null,options);
-  const found=out.entries.find(row=>row.statement===text);assert.ok(found,JSON.stringify(out));return found;
+const closed = { components: ['Card-A', 'Card-B'], licenses: ['Permit-A', 'Permit-B'], deployment_forms: ['Form-A', 'Form-B'] };
+
+function produced(text: string, options: ManualOptions = closed) {
+  const out = produceManualEntries(markdown('# Synthetic chapter\n\n' + text + '\n'), null, options);
+  const found = out.entries.find((row) => row.statement === text);
+  assert.ok(found, JSON.stringify(out).slice(0, 300));
+  return { entry: found, out };
 }
-test('each closed applicability field reads explicit phrases including component absence',()=>{
-  assert.deepEqual(entry('装有 Card-A、Card-B 时。').applicability,{components:{with:['Card-A','Card-B']}});
-  assert.deepEqual(entry('装有 Card-A 部件时。').applicability,{components:{with:['Card-A']}});
-  assert.deepEqual(entry('没有 Card-B 时。').applicability,{components:{without:['Card-B']}});
-  assert.deepEqual(entry('需要 Permit-A 许可。').applicability,{licenses:['Permit-A']});
-  assert.deepEqual(entry('适用于 Form-A、Form-B。').applicability,{deployment_forms:['Form-A','Form-B']});
-  assert.deepEqual(entry('仅 Form-A 支持。').applicability,{deployment_forms:['Form-A']});
-});
-test('an unreadable list member, negation, exception or empty vocabulary never becomes a partial condition',()=>{
-  for(const text of ['装有 Card-A、Unknown 时。','需要 Permit-A、Unknown 许可。','适用于 Form-A、Unknown。','不需要 Permit-A 许可。','适用于 Form-A 以外。','可能适用于 Form-A。','仅 Form-A 支持，但 Form-B 除外。'])assert.equal(entry(text).applicability,null,text);
-  assert.equal(entry('装有 Card-A 时。',{components:[],licenses:[],deployment_forms:[]}).applicability,null);
-});
-test('the product producer forwards the resolved closed vocabularies',()=>{
-  const text='需要 Permit-A 许可。';
-  const out=producer({slots:{cli:{parser:'markdown@1',model:markdown('# Synthetic\n\n'+text+'\n')}},params:closed});
-  assert.deepEqual(out.entries.find(row=>row.statement===text)?.applicability,{licenses:['Permit-A']});
+
+type State = { schema: string; grammar: string; declaration_status: string; judgment_status: string; declared_fields: unknown[]; conflicted_fields: unknown[]; criteria_digest: string };
+const stateOf = (entry: { data: Record<string, unknown> }): State => entry.data.applicability_state as State;
+
+// Every sentence the retired reader used to turn into a condition: component presence and absence, a license, deployment
+// forms, memory bounds in each relation, unit and fraction, plus the negations, exceptions, vague forms, unsupported
+// units and unsafe numbers that already stayed in the source. None of them is a declaration.
+const PROSE = [
+  '装有 Card-A、Card-B 时。', '装有 Card-A 部件时。', '没有 Card-B 时。', '需要 Permit-A 许可。', '适用于 Form-A、Form-B。', '仅 Form-A 支持。',
+  '装有 Card-A、Unknown 时。', '需要 Permit-A、Unknown 许可。', '适用于 Form-A、Unknown。', '不需要 Permit-A 许可。', '适用于 Form-A 以外。', '可能适用于 Form-A。', '仅 Form-A 支持，但 Form-B 除外。',
+  '内存不少于 8 GB。', '内存至少 8G。', '内存大于 8GB。', '内存小于 8GB。', '内存不超过 8GB。', '内存 8GB 以上。', '内存 8GB 以下。',
+  '内存至少 2GB。', '内存至少 2G。', '内存至少 2MB。', '内存至少 2M。', '16 G 内存的设备。', '内存至少1.5GB。', '内存至少0.1GB。',
+  '内存较大时。', '不适用于16G内存的设备。', '内存至少8GB以外。', '约16G内存的设备。', '内存至少8TB。', '内存至少999999999999999999GB。', '内存大于8GB或内存小于4GB。',
+  '没有 Card-B 时，内存不超过8GB。',
+] as const;
+
+test('prose declares no applicability: every retired phrase stays undeclared and unjudged', () => {
+  for (const text of PROSE) {
+    const { entry } = produced(text);
+    assert.equal(entry.applicability, null, text);
+    const state = stateOf(entry as { data: Record<string, unknown> });
+    assert.equal(state.schema, 'applicability-state@1', text);
+    assert.equal(state.grammar, 'apv-applicability@1', text);
+    assert.equal(state.declaration_status, 'undeclared', text);
+    assert.equal(state.judgment_status, 'unjudged', text);
+    assert.deepEqual(state.declared_fields, [], text);
+    assert.deepEqual(state.conflicted_fields, [], text);
+    assert.equal(typeof state.criteria_digest, 'string', text);
+    assert.equal(state.criteria_digest.length, 64, text);
+  }
 });
 
-for(const [text,side,inclusive] of [
-  ['内存不少于 8 GB。','minimum',true],['内存至少 8G。','minimum',true],['内存大于 8GB。','minimum',false],
-  ['内存小于 8GB。','maximum',false],['内存不超过 8GB。','maximum',true],['内存 8GB 以上。','minimum',true],['内存 8GB 以下。','maximum',true],
-] as const)test('memory relation preserves its endpoint '+text,()=>{
-  const memory=entry(text).applicability?.memory;assert.ok(memory);
-  assert.deepEqual(memory[side],{bytes:8*1024**3,inclusive});
-  assert.equal(memory.raw,text.slice(0,-1));
-});
-for(const [unit,factor] of [['GB',1024**3],['G',1024**3],['MB',1024**2],['M',1024**2]] as const)test('memory unit converts exactly '+unit,()=>{
-  assert.deepEqual(entry('内存至少 2'+unit+'。').applicability?.memory?.minimum,{bytes:2*factor,inclusive:true});
-});
-test('an explicit size is equality and exact fractional sizes are not rounded',()=>{
-  const memory=entry('16 G 内存的设备。').applicability?.memory;assert.ok(memory);
-  assert.deepEqual(memory.minimum,{bytes:16*1024**3,inclusive:true});assert.deepEqual(memory.maximum,memory.minimum);
-  assert.equal(entry('内存至少1.5GB。').applicability?.memory?.minimum?.bytes,3*1024**3/2);
-  assert.equal(entry('内存至少0.1GB。').applicability,null);
-});
-test('vague memory, negation, exceptions, unsupported units and unsafe numbers stay in the source',()=>{
-  for(const text of ['内存较大时。','不适用于16G内存的设备。','内存至少8GB以外。','约16G内存的设备。','内存至少8TB。','内存至少999999999999999999GB。','内存大于8GB或内存小于4GB。'])assert.equal(entry(text).applicability,null,text);
+test('a closed vocabulary in the options licenses no phrase reading, and an empty vocabulary changes nothing', () => {
+  assert.equal(produced('需要 Permit-A 许可。').entry.applicability, null);
+  assert.equal(produced('装有 Card-A 时。', { components: [], licenses: [], deployment_forms: [] }).entry.applicability, null);
+  assert.equal(stateOf(produced('装有 Card-A 时。', { components: [], licenses: [], deployment_forms: [] }).entry as { data: Record<string, unknown> }).declaration_status, 'undeclared');
 });
 
-test('an explicit absence and a memory bound retain their independent fields',()=>{
-  const value=entry('没有 Card-B 时，内存不超过8GB。').applicability;
-  assert.deepEqual(value?.components,{without:['Card-B']});
-  assert.deepEqual(value?.memory?.maximum,{bytes:8*1024**3,inclusive:true});
+test('the product producer forwards the resolved closed vocabularies and still declares nothing from prose', () => {
+  const text = '需要 Permit-A 许可。';
+  const out = producer({ slots: { cli: { parser: 'markdown@1', model: markdown('# Synthetic\n\n' + text + '\n') } }, params: closed });
+  const found = out.entries.find((row) => row.statement === text);
+  assert.ok(found, JSON.stringify(out).slice(0, 300));
+  assert.equal(found.applicability, null);
+  assert.equal(stateOf(found as unknown as { data: Record<string, unknown> }).declaration_status, 'undeclared');
+});
+
+test('the run counts declarations and inheritances per field, so a missing declaration is visible', () => {
+  const { out } = produced('没有 Card-B 时，内存不超过8GB。');
+  for (const field of ['型号', '平台', '起止构建', '部件', '内存', '许可']) {
+    assert.ok(
+      out.warnings.some((warning) => warning.startsWith(`适用条件统计：${field}：`) && /结构声明 0 条，继承 0 条/.test(warning)),
+      `${field}: ${JSON.stringify(out.warnings)}`,
+    );
+  }
 });
