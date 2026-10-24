@@ -1,4 +1,4 @@
-import { APPLICABILITY_FIELD,labelOf } from './generated/vocabulary.ts';
+import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated/vocabulary.ts';
 // Producer of manual entries, from either form of the CLI manual:
 // - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
 //   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
@@ -603,7 +603,7 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
   let rest = candidate;
   const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
   const tokensOk = (): boolean => tokensByField.platforms.length + tokensByField.models.length > 0;
-  let field: 'platforms' | 'models' | null = null;
+  let field: Extract<ApplicabilityField,'platforms'|'models'> | null = null;
   let nounAteSupport = false;
   let afterConnective = false;
   const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
@@ -640,7 +640,7 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
     if (head.index > CLAUSE_WINDOW) return null;
     const itemPart = rest.slice(0, head.index);
     const nounWord = head[1]!;
-    const nextField: 'platforms' | 'models' = nounWord === '平台' ? 'platforms' : 'models';
+    const nextField: Extract<ApplicabilityField,'platforms'|'models'> = nounWord === '平台' ? 'platforms' : 'models';
     if (field === null) field = nextField;
     else if (field !== nextField) return null;
     const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
