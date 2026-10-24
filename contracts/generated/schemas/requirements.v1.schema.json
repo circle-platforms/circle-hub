@@ -247,11 +247,7 @@
           "effect_class": {
             "type": "string",
             "enum": [
-              "none",
-              "read",
-              "sync_write",
-              "job",
-              "notification"
+              "job"
             ]
           },
           "parameters": {

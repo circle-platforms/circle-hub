@@ -11,3 +11,10 @@ test('write declarations are public contracts with typed safety and complete obs
  assert.ok(shapes.WriteDeclaration.safeParse({...declaration,before_state:{call:{tool:'read_state',arguments:{}},pointer:'/state',expected:{$value:'build'},conditional_write:true}}).success);
  assert.ok('executor@1' in resources.schemas,'executor is not published');
 });
+test('the published executor JSON Schema restricts its write to a recorded job without an audience',async()=>{
+ const {readFile}=await import('node:fs/promises');const schema=JSON.parse(await readFile(new URL('../generated/schemas/executor.v1.schema.json',import.meta.url),'utf8'));
+ const write=schema.properties.calls.properties.submit.properties.write.properties;
+ const requirements=JSON.parse(await readFile(new URL('../generated/schemas/requirements.v1.schema.json',import.meta.url),'utf8'));
+ assert.deepEqual(requirements.properties.effects.items.properties.effect_class.enum,['job']);
+ assert.deepEqual(write.effect_class.enum,['job']);assert.equal(write.audience.type,'null');assert.equal(write.writes_hub_records.const,true);
+});

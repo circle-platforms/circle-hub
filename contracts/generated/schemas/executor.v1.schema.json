@@ -460,11 +460,7 @@
                 "effect_class": {
                   "type": "string",
                   "enum": [
-                    "none",
-                    "read",
-                    "sync_write",
-                    "job",
-                    "notification"
+                    "job"
                   ]
                 },
                 "retry_safety": {
@@ -488,16 +484,7 @@
                 },
                 "target_key": {},
                 "audience": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 500
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "type": "null"
                 },
                 "evidence": {
                   "type": "object",
@@ -594,7 +581,8 @@
                   "additionalProperties": false
                 },
                 "writes_hub_records": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [

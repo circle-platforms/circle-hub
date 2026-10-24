@@ -182,7 +182,7 @@ export type RequirementTemplate = z.infer<typeof RequirementTemplate>;
 /** W03 public operation parameters; gateway field names stay in the executor deployment definition. */
 export const AllowedEffect=z.strictObject({
  id:z.string().regex(/^[a-z][a-z0-9_]{0,99}$/),resource_kind:z.literal('executor'),action:z.literal('submit'),
- effect_class:EffectClassSchema,
+ effect_class:EffectClassSchema.extract(['job']),
  parameters:z.union([
   z.strictObject({values:z.record(z.string().min(1),z.array(z.unknown()).min(1).max(1000))}),
   z.strictObject({policy:z.string().regex(/^policies\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/),check:z.string().regex(/^[a-z][a-z0-9_]{0,99}$/)}),

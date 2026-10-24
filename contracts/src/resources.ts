@@ -942,7 +942,7 @@ const base = z.strictObject({
   refused_tools: z.array(z.string().min(1).max(128)).max(100).default([]),
   allowed_tools: z.array(z.string().min(1).max(128)).min(1).max(100),
   payload_argument: pointer.refine(p => p !== ''),
-  calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call.extend({write:WriteDeclaration.optional()}), status: call, result: call, query: call.optional() }),
+  calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call.extend({write:WriteDeclaration.extend({effect_class:EffectClassSchema.extract(['job']),audience:z.null(),writes_hub_records:z.literal(true)}).optional()}), status: call, result: call, query: call.optional() }),
   lease: z.strictObject({ id: pointer, token: pointer, ttl_ms: pointer, ttl_scale_ms: z.number().positive().default(1), acceptance: pointer, map: acceptance }),
   receipt: z.strictObject({ identity:requestIdentity.optional(), stage: pointer.optional(), reached_device: pointer.optional(), stages: z.record(z.string(), EffectOutcomeSchema).default({}), request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
   conformance: z.strictObject({ expiry_margin_ms:z.number().int().min(1).max(600000).default(5000), expected_stage:z.string().min(1).max(200), payloads: z.array(z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]*={0,2}$/)).length(2).refine(p => p[0] !== p[1] && p.every(s=>Buffer.from(s,'base64').length>0 && Buffer.from(s,'base64').toString('base64')===s)) }).optional(),
