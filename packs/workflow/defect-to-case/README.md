@@ -122,13 +122,13 @@ npx tsc --noEmit
 
 ## 引文来源边界（集成者确认，2026-10-23）
 
-PLM 部署设置为 `settings.bug_fix_field`，系统包须在缺陷 `content.fix_field` 回传字段名；未配置时回传 null 并说明缺失设置。本包不直接读取资源设置、不猜 fix 等默认字段，缺少 content.fix_field 就拒绝启动并要求集成者配置后重新读缺陷。
+PLM 部署设置有两项。`settings.bug_fix_field` 由系统包在缺陷 `content.fix_field` 回传字段名，未配置时为 null。`settings.bug_fix_actions` 是动作码的 JSON 字符串数组，系统包据此填写 `content.fix_notes`；没配置时 fix_notes 为 null 并说明缺的是这个设置。本包不直接读取资源设置、不猜字段名或动作码。期望结果必须引用 fix_field 指向的字段原文，或 fix_notes 里某条 comment 原文；两处都没有才拒绝启动，修正说明点名缺的设置。
 
 `manual` 为可选输入（expected 角色，接受 `manual:cli`），绑定时必须恰好一份且 external 等于运行版本线的 `manual:cli:<版本线>`。手册不再由 expected_sources 在投影之后自动绑定。投影将本条缺陷摘要、fix_field 和手册摘要冻结为条目字段 allowed_quote_sources，提交中的同名字段不起作用。grounded_sources 是阻断检查，违规给出修正说明并计入最多两轮修复。
 
-只接受本条缺陷 `src:<摘要>/json@1/p/fields/<fix_field>`（可带该字段内的字节范围），或绑定手册的 src 片段。字段名按选择器的独立段解码后精确比较，不收父对象、其他字段、其他缺陷、其他来源。当前接口不能把 tree:/rec: 证明为这两份原件；按集成者决定拒绝这些引用形式，要求改引已绑定原件的 src 片段。
+只接受本条缺陷 `src:<摘要>/json@1/p/fields/<fix_field>`（可带该字段内的字节范围）、`src:<摘要>/json@1/p/fix_notes/<序号>/comment`（序号是冻结的数组位置，comment 为原文），或绑定手册的 src 片段。字段名按选择器的独立段解码后精确比较，序号与冻结位置逐字相等。不收父对象、其他字段、未冻结的序号、其他缺陷、其他来源。当前接口不能把 tree:/rec: 证明为这些原件；按集成者决定拒绝这些引用形式，要求改引已绑定原件的 src 片段。
 
-跨包依赖：PLM 系统包尚未提供 content.fix_field；集成者在需求追溯变更合并后安排补齐。本包只用带 fix_field 的合成内容验证；在系统包补齐之前，真实启动将明确拒绝。没有读取或修改真实资源设置。
+跨包依赖：PLM 系统包在缺陷 content 回传 content.fix_field，并按 settings.bug_fix_actions 回传 fix_notes。真实资源仍须集成者配置这两项设置后才有可引用的修复说明。本包只用合成内容验证。没有读取或修改真实资源设置。
 
 样例的 PLM 内容按 `{id, kind, title, fields, html_fields, fix_field}` 构造：HTML 已由系统包转成 fields 里的纯文本，html_fields 是字段名列表。`json@1/p/html_fields/fix` 不存在；引用配置为 fix 的示例用 `json@1/p/fields/fix`。字段名含 / 等路径字符时编码为一个选择器段。`reference-shape.test.ts` 通过核心 json@1 解析器定位样例引用，并重算示例内容摘要，避免只在假的字段结构上通过。
 
@@ -146,7 +146,7 @@ not_duplicate 的已实现判据是：相同的规范化命令头集合、相同
 
 复核确认：没有手册的版本线可不绑定 manual，投影冻结 manual:null 并明确警告仅修复字段可引。先按锁定构建确定版本线并核实手册可读；有手册再补绑重开。集成者需同步 gold-d2c 批跑提示（模板目前只有 defect/product/build），让客户端执行这个动作；Hub 不替客户端生成内容或选择默认版本线。
 
-复核修正：本包在投影时检查 fields[fix_field] 必须为非空文字，缺失或为空以 fix_text_missing 拒绝并点名缺陷及字段，要求核对 settings.bug_fix_field 或更换缺陷。PLM 系统包仅回传设置，不承担这个消费方检查。
+复核修正：投影在 fix_field 有非空文字，或 fix_notes 有非空 comment 时才放行。配置了字段但文字为空、且没有可引用的动作说明时，以 fix_text_missing 拒绝并点名缺陷及字段，要求核对 settings.bug_fix_field 或 settings.bug_fix_actions。两处都没有时以 missing_fix_field 拒绝并点名这两个设置。PLM 系统包只按声明回传，不承担这个消费方检查。
 
 收尾复核：manual_missing 由 expected_sources 从冻结条目发出，随 start_run 的 evidence gaps 返回，投影日志中的同名警告不再冒充客户端已见。条目摘要也明确未绑定手册；回执列出版本线、manual:cli 地址、配置修复字段和重开动作。
 

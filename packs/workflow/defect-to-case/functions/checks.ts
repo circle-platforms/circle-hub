@@ -212,10 +212,10 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
       const bytes=new TextEncoder().encode(text);let quote:string|null=null;try{if(identity.span.offset+identity.span.length<=bytes.byteLength)quote=new TextDecoder('utf-8',{fatal:true}).decode(bytes.slice(identity.span.offset,identity.span.offset+identity.span.length));}catch{}
       if(quote!==exp.quote.text){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'期望引用的 byte span 与逐字原文不一致',grounds:[reference],tier:'blocking',...own,pointer});continue;}
 
-      const pointer = `/slots/cases/${i}/data/expected/${j}/quote`;
+      const slotPointer = `/slots/cases/${i}/data/expected/${j}/quote`;
       const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
       if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
-        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${pointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer, ...own });
+        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${slotPointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer: slotPointer, ...own });
         continue;
       }
       const expected = foldQuoteText(exp.text);
@@ -236,8 +236,13 @@ export function checkQuoteSources(input: unknown): CheckOutcome[] {
   const quotes = Array.isArray(subject.quotes) ? subject.quotes : [];
   const out: CheckOutcome[] = [];
   const segment = (field: string) => [...field].map((ch) => /[%/:\p{Cc}\p{Cf}\p{Z}]/u.test(ch) ? encodeURIComponent(ch) : ch).join('');
-  const fixRef = `src:${allowed.defect}/json@1/p/fields/${segment(typeof allowed.fix_field === 'string' ? allowed.fix_field : '')}`;
-  const fix = `修正：引用本条缺陷修复说明 ${fixRef}` + (typeof allowed.manual === 'string' ? `，或手册 src:${allowed.manual}/<解析器>/<片段>` : '；当前未绑定手册，不允许其他来源') + '；tree:/rec: 请改引对应绑定原件的 src 片段';
+  const field = typeof allowed.fix_field === 'string' && allowed.fix_field !== '' ? allowed.fix_field : null;
+  const notes = Array.isArray(allowed.fix_notes) ? allowed.fix_notes.filter((index): index is number => Number.isInteger(index) && (index as number) >= 0) : [];
+  const paths = [
+    ...(field === null ? [] : [`src:${allowed.defect}/json@1/p/fields/${segment(field)}`]),
+    ...notes.map((index) => `src:${allowed.defect}/json@1/p/fix_notes/${index}/comment`),
+  ];
+  const fix = (paths.length ? `修正：引用${paths.join('，或')}` : '修正：配置 settings.bug_fix_field 或 settings.bug_fix_actions 后重新读取缺陷') + (typeof allowed.manual === 'string' ? `，或手册 src:${allowed.manual}/<解析器>/<片段>` : '；当前未绑定手册，不允许其他来源') + '；tree:/rec: 请改引对应绑定原件的 src 片段';
 
   for (const [index, value] of quotes.entries()) {
     const reference = isRecord(value) && typeof value.reference === 'string' ? value.reference : '';
@@ -247,13 +252,15 @@ export function checkQuoteSources(input: unknown): CheckOutcome[] {
     if (match && match[1] === allowed.defect && match[2] === 'json@1') {
       try {
         const parts = match[3].split('/').map((part) => decodeURIComponent(part));
-        accepted = parts.length === 3 && parts[0] === 'p' && parts[1] === 'fields' && parts[2] === allowed.fix_field;
+        const fieldPath = field !== null && parts.length === 3 && parts[0] === 'p' && parts[1] === 'fields' && parts[2] === field;
+        const notePath = parts.length === 4 && parts[0] === 'p' && parts[1] === 'fix_notes' && parts[3] === 'comment' && notes.some((position) => String(position) === parts[2]);
+        accepted = fieldPath || notePath;
       } catch { accepted = false; }
     }
     const position = isRecord(value) && Number.isInteger(value.case) && Number.isInteger(value.expected) ? `第 ${(value.case as number) + 1} 个起草用例第 ${(value.expected as number) + 1} 个期望结果` : `第 ${index + 1} 条引文`;
     if (!accepted) out.push({ verdict: 'refute', code: CODES.QUOTE_SOURCE_FORBIDDEN, statement: `${position}的引用 ${reference} 没有指向本条缺陷的配置修复字段或绑定的同版本线手册。${fix}`, grounds: [], tier: 'blocking', pointer: `/quotes/${index}/reference`, ...own });
   }
-  return out.length ? out : [{ verdict: 'support', statement: '各引文来源均为本条缺陷的配置修复说明字段或绑定的同版本线手册', grounds: [], tier: 'blocking', ...own }];
+  return out.length ? out : [{ verdict: 'support', statement: '各引文来源均为本条缺陷的配置修复说明字段、fix_notes 中的 comment 或绑定的同版本线手册', grounds: [], tier: 'blocking', ...own }];
 }
 
 /** Check 4: checkDuplicate - verifies drafts do not duplicate indexed cases */

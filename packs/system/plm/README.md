@@ -34,7 +34,7 @@ Needs: none.
 
 ## 1.2.0：修复字段声明和产品名字解析
 
-缺陷详情 content 只新增 `fix_field`：资源设置 `settings.bug_fix_field` 为非空字符串时原样返回该字段名，否则返回 null。不猜 fix 等默认名字，不从其他字段兜底，也不判这条缺陷有没有该字段；消费方检查 fields。需求详情和批量缺陷输出不加这个字段。设置在 system.json 的 bug 读取说明中声明（当前 system@1 没有设置 schema），字段名必须由集成者在真实只读冒烟后照原件核实，再配置部署资源。本包没有读取或修改真实资源设置。
+缺陷详情 content 回传 `fix_field` 和 `fix_notes`。`settings.bug_fix_field` 为非空字符串时 `fix_field` 原样是该字段名，否则为 null。不猜 fix 等默认名字，不从其他字段兜底，也不判这条缺陷有没有该字段；消费方检查 fields。`settings.bug_fix_actions` 是 JSON 字符串数组（动作码闭集）时，`fix_notes` 只收 `actions` 里 `action` 与数组成员完全相等、且 `comment` 非空的条目，按原顺序写成 `{action, date, actor, comment, index}`；comment 原文不改，HTML 按本包既有方式转纯文本，原件仍保留应答。没配置或形状不对时 `fix_notes` 为 null，`fix_notes_note` 和读取说明写明缺的是 `settings.bug_fix_actions`。不按正文挑选动作。需求详情和批量缺陷输出不加这两个字段。设置在 system.json 的 bug 读取说明中声明（当前 system@1 没有设置 schema）。动作码必须由集成者在真实只读冒烟后照原件核实，再配置部署资源。本包没有读取或修改真实资源设置。
 
 `plm:builds` 现在使用规划函数，最多两次请求：
 

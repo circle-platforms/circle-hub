@@ -3,6 +3,7 @@
 // Ids are numbers in some answers and strings in others, and steps and specs are HTML: the projection of a bug or a story
 // gives content {id, kind, title, fields, html_fields} with every HTML field as plain text (the original keeps the answer);
 // bugs additionally echo the configured fix_field, without guessing or checking its presence in the record,
+// and fix_notes: comments of actions whose code is exactly a member of settings.bug_fix_actions.
 // and meta {id, kind, title, status}. An id the service does not know is a failed read (shown to callers as unavailable).
 
 import type { Resolution } from '../../../../contracts/generated/vocabulary.ts';
@@ -98,6 +99,32 @@ export function htmlText(html: string): string {
 
 const idText = (value: unknown): string | null => (typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 
+/** The closed set settings.bug_fix_actions, a JSON array of action codes. Anything else is not configured. */
+function declaredActions(settings: Record<string, unknown>): { codes: ReadonlySet<string> } | { note: string } {
+  if (!Object.hasOwn(settings, 'bug_fix_actions') || settings.bug_fix_actions == null || settings.bug_fix_actions === '') return { note: '缺少设置 settings.bug_fix_actions' };
+  let value: unknown = settings.bug_fix_actions;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return { note: '设置 settings.bug_fix_actions 不是 JSON 字符串数组' }; }
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item === '')) return { note: '设置 settings.bug_fix_actions 不是 JSON 字符串数组' };
+  return { codes: new Set(value) };
+}
+
+/** Comments whose action code equals a declared code, in the original order. HTML comments use the pack's plain text; the original answer is unchanged. */
+function fixNotesOf(record: Record<string, unknown>, declared: { codes: ReadonlySet<string> } | { note: string }): { fix_notes: Array<{ action: string; date: string | null; actor: string | null; comment: string; index: number }> | null; fix_notes_note?: string } {
+  if ('note' in declared) return { fix_notes: null, fix_notes_note: declared.note };
+  const actions = Array.isArray(record.actions) ? record.actions : [];
+  const fix_notes = [];
+  for (let index = 0; index < actions.length; index++) {
+    const row = actions[index];
+    if (!isRecord(row) || typeof row.action !== 'string' || !declared.codes.has(row.action) || typeof row.comment !== 'string' || row.comment === '') continue;
+    const comment = isHtml(row.comment) ? htmlText(row.comment) : row.comment;
+    if (comment === '') continue;
+    fix_notes.push({ action: row.action, date: typeof row.date === 'string' ? row.date : null, actor: typeof row.actor === 'string' ? row.actor : null, comment, index });
+  }
+  return { fix_notes };
+}
+
 /** Projection of a bug or a story: the one record of the id from the array in the envelope. */
 export function detailProject(input: unknown): unknown {
   const { type, key, responses, original } = partsOf(input);
@@ -117,10 +144,12 @@ export function detailProject(input: unknown): unknown {
   const title = typeof record.title === 'string' ? record.title : typeof record.name === 'string' ? record.name : null;
   const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};
   const fixField = typeof settings.bug_fix_field === 'string' && settings.bug_fix_field.trim() !== '' ? settings.bug_fix_field : null;
+  const notes = kind === 'bug' ? fixNotesOf(record, declaredActions(settings)) : null;
   const status = typeof record.status === 'string' ? record.status : typeof record.stage === 'string' ? record.stage : null;
   return {
+    ...(notes?.fix_notes_note ? { note: notes.fix_notes_note } : {}),
     artifacts: [
-      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField } : {}) } },
+      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField, ...notes } : {}) } },
       { name: 'meta', media_type: 'application/json', json: { id: key, kind, title: title === null ? `${KINDS[kind].label} ${key}` : `${KINDS[kind].label} ${key} ${title}`, status } },
     ],
   };
