@@ -18,7 +18,7 @@ node <技能目录>/jev.ts ask --hub %HUB_URL% --model %JEV_MODEL% --input ask.j
 EOF
 ```
 
-ask.json 形状见 [合成输入](examples/ask.json)。pieces 只给 id 和从 Hub 照抄的 tree: 条目或 src: 片段引用；questions 用 noul、choice 或 score，instructions 用反引号指片段 id，最多 2000 字，选项说明最多 160 字。问题与说明也会外发，不能夹带用例、缺陷或其他受限原文绕过限制。
+ask.json 形状见 [合成输入](examples/ask.json)。pieces 只给 id 和从 Hub 照抄的 tree: 条目或 src: 片段引用；questions 用 noul、choice 或 score，每题必须用 `pieces` 显式声明它判断的片段 id（取自本次 pieces 列表）：缺声明、声明为空或声明了列表外的 id 都是结构问题，整批不发，回报里写明缺的事实和下一步，不会退回“把全部片段都发给这道题”。instructions 里的反引号只给服务商的模型读，技能不从题目文字里找片段；instructions 最多 2000 字，选项说明最多 160 字。问题与说明也会外发，不能夹带用例、缺陷或其他受限原文绕过限制。
 
 默认只发 Hub 读到的定义、行为原文和题目。用例、缺陷、观察或 src 只有本次明确 `--send case`（对应种类码，也可重复 --send；src 用 `--send src`）才加入，技能钩子仅在技能加载后生效；主目录自己的钩子还会再次执行技能的 before_tool 钩子，未加载技能、直接执行时也由它拦住 --send。该主目录由集成者准备。不能用 --send 绕过读取档位。子节点选项说明始终只来自定义或行为，不取用例标题等文字。种类码以 generated.json 为准。
 

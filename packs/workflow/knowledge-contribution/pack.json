@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
@@ -88,8 +88,8 @@
     },
     {
       "path": "tools/jev/SKILL.md",
-      "sha256": "a2a598a61f5a618ddffdb6479a5c47ec8b60fe574cd62287dafb0b9f53ebe062",
-      "size": 5972
+      "sha256": "aa23dd240c979599f83a811f09182504adae0bbe3e5e5e3fe186f4cf5d86d0f3",
+      "size": 6319
     },
     {
       "path": "tools/jev/egress.json",
@@ -98,8 +98,8 @@
     },
     {
       "path": "tools/jev/examples/ask.json",
-      "sha256": "12b7c50c8fc3b9dcc58d5295d562acdddbd3cac874cdd0168d272fb51473f281",
-      "size": 648
+      "sha256": "2a4d30326d740af9c22db26ef0d1c685c45134ddb46d7df1a0db7840ab652d72",
+      "size": 702
     },
     {
       "path": "tools/jev/examples/proposals.json",
@@ -108,7 +108,7 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "dbf25610b450c00f08884a563bd0fdc6ad212b56581904f4d99d361e1bc3569b",
+      "sha256": "6bfc8f5ceb9e6353206e5d8a9149d23b7bdd580064858c38418b7f673a101022",
       "size": 1327
     },
     {
@@ -148,8 +148,8 @@
     },
     {
       "path": "tools/jev/lib/http.ts",
-      "sha256": "01a9ebfdab42b29e4a600f0fc7b13a151e6acf1ac4e928277e02d2a42554a94c",
-      "size": 23645
+      "sha256": "c63a7aa391b90753b7124332b5ec5142c170b41a71e997a2ea1ed9c45cd4b2f1",
+      "size": 24069
     },
     {
       "path": "tools/jev/lib/hub.ts",
@@ -158,8 +158,8 @@
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "3001deafaf967a0a597f8ab441d1984c9de62c45a5ca3534c6a809e4e9d93de0",
-      "size": 12190
+      "sha256": "d174331950218b8ef8592b00739ee852af3eae945fa0d66dbd90c4ce709861d7",
+      "size": 15044
     },
     {
       "path": "tools/jev/lib/local.ts",
@@ -193,8 +193,8 @@
     },
     {
       "path": "tools/jev/lib/workflow.ts",
-      "sha256": "d0015f492214eb633d5a8a60b4573cccff2a4468614e47deffa0a75a8b6f899b",
-      "size": 24262
+      "sha256": "0d13b7505e832d9805e16767a0ca9ccefbd40357a1e3cf5c6ef84972ef73b537",
+      "size": 24326
     },
     {
       "path": "workflow.json",
