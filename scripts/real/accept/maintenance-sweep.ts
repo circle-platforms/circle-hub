@@ -5,6 +5,7 @@ import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Check } from '../lib/report.ts';
 import { facetReader, facetCountCheck, withoutFacetPages, validateScopeGold } from './regression-scope.ts';
 import { lengthBounded, runStarted } from './checks.ts';
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 
 export interface SweepCaseGold {
   id: string;
@@ -43,12 +44,13 @@ export default function scenario(gold: SweepGold): Scenario {
         const at = text.indexOf(c.id);
         const near = at >= 0 ? text.slice(Math.max(0, at - 400), at + 400) : '';
         if (c.removed) {
+          const removed = `已${labelOf('change_kind', 'removed')}`;
           checks.push({
             area,
-            name: `命令已删除的用例 ${c.id} 放在 removed 路径上`,
-            expected: `${c.id} 的原因路径 ${c.path}，标记为已删除`,
-            actual: near.includes(c.path) && /已删除/.test(near) ? '一致' : near.slice(0, 120) || '没有出现',
-            ok: near.includes(c.path) && /已删除/.test(near),
+            name: `命令${removed}的用例 ${c.id} 放在 ${labelOf('change_kind', 'removed')} 路径上`,
+            expected: `${c.id} 的原因路径 ${c.path}，标记为${removed}`,
+            actual: near.includes(c.path) && near.includes(removed) ? '一致' : near.slice(0, 120) || '没有出现',
+            ok: near.includes(c.path) && near.includes(removed),
           });
         } else {
           // A field difference is a named field with old and new values (or the pack's own "字段" wording), not
