@@ -311,7 +311,8 @@ describe('a production run of traceability', { skip }, () => {
     const HUGE_CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects&variant=huge-cases`;
     const hugeCases = [caseEntry({ defects: ['84001'], case: 'C-8401', title: '84001用例' })];
     const hugeCasesObj = indexViewOf('case', 'defects', hugeCases, {}, ['document', 'node', 'title']);
-    (hugeCasesObj as any).padding = 'y'.repeat(1024 * 1024 + 100);
+    const firstCase=Object.values(hugeCasesObj.entries as Record<string,{data:Record<string,unknown>}>)[0];
+    firstCase.data.title=String(firstCase.data.title)+'y'.repeat(1024 * 1024 + 100);
     hub.views.put(HUGE_CASES_ID, hugeCasesObj);
 
     hub.views.put('plm:bugs:84001+84002', {
