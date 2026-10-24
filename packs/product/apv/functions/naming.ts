@@ -196,3 +196,15 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
 
 /** Complete native grammar only; the Hub separately checks exact membership in its frozen build inventory. */
 export function validateBuildNames(input:unknown):{accepted:string[];rejected:string[]}{const values=input&&typeof input==='object'&&'names'in input&&Array.isArray(input.names)?input.names:[];return{accepted:values.filter((v):v is string=>typeof v==='string'&&parseBuildName(v).line!==null),rejected:values.filter((v):v is string=>typeof v==='string'&&parseBuildName(v).line===null)};}
+
+/**
+ * The spelling a device's version display shows for a build: the build-site spelling with every `_` replaced by `.`
+ * (synthetic example: `Beta_APV-ZX-U_10_8_0_901` displays as `Beta.APV-ZX-U.10.8.0.901`). This is an identity rule of
+ * this pack's naming syntax under C07 R[9] — the one declared replacement and nothing else: no case folding, no other
+ * separator handling, no vendor prefix handling (the executor's extraction pattern removes that prefix before the Hub
+ * compares). The spelling is a verified alias of the build by this declaration alone; the Hub core still compares
+ * exactly and never normalises.
+ */
+export function deviceSpelling(name: string): string {
+  return name.replaceAll('_', '.');
+}

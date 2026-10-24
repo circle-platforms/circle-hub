@@ -5,7 +5,7 @@
 // newest build of the line on the main platform is chosen and the basis says it is not released. Without a line, the line of
 // the newest released build is used.
 import type { KnownBuild, SelectBuildInput, SelectBuildOutput } from '../../../../contracts/src/product.ts';
-import { compareLines, lineKey, parseBuildName } from './naming.ts';
+import { compareLines, deviceSpelling, lineKey, parseBuildName } from './naming.ts';
 import { compareForRule, selectBuild } from './select-build.ts';
 import type { Build, Family } from './types.ts';
 import { compareDotted, compareNullable, compareText, internalError, isRecord } from './util.ts';
@@ -33,8 +33,13 @@ export function asBuild(known: KnownBuild): Build {
 export function chooseBuild(input: SelectBuildInput): SelectBuildOutput {
   try {
     if (!isRecord(input) || !Array.isArray(input.candidates)) return NO_BUILD;
-    const candidates = input.candidates.filter((c): c is KnownBuild => isRecord(c) && typeof c.name === 'string' && typeof c.line === 'string');
-    if (candidates.length === 0) return NO_BUILD;
+    const all = input.candidates.filter((c): c is KnownBuild => isRecord(c) && typeof c.name === 'string' && typeof c.line === 'string');
+    if (all.length === 0) return NO_BUILD;
+    // The device display spelling of a build is its verified alias, not a build of its own (the pack's naming
+    // declaration, C07 R[9]): it is never a candidate. Dropped only when the build it aliases is itself a candidate.
+    const names = new Set(all.map((c) => c.name));
+    const aliases = new Set(all.flatMap((c) => { const spelling = deviceSpelling(c.name); return spelling !== c.name && names.has(spelling) ? [spelling] : []; }));
+    const candidates = all.filter((c) => !aliases.has(c.name));
     const builds = candidates.map(asBuild);
     let line = typeof input.line === 'string' && input.line.trim() !== '' ? input.line.trim() : null;
     if (line === null) {
