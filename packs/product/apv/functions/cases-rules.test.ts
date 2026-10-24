@@ -3,10 +3,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MAX_LIST_SOURCES } from '../../../../contracts/src/product.ts';
-import { VAGUE_TEXTS } from '../../../../tests/fixtures/case-index/index.ts';
 import { mindmapPlan, ROOTS_KEY } from '../../../system/agile-platform/functions/agile.ts';
 import { normalizeTag } from '../../../workflow/case-review/functions/tags.ts';
-import { AGILE_ID, CASE_RULE, CASE_TREE_ID, MINDMAP_PREFIX, VAGUE_EXPECTED, isVague, negativeOf, tagKey, vagueKey } from './cases-rules.ts';
+import { AGILE_ID, CASE_RULE, CASE_TREE_ID, MINDMAP_PREFIX, negativeOf, tagKey } from './cases-rules.ts';
 import { MAX_CASE_DOCUMENTS } from './cases-sync.ts';
 import { randomText, seeded } from '../testing/test-support.ts';
 
@@ -27,13 +26,14 @@ describe('shared with other packs and the contracts', () => {
     const random = seeded(91);
     for (let k = 0; k < 2000; k++) spellings.push(random.pick(spellings) + randomText(random, 4));
     for (const tag of spellings) {
-      const expected = normalizeTag(tag).canonical === 'Negative';
-      assert.equal(negativeOf([tag, 'Function']) === true, expected, JSON.stringify(tag));
+      const expected = normalizeTag(tag).canonical === 'negative';
+      assert.equal(negativeOf([tag]) === true, expected, JSON.stringify(tag));
     }
     assert.equal(negativeOf([]), null);
     assert.equal(negativeOf([' ', '　']), null, 'blank tags are no tags');
-    assert.equal(negativeOf(['Function']), false);
-    assert.equal(tagKey(' [Negative-Case] '), 'negativecase');
+    assert.equal(negativeOf(['Function']), null);
+    assert.equal(negativeOf(['functional']), false);
+    assert.equal(tagKey(' [Negative-Case] '), ' [Negative-Case] ');
   });
 
   it('document ids the agile system pack reads, and the list limit of product@1', () => {
@@ -47,15 +47,4 @@ describe('shared with other packs and the contracts', () => {
   });
 });
 
-describe('vague expected results', () => {
-  it('are the listed phrases, whole, whatever the spacing, case and end punctuation', () => {
-    for (const text of ['正常', '设备正常。', ' 显示 正确 ', '符合预期！', 'OK', 'Pass.', 'As Expected', '「操作成功」', '配置生效~']) assert.equal(isVague(text), true, text);
-    for (const text of ['设备正常，CPU 占用低于 70%', '显示 pool1 的探测间隔为 5 秒', '提示参数超出范围', '不正常', '正常吗？还是', '', 'okay']) assert.equal(isVague(text), false, text);
-    assert.equal(vagueKey(' 设备 正常 。 '), '设备正常');
-  });
-
-  it('cover every vague text of the corpus, and every phrase is distinct once folded', () => {
-    for (const text of VAGUE_TEXTS) assert.equal(isVague(text), true, text);
-    assert.equal(new Set(VAGUE_EXPECTED.map(vagueKey)).size, VAGUE_EXPECTED.length);
-  });
-});
+// R3 semantic quality is covered by vague-retirement.test.ts and accepted review judgments.

@@ -290,3 +290,10 @@ test('a known expectation miss outranks an unsettled layer without changing fact
   assert.deepEqual(partitionCountsOf(unmet),partitionCountsOf(pending));assert.equal(partitionCountsOf(unmet).unknown,1);
   assert.deepEqual(requirementStatus({layers,hasProducer:true,expectation:{outcome:'refute',codes:['synthetic.violation']},expectedRefutation:true,independence:null,acceptsDeclared:false}),{status:'pending'},'a matching known terminal leaves the other layer pending');
 });
+
+test('a judgment cannot satisfy a requirement that accepts facts only',()=>{
+  const common={layers:[{layer:'static' as const,terminal:'judgment' as const}],hasProducer:true,expectation:SUPPORT,expectedRefutation:false,independence:null,acceptsDeclared:false};
+  assert.deepEqual(requirementStatus({...common,producer:'fact'}),{status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
+  assert.equal(requirementStatus({...common,producer:'judgment'}).status,'satisfied');
+  assert.equal(requirementStatus({...common,producer:'fact',layers:[{layer:'static',terminal:'pass'}]}).status,'satisfied');
+});

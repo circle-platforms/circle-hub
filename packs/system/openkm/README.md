@@ -15,3 +15,11 @@ Not published: `api.ts`, this README, `webdav.test.ts`. Test: `node --test packs
 WebDAV stub below a base path that answers 401 without the exact header; the copy equals the manual store's).
 
 Needs: none.
+
+## Declared specification folders
+
+`openkm:spec-list:configured` lists the direct members of `settings.spec_folders` (up to 32 directories) as JSON `folders`, `files` (`name`, resource-relative `path`, optional WebDAV `displayname` as `title`), `directories` (`name`, `path`), `unread` and `complete`. It never follows member links or descends into child directories. Unsafe member names are skipped and named in warnings; an unread directory makes the listing incomplete and names the permission/path repair. At least one directory must be declared, so the read has an inventory original; a configured directory with no files is a complete zero selection. No product or QA folders are added. Deployment may bind the setting to `${var:MANUAL_SPEC_FOLDERS}`.
+
+Legacy `spec_folder` joins the same list, once per normalized path; reads warn “旧设置 spec_folder 已并入 spec_folders，下一步资源管理员改用 spec_folders”. Specification searches use that same list and list the members of every directory in it; they select no file (keyword retrieval is retired, owner ruling U19/U20, 2026-10-24).
+
+Specification inventory reads require an explicit `spec_folders` list or the legacy `spec_folder` setting; an undeclared list refuses with the resource-administrator configuration action. An empty directory list refuses before requests, with the action to configure at least one readable directory (which may itself be empty). Only the existing search keeps its legacy `spec` fallback.

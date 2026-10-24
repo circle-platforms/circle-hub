@@ -1,3 +1,4 @@
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Input and output types of the case-review pack functions. Type-only imports: they are erased at run time, so the
 // functions stay self-contained inside the pack (the sandbox admits only modules inside the pack).
 import type { JsonValue, KityMinderModel, MindMapNode } from '../../../../hub/refs/api.ts';
@@ -6,7 +7,7 @@ import type { ExternalObjectId } from '../../../../contracts/src/reference.ts';
 export type { JsonValue, KityMinderModel, MindMapNode, ExternalObjectId };
 
 /** The canonical test categories of the team template; every tag spelling maps to one of them or to null. */
-export type CanonicalTag = 'Functional' | 'Configuration' | 'Integration' | 'Compatibility' | 'Negative' | 'Stress';
+export type CanonicalTag = TestTypeId;
 
 /** A non-fatal problem. `code` is a pack code (`case-review.<name>`, declared in tables/codes.json); text is Chinese. */
 export type Warning = {
@@ -32,10 +33,10 @@ export type Failure = { error: PackError; warnings: Warning[] };
 
 // tags.ts -------------------------------------------------------------------------------------------------------------------
 
-export type NormalizedTag = { canonical: CanonicalTag | null; raw: string };
+export type NormalizedTag = { canonical: CanonicalTag | null; raw: unknown };
 
 export type TagsInput = { tags: unknown[] };
-export type TagsOutput = { tags: NormalizedTag[]; canonical: CanonicalTag[]; negative: boolean } | Failure;
+export type TagsOutput = { tags: NormalizedTag[]; canonical: CanonicalTag[]; negative: boolean | null; declaration: ResourceTagDeclaration } | Failure;
 
 // project.ts ----------------------------------------------------------------------------------------------------------------
 
@@ -90,12 +91,16 @@ export type CaseFields = {
   degree: number | null;
   /** The resource entries as written (text only); empty for a case found by the case marker (caseRule marked). */
   tags: string[];
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Canonical categories of the tags, in canonical order, without repetition. */
   tagsNormalized: CanonicalTag[];
   /** Expected results in document order: leaf children, and the leaves below each step. */
   expected: string[];
   /** Number of expected results, also when `expected` is clipped. */
   expectedCount: number;
+  expectedSelectors?: string[];
   steps: CaseStep[];
   /** Leaves inside the case marked with the precondition priority. */
   preconditions: string[];
@@ -157,6 +162,9 @@ export type StructureSubject = {
   content: string;
   priority: JsonValue;
   tags: string[];
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Tags that are not blank. */
   tagCount: number;
   categories: CanonicalTag[];
@@ -168,6 +176,7 @@ export type StructureSubject = {
   otherTags: string[];
   expected: string[];
   expectedCount: number;
+  expectedSelectors?: string[];
   /** null when the case has no non-blank tag. */
   negative: boolean | null;
 };
@@ -246,33 +255,7 @@ export type SourcesOutput = { external: ExternalObjectId[]; basis: SourceBasis[]
 
 // template-coverage.ts ------------------------------------------------------------------------------------------------------
 
-export type TemplateField = 'path' | 'title' | 'steps' | 'expected' | 'preconditions';
-
-export type TemplateCategory = {
-  id: string;
-  label: string;
-  group?: string;
-  /** Default true: a required category that no item shows is missing. */
-  required?: boolean;
-  /** Present when an item has one of these canonical tags. */
-  tags?: CanonicalTag[];
-  /** Present when a searched text contains one of these (after normalization). */
-  contains?: string[];
-  /** Present when a searched text starts with one of these (after normalization). */
-  prefixes?: string[];
-  /** Present when a searched text is one of these (after normalization), for example a group node named "no". */
-  equals?: string[];
-  /** Texts searched by contains and prefixes; default path and title. */
-  fields?: TemplateField[];
-};
-
-export type Template = {
-  schema: 'case-review.template@1';
-  id: string;
-  origin: string;
-  description?: string;
-  categories: TemplateCategory[];
-};
+export type Template = import('./template-coverage.ts').Template;
 
 export type CoverageSkip = { category: string; reason: string };
 
@@ -301,4 +284,4 @@ export type CoverageFacts = {
   warnings: Warning[];
 };
 
-export type CoverageOutput = CoverageFacts | Failure;
+export type CoverageOutput = import('./template-coverage.ts').CoverageOutput | Failure;

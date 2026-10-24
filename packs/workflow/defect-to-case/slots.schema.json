@@ -7,31 +7,95 @@
       "data": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "priority": { "type": "integer" },
-          "negative": { "type": "boolean" },
-          "expects_refutation": { "type": "boolean" },
-          "preconditions": { "type": "array" },
-          "steps": { "type": "array" },
+          "title": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "negative": {
+            "type": "boolean"
+          },
+          "expects_refutation": {
+            "type": "boolean"
+          },
+          "preconditions": {
+            "type": "array"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "完整 CommandIdentity；缺失时 not_duplicate 未核对"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            }
+          },
           "expected": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["text", "quote"],
+              "required": [
+                "text",
+                "quote"
+              ],
               "properties": {
-                "text": { "type": "string" },
+                "text": {
+                  "type": "string"
+                },
                 "quote": {
                   "type": "object",
-                  "required": ["text", "reference"],
+                  "required": [
+                    "text",
+                    "reference"
+                  ],
                   "properties": {
-                    "text": { "type": "string", "description": "修复说明或手册里的逐字原文" },
-                    "reference": { "type": "string", "description": "引用" }
+                    "text": {
+                      "type": "string",
+                      "description": "修复说明或手册里的逐字原文"
+                    },
+                    "reference": {
+                      "type": "string",
+                      "description": "引用"
+                    }
                   }
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "ExpectedQuoteIdentity，原件摘要、parser/路径及原始 byte span"
+                },
+                "after": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               }
             }
           },
-          "tags": { "type": "array" }
+          "tags": {
+            "type": "array",
+            "description": "旧字段仅保留原文，不作为类型声明；请在 resource 写发布闭集的精确标签"
+          },
+          "resource": {
+            "type": "array"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "稳定草稿 id；按结构字段连接，不解析标题或 statement"
+          }
         }
       }
     }

@@ -42,7 +42,7 @@ const LATER = 'e'.repeat(64);
 const ref = (root: string, entry: string) => `tree:${root}/commands/show@${entry}`;
 
 describe('maintenance sweep edge cases', () => {
-  it('counts a modified path whose named definition is not in the view as a difference', () => {
+  it('counts a modified path whose named definition is not in the view as a missing fact, not a fabricated difference', () => {
     const view = buildImpact([{ path: '/commands/x', change: 'modified', before: [{ name: 'x' }], after: [{ name: 'x' }], from: [{ document: 'doc-1', node: 'n1', title: '甲', priority: 1 }] }]);
     const absent = 'f'.repeat(64);
     const rows = view.changes as Array<{ before: string[]; after: string[] }>;
@@ -53,7 +53,9 @@ describe('maintenance sweep edge cases', () => {
       sweep.items.map((item) => item.id),
       ['doc-1:n1'],
     );
-    assert.deepEqual(sweep.note.details[sweep.items[0].reasons[0].detail]?.fields, [{ path: '/', before: null, after: null }]);
+    const row = sweep.note.details[sweep.items[0].reasons[0].detail];
+    assert.deepEqual(row?.fields, []);
+    assert.deepEqual(row?.missing, [absent]);
     assert.ok(sweep.warnings.some((warning) => warning.code === 'maintenance-sweep.missing_entry'));
   });
 

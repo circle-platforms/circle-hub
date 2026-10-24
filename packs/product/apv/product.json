@@ -28,7 +28,8 @@
           "root": "${var:NSAE_ADOC_ROOT}",
           "main": "${var:NSAE_ADOC_MAIN}"
         }
-      }
+      },
+      "spec_index": true
     },
     "max_rounds": 10,
     "max_reads": 300
@@ -41,12 +42,12 @@
       "id": "manual-literals",
       "field": "command_literals",
       "namespace": "/commands",
-      "match": "longest_prefix",
+      "match": "exact",
       "entry_kind": "definition",
       "normalize": {
-        "lowercase": true,
-        "strip_nul": true,
-        "nfc": true
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
       },
       "source_producers": [
         "manual-apv",
@@ -63,9 +64,9 @@
       "match": "exact",
       "entry_kind": "definition",
       "normalize": {
-        "lowercase": true,
-        "strip_nul": true,
-        "nfc": true
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
       },
       "source_producers": [
         "manual-apv",
@@ -82,7 +83,7 @@
       "entry_kind": "definition",
       "producer": "command-tree",
       "complete": true,
-      "case_sensitive": false
+      "case_sensitive": true
     }
   ],
   "producers": [
@@ -224,6 +225,56 @@
           "source": "case_tree",
           "optional": true
         }
+      }
+    },
+    {
+      "id": "specifications",
+      "title": "产品线不分版本的规格章节",
+      "unversioned": true,
+      "function": {
+        "module": "functions/specifications.ts",
+        "export": "specifications"
+      },
+      "inputs": {
+        "documents": {
+          "source": "spec_documents",
+          "many": true,
+          "batch": 20,
+          "optional": true
+        },
+        "catalog": {
+          "source": "spec_catalog",
+          "optional": true
+        }
+      },
+      "params": {
+        "components": "${var:APV_COMPONENTS}",
+        "licenses": "${var:APV_LICENSES}",
+        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
+      }
+    },
+    {
+      "id": "unversioned-cases",
+      "title": "没有覆盖构建的用例文档",
+      "unversioned": true,
+      "function": {
+        "module": "functions/cases.ts",
+        "export": "cases"
+      },
+      "inputs": {
+        "documents": {
+          "source": "unversioned_case_documents",
+          "many": true,
+          "batch": 40,
+          "optional": true
+        },
+        "folders": {
+          "source": "case_tree",
+          "optional": true
+        }
+      },
+      "params": {
+        "command_phrases": true
       }
     }
   ],

@@ -14,10 +14,13 @@ export type { StoredResult } from './queries.ts';
 // Pure rules, for the console and for other packages' tests.
 export { itemCell, attributionByReason, attributionByRole, isSandboxFailure } from './terminals.ts';
 export type { CellLayer, ItemCell } from './terminals.ts';
-export { modelFamily, sameModelFamily } from './independence.ts';
+export { declaredFamily, independenceGap, independenceOf, warrantIndependence } from './independence.ts';
+export type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 export { slotSchemaOf } from './slots.ts';
 export { canSeeRun } from './readers.ts';
 
 export type { RequestBody, RequestView } from './requests.ts';
 export { createRequestService } from './requests.ts';
 export { isAbandonedResult } from './management.ts';
+
+export { unruledShapes } from './queries.ts';

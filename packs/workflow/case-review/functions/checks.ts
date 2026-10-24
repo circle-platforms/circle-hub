@@ -5,16 +5,17 @@
 //   finding whose cited evidence all resolves into hint sources (historical test lists, A03 R[6]) has no ground for a
 //   statement about the product; a command line it cites without `present` must be one the case writes (lines.ts), else it
 //   is the model's statement and goes back for repair, never a fact about the case;
-// - tags (tagSpelling), over the structure subjects of the run ({ subjects }, subject.ts): a category tag written unlike the
-//   usual spelling of its category in the same document is an inconsistent field format, advisory, named with both spellings.
+// - tags (tagSpelling): exact author resource declarations against the published closed set, advisory.
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { PACK, isRecord } from './common.ts';
+import {declareResourceTags} from './generated/vocabulary.ts';
 import { quotableLines, quotedFromCase } from './lines.ts';
 
 export const HINT_ONLY = `${PACK}.hint_only`;
 export const LOCATION_MISSING = `${PACK}.location_missing`;
 export const QUOTE_MISSING = `${PACK}.quote_missing`;
 export const COMMAND_NOT_IN_CASE = `${PACK}.command_not_in_case`;
+export const NEGATIVE_COMMAND_MISSING = `${PACK}.negative_command_missing`;
 export const TAG_VARIANT = `${PACK}.tag_variant`;
 /** Most outcomes of one call: the slot schema caps findings per item, a run holds at most 100 items. */
 const MAX_OUTCOMES = 1000;
@@ -31,8 +32,7 @@ export function findingSources(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof subject.item === 'string' ? subject.item : undefined;
   const own = item !== undefined ? { item } : {};
-  const slots = isRecord(subject.slots) ? subject.slots : null;
-  if (slots === null) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('这个条目没有提交槽位记录，发现的根据无从核对'), reason: 'missing_input', statement: '这个条目没有提交槽位记录，发现的根据无从核对', grounds: [], tier: 'blocking', ...own }];
+  const slots = isRecord(subject.slots) ? subject.slots : {};
   const roles = new Map<string, unknown>();
   for (const evidence of Array.isArray(subject.evidence) ? subject.evidence : []) {
     if (isRecord(evidence) && typeof evidence.reference === 'string' && evidence.resolved === true) roles.set(evidence.reference, evidence.role);
@@ -86,36 +86,43 @@ export function findingSources(input: unknown): CheckOutcome[] {
   return out;
 }
 
-type Variant = { tag: string; usual: string; category: string };
+/** A negative case must contain a line whose head belongs to the locked catalog. */
+export function negativeCommands(input:unknown):CheckOutcome[] {
+  const raw=isRecord(input)?input:{},subject=isRecord(raw.subject)?raw.subject:{};
+  const own=typeof subject.item==='string'?{item:subject.item}:{};
+  const phrases=Array.isArray(subject.phrases)?subject.phrases.filter((p):p is string=>typeof p==='string'):[];
+  if(subject.negative!==true)return [{verdict:'support',statement:'未声明反向标记，此项不要求非法命令行',grounds:[],tier:'advisory',...own}];
+  const catalog=isRecord(raw.catalog)?raw.catalog:{};
+  if(!Array.isArray(raw.catalog)&&!Array.isArray(catalog.entries))return [{verdict:'unknown',reason:'missing_input',missing:'冻结命令目录；下一步：请集成者选择有命令目录的构建或恢复目录绑定后重开评审',statement:'缺少冻结命令目录；请集成者选择有命令目录的构建或恢复目录绑定后重开评审，不能据此断言用例没有命令',grounds:[],tier:'advisory',...own}];
+  const entries=Array.isArray(raw.catalog)?raw.catalog.filter(isRecord):Array.isArray(catalog.entries)?catalog.entries.filter(isRecord):[];
+  // The owner's rule (10-24): no folding, no prefix heuristics on free text. A line carries a catalog command only
+  // when its leading words equal a locked catalog head word by word (exact match); the longest such head counts.
+  const wordLists=entries.map(entry=>Array.isArray(entry.words)?entry.words.filter((w):w is string=>typeof w==='string'&&w!==''):typeof entry.head==='string'&&entry.head!==''?entry.head.split(' '):[]);
+  const matchesHead=(phrase:string):boolean=>{
+    const words=phrase.split(' ').filter(w=>w!=='');
+    return wordLists.some(head=>head.length>0&&head.length<=words.length&&head.every((word,i)=>words[i]===word));
+  };
+  const found=phrases.filter(matchesHead);
+  return found.length ? [{verdict:'support',statement:'反向用例有目录命令行，参数反驳由目录检查核验',grounds:[],tier:'advisory',...own}]
+    : [{verdict:'refute',code:NEGATIVE_COMMAND_MISSING,statement:'按当前目录的行首解析，反向用例没有可核验命令行；请核对目录范围，将完整非法命令单独成行并写期望反驳后重开评审',grounds:[],tier:'advisory',...own,pointer:'/phrases',data:{path:'/phrases',matched_commands:0,catalog_entries:entries.length,provided_lines:phrases.length}}];
+}
 
-const isVariant = (value: unknown): value is Variant => isRecord(value) && typeof value.tag === 'string' && typeof value.usual === 'string' && typeof value.category === 'string';
-
+/** Literal author-field validation; neither document frequency nor spelling resemblance supplies a declaration. */
 export function tagSpelling(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const subjects = Array.isArray(subject.subjects) ? subject.subjects : [];
-  const out: CheckOutcome[] = [];
-  subjects.forEach((s, i) => {
-    if (!isRecord(s) || out.length >= MAX_OUTCOMES) return;
-    const own = typeof s.id === 'string' && s.id !== '' ? { item: s.id } : {};
-    const grounds = typeof s.location === 'string' ? [s.location] : [];
-    const variants = (Array.isArray(s.tagVariants) ? s.tagVariants : []).filter(isVariant);
-    if (variants.length === 0) {
-      out.push({ verdict: 'support', statement: '标签的写法与本文档同一类别最常用的写法一致', grounds, tier: 'advisory', ...own });
-      return;
+  return subjects.filter(isRecord).slice(0,MAX_OUTCOMES).map((s,i):CheckOutcome=>{
+    const own=typeof s.id==='string'?{item:s.id}:{};
+    const grounds=typeof s.location==='string'?[s.location]:[];
+    const declaration=declareResourceTags(s.resourcePresent===false?undefined:Object.hasOwn(s,'resource')?s.resource:s.tags);
+    if(declaration.issues.length){
+      return {verdict:'refute',code:TAG_VARIANT,tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,
+        statement:`未声明的标签：${declaration.issues.map(issue=>JSON.stringify(issue.raw)).join('、')}；允许的精确原文：${declaration.issues[0].allowed.join('、')}。作者从闭集选择原文修正 resource 后重新核验，不推测应选哪项`,
+        data:{table:declaration.table,issues:declaration.issues}};
     }
-    const named = variants.slice(0, 6).map((v) => `“${v.tag}”（本文档 ${v.category} 类最常用的写法是“${v.usual}”）`);
-    out.push({
-      verdict: 'refute',
-      code: TAG_VARIANT,
-      statement: `标签写法与本文档不一致：${named.join('、')}${variants.length > 6 ? ' 等' : ''}；改成本文档的写法`,
-      grounds,
-      tier: 'advisory',
-      ...own,
-      pointer: `/subjects/${i}/tagVariants`,
-      data: { variants: variants.slice(0, 20) },
-    });
+    if(declaration.status==='undeclared')return {verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action,data:{table:declaration.table,status:declaration.status}};
+    return {verdict:'support',tier:'advisory',...own,grounds,pointer:`/subjects/${i}/resource`,statement:'resource 的标签逐项等于发布闭集声明的原文，测试类型已声明',data:{table:declaration.table,types:declaration.types}};
   });
-  return out;
 }
 
 function total(run: (input: unknown) => CheckOutcome[], name: string, tier: CheckOutcome['tier']): (input: unknown) => unknown {

@@ -33,12 +33,13 @@ export type FacetViewData = {
 export type Fraction = { num: number; den: number };
 
 /** The counts of one (line, module) group, by the definitions of the owner's real-sample measurement. */
-export type GroupCounts = { cases: number; missing: number; vague: number; negative: number };
+export type GroupCounts = { cases: number; missing: number; vague: number; negative: number; negative_denominator?: number; type_unclassified?: number };
 
 /** One group of the board: an item's fields. */
-export type TypeCoverage = { present: string[]; missing: string[]; untagged: number | null; partial: boolean; source: string };
+export type TypeCoverage = { present: string[]; missing: string[]; untagged: number | null; type_undeclared?:number; invalid_source?:boolean; invalid_values?: Array<{raw:string;count:number}>; partial: boolean; source: string };
 
 export type GroupBoard = {
+  quality?: {judged:number;unjudged:number;conflicted:number;sources:string[]};
   coverage?: TypeCoverage;
   line: string | null;
   module: string | null;
@@ -47,7 +48,7 @@ export type GroupBoard = {
   counts: GroupCounts;
   ratios: { missing: Fraction; vague: Fraction; negative: Fraction };
   /** Rounded (4 decimal places) for display only. */
-  display: { missing: number; vague: number; negative: number };
+  display: { missing: number; vague: number | null; negative: number | null };
 };
 
 /** The effective thresholds of a run (the parameters, defaulted). */

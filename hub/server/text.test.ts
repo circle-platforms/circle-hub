@@ -78,9 +78,9 @@ function toySlots(): SlotSchema {
 }
 
 const REQUIREMENTS: RunSummary['requirements'] = [
-  { key: 'structure', name: '结构', description: '结构（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 0 },
-  { key: 'catalog', name: '命令目录', description: '命令目录（合成）', layers: ['static', 'dynamic'], done_rule: 'gating', accepted_producer: 'fact', repair_rounds: 1 },
-  { key: 'findings', name: '发现', description: '发现（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'independent_judgment', repair_rounds: 2 },
+  { key: 'structure', name: '结构', description: '结构（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 0, rules: [], run_interpreters: [] },
+  { key: 'catalog', name: '命令目录', description: '命令目录（合成）', layers: ['static', 'dynamic'], done_rule: 'gating', accepted_producer: 'fact', repair_rounds: 1, rules: [], run_interpreters: [] },
+  { key: 'findings', name: '发现', description: '发现（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'independent_judgment', repair_rounds: 2, rules: [], run_interpreters: [] },
 ];
 const FACTS_ONLY = REQUIREMENTS.filter((r) => r.accepted_producer === 'fact');
 
@@ -405,8 +405,8 @@ describe('start_run text', () => {
       const order = ['规程：', '要求项：', '来源：', '条目（', '槽位模式', '示例 submit_result'].map((head) => indexOf(lines, (l) => l.startsWith(head)));
       assert.ok(order.every((at, i) => at > 2 && (i === 0 || at > order[i - 1])), `the order of the parts: ${order.join(', ')}`);
       assert.equal(lines[order[0] + 1], '# 规程（合成）', 'the procedure as the pack wrote it');
-      assert.ok(lines.includes('- catalog 命令目录：接受的生产者 事实；判定层 静态、动态；门禁型；修复轮数 1'));
-      assert.ok(lines.includes('- findings 发现：接受的生产者 独立判断；判定层 静态（动态：本层不适用）；记账型；修复轮数 2'));
+      assert.ok(lines.includes('- catalog 命令目录：接受的生产者 事实；判定层 静态、动态；门禁型；修复轮数 1；规则 无；运行内表的已裁定解释器 无'));
+      assert.ok(lines.includes('- findings 发现：接受的生产者 独立判断；判定层 静态（动态：本层不适用）；记账型；修复轮数 2；规则 无；运行内表的已裁定解释器 无'));
       assert.ok(lines.includes(`- 被判对象 ${SUBJECT}（输入 map，外部对象 toy:mindmap:docq7@1，application/json，分区浇灌用例）`));
       assert.ok(lines.includes('- 数据缺口：期望来源 toy:broken:offline：对你不可用'), 'a gap is named as a gap');
       const shown = itemIdsOf(text);
@@ -1285,4 +1285,23 @@ test('large function-only structure summaries have real cursor continuation with
    const parsed=JSON.parse(next[1]);assert.equal(parsed.reference,reference);assert.notEqual(parsed.cursor,cursor);cursor=parsed.cursor;
  }
  assert.equal(seen.size,5000);
+});
+
+test('start_run states the rules and ledger interpreters that judge each requirement',()=>{
+ const run=runOf(items(1));
+ run.requirements[0].rules=['range@1'];run.requirements[0].run_interpreters=['structure@1'];
+ const text=toolText('start_run',startAnswer(run));
+ assert.match(text,/规则 range@1/);assert.match(text,/运行内表的已裁定解释器 structure@1/);
+});
+
+test('criterion start notices distinguish pending expired and rejected requests with explicit next actions',()=>{
+ const run=runOf(items(1)),base={item:run.items[0].id,criterion:SUBJECT,assertion:'合成变更',old:'旧判据',new:'新判据',grounds:[{reference:SUBJECT,quote:'合成引文'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:false,expired:false,next_action:'非作者绑定声明和 evidence 开复核'};
+ for(const change of [base,{...base,expired:true},{...base,answered:true,accepted:false,reviewer:base.audience,reason:'合成不同意'}]){run.criterion_changes=[change];const text=toolText('start_run',startAnswer(run));assert.ok(text.includes(change.request));assert.ok(text.includes(change.due));assert.ok(text.includes(change.next_action));if(change.expired)assert.match(text,/已过期.*新修订不带/);if(change.answered)assert.ok(text.includes('合成不同意'));else assert.match(text,/还没有回答|仍等作者以外/);withinBudget(text,'criterion notices');}
+});
+test('criterion result text shows all replacement values and review attribution',()=>{
+ const result=resultOf(items(1)),row=result.partitions.delivered[0];row.replaced_criteria=[{criterion:SUBJECT,old:'合成旧值',new:'合成新值',declaration:'rec:'+H('8')+'#/criterion_changes/0',review:'rec:'+H('7'),reviewer:'usr_'+'1'.repeat(26)}];const text=toolText('submit_result',submitAnswer(result));for(const value of Object.values(row.replaced_criteria[0]))assert.ok(text.includes(value));assert.match(text,/被取代的判据/);
+});
+test('superseded criterion declarations are displayed as replaced rather than unanswered',()=>{
+ const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion:SUBJECT,assertion:'旧声明',old:'旧判据',new:'先前提议',grounds:[{reference:SUBJECT,quote:'合成'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:true,expired:false,superseded_by:'rec:'+H('6'),next_action:'按后一份提交的新请求复核'}] as any;
+ const text=toolText('start_run',startAnswer(run));assert.match(text,/由后一份提交的同名声明取代/);assert.ok(text.includes('rec:'+H('6')));assert.ok(!text.includes('还没有回答'));
 });

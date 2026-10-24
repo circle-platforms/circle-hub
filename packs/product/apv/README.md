@@ -56,7 +56,7 @@ list and release notes `defect`; the finer form stays in
 | `ids.ts` | `idsFromTitle` | document title → `{ stories, bugs, plm, unclassified }` |
 | `cases.ts` | `cases` (product.json) | ProducerInput (documents batch, tree, folders) → ProducerOutput: one `case` entry per (case, resolved command) |
 | `cases-nodes.ts` | `caseNodes` | kityminder@1 model → the case nodes with title, labels above, tags, priority, expected count, steps, vague, autoid |
-| `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
+| `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; a text → the catalog paths of its whole command statements |
 | `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
 | `adoc/index.ts` | `compileAdoc` | `{ main, revision, files, attributes? }` of one manual group on one SVN revision → `{ ok: true, composition, model, report }` (the expanded intermediate model) or `{ ok: false, error }` for the whole group |
 | `adoc/k1-model.ts` | `toK1Model`, `citationFor` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads, each block with its own citation, plus the report lines and the blocks that could not be cited |
@@ -222,12 +222,16 @@ Producers (K02, K04, C07)
   a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
   number with no known head before it stays a command word. Value domains and worked examples become text entries at the
   matching head, else `unplaced`.
-- Release notes: sections whose heading names fixed issues (已修复问题, 修复的问题, 问题修复, 已解决问题, Fixed Issues,
-  Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
-  尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
-  whole words. The module is the child heading or a module column; items are list items, table rows (pipe, grid, HTML) or
-  paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
-  id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
+- Release notes: a section or a block is a defect list only when it declares `status` as exactly `fixed` or `known`.
+  The value is inherited from the nearest ancestor section that declares it. A heading's words are not a status, and a
+  value other than those two is not a status. With no declaration the producer emits no defect entry and names the
+  missing fact and the next step (the release-page author writes `status` before the next production). The module is
+  the child heading under that section, or the cell at a declared `columns.module` index. Items are list items, table
+  rows (pipe, grid, HTML) or paragraphs. A bug id is the whole cell at a declared `columns.bug` index when that cell
+  is the 2–9 digit token from `ids.ts` (`normalizeId`), or a bug marker `idsFromTitle` still reads in list and
+  paragraph text. Header words do not choose a column, and a headerless first cell is not a bug id. `columns.text`
+  and `columns.sequence` are the other declared indexes. The id is stored as `data.bug` (the same id a case lists in
+  `data.defects`). `data.status` is the declared `fixed` or `known`. The names `bug`, `status` and `defects` are
   legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
   for placement), so these defect entries stay unplaced under the root (K01 R[4]). `knowledge:facets` and
   `knowledge:index` count them with the entries hung on the tree, once each, and cite an unplaced entry at the root
@@ -283,21 +287,13 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   case, group priority, holds tagged or case-priority nodes); an untagged node outside every case with the case priority,
   children and none of those below is a case too; a node either rule names is one case. Inside a case, leaves are expected
   results (precondition-priority leaves not), children with children are steps, a case below a case is its own.
-- **Commands** (`cases-commands.ts`): the catalog is the build's command tree read with `produceCommandEntries` (the
-  command-tree producer's own function, so case paths are definition paths). The phrases of the case title and of every
-  label above the case (the mind map's root text included) are found with `commands.ts` `extractCommands`, all distinct
-  texts of a call in one scan (joined by a line no phrase crosses; equal to scanning each alone, tested). A phrase resolves
-  to the longest run of its leading words that is a catalog command, case-insensitive; a word may be a unique prefix of the
-  command word at its place (two letters at least, and at least three when the word is written in capitals, so `AD` and
-  `SH` are acronyms); a command reached through an abbreviation needs two words (an abbreviation alone is no command);
-  the words after a resolved command are arguments unless another command of two words or more starts there. The heads
-  handed to extractCommands include the unique prefixes of first words (not English short words) so that an abbreviated
-  first word is found at all; a `no` phrase the catalog lacks resolves to the command it undoes when that exists. Before
-  extraction each text is folded one unit for one: full-width letters and digits to ASCII, Unicode spaces and zero-width
-  characters to a space, vertical breaks to a line end. Full NFKC is not applied: it would turn full-width punctuation
-  (，：) into ASCII marks that no longer end a phrase. A list number glued to a command (`1.widget`, `2）show`) is blanked
-  out first. A two-letter lower-case prefix still abbreviates an inner word (`de` before `detail`); that is the same rule
-  as `sh` and `end`, and the table locks it. The table is `tests/fixtures/case-index/table.ts`.
+- **Commands** (`cases-commands.ts`): the catalog is the build's command tree. Each distinct text of a call (the case
+  title, every label above the case, and the case body) is read as newline-delimited statements. A statement is one
+  command only when its words are exactly the locked tree's words, in order and in the tree's spelling, and the tokens
+  that follow satisfy that command's declared argument list (`type`, `limit`, `length`, `optional`). Quotes delimit an
+  argument literal. A statement that matches two commands, or that is not a complete command, is not a command: no
+  abbreviation, no unique prefix, no case folding, no leading `no` that undoes another command, and no command lifted
+  out of a sentence. The table is `tests/fixtures/case-index/table.ts`.
 - **Entries**: ONE entry per resolved command, at the command's path, and, when no command resolves, ONE entry with
   `path: null` (the contract's unplaced form; brief 6a.4). The statement is `caseStatement`: every data field, several
   lines, so the entry digest covers what `data` says (K02 R[4]). Data is
@@ -330,6 +326,12 @@ the file table, conditions and attributes, source-line verification, the composi
 refusal. It registers no knowledge producer, changes no sync plan and does not read signatures, value domains or
 `catalog.json`. Step two maps that intermediate model onto K1's document model and runs it once per name family; the
 placement code in `manual.ts` is not changed by it.
+
+A whole-group refusal reads the engine's own structured observations only: a message severity of `ERROR` or `FATAL`, or the
+reader's `unterminated` flag for a delimited block the source never closed (`apv.adoc.engine_parse`). The words of a
+message are quoted back to the author as evidence and name no cause, so a warning whose text happens to say “unterminated
+… block” refuses nothing on its own (owner rule 2026-10-24, sweep A80). `report.engine_messages` keeps every message with
+its severity as before.
 
 ### Input and composition identity
 
@@ -720,10 +722,9 @@ accepted.
 - The functions were also run, outside the repository, on the read-only samples of 2026-10-21 (the index and a listing
   page, a command tree, the CLI manual and its catalog, agile titles and labels); nothing from them is in Git. The case
   index functions were not run on real documents yet (the integrator's `scripts/real/`).
-- Case index: only the title and the labels above a case are scanned for commands (as asked), not its steps or expected
-  results. A case with no resolvable command is still an entry, with an empty path. Abbreviations are unique prefixes of
-  command words (two letters, three when written in capitals); a CLI that accepts other short forms is not covered. A
-  phrase whose first word is no catalog word (`health interval ...` without its context word) is not found.
+- Case index: a case with no resolvable command is still an entry, with an empty path. A command is a whole statement of
+  the locked tree, exact words and declared arguments. An abbreviation or a prefix is not a command, and a statement
+  whose first word is not a catalog word is not a command.
 - Case index: facet and index views count entries hung on the tree and the unplaced rows of the root. An entry with an
   empty path stays under the root, marked unplaced, and is cited there (`tree:<root>/@<digest>`). An entry counts once;
   one that also hangs on a command keeps that path. The facet total includes the unplaced entries and says how many; the
@@ -770,7 +771,7 @@ npx tsc --noEmit
 Case index tests (fixtures in `tests/fixtures/case-index`: the hand-written command table, two invented command trees whose
 difference is known, a synthetic agile platform with the product's two roots and another product's root, 300 mind maps and
 the truth of every document and case, built while the corpus is built): `cases-commands.test.ts` (every table row against
-both trees, abbreviation, `no` and list-number rules, one scan equal to scans of each text, linear on long hostile text),
+both trees, whole-statement grammar, one scan equal to scans of each text, linear on long hostile text),
 `cases-nodes.test.ts` (every case of the corpus with its contents; parity with the case-review projection under the marked
 rule on the review, template, untagged, outline and tiny maps, the 3,000-node map and every corpus document; cycles,
 shared children, invalid indices, depth), `cases-rules.test.ts` (negative tags equal to case-review's on 2,000 spellings,
@@ -965,3 +966,53 @@ ROOT 的三种情形：
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+1.4.4 起，发布说明的 `fixed` / `known` 只认章节或块上声明的 `status`，表的缺陷号、模块、正文和序号只认块上声明的列号。标题和表头文字不再决定状态或列。没有 `status` 时不产出缺陷条目，并写明缺的事实和下一步。清单和段落里的缺陷号仍经 `idsFromTitle` 读取，这一处不在本版范围内。
+
+
+## Command grammar
+
+关键词整改 R4（所有者 2026-10-24；模型 C07 R[7–8]、W05；模型前置 1cb6562d）。本包声明支持的命令树输入为 `apv-command-tree@2`，出处是本节和随本包发布的 `functions/command-tree.ts`。这是版本化的产品语法声明，不是声称所有历史原件都符合；不符合的原件须补证或修订，不容错当作完整目录。
+
+- 容器是未经修复的 `xml@1`：根 `commands`，`scope` 重置菜单路径，`menu[name]` 与 `item[name]` 给出完整词；`item/arguments/arg` 给出按位置排列的重载参数。任何 `irregular` 或 NUL 修复拒绝。XML 属性已经解码，不再二次实体解码。
+- 词以 ASCII SP/HT 分隔，字符及大小写完全相等；命令行以 CR/LF 分隔，节点之间不拼词。单/双引号只界定参数值，允许转义同一引号或反斜杠，不允许换行或 NUL 藏在引号中。散文、编号、提示符、全角写法不擦除、不折叠，不扫描最长匹配。`no`/`clear` 只有树中存在完整路径才成立。参数中的另一条命令只是参数。
+- 类型只按原始 `type` 精确字段和本包的 `ARGUMENT_TYPES` 定义：STRING/XSTRING 为字符串；U16/U32 为对应无符号范围；DOTTEDIP 为 IPv4；IPADDR 为 IPv4/IPv6；IPMASK 为连续点分掩码或 0–128 前缀；HOSTNAME/IP_OR_HOSTNAME 为 contracts 的对应显式类型。help 只保留说明，不能改变类型。所有重载完整消费所有参数；展开或数量上限不转 STRING，给缺口与重产出口。
+- `optional` 精确值为 `YES` 或 `NO`，省略按本语法的 `NO`；空串、大小写变体、yes/y/true/1 等不是别名。未知值是结构违规，不能默认必填。未声明或没有定义的 type 保留原参数位置，不填占位类型；状态取生成的 `type_declaration_status.undeclared`、`command_parse_status.parameters_unchecked`，补证约束交通用检查返回现有 unknown/missing_input。
+- 类型覆盖只按精确 schema=`apv-command-argument-types@1`、origin=`product:apv/README.md#command-grammar` 的发布声明中的原样 command + position；字段不做 trim、大小写或同义归并，不能从 help 推。没有这种来源授权不得做覆盖。limit 只解释本语法声明的完整含端点 `[low - high]`，以及 STRING 上完整 `{value|value}` 的精确成员集（不许空项、重复、嵌套或隐式转义）；未声明约束语法保留未核对，不判已满足。
+- 直接 commands 函数必须收到完整 definitions（words/signatures）；旧 heads 单独不足以证明命令。标题、祖先、步骤及期望用同一个完整解析器，结果路径去重并稳定排序。
+
+手册结构语法为 `apv-manual-signature@2`：完整单行 `**head** *<required> [optional]*` 是候选结构；只有全部精确 head/variant 及参数位置和 optional 结构对上锁定树才产生命令定义。格式本身不证明命令。表的签名列必须是精确机器列标识 `command_signature@2`，不能凭“命令/Command”等自然语言表头或连接词猜列角色。普通代码块每行完整过树后可产生 canonical 命令引用，并保留原始 command_lines；散文强调/引号不抽命令。JSON 过渡输入目前只直接调用可达：head_tokens 是精确身份，params.required 必须是显式布尔；数字或非英文不使签名变示例，例子不找最长前缀。没有锁定树时只保留章节原文和补树出口。AsciiDoc AST 只映射候选结构，语言、粗体和单词外形不能决定命令身份。
+
+新 APV 包 1.5.0 接续基线 1.4.3。旧包生产的根和运行保留，不改原字节；受影响字段为命令定义的 signatures、用例 commands/归位路径、手册 signature_literals/command_literals 及相应回归/巡检计数。旧结果须附生成词表的 `legacy_keyword_rules` 限定；这不是删改原结果。新规则须另产根和运行，并引用旧生产记录的血缘；真实重产和旧结果限定的管理员操作由集成者另行安排，本次仅合成验证，不执行真实迁移。1.5.0 的组成按新包摘要及 grammar 身份区分。
+
+## Product-wide specifications
+
+`spec_index: true` reads `manual:spec-list:configured`. Only files whose filename or WebDAV display title contains a declared product name (NFKC, case-insensitive, ASCII letter boundaries) enter `scope.spec_documents`; other members are counted as 不属于这条产品线 and remain addressable at their original reference. Missing/incomplete directory observations withhold the whole scope so an existing root cannot lose its specifications.
+
+The `specifications` producer runs only with `unversioned: true`. Supported Markdown sections use the existing K1 producer, under `/spec/<resource-relative document path encoded as one segment>/<section path>`, without a command tree. It retains source literals and K02 applicability extraction/inheritance; `data.document_lines` preserves the written version tokens for information only and declares no build. `displayname` is the listing title when WebDAV supplies it; no title is guessed from a filename. Sources in other formats refuse with a conversion/reproduction action.
+
+## Product-wide case documents (step 2)
+
+The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
+
+The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+
+Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
+
+This step raises APV from 1.4.2 to 1.4.3, manual-store from 1.0.3 to 1.0.4 and OpenKM from 1.0.2 to 1.0.3, and re-signs all three manifests.
+
+两条支线各自把 APV 记为 1.4.3 而内容不同（view-scope 一侧的构建时间失败诊断与未打标签说明，这一侧的产品级规格与未覆盖用例），合并后 APV 升为 1.4.4，按合并后的原字节重签（`node packs/product/apv/api.ts sign`）；manual-store 1.0.4 与 OpenKM 1.0.3 两侧不冲突，取较新的一版。
+
+Complete zero selections emit source inventory proofs: specifications cite the bound directory files/complete fields; uncovered cases cite the bound tree documents/complete fields. The core independently verifies both before accepting an empty product-wide root. The composition stores each observed list total and selected=0; sync and reads say “不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）”. An empty selection can clear previously populated scope content; unread/incomplete inventories cannot do so. Specification filenames are percent-encoded when made into external references and decoded for document metadata, so an authored @ never becomes revision syntax.
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
+
+command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:.../xml@1/... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
+
+R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例提交全部期望叶子的逐字引文及判断，由 Hub 核验身份、路径和引文；不可读原件保持未知并补读。quality-board 仅接 Hub 绑定的同根、同原件、已受理且有效的 case-review 记录；重复回执去重，同原件相互冲突的判断单计冲突并留在未判断中，不挑最后一句。含糊率分母仅为已判断数；零分母显示未判断并补评审，不能显示 0% 或判阈值通过。资源类型比例另按精确声明分母计算。旧结果不改写，新版本须重产新根和评审后再开看板。本次续接未运行验证。
+
+R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/defects[].bug/status/text，status 来自生成词表 release_status；complete 必须为 true，构建与冻结构建精确相等。HTML/Markdown 标题、文件角色及数字外形不再补 fixed/known，缺字段给来源维护人补原始 JSON 后重产。可选 version、released、module、system 只读声明，不从正文猜测。
+
+查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，APV 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
+
+主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本次续接未运行验证。

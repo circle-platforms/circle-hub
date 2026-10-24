@@ -3,7 +3,8 @@ import { z } from 'zod';
 import {MissingFact,UnknownExit} from './validation.ts';
 import { TaskOutputValue } from './contributions.ts';
 import type { ItemHandling, Nature } from '../generated/vocabulary.ts';
-import { ItemId, RunId } from './common.ts';
+import { SampleExpectation } from './pack.ts';
+import { ItemId, RunId, Versioned } from './common.ts';
 import { Ground, referenceUriOf } from './reference.ts';
 
 const reason = z.string().regex(/\S/, 'give the reason in words').describe('why the item is skipped (W07 F[2])');
@@ -64,6 +65,18 @@ export const CrossItemJudgment = z.strictObject({
 export const CrossItemSubmission = z.discriminatedUnion('nature', [CrossItemFact, CrossItemJudgment]);
 export type CrossItemSubmission = z.infer<typeof CrossItemSubmission>;
 
+/** W04: inline data interpreted by the Hub, never executable code or a client-built subject. */
+export const RuntimeCheck = z.strictObject({
+  requirement: z.string().min(1),
+  interpreter: Versioned,
+  table: z.json(),
+  samples: z.array(z.strictObject({item: ItemId, expect: z.array(SampleExpectation).min(1)})).max(1000),
+});
+export type RuntimeCheck = z.infer<typeof RuntimeCheck>;
+
+export {CriterionChange} from './criterion.ts';
+import {CriterionChange} from './criterion.ts';
+
 export const Submission = z
   .strictObject({
     run: RunId,
@@ -72,6 +85,8 @@ export const Submission = z
     cross_item: z.array(CrossItemSubmission).optional().describe('claims over several items; optional'),
     notes: z.string().optional(),
     task_outputs: z.array(TaskOutputValue).max(1000).optional(),
+    checks: z.array(RuntimeCheck).max(100).optional(),
+    criterion_changes:z.array(CriterionChange).max(1000).optional(),
   })
   .superRefine((s, ctx) => {
     const first = new Map<string, number>();
@@ -79,6 +94,12 @@ export const Submission = z
       const seen = first.get(entry.item);
       if (seen === undefined) first.set(entry.item, i);
       else ctx.addIssue({ code: 'custom', path: ['items', i, 'item'], message: `item ${entry.item} is already declared at /items/${seen}` });
+    });
+    const criteria=new Set<string>();
+    (s.criterion_changes??[]).forEach((change,index)=>{
+      const key=JSON.stringify([change.item,change.criterion]);
+      if(criteria.has(key))ctx.addIssue({code:'custom',path:['criterion_changes',index,'criterion'],message:'the same item and criterion is already declared'});
+      criteria.add(key);
     });
     (s.cross_item ?? []).forEach((entry, i) => {
       if (entry.nature !== 'judgment') return;

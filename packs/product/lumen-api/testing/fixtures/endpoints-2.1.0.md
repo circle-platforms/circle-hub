@@ -6,26 +6,26 @@
 
 列出池，按名称排序。
 
-| 参数 | 类型 | 取值 |
-| --- | --- | --- |
-| limit | 整数 | 1-100，可选 |
+| name | type | optional | minimum | maximum | minLength | maxLength | values |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| limit | int | true | 1 | 100 | | | |
 
 ## POST /v1/pools
 
 创建一个池。
 
-| 参数 | 类型 | 取值 |
-| --- | --- | --- |
-| name | 字符串 | 1-32 |
-| mode | 枚举 | rr、lc、hash，可选 |
+| name | type | optional | minimum | maximum | minLength | maxLength | values |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| name | string | false | | | 1 | 32 | |
+| mode | enum | true | | | | | ["rr","lc","hash"] |
 
 ## DELETE /v1/pools/{id}
 
 删除一个池；池里还有成员时返回 409。
 
-| 参数 | 类型 | 取值 |
-| --- | --- | --- |
-| force | 枚举 | true、false，可选 |
+| name | type | optional | minimum | maximum | minLength | maxLength | values |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| force | enum | true | | | | | ["true","false"] |
 
 ## GET /v1/health
 

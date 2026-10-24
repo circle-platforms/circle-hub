@@ -1,10 +1,12 @@
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
+import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
+import {identityOf} from './typed-contract.ts';
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
 export interface PlanStep { object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
 export interface PlanExpect { text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
-export interface PlanSlots { bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
+export interface PlanSlots { command_identities?:CommandIdentity[]; bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
 export interface SlotProblem { pointer: string; message: string }
 export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
   const problems: SlotProblem[] = [];
@@ -13,9 +15,10 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   const keys = (raw: Record<string, unknown>, allowed: string[], at: string): void => {
     for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
   };
-  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements'], '');
+  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities'], '');
   if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是台架名');
   if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
+  if(value.command_identities!==undefined&&(!Array.isArray(value.command_identities)||value.command_identities.some(i=>identityOf(i)===null)))issue('/command_identities','必须是 raw 与类型值一致的完整 CommandIdentity 列表');
   const steps: PlanStep[] = [];
   if (!Array.isArray(value.steps) || !value.steps.length) issue('/steps', '步骤必须是非空数组');
   for (const [i, raw] of (Array.isArray(value.steps) ? value.steps : []).entries()) {
@@ -47,5 +50,5 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     if (typeof raw.case !== 'string' || !raw.case || typeof raw.bed !== 'string' || !raw.bed) issue(at, '替换条目必须是 {case, bed} 文字地址');
     else replacements.push({ case: raw.case, bed: raw.bed });
   }
-  return problems.length ? { ok: false, problems } : { ok: true, slots: { bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
+  return problems.length ? { ok: false, problems } : { ok: true, slots: { ...(Array.isArray(value.command_identities)?{command_identities:value.command_identities as CommandIdentity[]}:{}),bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
 }

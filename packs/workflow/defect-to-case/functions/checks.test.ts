@@ -16,6 +16,9 @@ import {
   checkDraftShape,
   checkDuplicate,
   checkGroundedReading,
+  countDuplicateClaims,
+  DUPLICATE_CLAIM_RULE,
+  duplicateClaimCountKey,
 } from './checks.ts';
 import { CODES } from './types.ts';
 
@@ -358,6 +361,33 @@ describe('pack checks', () => {
       assert.equal(outcomes[0].verdict, 'unknown');
       assert.equal(outcomes[0].reason, 'integrity_unproven');
       assert.ok(outcomes[0].statement.includes('3'));
+    });
+
+    it('counts duplicate claims by item, requirement and code when the statement is reworded', () => {
+      const draft = makeDuplicateDraft();
+      const outcomes = checkDuplicate(makeCheckInput({ item: '74001', drafts: [draft], indexed_cases: SYNTHETIC_INDEX_VIEW }));
+      assert.equal(outcomes.length, 1);
+      const claim = outcomes[0];
+      assert.equal(claim.item, '74001');
+      assert.equal(claim.code, CODES.DUPLICATE_CASE);
+      const data = claim.data ?? {};
+      assert.equal(data.requirement, 'not_duplicate');
+      assert.equal(DUPLICATE_CLAIM_RULE, 'defect-to-case.duplicate_claim_identity@1');
+      assert.equal(data.rule_version, DUPLICATE_CLAIM_RULE);
+      const duplicate = data.duplicate_of;
+      assert.ok(duplicate !== null && typeof duplicate === 'object' && !Array.isArray(duplicate));
+      const reference = (duplicate as { reference?: unknown }).reference;
+      assert.equal(typeof reference, 'string');
+      const reworded = { ...claim, statement: '措辞已换，这条主张不再用起草前缀' };
+      const sameWordsOtherItem = { ...claim, item: '74002' };
+      const counts = countDuplicateClaims([claim, reworded, sameWordsOtherItem]);
+      assert.equal(counts.get(duplicateClaimCountKey(claim) ?? ''), 2);
+      assert.equal(counts.get(duplicateClaimCountKey(sameWordsOtherItem) ?? ''), 1);
+      assert.equal(duplicateClaimCountKey(reworded), duplicateClaimCountKey(claim));
+      const prefix = `起草用例“${draft.title}”与已索引用例重复`;
+      const byPrefix = [claim, reworded, sameWordsOtherItem].filter((outcome) => outcome.statement.startsWith(prefix));
+      assert.equal(byPrefix.length, 2);
+      assert.equal(byPrefix.some((outcome) => outcome.statement === reworded.statement), false);
     });
   });
 });

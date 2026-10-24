@@ -120,7 +120,31 @@ export class FakeExternal implements ExternalReaderPort {
   }
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);
-    const object = this.objects.get(id);
+    let object = this.objects.get(id);
+    let revision = '1';
+    if (id.startsWith('knowledge:index:')) {
+      const pinned = /@([a-f0-9]{64})$/.exec(id);
+      const bare = pinned ? id.slice(0, -65) : id;
+      const base = bare.split('?')[0];
+      const source = this.objects.get(bare) ?? [...this.objects].find(([key]) => key.split('?')[0] === base)?.[1];
+      if (source) {
+        const view = JSON.parse(new TextDecoder().decode(source.bytes));
+        revision = view.build.root;
+        if (pinned && pinned[1] !== revision) return { ok: false, id, reason: 'synthetic pinned root is unavailable' };
+        const query = new Map((bare.split('?')[1] ?? '').split('&').map(part => { const at = part.indexOf('='); return [part.slice(0, at), part.slice(at + 1)]; }));
+        const only = query.get('only')?.split(',').map(decodeURIComponent);
+        if (only) { view.only = [...new Set(only)].sort(); view.keys = Object.fromEntries(Object.entries(view.keys).filter(([key]) => only.includes(key))); }
+        const hashes = new Set(Object.values(view.keys).flat());
+        view.entries = Object.fromEntries(Object.entries(view.entries).filter(([key]) => hashes.has(key)));
+        const fields = query.get('fields')?.split(',').map(decodeURIComponent);
+        if (fields) {
+          view.fields = fields;
+          for (const entry of Object.values(view.entries) as Array<{data:Record<string,unknown>;statement:string}>) { entry.data = Object.fromEntries(Object.entries(entry.data).filter(([key]) => fields.includes(key))); entry.statement = ''; }
+        }
+        view.cut_keys = [];
+        object = { bytes: Buffer.from(JSON.stringify(view)), mediaType: 'application/json' };
+      }
+    }
     if (object === undefined) return { ok: false, id, reason: `synthetic system answered “not found” for ${id}` };
     const visibility = { readers: [context.principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array, mediaType: string, name: string) =>
@@ -140,7 +164,7 @@ export class FakeExternal implements ExternalReaderPort {
         artifact: await ingest(new TextEncoder().encode(JSON.stringify(object.meta)), 'application/json', `${id} meta`),
       });
     }
-    return { ok: true, id, revision: '1', artifacts, manifest: 'synthetic' };
+    return { ok: true, id, revision, artifacts, manifest: sha('synthetic read manifest') };
   }
 }
 

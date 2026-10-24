@@ -10,6 +10,7 @@
         "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
         "fields": {
           "bug": "71011",
+          "identity": "71011",
           "ids": [
             "71011"
           ],
@@ -45,6 +46,7 @@
         "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54",
         "fields": {
           "bug": "71012",
+          "identity": "71012",
           "ids": [
             "71012"
           ],

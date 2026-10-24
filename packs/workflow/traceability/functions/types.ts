@@ -50,12 +50,17 @@ export type CaseRef = {
   reference: string;
   /** The raw defect ids the case entry carries (data.defects), sorted; the check re-verifies the join against them. */
   defects: string[];
+  system?: string | null;
   /** Entry digest. */
   entry: string;
 };
 
 /** One defect of the build and the cases that name it: an item's fields. */
 export type MatrixRow = {
+  identity?: string;
+  collision_systems?: string[];
+  collision_references?: string[];
+  ambiguous_cases?: CaseRef[];
   /** The normalised bug id (the item id). */
   bug: string;
   /** The raw keys of the defect view this bug was listed under, sorted. */
@@ -71,8 +76,8 @@ export type MatrixRow = {
   digests: string[];
   /** The cases carrying the bug, sorted by (case, document, reference). */
   cases: CaseRef[];
-  /** The distinct systems the defect entries name (data.system of the producer, sorted); the join is by number alone,
-   * so a number two systems share is one row and the summary says the collision is possible. Empty when unknown. */
+  /** The distinct systems the defect entries name (data.system of the producer, sorted); the current row belongs to one system.
+   * Cross-system collisions are listed separately in collision_systems. Empty when unspecified. */
   systems: string[];
 };
 

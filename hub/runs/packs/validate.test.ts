@@ -447,6 +447,27 @@ test('core emitter usage follows the configured contribution requirement rather 
   assert.ok(catalog.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'&&warning.message.includes('解释器')));
 });
 
+function narrowedPack(): PackDescription {
+  let pack = editJson<Json>(workflowPack(), 'workflow.json', f => {
+    f.inputs.push({ slot: 'lookup', role: 'expected', description: '索引视图', accepts: ['knowledge:index'], required: true, many: false });
+  });
+  return editJson<Json>(pack, 'checks.json', f => {
+    f.checks[0].applies = 'item';
+    f.checks[0].reads = { roles: ['expected'], types: ['knowledge:index'], narrow: { slot: 'lookup', key_path: '/keys', into: '/lookup', max_keys: 10, max_entries: 100 } };
+  });
+}
+test('publishes an optional item-key bounded index read', async () => { await accepted(narrowedPack()); });
+for (const [name, edit] of [
+  ['run', (f: Json) => { f.checks[0].applies = 'run'; }],
+  ['slot', (f: Json) => { f.checks[0].reads.narrow.slot = 'absent'; }],
+  ['role', (f: Json) => { f.checks[0].reads.roles = ['subject']; }],
+  ['type', (f: Json) => { f.checks[0].reads.types = ['toy:document']; }],
+] as const) {
+  test(`refuses narrowed reads without an exact item/index binding: ${name}`, async () => {
+    await refused(editJson<Json>(narrowedPack(), 'checks.json', edit), 'checks.narrow_binding', { file: 'checks.json' });
+  });
+}
+
 test('reason selectors remain typed causes rather than installed-interpreter codes',async()=>{
   const result=await accepted(requirements(value=>{value.requirements[0].error_handling.unshift({reason:'timeout',action:'repair',max_rounds:2});}));
   assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
@@ -527,4 +548,34 @@ test('variable declaration diagnostics explain allowed reference positions in Ch
 test('variable declaration diagnostics explain unused declarations in Chinese',async()=>{
  const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{delete p.producers[0].params;}),'product.shape');
  assert.match(p.message,/DEMO_OPTIONS.*声明了却没有引用/);
+});
+
+test('ledger shapes require a declared runtime table, an installed interpreter and a unique shape', async () => {
+  const row = { requirement: 'titles', interpreter: 'structure@1', ruled_in: '10.6.0' };
+  const ledger = (rows: unknown[]) => ({ 'ledger.json': JSON.stringify({schema:'ledger@1', shapes:rows}) });
+  const enabled = editJson<Json>(base, 'requirements.json', f => {f.requirements[0].run_table = true;});
+  await accepted(withFiles(enabled, ledger([row])));
+  await refused(withFiles(base, ledger([row])), 'ledger.run_table');
+  await refused(withFiles(enabled, ledger([{...row, requirement:'absent'}])), 'ledger.requirement');
+  await refused(withFiles(enabled, ledger([{...row, interpreter:'absent@1'}])), 'ledger.interpreter');
+  await refused(withFiles(enabled, ledger([row,row])), 'ledger.duplicate');
+  await refused(withFiles(enabled, ledger([{...row, from:'src:not-a-record'}])), 'ledger.shape');
+  const empty = await accepted(enabled);
+  assert.ok(empty.pack.warnings.some(w=>w.rule==='ledger.unruled'));
+  assert.deepEqual((await accepted(base)).pack.warnings, []);
+});
+
+test('read-only predecessor publication requires every requirement to be independently checked',async()=>{
+ await refused(workflow(f=>{f.predecessor_access='view';}),'workflow.predecessor_access',{field:'/predecessor_access'});
+});
+test('criterion review publication requires an account-verified single requirement and read-only predecessor',async()=>{
+ await refused(workflow(f=>{f.criterion_review=true;}),'workflow.criterion_review',{field:'/criterion_review'});
+});
+
+test('read-only review publication forbids the declared predecessor result default',async()=>{
+ const {readFile}=await import('node:fs/promises'),root=new URL('../../../packs/workflow/criterion-review/',import.meta.url);
+ const manifest=JSON.parse(await readFile(new URL('pack.json',root),'utf8')),files:PackDescription['files']={};for(const file of manifest.files)files[file.path]=await readFile(new URL(file.path,root));
+ const review:PackDescription={...manifest,files};await accepted(review);
+ const defaulted=editJson<Json>(review,'workflow.json',file=>{file.inputs[0].default_from_predecessor={pack:'synthetic-author'};});
+ await refused(defaulted,'workflow.predecessor_default',{file:'workflow.json',field:'/inputs'});
 });

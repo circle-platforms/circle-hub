@@ -1,9 +1,11 @@
+import {declareResourceTags} from './generated/vocabulary.ts';
+export {declareResourceTags as tagDeclaration} from './generated/vocabulary.ts';
 // Pack data of the case index (product knowledge and the team's conventions; pure constants and small pure helpers):
 // - the external ids and build roles the sync plan and the case producer share;
 // - the case rule of the team's test mind maps, as the case-review workflow pack's projection reads them (its defaults:
 //   case priority 2, group priority 1, precondition priority 3); a case is a node the tagged rule or the marked rule names;
-// - the tag spellings that make a case negative (case-review tags.ts; a test keeps both equal);
-// - the expected-result phrases that say nothing checkable (vague_expected).
+// - exact author-declared test types; spelling recovery is forbidden;
+// Expected quality is a client judgment, never a producer text match.
 
 /** Build role of the case documents (a list of agile:case ids) and of the agile tree they were located in. */
 export const CASE_DOCUMENTS_ROLE = 'case_documents';
@@ -29,22 +31,6 @@ export const CASE_RULE = { casePriority: 2, groupPriority: 1, preconditionPriori
 
 // ---------------------------------------------------------------- tags (case-review tags.ts, copied: packs cannot import each other)
 
-const CATEGORIES = ['Functional', 'Configuration', 'Integration', 'Compatibility', 'Negative', 'Stress'] as const;
-type Category = (typeof CATEGORIES)[number];
-const SPELLINGS: Readonly<Record<Category, readonly string[]>> = {
-  Functional: ['functional', 'function', 'functions', 'functionality', 'func', '功能', '功能性', '基本功能'],
-  Configuration: ['configuration', 'configurations', 'config', 'configs', 'configure', 'cfg', '配置'],
-  Integration: ['integration', 'integrations', 'integrated', 'integrate', '集成'],
-  Compatibility: ['compatibility', 'compatible', 'compat', '兼容', '兼容性'],
-  Negative: ['negative', 'neg', '负向', '负面', '反向', '逆向', '异常'],
-  Stress: ['stress', 'pressure', '压力', '压测'],
-};
-const BY_KEY = new Map<string, Category>();
-for (const category of CATEGORIES) for (const key of SPELLINGS[category]) BY_KEY.set(key, category);
-const EDGE = new Set([...'[]【】()（）{}<>《》「」『』"\'“”‘’`#*.,;:!?。，；：！？、']);
-const SUFFIXES = ['测试用例', 'testing', 'tests', 'cases', '测试', '用例', 'test', 'case'];
-const MAX_TAG = 200;
-
 /** Unicode White_Space (the set of case-review text.ts): every run becomes one space, both ends trimmed. */
 function isWhiteSpace(code: number): boolean {
   if (code <= 0x20) return code === 0x20 || (code >= 0x09 && code <= 0x0d);
@@ -66,35 +52,11 @@ function collapse(text: string): string {
   return out;
 }
 
-/** The folded tag the spellings are matched in (case-review tagKey). */
-export function tagKey(raw: string): string {
-  const chars = [...collapse(raw.normalize('NFKC')).toLowerCase()];
-  let start = 0;
-  let end = chars.length;
-  while (start < end && (EDGE.has(chars[start]) || chars[start] === ' ')) start += 1;
-  while (end > start && (EDGE.has(chars[end - 1]) || chars[end - 1] === ' ')) end -= 1;
-  return chars.slice(start, end).join('').replace(/[\s\-_]+/g, '');
-}
+/** Literal identity only; kept for callers until the generated field contract is connected. */
+export function tagKey(raw: string): string { return raw; }
 
-function categoryOf(tag: string): Category | null {
-  if (tag === '' || tag.length > MAX_TAG) return null;
-  const key = tagKey(tag);
-  const direct = BY_KEY.get(key);
-  if (direct !== undefined) return direct;
-  for (const suffix of SUFFIXES) {
-    if (key.length > suffix.length && key.endsWith(suffix)) {
-      const stripped = BY_KEY.get(key.slice(0, -suffix.length));
-      if (stripped !== undefined) return stripped;
-    }
-  }
-  return null;
-}
-
-/** Negative exactly when a tag names the Negative category; null when no tag is written (an untagged case). */
-export function negativeOf(tags: readonly string[]): boolean | null {
-  if (!tags.some((tag) => !isBlank(tag))) return null;
-  return tags.some((tag) => categoryOf(tag) === 'Negative');
-}
+/** Test polarity is known only from a valid, complete resource declaration containing a test type. */
+export function negativeOf(tags:unknown):boolean|null {return declareResourceTags(tags).negative;}
 
 /** No character outside Unicode White_Space. */
 export function isBlank(text: string): boolean {
@@ -102,59 +64,5 @@ export function isBlank(text: string): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------- vague expected results
+// Expected quality is not computed in the product producer.
 
-/**
- * Expected results that state no observable outcome (author-written from the phrases test lists use for "it works"; the
- * case-review tables hold no such list yet, see README). Matched whole, after VagueKey's folding.
- */
-export const VAGUE_EXPECTED: readonly string[] = [
-  '正常',
-  '成功',
-  '通过',
-  '正确',
-  '无异常',
-  '没有异常',
-  '符合预期',
-  '与预期一致',
-  '同预期',
-  '结果正确',
-  '结果正常',
-  '显示正确',
-  '显示正常',
-  '功能正常',
-  '运行正常',
-  '工作正常',
-  '设备正常',
-  '系统正常',
-  '操作成功',
-  '执行成功',
-  '配置成功',
-  '设置成功',
-  '生效',
-  '配置生效',
-  '功能生效',
-  'ok',
-  'pass',
-  'passed',
-  'success',
-  'normal',
-  'as expected',
-];
-
-/** The folded form vague phrases are compared in: NFKC, lower case, no white space, no punctuation at either end. */
-export function vagueKey(text: string): string {
-  const chars = [...text.normalize('NFKC').toLowerCase().replace(/\s+/gu, '')];
-  let start = 0;
-  let end = chars.length;
-  while (start < end && EDGE.has(chars[start])) start += 1;
-  while (end > start && (EDGE.has(chars[end - 1]) || chars[end - 1] === '~' || chars[end - 1] === '～')) end -= 1;
-  return chars.slice(start, end).join('');
-}
-
-const VAGUE_KEYS = new Set(VAGUE_EXPECTED.map(vagueKey));
-
-/** True when the text, folded, is one of the vague phrases. */
-export function isVague(text: string): boolean {
-  return VAGUE_KEYS.has(vagueKey(text));
-}

@@ -28,7 +28,7 @@ function subjectOf(defects: ReturnType<typeof defectEntry>[], cases: ReturnType<
 }
 
 const byItem = (outcomes: CheckOutcome[], id: string): CheckOutcome => {
-  const found = outcomes.find((o) => o.item === id);
+  const found = outcomes.find((o) => o.item === id || (o.data as {bug?:string}|undefined)?.bug === id);
   assert.ok(found, `an outcome for ${id}`);
   return found;
 };
@@ -68,15 +68,9 @@ describe('traceOutcomes', () => {
     assert.equal((outcome.data as { cases: unknown[] }).cases.length, 0);
   });
 
-  it('a bug of two systems: the statement carries the systems and the collision note, data.systems lists them', () => {
-    const plm = defectEntry({ bug: '7030', system: 'plm' });
-    const bz = defectEntry({ bug: '7030', system: 'bugzilla' });
-    const kase = caseEntry({ defects: ['7030'], case: 'C-s' });
-    const outcomes = traceOutcomes(subjectOf([plm, bz], [kase]));
-    const outcome = byItem(outcomes, '7030');
-    assert.equal(outcome.verdict, 'support');
-    assert.match(outcome.statement, /系统 bugzilla、plm（两个系统的缺陷号可能撞号）/);
-    assert.deepEqual((outcome.data as { systems: string[] }).systems, ['bugzilla', 'plm']);
+  it('named-system collisions are definite advisory refutations on separate identities',()=>{
+    const outcomes=traceOutcomes(subjectOf([defectEntry({bug:'7030',system:'plm'}),defectEntry({bug:'7030',system:'bugzilla'})],[caseEntry({defects:['7030'],case:'C-s'})]));
+    assert.equal(outcomes.length,2);for(const outcome of outcomes){assert.equal(outcome.verdict,'refute');assert.equal(outcome.code,'traceability.id_collision');assert.match(outcome.statement,/撞号.*补.*系统/);}
   });
 
   it('the unknown reason says how many listed sources were not read, and whether the index view was cut', () => {
@@ -273,10 +267,10 @@ describe('traceOutcomes', () => {
       const defect = defectEntry({ bug: '7044', system: 'bugzilla' });
       const outcome = byItem(traceOutcomes(subjectOf([defect], [])), '7044');
       assert.equal(outcome.verdict, 'unknown');
-      assert.match(outcome.statement, /缺陷 7044（发布说明：已修复；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询））：没有已索引的用例标出缺陷 7044/);
+      assert.match(outcome.statement, /缺陷 7044（发布说明：已修复；状态未读：系统未接入（bugzilla））：没有已索引的用例标出缺陷 7044/);
       const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
       assert.equal(data.defect_system_status, null);
-      assert.equal(data.defect_system_unknown_reason, '系统为 bugzilla，不从 PLM 查询');
+      assert.equal(data.defect_system_unknown_reason, null);assert.match(outcome.statement,/状态未读：系统未接入/);
       assert.equal(data.closed, false);
     });
 
@@ -397,4 +391,9 @@ describe('traceOutcomes', () => {
       assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
     });
   });
+});
+
+it('ambiguous case systems are named rather than hidden as an untraced absence',()=>{
+ const rows=traceOutcomes(subjectOf([defectEntry({bug:'7092',system:'plm'}),defectEntry({bug:'7092',system:'unknown'})],[caseEntry({defects:['7092'],case:'C-ambiguous-origin'})]));
+ for(const row of rows){assert.equal(row.verdict,'unknown');assert.match(row.statement,/集成者.*补取.*系统/);assert.equal((row.data?.ambiguous_cases as unknown[]).length,1);}
 });

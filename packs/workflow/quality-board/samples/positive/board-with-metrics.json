@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/SSL",
-        "location": "src:65e8c215a1d2e8f60a983f8e616f32b38393da604dd6a19bdccc6f19ffc7b0dd/json@1/p/rows",
+        "location": "src:dfc01a3b6e5d00253dccd32e32e9c714cb841744ddefa08b490ccf2890257290/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "SSL",
@@ -15,8 +15,14 @@
           "counts": {
             "cases": 20,
             "missing": 1,
-            "vague": 1,
+            "vague": 0,
             "negative": 1
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 20,
+            "conflicted": 0,
+            "sources": []
           },
           "ratios": {
             "missing": {
@@ -24,8 +30,8 @@
               "den": 20
             },
             "vague": {
-              "num": 1,
-              "den": 20
+              "num": 0,
+              "den": 0
             },
             "negative": {
               "num": 1,
@@ -34,7 +40,7 @@
           },
           "display": {
             "missing": 0.05,
-            "vague": 0.05,
+            "vague": null,
             "negative": 0.05
           }
         }
@@ -51,7 +57,7 @@
         {
           "placement": {
             "unplaced": 0,
-            "source": "src:087d7967f01de7cea1e5b0b210f6674e9ae33aabd3ef6fd7615dc9202be3c288",
+            "source": "src:7a4ab396679963e7ae543d748f9a235c02445f669071a3fe925980cc9f46c447",
             "skipped": 0,
             "truncated": false
           },
@@ -59,7 +65,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:65e8c215a1d2e8f60a983f8e616f32b38393da604dd6a19bdccc6f19ffc7b0dd",
+            "source": "src:dfc01a3b6e5d00253dccd32e32e9c714cb841744ddefa08b490ccf2890257290",
             "total": 20,
             "truncated": false,
             "skipped": 0,

@@ -189,11 +189,11 @@ function writtenOutcome(item: string, grounds: string[], pointer: string, name: 
     };
   }
   return {
-    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`知识库不认识写出的构建名 ${name}（知识库只收录构建站列出的构建；不认识不等于写错）`),
-    reason: 'missing_input',
-    statement: `知识库不认识写出的构建名 ${name}（知识库只收录构建站列出的构建；不认识不等于写错）`,
+    verdict: 'refute',
+    code: 'case-location.build_not_listed',
+    statement: `构建站没有列出写出的构建名 ${name}（本次运行冻结的构建清单只收录构建站列出的构建；不认识不等于写错）`,
     grounds,
-    tier: TIER,
+    tier: 'advisory',
     item,
     pointer,
     data,

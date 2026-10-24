@@ -1,3 +1,4 @@
+import {labelOf} from './generated/vocabulary.ts';
 // The producers of the product (product@1 producers, ProducerInput -> ProducerOutput). The Hub reads each source, parses it
 // with the core parser for its media type and hands the model in by slot; the entries point back into it by parser and
 // selector (and slot, for a producer with several inputs). Entry kinds are K02 R[3]'s: the command tree gives definitions,
@@ -11,14 +12,13 @@
 //   verified placement proposals is an owner decision, K04 R[6]), applicable to the build
 import type { ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
-import { produceCommandEntries } from './command-tree.ts';
-import { fixedBugEntries } from './fixed-bugs.ts';
+import { produceCommandEntries, bindCommandSource } from './command-tree.ts';
 import { ApplicabilitySourceError,produceManualEntries } from './manual.ts';
 import { produceReleaseEntries } from './release-notes.ts';
 import type { CommandTreeParams, FragmentRef, MarkdownModel, ProducedEntry, Unplaced, XmlModel } from './types.ts';
 import { internalError, isRecord } from './util.ts';
 
-type Slot = { parser?: unknown; model?: unknown } | null | undefined;
+type Slot = { sha256?:unknown; parser?: unknown; model?: unknown } | null | undefined;
 
 function slotOf(input: unknown, name: string): Slot {
   const slots = isRecord(input) && isRecord(input.slots) ? input.slots : {};
@@ -44,29 +44,15 @@ export function commandTree(input: unknown): ProducerOutput {
     if (slot === null || slot === undefined) return empty('没有命令树');
     if (slot.parser !== 'xml@1') return empty(`命令树不是 XML（解析器 ${String(slot.parser)}）`);
     const out = produceCommandEntries(slot.model as XmlModel, paramsOf(input) as CommandTreeParams);
-    // The catalog's per-argument notes (optional 取值认不出…) can number in the hundreds; one per site fills the
-    // capped warning list ahead of the structural facts. Aggregate each repeated note into one line with its count
-    // (closure finding 10); unique warnings keep their own lines in first-seen order.
-    const seen = new Map<string, { index: number; count: number }>();
-    const aggregated: string[] = [];
-    for (const warning of out.warnings) {
-      // The KIND of note alone decides the fold (c3 item 8): site, parameter name and unread value are all stripped,
-      // so 210 distinct unreadable values still fold into one line and the drift warning stays inside the capped
-      // list. The kept line names the first site and example; the count covers every occurrence.
-      const key = /optional 取值/u.test(warning) ? 'optional'
-        : /limit/u.test(warning) ? 'limit'
-          : /length/u.test(warning) ? 'length'
-            : warning;
-      const at = seen.get(key);
-      if (at === undefined) {
-        seen.set(key, { index: aggregated.length, count: 1 });
-        aggregated.push(warning);
-      } else {
-        at.count += 1;
-        aggregated[at.index] = `${aggregated[at.index]!.replace(/（同类 [0-9]+ 处）$/, '')}（同类 ${at.count} 处）`;
-      }
+    // Group only source/schema attributes and generated states; warning text is never parsed.
+    const groups=new Map<string,{diagnostic:NonNullable<typeof out.diagnostics>[number];count:number}>();
+    for(const diagnostic of out.diagnostics??[]){
+      const key=JSON.stringify([diagnostic.attribute,diagnostic.type_declaration_status,diagnostic.command_parse_status,diagnostic.syntax_valid]);
+      const held=groups.get(key);if(held)held.count++;else groups.set(key,{diagnostic,count:1});
     }
-    return { entries: out.entries as ProducedEntry[], warnings: aggregated };
+    const summaries=[...groups.values()].map(({diagnostic:d,count})=>`${d.attribute}：${labelOf('type_declaration_status',d.type_declaration_status)}；${labelOf('command_parse_status',d.command_parse_status)}（${count} 处）；缺失事实：${d.missing}；下一步：${d.next_action}；由 ${d.audience} 在 ${d.due} 完成`);
+    return {...out,entries:isRecord(slot)&&typeof slot.sha256==='string'?bindCommandSource(out.entries as ProducedEntry[],slot.sha256):out.entries as ProducedEntry[],warnings:[...new Set([...summaries,...out.warnings])]};
+
   } catch (error) {
     return empty(internalError(error));
   }
@@ -143,13 +129,11 @@ export function releaseNotes(input: unknown): ProducerOutput {
     const slot = slotOf(input, 'notes');
     if (slot === null || slot === undefined) return empty('没有修复缺陷清单');
     const build = buildName(input);
-    if (slot.parser === 'html@1') return fixedBugEntries(slot.model, build);
-    if (slot.parser === 'markdown@1') {
-      const out = produceReleaseEntries(slot.model as MarkdownModel);
-      const entries = out.entries.map((entry) => (build !== null && out.build === null ? { ...entry, applicability: { builds: [build] } } : entry));
-      return { entries, warnings: out.warnings };
+    if(slot.parser==='json@1'){
+      const out=produceReleaseEntries(slot.model,build);
+      return {entries:out.entries,warnings:out.warnings,grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};
     }
-    return empty(`修复缺陷清单的格式读不了（解析器 ${String(slot.parser)}）`);
+    return {entries:[],warnings:['缺 release-notes@2 结构化发布状态；下一步发布页或缺陷系统维护者补原始 JSON status 字段，重读并重产；不从 HTML/Markdown 补 fixed/known'],grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:false}};
   } catch (error) {
     return empty(internalError(error));
   }

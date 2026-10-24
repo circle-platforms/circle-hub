@@ -1,7 +1,4 @@
-// RFC 8785 JSON Canonicalization Scheme (JCS). Input is JSON data: null, booleans, finite numbers, well-formed strings,
-// arrays and plain objects. Numbers and strings use ECMAScript JSON.stringify serialization, which is what RFC 8785 specifies;
-// object members are sorted by the UTF-16 code units of their names.
-
+// RFC 8785 canonical JSON. A bounded sink avoids retaining a serialized string for every subtree.
 export class CanonicalizationError extends TypeError {
   readonly path: string;
   constructor(message: string, path: string) {
@@ -12,70 +9,125 @@ export class CanonicalizationError extends TypeError {
 }
 
 const MAX_DEPTH = 1000;
+const CHUNK_CHARS = 32 * 1024;
 
-/**
- * Canonical JSON text of `value`. Object members whose value is `undefined` are omitted (as JSON.stringify does);
- * everything else that is not JSON data is refused: NaN and infinities, lone surrogates, `undefined` or holes in arrays,
- * bigint, functions, symbols, cycles and objects that are not plain (Date, Map, Buffer, class instances).
- */
+/** Strict JCS text. Undefined object members are omitted; other non-JSON data is refused. */
 export function canonicalize(value: unknown): string {
-  return write(value, '', 0, new Set<object>());
+  return createCanonicalEncoder().text(value);
 }
 
+/** Strict JCS UTF-8 without a whole-answer intermediate string. */
 export function canonicalBytes(value: unknown): Uint8Array {
-  return Buffer.from(canonicalize(value), 'utf8');
+  return createCanonicalEncoder().bytes(value);
 }
 
-function pointer(path: string, key: string | number): string {
-  return `${path}/${String(key).replaceAll('~', '~0').replaceAll('/', '~1')}`;
+/** Exact size with the same validation, without allocating the serialized answer. */
+export function canonicalByteLength(value: unknown): number {
+  return createCanonicalEncoder().size(value);
 }
 
-function write(value: unknown, path: string, depth: number, stack: Set<object>): string {
-  if (value === null) return 'null';
+/** Reuse traversal scratch space and a bounded member-name cache within one synchronous operation. */
+export function createCanonicalEncoder(): { text(value: unknown): string; bytes(value: unknown): Uint8Array; size(value: unknown): number; } {
+  const stack: object[] = [];
+  const path: Array<string | number> = [];
+  const keys = new Map<string, string>();
+  const strings: string[] = [];
+  const buffers: Buffer[] = [];
+  let pending = '';
+  let length = 0;
+  let mode: 'text' | 'bytes' | 'size' = 'text';
+  let active = false;
+  const fail = (message: string): never => {
+    throw new CanonicalizationError(message, path.map(key => '/' + String(key).replace(/~/g, '~0').replace(/\//g, '~1')).join(''));
+  };
+  const flush = (): void => {
+    if (!pending) return;
+    if (mode === 'text') strings.push(pending);
+    else {
+      const bytes = Buffer.from(pending, 'utf8');
+      buffers.push(bytes);
+      length += bytes.length;
+    }
+    pending = '';
+  };
+  const emit = (text: string): void => {
+    if (mode === 'size') { length += Buffer.byteLength(text, 'utf8'); return; }
+    pending += text;
+    if (pending.length >= CHUNK_CHARS) flush();
+  };
+  const visit = (value: unknown, depth: number): void => {
+    if (value === null) { emit('null'); return; }
   switch (typeof value) {
-    case 'boolean':
-      return value ? 'true' : 'false';
+      case 'boolean': emit(value ? 'true' : 'false'); return;
     case 'number':
-      if (!Number.isFinite(value)) throw new CanonicalizationError('non-finite number', path);
-      // JSON.stringify gives the shortest round-trip form and serializes -0 as 0 (RFC 8785 section 3.2.2.3).
-      return JSON.stringify(value);
+        if (!Number.isFinite(value)) fail('non-finite number');
+        emit(JSON.stringify(value)); return;
     case 'string':
-      if (!value.isWellFormed()) throw new CanonicalizationError('string with a lone surrogate', path);
-      return JSON.stringify(value);
-    case 'object':
-      break;
-    default:
-      throw new CanonicalizationError(`unsupported ${typeof value} value`, path);
+        if (!value.isWellFormed()) fail('string with a lone surrogate');
+        emit(JSON.stringify(value)); return;
+      case 'object': break;
+      default: fail(`unsupported ${typeof value} value`);
   }
-  if (depth >= MAX_DEPTH) throw new CanonicalizationError('nesting deeper than 1000 levels', path);
+    if (depth >= MAX_DEPTH) fail('nesting deeper than 1000 levels');
   const object = value as object;
-  if (stack.has(object)) throw new CanonicalizationError('cyclic structure', path);
-  stack.add(object);
+    if (stack.includes(object)) fail('cyclic structure');
+    stack.push(object);
   try {
     if (Array.isArray(object)) {
-      const items: string[] = [];
-      for (let index = 0; index < object.length; index++) {
-        if (!(index in object) || object[index] === undefined) {
-          throw new CanonicalizationError('undefined array element', pointer(path, index));
+        emit('[');
+        for (let i = 0; i < object.length; i++) {
+          path.push(i);
+          if (!(i in object) || object[i] === undefined) fail('undefined array element');
+          if (i) emit(',');
+          visit(object[i], depth + 1);
+          path.pop();
         }
-        items.push(write(object[index], pointer(path, index), depth + 1, stack));
-      }
-      return `[${items.join(',')}]`;
+        emit(']'); return;
     }
     const prototype = Object.getPrototypeOf(object);
-    if (prototype !== Object.prototype && prototype !== null) throw new CanonicalizationError('not a plain object', path);
+      if (prototype !== Object.prototype && prototype !== null) fail('not a plain object');
     const record = object as Record<string, unknown>;
-    // Default sort compares UTF-16 code units, which is the order RFC 8785 section 3.2.3 requires.
-    const keys = Object.keys(record).sort();
-    const members: string[] = [];
-    for (const key of keys) {
+      let comma = false;
+      emit('{');
+      const names = Object.keys(record);
+      // V8's general Array.sort allocates a sort state even for a three-field projected entry.
+      // Insertion sort has the same UTF-16 order and no scratch allocation for these small objects.
+      if (names.length <= 16) {
+        for (let i = 1; i < names.length; i++) {
+          const name = names[i]; let j = i;
+          while (j > 0 && names[j - 1] > name) { names[j] = names[j - 1]; j--; }
+          names[j] = name;
+        }
+      } else names.sort();
+      for (const key of names) {
       const member = record[key];
       if (member === undefined) continue;
-      if (!key.isWellFormed()) throw new CanonicalizationError('member name with a lone surrogate', path);
-      members.push(`${JSON.stringify(key)}:${write(member, pointer(path, key), depth + 1, stack)}`);
+        if (!key.isWellFormed()) fail('member name with a lone surrogate');
+        path.push(key);
+        let encoded = keys.get(key);
+        if (encoded === undefined) {
+          encoded = JSON.stringify(key) + ':';
+          if (keys.size < 256) keys.set(key, encoded);
     }
-    return `{${members.join(',')}}`;
-  } finally {
-    stack.delete(object);
+        if (comma) emit(',');
+        emit(encoded); comma = true;
+        visit(member, depth + 1);
+        path.pop();
+  }
+      emit('}');
+    } finally { stack.pop(); }
+  };
+  const run = (value: unknown, nextMode: typeof mode): void => {
+    if (active) throw new TypeError('canonical encoder is already writing');
+    active = true;
+    mode = nextMode; pending = ''; length = 0;
+    strings.length = 0; buffers.length = 0; path.length = 0; stack.length = 0;
+    try { visit(value, 0); flush(); }
+    finally { active = false; path.length = 0; stack.length = 0; }
+  };
+  return {
+    text(value) { run(value, 'text'); return strings.join(''); },
+    bytes(value) { run(value, 'bytes'); return buffers.length === 1 ? buffers[0] : Buffer.concat(buffers, length); },
+    size(value) { run(value, 'size'); return length; },
   }
 }

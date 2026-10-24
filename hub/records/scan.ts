@@ -317,9 +317,8 @@ function hasMixedCase(value: string): boolean {
   return /[0-9]/.test(value) && /[A-Z]/.test(value) && /[a-z]/.test(value);
 }
 
-function cloudKeys(text: string, report: Report): void {
   const always = () => true;
-  const patterns: Array<[RegExp, (match: RegExpExecArray) => boolean]> = [
+const CLOUD_PATTERNS: Array<[RegExp, (match: RegExpExecArray) => boolean]> = [
     [/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}\b/g, (match) => !isPlaceholder(match[0])],
     [/\baws_secret_access_key(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/gi, (match) => !isPlaceholder(match[0])],
     [/\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g, always],
@@ -333,7 +332,8 @@ function cloudKeys(text: string, report: Report): void {
     [/\bAKID[A-Za-z0-9]{13,40}\b/g, (match) => hasMixedCase(match[0].slice(4))],
     [/\bAccountKey=([A-Za-z0-9+/]{40,}={0,2})/g, always],
   ];
-  for (const [pattern, accept] of patterns) each(text, pattern, accept, report, undefined, match => match[1] ?? match[0]);
+function cloudKeys(text: string, report: Report): void {
+  for (const [pattern, accept] of CLOUD_PATTERNS) each(text, pattern, accept, report, undefined, match => match[1] ?? match[0]);
 }
 
 const DETECTORS: ReadonlyArray<{ id: CredentialDetector; run: (text: string, report: Report) => void }> = [
@@ -595,11 +595,15 @@ function withoutNul(view: View): View {
   };
 }
 
+const DECODERS = new Map<string, TextDecoder | null>();
+
 function decoder(label: string): TextDecoder | null {
+  if (DECODERS.has(label)) return DECODERS.get(label)!;
   try {
-    return new TextDecoder(label, { fatal: true, ignoreBOM: true });
+    const value = new TextDecoder(label, { fatal: true, ignoreBOM: true });
+    DECODERS.set(label,value);return value;
   } catch {
-    return null;
+    DECODERS.set(label,null);return null;
   }
 }
 
@@ -616,8 +620,7 @@ function startsWith(bytes: Uint8Array, signature: readonly number[], at = 0): bo
 }
 
 /** Compressed, archive, document and image containers: their content is not text the scanner could read. */
-function isContainer(bytes: Uint8Array): boolean {
-  const signatures: ReadonlyArray<readonly number[]> = [
+const CONTAINER_SIGNATURES: ReadonlyArray<readonly number[]> = [
     [0x1f, 0x8b], // gzip
     [0x50, 0x4b, 0x03, 0x04], // zip, xlsx, docx
     [0x50, 0x4b, 0x05, 0x06],
@@ -633,7 +636,8 @@ function isContainer(bytes: Uint8Array): boolean {
     [0x47, 0x49, 0x46, 0x38, 0x37, 0x61], // GIF87a
     [0x47, 0x49, 0x46, 0x38, 0x39, 0x61], // GIF89a
   ];
-  if (signatures.some((signature) => startsWith(bytes, signature))) return true;
+function isContainer(bytes: Uint8Array): boolean {
+  if (CONTAINER_SIGNATURES.some((signature) => startsWith(bytes, signature))) return true;
   // bzip2: "BZh", a block size digit, then the block magic (all printable, so the whole header is checked).
   if (startsWith(bytes, [0x42, 0x5a, 0x68]) && bytes[3] >= 0x31 && bytes[3] <= 0x39 && startsWith(bytes, [0x31, 0x41, 0x59, 0x26, 0x53, 0x59], 4)) return true;
   return startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8); // WebP

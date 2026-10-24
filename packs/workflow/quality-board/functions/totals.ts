@@ -4,7 +4,7 @@ import { labelOf } from './generated/vocabulary.ts';
 // sums are recomputed from the frozen items. A view that declares itself complete (not truncated) but whose rows cannot
 // hold its stated total — fewer counted than stated, or more (a list-valued by field counted cases twice) — contradicts
 // itself: the totals are refuted (advisory) instead of stated.
-import { displayOf, fieldsOf, percentOf } from './board.ts';
+import { displayOf, fieldsOf, percentOf, summaryOf } from './board.ts';
 import { guarded, isRecord } from './text.ts';
 import type { CheckOutcome, GroupCounts, RunFacts } from './types.ts';
 
@@ -15,7 +15,7 @@ function read(subject: unknown): { counts: GroupCounts; facts: RunFacts } | null
   if (!isRecord(subject) || !Array.isArray(subject.items) || !isRecord(subject.context)) return null;
   const groups = Array.isArray(subject.context.groups) ? subject.context.groups : [];
   if (!isRecord(groups[0]) || !isRecord(groups[0].view)) return null;
-  const counts: GroupCounts = { cases: 0, missing: 0, vague: 0, negative: 0 };
+  const counts: GroupCounts = { cases: 0, missing: 0, vague: 0, negative: 0,negative_denominator:0,type_unclassified:0 };
   for (const value of subject.items) {
     if (!isRecord(value)) return null;
     const fields = fieldsOf(value.fields);
@@ -24,6 +24,7 @@ function read(subject: unknown): { counts: GroupCounts; facts: RunFacts } | null
     counts.missing += fields.counts.missing;
     counts.vague += fields.counts.vague;
     counts.negative += fields.counts.negative;
+    counts.negative_denominator!+=fields.counts.negative_denominator!;counts.type_unclassified!+=fields.counts.type_unclassified!;
   }
   return { counts, facts: groups[0] as unknown as RunFacts };
 }
@@ -35,22 +36,28 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
   }
   const { counts, facts } = read_;
   const view = facts.view;
-  const grounds = [view.source, ...(facts.placement ? [facts.placement.source] : [])];
+  const items=(subject as {items:Array<{fields:unknown}>}).items;
+  const quality=items.map(item=>fieldsOf(item.fields)!.quality).reduce((a,q)=>({judged:a.judged+(q?.judged??0),unjudged:a.unjudged+(q?.unjudged??0),conflicted:a.conflicted+(q?.conflicted??0),sources:[...new Set([...a.sources,...(q?.sources??[])])]}),{judged:0,unjudged:0,conflicted:0,sources:[] as string[]});
+  const grounds = [view.source, ...(facts.placement ? [facts.placement.source] : []),...quality.sources];
   const data: Record<string, unknown> = {
     ...(facts.placement ? { placement: facts.placement } : {}),
+    quality,
+    judged:quality.judged,
+    unjudged:quality.unjudged,
     cases: counts.cases,
     missing: counts.missing,
     vague: counts.vague,
     negative: counts.negative,
+    negative_denominator:counts.negative_denominator,type_unclassified:counts.type_unclassified,
     ratios: {
       missing: { num: counts.missing, den: counts.cases },
-      vague: { num: counts.vague, den: counts.cases },
-      negative: { num: counts.negative, den: counts.cases },
+      vague: { num: counts.vague, den: quality.judged },
+      negative: { num: counts.negative, den: counts.negative_denominator! },
     },
     display: {
       missing: displayOf(counts.missing, counts.cases),
-      vague: displayOf(counts.vague, counts.cases),
-      negative: displayOf(counts.negative, counts.cases),
+      vague: quality.judged===0?null:displayOf(counts.vague, quality.judged),
+      negative: counts.negative_denominator===0?null:displayOf(counts.negative, counts.negative_denominator!),
     },
     view: { total: view.total, truncated: view.truncated, skipped: view.skipped, listed_rows: view.listed_rows },
   };
@@ -74,7 +81,7 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
       data,
     };
   }
-  let statement = `合计：用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）。看板覆盖已索引文档的每一个用例（${COMMANDLESS_CASES}按 commands 空组计数，也计入合计）；没有读到的来源不在其中，所以它描述的是已索引的用例，不是整套测试`;
+  let statement = '合计：'+summaryOf(counts,quality)+`。看板覆盖已索引文档的每一个用例（${COMMANDLESS_CASES}按 commands 空组计数，也计入合计）；未判断不当明确或含糊，含糊率仅描述已受理判断的子集，以模型判断为前提；没有读到的来源不在其中，所以它描述的是已索引的用例，不是整套测试`;
   if (facts.types) statement += '；只按标签观察六种测试类型，其余 18 个模板类别需要路径、标题、步骤和期望原文，这些视图看不到，另用模板查缺读取原文';
   if (facts.placement) statement += `；${COMMANDLESS_CASES} ${facts.placement.unplaced} 个，计入合计` + (facts.placement.skipped > 0 ? `；${COMMANDLESS_CASES}计数只覆盖已索引的来源，另有 ${facts.placement.skipped} 份来源未读，下一步同步这些来源后重跑` : '');
   if (view.skipped > 0) statement += `；有 ${view.skipped} 份列出的来源没有读取，其中的用例不在计数里`;

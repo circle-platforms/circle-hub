@@ -89,8 +89,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     const production = detail.production!;
     const result = production.result;
     assert.ok(ValidationResult.safeParse(result).success);
-    assert.equal(result.acceptance,'accepted');assert.equal(result.errors.length,1);
-    assert.ok(result.errors.every(error=>error.code==='missing_input'&&error.requirement==='command_exists'&&error.path==='/cross_item'&&error.rounds_left===0&&error.fix?.includes('请求 rec:')));
+    assert.equal(result.acceptance,'accepted');assert.equal(result.errors.length,0);
     assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
 
@@ -128,9 +127,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
       assert.ok(summary.statement.text.includes(line), line);
     }
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
-    assert.equal(unknown.length, 1);
-    assert.match(unknown[0].statement.text, /命令归属事实/);
-    assert.match(unknown[0].statement.text, /下一步/);
+    assert.equal(unknown.length, 0, JSON.stringify(unknown.map((claim) => claim.statement.text)));
     assert.ok(result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     const stored = (await hub.service.getRun(hub.alice, run.run))!;
     assert.match(String((stored.run.groups?.[0] as { message?: string }).message), /有 4 条用例需要维护/);
@@ -267,6 +264,7 @@ describe('the real knowledge reader', () => {
       pack: {
         functions: { 'cases-node.ts': CASES_WITH_NODE },
         declaration: {
+          catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'commands', complete: true, case_sensitive: false }],
           producers: [...DEFAULT_PRODUCERS, { id: 'cases', title: '用例', function: { module: 'functions/cases-node.ts' }, inputs: { cases: { source: 'cases', many: true } } }],
         },
       },
@@ -290,7 +288,7 @@ describe('the real knowledge reader', () => {
     assert.equal(second.ok, true, second.reason ?? '');
 
     const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
-    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title&catalog=catalog@1';
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1';
     const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference }, facets: { external: 'knowledge:facets:acme:Rel_WDG_7_7_7?kind=case&by=commands' } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(detail.answer.run!.items.length > 0, 'the real reader answers an impact view the sweep projects');

@@ -7,6 +7,7 @@ export const MAX_COMPACT_TITLE_LENGTH = 80;
 export const MAX_INDEX_PER_KEY = 2000;
 
 export interface CompactCaseItem {
+  case_structure?:unknown;
   document: string;
   node: string;
   title: string;
@@ -48,7 +49,7 @@ export function isCompactIndex(value: unknown): value is CompactCaseIndex {
 }
 
 export function normalizeText(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  return text;
 }
 
 export const titleKey = (text: string): string => createHash('sha256').update(normalizeText(text)).digest('hex');
@@ -201,6 +202,7 @@ export function buildCompactIndex(
     const node = typeof data.node === 'string' ? data.node : '';
 
     const item: CompactCaseItem = {
+      case_structure:data.case_structure,
       document,
       node,
       title,

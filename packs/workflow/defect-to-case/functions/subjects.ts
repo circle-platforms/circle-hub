@@ -1,3 +1,7 @@
+import {declareResourceTags} from './generated/vocabulary.ts';
+import type { CatalogEntry } from '../../../../contracts/src/tables.ts';
+import { commandIdentity } from './case-identity.ts';
+import { commandHeadOf } from './command-head.ts';
 // Subject builders for defect-to-case checks.
 import type { DraftCase, DraftExpected, DraftStep } from './types.ts';
 
@@ -21,7 +25,7 @@ export function extractDrafts(slots: unknown): DraftCase[] {
     if (Array.isArray(raw.steps)) {
       for (const s of raw.steps) {
         if (isRecord(s) && typeof s.command === 'string') {
-          steps.push({ command: s.command, ...(typeof s.note === 'string' ? { note: s.note } : {}) });
+          steps.push({ identity:s.identity,command: s.command, ...(typeof s.note === 'string' ? { note: s.note } : {}) });
         }
       }
     }
@@ -32,12 +36,13 @@ export function extractDrafts(slots: unknown): DraftCase[] {
         const q = isRecord(e.quote) && typeof e.quote.reference === 'string' && typeof e.quote.text === 'string'
           ? { reference: e.quote.reference, text: e.quote.text }
           : undefined;
-        if (q) expected.push({ text: e.text, quote: q });
-        else expected.push({ text: e.text, quote: { reference: '', text: '' } });
+        if (q) expected.push({identity:e.identity,after:typeof e.after==='number'?e.after:undefined,text: e.text, quote: q });
+        else expected.push({identity:e.identity,after:typeof e.after==='number'?e.after:undefined,text: e.text, quote: { reference: '', text: '' } });
       }
     }
     const tags = Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === 'string') : [];
     drafts.push({
+      id:typeof raw.id==='string'?raw.id:undefined,
       title,
       priority,
       negative,
@@ -46,6 +51,7 @@ export function extractDrafts(slots: unknown): DraftCase[] {
       steps,
       expected,
       tags,
+      resource: raw.resource,
     });
   }
   return drafts;
@@ -127,10 +133,14 @@ export function duplicateSubject(input: unknown): unknown {
   return {
     item: itemId,
     drafts,
-    indexed_cases: indexedCases,
+    // New declarations receive the locked catalog and let the engine inject a fresh narrowed view.
+    indexed_cases: Array.isArray(record.catalog) ? null : indexedCases,
+    read_keys:[...new Set(drafts.flatMap(draft=>draft.steps.flatMap(step=>{const i=commandIdentity(step.identity);return i?[i.path]:[]})))].sort(),
   };
 }
 
 export default function (input: unknown): unknown {
   return commandSubject(input);
 }
+
+export function refutationSubject(input:unknown):unknown{const raw=isRecord(input)?input:{};return {item:extractItemId(raw),location:extractLocation(raw),claims:extractDrafts(raw.slots).flatMap(draft=>{const d=declareResourceTags(draft.resource);return d.valid&&d.status==='declared'?draft.steps.map(step=>({draft_id:draft.id,command:step.command,present:!(d.negative===true&&draft.expects_refutation===true)})):[];})};}

@@ -50,7 +50,8 @@ test('index-coverage unknown is identical with and without the facets hint metad
   const out = project(3); const withHint = out.groups[0];
   const { unplaced: _count, unplaced_build: _build, ...withoutHint } = withHint;
   for (const check of ['command_exists', 'command_unchanged']) assert.deepEqual(checkOutcomes(check, { items: out.items, note: withHint }), checkOutcomes(check, { items: out.items, note: withoutHint }));
-  const unknown = checkOutcomes('command_exists', { items: out.items, note: withHint }).find((v) => v.verdict === 'unknown'); assert.ok(unknown); assert.match(unknown.statement, /命令归属事实/);
+  const unknown = checkOutcomes('command_exists', { items: out.items, note: withHint }).find((v) => v.verdict === 'unknown');
+  assert.equal(unknown, undefined, JSON.stringify(unknown));
 });
 
 test('skipped facet sources refuse rather than disclose a false zero', () => {

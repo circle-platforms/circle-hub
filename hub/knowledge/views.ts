@@ -32,7 +32,7 @@ import {
   type UnversionedView,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
-import { canonicalBytes, canonicalize, sha256Hex, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
+import { sha256Hex, canonicalBytes, canonicalByteLength, createCanonicalEncoder, canonicalize, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
@@ -47,6 +47,7 @@ import type {KnowledgeViewScope,ScopedDocument} from '../../contracts/src/views.
 import {keepProblemRows} from './problem-journal.ts';
 import { describeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
+import { withReadCache } from './read-cache.ts';
 import { ACTION, COMPONENTS, Lru } from './store.ts';
 
 /** The system of the Hub's own knowledge views in external object ids. */
@@ -97,7 +98,8 @@ class BuildNameRefusal extends ImpactRefusal {
   readonly fix='使用候选的完整原样构建名重新读取';
 }
 
-function pageState(after: string | null, identity: unknown): {offset:number;next:(offset:number)=>string} {
+interface PageCursor { offset: number; next(offset: number): string }
+function pageState(after: string | null, identity: unknown): PageCursor {
   const q=sha256Hex(canonicalize(identity));
   let offset=0;
   if(after!==null){
@@ -287,13 +289,15 @@ async function* entriesOfKind(composition: CompositionView, kind: string): Async
   const seen = new Set<string>();
   for await (const row of composition.contentRows(new Set([kind]))) {
     if (seen.has(row.entry)) continue;
-    seen.add(row.entry);
-    yield { entry: row.entry, path: row.path, content: row.content, unplaced: false };
+    const entry = detachedText(row.entry);
+    seen.add(entry);
+    yield { entry, path: detachedText(row.path), content: row.content, unplaced: false };
   }
   for await (const row of composition.unplacedContent(kind)) {
     if (seen.has(row.entry)) continue;
-    seen.add(row.entry);
-    yield { entry: row.entry, path: '/', content: row.content, unplaced: true };
+    const entry = detachedText(row.entry);
+    seen.add(entry);
+    yield { entry, path: '/', content: row.content, unplaced: true };
   }
 }
 
@@ -309,6 +313,10 @@ async function* scopedEntries(main: CompositionView | null, scope: CompositionVi
   }
 }
 
+// JSON.parse may represent a short member as a slice of its large input. Retained index metadata
+// must own its bytes, so a digest/path/key cannot keep an otherwise streamed composition part alive.
+const detachedText = (text: string): string => Buffer.from(text, 'utf8').toString('utf8');
+
 /** The keys an index files an entry under: the text of each distinct element of a list or of the value; null and missing give none. */
 function indexKeys(data: Record<string, unknown>, field: string): string[] {
   const value = Object.hasOwn(data, field) ? data[field] : undefined;
@@ -318,6 +326,12 @@ function indexKeys(data: Record<string, unknown>, field: string): string[] {
 }
 
 // ---------------------------------------------------------------- the views
+
+interface IndexEncoding {
+  fields: Array<{ key: string; bytes: Uint8Array | null }>;
+  entries: Array<{ digest: string; key: string; bytes: Uint8Array }>;
+  length: number;
+}
 
 interface At {
   composition?: string;
@@ -373,7 +387,51 @@ export class KnowledgeViews {
   readonly #reading: TreeReading;
   readonly #relations: LinkReading;
   /** Canonical bytes of computed views by request and roots (a root's content never changes). */
-  readonly #cache = new Lru<string, Uint8Array>(4);
+  readonly #cache = new Lru<string, Uint8Array | { view: IndexView; entries: Map<string, Uint8Array> ;}>(4,Number.POSITIVE_INFINITY,true);
+  /** Encodings belong to these immutable projected entries only; never cache credential decisions. */
+  readonly #entryBytes = new WeakMap<ViewEntry, Uint8Array>();
+  readonly #encodedIndexes = new WeakMap<IndexView, Map<string, Uint8Array>>();
+  readonly #completeIndexes = new WeakMap<IndexView, { bytes: Uint8Array; notes: number ;}>();
+
+  #encoding(view: IndexView): IndexEncoding | null {
+    const entries = []; let entryLength = 2;
+    const encoded = this.#encodedIndexes.get(view);
+    for (const digest of [...(encoded?.keys() ?? Object.keys(view.entries))].sort()) {
+      const bytes = encoded?.get(digest) ?? this.#entryBytes.get(view.entries[digest]);
+      if(bytes===undefined){if(encoded)throw new Error('索引投影条目缺失，不能输出不完整的答复');return null;}
+      const key = JSON.stringify(digest) + ':'; entries.push({ key, bytes, digest }); entryLength += Buffer.byteLength(key) + bytes.length;
+    }
+    entryLength += Math.max(0, entries.length - 1);
+    const fields = []; let length = 2;
+    for (const name of Object.keys(view).sort()) {
+      const value = (view as unknown as Record<string, unknown>)[name]; if (value === undefined) continue;
+      const key = JSON.stringify(name) + ':', bytes = name === 'entries' ? null : canonicalBytes(value);
+      fields.push({ key, bytes }); length += Buffer.byteLength(key) + (bytes === null ? entryLength : bytes.length);
+    }
+    length += Math.max(0, fields.length - 1); return { fields, entries, length };
+  }
+
+  #length(view: IndexView): number { return this.#encoding(view)?.length ?? canonicalByteLength(view); }
+
+  #bytes(view: ImpactView | FacetView | IndexView): Uint8Array {
+    const complete = view.schema === 'index-view@1' ? this.#completeIndexes.get(view) : undefined;
+    if (complete && complete.notes === view.notes.length) return complete.bytes;
+    const encoding = view.schema === 'index-view@1' ? this.#encoding(view) : null;
+    if (encoding === null) return canonicalBytes(view);
+    const out = Buffer.allocUnsafe(encoding.length); let offset = 0;
+    const packed=new Map<string,Uint8Array>();
+    const text = (value: string) => { offset += out.write(value, offset, 'utf8'); };
+    const bytes = (value: Uint8Array) => { out.set(value, offset); offset += value.length; };
+    text('{');
+    encoding.fields.forEach((field, i) => {
+      if (i) text(','); text(field.key);
+      if (field.bytes !== null) { bytes(field.bytes); return; }
+      text('{'); encoding.entries.forEach((entry, j) => { if (j) text(','); text(entry.key);packed.set(entry.digest,out.subarray(offset,offset+entry.bytes.length)); bytes(entry.bytes); }); text('}');
+    });
+    text('}');
+    if(view.schema==='index-view@1'){this.#encodedIndexes.set(view,packed);this.#completeIndexes.set(view,{bytes:out,notes:view.notes.length});}
+    return out;
+  }
 
   constructor(context: KnowledgeContext, builds: Builds, reading: TreeReading, relations:LinkReading=new LinkReading(context,builds)) {
     this.#context = context;
@@ -682,7 +740,7 @@ export class KnowledgeViews {
     // Sized exactly above; a later-root citation can lengthen a reference, so the answer is checked once more as a whole.
     let count = kept.length;
     let view = await build(count);
-    while (count > 0 && canonicalBytes(view).byteLength > this.#context.limits.maxViewBytes) {
+    while (count > 0 && canonicalByteLength(view) > this.#context.limits.maxViewBytes) {
       count = Math.max(0, Math.min(count - 1, Math.floor(count * 0.95)));
       view = await build(count);
     }
@@ -795,6 +853,9 @@ export class KnowledgeViews {
    * out because their text has credential scan hits.
    */
   async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<IndexView> {
+    return withReadCache(()=>this.#index(product, at, kind, key, only, fields, exclude, after, pinned, scopeRoot, scopeLocked));
+  }
+  async #index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, encodedOnly = false): Promise<IndexView> {
     // With fields, entries carry only those data fields and an empty statement; the identity (entry digest) and the
     // reference are unchanged. The truncation accounting uses the slimmed size: the fields decide what an entry costs.
     const slim = (content: EntryContent): EntryContent => {
@@ -814,34 +875,80 @@ export class KnowledgeViews {
     });
     const budget = this.#budget(pinned?.reserve);
     const seen = new Set<string>();
+    const encoder = createCanonicalEncoder();
+    const validatedParts = this.#context.store?.rowsRead();
     const keys = new Map<string, string[]>();
     /** Every carrier: the path it is cited at and the exact bytes of its member in `entries`. */
-    const carriers = new Map<string, { path: string; bytes: number; root:string; unversioned:boolean }>();
-    const held = new Map<string, EntryContent>();
+    const carriers = new Map<string, number>();
+    let entryKeyBytes: number | undefined;
+    const held = new Map<string, Uint8Array>();
     let heldBytes = 0;
+    const heldGroups = new Map<string, { digests: string[]; bytes: number; largest:string }>();
+    let largestHeld: string | null = null, cacheFull = false;
+    let previousPath = '', previousRoot = '', referencePrefix = '';
+    let previousKind = '', parsedKind: EntryKind = kind;
+    const projected = (row: KindEntry): ViewEntry => {
+      if (row.path !== previousPath || row.root !== previousRoot) { previousPath = row.path; previousRoot = row.root!; referencePrefix = treeReference(row.root!, row.path, row.entry).slice(0, -64); }
+      if (row.content.kind !== previousKind) { previousKind = row.content.kind; parsedKind = EntryKindSchema.parse(row.content.kind); }
+      const content = slim(row.content);
+      return { ...(row.unversioned ? { root: row.root!, build: null } : {}), entry: row.entry, kind: parsedKind, statement: content.statement, data: content.data, reference: referencePrefix + row.entry };
+    };
     let ofKind = 0;
     let unplacedCount = 0;
     const excluded = new Map<string, string>();
-    if (composition !== null || scope !== null) {
-      for await (const row of scopedEntries(composition, scope, kind)) {
-        seen.add(row.entry);
+    const seenScope = scope === null ? null : new Set<string>();
+    for (const source of [composition, scope]) {
+      if (source === null) continue;
+      await source.forEachEntry(kind, (entry, path, content, unplaced) => {
+        if (seenScope?.has(entry)) return;
+        seenScope?.add(entry);
+        const row = { entry, path, content, unplaced, root: source.body.root, unversioned: source === scope };
+        seen.add(entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
-        if (values.length === 0) continue;
-        const entryBytes = memberBytes(row.entry, viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned));
-        carriers.set(row.entry, { path: row.path, bytes: entryBytes, root:row.root!, unversioned:row.unversioned===true });
+        if (values.length === 0) return;
+        const value = projected(row);
+        const serialized = encoder.text(value);
+        const entryBytes = (entryKeyBytes ??= encoder.size(row.entry) + 2) + Buffer.byteLength(serialized);
+        carriers.set(row.entry, entryBytes);
         if (exclude.has(row.entry)) excluded.set(row.entry, treeReference(row.root!, row.path, row.entry));
-        else if (heldBytes + entryBytes <= budget) {
-          held.set(row.entry, row.content);
-          heldBytes += entryBytes;
+        else {
+          // Cache an ordered prefix of index values rather than whichever paths happened to be scanned first.
+          // This bounds retained candidate bytes; final selection and the second-scan fallback below stay unchanged.
+          const rank = values.reduce((first, value) => compareText(first, value) <= 0 ? first : value);
+          if (!cacheFull || largestHeld === null || compareText(rank, largestHeld) <= 0) {
+            let group = heldGroups.get(rank);
+            if (group === undefined) { group = { digests: [], bytes: 0, largest:row.entry }; heldGroups.set(detachedText(rank), group); }
+            // The final view can use only the first MAX_INDEX_PER_KEY digests of a value. Do not let a high-fanout
+            // value evict every useful cached entry of the next value.
+            let keep=true;
+            if(group.digests.length>=MAX_INDEX_PER_KEY){
+              if(compareText(row.entry,group.largest)>=0)keep=false;
+              else{
+                const removed=group.largest,fee=carriers.get(removed)!;held.delete(removed);heldBytes-=fee;group.bytes-=fee;
+                group.digests.splice(group.digests.indexOf(removed),1);group.largest=group.digests.reduce((a,b)=>compareText(a,b)>0?a:b);
+              }
+            }
+            if(keep){
+              held.set(row.entry,Buffer.from(serialized));heldBytes+=entryBytes;group.digests.push(row.entry);group.bytes+=entryBytes;
+              if(compareText(row.entry,group.largest)>0)group.largest=row.entry;
+            }
+            if (largestHeld === null || compareText(rank, largestHeld) > 0) largestHeld = detachedText(rank);
+            while (heldBytes > budget && largestHeld !== null) {
+              const removed = heldGroups.get(largestHeld)!;
+              for (const digest of removed.digests) held.delete(digest);
+              heldBytes -= removed.bytes; heldGroups.delete(largestHeld); cacheFull = true; largestHeld = null;
+              for (const value of heldGroups.keys()) if (largestHeld === null || compareText(value, largestHeld) > 0) largestHeld = value;
+            }
+          }
         }
         for (const value of values) {
           const list = keys.get(value);
-          if (list === undefined) keys.set(value, [row.entry]);
+          if (list === undefined) keys.set(detachedText(value), [row.entry]);
           else list.push(row.entry);
         }
-      }
+      }, validatedParts);
     }
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
@@ -868,7 +975,7 @@ export class KnowledgeViews {
         let item=kept.at(-1);
         const same=item?.value===value;
         const fresh=listedAll.has(digest)?[]:[digest];
-        const size=(same?elementBytes(digest):memberBytes(value,[digest]))+fresh.reduce((sum,d)=>sum+carriers.get(d)!.bytes,0);
+        const size=(same?elementBytes(digest):memberBytes(value,[digest]))+fresh.reduce((sum,d)=>sum+carriers.get(d)!,0);
         if((same&&item!.listed.length>=MAX_INDEX_PER_KEY)||listedAll.size+fresh.length>MAX_INDEX_ENTRIES||bytes+size>budget){
           if(kept.length===0)throw new ImpactRefusal('单条索引内容超过视图页上限；用 fields 收窄条目字段后重读');
           stoppedAt=value;break;
@@ -883,10 +990,19 @@ export class KnowledgeViews {
     if (wanted.size > 0 && (composition !== null || scope !== null)) {
       for await (const row of scopedEntries(composition, scope, kind)) {
         if (!wanted.has(row.entry)) continue;
-        held.set(row.entry, row.content);
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
         wanted.delete(row.entry);
         if (wanted.size === 0) break;
       }
+    }
+    if(wanted.size>0)throw new Error('第二遍读取缺少不可变索引条目');
+    // The selection is fixed. Drop unselected serialized candidates before materializing the answer.
+    for (const digest of held.keys()) if (!listedAll.has(digest)) held.delete(digest);
+    const decoded = new Map<string, ViewEntry>();
+    const decode = (digest: string): ViewEntry => {
+      let entry = decoded.get(digest);
+      if (entry === undefined) { const bytes = held.get(digest)!; entry = JSON.parse(Buffer.from(bytes).toString('utf8')) as ViewEntry; this.#entryBytes.set(entry, bytes); decoded.set(digest, entry); held.delete(digest); }
+      return entry;
     }
     const notes = (count: number): string[] => {
       const out: string[] = [];
@@ -912,10 +1028,9 @@ export class KnowledgeViews {
     const build = (count: number): IndexView => {
       const items = kept.slice(0, count);
       const entries: Record<string, ViewEntry> = {};
-      for (const digest of items.flatMap((item) => item.fresh).sort(compareText)) {
-        entries[digest] = viewEntry(digest, slim(held.get(digest) as EntryContent), (carriers.get(digest)!).root, (carriers.get(digest)!).path, (carriers.get(digest)!).unversioned);
-      }
-      return {
+      const digests = items.flatMap(item => item.fresh).sort(compareText);
+      if (!encodedOnly) for (const digest of digests) entries[digest] = decode(digest);
+      const answer: IndexView = {
         schema: 'index-view@1',
         next: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available?page.next(page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)):null,
         unversioned: summary,
@@ -936,21 +1051,31 @@ export class KnowledgeViews {
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
+      if (encodedOnly) this.#encodedIndexes.set(answer, new Map(digests.map(digest => [digest, held.get(digest)!])));
+      return answer;
     };
     let count = kept.length;
     let view = build(count);
-    while (count > 0 && canonicalBytes(view).byteLength > this.#context.limits.maxViewBytes) {
+    while (count > 0 && this.#length(view) > this.#context.limits.maxViewBytes) {
       count = Math.max(0, Math.min(count - 1, Math.floor(count * 0.95)));
       view = build(count);
     }
-    return conforming(IndexView, view, 'index-view@1');
+    // Validate entry batches without retaining Zod's deep clone of the whole answer.
+    conforming(IndexView, { ...view, entries: {} }, 'index-view@1');
+    // Encoded entries are built only from schema-checked composition rows and a fully validated tree reference.
+    // Decoding and cloning that same data again here defeats streaming. The public object API still validates its graph.
+    if (!this.#encodedIndexes.has(view)) {
+      const entries = Object.entries(view.entries);
+      for (let i = 0; i < entries.length; i += 128)conforming(IndexView.shape.entries, Object.fromEntries(entries.slice(i, i + 128)), 'index-view@1.entries');
+    }
+    return view;
   }
 
   /** ExternalReaderPort.read for a knowledge view id: never throws, ok:false with the real reason for the admin log. */
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     const startedAt = this.#context.now().toISOString();
     try {
-      return await this.#read(id, context, startedAt);
+      return await withReadCache(()=>this.#read(id, context, startedAt));
     } catch (error) {
       if(error instanceof RelationReadError)return {ok:false,id:splitRevision(id).body,reason:error.message+'；下一步：'+error.nextAction};
       if (error instanceof LinkRefusal) return {ok:false,id:splitRevision(id).body,reason:error.message};
@@ -1047,7 +1172,7 @@ export class KnowledgeViews {
       else view.notes.push('不分版本条目只在首页交付，后续页不重复发送');
     }
     if(view.totals)Object.assign(view.totals,this.#scopeCounts(summary),summary?{unversioned_entries_cut:cut}:{});
-    if(canonicalBytes(view).byteLength>this.#context.limits.maxViewBytes)throw new LinkRefusal('链接视图的固定范围说明超过字节上限；请维护者调整字节预算后从首页重读');
+    if (canonicalByteLength(view) > this.#context.limits.maxViewBytes) throw new LinkRefusal('链接视图的固定范围说明超过字节上限；请维护者调整字节预算后从首页重读');
     LinksView.parse(view);
     const inputs=[`tree:${body.root}/`,`rec:${composition}`],origin={generated:{generator:COMPONENTS.views,inputs}},sources=new Set<string>();
     const sourceView=new CompositionView(this.#context.store,composition,body);
@@ -1116,7 +1241,7 @@ export class KnowledgeViews {
         title = `${labelOf('entry_kind', request.kind)}按 ${request.by.join('、')} 计数（${at.build}）`;
       } else {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields, after:request.after??null });
-        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run));
+        compute = (exclude) => this.#index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),true);
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }
@@ -1142,8 +1267,12 @@ export class KnowledgeViews {
     const origin = {generated:{generator:COMPONENTS.views,inputs}};
     const coverage = await this.#context.records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:[...derivedSources]});
     const visibility = { readers: [principal.id], admins: true, packs: [], shareable: false };
-    const ingest = (bytes: Uint8Array): Promise<SourceArtifact> =>
-      this.#context.records.artifacts.ingest({
+    const ingest = (bytes: Uint8Array): Promise<SourceArtifact> => {
+      const consume = bytes.byteLength >= 1024 * 1024;
+      // A large private view hands off its one owned buffer; retaining an alias would defeat both immutability and memory bounds.
+      if (consume) this.#cache.delete(key);
+      const write = consume ? this.#context.records.artifacts.ingestTransferred.bind(this.#context.records.artifacts) : this.#context.records.artifacts.ingest.bind(this.#context.records.artifacts);
+      return write({
         bytes,
         mediaType: 'application/json',
         origin,
@@ -1153,6 +1282,7 @@ export class KnowledgeViews {
         visibility,
         name: `${request.type}-view.json`,
       });
+    };
     const scopeCollection=async(rows:ScopedDocument[]):Promise<KnowledgeViewScope['listed_documents']>=>{
       const parts:KnowledgeViewScope['listed_documents']['parts']=[];
       const storePage=async(page:ScopedDocument[]):Promise<void>=>{
@@ -1186,19 +1316,33 @@ export class KnowledgeViews {
       return {ok:false,id:bare,reason:`视图 ${held.body.sha256} 有未受理凭据命中，不交给任务包。被排除引用前 ${Math.min(10,excluded.length)} 个：${excluded.slice(0,10).join('、')}；共 ${excluded.length} 个，完整清单：${refs.map(ref=>`rec:${ref.record}`).join('、')}。管理员 ${request.audience_user} 的核对请求 ${request.reference}，期限 ${request.deadline}；${action}`};
     };
     const tooLarge = (bytes: Uint8Array): string | null => (bytes.byteLength > this.#context.limits.maxViewBytes ? `视图有 ${bytes.byteLength} 字节，超过 ${this.#context.limits.maxViewBytes} 字节` : null);
-    let originalBytes = this.#cache.get(key);
+    const cached = this.#cache.get(key);
+    let originalBytes: Uint8Array | undefined;
     let view: ImpactView | FacetView | IndexView;
-    if (originalBytes === undefined) {
+    if (cached === undefined) {
       view = await compute(new Set());
-      originalBytes = canonicalBytes(view);
-      const large = tooLarge(originalBytes);
-      if (large !== null) return {ok:false,id:bare,reason:large};
-      // Cache the unfiltered answer only. Every use rechecks source acceptance and omissions.
+      const encoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
+      if (encoded && view.schema === 'index-view@1') {
+        // Keep the unfiltered encoded answer, never scanner decisions or a decoded graph of the root.
+        const cachedView = { ...view, notes: [...view.notes] };
+        this.#cache.set(key, { view: cachedView, entries: encoded });
+        const complete = this.#completeIndexes.get(view); if (complete) this.#completeIndexes.set(cachedView, complete);
+      } else {
+        originalBytes = this.#bytes(view);
+        const large = tooLarge(originalBytes); if (large !== null) return { ok: false, id: bare, reason: large };
       this.#cache.set(key,originalBytes);
-    } else view = JSON.parse(Buffer.from(originalBytes).toString('utf8')) as ImpactView | FacetView | IndexView;
+      }
+    } else if (cached instanceof Uint8Array) {
+      originalBytes = cached;
+      view = JSON.parse(Buffer.from(cached).toString('utf8')) as ImpactView | FacetView | IndexView;
+    } else {
+      view = { ...cached.view, notes: [...cached.view.notes] }; this.#encodedIndexes.set(view, cached.entries);
+      const complete = this.#completeIndexes.get(cached.view); if (complete) this.#completeIndexes.set(view, complete);
+    }
+    const encoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
+    const flagged = flaggedParts(view, coverage, part => part instanceof Uint8Array ? part : this.#entryBytes.get(part as ViewEntry) ?? canonicalBytes(part), encoded);
     const originalReferences=view.schema==='facet-view@1'?[]:Object.values(view.entries).map(entry=>entry.reference);
-    const flagged = flaggedParts(view,coverage);
-    if(request.after&&flagged.excluded.size>0)return credentialRefusal(await ingest(originalBytes),originalReferences);
+    if(request.after&&flagged.excluded.size>0)return credentialRefusal(await ingest(originalBytes ?? this.#bytes(view)),originalReferences);
     if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
     const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number, fallback = 0): void => {
       const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
@@ -1208,11 +1352,12 @@ export class KnowledgeViews {
     };
     if(flagged.excluded.size>0&&view.next){view.next=null;view.notes.push('本页有未受理凭据，先由管理员处理这些来源或用 only 收窄；处理后从首页重读，不沿偏移后的页继续');}
     view.scope=scoped;
-    const finalKeys = partKeys(view);
+    const finalEncoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
+    const finalKeys = finalEncoded ? new Set(finalEncoded.keys()) : partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
     annotate(view,covered,flagged.limited.size);
     if(view.next)view.next=continuationId(bare,view.next,revision);
-    let bytes = canonicalBytes(view);
+    let bytes = this.#bytes(view);
     let large = tooLarge(bytes);
     if (large !== null) return {ok:false,id:bare,reason:large};
     let artifact = await ingest(bytes);
@@ -1223,7 +1368,7 @@ export class KnowledgeViews {
       annotate(view,0,flagged.limited.size,covered);
       view.scope=scoped;
       if(view.next)view.next=continuationId(bare,view.next,revision);
-      bytes = canonicalBytes(view);
+      bytes = this.#bytes(view);
       large = tooLarge(bytes);
       if (large !== null) return {ok:false,id:bare,reason:large};
       artifact = await ingest(bytes);
@@ -1290,11 +1435,11 @@ function partKeys(view: ImpactView | FacetView | IndexView): Set<string> {
   return new Set(view.schema === 'facet-view@1' ? view.rows.map(row => canonicalize(view.by.map(field => row.values[field] ?? null))) : Object.keys(view.entries));
 }
 
-function flaggedParts(view: ImpactView | FacetView | IndexView, coverage: DerivedCoverage): {excluded:Set<string>;limited:Set<string>;eligible:Set<string>;kept:Set<string>;allHits:Set<string>} {
+function flaggedParts(view: ImpactView | FacetView | IndexView, coverage: DerivedCoverage, encode: (part: unknown) => Uint8Array = canonicalBytes, encoded?: ReadonlyMap<string, Uint8Array>): { excluded: Set<string>; limited: Set<string>; eligible: Set<string>; kept: Set<string>; allHits: Set<string> ;} {
   const excluded = new Set<string>(), limited = new Set<string>(), eligible = new Set<string>(), kept = new Set<string>(), allHits = new Set<string>();
   const parts: Array<[string,unknown]> = view.schema === 'facet-view@1'
     ? view.rows.map(row => [canonicalize(view.by.map(field => row.values[field] ?? null)),row])
-    : Object.entries(view.entries);
+    : encoded ? [...encoded] : Object.entries(view.entries);
   parts.sort(([a],[b]) => compareText(a,b));
   const skeleton = view.schema === 'facet-view@1' ? {...view,rows:[]} : view.schema === 'index-view@1' ? {...view,entries:{},keys:{}} : {...view,entries:{}};
   const overhead = coverage.assess(canonicalBytes(skeleton));
@@ -1309,7 +1454,7 @@ function flaggedParts(view: ImpactView | FacetView | IndexView, coverage: Derive
   }
   const charged = new Set<string>();
   for (const [key,value] of parts) {
-    const assessment = coverage.assess(canonicalBytes(value));
+    const assessment = coverage.assess(encode(value));
     const associated = memberships.get(key) ?? [];
     const hitKeys = associated.filter(k => keys.get(k)!.scan.findings.length > 0);
     if (!assessment.scan.findings.length && !hitKeys.length) continue;

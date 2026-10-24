@@ -138,6 +138,12 @@
       "interpreter": "contribution",
       "when": "缺少与运行锁定产品和根一致的组成快照",
       "fix": "恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped"
+    },
+    {
+      "code": "core.criterion.source_role_mismatch",
+      "interpreter": "criterion",
+      "when": "判据变更声明的判据或引文不是期望来源的片段，仅拒绝该条声明",
+      "fix": "判据只能取期望来源的片段（A03 R[0]）"
     }
   ]
 }

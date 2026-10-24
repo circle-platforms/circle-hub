@@ -5,7 +5,7 @@
 ## 1. 任务目标与输入
 
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单，收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。`only` 在读完缺陷、动笔起草后、开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。推荐省略 `only`，由检查按草稿命令头动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。
@@ -29,7 +29,7 @@
   - 对于反向用例（如测试参数超出范围时报错），`negative: true` 且 `expects_refutation: true`，其命令行预期被目录反驳（参数越界为用例设计点）。若命令行被目录接受，Hub 将判定为违规并要求修复。
 - `preconditions`：字符串数组，前置条件列表。
 - `steps`：测试步骤列表，包含 `text`（步骤说明）与 `command`（执行的命令行）。每个用例至少包含一个带有命令行的步骤。
-- `expected`：期望结果列表。**特别注意**：每个期望结果必须自己带 `quote` 对象（形状为 `{"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`），槽位路径为 `/cases/<用例序号>/expected/<期望结果序号>/quote`。**严禁**将引文放在用例一级或在期望结果中遗漏 quote。并且：每个期望结果的 quote 还必须**照抄进本条用例主张顶层的 `quotes` 数组**（与 `cases[].expected[].quote` 同一份内容）。引文只有在边界被解析过才能被 quote@1 核对；只写在期望结果的数据里、不抄进顶层 quotes 的引文，会被记成「没有绑定到本次运行」的未知（这是核心的缺口，另有任务修它；在修好之前，照抄进顶层是唯一正确的写法）。
+- `expected`：期望结果列表。**特别注意**：每个期望结果必须自己带 `quote` 对象（形状为 `{"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`），槽位路径为 `/cases/<用例序号>/expected/<期望结果序号>/quote`。**严禁**将引文放在用例一级或在期望结果中遗漏 quote。引文可以只位于期望数据内，Hub 已预热表内和槽位数据的引用并按本运行绑定来源分级读取；顶层 quotes 可以照抄作显式引用，不再是绕过核心缺口的条件。
   - `text`：期望结果文字（必填字符串，必须是自身引文的非空逐字片段，只忽略空白差异，不得改写）。
   - `quote`：逐字引文（必填对象，`{ "text": "...", "reference": "..." }`），包含必填的 `text`（修复说明或手册里的逐字原文）和 `reference`（引用地址）。每个期望结果必须各自携带自己的 quote。
 - `tags`：标签列表，至少包含一个属于团队模板类别的标签（`Functional`、`Negative`、`Boundary`、`Performance`、`Security`、`Compatibility`）。反向用例若含 `Negative` 标签，必须保证 `negative: true`。
@@ -104,3 +104,10 @@ Hub 对提交进行两层核对：
 ```
 
 查重未知时必须自动补取：先修正解析不出命令头的草稿；only 未覆盖就重读含草稿命令头的索引并重开；缺键、截断、每键上限、缺 commands 字段或未读来源，就补齐相应事实后重开核对。接口仍拿不到完整数据时明确报告能力缺口，不把未知转述成没有重复。参数值不同不改变命令头集合的比较。
+
+### 检查时按草稿动态读取
+Hub 在 duplicate_check 构造主体后，按锁定目录解析出的草稿命令头从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
+
+缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令头，逗号分隔>&fields=commands,document,node,title,negative`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。
+
+每条草稿声明稳定 id、每步完整 identity、每个 expected 的 identity/after；引用必须带原始 byte span。不要用相同标题或文字前缀查重。索引须有作者 case_structure；缺声明就请求作者补结构后重产新根，缺原件就补读，截断按冻结根续读。不能把不完整键当空集合。发布状态只取原始 JSON status，缺字段请发布页或缺陷系统维护者补声明。

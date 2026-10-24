@@ -52,7 +52,7 @@ describe('regression-scope scenario', () => {
     assert.deepEqual(scenario.respond({ ...turn(2), toolResults: turnsOf('运行 run_synthetic')[2].toolResults }), [{ text: '对比完成。' }]);
   });
   test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
-    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（modified）、/commands/demo/show（modified）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
+    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（修改）、/commands/demo/show（修改）；命令差 /commands/demo/pool/delete（删除，不进范围）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
     const stray = good.replace('/commands/demo/show。', '/commands/demo/other。');
     assert.ok(!allOk(scenario, turnsOf(stray)));
@@ -112,8 +112,8 @@ describe('traceability scenario', () => {
         input: {
           pack: 'traceability',
           inputs: {
-            defects: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=defect&key=bug' },
-            cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects&fields=document,node,title' },
+            defects: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=defect&key=bug&only=7300,7402' },
+            cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects&fields=document,node,title,system' },
           },
         },
       },
@@ -127,7 +127,8 @@ describe('traceability scenario', () => {
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看',
       '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
-    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
+    assert.ok(!allOk(scenario, turnsOf(good)), 'an honest unknown is unfinished rather than accepted');
+    assert.ok(scenario.check(turnsOf(good)).some(c=>c.ok&&c.name.includes('列出的用例')));
     const missing = good.replace('9001:c-1', '9001:wrong-case');
     assert.ok(!allOk(scenario, turnsOf(missing)), 'a defect missing one joined case fails');
     const traced = good.replace('无已索引用例（未知）', '1 个用例');

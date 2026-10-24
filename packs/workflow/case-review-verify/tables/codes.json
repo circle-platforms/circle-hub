@@ -37,14 +37,14 @@
       "code": "case-review-verify.internal_error",
       "when": "任务包函数内部出错",
       "fix": "这是任务包的缺陷，请把输入交给任务包维护人"
+    },
+    {
+      "code": "case-review-verify.draft_level_missing",
+      "when": "初评缺少等级",
+      "fix": "初评补等级并重交后再开复核"
     }
   ],
   "warnings": [
-    {
-      "code": "case-review-verify.draft_level_missing",
-      "when": "初评的验证结果里没有等级（跨条目主张 level）",
-      "fix": "结论与等级的一致性无法核对；请初评方补上等级后重新提交"
-    },
     {
       "code": "case-review-verify.parameter_ignored",
       "when": "运行参数的取值无效，按默认值处理",
@@ -141,6 +141,16 @@
       "code": "case-review-verify.suggestion_incomplete",
       "when": "检查 suggestion_targets：建议没有完整的补、因为、期望三段，或一段没有内容",
       "fix": "按“补：<用例>；因为：<原因>；期望：<结果>”写全三段"
+    },
+    {
+      "code": "case-review-verify.verdict_missing",
+      "when": "提交的复核判定或等级缺失",
+      "fix": "补齐 cross_item 的判定码和 rank 后重交；初评缺等级须先补齐初评再重开复核"
+    },
+    {
+      "code": "case-review-verify.level_missing",
+      "when": "提交的复核判定或等级缺失",
+      "fix": "补齐 cross_item 的判定码和 rank 后重交；初评缺等级须先补齐初评再重开复核"
     }
   ]
 }

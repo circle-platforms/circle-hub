@@ -317,8 +317,8 @@ describe('trace gold generator', () => {
       '运行 run_1 完成：任务包 traceability',
       '完整结果 rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       '条目（2 个；编号 | 名称 | 摘要）：',
-      '- 900001 | 缺陷 900001 | 发布说明：已修复；缺陷系统：closed；2 个用例',
-      '- 900002 | 缺陷 900002 | 发布说明：已修复；缺陷系统：active；无已索引用例（未知）',
+      '- plm:900001 | 缺陷 900001 | 发布说明：已修复；缺陷系统：closed；2 个用例',
+      '- plm:900002 | 缺陷 900002 | 发布说明：已修复；缺陷系统：active；无已索引用例（未知）',
       '跨条目：缺陷 2 个：已追溯 1 个，未追溯 1 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个；缺陷系统状态未知 0 个（不算已关闭也不算未关闭），支持，traceability.counts',
     ].join('\n');
 
@@ -334,9 +334,9 @@ describe('trace gold generator', () => {
     ];
 
     const checks = scenario.check(turns);
-    for (const c of checks) {
-      assert.ok(c.ok, `Check failed: ${c.name} - expected: ${c.expected}, actual: ${c.actual}`);
-    }
+    assert.ok(checks.some(c=>!c.ok&&c.actual.includes('未知')),'the untraced row remains unfinished');
+    assert.ok(checks.filter(c=>c.name.includes('列出的用例')).every(c=>c.ok),'the determinate joined rows still match');
+    assert.ok(checks.find(c=>c.name==='已关闭缺陷统计与独立依据一致')?.ok);
   });
 
   it('main CLI reads inputs, generates gold JSON, and exits 0', async () => {

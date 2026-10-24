@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../generated/protocol.ts';
 import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
-import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
+import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement, TypeDeclarationStatusSchema, CommandParseStatusSchema, ReasonSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
 
@@ -285,7 +285,26 @@ export type ProducedEntry = z.infer<typeof ProducedEntry>;
 export const Unplaced = z.strictObject({ fragment: FragmentRef, section: z.string(), kind: z.string(), text: z.string() });
 export type Unplaced = z.infer<typeof Unplaced>;
 
+/** C07/W05: grammar identity and parameter evidence, never a new validation terminal. */
+export const ProducerDiagnostic=z.strictObject({
+  command:z.array(z.string()),path:z.string().min(1),attribute:z.string().min(1),position:z.number().int().positive().optional(),
+  type_declaration_status:TypeDeclarationStatusSchema,command_parse_status:CommandParseStatusSchema,
+  syntax_valid:z.boolean(),reason:ReasonSchema,missing:z.string().regex(/\S/),next_action:z.string().regex(/\S/),
+  audience:z.string().regex(/\S/),due:z.string().regex(/\S/),source_value:z.string().optional(),
+});
+export type ProducerDiagnostic=z.infer<typeof ProducerDiagnostic>;
+export const ProducerGrammar=z.strictObject({id:Versioned,source:z.string().min(1),complete:z.boolean()});
+
 export const ProducerOutput = z.strictObject({
+  grammar:ProducerGrammar.optional(),
+  diagnostics:z.array(ProducerDiagnostic).optional(),
+
+  inventory: z.array(z.strictObject({
+    label: z.string().min(1).max(80),
+    listed: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON array of the complete source inventory'),
+    complete: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON true declaring the inventory complete'),
+    selected: z.number().int().nonnegative(),
+  })).max(32).optional().describe('Evidence for a complete zero selection; the Hub verifies fragments and counts before admitting an empty product-wide root'),
   entries: z.array(ProducedEntry),
   unplaced: z.array(Unplaced).optional(),
   warnings: z.array(z.string()),

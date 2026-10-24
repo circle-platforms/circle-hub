@@ -244,3 +244,19 @@ describe('parseManifest is total', () => {
     assert.ok(elapsed < 5000, `${elapsed.toFixed(0)} ms for 500 mangled manifests`);
   });
 });
+
+describe('a device without any interface address', () => {
+  it('is refused at import with a pointer at the device', () => {
+    const input = { ...valid, beds: [{ ...valid.beds[0], devices: [...valid.beds[0].devices, { name: 'bare0', type: 'client', ipv4: [], ipv6: [] }] }] };
+    const problems = problemsOf(input);
+    const problem = problems.find((p) => p.pointer === '/beds/0/devices/5');
+    assert.ok(problem, JSON.stringify(problems));
+    assert.match(problem.message, /bare0/);
+    assert.match(problem.message, /没有接口地址/);
+  });
+
+  it('a device with an address on either family is not refused', () => {
+    const parsed = parseManifest({ ...valid, beds: [{ ...valid.beds[0], devices: [...valid.beds[0].devices, { name: 'v6only0', type: 'client', ipv4: [], ipv6: ['2001:db8:1::99/64'] }] }] });
+    assert.ok(parsed.ok, JSON.stringify(parsed.ok ? null : parsed.problems));
+  });
+});

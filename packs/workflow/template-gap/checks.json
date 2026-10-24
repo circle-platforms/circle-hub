@@ -4,14 +4,21 @@
     {
       "id": "coverage",
       "title": "模板类别覆盖",
-      "interpreter": "coverage@1",
-      "table": "tables/template-v3-coverage.json",
       "applies": "item",
       "subject": {
-        "module": "functions/subject.ts"
+        "module": "functions/classification-subject.ts"
       },
       "judges": "subject",
-      "tier": "advisory"
+      "tier": "advisory",
+      "function": {
+        "module": "functions/coverage-check.ts"
+      },
+      "reads": {
+        "roles": [
+          "subject"
+        ],
+        "max_bytes": 1048576
+      }
     },
     {
       "id": "command_coverage",
@@ -23,6 +30,23 @@
       "subject": {
         "module": "functions/command-subject.ts"
       },
+      "judges": "subject",
+      "tier": "advisory",
+      "reads": {
+        "roles": [
+          "subject"
+        ],
+        "max_bytes": 1048576
+      }
+    },
+    {
+      "id": "tag_declarations",
+      "title": "标签闭集声明",
+      "function": {
+        "module": "functions/tag-declarations.ts"
+      },
+      "table": "tables/resource-tags.json",
+      "applies": "item",
       "judges": "subject",
       "tier": "advisory"
     }

@@ -163,11 +163,8 @@ describe('projection of the draft result onto the target', () => {
     assert.match((out.items[0].fields.draft_findings as Array<{ reference: string }>)[0].reference, new RegExp(`^rec:${RECORD}#/result/partitions/`));
   });
 
-  it('warns when the draft has no level, and says nothing is to verify without findings', () => {
-    const out = projected(projection(input([target(), draft(record(draftResult({ cross_item: [] })))])));
-    assert.deepEqual(out.warnings.map((w) => w.code), ['case-review-verify.draft_level_missing']);
-    assert.equal(out.items[0].fields.draft_level, null);
-    assert.equal(out.groups[0].rank, null);
+  it('rejects a draft without a level and names the initial review that needs repair',()=>{
+    const out=projection(input([target(),draft(record(draftResult({cross_item:[]})))]));refused(out,'case-review-verify.draft_level_missing');
   });
 
   it('refuses inputs that are not a target and a draft result of that target', () => {
@@ -244,10 +241,10 @@ describe('the checks', () => {
   });
 
   it('a verdict without a draft level to compare, or without any verdict, is unknown, not a pass', () => {
-    assert.deepEqual(verdict(runSubject([claim('verified', { data: { finding: ref(1) } })], [final('PASS')], null)).map((o) => [o.verdict, o.reason]), [['unknown', 'missing_input']]);
-    assert.deepEqual(verdict(runSubject([], [])).map((o) => [o.verdict, o.reason]), [['unknown', 'missing_input']]);
-    assert.deepEqual(verdict(runSubject([], [final('PARTIAL')], null)).map((o) => [o.verdict, o.reason]), [['unknown', 'missing_input']]);
-    assert.deepEqual(dispositions(itemSubject(null)).map((o) => [o.verdict, o.reason]), [['unknown', 'missing_input']]);
+    assert.deepEqual(verdict(runSubject([claim('verified', { data: { finding: ref(1) } })], [final('PASS')], null)).map((o) => [o.verdict, o.reason]), [['refute', undefined]]);
+    assert.deepEqual(verdict(runSubject([], [])).map((o) => [o.verdict, o.reason]), [['refute', undefined]]);
+    assert.deepEqual(verdict(runSubject([], [final('PARTIAL')], null)).map((o) => [o.verdict, o.reason]), [['refute', undefined]]);
+    assert.deepEqual(dispositions(itemSubject(null)).map((o) => [o.verdict, o.reason]), [['refute', undefined]]);
   });
 
   it('a PASS needs a quotation of its own into the target: a location, a ground, a quotation of another source or a copy of the draft\'s quotation is not one', () => {

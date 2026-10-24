@@ -1,0 +1,72 @@
+{
+  "id": "negative_command_present",
+  "source": "author",
+  "check": "negative_commands",
+  "note": "反向用例从自身取命令行",
+  "subject": {
+    "item": "sample:n1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/n1",
+    "negative": true,
+    "claims": [],
+    "phrases": [
+      "探测间隔超出范围时报错",
+      "health interval pool1 0",
+      "提示取值超出范围"
+    ],
+    "unquoted": []
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:n1",
+      "tier": "advisory"
+    }
+  ]
+}

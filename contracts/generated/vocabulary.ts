@@ -74,12 +74,13 @@ export const AXES = {
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
   share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
   applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
-  knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
   classification_status: { label: '分类状态', owner: 'W01', values: [{ code: 'classified', label: '已分类' }, { code: 'unclassified', label: '未分类' }] },
   judgment_status: { label: '判断状态', owner: 'V02', values: [{ code: 'judged', label: '已判断' }, { code: 'unjudged', label: '未判断' }] },
   type_declaration_status: { label: '类型声明状态', owner: 'C07', values: [{ code: 'declared', label: '类型已声明' }, { code: 'undeclared', label: '类型未声明' }] },
   command_parse_status: { label: '命令解析状态', owner: 'C07', values: [{ code: 'parsed', label: '命令已解析' }, { code: 'not_command', label: '不是命令' }, { code: 'parameters_unchecked', label: '参数未核' }] },
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
+  knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
+  release_status: { label: '发布说明状态', owner: 'K02', values: [{ code: 'fixed', label: '已修复' }, { code: 'known', label: '已知' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -723,15 +724,6 @@ export function isApplicabilityField(value: unknown): value is ApplicabilityFiel
   return (APPLICABILITY_FIELD as readonly unknown[]).includes(value);
 }
 
-/** 知识计数口径 (K05) */
-export const KNOWLEDGE_COUNT = ['tree_unplaced_entries', 'commandless_cases'] as const;
-export type KnowledgeCount = (typeof KNOWLEDGE_COUNT)[number];
-export const KNOWLEDGE_COUNT_LABEL = { 'tree_unplaced_entries': '未挂到树上位置的条目', 'commandless_cases': '未归位（没有命令归属的用例）' } as const satisfies { readonly [K in KnowledgeCount]: string };
-export const KnowledgeCountSchema = z.enum(KNOWLEDGE_COUNT);
-export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
-  return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
-}
-
 /** 分类状态 (W01) */
 export const CLASSIFICATION_STATUS = ['classified', 'unclassified'] as const;
 export type ClassificationStatus = (typeof CLASSIFICATION_STATUS)[number];
@@ -775,6 +767,24 @@ export const DECLARATION_STATUS_LABEL = { 'declared': '已声明', 'undeclared':
 export const DeclarationStatusSchema = z.enum(DECLARATION_STATUS);
 export function isDeclarationStatus(value: unknown): value is DeclarationStatus {
   return (DECLARATION_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 知识计数口径 (K05) */
+export const KNOWLEDGE_COUNT = ['tree_unplaced_entries', 'commandless_cases'] as const;
+export type KnowledgeCount = (typeof KNOWLEDGE_COUNT)[number];
+export const KNOWLEDGE_COUNT_LABEL = { 'tree_unplaced_entries': '未挂到树上位置的条目', 'commandless_cases': '未归位（没有命令归属的用例）' } as const satisfies { readonly [K in KnowledgeCount]: string };
+export const KnowledgeCountSchema = z.enum(KNOWLEDGE_COUNT);
+export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
+  return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
+}
+
+/** 发布说明状态 (K02) */
+export const RELEASE_STATUS = ['fixed', 'known'] as const;
+export type ReleaseStatus = (typeof RELEASE_STATUS)[number];
+export const RELEASE_STATUS_LABEL = { 'fixed': '已修复', 'known': '已知' } as const satisfies { readonly [K in ReleaseStatus]: string };
+export const ReleaseStatusSchema = z.enum(RELEASE_STATUS);
+export function isReleaseStatus(value: unknown): value is ReleaseStatus {
+  return (RELEASE_STATUS as readonly unknown[]).includes(value);
 }
 
 export interface AxisValues {
@@ -849,12 +859,13 @@ export interface AxisValues {
   digest_rule: DigestRule;
   share_audience: ShareAudience;
   applicability_field: ApplicabilityField;
-  knowledge_count: KnowledgeCount;
   classification_status: ClassificationStatus;
   judgment_status: JudgmentStatus;
   type_declaration_status: TypeDeclarationStatus;
   command_parse_status: CommandParseStatus;
   declaration_status: DeclarationStatus;
+  knowledge_count: KnowledgeCount;
+  release_status: ReleaseStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -929,12 +940,13 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   digest_rule: DIGEST_RULE_LABEL,
   share_audience: SHARE_AUDIENCE_LABEL,
   applicability_field: APPLICABILITY_FIELD_LABEL,
-  knowledge_count: KNOWLEDGE_COUNT_LABEL,
   classification_status: CLASSIFICATION_STATUS_LABEL,
   judgment_status: JUDGMENT_STATUS_LABEL,
   type_declaration_status: TYPE_DECLARATION_STATUS_LABEL,
   command_parse_status: COMMAND_PARSE_STATUS_LABEL,
   declaration_status: DECLARATION_STATUS_LABEL,
+  knowledge_count: KNOWLEDGE_COUNT_LABEL,
+  release_status: RELEASE_STATUS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

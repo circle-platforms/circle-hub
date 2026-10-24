@@ -6,6 +6,7 @@ import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts
 import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
 import { sha } from './testing/knowledge.ts';
 import { ITEM, standardDocument, toyMap } from './testing/mindmap.ts';
+import { independenceGap } from './independence.ts';
 
 let postgres: TemporaryPostgres;
 let h: Harness;
@@ -15,7 +16,7 @@ let handover: string;
 const skip = await sandboxSkip();
 
 const IDS = [ITEM.c1, ITEM.c2, ITEM.c3, ITEM.c4];
-/** Synthetic declared models of two families (names that share no word, sameModelFamily). */
+/** Synthetic declared model names. They name no family: a family is only a declared model_family_id (A76). */
 const DRAFT_MODEL = 'aster-7 temperature=0';
 const VERIFIER = 'birch-2';
 const TITLES: Record<string, string> = { [ITEM.c1]: '设置 3 区浇灌 15 分钟', [ITEM.c2]: '查看分区状态', [ITEM.c3]: '设置 9 区应报错', [ITEM.c4]: '没有期望结果的用例' };
@@ -116,20 +117,27 @@ test('handover by a Hub record reference: the draft result is a bound source; it
   assert.ok(judgment.validity.bound.includes(handover.slice('rec:'.length)));
 });
 
-test('independence satisfied by another session and another model; the claims carry the declared-independence mark', { skip }, async () => {
+test('another session and another model name are no family evidence: independence unknown, claims kept', { skip }, async () => {
+  // Before the retirement of name inference (owner rule 2026-10-24, sweep A76) a differing model name made this
+  // verification independent. A family is now only a declared model_family_id, compared exactly, and no submission
+  // declares one yet: the honest result is unknown, never a verdict in either direction.
   const run = await verification('sess-verify-1');
   const answer = await h.service.submitResult(h.alice, verdicts(run, `${VERIFIER} temperature=0`), h.call('sess-verify-1'));
   assert.equal(answer.acceptance, 'accepted');
   for (const id of IDS) {
     const r = verificationOf(answer.result!, id);
-    assert.deepEqual([r.status, r.layers[0].terminal], ['satisfied', 'judgment'], id);
+    assert.deepEqual([r.status, r.unsatisfied_reason, r.layers[0].terminal], ['unsatisfied', 'independence_unknown', 'judgment'], id);
     const judgment = r.claims.find((c) => c.warrant.producer === 'model')!;
-    assert.equal(judgment.warrant.independence, 'model_family_declared');
-    assert.ok(judgment.qualifier.marks.includes('independence_declared'));
+    assert.equal(judgment.warrant.independence, 'unknown');
+    assert.ok(judgment.qualifier.marks.includes('independence_declared'), 'the template still accepts a declared independence');
   }
   const final = answer.result!.cross_item.find((c) => c.requirement === 'final')!;
-  assert.deepEqual([final.statement.rank, final.warrant.independence], ['PASS', 'model_family_declared']);
+  assert.deepEqual([final.statement.rank, final.warrant.independence], ['PASS', 'unknown']);
   assert.ok(final.qualifier.marks.includes('independence_declared'));
+  // The gap that belongs to this unknown, for the receipt the integrator wires with the declared-identity contract.
+  const gap = independenceGap({ sessions: ['sess-verify-1'], model: `${VERIFIER} temperature=0` }, { sessions: new Set(['sess-draft']), models: new Set([DRAFT_MODEL]), complete: true });
+  assert.match(gap!.missing, /model_family_id/);
+  assert.match(gap!.next, /model-identity@1/);
 });
 
 test('the same session as the draft is not independent: unsatisfied (independence unknown), claims kept', { skip }, async () => {
@@ -147,12 +155,14 @@ test('the same session as the draft is not independent: unsatisfied (independenc
   assert.equal(verificationOf(mixed.result!, ITEM.c2).claims.find((c) => c.warrant.producer === 'model')!.warrant.independence, 'not_independent');
 });
 
-test('the same model family as the draft is not independent, whatever its configuration', { skip }, async () => {
+test('another configuration or case of a model name is no family evidence either: unknown, not a verdict', { skip }, async () => {
+  // The retired rule read a family out of the name (ASTER-7 temperature=1 and the draft's aster-7 temperature=0). Names
+  // are not compared any more, so this is unknown; a declared family of the same id would be not_independent.
   const run = await verification('sess-verify-3');
   const answer = await h.service.submitResult(h.alice, verdicts(run, 'ASTER-7 temperature=1'), h.call('sess-verify-3'));
   const r = verificationOf(answer.result!, ITEM.c3);
   assert.deepEqual([r.status, r.unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
-  assert.equal(r.claims.find((c) => c.warrant.producer === 'model')!.warrant.independence, 'not_independent');
+  assert.equal(r.claims.find((c) => c.warrant.producer === 'model')!.warrant.independence, 'unknown');
 });
 
 test('an unobserved session refuses an independent start before binding', { skip }, async () => {
@@ -169,7 +179,7 @@ test('a verdict inconsistent with the dispositions is a violation routed into re
   const r = verificationOf(answer.result!, ITEM.c2);
   assert.deepEqual(r.layers, [{ layer: 'static', terminal: 'violation', code: 'toy-verify.inconsistent', tier: 'blocking', attribution: 'producer_error' }]);
   assert.equal(r.unsatisfied_reason, 'outcome_mismatch');
-  assert.equal(verificationOf(answer.result!, ITEM.c1).status, 'satisfied');
+  assert.deepEqual([verificationOf(answer.result!, ITEM.c1).status, verificationOf(answer.result!, ITEM.c1).unsatisfied_reason], ['unsatisfied', 'independence_unknown'], 'the consistent item still fails on independence, not on its outcome');
   // PARTIAL with the same dispositions is consistent
   const partial = await h.service.submitResult(h.alice, verdicts(run, VERIFIER, { [ITEM.c2]: 'refuted' }, 'PARTIAL'), h.call('sess-verify-5'));
   assert.deepEqual(partial.errors, []);
@@ -200,7 +210,7 @@ test('without accepts_declared_independence the declared independence is not acc
     const r = verificationOf(answer.result!, ITEM.c1);
     assert.deepEqual([r.status, r.unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
     const judgment = r.claims.find((c) => c.warrant.producer === 'model')!;
-    assert.equal(judgment.warrant.independence, 'model_family_declared');
+    assert.equal(judgment.warrant.independence, 'unknown');
     assert.ok(!judgment.qualifier.marks.includes('independence_declared'));
     map = previous;
   } finally {
@@ -274,7 +284,7 @@ test('a predecessor of the same pack is the author of an independent judgment (A
   );
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
   const findings = Object.values(answer.result!.partitions).flat().find((item) => item.item === ITEM.c1)!.requirements.find((requirement) => requirement.requirement === 'findings')!;
-  assert.equal(findings.status, 'satisfied');
+  assert.deepEqual([findings.status, findings.unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
 });
 
 test('replaying an accepted verification from the drafter session is not independent (A04)', { skip }, async () => {
@@ -283,7 +293,7 @@ test('replaying an accepted verification from the drafter session is not indepen
   const body = verdicts(run, VERIFIER);
   const accepted = await h.service.submitResult(h.alice, body, h.call('sess-replay-verify'));
   assert.equal(accepted.acceptance, 'accepted', JSON.stringify(accepted.errors));
-  assert.equal(verificationOf(accepted.result!, ITEM.c1).status, 'satisfied');
+  assert.deepEqual([verificationOf(accepted.result!, ITEM.c1).status, verificationOf(accepted.result!, ITEM.c1).unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
   // The body is unchanged. The session is the drafter's, so this call is not the verifier's receipt.
   const replayed = await h.service.submitResult(h.alice, body, h.call('sess-replay-draft'));
   assert.equal(replayed.acceptance, 'accepted', JSON.stringify(replayed.errors));
@@ -297,16 +307,17 @@ test('replaying an accepted verification from the drafter session is not indepen
 test('a verification revised by its own verifier stays independent of the draft; revised by the drafter it is not', { skip }, async () => {
   const lineage = await draftBy('sess-r-draft', 'sess-r-draft', DRAFT_MODEL);
   const v1 = await verification('sess-r-verify', h, lineage.handover, lineage.run);
-  assert.deepEqual(await verified(v1, VERIFIER, 'sess-r-verify'), { statuses: ['satisfied'], independence: ['model_family_declared'], final: 'model_family_declared' });
+  assert.deepEqual(await verified(v1, VERIFIER, 'sess-r-verify'), { statuses: ['unsatisfied'], independence: ['unknown'], final: 'unknown' });
   // the verifier revises its own verification: still judged against the draft, not against its own first revision
   const v2 = await verification('sess-r-verify', h, lineage.handover, v1);
-  assert.deepEqual(await verified(v2, VERIFIER, 'sess-r-verify'), { statuses: ['satisfied'], independence: ['model_family_declared'], final: 'model_family_declared' });
+  assert.deepEqual(await verified(v2, VERIFIER, 'sess-r-verify'), { statuses: ['unsatisfied'], independence: ['unknown'], final: 'unknown' });
   // the drafter revises the verification: not independent of the draft, whatever the revision before it
   const v3 = await verification('sess-r-draft', h, lineage.handover, v2);
   assert.deepEqual(await verified(v3, DRAFT_MODEL, 'sess-r-draft'), { statuses: ['unsatisfied'], independence: ['not_independent'], final: 'not_independent' });
   // the drafter's model family from a fresh session (a dated alias) is just as dependent
   const v4 = await verification('sess-r-fresh', h, lineage.handover, v3);
-  assert.deepEqual(await verified(v4, 'aster-7-20261001', 'sess-r-fresh'), { statuses: ['unsatisfied'], independence: ['not_independent'], final: 'not_independent' });
+  // A dated alias of the draft's model name is no family evidence: unknown, not a verdict in either direction.
+  assert.deepEqual(await verified(v4, 'aster-7-20261001', 'sess-r-fresh'), { statuses: ['unsatisfied'], independence: ['unknown'], final: 'unknown' });
 });
 
 test('every drafter of the lineage counts: the producer of an older handed-over result and a later one', { skip }, async () => {
@@ -326,7 +337,7 @@ test('every drafter of the lineage counts: the producer of an older handed-over 
   assert.deepEqual((await verified(bySecond, 'cedar-3', 'sess-o-v2')).independence, ['not_independent']);
   // a verifier of another family in another session is independent
   const byOther = await verification('sess-o-v3', h, older, draftRun);
-  assert.deepEqual(await verified(byOther, VERIFIER, 'sess-o-v3'), { statuses: ['satisfied'], independence: ['model_family_declared'], final: 'model_family_declared' });
+  assert.deepEqual(await verified(byOther, VERIFIER, 'sess-o-v3'), { statuses: ['unsatisfied'], independence: ['unknown'], final: 'unknown' });
 });
 
 test('judgments carried into a revision of the draft keep their author: the first drafter cannot verify the revision', { skip }, async () => {

@@ -66,11 +66,15 @@ describe('reads through the connectors with Basic authentication', () => {
     await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'authorization', SYNTHETIC_AUTHORIZATION);
     const manual = await read('openkm:cli:7.1');
     assert.equal(manual.ok, true, manual.ok ? '' : manual.reason);
+    const before = store.requests.length;
     const search = await read(`openkm:spec-search:${SPEC_SEARCH_TERMS.join('+')}`);
     assert.ok(search.ok);
     const content = search.artifacts.find((a) => a.name === 'content')!;
     const text = new TextDecoder().decode(await artifactBytes(kit, content.artifact.body.sha256));
-    for (const name of SPEC_SEARCH_FILES) assert.ok(text.includes(`# ${name}`));
+    // The search lists the folder and reads no file: keyword retrieval selects no source (owner ruling U19/U20).
+    for (const name of SPEC_SEARCH_FILES) assert.ok(text.includes(`spec/${name}`), name);
+    assert.match(text, /关键词检索已退役/);
+    assert.deepEqual(store.requests.slice(before).map((r) => r.method), ['PROPFIND']);
     assert.ok(store.requests.length > 0 && store.requests.every((r) => r.headers.authorization === SYNTHETIC_AUTHORIZATION));
     assert.equal(store.refused, 0);
   });

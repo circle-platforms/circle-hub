@@ -7,9 +7,11 @@
 // - <type>:cli:<line>           the CLI manual of a version line: the subfolder of settings.cli_folder (default cli) whose
 //                               name ends in the line's numbers (rel_x_10_7_1 is line 10.7.1), file settings.cli_file
 // - <type>:app:<line>           the same for the application manual (settings.app_folder, settings.app_file)
-// - <type>:spec-search:<terms>  terms joined by +: settings.spec_folder (default spec) listed once, every file name scored by
-//                               the number of terms it contains, the best five with at least one term read; the derived
-//                               content (Markdown) lists the files read and then holds each file's text
+// - <type>:spec-search:<terms>  terms joined by +: settings.spec_folders (default [spec]) listed once each. Keyword
+//                               retrieval is retired (owner ruling U19/U20, 2026-10-24): the terms are disclosed and not
+//                               used, no file is scored, chosen or read. The derived content (Markdown) lists the folder
+//                               members and names the missing fact and its next step (an explicit <type>:file:<path>, or
+//                               a candidate a model proposes with a verbatim quote the Hub verifies)
 // - <type>:qa-search:<terms>    the same over the test strategy documents (settings.qa_folder, default qa)
 // No product name is written here: folder and file names come from the resource settings.
 
@@ -22,8 +24,6 @@ type Input = { round?: unknown; external?: { type?: unknown; key?: unknown }; se
 const DEFAULTS = { cli_folder: 'cli', cli_file: 'cli_cn/cli_cn.md', app_folder: 'app', app_file: 'app_cn/app_cn.md', spec_folder: 'spec', qa_folder: 'qa' } as const;
 type Setting = keyof typeof DEFAULTS;
 
-/** Files kept by a search. */
-export const SEARCH_LIMIT = 5;
 const MAX_TERMS = 16;
 const MAX_TERM = 64;
 const MAX_CANDIDATES = 4;
@@ -312,96 +312,130 @@ export function termsOf(key: string): string[] {
   return out;
 }
 
-const ASCII_WORD = /^[A-Za-z0-9]+$/;
-const ASCII_LETTER = /[A-Za-z]/;
-
-/** Whether a file name contains a term, case-insensitively; an ASCII term counts only where no ASCII letter touches it. */
-export function containsTerm(name: string, term: string): boolean {
-  const haystack = name.toLowerCase();
-  const needle = term.toLowerCase();
-  if (!ASCII_WORD.test(term)) return haystack.includes(needle);
-  for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
-    const before = haystack[at - 1] ?? '';
-    const after = haystack[at + needle.length] ?? '';
-    if (!ASCII_LETTER.test(before) && !ASCII_LETTER.test(after)) return true;
-  }
-  return false;
-}
-
-export type Scored = Entry & { score: number; matched: string[]; weight: number };
-
-/**
- * The files of a search, best first: every file of the listing scored by the number of terms its name contains; ties go to
- * the files whose terms are rarer in the listing (the sum over its terms of the files without that term), then to the name.
- * Only files with at least one term; at most SEARCH_LIMIT. `entries` defaults to the readable members of the listing.
- */
-export function rankFiles(model: unknown, terms: readonly string[], entries: readonly Entry[] = membersOf(model).members): Scored[] {
-  const files = entries.filter((entry) => !entry.collection);
-  const matches = files.map((file) => terms.filter((term) => containsTerm(file.name, term)));
-  const frequency = new Map<string, number>();
-  for (const list of matches) for (const term of list) frequency.set(term, (frequency.get(term) ?? 0) + 1);
-  const scored: Scored[] = files.map((file, k) => ({
-    ...file,
-    score: matches[k].length,
-    matched: matches[k],
-    weight: matches[k].reduce((sum, term) => sum + files.length - (frequency.get(term) ?? 0), 0),
-  }));
-  return scored
-    .filter((file) => file.score > 0)
-    .sort((a, b) => b.score - a.score || b.weight - a.weight || byName(a, b))
-    .slice(0, SEARCH_LIMIT);
-}
-
 const searchOf = (type: string): { folder: Setting; title: string } => SEARCHES[type] ?? SEARCHES['spec-search'];
 
-/** Plan of <type>:spec-search:<terms> and <type>:qa-search:<terms>: the folder listed once, then the best files read by their paths. */
-export function searchPlan(input: unknown): PlanOutput {
-  const { round, type, key, settings, responses } = partsOf(input);
-  const folder = setting(settings, searchOf(type).folder);
-  if (round === 1) return { requests: [{ key: 'list', route: 'list', params: { dir: folder } }], done: false };
-  const ranked = rankFiles(responses.list?.model, termsOf(key));
-  return { requests: ranked.map((file, k) => ({ key: `file-${k + 1}`, route: 'file', params: { path: `${folder}/${file.name}` } })), done: true, original: 'list' };
+const LEGACY_SPEC = '旧设置 spec_folder 已并入 spec_folders，下一步资源管理员改用 spec_folders';
+/** One normalized list for both listing and search; legacy settings add one member, never a second read path. */
+export function specFolders(settings: Record<string, unknown>,searchDefault=false): { folders: string[]; warnings: string[] } {
+  const given = settings.spec_folders;
+  if (given !== undefined && (!Array.isArray(given) || given.some(v => typeof v !== 'string'))) throw new TypeError('spec_folders 需要目录列表；下一步资源管理员修正设置后重读');
+  const values: unknown[] = given === undefined ? [] : [...given as string[]];
+  const warnings: string[] = [];
+  if (settings.spec_folder !== undefined) { values.push(settings.spec_folder); warnings.push(LEGACY_SPEC); }
+  if (given === undefined && settings.spec_folder === undefined) {
+    if(!searchDefault)throw new TypeError('规格目录设置 spec_folders 未声明；下一步资源管理员配置目录列表后重读');
+    values.push(DEFAULTS.spec_folder);
+  }
+  const folders = values.map(value => {
+    if (typeof value !== 'string') throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
+    const path = value.replace(/^\/+|\/+$/g, '');
+    if (path.length > 255 || !path.split('/').every(s => SEGMENT.test(s))) throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
+    return path;
+  });
+  const unique=[...new Set(folders)];
+  if(unique.length===0)throw new TypeError('spec_folders 没有可读取的目录清单原件；下一步资源管理员至少配置一个目录（可以是空目录）后重读');
+  if (unique.length > 32) throw new TypeError('spec_folders 超过 32 个目录；下一步包作者提高读请求上限并发布后重读');
+  return { folders: unique, warnings };
+}
+const listKey = (folders: readonly string[], at: number): string => folders.length === 1 ? 'list' : `list-${at}`;
+export function specListPlan(input: unknown): PlanOutput {
+  const {settings} = partsOf(input); const {folders} = specFolders(settings);
+  return {requests: folders.map((dir, at) => ({key: listKey(folders, at), route: 'list', params: {dir}})), done: true};
+}
+export function specListProject(input: unknown): unknown {
+  const {settings,responses} = partsOf(input); const {folders,warnings} = specFolders(settings);
+  const files: Array<{name:string;path:string;title?:string}> = []; const unread: string[] = [];
+  const directories:Array<{name:string;path:string}>=[];
+  folders.forEach((folder, at) => {
+    const response = responses[listKey(folders, at)];
+    if (!response?.ok || !isRecord(response.model) || !isRecord(response.model.root)) { unread.push(folder); warnings.push(`${folder}/ 目录读不到；下一步资源管理员核对读权限和目录后重读`); return; }
+    const listing = membersOf(response.model); const warning = skippedWarning(folder,listing.skipped);
+    directories.push(...listing.members.filter(entry=>entry.collection).sort(byName).map(entry=>({name:entry.name,path:`${folder}/${entry.name}`})));
+    if (warning) warnings.push(warning);
+    const titles=new Map<string,string>();
+    const walk=(element:XmlElement,depth=0):void=>{
+      if(depth>32)return;
+      if(localName(element.name)==='response'){
+        let href:string|undefined,title:string|undefined;
+        const fields=(node:XmlElement,level=0):void=>{if(level>32)return;const name=localName(node.name);if(name==='href')href=textOf(node).trim();if(name==='displayname')title=textOf(node).trim();for(const child of node.children)if(typeof child!=='string')fields(child,level+1);};
+        fields(element);if(href&&title)titles.set(trimmed(pathOf(href)),title);
+      }else for(const child of element.children)if(typeof child!=='string')walk(child,depth+1);
+    };
+    walk(response.model.root as XmlElement);
+    files.push(...listing.members.filter(e=>!e.collection).sort(byName).map(e=>({name:e.name,path:`${folder}/${e.name}`,...(titles.has(e.path)?{title:titles.get(e.path)}:{})})));
+  });
+  return {artifacts:[{name:'content',media_type:'application/json',json:{folders,files,directories,unread,complete:unread.length===0}}],warnings,...(unread.length?{complete:false}:{})};
 }
 
-/** Projection of a search: a Markdown listing of the files read (an empty listing when none matched), then each file's text. */
+function searchFolders(type: string, settings: Record<string,unknown>): {folders:string[];warnings:string[]} {
+  return type === 'spec-search' || !SEARCHES[type] ? specFolders(settings,true) : {folders:[setting(settings,searchOf(type).folder)],warnings:[]};
+}
+/**
+ * The listings of the configured folders of a search key, one per folder in the order the settings give. Nothing here
+ * scores a name, chooses a file or reads one (owner ruling U19/U20, 2026-10-24).
+ */
+function searchListings(type: string, settings: Record<string, unknown>, responses: Record<string, Response>) {
+  const { folders, warnings } = searchFolders(type, settings);
+  const listings = folders.map((folder, at) => {
+    const response = responses[listKey(folders, at)];
+    return { folder, listed: response?.ok === true, ...membersOf(response?.model) };
+  });
+  return { folders, warnings, listings };
+}
+
+/**
+ * Plan of <type>:spec-search:<terms> and <type>:qa-search:<terms>: the configured folders listed once each, and nothing
+ * else. Keyword retrieval selects no source, so no file is planned for reading: a file is read by its declared path
+ * (<type>:file:<path>), or a model proposes one with a verbatim quote the Hub verifies.
+ */
+export function searchPlan(input: unknown): PlanOutput {
+  const { round, type, settings } = partsOf(input);
+  const { folders } = searchFolders(type, settings);
+  if (round === 1) return { requests: folders.map((dir, at) => ({ key: listKey(folders, at), route: 'list', params: { dir } })), done: folders.length === 0 };
+  return { requests: [], done: true, ...(folders.length ? { original: listKey(folders, 0) } : {}) };
+}
+
+/**
+ * Projection of a search: the members of the configured folders as a listing in name order, the requested terms
+ * disclosed as unused, and the missing fact with its next step. No file is scored, chosen or read, and the terms never
+ * decide what is listed.
+ */
 export function searchProject(input: unknown): unknown {
   const { type, key, settings, responses } = partsOf(input);
   const search = searchOf(type);
   const terms = termsOf(key);
-  const folder = setting(settings, search.folder);
-  const listing = membersOf(responses.list?.model);
-  const ranked = rankFiles(responses.list?.model, terms, listing.members);
-  // Listed files the search did not read although their names hold a term: the search did not cover the folder.
-  const missed = listing.skipped.filter((s) => terms.some((term) => containsTerm(s.name, term)));
-  const read = ranked.map((file, k) => ({ file, response: responses[`file-${k + 1}`] }));
-  const lines = [`# ${search.title}`, '', `检索词：${terms.join('、') || '（无）'}`, '', `目录：${folder}/`, ''];
-  const ok = read.filter((r) => r.response?.ok === true && typeof r.response.text === 'string');
-  if (ok.length === 0) lines.push(ranked.length === 0 ? '没有文件名包含这些词的文件。' : '文件名包含这些词的文件都没有读到。');
-  else {
-    lines.push(`读到的文件（${ok.length} 个，按文件名包含的检索词个数排序）：`, '');
-    ok.forEach(({ file }, k) => lines.push(`${k + 1}. ${file.name}（包含 ${file.score} 个检索词：${file.matched.join('、')}）`));
+  const { folders, warnings, listings } = searchListings(type, settings, responses);
+  const folder = folders.join('、');
+  const skipped = listings.flatMap((list) => list.skipped);
+  const unread = listings.filter((list) => !list.listed).map((list) => list.folder);
+  const files = listings.flatMap((list) => list.members.filter((entry) => !entry.collection).sort(byName).map((entry) => ({ name: entry.name, path: `${list.folder}/${entry.name}` })));
+  const lines = [
+    `# ${search.title}`, '',
+    `检索词：${terms.join('、') || '（无）'}（只作披露；关键词检索已退役，不用于选择来源）`, '',
+    `目录：${folder}/`, '',
+    `目录成员（${files.length} 个，按名称排序；没有打分、没有选择、没有读取）：`,
+    ...files.map((file, k) => `${k + 1}. ${file.path}`),
+    '',
+    '本读法不按检索词给文件名打分，也不读任何文件（所有者裁定 U19/U20，2026-10-24：关键词检索连候选来源也禁止，检索结果不作任何输入或查全依据）。',
+    '缺的事实：这次要判断的来源身份。下一步：作者用 file:<路径> 读法按上面列出的路径显式声明来源（目录清单也可用 spec-list:configured 读法取得），或由模型带逐字引文提出候选并经 Hub 核验。',
+  ];
+  if (skipped.length > 0) {
+    const named = skipped.slice(0, MAX_NAMED).map((entry) => `${entry.name}（${WHY[entry.why]}）`);
+    lines.push('', `列表里没有读的项（${skipped.length} 个）：${named.join('、')}${skipped.length > MAX_NAMED ? ' 等' : ''}`);
   }
-  const failed = read.filter((r) => !(r.response?.ok === true && typeof r.response.text === 'string')).map((r) => r.file.name);
-  if (failed.length > 0) lines.push('', `没有读到：${failed.join('、')}`);
-  if (missed.length > 0) lines.push('', `列表里有、但没有读：${missed.map((s) => `${s.name}（${WHY[s.why]}）`).join('、')}`);
-  let removed = 0;
-  for (const { file, response } of ok) {
-    const clean = stripNul(response?.text as string);
-    removed += clean.removed;
-    lines.push('', `# ${file.name}`, '', clean.text.trimEnd());
-  }
-  const warning = skippedWarning(folder, listing.skipped);
+  if (unread.length > 0) lines.push('', `没有读到的目录：${unread.join('、')}`);
+  const warning = skippedWarning(folder, skipped);
   return {
     artifacts: [
       { name: 'content', media_type: 'text/markdown; charset=utf-8', text: `${lines.join('\n')}\n` },
       {
         name: 'meta',
         media_type: 'application/json',
-        json: { title: `${search.title}：${terms.join('、')}`, terms, folder, files: ok.map(({ file }) => ({ name: file.name, score: file.score, matched: file.matched })), skipped: listing.skipped.map((s) => ({ name: s.name, why: s.why })), nul_removed: removed },
+        json: { title: `${search.title}：${terms.join('、')}`, terms, terms_used: false, folder, files, skipped: skipped.map((s) => ({ name: s.name, why: s.why })), selection: 'retired' },
       },
     ],
-    ...(missed.length > 0 ? { complete: false } : {}),
-    ...(ok.length === 0 ? { note: '没有找到匹配的文件，派生内容是空清单' } : missed.length > 0 ? { note: `有 ${missed.length} 个包含检索词的文件在列表里、但链接不能读，检索不完整` } : {}),
-    ...(warning !== null ? { warnings: [warning] } : {}),
+    ...(unread.length > 0 ? { complete: false } : {}),
+    note: '关键词检索已退役：本读法只列出配置目录的成员，不选择也不读取来源；下一步按 file:<路径> 显式声明来源，或由模型带逐字引文提出候选并经 Hub 核验',
+    ...((warnings.length || warning !== null) ? { warnings: [...warnings,...(warning?[warning]:[])] } : {}),
   };
 }

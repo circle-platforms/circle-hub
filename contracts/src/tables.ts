@@ -1,3 +1,4 @@
+import {Versioned} from './common.ts';
 // Shapes owned by the tables work package (the rules package): the table kinds read by the Hub's core interpreters (C04, C05),
 // the catalog entry the catalog interpreter matches against (C07) and the outcome every check returns (V01).
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY, which
@@ -10,9 +11,9 @@
 // mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
 // "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema, TypeDeclarationStatusSchema } from '../generated/vocabulary.ts';
 import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
-import { ReferenceUri } from './reference.ts';
+import { ReferenceUri,Ground } from './reference.ts';
 
 /** Limits of the pattern@1 samples, so validating a table stays cheap (the matcher also caps its work on them). */
 export const PATTERN_LIMITS = { rules: 64, samples: 32, sampleLength: 1000 } as const;
@@ -148,6 +149,7 @@ export const CatalogTable = z
     schema: z.literal('catalog@1'),
     ...common,
     catalog: z.string().min(1).describe('Name of the catalog in the pack knowledge declaration (knowledge.json) that the caller binds'),
+    strict_signatures:z.boolean().optional().describe('Membership claims require a complete executable signature; a menu or a bare head with required arguments is not membership'),
     commands: z
       .array(JsonPath)
       .optional()
@@ -205,7 +207,9 @@ export type CatalogUncheckedConstraint=z.infer<typeof CatalogUncheckedConstraint
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
-    type: CatalogParamType,
+    native_type:z.strictObject({name:z.string().min(1),declaration:Ground,grammar:Versioned}).optional(),
+    type: CatalogParamType.optional(),
+    type_declaration_status: TypeDeclarationStatusSchema.optional(),
     unchecked_constraints:z.array(CatalogUncheckedConstraint).min(1).optional(),
     address_role:z.string().regex(/\S/).optional().describe('Role identifier from the bound published runtime/bed contract, not an inferred core role'),
     optional: z.boolean().optional().describe('The argument may be omitted'),
@@ -217,6 +221,10 @@ export const CatalogParam = z
     values: z.array(z.string().min(1)).optional().describe('enum: the allowed values'),
     keyword: z.string().min(1).optional().describe('keyword: the literal word; defaults to the parameter name'),
     description: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
+  })
+  .superRefine((param,ctx)=>{
+    if(param.type===undefined&&(param.type_declaration_status!=='undeclared'||!param.unchecked_constraints?.length))ctx.addIssue({code:'custom',message:'an absent native type requires undeclared status and a recovery-bearing unchecked constraint'});
+    if(param.type!==undefined&&param.type_declaration_status==='undeclared')ctx.addIssue({code:'custom',message:'an undeclared native type cannot be replaced with a guessed type'});
   })
   .describe('One typed parameter of a signature. A producer interprets a scalar source limit by that source format and emits generic constraints: an exact numeric value uses equal minimum/maximum, a ceiling uses maximum, a member uses values, a length uses maxLength; raw limit is not guessed by the core');
 export type CatalogParam = z.infer<typeof CatalogParam>;

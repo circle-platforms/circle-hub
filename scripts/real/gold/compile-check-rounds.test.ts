@@ -78,12 +78,12 @@ test('the requirement status is compared beside the terminal: satisfied/unsatisf
   assert.ok(diffs3.some((d) => d.includes('bed_addresses') && d.includes('状态 unsatisfied') && d.includes('独立答案 satisfied')), diffs3.join(' | '));
 });
 
-test('both sides unknown is pending: no difference when the independent answer is also unknown', () => {
+test('both sides unknown remains unresolved and is reported as a difference', () => {
   const f = fixtureOf();
   // Without the command tree the independent commands_known answers are unknown for every item; so are the Hub's.
   for (const item of [0, 1]) setRequirement(f, item, 'commands_known', { terminal: 'unchecked', status: 'pending', reason: '缺少命令树原件' });
   const r = compileCheck({ ...f, commandTreeXml: undefined, commandCatalog: undefined });
-  assert.ok(!r.comparison.differences.some((d) => d.includes('commands_known')), r.comparison.differences.join(' | '));
+  assert.ok(r.comparison.differences.some((d) => d.includes('commands_known')), r.comparison.differences.join(' | '));
 });
 
 test('delivered with refutes and rounds left stays delivered: the requirement is unsatisfied, the partition is not a pass', () => {

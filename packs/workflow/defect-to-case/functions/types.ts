@@ -1,4 +1,6 @@
 // Type definitions and constants for defect-to-case workflow pack.
+import {TEST_TYPE_IDS} from './generated/vocabulary.ts';
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 
 export const PACK = 'defect-to-case';
@@ -15,12 +17,15 @@ export const CODES = {
 } as const;
 
 export interface DraftStep {
+  identity?:unknown;
   command: string;
   note?: string;
   text?: string;
 }
 
 export interface DraftExpected {
+  identity?:unknown;
+  after?:number;
   text: string;
   quote?: {
     reference: string;
@@ -29,6 +34,7 @@ export interface DraftExpected {
 }
 
 export interface DraftCase {
+  id?:string;
   title: string;
   priority: number;
   negative: boolean;
@@ -37,6 +43,8 @@ export interface DraftCase {
   steps: DraftStep[];
   expected: DraftExpected[];
   tags: string[];
+  resource?: unknown;
+  tagDeclaration?: ResourceTagDeclaration;
 }
 
 export interface DefectItemFields {
@@ -50,13 +58,5 @@ export interface DefectItemFields {
   [key: string]: unknown;
 }
 
-export const CANONICAL_CATEGORIES = [
-  'Functional',
-  'Configuration',
-  'Integration',
-  'Compatibility',
-  'Negative',
-  'Stress',
-] as const;
-
-export type CanonicalCategory = (typeof CANONICAL_CATEGORIES)[number];
+export const CANONICAL_CATEGORIES = TEST_TYPE_IDS;
+export type CanonicalCategory = TestTypeId;
