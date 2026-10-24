@@ -136,7 +136,7 @@ test('resolve_reference on a run with large bound sources (>65536 candidates) do
   assert.equal(answer.resolution, 'resolved');
 });
 
-test('sharing grants read queries and preview but never submission or predecessor rights', { skip }, async () => {
+test('sharing grants read queries and preview but never submission or predecessor rights', { skip }, async t => {
   const { recordReader, identityOf } = await import('./readers.ts');
   const { runById } = await import('./store.ts');
   const a = h.kit.authorizations;
@@ -154,6 +154,9 @@ test('sharing grants read queries and preview but never submission or predecesso
   assert.ok(await records.read(view.submissions.find(s=>s.acceptance==='accepted')!.record,identityOf(h.bob)));
   const preview = await h.service.resolveReference(h.bob,{run:run.run,text:'rec:'+stored.digest,expect:'reference'},h.call());
   assert.equal(preview.call_result,'ok');
+  t.mock.method(h.packs,'readableProducts',async()=>new Set<string>());
+  const noTree = await h.service.resolveReference(h.bob,{run:run.run,text:'zone set 2 5',expect:'command'},h.call());
+  assert.equal(noTree.call_result,'ok'); assert.equal(noTree.resolution,'unresolved'); assert.deepEqual(noTree.references,[]);
   const submission = await h.service.submitResult(h.bob,{...accepted,run:run.run},h.call());
   assert.equal(submission.acceptance,'not_accepted'); assert.equal(submission.errors[0].code,'SOURCE_UNAVAILABLE');
   h.workflows.assign(h.bob.id,'toy-review');
@@ -188,4 +191,22 @@ test('production policy covers current future and Hub runs but not judgment runs
   assert.equal(await h.service.getRun(h.bob,first.run),null); assert.equal(await h.service.getRun(h.bob,future.run),null);
   await a.assign(h.admin,h.bob.id,'toy-locate'); await a.unshare(h.admin,productionShareKey('toy-locate'),{kind:'pack_users',pack:'toy-locate'});
   assert.equal(await h.service.getRun(h.bob,first.run),null); assert.ok(await h.service.getRun(h.bob,own.run));
+});
+
+test('shared pagination sorts frozen start times rather than append order and has stable ties', {skip}, async()=>{
+  const {RunRecord}=await import('../../../contracts/src/run.ts');
+  const {newId}=await import('../../records/api.ts');
+  const fresh=(await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call())).run!;
+  const base=(await h.service.getRun(h.alice,fresh.run))!.run;
+  const rows:string[]=[];
+  for(const started_at of ['2026-10-20T00:00:00.000Z','2026-10-19T00:00:00.000Z','2026-10-20T00:00:00.000Z']){
+    const run=newId('run');rows.push(run);
+    const body=RunRecord.parse({...base,run,started_at});
+    await h.kit.store.put({kind:'run',schema:'run@1',provenance:'observed',body,index:[{key:'runs.id',value:run},{key:'runs.pack',value:'toy-locate'}]});
+    await h.kit.authorizations.share(h.admin,run,[h.bob.id]);
+  }
+  let cursor:string|null=null;const all:string[]=[];
+  do{const page=await h.service.runsFor(h.bob,'toy-locate',{limit:2,cursor});assert.ok(page.items.length>0);all.push(...page.items.map(r=>r.run));cursor=page.next;}while(cursor);
+  assert.equal(new Set(all).size,all.length);
+  assert.deepEqual(all.filter(id=>rows.includes(id)),[rows[2],rows[0],rows[1]]);
 });

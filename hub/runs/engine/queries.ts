@@ -74,7 +74,8 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
     for (const record of page.items) if (await canViewRun(user,record.body,ctx.deps.records.store)) rows.push(record.body);
     cursor = page.next;
   } while (cursor !== null);
-  const order = (a: RunRecord,b: RunRecord): number => b.started_at.localeCompare(a.started_at) || b.run.localeCompare(a.run);
+  const compare = (a: string,b: string): number => a === b ? 0 : a < b ? -1 : 1;
+  const order = (a: RunRecord,b: RunRecord): number => compare(b.started_at,a.started_at) || compare(b.run,a.run);
   rows.sort(order);
   const following = after === null ? rows : rows.filter(row => row.started_at < after!.at || row.started_at === after!.at && row.run < after!.id);
   const items = following.slice(0,limit);
