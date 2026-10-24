@@ -3,7 +3,7 @@
 Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你逐用例提交的模型判断；Hub 只核验结构、身份、逐字引文、用例归属与集合运算。引文存在不证明分类语义正确，结果仍需独立复核查漏。不得用关键词、词典、同义词、前缀、自由文本正则判断类别，也不得把 Functional 等测试类型标签映射成 functional。
 
 1. 用 get_workflow 读此版本的要求项、槽位及本规程末尾按 `tables/template-v3.json` 列出的描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
-2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执；product、build 锁定目录。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
+2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执。要对照某个构建时，product 和 build、version 写在 start_run 顶层，与 pack、inputs 并列，用来锁定目录，不写进 parameters。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
 3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，不能按路径相同合并不同参数调用。
 4. 读 start_run 的条目字段和运行记录。unclassified 是还缺类别判断的用例，不是缺类别。读取原件中这些用例的节点及下属步骤/结果；用模型逐用例判断可适用类别，按该包声明的 id 提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写原件 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应这些原始字节；producer 显式写 model_id、model_family_id。不得拿祖先、兄弟或嵌套用例的同文当证据。JSON 转义和双重编码按原始字节身份写，不正规化宽窄、大小写或空白。
 5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，statement 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。

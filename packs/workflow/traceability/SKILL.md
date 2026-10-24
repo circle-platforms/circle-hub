@@ -2,7 +2,7 @@
 
 Hub 直接算出一个构建的缺陷到用例的追溯矩阵：构建的 release notes 列出的每个缺陷，有没有已索引的用例携带它的编号。不需要你提交结果。
 
-1. 开始运行：pack 写 traceability。inputs.defects 写 `{"external": "knowledge:index:<产品>:<构建>?kind=defect&key=bug"}`，inputs.cases 写 `{"external": "knowledge:index:<产品>:<构建>?kind=case&key=defects"}`。两个视图要指向同一个知识根（构建名写任一名称族的写法都可以）。不要在这两个标识里写 only= 或 fields=，也不要向用户索取缺陷编号。编号在该构建知识根的修复清单里（fixed-bugs 生产的缺陷条目和发布页），Hub 绑定 cases 时按这些编号自动加上 only=，并加上追溯用到的 fields=（case、defects、document、node、system、title）。这个任务包不绑定产品线：不要写 product、version、build——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。可选参数 statuses 写 `["fixed"]` 或 `["known"]` 只看一种状态的缺陷，不写则两个都算。
+1. 开始运行：pack 写 traceability。inputs.defects 写 `{"external": "knowledge:index:<产品>:<构建>?kind=defect&key=bug"}`，inputs.cases 写 `{"external": "knowledge:index:<产品>:<构建>?kind=case&key=defects"}`。两个视图要指向同一个知识根（构建名写任一名称族的写法都可以）。不要在这两个标识里写 only= 或 fields=，也不要向用户索取缺陷编号。编号在该构建知识根的修复清单里（fixed-bugs 生产的缺陷条目和发布页），Hub 绑定 cases 时按这些编号自动加上 only=，并加上追溯用到的 fields=（case、defects、document、node、system、title）。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。可选参数 statuses 写 `["fixed"]` 或 `["known"]` 只看一种状态的缺陷，不写则两个都算。
 2. 缺陷系统状态与期望来源：开始运行时由 expected_sources 将缺陷编号按数值排序去重后分组（每组至多 50 个）生成外部标识 `plm:bugs:<编号>+<编号>+…` 批量查询缺陷系统状态（只查询系统明确包含 plm 的缺陷；系统不明或为 bugzilla 的不查，避免张冠李戴）。Bugzilla 明确写“状态未读：系统未接入”，这是确定的数据缺口，不算临时未知。其他读不到状态时记未知并写明原因（缺陷系统不明不按编号查、整份缺陷系统来源不可用、记录中无状态、编号未返回），绝不假定为未关闭。
 3. 结果在开始运行时就算好了：每个条目是一个缺陷（已知系统时条目编号是系统加缺陷编号，系统未给出时保留编号），摘要是“状态；用例数”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取：条目多时回答放不下所有条目，末尾的说明会写明略去了哪些、怎么接着读，照它读完再转述。矩阵按（系统，编号）连接，两个系统的同号分别列项并记确定的撞号反驳。用例系统未给出时，仅在编号唯一归属一个已读系统时连接；撞号用例须补取系统来源，不能强行归到任一系统。
 4. 原样转述每个条目的结论，结论文字均以“缺陷 X（发布说明：…；缺陷系统：…）：…”开头，不补全、不猜测：

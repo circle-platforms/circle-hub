@@ -4,6 +4,7 @@
 
 ## 1. 任务目标与输入
 
+- **开始运行**：要对照某个构建时，build 和 version 写在 start_run 顶层，与 pack、product、inputs 并列，不写进 parameters。
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
 - **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。推荐省略 `only`，由检查按草稿命令头动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
 - **参数**：
