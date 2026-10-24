@@ -30,6 +30,6 @@ test('authorized stale cursor gets a determined remedy while unreadable roots re
  const info=build('Rel_ACME_10_6_1_9');w.external.set(String(info.sources.tree),{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
  const produced=await w.knowledge.produceTree({product:w.product,build:info});assert.equal(produced.ok,true,produced.reason??'');
  const query={root:produced.root!,paths:['/'],depth:6,cursor:'invalid-cursor'};
- await assert.rejects(w.knowledge.getNodes(query,w.user),error=>error instanceof KnowledgeError&&error.code==='REFERENCE_UNRESOLVED'&&/游标.*首页/.test(error.message));
+ await assert.rejects(w.knowledge.getNodes(query,w.user),error=>error instanceof KnowledgeError&&error.code==='REFERENCE_UNRESOLVED'&&error.detail.path==='/cursor'&&/首页/.test(error.fix??'')&&/游标.*首页/.test(error.message));
  assert.equal(await w.knowledge.getNodes(query,w.outsider),null);
 });

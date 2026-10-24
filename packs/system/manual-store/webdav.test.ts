@@ -185,8 +185,10 @@ describe('reads through the connectors', () => {
       return text('not found', 'text/plain', 404);
     });
     // One enabled resource per external type: the second store is enabled only for its own test.
+    await kit.connectors.admin.disable(kit.admin, main);
     mixed = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'manual-store', name: '链接混杂的手册库', environment: 'test', origins: { 'manual-store': odd.origin } })).id;
     await kit.connectors.admin.disable(kit.admin, mixed);
+    await kit.connectors.admin.enable(kit.admin, main);
   });
   after(async () => {
     await odd?.close();
@@ -228,8 +230,8 @@ describe('reads through the connectors', () => {
     assert.equal(meta.folder, 'rel_comet_7_2');
     ok(await read('manual:app:7.1'));
     const missing = await read('manual:cli:9.9');
-    assert.equal(missing.ok, false);
-    assert.equal((await read('manual:app:7.2')).ok, false, 'no application manual for 7.2');
+    assert.ok(missing.ok && missing.absent?.code==='SOURCE_ABSENT');
+    const noApp=await read('manual:app:7.2');assert.ok(noApp.ok && noApp.absent?.code==='SOURCE_ABSENT','no application manual for 7.2');
   });
 
   test('the spec search finds the two files of the feature first and lists every file it read', async () => {

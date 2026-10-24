@@ -19,24 +19,11 @@ envelope of the reads with the expired code of the platform. Three POST read rou
 (`/agile/get_root_node/`, `/agile/get_child_node_task/`, `/agile/get_case_data/`), every one marked read; no write route.
 Settings: `roots` (the root ids of the product; deployment data, never in Git).
 
-**Limit of `settings.roots`**: a read reads the trees of the first 10 configured roots (`MAX_ROOTS`). The connectors allow 20
-nested reads over all rounds of one read (`MAX_NESTED_READS`), and the mind-map read may refresh every tree it read once, so
-10 roots is the most that always fits. Further roots are not read; a read that needed them is incomplete and its note names
-them. The real product has two roots. `system@1` has no settings schema, so the limit cannot be refused when the resource
-is configured (see Needs).
+**Configured roots**: no first-ten truncation. Mindmap and search use one aggregate agile:tree:roots read, with at most one cached refresh; the nested-read cap is preserved. The aggregate schedules every configured root and every still-needed announced listing page before done. Request/byte/global round caps remain enforced; an over-budget read refuses rather than claiming complete. Partial aggregate results remain explicitly partial and are not cached as full successes.
 
 ## agile:tree:roots
 
-- **Requests.** One subtree request per configured root (`subtree-<k>`, k the root's place in `settings.roots`) and the
-  listing pages that name the roots (`page-<n>`). Round 1 asks for the first listing page and the first three subtrees;
-  later rounds for the subtrees left and, while a configured root has no title yet (neither its own node in the subtree
-  nor a listing page names it), the further pages the listing's total announces, up to `ROOTS_PAGES` (50, the same cap as
-  one root's tree read). The five rounds stop earlier: about 17 pages when round 1 also sent subtrees, which still covers
-  a root listed at position 120. **At most 4 requests per round** (`ROOTS_IN_FLIGHT`): the connectors send the requests of a
-  round together (within the resource's own `concurrency`) and the next round only after them, so never more than 4 are
-  in flight, whatever the resource allows (tested against a slow stub with a resource limit of 16). Ten roots and ten
-  pages fit the connectors' five rounds; the read declares no other limits than the profile format offers (route timeouts
-  and byte caps, the read's `max_requests` of 51).
+- **Requests.** Round 1 schedules one subtree per configured root and the first listing page. After the responses, the planner schedules all still-needed announced pages (up to ROOTS_PAGES) before declaring done. Each plan declares concurrency=4; the Hub enforces that lower cap alongside the resource limiter. The five-round cap and the profile's max_requests=51 remain unchanged. More roots are not silently excluded to fit a round; limits produce a bounded failure and the manifest records its actual coverage.
 - **Original and content.** The first listing page is the original (a read without the listing fails: no root title
   could be known). The content lists each document once (a document filed in two folders at its first place, in tree
   order; at most 50,000 documents). Folder `cases` lists are cumulative, so a document belongs to the deepest folder that
@@ -78,3 +65,7 @@ flight against a slow stub with resource concurrency 16.
 - **contracts / connectors**: a settings schema in `system@1` that the connectors check when a resource is added or updated,
   so that `roots` with more than 10 entries (or a malformed entry) is refused at configuration instead of being reported per
   read.
+
+## hub-read-absence coverage
+
+Version 1.2.1 uses aggregate nested trees for mindmap/search. Failed HTTP tree and file reads receive the connectors' bounded transient retry policy within the read budgets, and partial results carry coverage through nested reads. A document absent from every fully read configured root is described as 在本产品配置的根之外; an incomplete range never makes that conclusion. SOURCE_ABSENT public mapping and login request records remain for their model/exit dependencies.

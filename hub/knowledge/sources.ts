@@ -3,7 +3,7 @@
 // Hub parses, not the pack). Only model-readable text read with a shared credential enters the tree: a credential hit
 // (retain_only), function-only bytes, bytes the scanner could not inspect and personal-credential reads are refused with a
 // Chinese reason naming the digest (B02 R[3], R[4]; records README, Needs).
-import {ReadManifest} from '../../contracts/src/resources.ts';
+import {ReadManifest,SourceAbsent} from '../../contracts/src/resources.ts';
 import type {RecordStore} from '../records/api.ts';
 import { labelOf, type ReadTier } from '../../contracts/generated/vocabulary.ts';
 import { EXTERNAL_ARTIFACT, type ExternalReaderPort } from '../ports.ts';
@@ -145,6 +145,17 @@ export class SourceLoader {
     } catch (error) {
       // The port promises never to throw; a broken adapter is reported like a failed read.
       return { ok: false, id, reason: `读取失败（连接器出错：${describeError(error)}）` };
+    }
+    if (result.ok && result.absent) {
+      const manifest=await this.manifest(result.manifest),absence=SourceAbsent.safeParse(result.absent);
+      const responses=absence.success?(absence.data.responses??[]).map(key=>manifest?.requests.findLast(request=>request.key===key)):[];
+      const supported=responses.length>0&&responses.every(request=>request&&request.artifact!==null&&request.sha256!==null&&request.status!==null&&(
+        request.ok&&request.status>=200&&request.status<300 || request.error==='SOURCE_ABSENT'&&(request.status===404||request.status===410)
+      ));
+      if(!absence.success||!manifest||manifest.external!==result.id||manifest.result!=='completed'||manifest.error_code!==null||!manifest.coverage.complete||absence.data.object!==result.id||absence.data.system!==result.id.split(':')[0]||!supported)
+        return {ok:false,id,reason:'缺少相符的缺席读取清单或原始应答；请管理员恢复清单后按原对象重读'};
+      const observation:SourceObservation={external:result.id,code:absence.data.code,status:responses.findLast(request=>request?.status===404||request?.status===410)?.status??responses.at(-1)?.status??null,at:absence.data.observed_at,manifest:result.manifest,system_pack:manifest.system_pack.id,resource:manifest.resource};
+      return {ok:false,id,reason:`来源已确定缺席：${observation.code}（HTTP ${observation.status}，${observation.at}）`,observation};
     }
     if (!result.ok) {
       const manifest=await this.manifest(result.manifest);

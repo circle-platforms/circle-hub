@@ -312,3 +312,16 @@ test('grant participates in the caller transaction and rolls back with it', asyn
   }),/synthetic rollback/);
   assert.equal(await kit.authorizations.latest('assign',alice.id,'demo-pack'),null);
 });
+
+test('resource configuration participates in an optional caller transaction while legacy calls commit',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin}=await setup(kit);
+ const resource='synthetic-transaction-resource',bound=digestOf({synthetic:true});
+ const rollback=new Error('synthetic rollback');
+ await assert.rejects(kit.store.withTransaction(async tx=>{
+   const record=await kit.authorizations.configureResource(admin,resource,bound,null,tx);
+   assert.ok(await kit.store.get(record.digest,tx));throw rollback;
+ }),error=>error===rollback);
+ assert.equal(await kit.authorizations.resourceConfig(resource),null);
+ await kit.authorizations.configureResource(admin,resource,bound);
+ assert.equal((await kit.authorizations.resourceConfig(resource))?.body.bound,bound);
+});

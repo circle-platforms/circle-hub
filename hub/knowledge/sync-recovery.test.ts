@@ -21,7 +21,7 @@ test('an unfinished bounded plan resumes its pending pages instead of rereading 
  assert.equal(w.external.reads.filter(id=>id==='site:page:index').length,1);assert.equal(w.external.reads.filter(id=>id==='site:page:next').length,1);
 });
 
-for(const status of [403,404])test(`HTTP ${status} is a determined build observation with an explicit recovery path`,async t=>{
+for(const status of [403,404])for(const completedAbsence of status===404?[false,true]:[false])test(`HTTP ${status} with completed absence ${completedAbsence} is a determined build observation with an explicit recovery path`,async t=>{
  const {ReadManifest}=await import('../../contracts/src/resources.ts');const {newId}=await import('../records/api.ts');
  const w=await makeWorld(postgres,{pack:{functions:{'plan.ts':`export default input=>({fetch:[],builds:input.options.builds??${JSON.stringify([base])},done:true});`},declaration:{producers:[...DEFAULT_PRODUCERS,{id:'manual',title:'synthetic manual',function:{module:'functions/manual.ts'},inputs:{manual:{source:'manual',optional:true}}}]}}});t.after(()=>w.close());
  w.external.set('site:page:index',{bytes:'<p>synthetic index version one</p>',mediaType:'text/html'});w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
@@ -30,7 +30,10 @@ for(const status of [403,404])test(`HTTP ${status} is a determined build observa
   if(id!==failedId||!blocked)return previous(id,context);attempts++;
   const at=new Date().toISOString(),code=status===404?'SOURCE_ABSENT':'SOURCE_FORBIDDEN';
   const body=ReadManifest.parse({action:'read',run:null,item:null,inputs:[],component:'connectors@1',lease:null,started_at:at,ended_at:at,result:'error',error_code:code,external:id,revision:null,resource:newId('res'),environment:'test',system_pack:{id:'synthetic-site',version:'1.0.0',digest:'b'.repeat(64)},read:'tree',principal:w.admin.id,purpose:'synthetic source refusal',requests:[{key:'page',round:1,route:'page',method:'GET',path:'/synthetic',query:{},started_at:at,ended_at:at,status,ok:false,error:code,sha256:null,size:null,media_type:null,etag:null,artifact:null,after_login:false}],reads:[],original:null,artifacts:[],coverage:{complete:false,examined:0,total:1},reason:'synthetic failure',warnings:[]});
-  const record=await w.kit.store.put({kind:'action',schema:'read-manifest@1',provenance:'observed',body});return {ok:false,id,reason:'unrelated free text',manifest:record.digest};
+  if(completedAbsence){body.result='completed';body.error_code=null;body.reason=null;body.original='page';body.coverage={complete:true,examined:1,total:1};body.requests[0].sha256='c'.repeat(64);body.requests[0].artifact='d'.repeat(64);}
+  const record=await w.kit.store.put({kind:'action',schema:'read-manifest@1',provenance:'observed',body});
+  if(completedAbsence)return {ok:true,id,revision:null,artifacts:[],manifest:record.digest,absent:{code:'SOURCE_ABSENT',system:'site',object:id,observed_at:at,responses:['page']}};
+  return {ok:false,id,reason:'unrelated free text',manifest:record.digest};
  };
  const first=await w.knowledge.syncProduct(w.product);assert.equal(first.counts.failed,1);assert.equal((await w.knowledge.resolveBuild('acme',name))?.root,null);
  assert.equal((await w.knowledge.store.buildFailures('acme',{root:null})).length,1);

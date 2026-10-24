@@ -142,8 +142,8 @@ describe('resolveReference: source fragments', () => {
   });
 });
 
-describe('resolveReference: unavailable looks the same whatever the cause', () => {
-  it('gives the same neutral answer for absent, forbidden, tampered and failing sources', async () => {
+describe('resolveReference: neutral permission answers and actionable read faults', () => {
+  it('keeps absent and forbidden neutral while distinguishing integrity and reader faults', async () => {
     const { ctx, diagnostics } = context();
     const absent = srcFragment('e'.repeat(64), 'kityminder@1', 'n/x');
     const forbidden = srcFragment(mapSha, 'kityminder@1', 'n/x');
@@ -168,28 +168,19 @@ describe('resolveReference: unavailable looks the same whatever the cause', () =
       }),
       await resolveReference(forbidden, { ...ctx, sources: undefined }),
     ];
-    for (const result of results) {
-      assert.equal(result.resolved, false);
-      if (result.resolved) continue;
-      assert.deepEqual(Object.keys(result).sort(), ['code', 'fix', 'message', 'reference', 'resolved']);
-      assert.equal(result.code, 'SOURCE_UNAVAILABLE');
-      assert.equal(result.message, UNAVAILABLE_MESSAGE);
-    }
-    const { reference: _a, ...first } = results[0] as { reference: string };
-    for (const result of results.slice(1)) {
-      const { reference: _b, ...rest } = result as { reference: string };
-      assert.deepEqual(rest, first);
-    }
+    assert.deepEqual(results.map(result=>result.resolved?null:result.code),['SOURCE_UNAVAILABLE','SOURCE_UNAVAILABLE','SOURCE_INTEGRITY_UNPROVEN','SOURCE_INTEGRITY_UNPROVEN','SOURCE_RETRYABLE','SOURCE_RETRYABLE']);
+    assert.deepEqual(results[0] && Object.keys(results[0]).sort(), ['code','fix','message','reference','resolved']);
+    assert.equal(!results[1].resolved && results[1].message,UNAVAILABLE_MESSAGE);
     assert.ok(diagnostics.some((d) => /do not hash/.test(d.message)));
     assert.ok(diagnostics.some((d) => /disk failure/.test(d.message)));
     assert.ok(diagnostics.every((d) => !/对你不可用/.test(d.message)));
-    // The internal caller can still tell "could not check" from "not there" (T03 R[3]); the reader cannot.
+    // The internal caller still distinguishes unchecked work from a missing fragment (T03 R[3]).
     assert.deepEqual(
       results.map((result) => (result.resolved ? 'resolved' : (result.reason ?? null))),
       [null, null, 'integrity_unproven', 'integrity_unproven', 'check_error', 'check_error'],
     );
     const serialized = results.map(({ reference: _reference, ...rest }) => JSON.stringify(rest));
-    assert.equal(new Set(serialized).size, 1, 'the reason never reaches JSON');
+    assert.equal(serialized[0], serialized[1], 'absent and unauthorized remain identical');
     assert.ok(results.every((result) => !Object.keys(result).includes('reason') && !('reason' in { ...result })));
   });
 
@@ -197,7 +188,7 @@ describe('resolveReference: unavailable looks the same whatever the cause', () =
     const { ctx } = context();
     const digest = 'd'.repeat(64);
     const failing = await resolveReference(`rec:${digest}`, { ...ctx, records: { read: () => Promise.reject(new Error('timeout')) } });
-    assert.ok(!failing.resolved && failing.code === 'SOURCE_UNAVAILABLE' && failing.reason === 'check_error');
+    assert.ok(!failing.resolved && failing.code === 'SOURCE_RETRYABLE' && failing.reason === 'check_error');
     const notJson = await resolveReference(`rec:${digest}`, { ...ctx, records: { read: () => ({ kind: 'claim', schema: 'claim@1', provenance: 'observed', created_at: '2026-10-21T08:00:00.000Z', body: { at: new Date(0) } }) } });
     assert.ok(!notJson.resolved && notJson.reason === 'integrity_unproven', 'a body that is not JSON data cannot be verified');
     const absent = await resolveReference(`rec:${digest}`, { ...ctx, records: { read: () => null } });
@@ -296,7 +287,7 @@ describe('resolveReference: read tiers', () => {
     assert.ok(answer.resolved && answer.note === '含凭据，原文不可读' && answer.text === null);
     const broken = { read: (): SourceRead => ({ bytes: null, mediaType: 'text/plain', size: secret.length, readTier: 'model_readable' }) };
     const failed = await resolveReference(srcFragment(secretSha, 'text@1', 'l/2'), { ...ctx, sources: broken });
-    assert.ok(!failed.resolved && failed.code === 'SOURCE_UNAVAILABLE' && failed.reason === 'check_error');
+    assert.ok(!failed.resolved && failed.code === 'SOURCE_INTEGRITY_UNPROVEN' && failed.reason === 'integrity_unproven');
   });
 });
 
@@ -330,7 +321,7 @@ describe('resolveReference: knowledge tree and records', () => {
     const other = await resolveReference(`tree:${root}/commands/widget`, { ...ctx, reader: bob });
     assert.ok(!other.resolved && other.code === 'SOURCE_UNAVAILABLE');
     const none = await resolveReference(`tree:${root}/commands/widget`, { ...ctx, trees: undefined });
-    assert.ok(!none.resolved && none.code === 'SOURCE_UNAVAILABLE');
+    assert.ok(!none.resolved && none.code === 'SOURCE_RETRYABLE');
   });
 
   it('answers a path that a visible root does not have as unresolved, and an invisible root as unavailable', async () => {
@@ -407,7 +398,7 @@ describe('resolveReference: knowledge tree and records', () => {
     const { ctx, diagnostics } = context({ records });
     const digest = recordDigest(claim);
     const tampered = await resolveReference(`rec:${digest}`, { ...ctx, records: { read: () => ({ ...claim, body: { ...(claim.body as object), extra: 1 } }) } });
-    assert.ok(!tampered.resolved && tampered.code === 'SOURCE_UNAVAILABLE');
+    assert.ok(!tampered.resolved && tampered.code === 'SOURCE_INTEGRITY_UNPROVEN');
     assert.ok(diagnostics.some((d) => /hashes to/.test(d.message)));
     const foreign = await resolveReference(`rec:${digest}`, { ...ctx, reader: bob });
     assert.ok(!foreign.resolved && foreign.code === 'SOURCE_UNAVAILABLE');

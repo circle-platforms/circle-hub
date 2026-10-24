@@ -15,7 +15,7 @@ import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
-import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
+import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { bindRecovery } from './recovery.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
@@ -313,11 +313,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         try {
           const parsed = parseReference(reference);
           const result = await retryRead(() => resolveReference(parsed, resolveCtx), result => result.resolved ? null
-            : { reason: result.reason ?? result.code, retry: result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
+            : { reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE'), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
               if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
           if (!result.resolved) {
-            return { resolved: false, text: null, reason: result.reason ?? result.code };
+            return { resolved: false, text: null, reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE') };
           }
           if (result.text === null) {
             return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? 'credential_unreadable' as const : 'missing_input' as const };
@@ -339,14 +339,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     return match ? match[1] : null;
   };
 
-  const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
-    if (check.reads === undefined) {
-      return { boundSources: {}, unreadSources: [] };
-    }
-    const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
+  const sourcesForReads=(check:CheckEntry)=>{
+    if(check.reads===undefined)return [];
     const roles = new Set(check.reads.roles);
     const types = check.reads.types !== undefined ? new Set(check.reads.types) : undefined;
-    const matchingSources = (run.sources ?? []).filter((s) => {
+    return (run.sources ?? []).filter((s) => {
       if (!roles.has(s.role)) return false;
       if (types !== undefined) {
         if (s.external === undefined) return false;
@@ -355,6 +352,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       }
       return true;
     });
+  };
+
+  const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
+    if (check.reads === undefined) {
+      return { boundSources: {}, unreadSources: [] };
+    }
+    const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
+    const matchingSources=sourcesForReads(check);
     const boundSources: Record<string, string> = {};
     const unreadSources: UnreadSource[] = [];
     for (const s of matchingSources) {
@@ -419,13 +424,13 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         let result: Awaited<ReturnType<typeof resolveReference>>;
         try {
           result = await retryRead(() => resolveReference(ref, resolveCtx), value => !value.resolved
-            && value.code === 'SOURCE_UNAVAILABLE' && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
+            && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
             attempt => { if(attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read',ENGINE_COMPONENT,attempt,{reference})); });
         } catch(error) {
           onError(error,'graded fragment');
           throw new HubReadFailure(reference,'check_error',retryAttempts);
         }
-        if(!result.resolved && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined)
+        if(!result.resolved && result.reason !== undefined)
           throw new HubReadFailure(reference,result.reason,retryAttempts);
         return finish(result);
       })();
@@ -739,6 +744,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
                 ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence) } : {}),
                 marks: [...marksFor(t), ...writtenAlone],
                 sourceRole: strongestRole(ce.roles),
+                coverage:sourceCoverage(run.sources,[it.location,...ce.grounds,...ce.bound]),
                 grounds: ce.grounds,
                 resolutions: ce.resolutions,
                 bound: [...baseBound, ...ce.bound, ...contextBound, input.submissionDigest],
@@ -754,13 +760,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           factClaim({
             item: it.id,
             requirement: t.key,
+            coverage:sourceCoverage(run.sources,[it.location,...o.outcome.grounds,...sourcesForReads(check).map(s=>s.reference)]),
             outcome: o.outcome,
             rule: ruleOf(workflow, check),
             judges: o.judges,
             sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
             discrimination: t.requires_discrimination === true,
-            bound: [...baseBound, ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
+            bound: [...baseBound,...sourcesForReads(check).flatMap(source=>{const digest=rootDigest(source.reference);return digest?[digest]:[];}), ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
             premises: premisesOf(o.outcome, check, it.id),
           }),
         );
@@ -817,13 +824,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     factClaim({
       ...(o.item !== undefined && itemIds.has(o.item) ? { item: o.item } : {}),
       requirement,
+      coverage:sourceCoverage(run.sources,[...items.map(it=>it.location),...o.grounds,...sourcesForReads(check).map(s=>s.reference)]),
       outcome: o,
       rule: ruleOf(workflow, check),
       judges: check.judges,
       sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',
       discrimination: (requirementsOf.get(check.id) ?? []).some((t) => t.requires_discrimination === true),
-      bound: [...crossBound, ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],
+      bound: [...crossBound,...sourcesForReads(check).flatMap(source=>{const digest=rootDigest(source.reference);return digest?[digest]:[];}), ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],
       premises: premisesOf(o, check, o.item !== undefined && itemIds.has(o.item) ? o.item : null),
     });
   for (const t of runTemplates) {
@@ -864,6 +872,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           ...(independence !== null ? { independence: warrantIndependence(independence) } : {}),
           marks: [...(entry.nature === 'fact' ? (['unverified_submission'] as const) : []), ...(template ? marksFor(template) : [])],
           sourceRole: strongestRole(ce.roles),
+          coverage:sourceCoverage(run.sources,[...ce.grounds,...ce.bound]),
           grounds: ce.grounds,
           resolutions: ce.resolutions,
           bound: [...crossBound, ...ce.bound, input.submissionDigest],

@@ -483,6 +483,7 @@ export const ReadDeclaration = z
     plan: PackFunctionRef.optional().describe('ReadPlanInput -> ReadPlanOutput, called again with the responses so far, at most 5 rounds'),
     request: ReadRequestTemplate.optional().describe('one declared request instead of a planner'),
     project: PackFunctionRef.optional().describe('ReadProjectionInput -> ReadProjectionOutput: derived artifacts such as content and meta'),
+    absent_codes:z.array(z.string().min(1).max(100)).min(1).max(20).optional().describe('Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses'),
     max_requests: z.number().int().min(1).max(MAX_READ_REQUESTS).optional(),
     max_bytes: z.number().int().min(1).max(1024 * 1024 * 1024).optional().describe('all responses of one read together'),
   })
@@ -721,15 +722,18 @@ export const ReadResponse = z.strictObject({
   size: z.number().int().nonnegative().nullable(),
   sha256: Sha256.nullable().describe('digest of the stored response body'),
   etag: z.string().nullable(),
+  location:z.string().max(4096).optional().describe('Observed Location, only when safe to disclose; a redirect is followed only by a separately planned request'),
+  location_redacted:z.literal(true).optional(),
   json: z.unknown().optional().describe('the parsed answer of a json route'),
   text: z.string().optional().describe('the decoded answer of a text, xml or html route (or of a json route that did not parse)'),
   model: z.unknown().optional().describe('the model of the core parser the route names'),
-  error: z.strictObject({ code: z.string(), message: z.string() }).nullable(),
+  error: z.strictObject({ code: z.string(), message: z.string(), retry_at:IsoTime.optional(), attempts:z.number().int().positive().optional() }).nullable(),
 });
 export type ReadResponse = z.infer<typeof ReadResponse>;
 
 /** A read of another external object the planner asked for, served from the cache unless refreshed. */
 export const NestedRead = z.strictObject({
+  coverage:Coverage.optional(),
   ok: z.boolean(),
   revision: z.string().nullable(),
   cached: z.boolean(),
@@ -768,6 +772,7 @@ export const PlannedRequest = z
 export type PlannedRequest = z.infer<typeof PlannedRequest>;
 
 export const ReadPlanOutput = z.strictObject({
+  concurrency:z.number().int().min(1).max(MAX_READ_REQUESTS).optional().describe('Optional lower in-flight limit for this plan; the resource limit still applies'),
   requests: z.array(PlannedRequest).max(MAX_READ_REQUESTS),
   reads: z.array(z.strictObject({ external: ExternalObjectId, refresh: z.boolean().optional() })).max(MAX_NESTED_READS).optional(),
   done: z.boolean().describe('true: execute these requests and reads, then stop; false: call the planner again with their answers'),
@@ -828,6 +833,8 @@ export type ReadProjectionOutput = z.infer<typeof ReadProjectionOutput>;
 // ---------------------------------------------------------------- read-manifest@1 (a B05 read action)
 
 export const ReadRequestEntry = z.strictObject({
+  attempt:z.number().int().positive().optional().describe('Physical attempt within this planned request, including the single login replay'),
+  retry_at:IsoTime.optional().describe('Earliest scheduled retry time; long Retry-After values end the bounded wait instead of being shortened'),
   key: RequestKey,
   round: z.number().int().min(1).max(MAX_READ_ROUNDS),
   route: RouteId,
@@ -844,6 +851,8 @@ export const ReadRequestEntry = z.strictObject({
   size: z.number().int().nonnegative().nullable(),
   media_type: z.string().nullable(),
   etag: z.string().max(300).nullable(),
+  location:z.string().max(4096).optional(),
+  location_redacted:z.literal(true).optional(),
   artifact: Sha256.nullable().describe('digest of the source_artifact record of the response'),
   after_login: z.boolean().describe('sent again once after a login, because the first answer said the login had expired'),
 });
