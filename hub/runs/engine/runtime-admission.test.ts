@@ -12,7 +12,7 @@ import {putRun,actionsOf} from './store.ts';
 import {roundsUsedOf} from './submit.ts';
 import {buildCatalog} from '../../rules/api.ts';
 import {authorOriginOf} from './lineage.ts';
-import {independenceOf} from './independence.ts';
+import {independenceGap,independenceOf} from './independence.ts';
 const table={schema:'range@1',origin:'合成规则',checks:[{values:'$.fields.value',range:{minimum:1,maximum:3}}]};
 test('runtime admission reruns contrasting bound items and records observed source provenance',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());
@@ -91,7 +91,13 @@ test('runtime admission reruns contrasting bound items and records observed sour
  const author=await authorOriginOf(ctx,{...run,pack:'verification@10.6.0',predecessor:run.run});
  assert.equal(author?.complete,true);
  assert.ok(author?.models.has('synthetic'));
- assert.equal(independenceOf({sessions:['independent-session'],model:'independent-model'},author),'independent');
+ // Another model name is no evidence of another family (owner rule 2026-10-24, sweep A76): without a declared
+ // model_family_id on both sides independence stays unknown, and the gap names the missing declaration.
+ assert.equal(independenceOf({sessions:['independent-session'],model:'independent-model'},author),'unknown');
+ assert.match(independenceGap({sessions:['independent-session'],model:'independent-model'},author)!.missing,/model_family_id/);
+ const declared={...author,families:new Set(['synthetic-family']),familiesComplete:true};
+ assert.equal(independenceOf({sessions:['independent-session'],model:'independent-model',family:'other-family'},declared),'independent');
+ assert.equal(independenceOf({sessions:['independent-session'],model:'independent-model',family:'synthetic-family'},declared),'not_independent');
  const badSample=structuredClone(submission);badSample.checks![0].samples[0].item='absent';
  const rejected=await service.submitResult(h.alice,badSample,h.call('synthetic'));
  assert.equal(rejected.acceptance,'not_accepted');
