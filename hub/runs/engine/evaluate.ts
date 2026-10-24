@@ -4,7 +4,7 @@ import {attachParentRecovery} from './parent-recovery.ts';
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { FragmentRead, PermissionRole, ProvenanceType, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SubjectBlocked, MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
@@ -16,6 +16,8 @@ import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { receivedDigest } from './util.ts';
+import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
@@ -82,7 +84,27 @@ export function productionEvaluationInput(run: RunRecord, workflow: LoadedWorkfl
   return {run,workflow,submission:null,submissionDigest:runDigest,exact:null,carried:new Map(),roundsUsed:new Map(),origin:null,author:null,traceId};
 }
 
+export interface RuntimeAdmission {
+  admitted: boolean;
+  provenance: ProvenanceType;
+  missing?: string;
+  next_action?: string;
+  requirement: string;
+  interpreter: string;
+  table_sha256: string;
+  samples: Array<{
+    item: string;
+    expect: NonNullable<Submission['checks']>[number]['samples'][number]['expect'];
+    source_provenance: {reference:string;record:string;provenance:string;origin:unknown;author:unknown;outside_author:boolean} | null;
+    outcome: CheckOutcome[];
+    passed: boolean;
+    missing?: string;
+    next_action?: string;
+  }>;
+}
+
 export interface Evaluation {
+  runtimeAdmission: RuntimeAdmission[];
   result: ValidationResult;
   /** Item-level refutations routed by the error table and the items the submission did not cover (also in result.errors). */
   errors: ProtocolError[];
@@ -602,6 +624,33 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
     return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context };
   };
+  const runtimeAdmission: RuntimeAdmission[] = [];
+  for (const declared of submission?.checks ?? []) {
+    const requirement = templates.find(t=>t.key===declared.requirement);
+    const interpreter = getInterpreter(declared.interpreter);
+    if (!requirement?.run_table || !workflow.ledger?.shapes.some(row=>row.requirement===declared.requirement && row.interpreter===declared.interpreter) || !interpreter || interpreter.validateTable(declared.table).length) continue;
+    const record: RuntimeAdmission = {admitted:false,provenance:'declared',requirement:declared.requirement,interpreter:declared.interpreter,table_sha256:receivedDigest(declared.table).digest,samples:[]};
+    for (const sample of declared.samples) {
+      const item = items.find(it=>it.id===sample.item);
+      if (!item) continue; // The submission boundary refuses nonexistent sample items.
+      const itemInput=builderInput(item);
+      const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence};
+      const texts=evidenceOf(item.id).texts;
+      await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
+      const outcome=await runCheck({interpreter:declared.interpreter},{table:declared.table,subject,sources:gradedSourceView(texts),context:{run:run.run,requirement:requirement.key,pack:workflow.pack.id,sets}});
+      const ref=parseReference(item.location);
+      const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
+      const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
+      const passed=sample.expect.length===outcome.length && sample.expect.every((expected,i)=>Object.entries(expected).every(([key,value])=>outcome[i][key as keyof CheckOutcome]===value));
+      record.samples.push({item:item.id,expect:sample.expect,source_provenance:proof,outcome,passed,...(proof===null?{missing:`条目 ${item.id} 所在源文件的读取或上传来源记录`,next_action:'由运行者重新读取或上传该源文件，绑定新来源后重验'}:{})});
+    }
+    record.admitted=record.samples.length===declared.samples.length && record.samples.length>0 && record.samples.every(sample=>sample.passed && sample.outcome.every(o=>o.verdict==='support'||o.verdict==='refute'))
+      && record.samples.some(sample=>sample.expect.every(e=>e.verdict==='support'))
+      && record.samples.some(sample=>sample.expect.some(e=>e.verdict==='refute'))
+      && record.samples.some(sample=>sample.source_provenance?.outside_author);
+    if(!record.admitted){record.missing=`要求项 ${record.requirement} 的通过正反对照和至少一份作者之外样例的准入证据`;record.next_action='重读外部来源或由其他账号提供样例，补齐正反对照后重交；本次结论以判断为前提';}
+    runtimeAdmission.push(record);
+  }
   const builders = new Map<string, { target: PackFunctionTarget; entries: Map<string, unknown> }>();
   for (const check of perItem) {
     const ids = items.filter(it => eligible(check, it.id)).map(it => it.id);
@@ -982,5 +1031,5 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());
-  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess };
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission };
 }

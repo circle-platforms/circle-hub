@@ -784,3 +784,14 @@ Owners and administrators retain the full diagnostics. The underlying submission
 never rewritten or redacted under their original digests.
 
 The sharing/unknown-exit merge keeps visibility filtering before stable pagination, alongside unanswered and overdue requests. System-input deliveries remain independent of user-submission receipt lookup. Sharing grants accepted validation bodies and the run/submission/action records declared by B04; run-bound request and hypothesis-set records remain owner/administrator-only in both record readers, matching the request listing policy. Management delivery stays current without changing historical technical results.
+
+### Runtime table admission (W04)
+
+A submission's inline table is declared data. For a ledger-approved interpreter the Hub rebuilds each sample's default
+item subject from the frozen projection, resolved slots and evidence, and reruns the same interpreter. Admission requires
+matching positive and negative expectations and an observed external-read origin or an upload by another account.
+Unknown source provenance names the missing source record and asks the runner to reread or re-upload and bind it.
+Failed contrasts, missing polarities and author-only examples keep the submission accepted, with conditional conclusions.
+The evidence is `detail.admission` on the submission's existing validate action, including table digest, expectations,
+observed source provenance and actual outcomes. No additional validate action is written: author/session lineage and the
+per-submission repair-round accounting keep their existing identity.
