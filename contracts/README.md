@@ -333,3 +333,5 @@ The source language is the closed `model-shape@1` structural subset listed in th
 - `ModelIdentity` holds explicit `model_id` and `model_family_id`; the observed session remains separate. Evidence states and qualifier marks stay in the existing generated `vocabulary.ts`; they are not duplicated or renamed here.
 
 Verification: `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`, `npm run typecheck`, `npm run test:docs`, and `node tools/gen-contracts.ts --check`. Shared-interface examples are synthetic. JSON/Zod parity tests prove shape consistency, not source existence, accepted judgment truth, target behavior or deployed availability.
+
+R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.native_type 保存原始类型名、声明引用和 grammar；它是来源证据，不进入语法影响比较。catalog@1 的 strict_signatures 让成员主张必须完整匹配执行签名，目录菜单及缺参数命令头不算执行成员。

@@ -39,11 +39,11 @@ function misfit(result: Exclude<SignatureResult, { kind: 'match'|'unchecked' }>,
 }
 
 /** Whether a command exists: its words are a head or a menu, or a head followed by arguments that fit one of its signatures. */
-function membership(catalog: CatalogView, tokens: string[], fold: boolean) {
+function membership(catalog: CatalogView, tokens: string[], fold: boolean, strictSignatures=false) {
   const lookup = { caseSensitive: !fold };
   const exact = catalog.get(tokens, lookup);
-  if (exact) return { exists: true, grounds: [exact.reference], head: exact.words.join(' ') } as const;
-  if (catalog.hasPrefix(tokens, lookup)) return { exists: true, grounds: catalog.reference ? [catalog.reference] : [], head: undefined } as const;
+  if (exact && !strictSignatures) return { exists: true, grounds: [exact.reference], head: exact.words.join(' ') } as const;
+  if (!strictSignatures && catalog.hasPrefix(tokens, lookup)) return { exists: true, grounds: catalog.reference ? [catalog.reference] : [], head: undefined } as const;
   const match = catalog.lookup(tokens, lookup);
   if (!match) return { exists: false, grounds: catalog.reference ? [catalog.reference] : [], head: undefined } as const;
   const head = match.entry.words.join(' ');
@@ -182,7 +182,7 @@ export const catalogInterpreter = defineInterpreter({
         }
         const command = tokens.join(' ');
         const claimsPresent = presentFound.value;
-        const found = membership(catalog, tokens, fold);
+        const found = membership(catalog, tokens, fold,table.strict_signatures===true);
         const grounds = [...found.grounds];
         const data = { command, claims_present: claimsPresent, in_catalog: found.exists, ...(found.head !== undefined ? { head: found.head } : {}) };
         const why = 'misfit' in found && found.misfit ? `（有命令“${found.head}”，但${found.misfit}）` : '';

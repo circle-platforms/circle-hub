@@ -354,6 +354,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         commands: paths,
         command_identities: results.flatMap(r=>r.identities??[]),
         command_tree_root: catalog.tree_root ?? null,
+        ...(node.caseStructure!==undefined?{case_structure:node.caseStructure,case_structure_author_declared:true}:{}),
         stories: [...stories].sort(byNumber),
         defects: [...defects].sort(byNumber),
         line: located.line,

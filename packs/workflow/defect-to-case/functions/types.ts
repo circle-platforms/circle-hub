@@ -17,12 +17,15 @@ export const CODES = {
 } as const;
 
 export interface DraftStep {
+  identity?:unknown;
   command: string;
   note?: string;
   text?: string;
 }
 
 export interface DraftExpected {
+  identity?:unknown;
+  after?:number;
   text: string;
   quote?: {
     reference: string;
@@ -31,6 +34,7 @@ export interface DraftExpected {
 }
 
 export interface DraftCase {
+  id?:string;
   title: string;
   priority: number;
   negative: boolean;

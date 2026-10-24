@@ -222,12 +222,16 @@ Producers (K02, K04, C07)
   a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
   number with no known head before it stays a command word. Value domains and worked examples become text entries at the
   matching head, else `unplaced`.
-- Release notes: sections whose heading names fixed issues (已修复问题, 修复的问题, 问题修复, 已解决问题, Fixed Issues,
-  Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
-  尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
-  whole words. The module is the child heading or a module column; items are list items, table rows (pipe, grid, HTML) or
-  paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
-  id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
+- Release notes: a section or a block is a defect list only when it declares `status` as exactly `fixed` or `known`.
+  The value is inherited from the nearest ancestor section that declares it. A heading's words are not a status, and a
+  value other than those two is not a status. With no declaration the producer emits no defect entry and names the
+  missing fact and the next step (the release-page author writes `status` before the next production). The module is
+  the child heading under that section, or the cell at a declared `columns.module` index. Items are list items, table
+  rows (pipe, grid, HTML) or paragraphs. A bug id is the whole cell at a declared `columns.bug` index when that cell
+  is the 2–9 digit token from `ids.ts` (`normalizeId`), or a bug marker `idsFromTitle` still reads in list and
+  paragraph text. Header words do not choose a column, and a headerless first cell is not a bug id. `columns.text`
+  and `columns.sequence` are the other declared indexes. The id is stored as `data.bug` (the same id a case lists in
+  `data.defects`). `data.status` is the declared `fixed` or `known`. The names `bug`, `status` and `defects` are
   legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
   for placement), so these defect entries stay unplaced under the root (K01 R[4]). `knowledge:facets` and
   `knowledge:index` count them with the entries hung on the tree, once each, and cite an unplaced entry at the root
@@ -963,6 +967,8 @@ ROOT 的三种情形：
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
 
+1.4.4 起，发布说明的 `fixed` / `known` 只认章节或块上声明的 `status`，表的缺陷号、模块、正文和序号只认块上声明的列号。标题和表头文字不再决定状态或列。没有 `status` 时不产出缺陷条目，并写明缺的事实和下一步。清单和段落里的缺陷号仍经 `idsFromTitle` 读取，这一处不在本版范围内。
+
 
 ## Command grammar
 
@@ -1004,3 +1010,9 @@ Complete zero selections emit source inventory proofs: specifications cite the b
 command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:.../xml@1/... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
 
 R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例提交全部期望叶子的逐字引文及判断，由 Hub 核验身份、路径和引文；不可读原件保持未知并补读。quality-board 仅接 Hub 绑定的同根、同原件、已受理且有效的 case-review 记录；重复回执去重，同原件相互冲突的判断单计冲突并留在未判断中，不挑最后一句。含糊率分母仅为已判断数；零分母显示未判断并补评审，不能显示 0% 或判阈值通过。资源类型比例另按精确声明分母计算。旧结果不改写，新版本须重产新根和评审后再开看板。本次续接未运行验证。
+
+R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/defects[].bug/status/text，status 来自生成词表 release_status；complete 必须为 true，构建与冻结构建精确相等。HTML/Markdown 标题、文件角色及数字外形不再补 fixed/known，缺字段给来源维护人补原始 JSON 后重产。可选 version、released、module、system 只读声明，不从正文猜测。
+
+查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，APV 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
+
+主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本次续接未运行验证。

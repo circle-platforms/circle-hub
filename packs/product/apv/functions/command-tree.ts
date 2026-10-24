@@ -159,7 +159,7 @@ function typeLabel(param: CatalogParam): string {
   return param.type ?? labelOf('type_declaration_status','undeclared');
 }
 
-type SourceParam = { nativeType:string; selector:string; name: string; alternatives: CatalogParam[]; optional: boolean; default?: string; description?: string; label: string };
+type SourceParam = { sourceNative:boolean; nativeType:string; selector:string; name: string; alternatives: CatalogParam[]; optional: boolean; default?: string; description?: string; label: string };
 
 type TypeCounters = { unknown: Map<string, number>; diagnostics:ProducerDiagnostic[] };
 
@@ -208,7 +208,7 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
     if (description !== '') param.description = description;
   }
   const label = `<${name}:${params.map(typeLabel).join('/')}${defaultValue === undefined ? '' : `=${JSON.stringify(defaultValue)}`}>`;
-  const out: SourceParam = { nativeType:arg.attributes.type??'',selector:parameterPath,name, alternatives: params, optional, label: optional ? `[${label}]` : label };
+  const out: SourceParam = { sourceNative:typeName===arg.attributes.type,nativeType:arg.attributes.type??'',selector:parameterPath,name, alternatives: params, optional, label: optional ? `[${label}]` : label };
   if (defaultValue !== undefined) out.default = defaultValue;
   if (description !== '') out.description = description;
   return out;
@@ -343,7 +343,7 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
         continue;
       }
       const signatures: CatalogSignature[] = [];
-      const signature_declarations:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>={};
+      const signature_declarations:Record<string,{selector:string;parameters:Array<{name:string;selector:string;native?:boolean}>}>={};
       const lines: string[] = [];
       const fragments: FragmentRef[] = [];
       const summaries = new Set<string>();
@@ -359,7 +359,7 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           const expanded = expand(complete, String(fragments.length), where, warnings);
           if (expanded.length === 0) return invalid('联合类型展开超过完整解析限额',overload.selector,'arguments');
           signatures.push(...expanded);
-          for(const signature of expanded)signature_declarations[signature.id!]={selector:overload.argumentSelectors[argumentIndex],parameters:complete.map(param=>({name:param.nativeType,selector:param.selector}))};
+          for(const signature of expanded)signature_declarations[signature.id!]={selector:overload.argumentSelectors[argumentIndex],parameters:complete.map(param=>({name:param.nativeType,selector:param.selector,native:param.sourceNative}))};
           lines.push([where, ...complete.map((param) => param.label)].join(' '));
           if (summary !== '') lines.push(`  ${summary}`);
           for (const param of complete){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
@@ -392,3 +392,6 @@ export default function commandTree(input: unknown): CommandTreeResult {
     (warning) => ({ entries: [], warnings: [warning] }),
   );
 }
+
+/** Attach immutable source declarations after the producer receives the original tree digest. */
+export function bindCommandSource(entries:ProducedEntry[],source:string):ProducedEntry[]{return entries.map(entry=>{if(!isRecord(entry.data)||!Array.isArray(entry.data.signatures)||!isRecord(entry.data.signature_declarations))return entry;const declarations=entry.data.signature_declarations;return {...entry,data:{...entry.data,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>{const d=declarations[signature.id??''];if(!isRecord(d)||typeof d.selector!=='string'||!Array.isArray(d.parameters))return signature;return {...signature,reference:'src:'+source+'/xml@1/'+d.selector,params:signature.params.map((p,index)=>{const raw=d.parameters[index];return isRecord(raw)&&raw.native!==false&&typeof raw.name==='string'&&raw.name.length>0&&typeof raw.selector==='string'&&p.type!==undefined?{...p,native_type:{name:raw.name,declaration:'src:'+source+'/xml@1/'+raw.selector,grammar:'apv-command-tree@2'}}:p;})};})}};});}

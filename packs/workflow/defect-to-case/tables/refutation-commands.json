@@ -1,0 +1,20 @@
+{
+  "schema": "catalog@1",
+  "origin": "Owner R4/R7 strict native grammar and exact negative declarations",
+  "catalog": "commands@1",
+  "item": "/item",
+  "location": "/location",
+  "strict_signatures": true,
+  "claims": {
+    "select": "$.claims[*]",
+    "command": "/command",
+    "present": "/present"
+  },
+  "match": {
+    "unicode": "none",
+    "case": "sensitive",
+    "whitespace": "exact"
+  },
+  "tier": "blocking",
+  "basis": "显式成员主张须符合完整执行签名；目录菜单和缺必需参数的命令头都不算可执行命令"
+}

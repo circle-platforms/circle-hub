@@ -276,6 +276,7 @@ export type ManualResult = { entries: ProducedEntry[]; unplaced: Unplaced[]; war
 export type ReleaseInput = MarkdownModel | { model: MarkdownModel };
 
 export type ReleaseResult = {
+  complete?:boolean;
   product: Family | null;
   version: string | null;
   build: string | null;

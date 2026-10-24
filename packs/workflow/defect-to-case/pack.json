@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.9",
+  "version": "1.6.11",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "521910b1e5ac2aae2e67cef398149cc832249df4abcc14ce4df562719c57cc6d",
-      "size": 9334
+      "sha256": "1e8c581ba8659d86c5a5c254c08b58623b51dfd480ac6e445df808f621c769a8",
+      "size": 9773
     },
     {
       "path": "checks.json",
-      "sha256": "21bd49c47f5ea6561ba3e96595e8479e36a12a225410e24ae7a34cde9c3ca429",
-      "size": 4002
+      "sha256": "907301bba7fb6242bd8d01a49fb809bf30473d1e44ab586da80b73cbabb80fc5",
+      "size": 4859
     },
     {
       "path": "examples/start-run.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "292de179c8734409be9b92aba1cd476b28081d7dec16c7328e5ae13deb812411",
-      "size": 25937
+      "sha256": "e0d132c31415d60d30667c579b19506767b664c92177896396a5e2e6b8bc3126",
+      "size": 19894
     },
     {
       "path": "functions/command-head.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/compact-index.ts",
-      "sha256": "6439fb8f5e632cf40ce1e14e1d78300a0885d456edabee155c8a96d5be042f0b",
-      "size": 11759
+      "sha256": "d8244c19d58352ff59a3fde5402546f4ebfea382d86ccc37030603070ef69da3",
+      "size": 11828
     },
     {
       "path": "functions/expected.ts",
@@ -63,18 +63,18 @@
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "4c8cf959e55c4b0a93da3380aa27a823e4149ae97e4fa88d8d18b6c78c9e38be",
-      "size": 5770
+      "sha256": "15d89de8012a0eb4931cb28033617474f4b22f0e5bf01c90e303b6921f9faa54",
+      "size": 6258
     },
     {
       "path": "functions/types.ts",
-      "sha256": "92085cd5d06d4ee5be7875e9a8e3c7f4ec9f61790e48c592e2f75e28739f6543",
-      "size": 1549
+      "sha256": "6b4fcbd92fe66b456b218d612e6f5eb6a061420e8059cef62e55f672b0f12002",
+      "size": 1622
     },
     {
       "path": "requirements.json",
-      "sha256": "4b227226ab1defe6ca76b190ae4d306bcee236f3cd6998d2ebedcbd896089880",
-      "size": 5453
+      "sha256": "f59a4727fc50c84fa592d9c706434389587a73825b725bd75d8b082b9eedfb30",
+      "size": 5483
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
@@ -148,13 +148,13 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "fe9c8304a75ef7106f789e10303bd8990bb5c3b4e8bd9a7b65ebf4bc5612e04f",
-      "size": 1770
+      "sha256": "30b7da21d4432a8e1c870bc6ef66f9af1f0c3b9003cd4d423f92debad8b562b8",
+      "size": 2823
     },
     {
       "path": "tables/commands.json",
-      "sha256": "5b2b2c0dda2d89fdcbae2dbd9651ec2ee524528906fde66c9ad295b312566439",
-      "size": 867
+      "sha256": "f5b53b3e3ba1f56d0ff839c6a77d41dda8f6760ba6c04339a3b6a6b04ba3448c",
+      "size": 879
     },
     {
       "path": "tables/quotes.json",
@@ -168,8 +168,33 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "c07e42fd9fd3caf5cea83c1ef6f56bdeea366aaa055ad0f1874a497e3f1290bb",
-      "size": 2264
+      "sha256": "d75597bf9f828704724a5c8516f17ea5c1e3fc2bd9897f906c611b2c23c613f3",
+      "size": 2298
+    },
+    {
+      "path": "functions/case-identity.ts",
+      "sha256": "3bc483dfc66d4008e03ebf9fd134cee56a3899e429b529205335345df8c859ad",
+      "size": 6046
+    },
+    {
+      "path": "tables/case-structure-rules.json",
+      "sha256": "da99f41bf7a230650b1158c3248075d8d220ecceecb66f95c7c755e1f3157a55",
+      "size": 544
+    },
+    {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
+    },
+    {
+      "path": "tables/expected-quote-identity.schema.json",
+      "sha256": "4d44ebbf967e38b9ad5f35e3615d6f53396c00dd41defd5007e40dc95a7836b5",
+      "size": 1461
+    },
+    {
+      "path": "tables/refutation-commands.json",
+      "sha256": "c732449a161c9213404a19366890d0c0cb2cf6bc395e1be1bce19980824d8a88",
+      "size": 555
     }
   ]
 }

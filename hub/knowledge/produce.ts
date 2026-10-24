@@ -1355,7 +1355,7 @@ export function catalogCanon(data: Record<string, unknown>): string | null {
   if (parsed === null) return null;
   const signatures = parsed.signatures.map((signature) => ({
     params: signature.params.map((param) => {
-      const { description: _dropped, ...rest } = param;
+      const { description: _dropped, native_type: _nativeType, ...rest } = param;
       // Diagnostic paths and recovery prose identify observations; they do not change a parameter's syntax.
       return {...rest,...(rest.unchecked_constraints?{unchecked_constraints:rest.unchecked_constraints.map(({path:_path,next_action:_action,...constraint})=>constraint).sort((a,b)=>compareText(canonicalize(a),canonicalize(b)))}:{})};
     }),

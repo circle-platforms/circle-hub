@@ -7,8 +7,14 @@
   "item": "/item",
   "location": "/location",
   "catalog": "commands@1",
-  "commands": ["$.phrases[*]"],
+  "commands": [
+    "$.phrases[*]"
+  ],
   "required": true,
-  "scope": "resolved",
-  "match": { "unicode": "nfkc", "case": "insensitive", "whitespace": "collapse" }
+  "scope": "all",
+  "match": {
+    "unicode": "none",
+    "case": "sensitive",
+    "whitespace": "exact"
+  }
 }

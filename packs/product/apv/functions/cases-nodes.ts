@@ -13,6 +13,7 @@ import { CASE_RULE, isBlank } from './cases-rules.ts';
 import { isRecord } from './util.ts';
 
 export type CaseNode = {
+  caseStructure?:unknown;
   /** Index of the node in model.nodes. */
   index: number;
   /** The parser's canonical selector of the node. */
@@ -150,6 +151,7 @@ export function caseNodes(model: unknown): CaseScan {
         priority: priorityOf(visit.data),
         tags,
         resource: visit.data.resource,
+        caseStructure:visit.data.case_structure,
         expectedCount: 0,
         hasExpected: false,
         steps: 0,
