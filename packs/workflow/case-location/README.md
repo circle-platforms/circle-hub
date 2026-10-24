@@ -314,3 +314,16 @@ case-location@1.3.3 只把注释中的版本示例换成合成线，解析规则
 1.4.0 applies the settled conventions and decimal identifier normalization; APV ids is re-signed without changing its version, pending integrator alignment with K1.
 
 R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。apv-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。apv-assets@1 只识别完整 Rel_APV/NSAE_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
+
+apv-directory@1 的逐层语法（`functions/convention.ts` 文件头是同一份声明，出处：本线目录命名与 docs/hub-r4-architecture.md 6a，按所有者 R6 于 2026-10-24 声明）：
+
+- 前缀码：三字符 ASCII 字母数字（至少一位数字），最多四组以 `-` 相连，随后可有空白和一个 ASCII 或全角冒号。
+- 版本线层：码后整段是 `v?<n.n[.n[.n]]>`（每段 1 到 3 位数字）。
+- 发布火车层：码后整段是 `v?<n.n[.n[.n]]>` 加一个或多个 `-`、`_` 或空格，再加非空的单行后缀。
+- 模块层：火车下一层的整段标签，单行、1 到 1000 字符；标签超过 1000 字符按声明截断后读取。
+- 版本标签：整段标签是裸版本（可带 `v`/`V`），或“本次运行绑定的产品名之一 + `_` 或 `-` + 版本”；产品名按完全相等比较（U23：不做大小写、全半角或同义折叠），所以 `nsae_10.7.3`、`OTHER_10.7.3` 都不是版本标签。
+- 构建名：只在标签开头按 `Rel|Beta` + 统一分隔符 + 家族名（可带 `-平台` 段）+ 数字组读取，不扫正文中间；家族名与绑定名精确相等，小写家族算另一个产品并单独报告。
+
+不折叠：标签按目录原样读取，全角数字或全角冒号写成的码不在语法内，该层记未知并给出出口（包作者补语法或作者改目录名）。已退役且不再实现：build 日期与 patch 号方案、正文中捞版本、模块层的活动/文档/版本/编号语义排除、协议/数量/地址形状守卫（`192.0.2.10` 这样的整段标签按语法就是版本线，属作者命名问题，不按含义拒绝）。
+
+测试状态（本次）：`functions/convention.test.ts` 已按上述声明逐行重写，11 条全过；`functions/locate.test.ts` 89 条中 41 过，其余 48 行、以及 `conventions/expected/ids/candidates/check/project` 里共 87 行仍按已退役规则写期望，待按声明重写（分五类：编号不再从标题或目录散文抽取、build/patch 字段不再产出、模块层不再语义排除、不折叠后全角标签不可读、以及上述引起的 verdict 变化）。包级 `pack.test.ts`、`production.test.ts`、`publish.test.ts` 现在无法加载，原因是主线 `hub/knowledge/produce.ts` 重复声明 `inventory`（已派 Cursor）。不把实际输出倒写为期望。
