@@ -46,21 +46,23 @@ export function applicabilityText(applicability: Applicability | null, sources:r
   const add=(field:ApplicabilityField,value:string)=>{
     if(conflicts.has(field)||unread.has(field))return;
     const inherited=applicability?.inherited?.includes(field);
-    const sections=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')))];
+    const sections=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')).filter(Boolean))];
     parts.push(labelOf('applicability_field',field)+' '+value+(inherited?'（继承自章节开头：'+(sections.length?sections.join('、'):'出处未取得；下一步读取组成记录中的来源片段')+'）':''));
   };
   if(applicability!==null){
   if(applicability.builds!==undefined)add('builds',applicability.builds.join('、')||'（无）');
   if(applicability.platforms!==undefined)add('platforms',applicability.platforms.join('、')||'（无）');
   if(applicability.models!==undefined)add('models',applicability.models.join('、')||'（无）');
-  if(applicability.components!==undefined)add('components',[applicability.components.with?'装有 '+applicability.components.with.join('、'):'',applicability.components.without?'没有 '+applicability.components.without.join('、'):''].filter(Boolean).join('；'));
+  if(applicability.components!==undefined)add('components',[applicability.components.with?'装有 '+applicability.components.with.join('、'):'',applicability.components.without?'没有 '+applicability.components.without.join('、'):''].filter(Boolean).join('，'));
   if(applicability.memory!==undefined){const m=applicability.memory;const bounds=[m.minimum?(m.minimum.inclusive?'≥':'>')+m.minimum.bytes+' 字节':'',m.maximum?(m.maximum.inclusive?'≤':'<')+m.maximum.bytes+' 字节':''].filter(Boolean).join('，');add('memory',m.raw+'（'+bounds+'）');}
   if(applicability.licenses!==undefined)add('licenses',applicability.licenses.join('、')||'（无）');
   if(applicability.deployment_forms!==undefined)add('deployment_forms',applicability.deployment_forms.join('、')||'（无）');
   }
   for(const field of ApplicabilityFieldSchema.options)if(conflicts.has(field)||unread.has(field)){
-    const paths=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')))];
-    parts.push(labelOf('applicability_field',field)+' 未声明（章节开头'+(conflicts.has(field)?'冲突，双方值和片段保留在组成记录':'条件未能结构化，原文保留')+'：'+paths.join('、')+'）');
+    const paths=[...new Set(sources.filter(source=>source.field===field).map(source=>source.section.join('/')).filter(Boolean))];
+    const location=paths.length?paths.join('、'):'出处未取得；下一步读取组成记录中的来源片段';
+    const next=conflicts.has(field)?'下一步：来源维护者核对这些片段，修订或明确保留矛盾后重新同步':'下一步：读取组成记录里的来源片段核对原文';
+    parts.push(labelOf('applicability_field',field)+' 未声明（章节开头'+(conflicts.has(field)?'冲突，双方值和片段保留在组成记录':'条件未能结构化，原文保留')+'：'+location+'；'+next+'）');
   }
   return parts.length?parts.join('；'):'未限定';
 }

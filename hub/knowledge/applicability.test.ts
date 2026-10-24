@@ -22,3 +22,16 @@ test('display uses vocabulary field labels and inherited section provenance',()=
   for(const field of ['components','memory','licenses','deployment_forms'] as const)assert.ok(text.includes(labelOf('applicability_field',field)));
   assert.match(text,/继承自章节开头：Synthetic chapter/);
 });
+
+test('conflicted and unread declarations disclose their next action even without a chapter path',()=>{
+  const conflict=applicabilityText(null,[{field:'components',section:['Inner'],declaration:{components:{with:['Card-A']}},conflict:true}]);
+  assert.ok(conflict.includes('下一步：来源维护者核对这些片段，修订或明确保留矛盾后重新同步'));
+  const unread=applicabilityText(null,[{field:'licenses',section:[],declaration:{}}]);
+  assert.ok(unread.includes('出处未取得'));
+  assert.ok(unread.includes('下一步：读取组成记录里的来源片段核对原文'));
+  assert.ok(!unread.includes('：）'));
+});
+test('component presence and absence stay inside one labelled field',()=>{
+  const text=applicabilityText({components:{with:['Card-A'],without:['Card-B']},licenses:['Permit-A']});
+  assert.equal(text,'部件 装有 Card-A，没有 Card-B；许可 Permit-A');
+});
