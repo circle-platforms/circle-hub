@@ -98,7 +98,8 @@ class BuildNameRefusal extends ImpactRefusal {
   readonly fix='使用候选的完整原样构建名重新读取';
 }
 
-function pageState(after: string | null, identity: unknown): {offset:number;next:(offset:number)=>string} {
+interface PageCursor { offset: number; next(offset: number): string }
+function pageState(after: string | null, identity: unknown): PageCursor {
   const q=sha256Hex(canonicalize(identity));
   let offset=0;
   if(after!==null){
