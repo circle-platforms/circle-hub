@@ -119,7 +119,9 @@ export default function check(input: unknown): Outcome[] {
   const grounds = typeof raw.sha256 === 'string' && /^[a-f0-9]{64}$/.test(raw.sha256) ? [`src:${raw.sha256}`, `src:${s.manifest_sha256}`] : [];
   const fail = (message: string, at = pointer): Outcome[] => [{ verdict: 'refute', code: 'case-compile.workbook_invalid', statement: message + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: at }];
   const checked = [checkContractShape, checkAddresses, checkExpectedSources].flatMap((fn) => fn({ subject: s }));
-  if (checked.some((v) => v.verdict !== 'support')) return fail('计划的调用、地址或期望尚未满足，不能核验工作簿；先修计划，再由同版客户端脚本重生成');
+  if (checked.some(v => v.verdict === 'refute')) return fail('计划的调用、地址或期望尚未满足，不能核验工作簿；先修计划，再由同版客户端脚本重生成');
+  const unverified = checked.find(v => v.verdict === 'unknown');
+  if (unverified) return [{ ...unverified, statement: '工作簿未核对：' + unverified.statement, grounds, ...(item ? { item } : {}) }];
   const recipe: GenerationInput = { slots: slots.slots, fields, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build };
   try {
     const read = readWorkbook(raw.model, recipe); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);

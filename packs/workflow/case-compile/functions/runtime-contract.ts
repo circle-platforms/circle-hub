@@ -4,7 +4,8 @@ import FORMAT from '../tables/runtime-contract-format.json' with { type: 'json' 
 import { isRecord } from './text.ts';
 export interface Problem { pointer: string; message: string; fix: string }
 export interface RuntimeParameter { name: string; kind: string; required: boolean; redacted: boolean }
-export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[] }
+/** The legacy reader verifies signatures only; unknown/raw metadata never becomes typed authority. */
+export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[]; sourcePointer?: string; authority?: null }
 export interface RuntimeContract { runtimeVersion: string; digest: string; objects: string[]; enabled: RuntimeEntry[] }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
 const SHA = /^[a-f0-9]{64}$/;
@@ -107,7 +108,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       if (JSON.stringify(signature[field]) !== JSON.stringify(wanted)) issue(`${at}/signature/${field}`, '签名参数分组与逐参数标志不一致');
     }
     if (typeof signature.text !== 'string') issue(`${at}/signature/text`, '签名说明不是文字');
-    if (entry.status === 'enabled' && entry.certification_candidate !== true) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters });
+    if (entry.status === 'enabled' && entry.certification_candidate !== true) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters, sourcePointer: at, authority: null });
   }
   let digest = '';
   try { digest = runtimeDigest(value); } catch { /* Precise numeric/key problems were already listed above. */ }

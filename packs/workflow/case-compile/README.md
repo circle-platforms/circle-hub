@@ -125,3 +125,25 @@ allowed 是合约启用集合中、经角色和检查覆盖的已开放子集；
 合入 trunk-fixes-4 后，包测试 284 项与 96 个发布作者样例通过，场景 28 完整复跑 7 项通过，类型、合约生成和包清单检查通过。场景同时钉住一次预算的固定拒绝码、原作业继续冻结、另一核验运行不能越过冻结，以及具名对账后的后续派发。
 
 生成前回执可以明确列出 workbook_verified 的 missing_input；客户端只在这一项是当前唯一条目的未核对缺输入、且其余必需计划要求项全部满足时生成。其他错误、检查失败、确定反驳或别的条目不能借此放行；生成后仍须上传原字节并开后继核验运行。
+
+## R5 typed-address remediation in progress
+
+Owner ruling R5 (2026-10-24) replaces the historical deny-word and address-appearance policies described above.
+The legacy signature reader proves object/method identity, signature kind and required/default fields only; its
+parsed methods currently carry no validated type/effect authority. Local profile roles and reviewed flags cannot
+supply that authority. Missing authority leaves checks unknown with missing_input, stops client generation and
+prevents an existing workbook from acquiring a support receipt or dispatch parameters. Hub binds the actual named
+recovery recipient and deadline; the pack does not invent account IDs or timestamps.
+
+The internal replacement helper accepts explicit exact spans only (UTF-16 indexes into the unchanged string).
+It never discovers spans by scanning prose. The caller must obtain them from a validated typed binding and retain
+its original reference identity; this helper alone does not establish that authority. No spans means no rewrite.
+Signature binding is separate from the POSIX command lexer: a G-encodable ordinary literal is not automatically
+shell text. Only a declared command role invokes that lexer, on the original glyphs without NFKC conversion.
+
+The original synthetic pre-R5 workbook is retained unchanged in testing/legacy-untyped-workbook.json, including its
+source revision and byte digest. It is an unverified historical fixture, never a new typed release. Model M4/M5,
+R4 complete command grammar and the R7 expected-source identity remain integration prerequisites. No new vocabulary
+values or wire type/effect schema are guessed here. The full package examples, generated vocabulary, manifest and
+new version will be migrated and verified after the integrator supplies the frozen model commit. Legacy positive
+samples are not evidence of completed remediation and this work-in-progress tree is not a publishable release.

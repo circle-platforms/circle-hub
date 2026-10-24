@@ -7,12 +7,32 @@ export function literalAddresses(text: string): LiteralAddress[] {
   for (const m of text.matchAll(/(?<![A-Za-z0-9_])(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F:.]*)(?![A-Za-z0-9_])/g)) { const key = addressKey(m[0]); if (key !== null || /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(m[0])) out.push({ text: m[0], at: m.index, key }); }
   return out;
 }
-/** Substitute only complete numeric address tokens; a short address never changes the prefix of a longer one. */
-export function replacedQuote(text: string, replacements: readonly Replacement[]): string {
-  const byKey = new Map(replacements.map((v) => [addressKey(v.case), v.bed]));
-  let out = ''; let at = 0;
-  for (const token of literalAddresses(text)) { out += text.slice(at, token.at) + (token.key === null ? token.text : byKey.get(token.key) ?? token.text); at = token.at + token.text.length; }
-  return out + text.slice(at);
+/** Internal offsets are UTF-16 string indexes into the exact quote. The typed reader, not this helper, authorizes a span. */
+export interface AddressSpan { start: number; end: number; literal: string }
+export class AddressSpanError extends Error {
+  readonly reason: string;
+  constructor(reason: string) { super('结构地址跨度或替换映射不符合已声明原文；不得重新扫描文字猜位置'); this.name = 'AddressSpanError'; this.reason = reason; }
+}
+/** Rewrites explicitly selected address positions only. No supplied position means no replacement, even for IP-shaped text. */
+export function replacedQuote(text: string, replacements: readonly Replacement[], spans: readonly AddressSpan[] = []): string {
+  const byKey = new Map<string, string>(), targets = new Set<string>();
+  for (const replacement of replacements) {
+    const from = addressKey(replacement.case), to = addressKey(replacement.bed);
+    if (!from || !to) throw new AddressSpanError('mapping_syntax');
+    if (from.split(':', 1)[0] !== to.split(':', 1)[0]) throw new AddressSpanError('mapping_family');
+    if (byKey.has(from) || targets.has(to)) throw new AddressSpanError('mapping_bijection');
+    byKey.set(from, replacement.bed); targets.add(to);
+  }
+  let out = '', cursor = 0;
+  for (const span of spans) {
+    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) || span.start < cursor || span.end <= span.start || span.end > text.length) throw new AddressSpanError('span_bounds');
+    if (text.slice(span.start, span.end) !== span.literal) throw new AddressSpanError('span_identity');
+    const key = addressKey(span.literal);
+    if (!key) throw new AddressSpanError('span_syntax');
+    out += text.slice(cursor, span.start) + (byKey.get(key) ?? span.literal);
+    cursor = span.end;
+  }
+  return out + text.slice(cursor);
 }
 export function deniedCommand(text: string, denied: readonly string[]): boolean {
   // Adjacent shell quoting and escaping cannot hide a denied spelling. No shell or Python is executed.

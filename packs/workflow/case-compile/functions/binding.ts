@@ -30,12 +30,11 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
   for (const v of values) {
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
     else if (!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
-    if (typeof v.value === 'string' && !hasBalancedCommandText(v.value)) issue('param_value', v.pointer, '按 POSIX 引号规则修正：单引号内的反斜杠不是转义；可用双引号包住含单引号的文字，且值不能以反斜杠结尾');
   }
   return { values, problems };
 }
 
-/** The catalog tokenizer cannot consume unmatched quoting or a final escape. Reject before its unknown path. */
+/** POSIX-subset command syntax only; the caller must establish a command role before using this lexer. */
 export function hasBalancedCommandText(text: string): boolean {
   if (text.endsWith('\\')) return false;
   let quote: string | null = null; let escaped = false;
