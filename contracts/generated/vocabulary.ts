@@ -57,7 +57,7 @@ export const AXES = {
   permission_role: { label: '权限角色', owner: 'R01', values: [{ code: 'user', label: '用户' }, { code: 'admin', label: '管理员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
   validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
-  qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }] },
+  qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
   reason: { label: '未知与未完成的原因', owner: 'V03', values: [{ code: 'no_check', label: '未装检查' }, { code: 'check_error', label: '检查出错' }, { code: 'timeout', label: '超时' }, { code: 'missing_input', label: '缺输入' }, { code: 'declared_skip', label: '模型声明跳过' }, { code: 'not_covered', label: '提交未覆盖' }, { code: 'awaiting_step', label: '在等某一步' }, { code: 'output_failed', label: '出件失败' }, { code: 'repair_exhausted', label: '修复轮数用完' }, { code: 'budget_exhausted', label: '预算用完' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
   sample_source: { label: '样例来源', owner: 'T02', values: [{ code: 'author', label: '作者' }, { code: 'returned_counterexample', label: '回流反例' }, { code: 'retained_delivery', label: '外部留存交付' }] },
   target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
@@ -74,6 +74,11 @@ export const AXES = {
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
   share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
   applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
+  classification_status: { label: '分类状态', owner: 'W01', values: [{ code: 'classified', label: '已分类' }, { code: 'unclassified', label: '未分类' }] },
+  judgment_status: { label: '判断状态', owner: 'V02', values: [{ code: 'judged', label: '已判断' }, { code: 'unjudged', label: '未判断' }] },
+  type_declaration_status: { label: '类型声明状态', owner: 'C07', values: [{ code: 'declared', label: '类型已声明' }, { code: 'undeclared', label: '类型未声明' }] },
+  command_parse_status: { label: '命令解析状态', owner: 'C07', values: [{ code: 'parsed', label: '命令已解析' }, { code: 'not_command', label: '不是命令' }, { code: 'parameters_unchecked', label: '参数未核' }] },
+  declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -565,9 +570,9 @@ export function isValidityStatus(value: unknown): value is ValidityStatus {
 }
 
 /** 限定标记 (B01) */
-export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded', 'human_intervention', 'discrimination_not_established', 'semantics_unasserted', 'unverified_submission', 'client_preview', 'model_relay', 'no_reuse', 'author_samples_only', 'conditional_on_judgment', 'independence_declared', 'not_realtime', 'partial', 'intermittent', 'decision_shape_unruled'] as const;
+export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded', 'human_intervention', 'discrimination_not_established', 'semantics_unasserted', 'unverified_submission', 'client_preview', 'model_relay', 'no_reuse', 'author_samples_only', 'conditional_on_judgment', 'independence_declared', 'not_realtime', 'partial', 'intermittent', 'decision_shape_unruled', 'legacy_keyword_rules', 'possible_credentials'] as const;
 export type QualifierMark = (typeof QUALIFIER_MARK)[number];
-export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分', 'intermittent': '间歇', 'decision_shape_unruled': '判定形状未裁定' } as const satisfies { readonly [K in QualifierMark]: string };
+export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分', 'intermittent': '间歇', 'decision_shape_unruled': '判定形状未裁定', 'legacy_keyword_rules': '旧规则（关键词）', 'possible_credentials': '可能含凭据' } as const satisfies { readonly [K in QualifierMark]: string };
 export const QualifierMarkSchema = z.enum(QUALIFIER_MARK);
 export function isQualifierMark(value: unknown): value is QualifierMark {
   return (QUALIFIER_MARK as readonly unknown[]).includes(value);
@@ -717,6 +722,51 @@ export function isApplicabilityField(value: unknown): value is ApplicabilityFiel
   return (APPLICABILITY_FIELD as readonly unknown[]).includes(value);
 }
 
+/** 分类状态 (W01) */
+export const CLASSIFICATION_STATUS = ['classified', 'unclassified'] as const;
+export type ClassificationStatus = (typeof CLASSIFICATION_STATUS)[number];
+export const CLASSIFICATION_STATUS_LABEL = { 'classified': '已分类', 'unclassified': '未分类' } as const satisfies { readonly [K in ClassificationStatus]: string };
+export const ClassificationStatusSchema = z.enum(CLASSIFICATION_STATUS);
+export function isClassificationStatus(value: unknown): value is ClassificationStatus {
+  return (CLASSIFICATION_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 判断状态 (V02) */
+export const JUDGMENT_STATUS = ['judged', 'unjudged'] as const;
+export type JudgmentStatus = (typeof JUDGMENT_STATUS)[number];
+export const JUDGMENT_STATUS_LABEL = { 'judged': '已判断', 'unjudged': '未判断' } as const satisfies { readonly [K in JudgmentStatus]: string };
+export const JudgmentStatusSchema = z.enum(JUDGMENT_STATUS);
+export function isJudgmentStatus(value: unknown): value is JudgmentStatus {
+  return (JUDGMENT_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 类型声明状态 (C07) */
+export const TYPE_DECLARATION_STATUS = ['declared', 'undeclared'] as const;
+export type TypeDeclarationStatus = (typeof TYPE_DECLARATION_STATUS)[number];
+export const TYPE_DECLARATION_STATUS_LABEL = { 'declared': '类型已声明', 'undeclared': '类型未声明' } as const satisfies { readonly [K in TypeDeclarationStatus]: string };
+export const TypeDeclarationStatusSchema = z.enum(TYPE_DECLARATION_STATUS);
+export function isTypeDeclarationStatus(value: unknown): value is TypeDeclarationStatus {
+  return (TYPE_DECLARATION_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 命令解析状态 (C07) */
+export const COMMAND_PARSE_STATUS = ['parsed', 'not_command', 'parameters_unchecked'] as const;
+export type CommandParseStatus = (typeof COMMAND_PARSE_STATUS)[number];
+export const COMMAND_PARSE_STATUS_LABEL = { 'parsed': '命令已解析', 'not_command': '不是命令', 'parameters_unchecked': '参数未核' } as const satisfies { readonly [K in CommandParseStatus]: string };
+export const CommandParseStatusSchema = z.enum(COMMAND_PARSE_STATUS);
+export function isCommandParseStatus(value: unknown): value is CommandParseStatus {
+  return (COMMAND_PARSE_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 结构声明状态 (K02) */
+export const DECLARATION_STATUS = ['declared', 'undeclared'] as const;
+export type DeclarationStatus = (typeof DECLARATION_STATUS)[number];
+export const DECLARATION_STATUS_LABEL = { 'declared': '已声明', 'undeclared': '未声明' } as const satisfies { readonly [K in DeclarationStatus]: string };
+export const DeclarationStatusSchema = z.enum(DECLARATION_STATUS);
+export function isDeclarationStatus(value: unknown): value is DeclarationStatus {
+  return (DECLARATION_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -789,6 +839,11 @@ export interface AxisValues {
   digest_rule: DigestRule;
   share_audience: ShareAudience;
   applicability_field: ApplicabilityField;
+  classification_status: ClassificationStatus;
+  judgment_status: JudgmentStatus;
+  type_declaration_status: TypeDeclarationStatus;
+  command_parse_status: CommandParseStatus;
+  declaration_status: DeclarationStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -863,6 +918,11 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   digest_rule: DIGEST_RULE_LABEL,
   share_audience: SHARE_AUDIENCE_LABEL,
   applicability_field: APPLICABILITY_FIELD_LABEL,
+  classification_status: CLASSIFICATION_STATUS_LABEL,
+  judgment_status: JUDGMENT_STATUS_LABEL,
+  type_declaration_status: TYPE_DECLARATION_STATUS_LABEL,
+  command_parse_status: COMMAND_PARSE_STATUS_LABEL,
+  declaration_status: DECLARATION_STATUS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */
