@@ -225,7 +225,7 @@ export async function bindInputs(
     const given = inputs[slot.slot];
     const list = given === undefined ? [] : Array.isArray(given) ? given : [given];
     if (list.length === 0) {
-      if (slot.required) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, `在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
+      if (slot.required) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, slot.default_from_predecessor?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 显式给出有权读取的完整 rec: 结果引用`:`在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
       continue;
     }
     if (!slot.many && list.length > 1) {

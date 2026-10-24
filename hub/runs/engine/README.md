@@ -784,3 +784,10 @@ Owners and administrators retain the full diagnostics. The underlying submission
 never rewritten or redacted under their original digests.
 
 The sharing/unknown-exit merge keeps visibility filtering before stable pagination, alongside unanswered and overdue requests. System-input deliveries remain independent of user-submission receipt lookup. Sharing grants accepted validation bodies and the run/submission/action records declared by B04; run-bound request and hypothesis-set records remain owner/administrator-only in both record readers, matching the request listing policy. Management delivery stays current without changing historical technical results.
+
+
+## Declared predecessor input defaults
+
+An input slot opts in with `default_from_predecessor: {pack: <workflow id>}`. The declaration is valid only for an artifact-under-verification slot accepting JSON; media type alone never opts a slot in. Missing opted-in slots use one selection of the predecessor's latest accepted submitted validation record. Lookup follows every result page and verifies the original submission exists. Production, system-input and abandonment deliveries are excluded. The existing predecessor owner/admin guard and independent-session/lineage checks still apply; a read-only share adds no predecessor authority.
+
+Explicit bindings, including explicit arrays, are not replaced. Unopted slots retain their existing required/optional behavior. `input_defaults` freezes each defaulted slot, predecessor and full `rec:` reference in the run and start reply; the text names the same binding. Client-key replay returns that frozen selection. No accepted submitted result refuses before input binding with the existing missing-input schema code and a concrete resubmit-then-review step. The Hub never interprets a package name or guesses a package-specific error code.
