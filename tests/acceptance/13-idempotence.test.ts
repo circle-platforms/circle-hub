@@ -60,7 +60,7 @@ describe('scenario 13: idempotence of start_run and submit_result', () => {
     assert.equal(mismatch.out.errors[0]?.code, 'IDEMPOTENCY_MISMATCH');
   });
 
-  test('repeating submit_result for the same (run, submission digest) returns stored result without re-running', async () => {
+  test('repeated transitional submissions are rechecked without duplicating the original or repair charge', async () => {
     const submission = draft(run1);
 
     // First submission
@@ -79,14 +79,19 @@ describe('scenario 13: idempotence of start_run and submit_result', () => {
     assert.equal(repeatSubmit.out.acceptance, 'accepted');
     const repeatResult = resultOf(repeatSubmit);
 
-    // Results match
-    assert.deepEqual(repeatResult, firstResult);
+    assert.ok(firstSubmit.out.counts!.unknown>0,'this fixture contains unresolved catalog facts');
+    assert.equal(repeatResult.submission,firstResult.submission);
+    assert.deepEqual(repeatResult.partitions,firstResult.partitions,'unchanged facts retain their raw terminals and exits');
+    assert.notEqual(repeatResult.trace,firstResult.trace,'the repeat has an actual new validation trace');
+    const third=await client.call('submit_result',submission),thirdResult=resultOf(third);
+    assert.equal(thirdResult.rounds.used,repeatResult.rounds.used,'the same body never consumes another round');
+    assert.equal((await bed.hub.records.store.find({key:'runs.submission.run',value:run1.run})).items.length,1);
 
     // No new records were written to database
     const resultsAfter = (await bed.hub.records.store.find({ key: 'runs.result.run', value: run1.run })).items.length;
     const actionsAfter = (await bed.hub.records.store.find({ key: 'runs.action.run', value: run1.run })).items.length;
-    assert.equal(resultsAfter, resultsBefore, 'no new validation_result stored on idempotent repeat');
-    assert.equal(actionsAfter, actionsBefore, 'no new action stored on idempotent repeat');
+    assert.equal(resultsAfter,resultsBefore+2,'each transitional recheck appends its own result');
+    assert.equal(actionsAfter,actionsBefore+2,'each actual recheck has its own validation action');
   });
 
   test('an expired client_key starts a new run', async () => {
