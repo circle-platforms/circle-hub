@@ -1,3 +1,5 @@
+import {catalogFor} from './command-catalog.ts';
+import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
 // Test harness of the case-compile pack against the real Hub parts: a fake external reader serving the synthetic
 // case document (agile:mindmap) and the two named documents (doc:doc), a fake knowledge port answering the command
 // catalog of the locked build, and the staged pack published into a temporary registry.
@@ -7,7 +9,7 @@ import type { KnownBuild } from '../../../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, KnowledgePort, NodesPage, RootDiff, RootInfo } from '../../../../hub/ports.ts';
 import type { Artifacts, Principal } from '../../../../hub/records/api.ts';
 import type { TreeReader } from '../../../../hub/refs/api.ts';
-import { buildCatalog, type CatalogView } from '../../../../hub/rules/api.ts';
+import {createCatalogView, buildCatalog, type CatalogView } from '../../../../hub/rules/api.ts';
 import {
   createPackRegistry,
   createPacksPort,
@@ -51,7 +53,7 @@ const CATALOG_SPEC = {
 };
 
 export class FakeKnowledge implements KnowledgePort {
-  readonly #catalogView: CatalogView = buildCatalog(CATALOG_SPEC);
+  readonly #catalogView: CatalogView = createCatalogView(catalogFor(COMMAND_IDENTITIES,ROOT).entries,{reference:`tree:${ROOT}/commands`,complete:true,caseSensitive:true});
 
   async builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]> {
     return product === 'widget' && (filter?.line === undefined || filter.line === BUILD.line) ? [BUILD] : [];

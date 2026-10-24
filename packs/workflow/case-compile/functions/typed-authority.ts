@@ -1,9 +1,10 @@
+import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import type { RuntimeProfile } from './profile.ts';
 import type { PlanSlots } from './slots.ts';
 import {bindArguments} from './binding.ts';
-import {identityOf,identityKey,commandLine,valueProblem,type Authority,type ValueType} from './typed-contract.ts';
+import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from './typed-contract.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import {addressKey} from './manifest.ts';
@@ -11,9 +12,9 @@ export interface AuthorityGap { document: string; pointer: string; message: stri
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
-export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown): AuthorityGap[] {
+export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown): AuthorityGap[] {
  const gaps:AuthorityGap[]=[];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
- const planned=(slots.command_identities??[]).map(identityOf),knownIds=Array.isArray(known)?known.map(identityOf):null;
+ const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
  const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>identityKey(replacedIdentity(i,slots))));
  const usage=new Map<string,{budget:number;count:number}>();
  const effectUse=(a:Authority,at:string)=>{for(const e of a.effects){const row=usage.get(e.id)??{budget:e.budget,count:0};row.count++;row.budget=Math.min(row.budget,e.budget);usage.set(e.id,row);if(row.count>row.budget)note(at,`效果 ${e.id} 的计划调用 ${row.count} 次超过声明预算 ${row.budget} 次`,'refute');}};
@@ -29,10 +30,10 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
    const problem=valueProblem(p.type,v.value);if(problem)note(v.pointer,problem,'refute');
    if(p.role==='host_shell'&&!a.effects.some(e=>e.allowed_literals.includes(String(v.value))))note(v.pointer,'主机命令不在合约效果表的完整字面允许集合','refute');
    if(p.role==='device_cli'){
-    if(knownIds===null||knownIds.some(i=>i===null)){note(v.pointer,'缺冻结知识条目的 data.command_identities；下一步绑定同一根的 case_index 后重开运行');continue;}
-    const matches=planned.filter((i):i is CommandIdentity=>i!==null&&commandLine(i)===v.value);
-    if(matches.length!==1){note(v.pointer,'缺与完整原文命令行一致且唯一的 CommandIdentity；下一步按冻结身份及显式替换提交');continue;}
-    const identity=matches[0];if(!keys.has(identityKey(identity)))note(v.pointer,'完整命令身份没有冻结用例身份及类型化替换的依据');
+    if(knownIds===null||knownIds.some(i=>i===null)){note(v.pointer,'用例声明身份结构未核对；修正 case_index 的明确声明后重核');continue;}
+    const parsed=resolution.byLine.get(String(v.value));const matches=parsed?[parsed]:[];
+    if(matches.length!==1)continue;
+    const identity=matches[0];if(knownIds.length&&!keys.has(identityKey(identity)))note(v.pointer,'计划命令与用例明确声明的命令身份不一致（已核显式类型化替换）','refute');
     if(!a.effects.some(e=>e.commands.some(i=>identityKey(replacedIdentity(i,slots))===identityKey(identity))))note(v.pointer,'完整命令身份不在合约效果允许集合','refute');
     for(const parameter of identity.parameters)if(parameter.parsed.kind==='address'&&(parameter.parsed.value.kind==='ipv4'||parameter.parsed.value.kind==='ipv6')){const role=commandRole(a,identity,parameter.position,parameter.role?.name);if(!role||typeof a.roles[role]?.bed_member!=='boolean')note(v.pointer,`命令参数位置 ${parameter.position} 缺合约闭集角色及 bed_member 用途声明`);}
    }
@@ -40,7 +41,6 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
  }
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));
  if(assertion){const entry=runtimeMethod(contract,assertion.object,assertion.method),a=entry?.authority;const name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','字面断言方法缺 runtime-contract@2 的类型、角色和效果授权');else for(const [i,expect]of slots.expects.entries()){effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');const problem=valueProblem(a.parameters[name].type,expect.text);if(problem)note(`/expects/${i}/text`,problem,'refute');}}
- if(planned.some(i=>i===null))note('/command_identities','命令身份的结构或 raw 与类型化解析值不一致','refute');
  return gaps;
 }
 function commandRole(a:Authority,i:CommandIdentity,position:number,native?:string):string|null {
@@ -49,9 +49,10 @@ function commandRole(a:Authority,i:CommandIdentity,position:number,native?:strin
  const roles=[...new Set(declared)];return roles.length===1?roles[0]:null;
 }
 export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
-export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots):AddressUse[]{
+export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
+ const resolved=planCommands(contract,profile,slots,catalog);
  const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of slots.command_identities??[]){const i=identityOf(raw);if(!i||commandLine(i)!==v.value)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }

@@ -103,9 +103,9 @@ export function projectItems(input: unknown): unknown {
     location: { slot: 'subject', source: sha256, parser: 'kityminder@1', selector: found.selector ?? '' },
     fields: {
       command_identities:(()=>{const source=slotOf(inputs,'case_index'),context=isRecord(params.context)?params.context:{};const view=source?.model;
-        if(source?.parser!=='json@1'||!isRecord(view)||view.schema!=='index-view@1'||view.kind!=='case'||!isRecord(view.build)||view.build.root!==context.root||!isRecord(view.entries))return undefined;
+        if(!source)return undefined;if(source.parser!=='json@1'||!isRecord(view)||view.schema!=='index-view@1'||view.kind!=='case'||!isRecord(view.build)||view.build.root!==context.root||!isRecord(view.entries))return null;
         const rows=Object.values(view.entries).filter(row=>isRecord(row)&&isRecord(row.data)&&row.data.document===documentId&&row.data.node===found.id);
-        if(!rows.length||rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return undefined;
+        if(!rows.length||rows.every(row=>isRecord(row)&&isRecord(row.data)&&!Object.hasOwn(row.data,'command_identities')))return undefined;if(rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return null;
         return [...new Map(rows.flatMap(row=>(row as {data:{command_identities:unknown[]}}).data.command_identities).map(identity=>[JSON.stringify(identity),identity])).values()];
       })(),
       title: found.title,

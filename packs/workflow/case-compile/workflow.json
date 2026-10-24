@@ -55,7 +55,7 @@
     {
       "slot": "case_index",
       "role": "expected",
-      "description": "同一锁定知识根的 case 索引，fields=document,node,command_identities,command_tree_root；按 document/node 精确绑定完整身份，缺失时 commands_known 未核对并阻派发",
+      "description": "同一锁定根的可选用例身份声明；存在声明时与计划命令的锁定目录解析结果共同核对，作者未声明命令不阻止按目录解析计划命令",
       "accepts": [
         "knowledge:index"
       ],

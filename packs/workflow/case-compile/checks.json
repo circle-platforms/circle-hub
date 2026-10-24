@@ -15,7 +15,8 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值"
+      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值",
+      "catalog": "commands@1"
     },
     {
       "id": "bed_addresses",
@@ -31,7 +32,8 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "决定 35：本台架所有设备接口及本血缘分配地址均可出现；台架外原地址经 replacements 换入，掩码、前缀与非地址令牌不当作主机地址"
+      "basis": "决定 35：本台架所有设备接口及本血缘分配地址均可出现；台架外原地址经 replacements 换入，掩码、前缀与非地址令牌不当作主机地址",
+      "catalog": "commands@1"
     },
     {
       "id": "commands_catalog",
@@ -43,11 +45,12 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "只核对完整 CommandIdentity、冻结 data.command_identities、显式类型化替换及合约效果授权；不按命令文字猜测",
+      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析",
       "function": {
         "module": "functions/checks.ts",
         "export": "checkCommandsKnown"
-      }
+      },
+      "catalog": "commands@1"
     },
     {
       "id": "expected_sources",
@@ -63,7 +66,8 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 expected_grounded：每个期望结果带逐字引文（用例原文、缺陷修复说明或手册），不能是模型自己写的"
+      "basis": "要求项 expected_grounded：每个期望结果带逐字引文（用例原文、缺陷修复说明或手册），不能是模型自己写的",
+      "catalog": "commands@1"
     },
     {
       "id": "expected_quotes",
@@ -77,7 +81,8 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里"
+      "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里",
+      "catalog": "commands@1"
     },
     {
       "id": "workbook_verified",
@@ -92,7 +97,8 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等"
+      "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等",
+      "catalog": "commands@1"
     },
     {
       "id": "dispatch_policy",
@@ -108,7 +114,8 @@
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "W03 F[0]、P11 R[3]：同一脚本与政策表在编译与写意图前重核，通用参数完全来自已重算的工作簿事实",
-      "table": "policies/dispatch.json"
+      "table": "policies/dispatch.json",
+      "catalog": "commands@1"
     }
   ]
 }

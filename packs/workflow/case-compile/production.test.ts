@@ -66,6 +66,24 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     assert.equal(receipt.statement.data?.runtime_version, CONTRACT_DOC.runtime.minimum_version);
     assert.ok(!JSON.stringify(result).includes('exec-plan@1')); assert.ok(!JSON.stringify(result).includes('"plan_json"'));
   });
+  it('resolves complete plan commands for a natural-language case without authored identities', async () => {
+    const document = map(); document.root.children[0].children[0].data.text = '开启合成服务，同时添加合成监听';
+    const bytes = JSON.stringify(document), external = 'agile:mindmap:synthetic-natural';
+    hub.external.put(external, {bytes:new TextEncoder().encode(bytes),mediaType:'application/json'});
+    const parsed = recognize(createDefaultRegistry(),new TextEncoder().encode(bytes),'application/json')!;
+    const expected = (parsed.document.model as {nodes:Array<{text:string;selector:string}>}).nodes.find(node=>node.text==='健康检查间隔设置成功')!;
+    const args=start(); delete (args.inputs as Partial<typeof args.inputs>).case_index; args.inputs.subject.external=external;
+    const started=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
+    const run=started.answer.run!, sent=submission(run.run,data=>{delete data.command_identities;data.expects[0].quote.reference=`src:${sha(bytes)}/kityminder@1/${expected.selector}`;});
+    sent.items[0].item=run.items[0].id;
+    const accepted=await hub.service.submitResult(hub.alice,sent,call());assert.equal(accepted.acceptance,'accepted',JSON.stringify(accepted.errors));
+    const requirements=Object.values(accepted.result!.partitions).flat().flatMap(item=>item.requirements);
+    for(const key of ['commands_known','contract_methods','bed_addresses','expected_grounded'])assert.equal(requirements.find(row=>row.requirement===key)?.status,'satisfied',JSON.stringify(requirements));
+    sent.items[0].slots.plan[0].data.steps[0].args=['widget unknown 60'];
+    const rejected=await hub.service.submitResult(hub.alice,sent,call());
+    const unknown=Object.values(rejected.result!.partitions).flat().flatMap(item=>item.requirements).find(row=>row.requirement==='commands_known')!;
+    assert.notEqual(unknown.status,'satisfied');assert.ok(unknown.claims.some(claim=>claim.statement.verdict==='refute'),JSON.stringify(unknown));
+  });
   it('repairs a rejected value within two rounds without changing the frozen original contract', async () => {
     const detail = await hub.service.startRunDetailed(hub.alice, start(), call()); const run = detail.answer.run!;
     const first = await hub.service.submitResult(hub.alice, submission(run.run, (v) => { v.steps[0].args = ['=fixture']; }), call());

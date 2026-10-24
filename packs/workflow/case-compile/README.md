@@ -154,7 +154,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
 
-设备命令计划额外交 command_identities；case_index 从相同知识根按 document/node 精确取 data.command_identities，完整命令原文须与身份的路径及参数 raw 一致。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在台架/本血缘租约中。
+设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 APV 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在台架/本血缘租约中。
 
 派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重绑后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
 
@@ -179,4 +179,4 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 常规测试显式声明参数类型、角色闭集、效果预算、来源引用和冻结 CommandIdentity；旧合约只由具名 legacy 夹具覆盖，仍应返回未核对并阻止生成或派发。修改命令文字不会自动补身份或授权。地址测试按声明的位置和用途核验，普通文字不扫描；期望引文按原文逐字核对，不沿用旧空白折叠或隐式地址替换。
 
-工作簿夹具和支持回执钉原合约身份，@2 增补摘要单独保留。客户端从已受理运行提取生成输入时原样保留冻结的 command_identities，不从计划文字构造身份。发布样例覆盖七项检查，另有显式地址成员和效果预算的正反例；历史未类型化工作簿的字节与摘要不改写。全部资源和合约均为合成数据。
+工作簿夹具和支持回执钉原合约身份，@2 增补摘要单独保留。客户端从已受理运行提取生成输入时，读取 commands_known 的锁根语法回执（含完整计划命令、相关签名与原生类型出处）；生成器和独立回读复用相同语法核验，不能用模型自报身份或目录替代回执。发布样例覆盖七项检查，另有显式地址成员和效果预算的正反例；历史未类型化工作簿的字节与摘要不改写。全部资源和合约均为合成数据。

@@ -18,7 +18,7 @@ for (const [name, mutate, code] of [
   ['whitespace', (v: any) => { v.steps[0].args = [' widget health interval 60']; }, 'param_value'],
   ['device denial', (v: any) => { v.steps[0].args = ['system cycle']; }, 'device_command_denied'],
   ['host denial', (v: any) => { v.steps[1].args = ['sudo reboot']; }, 'host_command_denied'],
-] as const) test(`plan rule: ${name}`, () => { const data = goodData(); mutate(data); const outcomes=checkContractShape(subjectOf(data));if(name==='device denial'){assert.ok(outcomes.some(v=>v.verdict==='unknown'&&v.missing?.includes('CommandIdentity')));}else{assert.ok(outcomes.some(v=>v.code==='case-compile.method_forbidden'&&Array.isArray(v.data?.problems)),JSON.stringify(outcomes));} });
+] as const) test(`plan rule: ${name}`, () => { const data = goodData(); mutate(data); const outcomes=checkContractShape(subjectOf(data));if(name==='device denial'){assert.ok(outcomes.some(v=>v.verdict==='refute'&&v.code==='case-compile.method_forbidden'));}else{assert.ok(outcomes.some(v=>v.code==='case-compile.method_forbidden'&&Array.isArray(v.data?.problems)),JSON.stringify(outcomes));} });
 test('credential-marked optional parameters cannot be supplied to an otherwise allowed call', () => {
   const data = goodData(); data.steps[0].keywords.auth_token = 'synthetic-placeholder';
   assert.ok(checkContractShape(subjectOf(data)).some((v) => v.code === 'case-compile.method_forbidden' && v.statement.includes('脱敏')));

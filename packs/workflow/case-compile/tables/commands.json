@@ -13,8 +13,8 @@
   "required": true,
   "scope": "all",
   "match": {
-    "unicode": "nfkc",
-    "case": "insensitive",
-    "whitespace": "collapse"
+    "unicode": "none",
+    "case": "sensitive",
+    "whitespace": "exact"
   }
 }

@@ -358,7 +358,8 @@ export const ItemSubjectInput = z.strictObject({
   slots: z.record(z.string(), z.unknown()).nullable(),
   evidence: z.array(ResolvedEvidence),
   context: RunContext,
-  catalog: z.array(z.unknown()).optional().describe('locked catalog entries for an item-key narrowed read subject builder'),
+  catalog: z.array(z.unknown()).optional().describe('locked catalog entries declared by this check'),
+  catalog_complete:z.boolean().optional().describe('whether the locked catalog is complete for its scope'),
 });
 export type RunSubjectInput = z.infer<typeof RunSubjectInput>;
 export type ItemSubjectInput = z.infer<typeof ItemSubjectInput>;
