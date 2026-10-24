@@ -225,6 +225,174 @@
         ],
         "additionalProperties": false
       }
+    },
+    "effects": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,99}$"
+          },
+          "resource_kind": {
+            "type": "string",
+            "const": "executor"
+          },
+          "action": {
+            "type": "string",
+            "const": "submit"
+          },
+          "effect_class": {
+            "type": "string",
+            "enum": [
+              "job"
+            ]
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalProperties": {
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {}
+                    }
+                  }
+                },
+                "required": [
+                  "values"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "type": "string",
+                    "pattern": "^policies\\/(?:[a-zA-Z0-9_-]+\\/)*[a-zA-Z0-9_-]+\\.json$"
+                  },
+                  "check": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,99}$"
+                  }
+                },
+                "required": [
+                  "policy",
+                  "check"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "release": {
+            "type": "object",
+            "properties": {
+              "requirements": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "artifact": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "requirements",
+              "artifact"
+            ],
+            "additionalProperties": false
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "runner_session",
+              "hub_template"
+            ]
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "duration_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 86400000000
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "executor_max_run_ms": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "executor_max_run_ms"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "duration_ms"
+            ],
+            "additionalProperties": false
+          },
+          "deadline_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31536000000
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "policy_checks": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "id",
+          "resource_kind",
+          "action",
+          "effect_class",
+          "parameters",
+          "release",
+          "trigger",
+          "budget",
+          "deadline_ms",
+          "optional",
+          "policy_checks"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

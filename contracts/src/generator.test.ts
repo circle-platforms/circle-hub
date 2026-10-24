@@ -182,8 +182,8 @@ describe('on a temporary copy', () => {
     const result = run(script, [], root);
     assert.equal(result.status, 2);
     for (const expected of [
-      'vocabulary[9] (layer): code static appears twice',
-      'vocabulary[9] (layer): label 静态 appears twice',
+      'vocabulary[11] (layer): code static appears twice',
+      'vocabulary[11] (layer): label 静态 appears twice',
       'owner "Z99" is not an element id of the model',
       'code "bad code" must be UPPER_SNAKE_CASE',
       '(bad code): when must be Chinese text',

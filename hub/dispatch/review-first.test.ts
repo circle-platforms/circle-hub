@@ -82,7 +82,7 @@ test('R04 a local post-intent fence refusal proves no submission rather than inv
 test('R05 action records separate an intent from a submission with no trustworthy reply',async t=>{
   const c=await setup({mode:'disconnect'});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const events=await c.service.journal.events(state.job);
-  const intent=events.find(e=>e.body.detail.phase==='intent')!;assert.equal(intent.body.action,'validate');assert.equal(intent.body.acceptance,'accepted');
+  const intent=events.find(e=>e.body.detail.phase==='intent')!;assert.equal(intent.body.action,'dispatch');assert.equal(intent.body.acceptance,'accepted');
   const reply=events.find(e=>e.body.detail.phase==='submit.response')!;assert.equal(reply.body.action,'dispatch');assert.equal(reply.body.result,'unknown');assert.equal(reply.body.error_code,null);
   const unknown=events.find(e=>e.body.detail.phase==='unknown')!;assert.equal(unknown.body.action,'validate');
 });
@@ -122,7 +122,7 @@ test('R10 the booking must cover submission plus the entire observation window',
   const c=await setup();t.after(()=>c.close());
   await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'synthetic short booking'});
   await c.leases.acquire({keys:c.executor.definition.resources,prefix:'synthetic/',ttlSeconds:15,maxTtlSeconds:3600,holder:{user:c.owner.id,run:c.run}});
-  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/租约到期/);
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
 });
 

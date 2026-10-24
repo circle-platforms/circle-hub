@@ -11,3 +11,6 @@ export type { BuildKnowledge } from './probes.ts';
 
 export { readRunJobs, type RunJob } from './read-runs.ts';
 export {ExecutorSource,resolveExecutorValues} from './source.ts';
+
+export {freezeEffectRegistry} from './snapshot.ts';
+export {boundaryPolicy,policyAllows} from './policy.ts';
