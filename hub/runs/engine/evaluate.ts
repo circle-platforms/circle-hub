@@ -290,7 +290,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
   const items = run.items.filter(it => !exclude.has(it.id));
   const itemIds = new Set(items.map((it) => it.id));
-  const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : [])];
+  const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
+  const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
