@@ -7,7 +7,7 @@
 // keywords are matched once per node, top down, instead of once per case and ancestor.
 import type { DocumentCases } from './cases.ts';
 import { isRecord } from './common.ts';
-import { CANONICAL_TAGS, canonicalTags } from './tags.ts';
+import { CANONICAL_TAGS, canonicalTags, declareResourceTags } from './tags.ts';
 import { collapseRuns, fold, isBlank } from './text.ts';
 import type { CanonicalTag, CategoryFact, TemplateField } from './types.ts';
 
@@ -129,7 +129,7 @@ export function categoryFacts(template: Template, document: Pick<DocumentCases, 
   const items: Searchable[] = cases.map((record) => ({
     id: record.id,
     parent: nodes.parents[record.visit],
-    tags: new Set(canonicalTags(record.tags)),
+    tags: new Set(declareResourceTags(Object.hasOwn(record,'resource')?record.resource:record.tags).types),
     texts: new Map([
       ['title', [forms[record.visit]]],
       ['steps', record.steps.map(matchForm)],

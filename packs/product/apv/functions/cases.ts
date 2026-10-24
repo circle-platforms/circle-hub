@@ -16,7 +16,7 @@
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
-import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, isBlank, negativeOf } from './cases-rules.ts';
+import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, isBlank, negativeOf, tagDeclaration } from './cases-rules.ts';
 import { idsFromTitle } from './ids.ts';
 import { locateFromAncestors } from './locate.ts';
 import { lineKey } from './naming.ts';
@@ -327,6 +327,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         ids.stories.forEach((id) => stories.add(id));
         ids.bugs.forEach((id) => defects.add(id));
       }
+      const declaration = tagDeclaration(node.resource);
       const data: Record<string, unknown> = {
         document: doc.document,
         node: storable(key, MAX_TITLE),
@@ -334,7 +335,14 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         path_labels: node.path.slice(0, MAX_LABELS).map((label) => storable(label, MAX_LABEL)),
         priority: typeof node.priority === 'string' ? storable(node.priority, MAX_TAG) : node.priority,
         tags: node.tags.slice(0, MAX_TAGS).map((tag) => storable(tag, MAX_TAG)),
-        negative: negativeOf(node.tags),
+        negative: declaration.negative,
+        test_type_status: declaration.status,
+        test_types: declaration.types,
+        tag_ids: declaration.ids,
+        tag_valid: declaration.valid,
+        resource_empty: node.resource === undefined || (Array.isArray(node.resource) && node.resource.length === 0),
+        resource: node.resource ?? null,
+        tag_declaration: declaration,
         ...(!node.tags.some(tag => !isBlank(tag)) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: node.expectedCount,
         has_expected: node.hasExpected,

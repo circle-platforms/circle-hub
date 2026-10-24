@@ -51,7 +51,7 @@ function violationsOf(fields: GroupBoard, thresholds: Thresholds): Array<{ metri
   const { missing, vague, negative } = fields.ratios;
   if (missing.num / missing.den > thresholds.max_missing_ratio) out.push({ metric: 'missing', over: true });
   if (vague.num / vague.den > thresholds.max_vague_ratio) out.push({ metric: 'vague', over: true });
-  if (negative.num / negative.den < thresholds.min_negative_ratio) out.push({ metric: 'negative', over: false });
+  if (negative.den>0 && negative.num / negative.den < thresholds.min_negative_ratio) out.push({ metric: 'negative', over: false });
   return out;
 }
 
@@ -74,16 +74,19 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
         out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (why), reason: 'check_error', statement: why, grounds: [], tier: TIER, item: id, pointer });
         continue;
       }
+      const unresolvedNegative=fields.ratios.negative.den===0;
+      if(unresolvedNegative)out.push({verdict:'unknown',reason:'missing_input',tier:TIER,item:id,pointer,grounds,missing:'缺少有效作者测试类型声明构成的负向比例分母',statement:'缺少有效测试类型声明，负向比例未核对；下一步作者按发布闭集补 resource，重产知识根后重新运行看板'});
       const violations = violationsOf(fields, thresholds);
       if (violations.length === 0) {
+        if(unresolvedNegative)continue;
         out.push({
           verdict: 'support',
-          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.counts.cases)} ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.cases)} ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
+          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.counts.cases)} ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.negative_denominator!)}（有效声明分母 ${fields.counts.negative_denominator}，类型未声明 ${fields.counts.type_unclassified}） ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
           grounds,
           tier: TIER,
           item: id,
           pointer,
-          data: { line: fields.line, module: fields.module, thresholds: { ...thresholds } },
+          data: { line: fields.line, module: fields.module, negative_denominator:fields.counts.negative_denominator,type_unclassified:fields.counts.type_unclassified,thresholds: { ...thresholds } },
         });
         continue;
       }
@@ -102,7 +105,7 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
           tier: TIER,
           item: id,
           pointer,
-          data: { line: fields.line, module: fields.module, metric: violation.metric, ratio, display: fields.display[violation.metric], threshold },
+          data: { line: fields.line, module: fields.module, metric: violation.metric, type_unclassified:fields.counts.type_unclassified, ratio, display: fields.display[violation.metric], threshold },
         });
       }
     } catch (error) {

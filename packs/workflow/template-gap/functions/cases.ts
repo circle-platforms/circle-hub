@@ -229,13 +229,13 @@ export function casesOf(
       const tags: string[] = [];
       const resource = Array.isArray(visit.data.resource) ? (visit.data.resource as unknown[]) : [];
       for (const entry of resource) {
-        const tag = textOf(entry);
+        const tag = typeof entry === 'string' ? entry : null;
         if (tag === null) stats.nonTextTags += 1;
         else tags.push(tag);
       }
       if (!isTagged(visit.data)) markedOnly += 1;
       caseOf[v] = cases.length;
-      cases.push({ id: caseIdentity(visit), nodeId: rawIdOf(visit.data), visit: v, title: visit.text, tags, steps: [], expected: [], preconditions: [] });
+      cases.push({ id: caseIdentity(visit), nodeId: rawIdOf(visit.data), visit: v, title: visit.text, tags, resource:visit.data.resource, steps: [], expected: [], preconditions: [] });
     } else if (role[v] === INNER) {
       const owner = within[v];
       if (role[owner] !== CASE) continue; // inside a candidate: not a case

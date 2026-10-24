@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.8",
+  "version": "1.6.9",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "7612ca190cf4cbd217ea5b4192ab9730ae57d8f09afe81e072a9b8513e77e5db",
-      "size": 25691
+      "sha256": "292de179c8734409be9b92aba1cd476b28081d7dec16c7328e5ae13deb812411",
+      "size": 25937
     },
     {
       "path": "functions/command-head.ts",
@@ -52,19 +52,24 @@
       "size": 1745
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
       "path": "functions/projection.ts",
       "sha256": "15efa9b3b03c318648d9c68970298e1637bba365941011dc104fa223add341b9",
       "size": 7534
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "6c9fd97d22e7259eb448ed7d55a46e221e3e830f54f691a064dc48d679471d00",
-      "size": 5740
+      "sha256": "4c8cf959e55c4b0a93da3380aa27a823e4149ae97e4fa88d8d18b6c78c9e38be",
+      "size": 5770
     },
     {
       "path": "functions/types.ts",
-      "sha256": "6a73f21dd64875fef224da71231d450ac74c24d08db744a5d8c497596cba7af6",
-      "size": 1469
+      "sha256": "92085cd5d06d4ee5be7875e9a8e3c7f4ec9f61790e48c592e2f75e28739f6543",
+      "size": 1549
     },
     {
       "path": "requirements.json",
@@ -143,8 +148,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "1d8dae98db09fe39618da7df459b921561ecf785e15a4df670c80f7110f5b1ff",
-      "size": 1153
+      "sha256": "fe9c8304a75ef7106f789e10303bd8990bb5c3b4e8bd9a7b65ebf4bc5612e04f",
+      "size": 1770
     },
     {
       "path": "tables/commands.json",
@@ -155,6 +160,11 @@
       "path": "tables/quotes.json",
       "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
       "size": 764
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "workflow.json",

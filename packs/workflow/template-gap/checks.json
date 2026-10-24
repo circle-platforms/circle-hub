@@ -25,6 +25,17 @@
       },
       "judges": "subject",
       "tier": "advisory"
+    },
+    {
+      "id": "tag_declarations",
+      "title": "标签闭集声明",
+      "function": {
+        "module": "functions/tag-declarations.ts"
+      },
+      "table": "tables/resource-tags.json",
+      "applies": "item",
+      "judges": "subject",
+      "tier": "advisory"
     }
   ]
 }

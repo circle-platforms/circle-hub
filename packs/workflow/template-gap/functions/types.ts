@@ -1,3 +1,4 @@
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Types of the template-gap functions. Type-only imports: they are erased at run time, so the functions stay self-contained
 // inside the pack (the sandbox admits only modules inside the pack); the contract types keep the outputs in their shapes.
 import type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedItem, ProjectionInput } from '../../../../contracts/src/pack.ts';
@@ -5,7 +6,7 @@ import type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedIt
 export type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedItem, ProjectionInput };
 
 /** The canonical test types of the team template; every tag spelling maps to one of them or to null. */
-export type CanonicalTag = 'Functional' | 'Configuration' | 'Integration' | 'Compatibility' | 'Negative' | 'Stress';
+export type CanonicalTag = TestTypeId;
 
 /** One case of a document as the template matching reads it (the fields case-review projects that the template searches). */
 export type CaseRecord = {
@@ -20,6 +21,9 @@ export type CaseRecord = {
   title: string;
   /** The resource entries as written (text only). */
   tags: string[];
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Texts of the children that have children of their own. */
   steps: string[];
   /** Every leaf below the case that is not a precondition, in document order. */
@@ -64,6 +68,9 @@ export type DocumentFields = {
   data: { case_rule: 'marked' | 'tagged'; marked_only: number };
   /** Every category of the template, in template order. */
   categories: CategoryFact[];
+  case_resources?: Array<{case:string;present:boolean;resource:unknown}>;
+  tag_table?: ResourceTagDeclaration['table'];
+  tag_undeclared_cases?: number;
   command_coverage?: CommandCoverage;
   /** Ids of the required categories (in template v3: every category) no case shows and no skip names, in template order. */
   missing: string[];

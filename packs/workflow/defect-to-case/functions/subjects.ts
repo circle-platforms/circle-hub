@@ -48,6 +48,7 @@ export function extractDrafts(slots: unknown): DraftCase[] {
       steps,
       expected,
       tags,
+      resource: raw.resource,
     });
   }
   return drafts;

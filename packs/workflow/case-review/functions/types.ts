@@ -1,3 +1,4 @@
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Input and output types of the case-review pack functions. Type-only imports: they are erased at run time, so the
 // functions stay self-contained inside the pack (the sandbox admits only modules inside the pack).
 import type { JsonValue, KityMinderModel, MindMapNode } from '../../../../hub/refs/api.ts';
@@ -6,7 +7,7 @@ import type { ExternalObjectId } from '../../../../contracts/src/reference.ts';
 export type { JsonValue, KityMinderModel, MindMapNode, ExternalObjectId };
 
 /** The canonical test categories of the team template; every tag spelling maps to one of them or to null. */
-export type CanonicalTag = 'Functional' | 'Configuration' | 'Integration' | 'Compatibility' | 'Negative' | 'Stress';
+export type CanonicalTag = TestTypeId;
 
 /** A non-fatal problem. `code` is a pack code (`case-review.<name>`, declared in tables/codes.json); text is Chinese. */
 export type Warning = {
@@ -32,10 +33,10 @@ export type Failure = { error: PackError; warnings: Warning[] };
 
 // tags.ts -------------------------------------------------------------------------------------------------------------------
 
-export type NormalizedTag = { canonical: CanonicalTag | null; raw: string };
+export type NormalizedTag = { canonical: CanonicalTag | null; raw: unknown };
 
 export type TagsInput = { tags: unknown[] };
-export type TagsOutput = { tags: NormalizedTag[]; canonical: CanonicalTag[]; negative: boolean } | Failure;
+export type TagsOutput = { tags: NormalizedTag[]; canonical: CanonicalTag[]; negative: boolean | null; declaration: ResourceTagDeclaration } | Failure;
 
 // project.ts ----------------------------------------------------------------------------------------------------------------
 
@@ -90,6 +91,9 @@ export type CaseFields = {
   degree: number | null;
   /** The resource entries as written (text only); empty for a case found by the case marker (caseRule marked). */
   tags: string[];
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Canonical categories of the tags, in canonical order, without repetition. */
   tagsNormalized: CanonicalTag[];
   /** Expected results in document order: leaf children, and the leaves below each step. */
@@ -157,6 +161,9 @@ export type StructureSubject = {
   content: string;
   priority: JsonValue;
   tags: string[];
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Tags that are not blank. */
   tagCount: number;
   categories: CanonicalTag[];
