@@ -158,7 +158,7 @@
                     "not_realtime",
                     "partial",
                     "intermittent",
-                    "decision_shape_unruled"
+                    "unruled_shape"
                   ]
                 }
               },
