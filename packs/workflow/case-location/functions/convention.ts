@@ -26,7 +26,7 @@ export const MAX_LABEL = 1000;
  */
 const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*[:：]\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
-const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_]([^\r\n/]+)$/;
+const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_]([^\r\n]+)$/;
 
 export type Label = {
   /** The label in matching form (NFKC, white space squeezed, cut at MAX_LABEL). */
@@ -77,7 +77,7 @@ export function pureVersionOf(label: Label): string | null {
 
 /** Module name of a label right below a release train: a plain name, not an activity, document, version or id folder. */
 export function moduleOfLabel(label: Label, _hasIds: (text: string) => boolean): string | null {
-  return /^[^/\r\n]{1,1000}$/.test(label.rest) ? label.rest : null;
+  return /^[^\r\n]{1,1000}$/.test(label.rest) ? label.rest : null;
 }
 
 // ---------------------------------------------------------------- the version scheme
