@@ -77,12 +77,13 @@ test('a derived chain rechecks every acceptance and never ignores an explicitly 
   const retained = await kit.artifacts.ingest({...derived(Buffer.from(`kept\n${line(secret)}`),[source.body.sha256]),readTier:'retain_only'});
   assert.equal(retained.body.read_tier,'retain_only');
 });
-test('truncated scans cannot be sources or derived targets', async t => {
+test('complete derived scans may exceed the display cap while unaccepted truncated sources still cannot cover', async t => {
   const {kit,admin,admitted} = await world(t); const secret = fake();
   const source = await admitted(Buffer.from(line(secret)));
   const many = Buffer.from(Array.from({length:101},(_,i) => `${i}: ${line(secret)}`).join('\n'));
   const output = await kit.artifacts.ingest(derived(many,[source.body.sha256]));
-  assert.equal(output.body.scan.truncated,true); assert.equal(output.body.read_tier,'retain_only');
+  assert.equal(output.body.scan.truncated,false);assert.equal(output.body.scan.findings.length,101);assert.equal(output.body.read_tier,'model_readable');
+  assert.ok((await kit.artifacts.source(admin,output.body.sha256))?.bytes);
   const held = await kit.artifacts.ingest(readInput(many));
   await assert.rejects(kit.artifacts.acceptFindings(admin,held.body.sha256));
   assert.equal((await kit.artifacts.ingest(derived(Buffer.from(`target\n${line(secret)}`),[held.body.sha256]))).body.read_tier,'retain_only');

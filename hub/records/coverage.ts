@@ -7,7 +7,7 @@ import type { ReadTier } from '../../contracts/generated/vocabulary.ts';
 import { digestOf, isSha256 } from './digest.ts';
 import { scanAcceptanceKey } from './constants.ts';
 import { hubArtifact, sourceLinks, type SourceLinks } from './lineage.ts';
-import { CREDENTIAL_SCANNER, scanDigest, scanWithMatches } from './scan.ts';
+import { CREDENTIAL_SCANNER, scanDigest, scanWithMatches,scanAllCredentials } from './scan.ts';
 
 type Evidence = DerivedScanAcceptance['sources'][number];
 type Scan = ReturnType<typeof scanWithMatches>;
@@ -27,6 +27,8 @@ export class CoverageContext {
   readonly #lineage = new Map<string,boolean>();
   readonly #originHub = new Map<string,boolean>();
   readonly #effective = new Map<string,EffectiveScanAcceptance | null>();
+  readonly #fullScans=new Map<string,Scan>();
+  readonly #fullFacts=new Map<string,CredentialScan>();
   readonly #facts = new Map<string,CredentialScan | null>();
   #config = new Map<string, import('./api.ts').AuthorizationRecord>();
 
@@ -94,6 +96,13 @@ export class CoverageContext {
     const shas = [...this.bySha].filter(([,rows]) => rows.some(r => r.body.scan.findings.length > 0)).map(([sha]) => sha);
     if (reload) await this.#loadSha(shas,true);
     this.#config = await this.#io.authorizations.resourceConfigs(shas.map(scanAcceptanceKey));
+    this.#fullFacts.clear();this.#facts.clear();
+    for(const sha of shas){
+      if(!this.#config.has(scanAcceptanceKey(sha))||!(this.bySha.get(sha)??[]).some(row=>row.body.scan.truncated))continue;
+      const bytes=await this.#io.objects.get(sha);if(!bytes)continue;
+      const full=this.#fullScans.get(sha)??this.#io.scan(bytes);this.#fullScans.set(sha,full);
+      if(full.complete&&!full.scan.truncated&&full.scan.inspected)this.#fullFacts.set(sha,full.scan);
+    }
     this.#effective.clear();
   }
 
@@ -123,6 +132,7 @@ export class CoverageContext {
 
   /** Stored scan facts only: no byte reads and no credential scan on a read. */
   facts(sha: string): CredentialScan | null {
+    if(this.#fullFacts.has(sha))return this.#fullFacts.get(sha)!;
     if (this.#facts.has(sha)) return this.#facts.get(sha)!;
     const rows = this.bySha.get(sha) ?? [];
     const newest = Math.max(...rows.map(r => version(r.body.scan)));
@@ -181,7 +191,7 @@ export class CoverageContext {
           const accepted = this.acceptance(row);
           if (!accepted || this.tier(row,accepted) === 'retain_only') continue;
           const bytes = await this.#io.objects.get(sha); if (!bytes) continue;
-          const source = this.#io.scan(bytes), recorded = this.facts(sha);
+          const source = this.#fullScans.get(sha)??this.#io.scan(bytes), recorded = this.facts(sha);
           if (!recorded || !source.scan.inspected || source.scan.truncated || !source.complete || scanDigest(source.scan) !== scanDigest(recorded)) continue;
           const evidence = accepted.kind === 'direct' ? [accepted.acceptance] : accepted.acceptance.sources.flatMap(s => s.acceptances);
           const acceptances = [...new Map(evidence.map(a => [a.authorization,a])).values()].sort((a,b) => a.authorization < b.authorization ? -1 : a.authorization > b.authorization ? 1 : 0);

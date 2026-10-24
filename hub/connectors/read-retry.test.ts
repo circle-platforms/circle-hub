@@ -71,3 +71,21 @@ test('a nontransient malformed response is a determined read failure with an adm
  const result=await w.external();assert.ok(!result.ok && result.inputError?.code==='SOURCE_READ_FAILED');assert.equal(w.calls(),1);
  if(!result.ok)assert.match(result.inputError!.fix,/资源管理员/);
 });
+
+test('the reader port preserves retry metadata and the same stored failure manifest',async t=>{
+ const w=await world(t,()=>new Response('{}',{status:503,headers:{'content-type':'application/json'}}));
+ const result=await w.external();assert.equal(result.ok,false);if(result.ok)return;
+ assert.equal(result.retry?.attempts,3);assert.equal(w.calls(),3);assert.ok(Date.parse(result.retry!.at)>w.now());
+ assert.match(result.manifest??'',/^[0-9a-f]{64}$/);
+ const manifest=ReadManifest.parse((await w.kit.records.store.get(result.manifest!))!.body);
+ assert.equal(manifest.result,'error');assert.equal(manifest.error_code,'SOURCE_HTTP_STATUS');assert.equal(manifest.requests.length,3);
+ assert.deepEqual(manifest.requests.map(request=>request.status),[503,503,503]);
+});
+test('the reader port preserves a determined read failure code together with its original manifest',async t=>{
+ const w=await world(t,()=>new Response('{ broken',{headers:{'content-type':'application/json'}}));
+ const result=await w.external();assert.equal(result.ok,false);if(result.ok)return;
+ assert.equal(result.inputError?.code,'SOURCE_READ_FAILED');assert.ok(result.inputError.fix);assert.equal(result.retry,undefined);assert.equal(w.calls(),1);
+ assert.match(result.manifest??'',/^[0-9a-f]{64}$/);
+ const manifest=ReadManifest.parse((await w.kit.records.store.get(result.manifest!))!.body);
+ assert.equal(manifest.result,'error');assert.equal(manifest.error_code,'SOURCE_MALFORMED');assert.equal(manifest.requests[0].status,200);assert.ok(manifest.requests[0].artifact);
+});
