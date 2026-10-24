@@ -26,7 +26,9 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const stored = await visibleRun(ctx, user, run);
   if (stored === null) return null;
   const store = ctx.deps.records.store;
-  const results = await resultsOf(store, run);
+  // A shared view includes accepted validation bodies only; rejected receipts fall back to public action codes.
+  const owner = canSeeRun(user, stored.body);
+  const results = (await resultsOf(store, run)).filter(record => owner || record.body.acceptance === 'accepted');
   const byDigest = new Map(results.map((r) => [r.body.submission, r]));
   const submissions: RunSubmissionView[] = [];
   for (const record of await submissionsOf(store, run)) {

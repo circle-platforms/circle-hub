@@ -29,3 +29,25 @@ test('console shared views are marked, administrator views list decisions, and r
   assert.deepEqual(await runPage(bob,run.run),absent);
   assert.equal((await resultPage(bob,run.run)).status,404);
 });
+
+test('shared console receipts omit rejected validation explanations and pointers but preserve owner diagnostics', {skip}, async t=>{
+  const h=await openHarness(postgres);t.after(()=>h.close());
+  const source=await h.upload(h.alice,toyMap(standardDocument()));
+  const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',inputs:{map:{reference:source}}},h.call());
+  assert.equal(started.call_result,'ok',JSON.stringify(started.errors));const run=started.run!;
+  const rejected=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic-review',items:[{item:'synthetic-private-item',handling:'handled',slots:{}}]},h.call());
+  assert.equal(rejected.acceptance,'not_accepted');
+  const original=(await h.service.getRun(h.alice,run.run))!;
+  const errors=original.submissions.at(-1)!.errors;
+  assert.ok(errors.some(error=>error.path!==undefined&&error.message.includes('synthetic-private-item')));
+  await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
+  const context=(principal:typeof h.bob):PageContext=>({deps:{records:h.kit,runs:h.service} as unknown as ServerDeps,principal,admin:principal.role==='admin',url:new URL('http://127.0.0.1/console/runs'),chrome:title=>({title,user:{name:principal.name,role:principal.role,admin:principal.role==='admin'},csrf:null}),userName:async id=>id?(await h.kit.principals.get(id))?.name??id:'—'});
+  const shared=await runPage(context(h.bob),run.run);assert.equal(shared.status,200);
+  for(const error of errors){assert.ok(!String(shared.body).includes(error.message));if(error.path)assert.ok(!String(shared.body).includes(error.path));}
+  for(const user of [h.alice,h.admin]){
+    const own=await runPage(context(user),run.run);assert.equal(own.status,200);
+    assert.ok(String(own.body).includes('synthetic-private-item 不是本运行的条目'));
+  }
+  await h.kit.authorizations.unshare(h.admin,run.run,h.bob.id);
+  assert.equal((await runPage(context(h.bob),run.run)).status,404);
+});

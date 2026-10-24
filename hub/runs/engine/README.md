@@ -618,3 +618,8 @@ existing predecessor guard, as specified by its task page, and introduces no suc
 Shared previews use the same run-bound generated-source accessor for fragment resolution and quotation candidates.
 A shared run never grants knowledge-tree permission: live catalogs are omitted from a preview when its reader cannot
 read the product, and tree references still pass the ordinary tree reader. Connector originals retain their own ACLs.
+
+Shared run-detail receipts use only the action codes and their registered descriptions for rejected validations. Instance
+messages, fixes, paths and requirement pointers from those validation bodies do not enter the shared aggregate view.
+Owners and administrators retain the full diagnostics. The underlying submissions, actions, results and run record are
+never rewritten or redacted under their original digests.

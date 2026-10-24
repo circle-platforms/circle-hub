@@ -210,3 +210,28 @@ test('shared pagination sorts frozen start times rather than append order and ha
   assert.equal(new Set(all).size,all.length);
   assert.deepEqual(all.filter(id=>rows.includes(id)),[rows[2],rows[0],rows[1]]);
 });
+
+test('shared run details never include rejected validation bodies while owner and admin retain them', {skip}, async()=>{
+  const rejected=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic-review',items:[{item:'synthetic-private-item',handling:'handled',slots:{}}]},h.call());
+  assert.equal(rejected.acceptance,'not_accepted');
+  const original=(await h.service.getRun(h.alice,run.run))!;
+  const receipt=original.submissions.at(-1)!;
+  assert.ok(receipt.errors.some(error=>error.message.includes('synthetic-private-item')));
+  assert.ok(receipt.errors.some(error=>error.path!==undefined));
+  assert.ok(receipt.errors.some(error=>error.requirement!==undefined));
+  await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
+  const shared=(await h.service.getRun(h.bob,run.run))!;
+  const visible=shared.submissions.find(row=>row.record===receipt.record)!;
+  assert.equal(visible.acceptance,'not_accepted');assert.equal(visible.result,null);
+  assert.ok(visible.errors.length>0);
+  for(const error of visible.errors){
+    assert.deepEqual(Object.keys(error).sort(),['code','message']);
+    assert.equal(error.message,PROTOCOL_CODES[error.code as keyof typeof PROTOCOL_CODES].when);
+  }
+  assert.ok(!JSON.stringify(visible.errors).includes('synthetic-private-item'));
+  assert.deepEqual((await h.service.getRun(h.alice,run.run))!.submissions.find(row=>row.record===receipt.record)!.errors,receipt.errors);
+  assert.deepEqual((await h.service.getRun(h.admin,run.run))!.submissions.find(row=>row.record===receipt.record)!.errors,receipt.errors);
+  assert.deepEqual(shared.run,original.run);
+  await h.kit.authorizations.unshare(h.admin,run.run,h.bob.id);
+  assert.equal(await h.service.getRun(h.bob,run.run),null);
+});
