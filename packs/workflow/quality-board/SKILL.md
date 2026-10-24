@@ -2,7 +2,7 @@
 
 Hub 直接算出一个构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及整个构建的合计。不需要你提交结果。
 
-1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。同时必须绑定 inputs.placement：`{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=commands"}`，角色为提示，只披露未归位数，不作阈值判据。需要测试类型覆盖时，inputs.facets 改成两个对象的数组，再加 `{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=line,module,tags"}`，计数视图和标签视图不得合成一个，三个视图必须同产品同根。这个任务包不绑定产品线：不要写 product、version、build——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
+1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。同时必须绑定 inputs.placement：`{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=commands"}`，角色为提示，只披露未归位数，不作阈值判据。需要测试类型覆盖时，inputs.facets 改成两个对象的数组，再加 `{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=line,module,tags"}`，计数视图和标签视图不得合成一个，三个视图必须同产品同根。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
 2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数、三项个数和占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
 3. 原样转述每个分组的指标和阈值结论，不补全、不猜测：
    - 占比是精确分数（结论数据里是 num/den），转述用展示值（四位小数或一位百分数）；“超过上限”“低于下限”是提示档的不通过，等于阈值不算越界。

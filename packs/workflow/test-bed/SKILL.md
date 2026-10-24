@@ -2,7 +2,7 @@
 
 先读取任务包和管理员发布的台架清单，缺省 inputs.inventory 为 `{"external":"doc:doc:bed-topology"}`。
 清单内容由管理员发布；用户登记只记归属，不修改清单。所有结论原样转述，保留
-“Hub 记录里…（未排除本地操作）”，不能据此声称已经排除本地操作或已经停止网关作业。
+“Hub 记录里…（未排除本地操作）”，不能据此声称已经排除本地操作或已经停止网关作业。这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。搜索条件里的 need.build 仍是 need 的字段。
 
 - `search`：可按 need.devices、need.build 搜索。不写 need 也展示每台设备的占用。
   主人或管理员能看到持有人名字；别人只看运行号、取得时刻和未终态作业号。构建来自声明，未核对。

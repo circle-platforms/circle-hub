@@ -2,7 +2,7 @@
 
 只在 Circle 整合技能已决定把本地解读作为事实回注时使用。候选留在 Circle，本包不接候选，也不调用模型。
 
-1. 用 JSON 清单标识本次工作，items 各带 id、title。上传清单，按 examples/start-run.json 开独立运行，指定产品和构建以锁定根。非管理员产品读者从 get_nodes 复制 tree:<root><path>[@entry] 引用，不绑定 originals；根原件只允许管理员读取。examples/start-run.json 默认就是这个路径。管理员确有可读 src: 原文时才另行绑定 originals，所有引用仍受锁定根约束。
+1. 用 JSON 清单标识本次工作，items 各带 id、title。上传清单，按 examples/start-run.json 开独立运行。这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。非管理员产品读者从 get_nodes 复制 tree:<root><path>[@entry] 引用，不绑定 originals；根原件只允许管理员读取。examples/start-run.json 默认就是这个路径。管理员确有可读 src: 原文时才另行绑定 originals，所有引用仍受锁定根约束。
 2. 每项只交一条 contribution，code 使用分类、归位提议、声明、关系对应的生成词表值；text 写整合后的陈述，data 按 examples/submit-result.json 带 root、path、source。
 3. source 的 reference 必须读得到，quote 逐字引原文。非管理员继续使用 get_nodes 返回的 tree:<root><path>[@entry]，不绑定 originals；不要尝试用根的 src: 原件绕过权限。只收锁定根里已有的、可追溯 Hub 原件；不要把清单或会话当作知识根据。只有会话说法须负责人署名，本版没有署名通道。
 4. 关系另外带 relation.kind 和 relation.other（同样是 reference、quote）。same_subject 仅表示同一议题，不表示内容等价；contradicts 记录矛盾关系。两者都不修改任一方。
