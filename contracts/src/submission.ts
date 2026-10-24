@@ -74,16 +74,8 @@ export const RuntimeCheck = z.strictObject({
 });
 export type RuntimeCheck = z.infer<typeof RuntimeCheck>;
 
-/** W10: a proposed criterion replacement; neither the source nor the current checks are changed by submission. */
-export const CriterionChange = z.strictObject({
-  item: ItemId,
-  criterion: Ground,
-  assertion: z.string().regex(/\S/u),
-  old: z.string().regex(/\S/u),
-  new: z.string().regex(/\S/u),
-  grounds: z.array(z.strictObject({reference: Ground, quote:z.string().regex(/\S/u)})).min(1),
-});
-export type CriterionChange = z.infer<typeof CriterionChange>;
+export {CriterionChange} from './criterion.ts';
+import {CriterionChange} from './criterion.ts';
 
 export const Submission = z
   .strictObject({

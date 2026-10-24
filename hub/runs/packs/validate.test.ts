@@ -543,3 +543,10 @@ test('ledger shapes require a declared runtime table, an installed interpreter a
   assert.ok(empty.pack.warnings.some(w=>w.rule==='ledger.unruled'));
   assert.deepEqual((await accepted(base)).pack.warnings, []);
 });
+
+test('read-only predecessor publication requires every requirement to be independently checked',async()=>{
+ await refused(workflow(f=>{f.predecessor_access='view';}),'workflow.predecessor_access',{field:'/predecessor_access'});
+});
+test('criterion review publication requires an account-verified single requirement and read-only predecessor',async()=>{
+ await refused(workflow(f=>{f.criterion_review=true;}),'workflow.criterion_review',{field:'/criterion_review'});
+});

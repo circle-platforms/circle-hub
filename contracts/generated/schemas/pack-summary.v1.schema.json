@@ -119,6 +119,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "independence_by_account": {
+            "type": "boolean"
+          },
           "key": {
             "type": "string"
           },

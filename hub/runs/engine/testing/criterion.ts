@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import type {TemporaryPostgres} from '../../../testing/postgres.ts';
 import {openHarness} from './harness.ts';
 import {writePack} from './packs.ts';
-export async function criterionHarness(pg:TemporaryPostgres){
- const h=await openHarness(pg);const dir=await mkdtemp(join(tmpdir(),'criterion-fixture-'));
+export async function criterionHarness(pg:TemporaryPostgres,options:{leases?:boolean}={}){
+ const h=await openHarness(pg,{leases:options.leases});const dir=await mkdtemp(join(tmpdir(),'criterion-fixture-'));
  const spec={id:'criterion-draft',version:'1.0.0',kind:'workflow' as const,title:'合成判据草稿',description:'合成声明边界',files:{
   'workflow.json':{json:{schema:'workflow@1',inputs:[{slot:'subject',role:'subject',description:'合成对象',accepts:['application/json'],required:true,many:false},{slot:'expected',role:'expected',description:'合成期望',accepts:['text/plain'],required:true,many:false}],parameters:[],product:{catalogs:[]},subject:'subject',projection:{module:'functions/project.ts'}}},
   'requirements.json':{json:{schema:'requirements@1',requirements:[{key:'criterion',name:'原判据',description:'合成原判据',target:'item',required:true,done_rule:'bookkeeping',layers:['static'],accepted_producer:'fact',checks:['original'],error_handling:[]}]}},

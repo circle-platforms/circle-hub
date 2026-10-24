@@ -1,3 +1,4 @@
+import {AcceptedCriterionRef} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
@@ -50,6 +51,7 @@ export const ItemProjection = z.strictObject({
 export type ItemProjection = z.infer<typeof ItemProjection>;
 
 export const RequirementSummary = z.strictObject({
+  independence_by_account:z.boolean().optional(),
   key: z.string(),
   name: z.string(),
   description: z.string(),
@@ -140,6 +142,10 @@ const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_int
   if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
 });
 export const RunRecord = RunSummary.extend({
+  accepted_criteria:z.array(AcceptedCriterionRef).optional(),
+  criterion_requests:z.array(Sha256).optional(),
+  criterion_review:z.strictObject({submission:Sha256,requests:z.array(Sha256)}).optional(),
+  predecessor_access:z.literal('view').optional(),
   requirements:z.array(PersistedRequirementSummary),
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,

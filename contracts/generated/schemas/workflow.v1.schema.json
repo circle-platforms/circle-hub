@@ -6,6 +6,15 @@
       "type": "string",
       "const": "workflow@1"
     },
+    "predecessor_access": {
+      "description": "Read-only predecessor visibility; never grants mutation or lineage lease rights",
+      "type": "string",
+      "const": "view"
+    },
+    "criterion_review": {
+      "description": "W10 review protocol over an explicitly bound declaration submission",
+      "type": "boolean"
+    },
     "predecessor": {
       "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
       "type": "string",

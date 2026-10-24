@@ -1,3 +1,5 @@
+import {authorAccountsOf} from './lineage.ts';
+import {accountIndependenceOf,authorAccount} from './independence.ts';
 import {attachParentRecovery} from './parent-recovery.ts';
 // The Hub recomputes everything itself (T03 R[1], W08): every check of every requirement re-runs through hub/rules with the
 // pack's table, the locked catalog and the subject; outcomes become the terminals of each (item, requirement, layer), the
@@ -238,6 +240,7 @@ export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks
 export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
 export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
   const { run, workflow, submission } = input;
+  const accountAuthors=workflow.requirements.some(t=>t.independence_by_account)?await authorAccountsOf(ctx,run.predecessor):null;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
   const retryAttempts: Array<Record<string, unknown>> = [];
@@ -791,7 +794,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const partitionInputs: PartitionInput[] = [];
   const required = new Set(itemTemplates.filter((t) => t.required).map((t) => t.key));
   const roundsLeftOf = (t: RequirementTemplate): number => Math.max(0, repairRounds(t) - (input.roundsUsed.get(t.key) ?? 0));
-  const marksFor = (t: RequirementTemplate): ('independence_declared')[] => (t.independent_of !== undefined && t.accepts_declared_independence === true ? ['independence_declared'] : []);
+  const marksFor = (t: RequirementTemplate): ('independence_declared')[] => (t.independent_of !== undefined && !t.independence_by_account && t.accepts_declared_independence === true ? ['independence_declared'] : []);
 
   for (const it of items) {
     const handling = handlingOf(it.id);
@@ -800,7 +803,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const carried = input.carried.get(it.id);
     const entry = entries.get(it.id);
     const origin = carried?.origin ?? input.origin;
-    const independence = origin === null ? 'unknown' : independenceOf(origin, input.author);
+    const modelIndependence = origin === null ? 'unknown' : independenceOf(origin, input.author);
     // W07 F[1]: a slot record comes with the digest of the context it was written in; one written in one go is marked no_reuse
     // (decision row 18 (b)). A context that is a SHA-256 binds the claims; any other spelling stays in the stored submission.
     const context = entry !== undefined && entry.entry.handling === 'handled' ? (entry.entry.context ?? null) : null;
@@ -812,6 +815,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     let handlingErrorRecorded=false;
     const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
+      const independence=t.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):modelIndependence;
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
       const outcomes = outcomesFor(t, it.id);
@@ -863,7 +867,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         expectation,
         expectedRefutation: routed.expectedRefutation,
         independence: t.independent_of !== undefined ? independence : null,
-        acceptsDeclared: t.accepts_declared_independence === true,
+        acceptsDeclared: t.independence_by_account!==true&&t.accepts_declared_independence === true,
+        accountVerified:t.independence_by_account===true,
       });
       if(status.status==='satisfied' && t.requires_discrimination && (!t.checks.some(id=>admittedChecks.get(id)?.admitted) || t.checks.some(id=>admittedChecks.has(id) && !admittedChecks.get(id)!.admitted))) {
         status.status='unsatisfied';status.unsatisfied_reason='outcome_mismatch';
@@ -883,7 +888,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
                 pointer,
                 ...statementOf(claim),
                 model: submission.model,
-                ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence) } : {}),
+                ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence,t.independence_by_account===true) } : {}),
                 marks: [...marksFor(t), ...writtenAlone],
                 sourceRole: strongestRole(ce.roles),
                 coverage:sourceCoverage(run.sources,[it.location,...ce.grounds,...ce.bound]),
@@ -1032,7 +1037,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       const key = runRequirementOf(workflow.slots, entry.code);
       const template = key === null ? undefined : templates.find((t) => t.key === key);
       const ce = input.exact?.cross.get(pointer) ?? { resolutions: [], roles: [] as SourceRole[], bound: [], grounds: [...entry.grounds] };
-      const independence = template?.independent_of !== undefined ? independenceOf(origin, input.author) : null;
+      const independence = template?.independent_of !== undefined ? template.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):independenceOf(origin, input.author) : null;
       cross.push(
         judgmentClaim({
           ...(key !== null ? { requirement: key } : {}),
@@ -1042,7 +1047,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           ...(entry.rank !== undefined ? { rank: entry.rank } : {}),
           ...(entry.nature === 'fact' ? { data: { declared_nature: 'fact' } } : {}),
           model: submission.model,
-          ...(independence !== null ? { independence: warrantIndependence(independence) } : {}),
+          ...(independence !== null ? { independence: warrantIndependence(independence,template?.independence_by_account===true) } : {}),
           marks: [...(entry.nature === 'fact' ? (['unverified_submission'] as const) : []), ...(template ? marksFor(template) : [])],
           sourceRole: strongestRole(ce.roles),
           coverage:sourceCoverage(run.sources,[...ce.grounds,...ce.bound]),
