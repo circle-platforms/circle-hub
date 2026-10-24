@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '2.3.5',
+  version: '2.4.0',
   kind: 'workflow',
   title: '用例编译',
   description: '按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通',
@@ -22,7 +22,7 @@ export const IDENTITY = {
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'tables', 'samples', 'examples', 'tools'];
+const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools'];
 /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 
