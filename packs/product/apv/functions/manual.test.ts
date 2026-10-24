@@ -125,6 +125,8 @@ describe('entries from the converted manual', () => {
         ['text', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
         ['signature', '/commands/demo/pool/add', 'b/4/基本配置/显示命令/其他说明'],
         ['text', '/commands/demo/pool/add', 'b/5/基本配置/显示命令/其他说明'],
+        ['text','/manual/manual/合成适用范围：装有%20Card-A%20时','b/0/合成适用范围：装有%20Card-A%20时'],
+        ['text','/manual/manual/合成适用范围：装有%20Card-A%20时/合成子节','b/0/合成适用范围：装有%20Card-A%20时/合成子节'],
       ],
     );
     // K02 R[3]: a signature is a definition, the text under a command a behaviour; the finer form is data.
@@ -200,13 +202,15 @@ describe('entries from the converted manual', () => {
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明'],
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明'],
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
+        ['behaviour','/manual/manual/合成适用范围：装有%20Card-A%20时','b/0/合成适用范围：装有%20Card-A%20时'],
+        ['behaviour','/manual/manual/合成适用范围：装有%20Card-A%20时/合成子节','b/0/合成适用范围：装有%20Card-A%20时/合成子节'],
       ],
     );
     // "**demo broken** *\<name*" is written as a signature but its brackets do not close: it hangs at its section,
     // marked signature_rejected, with a warning.
     const rejected = hung.find((entry) => entry.fragments[0].selector === 'b/1/基本配置/显示命令/其他说明');
     assert.equal(rejected?.data.signature_rejected, true);
-    assert.deepEqual(fromMarkdown.warnings, ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
+    assert.deepEqual(fromMarkdown.warnings.filter(warning=>!warning.startsWith('适用条件')), ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
   });
 
   it('gives fragments the markdown@1 document locates, with the same text', () => {
@@ -214,6 +218,7 @@ describe('entries from the converted manual', () => {
     for (const entry of fromMarkdown.entries) {
       // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
       const located = entry.fragments
+        .filter((fragment,index)=>index===0||!fragment.applicability)
         .map((fragment) => {
           const text = md.locate(fragment.selector)?.text ?? '';
           const range = (fragment as { range?: [number, number] }).range;
@@ -923,9 +928,9 @@ describe('applicability from explicit conditions', () => {
     );
     const [own, model, mixed, builds] = result.entries;
     assert.deepEqual(own.applicability, { platforms: ['hg-k'] });
-    assert.deepEqual(model.applicability, { models: ['X9000'] });
-    assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'] }, 'a start build ("自…起") is not a manual-entry condition');
-    assert.equal(builds.applicability, null, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
+    assert.deepEqual(model.applicability, { models: ['X9000'], platforms:['hg-k'], inherited:['platforms'] });
+    assert.deepEqual(mixed.applicability, { platforms: ['hg-k', 'zx-neokylin'],models:['X9000'],inherited:['models'] }, 'a start build ("自…起") is not a manual-entry condition');
+    assert.deepEqual(builds.applicability, {models:['X9000'],platforms:['hg-k'],inherited:['models','platforms']}, 'which builds use a manual is said by the composition, never by the entry (K02 F[6])');
   });
 
 
@@ -1206,17 +1211,15 @@ describe('applicability from explicit conditions', () => {
     assert.equal(nameRow.applicability, null, 'the name row inherits nothing');
   });
 
-  it('counts a condition only for the entry whose own text states it (no positional inheritance until the owner decides)', () => {
+  it('retains a title and opening-paragraph disagreement without adjudicating any entry', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n适用于 ft-kylinv10 平台的功能。\n\n本节的另一段。\n\n### 小节\n\n子节的一段。\n'));
     const [own, other, sub] = result.entries;
-    assert.deepEqual(own.applicability, { platforms: ['ft-kylinv10'] });
-    assert.equal(other.applicability, null, 'a sibling block states nothing');
-    assert.equal(sub.applicability, null, 'a subsection states nothing');
+    for(const entry of [own,other,sub]){assert.equal(entry.applicability,null);assert.equal(entry.fragments.flatMap(fragment=>fragment.applicability??[]).filter(origin=>origin.conflict).length,2);}
   });
 
-  it('does not read a condition of a bare heading (a heading is no entry’s own text)', () => {
+  it('inherits an explicit heading condition into signatures and their body', () => {
     const result = produceManualEntries(markdown('## 仅 hg-k 平台支持\n\n**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n'));
-    assert.ok(result.entries.every((entry) => entry.applicability === null));
+    assert.ok(result.entries.every((entry) => JSON.stringify(entry.applicability) === JSON.stringify({platforms:['hg-k'],inherited:['platforms']})));
   });
 
   it('keeps a command block’s condition on its own entry and lets nothing leak to a sibling command', () => {
@@ -1263,10 +1266,10 @@ describe('applicability from explicit conditions', () => {
     const positive = produceManualEntries(markdown('# 章\n\n适用于 hg-k 平台和 ft-kylinv10 平台。\n\n仅虚拟平台支持。\n\n适用于 X9000、X8000 机型。\n'));
     assert.deepEqual(positive.entries[0].applicability, { platforms: ['ft-kylinv10', 'hg-k'] });
     assert.deepEqual(positive.entries[1].applicability, { platforms: ['虚拟'] });
-    assert.deepEqual(positive.entries[2].applicability, { models: ['X8000', 'X9000'] });
+    assert.deepEqual(positive.entries[2].applicability, { models: ['X8000', 'X9000'],platforms:['ft-kylinv10','hg-k'],inherited:['platforms'] });
   });
 
   it('leaves applicability null when nothing declares a condition', () => {
-    assert.ok(fromMarkdown.entries.every((entry) => entry.applicability === null));
+    assert.ok(produceManualEntries(markdown('# Plain\n\n普通说明。')).entries.every((entry) => entry.applicability === null));
   });
 });

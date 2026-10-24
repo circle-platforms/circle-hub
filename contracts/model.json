@@ -5791,6 +5791,41 @@
      "label": "能用这个包的用户"
     }
    ]
+  },
+  {
+   "axis": "applicability_field",
+   "label": "适用条件字段",
+   "owner": "K02",
+   "values": [
+    {
+     "code": "models",
+     "label": "型号"
+    },
+    {
+     "code": "platforms",
+     "label": "平台"
+    },
+    {
+     "code": "builds",
+     "label": "起止构建"
+    },
+    {
+     "code": "components",
+     "label": "部件"
+    },
+    {
+     "code": "memory",
+     "label": "内存"
+    },
+    {
+     "code": "licenses",
+     "label": "许可"
+    },
+    {
+     "code": "deployment_forms",
+     "label": "部署形态"
+    }
+   ]
   }
  ],
  "kernelMapping": [

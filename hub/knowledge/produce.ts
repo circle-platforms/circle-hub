@@ -214,6 +214,7 @@ interface Collected {
   index: number;
   unplaced: boolean;
   fragments: string[];
+  applicability_sources?:CompositionRow['applicability_sources'];
   slots: string[];
   /** Estimated bytes of the entry in a composition row. */
   bytes: number;
@@ -338,15 +339,17 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
     const dataBytes = canonicalSize(content.data);
     if (dataBytes > context.limits.maxDataBytes) return `结构化数据超过 ${context.limits.maxDataBytes} 字节`;
     const references: string[] = [];
+    const applicabilitySources:NonNullable<CompositionRow['applicability_sources']>=[];
     const slotNames: string[] = [];
     for (const fragment of fragments) {
       const verified = verifyFragment(fragment, sources, loader);
       if (!verified.ok) return verified.reason;
       if (!references.includes(verified.value.reference)) references.push(verified.value.reference);
+      for(const origin of fragment.applicability??[])applicabilitySources.push({...origin,fragment:verified.value.reference});
       slotNames.push(verified.value.slot);
     }
-    const bytes = statementBytes + dataBytes + references.reduce((sum, r) => sum + r.length, 0) + 400;
-    return { content: { ...content, kind: entry.kind }, digest, producer, index, unplaced, fragments: references, slots: slotNames, bytes };
+    const bytes = statementBytes + dataBytes + references.reduce((sum, r) => sum + r.length, 0) + canonicalSize(applicabilitySources) + 400;
+    return { content: { ...content, kind: entry.kind }, digest, producer, index, unplaced, fragments: references, ...(applicabilitySources.length?{applicability_sources:applicabilitySources}:{}), slots: slotNames, bytes };
   };
   output.entries.forEach((entry, index) => {
     let at: { segments: string[]; path: string } | null = null;
@@ -719,6 +722,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     held.producers.add(entry.producer);
     for (const slot of entry.slots) held.slots.add(`${entry.producer}\u0000${slot}`);
     for (const fragment of entry.fragments) if (!held.row.fragments.includes(fragment)) held.row.fragments.push(fragment);
+    for(const origin of entry.applicability_sources??[]){held.row.applicability_sources??=[];if(!held.row.applicability_sources.some(existing=>canonicalize(existing)===canonicalize(origin)))held.row.applicability_sources.push(origin);}
   };
   for (const entry of hung) addRow(entry.path, entry, undefined);
   hung.length = 0;
@@ -770,6 +774,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     held.producers.add(entry.producer);
     for (const slot of entry.slots) held.slots.add(`${entry.producer}\u0000${slot}`);
     for (const fragment of entry.fragments) if (!held.row.fragments.includes(fragment)) held.row.fragments.push(fragment);
+    for(const origin of entry.applicability_sources??[]){held.row.applicability_sources??=[];if(!held.row.applicability_sources.some(existing=>canonicalize(existing)===canonicalize(origin)))held.row.applicability_sources.push(origin);}
   }
   for (const entry of directUnplaced) {
     let held = lost.get(entry.digest);
@@ -796,6 +801,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     held.producers.add(entry.producer);
     for (const slot of entry.slots) held.slots.add(`${entry.producer}\u0000${slot}`);
     for (const fragment of entry.fragments) if (!held.row.fragments.includes(fragment)) held.row.fragments.push(fragment);
+    for(const origin of entry.applicability_sources??[]){held.row.applicability_sources??=[];if(!held.row.applicability_sources.some(existing=>canonicalize(existing)===canonicalize(origin)))held.row.applicability_sources.push(origin);}
   }
   const unplacedRows = [...lost.values()]
     .map(({ row, producers, slots }) => ({ ...row, producers: [...producers].sort(compareText), basis: basisOver(slots, basisOf) }))

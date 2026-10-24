@@ -71,6 +71,7 @@ export const AXES = {
   variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
   share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
+  applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -687,6 +688,15 @@ export function isShareAudience(value: unknown): value is ShareAudience {
   return (SHARE_AUDIENCE as readonly unknown[]).includes(value);
 }
 
+/** 适用条件字段 (K02) */
+export const APPLICABILITY_FIELD = ['models', 'platforms', 'builds', 'components', 'memory', 'licenses', 'deployment_forms'] as const;
+export type ApplicabilityField = (typeof APPLICABILITY_FIELD)[number];
+export const APPLICABILITY_FIELD_LABEL = { 'models': '型号', 'platforms': '平台', 'builds': '起止构建', 'components': '部件', 'memory': '内存', 'licenses': '许可', 'deployment_forms': '部署形态' } as const satisfies { readonly [K in ApplicabilityField]: string };
+export const ApplicabilityFieldSchema = z.enum(APPLICABILITY_FIELD);
+export function isApplicabilityField(value: unknown): value is ApplicabilityField {
+  return (APPLICABILITY_FIELD as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -756,6 +766,7 @@ export interface AxisValues {
   variable_kind: VariableKind;
   digest_rule: DigestRule;
   share_audience: ShareAudience;
+  applicability_field: ApplicabilityField;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -827,6 +838,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   variable_kind: VARIABLE_KIND_LABEL,
   digest_rule: DIGEST_RULE_LABEL,
   share_audience: SHARE_AUDIENCE_LABEL,
+  applicability_field: APPLICABILITY_FIELD_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */
