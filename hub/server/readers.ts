@@ -1,3 +1,5 @@
+import {RunRecord} from '../../contracts/src/run.ts';
+import {parseReference} from '../refs/api.ts';
 import type { ProducerKind } from '../../contracts/generated/vocabulary.ts';
 import { isKnowledgeContributionSchema } from '../../contracts/src/contributions.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
@@ -21,7 +23,8 @@ export function sourceReaderFor(
 ): SourceReader {
   return {
     async read(sha256, reader): Promise<SourceRead | null> {
-      const source = await records.artifacts.source(principal, sha256, { consumer }) ?? (reader?.run ? await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}) : null);
+      const run=reader?.run?(await records.store.find({key:'runs.id',value:reader.run,kind:'run',limit:1})).items[0]:null;const parsed=run?RunRecord.safeParse(run.body):null;const pins=parsed?.success?parsed.data.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact;}):[];
+      const source = pins.length?await records.artifacts.source(principal,sha256,{consumer,record:pins[0].artifact})??(reader?.run?await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}):null):await records.artifacts.source(principal, sha256, { consumer }) ?? (reader?.run ? await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}) : null);
       if (source === null) {
         note(`source ${sha256} is absent or not readable by ${principal.id}`);
         return null;

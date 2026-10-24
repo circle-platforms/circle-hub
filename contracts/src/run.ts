@@ -29,6 +29,9 @@ export type InputBinding = z.infer<typeof InputBinding>;
 
 /** A source bound to the run (P02), with the role it plays (A03). Inputs carry their slot; sources the pack bound itself carry none. */
 export const SourceBinding = z.strictObject({
+  artifact:Sha256.optional().describe('Exact source_artifact record returned by this read, independent of equal-byte captures'),
+  read_manifest:Sha256.optional().describe('Observed read action that returned this exact capture'),
+  meta_artifact:Sha256.optional().describe('Exact metadata source_artifact returned by the same read'),
   coverage:Coverage.optional().describe('Observed coverage of the external read frozen with these bytes; absent on legacy bindings'),
   reference: ReferenceUri.describe('the bound bytes or fragment; read it with get_nodes'),
   role: SourceRoleSchema,
