@@ -7,8 +7,6 @@ import {
   commandSetKey,
   isCompactIndex,
   normalizeCommand,
-  normalizeText,
-  titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
@@ -516,9 +514,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
         const node = cand.node || '未知节点';
         const title = cand.title || '未知标题';
         outcomes.push({
-          verdict: 'refute',
-          code: CODES.DUPLICATE_CASE,
-          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
+          verdict: 'unknown', reason: 'missing_input', missing: '相同标题不是用例身份；缺少命令路径、参数及期望引文身份；下一步由作者补声明身份或模型提交两侧逐字引文后重跑',
+          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例标题相同，重复身份未核：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
           grounds: [cand.reference],
           tier: 'advisory',
           ...own,

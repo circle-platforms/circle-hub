@@ -239,7 +239,9 @@ export default function scenario(gold: TraceGold): Scenario {
       // only a gold that DID read statuses and found nothing points at other builds.
       const hasClosedStatus = gold.defects.some((d) => d.closed !== undefined) || gold.closed_defects !== undefined;
       checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : hasClosedStatus ? '0 个，正例没核到；导出其他构建并执行 trace-scan' : '未读：标准答案没有已关闭状态；重跑 trace.ts，加 --plm --closed-statuses', ok: positive > 0 });
-      const unresolved=lines.filter(line=>claimVerdict(line)==='unknown');
+      const outcomes=lines.map(claimVerdict);
+      const unresolved=outcomes.filter(verdict=>verdict==='unknown');
+      if (!outcomes.some(verdict=>verdict!==null)) checks.push({area,name:'结构化判定可用',expected:'verdict、reason、missing 字段',actual:'答案不完整：模型回执未携带结构化结论；下一步读取运行结果的结构化字段后重跑',ok:false});
       if(unresolved.length)checks.push({area,name:'检查不能以未知结束',expected:'未知 0 项',actual:`未知 ${unresolved.length} 项；原因见私有原回执，下一步按缺失事实重读、补齐或重跑`,ok:false});
       if(unresolved.length)note('回执仍含未知主张或状态',unresolved.length);
       for(const [reason,count] of pending)countLines.push(`未完成核对 ${count} 项；原因：${reason}；下一步：由集成者按私有原回执补齐对应事实后重读或重跑`);
