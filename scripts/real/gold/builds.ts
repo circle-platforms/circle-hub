@@ -1,6 +1,7 @@
 // Gold script: build candidates of one version line computed independently from the build site listing page.
 // Strictly independent by design — imports nothing from hub/ or packs/; the build naming, version line, and
 // based-on alias rules are re-implemented directly from packs/product/apv/README.md.
+// An own command tree makes a build its own base, even when its listing also carries a based-on declaration.
 //   node scripts/real/gold/builds.ts --page <listing.html> [--page <listing.html> ...] --line <versionLine> --out <gold.json>
 //     [--include <page-name-glob> ...] [--exclude <page-name-glob> ...]
 // Default: main-platform builds only, even on a mainline page that also lists platform builds. To include those,
@@ -133,8 +134,8 @@ function parseRawEntries(html: string): RawEntry[] {
 function resolveBase(entry: RawEntry, byName: Map<string, RawEntry>): string {
   // APV names are their own base unless explicitly declared based on another
   if (entry.family === 'APV' && !entry.basedOn) return entry.name;
-  // An NSAE build with its own command tree is its own base
-  if (entry.hasCommandTree && !entry.basedOn) return entry.name;
+  // An own command tree takes precedence over an accompanying based-on declaration.
+  if (entry.hasCommandTree) return entry.name;
 
   if (entry.basedOn) {
     let curName = entry.basedOn;

@@ -115,6 +115,24 @@ describe('parseBuildCandidates', () => {
     assert.equal(byName.get('Rel_APV_10_6_1_55')?.built, null);
   });
 
+  test('an own-tree NSAE build is its own base despite based on, while tree-less aliases still follow their chain', () => {
+    const html = `
+      Rel_APV_10_8_2_91 (build on 2026-09-01 10:00:00 ): Released on 2026-09-02
+      <BLOCKQUOTE><A href="http://192.0.2.71/command_tree-Rel_APV_10_8_2_91.xml">tree</A></BLOCKQUOTE>
+      Rel_NSAE_10_8_2_92 (build on 2026-09-03 10:00:00 ): based on Rel_APV_10_8_2_91 Released on 2026-09-04
+      <BLOCKQUOTE><A href="http://192.0.2.71/command_tree-Rel_NSAE_10_8_2_92.xml">own tree</A></BLOCKQUOTE>
+      Rel_NSAE_10_8_2_93 (build on 2026-09-05 10:00:00 ): based on Rel_APV_10_8_2_91
+      Rel_NSAE_10_8_2_94 (build on 2026-09-06 10:00:00 ): based on Rel_NSAE_10_8_2_92
+    `;
+    const candidates = parseBuildCandidates(html, '10.8.2');
+    const byName = new Map(candidates.map(candidate => [candidate.name, candidate]));
+    assert.equal(candidates.length, 4);
+    assert.equal(byName.get('Rel_NSAE_10_8_2_92')?.base, 'Rel_NSAE_10_8_2_92');
+    assert.equal(byName.get('Rel_NSAE_10_8_2_93')?.base, 'Rel_APV_10_8_2_91');
+    assert.equal(byName.get('Rel_NSAE_10_8_2_94')?.base, 'Rel_NSAE_10_8_2_92');
+    assert.equal(candidates.filter(candidate => candidate.base !== candidate.name).length, 2);
+  });
+
   test('resolves alias chains when base build points to another alias or base', () => {
     const htmlWithChain = `
       Rel_APV_10_6_1_57 (build on 2026-05-12 10:20:30 ): Released on 2026-05-14
