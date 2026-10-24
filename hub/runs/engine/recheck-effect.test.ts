@@ -26,3 +26,18 @@ test('effect policy replay uses frozen subjects tables and scripts without stori
  assert.equal((await h.service.getRun(h.alice,started.run!.run))!.submissions.length,before);assert.equal(loaded.pack.digest,(await h.workflows.byDigest(loaded.pack.digest))!.pack.digest);
  await assert.rejects(recheckEffectChecks(deps,{run:started.run!.run,submission:answer.result!.submission,checks:['not-in-the-pack']}),/冻结|点名/);
 });
+test('effect policy replay accepts a production result only under its frozen run digest',{skip},async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());const dir=await mkdtemp(join(tmpdir(),'effect-production-replay-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const spec=locatePack();spec.id='synthetic-production-replay';
+ const requirements=spec.files['requirements.json'] as {json:{requirements:Array<Record<string,unknown>>}};requirements.json.requirements=requirements.json.requirements.filter(r=>r.key==='overview');Object.assign(requirements.json.requirements[0],{accepted_producer:'fact',checks:['policy']});
+ const checks=spec.files['checks.json'] as {json:{checks:unknown[]}};checks.json.checks=[{id:'policy',function:{module:'functions/policy.ts'},table:'policies/checked.json',applies:'run',judges:'subject',tier:'advisory'}];
+ spec.files['policies/checked.json']={json:{tag:'frozen-production'}};
+ spec.files['functions/policy.ts']=`export default function(input){return [{verdict:'support',tier:'advisory',statement:'合成政策成立',grounds:[],data:{tag:input.table.tag}}]}`;
+ await h.workflows.add(await writePack(dir,spec));h.workflows.assign(h.alice.id,spec.id);const map=await h.upload(h.alice,toyMap(standardDocument()));
+ const started=await h.service.startRun(h.alice,{pack:spec.id,inputs:{map:{reference:map}}},h.call());assert.equal(started.call_result,'ok',JSON.stringify(started.errors));assert.ok(started.result);
+ const detail=(await h.service.getRun(h.alice,started.run!.run))!;assert.equal(detail.latest!.result.acceptance,'accepted');assert.equal(detail.submissions.length,0);
+ const deps={records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,sandbox:{requireOsIsolation:false}};
+ const replay=await recheckEffectChecks(deps,{run:started.run!.run,submission:detail.latest!.result.submission,checks:['policy']});assert.ok(replay.policy.length);assert.ok(replay.policy.every(o=>o.verdict==='support'&&o.data?.tag==='frozen-production'));
+ assert.equal((await h.service.getRun(h.alice,started.run!.run))!.submissions.length,0);
+ await assert.rejects(recheckEffectChecks(deps,{run:started.run!.run,submission:'f'.repeat(64),checks:['policy']}),/受理|原记录/);
+});
