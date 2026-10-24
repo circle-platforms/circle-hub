@@ -14,6 +14,7 @@ import {sandboxSkip} from './testing/harness.ts';
 import {verifyPack,writePack} from './testing/packs.ts';
 import {standardDocument,toyMap} from './testing/mindmap.ts';
 import {putAction,putResult,runById} from './store.ts';
+import {createKeyedLock} from './util.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
 async function setup(options:{declared?:boolean;many?:boolean;slot?:string}={}){
@@ -137,7 +138,8 @@ test('default lookup pages beyond refusals and never accepts an orphan validatio
     return query.cursor?{items:[submitted],next:null}:{items:[...Array.from({length:99},()=>rejected),orphan],next:'synthetic-next'};
   }} as unknown as import('../../records/api.ts').RecordStore;
   const predecessor={digest:'a'.repeat(64),body:runRecord} as unknown as import('../../records/api.ts').StoredRecord<import('../../../contracts/src/run.ts').RunRecord>;
-  assert.equal((await latestSubmittedResult(store,predecessor))!.digest,submitted.digest);
+  const ctx={deps:{records:{store}},lock:createKeyedLock()} as unknown as import('./deps.ts').EngineContext;
+  assert.equal((await latestSubmittedResult(ctx,predecessor))!.digest,submitted.digest);
   assert.deepEqual(cursors,[null,'synthetic-next']);
 });
 
@@ -164,4 +166,36 @@ test('an inherited object property never counts as an explicit input binding',{s
     assert.equal(explicit.call_result,'ok',JSON.stringify(explicit.errors));
     assert.equal(explicit.run!.input_defaults,undefined);
   }finally{await w.close();}
+});
+
+test('predecessor selection holds the submission key across every result page',async()=>{
+  const {latestSubmittedResult}=await import('./predecessor-defaults.ts');
+  const {runRecord}=await import('../../../contracts/src/fixtures.ts');
+  const predecessor={digest:'a'.repeat(64),body:runRecord} as unknown as import('../../records/api.ts').StoredRecord<import('../../../contracts/src/run.ts').RunRecord>;
+  const older={digest:'b'.repeat(64),body:{...fixture,submission:'c'.repeat(64)}};
+  const newer={digest:'d'.repeat(64),body:{...fixture,submission:'e'.repeat(64)}};
+  let pageRead!:()=>void,releasePage!:()=>void;
+  const firstPage=new Promise<void>(resolve=>{pageRead=resolve;});
+  const gate=new Promise<void>(resolve=>{releasePage=resolve;});
+  let pause=true,committed=false,writerEntered=false;
+  const store={find:async(query:{kind:string;cursor?:string|null})=>{
+    if(query.kind==='submission')return{items:[{body:{run:runRecord.run}}],next:null};
+    if(query.cursor)return{items:[older],next:null};
+    if(committed)return{items:[newer],next:null};
+    const page={items:Array.from({length:100},()=>({body:{...fixture,acceptance:'not_accepted'}})),next:'synthetic-next'};
+    if(pause){pause=false;pageRead();await gate;}
+    return page;
+  }} as unknown as import('../../records/api.ts').RecordStore;
+  const lock=createKeyedLock();
+  const ctx={deps:{records:{store}},lock} as unknown as import('./deps.ts').EngineContext;
+  const select=()=>latestSubmittedResult(ctx,predecessor);
+  const selection=select();await firstPage;
+  const writer=lock('submit:'+runRecord.run,async()=>{writerEntered=true;committed=true;});
+  try{
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    assert.equal(writerEntered,false,'a new accepted submission must wait until all predecessor pages have been selected');
+  }finally{releasePage();}
+  assert.equal((await selection)!.digest,older.digest,'the in-flight selection is consistent before the queued submission');
+  await writer;
+  assert.equal((await select())!.digest,newer.digest,'the next selection sees the newly accepted result');
 });
