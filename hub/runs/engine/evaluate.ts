@@ -703,7 +703,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     && !(judgmentOnly(check) && (handlingOf(id) !== 'handled' || exclude.has(id) || submission === null));
   const builderInput = (it: ItemProjection, check: CheckEntry) => {
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
-    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context, ...(check.reads?.narrow && check.catalog ? { catalog: views.get(check.catalog)?.entries() ?? [] } : {}) };
+    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context, ...(check.catalog ? { catalog: views.get(check.catalog)?.entries() ?? [],catalog_complete:views.get(check.catalog)?.complete??false } : {}) };
   };
   const runtimeAdmission: RuntimeAdmission[] = [];
   const admittedChecks = new Map<string,RuntimeAdmission>();

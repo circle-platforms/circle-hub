@@ -55,7 +55,8 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   const fields = record(item.fields, '缺少条目字段');
   if (typeof fields.autoid !== 'string' || typeof fields.title !== 'string' || !Array.isArray(fields.steps) || fields.steps.some((v) => !isRecord(v) || typeof v.text !== 'string') || fields.priority !== null && typeof fields.priority !== 'string') throw new Error('条目字段没有原始文字 autoid、标题、优先级或步骤');
   if (typeof run.build !== 'string' || !run.build) throw new Error('计划运行没有锁定构建');
-  return { slots: plan.slots, fields: { command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
+  const commandClaims=itemResult.requirements.filter((value:unknown)=>isRecord(value)&&value.requirement==='commands_known').flatMap((value:unknown)=>isRecord(value)&&Array.isArray(value.claims)?value.claims:[]);const command=commandClaims.find((value:unknown)=>isRecord(value)&&isRecord(value.statement)&&value.statement.verdict==='support'&&isRecord(value.statement.data)&&isRecord(value.statement.data.command_catalog));const parsedCommand=isRecord(command)&&isRecord(command.statement)&&isRecord(command.statement.data)?command.statement.data.command_catalog:undefined;if(!isRecord(parsedCommand)||parsedCommand.root!==run.root)throw new Error('缺 commands_known 的锁定目录解析回执；重新核验计划后导出，不以用例缺声明阻止计划解析');
+  return { slots: plan.slots, fields: { command_catalog:parsedCommand,command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
 }
 export async function main(argv: string[]): Promise<number> {
   try {

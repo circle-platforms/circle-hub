@@ -4,6 +4,36 @@
   "check": "bed_addresses",
   "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
   "subject": {
+    "command_catalog": {
+      "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "complete": true,
+      "entries": [
+        {
+          "words": [
+            "widget",
+            "address"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/widget/address",
+          "signatures": [
+            {
+              "id": "src:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/json@1/p/signature",
+              "reference": "src:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/json@1/p/signature",
+              "params": [
+                {
+                  "name": "address",
+                  "type": "ipv4",
+                  "native_type": {
+                    "name": "ipv4",
+                    "declaration": "src:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/json@1/p/types/ipv4",
+                    "grammar": "synthetic-address@1"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "command_identities": [
       {
         "tree_root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",

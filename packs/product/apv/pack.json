@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "b0a7802f6bbf213c856f5a9ee2c9883ed2133b6d2cc14df0e9005f19f5231155",
-      "size": 12080
+      "sha256": "5906f64bda01e263d650c4a6fe26c592468eef0dc1a790b4520cef3e042f4658",
+      "size": 1377
     },
     {
       "path": "functions/documents.ts",
@@ -135,6 +135,11 @@
       "path": "functions/fixed-bugs.ts",
       "sha256": "1da2c71b6da21527ee4ff30210b22aaaf7342b03e2cc741f03dffab7b077b8f4",
       "size": 3261
+    },
+    {
+      "path": "functions/generated/command-grammar.ts",
+      "sha256": "257812138a3a2a2239aa03e900273bfc7aafbb9a2c44cd348bf96e24ec022d5d",
+      "size": 10574
     },
     {
       "path": "functions/generated/vocabulary.ts",

@@ -4,6 +4,37 @@
   "check": "bed_addresses",
   "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
   "subject": {
+    "command_catalog": {
+      "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "complete": true,
+      "entries": [
+        {
+          "words": [
+            "widget",
+            "health",
+            "interval"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/widget/health/interval",
+          "signatures": [
+            {
+              "id": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+              "reference": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+              "params": [
+                {
+                  "name": "seconds",
+                  "type": "int",
+                  "native_type": {
+                    "name": "U16",
+                    "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+                    "grammar": "apv-command-tree@2"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "case_texts": [
