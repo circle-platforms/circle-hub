@@ -3,8 +3,7 @@ import { test } from 'node:test';
 import { PARTITION, REASON, STATIC_TERMINAL, type Partition, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Partitions, partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import { PartitionInvariantError, assertCovering, partitionItems, type PartitionInput } from './partitions.ts';
-import { bindRecovery } from './recovery.ts';
-import { dynamicLayer } from './terminals.ts';
+import { dynamicLayer, bindRecovery } from './terminals.ts';
 
 /** Deterministic generator (mulberry32), so a failing case is reproducible from its seed. */
 function seeded(seed: number) {
@@ -20,7 +19,7 @@ function seeded(seed: number) {
 }
 
 const recovery = { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) };
-const bind = (layer: LayerResult): LayerResult => bindRecovery(layer, [], recovery);
+const bind = (layer: LayerResult): LayerResult => bindRecovery(layer,{runner:recovery.runner,owner:recovery.owner,administrator:recovery.admin,due:new Date(recovery.now.getTime()+86400000).toISOString(),location:'synthetic'});
 const LOCATION = `src:${'a'.repeat(64)}/kityminder@1/n/x`;
 
 function layer(terminal: (typeof STATIC_TERMINAL)[number], reason: Reason): LayerResult {
@@ -30,7 +29,7 @@ function layer(terminal: (typeof STATIC_TERMINAL)[number], reason: Reason): Laye
 }
 
 function requirementResult(key: string, layers: LayerResult[]): RequirementResult {
-  return { requirement: key, layers, status: 'pending', claims: [] };
+  return { requirement: key, layers:layers.map(l=>bindRecovery(l,{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:key})), status: 'pending', claims: [] };
 }
 
 function input(item: string, requirements: RequirementResult[], extra: Partial<PartitionInput> = {}): PartitionInput {

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -213,7 +213,7 @@
     },
     {
       "path": "samples/negative/dispatch-policy.json",
-      "sha256": "6b0b1ede3d454740effc7af95a5d9969145369b25db375753af7aaeeaf217a72",
+      "sha256": "8c7add6710c140325c3cf37269aced0b6db1f8cfacbe4997b842550fec28be06",
       "size": 29477
     },
     {
@@ -398,7 +398,7 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "1f96410e55016acd161b990db0dfb5083fc79ec95a611a7c7f93f6cdc7dc7b3c",
+      "sha256": "47ae28d971ee41d7a990e01988822955576d1e1d994a6f05665f236f96464ff6",
       "size": 29477
     },
     {
@@ -453,7 +453,7 @@
     },
     {
       "path": "samples/positive/dispatch-policy.json",
-      "sha256": "d15ed69619961a952909e7c41ee76fca0898a9a10e4f0fe21a0cd971c02f1432",
+      "sha256": "79e9476dc7e16a0545ef0eeb600457034cd0957cb350958b250b0188f2be21b5",
       "size": 29431
     },
     {
@@ -638,7 +638,7 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "fba968c27cd8d758e25e79e528a780544c05e33b0d3235993685bacb59e1452e",
+      "sha256": "91685a4427fd59dc1ed26f433b8c7dbafb1f4567b7e13d943ea653bb7c3e5f22",
       "size": 29431
     },
     {
@@ -678,7 +678,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "d820b84e0497232fcb296fb02eaaaca2705c5666762ccdce606f2af273e39d7f",
+      "sha256": "ce831adb9c7b28c24c3265c682ce9c940874849f976fbe60aebdb3614ed67a85",
       "size": 555
     },
     {
@@ -688,8 +688,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "e7b114d7edb7dca531bb197d05aa0977d190418be4198c0eff921a4eed3d0839",
-      "size": 7866
+      "sha256": "07f931ad72709c64605c0e8fefbb956c66c8e440bfe8c6ff3817277f75cafa3e",
+      "size": 9038
     },
     {
       "path": "tools/normalize-mindmap.ts",

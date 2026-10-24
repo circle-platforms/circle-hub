@@ -80,7 +80,7 @@ describe('oracle', () => {
     });
     assert.equal(e.items[0].partition, 'incomplete');
     assert.equal(e.items[0].reason, 'repair_exhausted');
-    assert.deepEqual(e.errors, [{ kind: 'refutation', code: 'p.x', item: 'i1', requirement: 'r1', rounds_left: 0 }]);
+    assert.deepEqual(e.errors, [{ kind: 'refutation', code: 'p.x', item: 'i1', requirement: 'r1', rounds_left: 0 },{kind:'unknown',code:'repair_exhausted',item:'i1',requirement:'r1',rounds_left:0}]);
     assert.deepEqual(e.rounds, { used: 2, max: 2 });
   });
 
@@ -122,22 +122,22 @@ describe('oracle', () => {
 
   it('a skipped item is incomplete at every declared layer; only a required requirement makes the item incomplete (W07 R[2], V05 R[3])', () => {
     const skipped: SubmissionDescription = { ...handled, items: { i1: { handling: 'skipped' } } };
-    const e = expected(run(), skipped, support);
+    const e = expected(run({requirements:[req({producer:'judgment'})]}), skipped, support);
     assert.deepEqual(e.items[0].requirements[0].layers, [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed' }]);
     assert.equal(e.items[0].partition, 'incomplete');
     assert.equal(e.items[0].reason, 'declared_skip');
-    const optional = expected(run({ requirements: [req({ required: false })] }), skipped, support);
+    const optional = expected(run({ requirements: [req({ required: false,producer:'judgment' })] }), skipped, support);
     assert.equal(optional.items[0].partition, 'delivered');
   });
 
   it('a missing item is not covered, named in errors, and the submission stays accepted (W07 R[3])', () => {
     const missing: SubmissionDescription = { ...handled, items: {} };
-    const e = expected(run(), missing, support);
+    const e = expected(run({requirements:[req({producer:'judgment'})]}), missing, support);
     assert.equal(e.acceptance, 'accepted');
     assert.deepEqual(e.items[0].requirements[0].layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'unattributed' }]);
     assert.equal(e.items[0].partition, 'incomplete');
     assert.equal(e.items[0].reason, 'not_covered');
-    assert.deepEqual(e.errors, [{ kind: 'not_covered', item: 'i1', rounds_left: 2 }]);
+    assert.deepEqual(e.errors, [{kind:'not_covered',code:'not_covered',item:'i1',requirement:'r1',rounds_left:2},{ kind: 'not_covered',code:'core.coverage.shortfall', item: 'i1', rounds_left: 2 }]);
   });
 
   it('an independent judgment needs another session and model, and the template must accept the declaration (W02 F[4])', () => {
@@ -177,6 +177,7 @@ describe('oracle', () => {
     assert.deepEqual(out.errors, [
       { kind: 'refutation', code: 'p.x', item: 'i1', requirement: 'r1' },
       { kind: 'refutation', code: 'p.x', item: 'i1', requirement: 'r2', rounds_left: 0 },
+      {kind:'unknown',code:'repair_exhausted',item:'i1',requirement:'r2',rounds_left:0},
     ]);
   });
 
@@ -196,7 +197,7 @@ describe('oracle', () => {
     const onlyDynamic = expected(run({ requirements: [req({ layers: ['dynamic'] })] }), handled, refuteX);
     assert.equal(onlyDynamic.items[0].partition, 'delivered');
     assert.deepEqual(onlyDynamic.items[0].requirements[0].layers, [{ layer: 'dynamic', terminal: 'not_run', reason: 'no_check', attribution: 'unattributed' }]);
-    assert.deepEqual(onlyDynamic.errors, []);
+    assert.deepEqual(onlyDynamic.errors, [{kind:'unknown',code:'no_check',item:'i1',requirement:'r1',rounds_left:2}]);
   });
 
   it('repair rounds are the rounds of the code that was refuted, not the largest row of the requirement (W02 F[7])', () => {
@@ -239,10 +240,10 @@ describe('oracle', () => {
     ]);
   });
 
-  it('a missing item is incomplete even when every requirement is optional (W07 R[3], V05 R[3])', () => {
-    const e = expected(run({ requirements: [req({ required: false })] }), { ...handled, items: {} }, support);
-    assert.equal(e.items[0].partition, 'incomplete');
-    assert.equal(e.items[0].reason, 'not_covered');
+  it('optional requirements alone do not force an item into incomplete (W07 R[3], V05 R[3])', () => {
+    const e = expected(run({ requirements: [req({ required: false,producer:'judgment' })] }), { ...handled, items: {} }, support);
+    assert.equal(e.items[0].partition, 'delivered');
+    assert.equal(e.items[0].reason, undefined);
     assert.equal(e.errors[0].kind, 'not_covered');
   });
 
@@ -288,10 +289,10 @@ describe('oracle', () => {
             const got = expected(description, submission, checks);
             const layer = got.items[0].requirements[0].layers[0];
             const where = `${producer}/${handling}/${outcome}/${negative ? 'negative' : 'plain'}`;
-            if (handling !== 'handled') {
+            if (handling !== 'handled' && (producer !== 'fact' || outcome === 'incomplete')) {
               assert.equal(layer.terminal, 'incomplete', where);
-              assert.equal(layer.reason, handling === 'skipped' ? 'declared_skip' : 'not_covered', where);
-              assert.equal(layer.attribution, 'unattributed', where);
+              assert.equal(layer.reason,outcome==='incomplete'?'repair_exhausted':handling === 'skipped' ? 'declared_skip' : 'not_covered', where);
+              assert.equal(layer.attribution,outcome==='incomplete'?'producer_error':'unattributed', where);
               assert.equal(got.items[0].requirements[0].status, 'pending', where);
               assert.equal(got.items[0].partition, 'incomplete', where);
               assert.equal(got.counts.unknown, 0, where);
@@ -345,4 +346,16 @@ describe('oracle', () => {
     assert.deepEqual(cellOf('dynamic', ['not_run', 'pass', 'incomplete']), { value: 'incomplete', counts: { not_run: 1, incomplete: 1 } });
     assert.equal(cellOf('dynamic', []), null);
   });
+});
+
+it('unknowns and skipped work name each requirement and its remaining budget',()=>{
+  const unknown=expected(run(),handled,{c1:{i1:[{verdict:'unknown',reason:'timeout'}]}});
+  assert.deepEqual(unknown.errors,[{kind:'unknown',code:'timeout',item:'i1',requirement:'r1',rounds_left:2}]);
+  const skipped=expected(run({requirements:[req({producer:'judgment'})]}),{...handled,items:{i1:{handling:'skipped'}}},support);
+  assert.deepEqual(skipped.errors,[{kind:'not_covered',code:'declared_skip',item:'i1',requirement:'r1',rounds_left:2}]);
+});
+it('a record-unknown row remains a violation and names the request in receipt errors',()=>{
+  const value=expected(run({requirements:[req({errorTable:[{code:'p.x',action:'unknown'}]})],checks:[{id:'c1',judges:'artifact_under_verification',tier:null}]}),handled,refuteX);
+  assert.equal(value.items[0].requirements[0].layers[0].terminal,'violation');
+  assert.deepEqual(value.errors,[{kind:'refutation',code:'p.x',item:'i1',requirement:'r1'}]);
 });

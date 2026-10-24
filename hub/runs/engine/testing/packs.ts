@@ -69,6 +69,7 @@ const requirement = (r: Partial<RequirementTemplate> & Pick<RequirementTemplate,
   layers: ['static'],
   error_handling: [],
   ...r,
+  ...(r.accepted_producer==='fact'&&r.layers?.includes('dynamic')?{observation:r.observation??'synthetic-observation@1'}:{}),
 });
 
 export interface ReviewOptions {

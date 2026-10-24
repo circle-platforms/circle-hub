@@ -3,6 +3,7 @@ import { isKnowledgeContributionSchema } from '../../contracts/src/contributions
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
+import { canSeeRun } from '../runs/engine/api.ts';
 import type { RunsService } from '../ports.ts';
 import { IntegrityError } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
@@ -19,8 +20,8 @@ export function sourceReaderFor(
   note: (reason: string) => void = () => {},
 ): SourceReader {
   return {
-    async read(sha256): Promise<SourceRead | null> {
-      const source = await records.artifacts.source(principal, sha256, { consumer });
+    async read(sha256, reader): Promise<SourceRead | null> {
+      const source = await records.artifacts.source(principal, sha256, { consumer }) ?? (reader?.run ? await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}) : null);
       if (source === null) {
         note(`source ${sha256} is absent or not readable by ${principal.id}`);
         return null;
@@ -35,7 +36,7 @@ export function sourceReaderFor(
 }
 
 /** Record kinds that belong to a run: the runs engine's rule (hub/runs/engine/readers.ts). */
-const RUN_KINDS: ReadonlySet<string> = new Set<RecordKind>(['run', 'submission', 'validation_result', 'action']);
+const RUN_KINDS: ReadonlySet<string> = new Set<RecordKind>(['run', 'submission', 'validation_result', 'action', 'request']);
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -45,8 +46,8 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
  * non_canonical_path, run}}` (hub/runs submit.ts). `run` is taken first: a canonical submission's arguments may carry a
  * member named `received` of their own.
  */
-export function runOfRecord(kind: string, body: unknown): string | null {
-  if (!RUN_KINDS.has(kind) || !isObject(body)) return null;
+export function runOfRecord(kind: string, body: unknown, schema?: string): string | null {
+  if (!(kind==='claim'&&schema==='hypothesis-set@1')&&!RUN_KINDS.has(kind) || !isObject(body)) return null;
   if (typeof body.run === 'string') return body.run;
   if (kind === 'submission' && isObject(body.received) && typeof body.received.run === 'string') return body.received.run;
   return null;
@@ -66,8 +67,12 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) return (await contributions?.read(record.digest, account)) != null;
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
     if (account.role === 'admin') return true;
-    const run = runOfRecord(record.kind, record.body);
-    return run !== null && (await runs.getRun(principal, run)) !== null;
+    const run = runOfRecord(record.kind, record.body, record.schema);
+    if (run === null) return false;
+    const detail = await runs.getRun(account, run);
+    if (detail === null) return false;
+    if(!canSeeRun(account,detail.run)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
+    return canSeeRun(account, detail.run) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
   };
   return {
     async read(digest): Promise<RecordRead | null> {

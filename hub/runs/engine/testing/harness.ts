@@ -79,7 +79,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const admin = principal(adminUser);
     const alice = principal(await kit.principals.createUser(admin, '甲'));
     const bob = principal(await kit.principals.createUser(admin, '乙'));
-    const workflows = new FakeWorkflowStore(alice.id);
+    const workflows = new FakeWorkflowStore(admin.id);
     const review = await workflows.add(await writePack(dir, reviewPack({ ...(options.review ?? {}), ...(options.dataQuotes !== undefined ? { dataQuotes: options.dataQuotes } : {}) })));
     const verify = await workflows.add(await writePack(dir, verifyPack({ acceptsDeclared: options.verifyAcceptsDeclared })));
     const locate = await workflows.add(await writePack(dir, locatePack()));

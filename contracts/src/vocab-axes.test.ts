@@ -184,3 +184,11 @@ test('contracts schemas integrate with the generated schemas seamlessly', () => 
   }
   assert.ok(!PackSample.safeParse({ ...sampleBase, source: 'unknown' }).success);
 });
+
+ test('share audiences are generated from the B04 decision', async () => {
+  const { SHARE_AUDIENCE, SHARE_AUDIENCE_LABEL, ShareAudienceSchema } = await import('../generated/vocabulary.ts');
+  assert.deepEqual(SHARE_AUDIENCE, ['user', 'pack_users']);
+  assert.deepEqual(SHARE_AUDIENCE_LABEL, { user: '用户', pack_users: '能用这个包的用户' });
+  assert.ok(!ShareAudienceSchema.safeParse('other').success);
+  assert.ok(model.elements.find(e => e.id === 'B04') !== undefined);
+});

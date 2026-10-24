@@ -133,7 +133,7 @@ test('a description list, marked list items, an admonition and a retained single
   const produced = produceAdocEntries(result, { name: 'cli' });
   assert.ok(produced.ok, JSON.stringify(produced));
   const placed = { entries: produced.entries, warnings: produced.warnings };
-  assert.deepEqual(placed.warnings, [], placed.warnings.join('；'));
+  assert.deepEqual(placed.warnings.filter(warning=>!warning.startsWith('适用条件统计：')), [], placed.warnings.join('；'));
   const statements = placed.entries.map((entry) => String(entry.statement));
   for (const text of ['name:: 成员名称', 'weight:: 权重，取值 1 到 100', 'demo pool add', '支持热备', 'change it', '需要管理员权限', 'APV 独有的一行说明']) {
     assert.ok(statements.some((statement) => statement.includes(text)), `${text} is missing from ${JSON.stringify(statements)}`);
@@ -178,7 +178,7 @@ test('a block that cannot be cited stays out of the model and is reported with f
     JSON.stringify(result.uncited),
   );
   const placed = produceManualEntries(result.model, null, { name: 'cli' });
-  assert.deepEqual(placed.warnings, [], 'K1 sees no malformed block, so it counts none');
+  assert.deepEqual(placed.warnings.filter(warning=>!warning.startsWith('适用条件统计：')), [], 'K1 sees no malformed block, so it counts none');
   assert.equal(placed.entries.some((entry) => String(entry.statement).includes('第二段说明')), false);
   assert.ok(result.warnings.some((warning) => warning.includes('回核不到原文行') && warning.includes('main.adoc:9')), result.warnings.join('；'));
 });
@@ -396,4 +396,19 @@ test('splitting a block by its source ranges does not make a signature the autho
       `${label}: each part cites its own range of its own file`,
     );
   }
+});
+
+test('adoc forwards closed sets and preserves field provenance on verified chapter line fragments', async () => {
+  const out = await compile({'main.adoc': '= Book\n\n== Outer 装有 Card-A 时\n\n内存至少8GB。\n\n=== Child\n\n普通正文。\n'});
+  const produced = produceAdocEntries(mapped(out), {name:'cli',slot:'manual',components:['Card-A'],licenses:[],deployment_forms:[]});
+  assert.ok(produced.ok, JSON.stringify(produced));
+  const entry = produced.entries.find(row => row.statement === '普通正文。')!;
+  assert.ok(entry);
+  assert.deepEqual(entry.applicability?.components,{with:['Card-A']});
+  assert.deepEqual(entry.applicability?.inherited,['components','memory']);
+  assert.equal(entry.fragments[0]!.selector,'l/9');
+  assert.ok(produced.warnings.some(warning=>warning.startsWith('适用条件统计：部件：')));
+  const inherited=entry.fragments.slice(1);
+  assert.deepEqual(inherited.map(row=>row.selector),['l/3','l/5']);
+  assert.ok(inherited.every(row=>row.parser==='text@1'&&row.source===out.composition.files[0]?.sha256&&row.applicability?.length));
 });

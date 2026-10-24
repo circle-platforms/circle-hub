@@ -48,6 +48,11 @@ export function normaliseApplicability(applicability: Applicability | null): App
   if (applicability.builds !== undefined) out.builds = uniqueSorted(applicability.builds);
   if (applicability.platforms !== undefined) out.platforms = uniqueSorted(applicability.platforms);
   if (applicability.models !== undefined) out.models = uniqueSorted(applicability.models);
+  if(applicability.components!==undefined)out.components={...(applicability.components.with!==undefined?{with:uniqueSorted(applicability.components.with)}:{}),...(applicability.components.without!==undefined?{without:uniqueSorted(applicability.components.without)}:{})};
+  if(applicability.memory!==undefined)out.memory={...applicability.memory,...(applicability.memory.minimum?{minimum:{...applicability.memory.minimum}}:{}),...(applicability.memory.maximum?{maximum:{...applicability.memory.maximum}}:{})};
+  if(applicability.licenses!==undefined)out.licenses=uniqueSorted(applicability.licenses);
+  if(applicability.deployment_forms!==undefined)out.deployment_forms=uniqueSorted(applicability.deployment_forms);
+  if(applicability.inherited!==undefined)out.inherited=[...new Set(applicability.inherited)].sort(compareText);
   return out;
 }
 

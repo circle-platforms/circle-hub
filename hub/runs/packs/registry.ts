@@ -1,3 +1,4 @@
+import { createRequestService } from '../../requests/api.ts';
 // The pack registry (T01 T02 B04 R01): publication by the owner of a pack id holding a publish right, the publish check,
 // content-addressed storage of every file, assignment of workflow packs to users, activation of product packs for the whole
 // Hub, withdrawal by an admin through the authorization chain, listings, and extraction into read-only directories.
@@ -94,7 +95,7 @@ export interface ActiveProduct {
 export interface PackRegistry {
   readonly extractDir: string;
   /** Publishes the pack in `directory` for its owner (T02); every refusal comes back as problems, never half a publication. */
-  publish(owner: Principal, directory: string): Promise<PublishOutcome>;
+  publish(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishOutcome>;
   /**
    * Admin: withdraws a published version (R01 R[1], T02 R[4]); existing runs keep it, new runs cannot use it (T02 R[6]). For
    * anyone else absent and forbidden are the same AccessError. Refused (ConflictError with the fix) when the version is the
@@ -659,7 +660,7 @@ class Registry implements PackRegistry {
 
   // ---------------------------------------------------------------- publication
 
-  async publish(owner: Principal, directory: string): Promise<PublishOutcome> {
+  async publish(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}={}): Promise<PublishOutcome> {
     const refuse = (problems: PackProblem[], report: PublishReport | null = null): PublishOutcome => ({ ok: false, problems, report });
     const account = await this.account(owner);
     if (account === null) return refuse([problem('publish.account', '.', '发布人不是有效的 Hub 账号（不存在或已停用）', '用有效的账号发布')]);
@@ -667,13 +668,21 @@ class Registry implements PackRegistry {
     const read = await readPackDirectory(directory, { limits: this.#options.limits });
     if (!read.ok) return refuse(read.problems);
     const { manifest, digest } = read.pack;
-    return this.#exclusive(manifest.id, async () => {
+    const answers=[...new Set(options.answerRequests??[])];
+    const requests=createRequestService(this.#records,this.#now);
+    const outcome=await this.#exclusive(manifest.id, async ():Promise<PublishOutcome> => {
       const authorizations = this.#records.authorizations;
       const currentOwner = await authorizations.ownerOf(manifest.id);
       if (currentOwner !== null && currentOwner !== account.id) {
         return refuse([problem('publish.not_owner', 'pack.json', `包 ${manifest.id} 的所有者是另一位用户；新版本只能由包的所有者发布（T02 R[4]）`, '用自己的包号发布，或者请所有者发布新版本', { field: '/id' })]);
       }
       const earlier = await this.getVersion(manifest.id, manifest.version);
+      for(const id of answers){
+        const request=await requests.inspect(id);
+        const previous=request?.pack_digest?await this.byDigest(request.pack_digest):null;
+        if(!request||request.kind!=='repair'||request.audience!==account.id||!previous||previous.id!==manifest.id||previous.owner!==account.id||request.pack_digest===digest||request.answered_by!==null&&request.answered_by!==earlier?.record)return refuse([problem('publish.answer_request','pack.json','指定请求对发布人不可用，或不属于这个包的待修复版本','给出发给本包作者的修复请求摘要；重试已有作答时使用相同版本')]);
+      }
+
       if (earlier !== null) {
         if (earlier.digest === digest && !earlier.withdrawn) return { ok: true, created: false, version: earlier, report: earlier.report };
         if (earlier.withdrawn) return refuse([problem('publish.version_withdrawn', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经下架；下架的版本号不再使用`, '改大版本号后发布新版本', { field: '/version' })]);
@@ -788,6 +797,9 @@ class Registry implements PackRegistry {
         if (staged !== null) await (staged as StagedTree).discard();
       }
     });
+    if(outcome.ok)try{for(const id of answers)await requests.answer(id,outcome.version.record);}
+    catch(error){this.#report(error,'request answer after publication');throw new RecordsError('包版本已发布，但请求作答尚未全部保存',{cause:error,fix:error instanceof RecordsError&&error.fix?error.fix:'对同一目录和版本原样重试 pack publish，并保留全部 --answer-request 参数；不会重新发布版本'});}
+    return outcome;
   }
 }
 

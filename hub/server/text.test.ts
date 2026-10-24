@@ -156,6 +156,14 @@ const fact = (id: string, requirement: string, text: string, code?: string): Cla
 
 /** A validation result over given partitions and errors, with one cross-item fact. */
 function resultWith(partitions: Record<string, ItemResult[]>, errors: ProtocolError[] = [], cross: Claim[] | null = null): ValidationResult {
+  partitions=structuredClone(partitions);
+  // New synthetic results carry real-shaped recovery metadata; legacy reads have their own tests.
+  for(const list of Object.values(partitions))for(const item of list)for(const requirement of item.requirements)for(const layer of requirement.layers){
+    if(layer.terminal==='unchecked'||layer.terminal==='incomplete'||layer.terminal==='no_verdict'||layer.terminal==='not_run'){
+      layer.missing??='合成条目缺少完整观察';
+      layer.exit??={action:'request',request_kind:'clarification',audience:{user:'usr_00000000000000000000000001'},due:'2026-10-25T00:00:00.000Z'};
+    }
+  }
   const total = Object.values(partitions).reduce((n, list) => n + list.length, 0);
   return ValidationResult.parse({
     schema: 'validation@1',

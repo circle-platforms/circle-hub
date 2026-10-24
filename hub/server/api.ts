@@ -21,6 +21,7 @@ export interface ServerDeps {
   config: HubConfig;
   records: RecordsKit;
   runs: RunsService;
+  maintenance?: Pick<RunsEngine, 'startMaintenance' | 'stopMaintenance'>;
   /**
    * The run engine's extras the text of the answers uses (filled by the assembly): start_run through startRunDetailed (the
    * run record, the whole production result, the evidence gaps) and the stored result of a submission by its digest.

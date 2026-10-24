@@ -4,7 +4,7 @@ import { LayerResult } from '../../../contracts/src/validation.ts';
 import { unknown } from '../../rules/outcome.ts';
 import { bindRecovery } from './recovery.ts';
 
-const context = { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) };
+const context = { trustedCore:true, now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) };
 test('missing check has an explicit fact and a repair exit to its author', () => {
   const layer = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'no_check' }, [], context);
   assert.ok(layer.missing?.includes('检查'));
@@ -82,7 +82,7 @@ test('budget_exhausted carries its own missing fact and named exit', () => {
 test('integrity_unproven carries its own missing fact and named exit', () => {
   const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'integrity_unproven' }, [], context);
   assert.equal(result.exit?.request_kind, 'repair');
-  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.deepEqual(result.exit?.audience, { user: context.admin });
   assert.ok(result.missing?.includes('完整的来源目'));
   assert.ok(LayerResult.safeParse(result).success);
 });
@@ -126,4 +126,20 @@ test('an empty unread list never changes a prerequisite repair into administrato
   const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [outcome], context);
   assert.deepEqual(result.exit?.audience, { user: context.runner });
   assert.doesNotMatch(result.missing!, /管理员接受/);
+});
+
+test('package-authored exit metadata cannot choose another request audience',()=>{
+  const outcome={verdict:'unknown' as const,reason:'check_error' as const,missing:'合成检查缺结论',statement:'缺结论',grounds:[],tier:'advisory' as const,exit:{action:'request' as const,request_kind:'disposition' as const,audience:{user:'usr_'+'4'.repeat(26)},due:'2026-01-09T00:00:00.000Z'}};
+  const result=bindRecovery({layer:'static',terminal:'unchecked',reason:'check_error'},[outcome],context);
+  assert.deepEqual(result.exit?.audience,{user:context.owner});
+});
+
+test('an absent publication owner is a named identity wiring failure, not an invented owner',()=>{
+  assert.throws(()=>bindRecovery({layer:'static',terminal:'unchecked',reason:'no_check'},[],{...context,owner:null}),/具名|owner/);
+});
+
+test('package data cannot schedule Hub recovery by imitating a sandbox status',()=>{
+  const outcome=unknown({tier:'advisory',grounds:[]},'check_error','合成缺失事实',{data:{sandbox:'SANDBOX_UNAVAILABLE'}});
+  const result=bindRecovery({layer:'static',terminal:'unchecked',reason:'check_error'},[outcome],{...context,trustedCore:false});
+  assert.equal(result.exit?.action,'request');assert.deepEqual(result.exit?.audience,{user:context.owner});
 });

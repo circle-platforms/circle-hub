@@ -1,3 +1,4 @@
+import {attachParentRecovery} from './parent-recovery.ts';
 // The Hub recomputes everything itself (T03 R[1], W08): every check of every requirement re-runs through hub/rules with the
 // pack's table, the locked catalog and the subject; outcomes become the terminals of each (item, requirement, layer), the
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
@@ -16,7 +17,6 @@ import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
-import { bindRecovery } from './recovery.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
@@ -30,6 +30,8 @@ import { identityOf, principalOf, recordReader, sourceReader } from './readers.t
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
+  bindRecovery,
+  waitForRepairs,
   dynamicLayer,
   expectationFor,
   repairRounds,
@@ -67,7 +69,7 @@ export interface EvaluationInput {
   /** Who produced this submission's judgments; null for a production result. */
   origin: ProducerOrigin | null;
   /** Who produced the work the run judges (lineage.ts); null when the Hub does not know (no predecessor). */
-  author: AuthorOrigin | null;
+  author: (AuthorOrigin & {missingSessions?:string[]}) | null;
   traceId: string;
   /** Items whose own exact values did not resolve: no checks or conclusions for them (a not-accepted submission). */
   exclude?: ReadonlySet<string>;
@@ -84,6 +86,7 @@ export interface Evaluation {
   /** Requirements of the items the submission did not cover (W07 R[3]: also a repair round). */
   uncovered: Set<string>;
   retryAttempts: Array<Record<string, unknown>>;
+  parentObservedSuccess:boolean;
 }
 
 type Slots = Record<string, unknown> | null;
@@ -209,13 +212,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const { run, workflow, submission } = input;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
-  const recovery = { now: ctx.now(), runner: run.runner ?? run.configurer!, owner: workflow.owner ?? null, admin: administrators[0]?.id ?? null };
   const retryAttempts: Array<Record<string, unknown>> = [];
+  let parentObservedSuccess=false;
   const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
     retryWallTimeout: true,
     onAttempt: attempt => {
+      if(attempt.code===undefined)parentObservedSuccess=true;
       if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('validate', run.pack, attempt, { ...extra,
+        ...(attempt.code==='SANDBOX_UNAVAILABLE'&&!attempt.retry&&attempt.attempt>1?{parent_unavailable:true}:{}),
         ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}) }));
       try { ctx.deps.sandbox?.onAttempt?.(attempt); } catch { /* Diagnostics cannot change a check. */ }
     },
@@ -714,22 +719,52 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const sourceSha = rootDigest(it.location);
     let rejection: string | null = null;
     const results: RequirementResult[] = [];
+    let handlingErrorRecorded=false;
+    const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
       const outcomes = outcomesFor(t, it.id);
-      const raw = staticTerminal({
+      let raw = staticTerminal({
         producer: t.accepted_producer,
         hasProducer,
         checks: t.checks.filter((id) => checks.has(id)).length+(outcomes.some(o=>o.check===ADMISSION_CHECK)?1:0),
         outcomes,
         // A missing item artifact is a coverage gap even when its requirement accepts only facts. Pure target
         // checks keep their existing handling rules; production evaluation has no submitted artifact to omit.
-        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' || ((hasItemJudgments || (submission !== null && artifactRequirements.has(t.key))) && handling === 'not_covered') ? handling : null,
+        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
-      const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
-      const layers = t.layers.map((layer) => bindRecovery(layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed), layer === 'static' ? outcomes.map(o => o.outcome) : [], recovery));
+      if ((raw.reason === 'declared_skip' || raw.reason === 'not_covered') && roundsLeftOf(t) === 0) raw = {...raw, reason:'repair_exhausted'};
+      const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0, outcomes);
+      const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
+      const layers = [] as typeof unresolved;
+      for (const layer of unresolved) {
+        if (layer.terminal === 'unchecked' || layer.terminal === 'incomplete' || layer.terminal === 'not_run' || layer.terminal === 'no_verdict' || outcomes.some(o=>o.outcome.verdict==='unknown')) {
+          const owner = await ctx.deps.workflows.ownerOf?.(run.pack_digest) ?? workflow.owner;
+          const administrator = administrators[0]?.id;
+          const runner = run.runner ?? run.configurer;
+          if (!owner || !administrator || !runner) throw new Error('无法绑定未知出口：缺少包 ownerOf、具名管理员或运行者；请管理员补齐身份读取接线后重验');
+          const bound=bindRecovery(layer, {owner, administrator, runner, due: new Date(ctx.now().getTime()+24*60*60*1000).toISOString(), location: `${it.id} / ${t.key}`}, outcomes.map(o => o.outcome));
+          // Only Hub-observed retain-only reads can select administrator acceptance; pack data cannot grant read rights.
+          const retained=[...warmedUnread].filter(([,failure])=>failure.reason==='credential_unreadable').map(([reference])=>reference);
+          for(const [reference,pending] of boundSourceCache)if((await pending).reason==='credential_unreadable'&&!retained.includes(reference))retained.push(reference);
+          if(retained.length&&outcomes.some(o=>o.outcome.verdict==='unknown'&&(o.outcome.reason==='awaiting_step'||o.outcome.reason==='missing_input'))){
+            bound.exit={action:'request',request_kind:'disposition',audience:{user:administrator},due:bound.exit?.due??new Date(ctx.now().getTime()+86400000).toISOString()};
+            bound.missing=`管理员尚未接受只保留的来源：${retained.join('、')}；${bound.missing??''}`;
+          }
+          layers.push(bound);
+        } else layers.push(layer);
+      }
+      const missingSessions=[...(input.author?.missingSessions??[]),...(run.session===undefined?[`运行 ${run.run} 的开始会话（原运行者 ${run.runner??run.configurer??'记录未给出'}）`]:[])];
+      if(t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
+        const runner=run.runner??run.configurer;
+        if(!runner)throw new Error('历史独立性缺少具名受众');
+        const missing=`缺少被判工作来源会话：${missingSessions.join('；')}`;
+        const gap={reason:'missing_input' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:runner},due:new Date(ctx.now().getTime()+86400000).toISOString()}};
+        for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
+        errors.push({code:'missing_input',message:missing,item:it.id,requirement:t.key,fix:'请所列原运行者带 Circle-Session-Id，以原工作为 predecessor 开新修订并重新提交，再对新修订开复核运行'});
+      }
       const status = requirementStatus({
         layers,
         hasProducer,
@@ -786,24 +821,47 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       }
       results.push({ requirement: t.key, layers, ...status, claims });
       for (const r of routed.routed) {
-        if (r.action === 'unknown') continue;
         const check = checks.get(r.outcome.check)!;
         const path = submissionPointer(it.id, check, r.outcome.outcome.pointer);
         errors.push({
-          code: r.outcome.outcome.code ?? 'check_error',
-          message: r.outcome.outcome.statement,
+          code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
+          message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
           fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
-          ...(r.action === 'repair' ? { rounds_left: r.roundsLeft ?? 0 } : {}),
+          ...(r.action === 'repair' || r.outcome.outcome.verdict === 'unknown' ? { rounds_left: r.roundsLeft ?? roundsLeftOf(t) } : {}),
         });
-        if (r.action === 'repair') problems.add(t.key);
+        if (r.action === 'repair') {
+          problems.add(t.key);
+          const runner=run.runner??run.configurer;
+          if(path&&runner){
+            const wait=bindRecovery({layer:'static',terminal:'incomplete',reason:'awaiting_step'},{runner,owner:runner,administrator:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),location:`${it.id} / ${t.key}`});
+            waitingRepairs.push({requirement:t.key,pointer:path,exit:wait.exit!});
+          }
+        }
+      }
+      for (const outcome of outcomes.filter(o => o.outcome.verdict === 'unknown')) {
+        problems.add(t.key);
+        if (routed.routed.some(r => r.outcome === outcome)) continue;
+        const check=checks.get(outcome.check);
+        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
+      }
+      if (submission!==null&&(handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
+        handlingErrorRecorded=true;
+        problems.add(t.key);
+        const reason=entry?.entry.handling==='skipped'?entry.entry.reason:'没有提交这个条目的处理声明';
+        errors.push({code:roundsLeftOf(t)===0?'repair_exhausted':handling==='skipped'?'declared_skip':'not_covered',message:`条目 ${it.id}：${reason}`,item:it.id,requirement:t.key,path:entry?pointerOf('items',entry.index):'/items',rounds_left:roundsLeftOf(t),fix:'用 submit_result 对同一运行重交完整提交；完整的新提交仍可取代本次结果'});
       }
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
-    const notCovered = submission !== null && (hasItemJudgments || artifactRequirements.size > 0) && handling === 'not_covered';
+    if(entry?.entry.handling==='skipped'&&!handlingErrorRecorded){
+      for(const template of itemTemplates)problems.add(template.key);
+      errors.push({code:'declared_skip',message:`条目 ${it.id} 声明跳过：${entry.entry.reason}；Hub 已照常核对目标事实`,item:it.id,path:pointerOf('items',entry.index),rounds_left:Math.max(0,...itemTemplates.map(roundsLeftOf)),fix:'处理声明不改变 Hub 的目标事实；完整的新提交仍可替代'});
+    }
+    waitForRepairs(results,waitingRepairs);
+    const notCovered = submission !== null && handling === 'not_covered' && itemTemplates.some(t => t.required && (isJudgment(t) || artifactRequirements.has(t.key)));
     if (notCovered) {
       const judged = itemTemplates.filter((t) => isJudgment(t) && itemSlotKeys.has(t.key));
       for (const t of judged) uncovered.add(t.key);
@@ -826,6 +884,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       notCovered,
       rejection,
       ...(carried ? { carriedOver: carried.reuse } : {}),
+      ...(entry?.entry.handling==='skipped'?{skipReason:entry.entry.reason}:{}),
     });
   }
 
@@ -917,5 +976,6 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     locks: { ...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
-  return { result, errors, problems, uncovered, retryAttempts };
+  attachParentRecovery(result,retryAttempts,ctx.now());
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess };
 }

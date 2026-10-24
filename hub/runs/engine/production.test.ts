@@ -38,7 +38,7 @@ test('run detail preserves its production result after accepted commentary chang
   const commentary=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic-commentary',items:run.items.map((item,i)=>i===0?{item:item.id,handling:'skipped',reason:'合成评论跳过'}:{item:item.id,handling:'handled'}),cross_item:[{nature:'judgment',statement:'这是模型评论',grounds:[]}]},h.call());
   assert.equal(commentary.acceptance,'accepted',JSON.stringify(commentary.errors));
   const detail=(await h.service.getRun(h.alice,run.run))!;
-  assert.equal(partitionCountsOf(detail.latest!.result.partitions).incomplete,1);
+  assert.equal(partitionCountsOf(detail.latest!.result.partitions).incomplete,0);
   assert.deepEqual(detail.production,{record:started.production!.record,result:started.production!.result});
   assert.notEqual(detail.production!.record,detail.latest!.record);
   assert.equal(await h.service.getRun(h.bob,run.run),null);

@@ -162,10 +162,12 @@ describe('defect-to-case end to end run', { skip }, () => {
       result.partitions.delivered.some((p) => p.item === '74001'),
       '74001 should be in delivered partition',
     );
-    // 71010 was skipped -> in incomplete partition with declared_skip
+    // At zero remaining rounds the skipped work is repair exhausted; its submitted reason remains visible.
     const skippedItem = result.partitions.incomplete.find((p) => p.item === '71010');
     assert.ok(skippedItem, '71010 should be in incomplete partition');
-    assert.equal(skippedItem.reason, 'declared_skip');
+    assert.equal(skippedItem.reason,'repair_exhausted');
+    assert.ok(skippedItem.skip_reason);
+    assert.ok(result.errors.some(error=>error.item==='71010'&&error.code==='repair_exhausted'&&error.rounds_left===0&&error.fix?.includes('请求 rec:')));
   });
 
   it('blocks a paraphrased expectation and consumes a repair round when it is resubmitted', async () => {

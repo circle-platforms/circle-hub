@@ -42,7 +42,7 @@ const STATIC_TERMINAL_RULES = {
 
 const DYNAMIC_TERMINAL_RULES = {
   pass: { code: 'forbidden', reason: 'forbidden', attribution: false, unknown: false },
-  fail: { code: 'required', reason: 'optional', attribution: true, unknown: false },
+  fail: { code: 'optional', reason: 'optional', attribution: true, unknown: false },
   no_verdict: { code: 'optional', reason: 'required', attribution: true, unknown: true },
   not_run: { code: 'optional', reason: 'required', attribution: true, unknown: true },
   incomplete: { code: 'optional', reason: 'required', attribution: true, unknown: false },
@@ -71,7 +71,7 @@ const layerFields = {
   missing:MissingFact.optional(),
   exit:UnknownExit.optional(),
   gaps:z.array(RecoveryGap).min(1).optional().describe('Additional independent causes, each with its own missing fact and exit; never replace them with a primary reason'),
-  code: z.string().min(1).optional().describe('violation code; required when the terminal is violation or fail'),
+  code: z.string().min(1).optional().describe('violation code; required for a static violation, optional for observed dynamic failure'),
   tier: CheckTierSchema.optional(),
   reason: ReasonSchema.optional().describe('why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete'),
   attribution: AttributionSchema.optional().describe("only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)"),
@@ -193,7 +193,8 @@ export const ValidationResult = z
     not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),
   }).optional().describe('Dedicated contribution run receipt; ordinary submissions never write the knowledge layer'),
     run: RunId,
-    submission: Sha256.describe('digest of the submission as received, the idempotency key together with the run'),
+    submission: Sha256.describe('Digest of the received user submission; with system_input, digest of that action detail.input instead; legacy production uses the run record digest'),
+    system_input: referenceUriOf('rec').optional().describe('System-delivery input action; detail.input contains the exact canonical input whose digest is submission; never a user receipt'),
     acceptance: AcceptanceSchema,
     errors: z.array(ProtocolError).describe('every code that kept the submission from being accepted, item-level refutations with their fixes and rounds left, and items the submission did not cover'),
     rounds: Rounds,
@@ -224,6 +225,7 @@ const partitionCountShape = Object.fromEntries(PARTITION.map((p) => [p, count]))
 export const PartitionCounts = z.strictObject({
   ...partitionCountShape,
   unknown: count.describe('items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])'),
+  pending_unknown: count.optional().describe('Additional count, not a partition: items whose layers retain unresolved unknown gaps beside their primary terminal'),
 });
 export type PartitionCounts = z.infer<typeof PartitionCounts>;
 
@@ -234,7 +236,8 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
   for (const p of PARTITION) {
     for (const it of partitions[p]) if (it.requirements.some((r) => r.layers.some(isUnknownTerminal))) unknown++;
   }
-  return { ...counts, unknown };
+  const pending_unknown=PARTITION.reduce((sum,p)=>sum+partitions[p].filter(it=>it.requirements.some(r=>r.layers.some(l=>(l.gaps?.length??0)>0))).length,0);
+  return { ...counts, unknown, ...(pending_unknown>0?{pending_unknown}:{}) };
 }
 
 

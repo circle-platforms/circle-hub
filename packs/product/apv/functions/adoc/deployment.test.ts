@@ -83,3 +83,21 @@ test('configured adoc production refuses a missing build with a concrete recover
  for(const root of ['synthetic/{line}',null]){const value=input();value.params.root=root;delete value.build;
  await assert.rejects(familyManual(value),error=>error instanceof TypeError&&error.message.includes('缺少 build')&&error.message.includes('下一步'));}
 });
+
+test('family deployment forwards all applicability closed sets with verified inherited origins',async()=>{
+ for(const family of ['APV','NSAE']){
+  const value=input(family);
+  const body='== Outer 装有 Card-A 时\n\n需要 Permit-A 许可。适用于 Form-A 部署形态。\n\n=== Inner\n\n普通正文。\n';
+  value.params.components=['Card-A'];value.params.licenses=['Permit-A'];value.params.deployment_forms=['Form-A'];
+  value.lists!.files=value.lists!.files!.map(part=>part.external===fileId('chapters/body.adoc')?slot(part.external,body,'text/plain'):part.external===childId?slot(childId,{...child,members:[{...child.members[0],size:Buffer.byteLength(body)}]}):part);
+  const out=await familyManual(value);
+  const entry=out.entries.find(row=>row.statement==='普通正文。')!;assert.ok(entry);
+  assert.deepEqual(entry.applicability?.components,{with:['Card-A']});
+  assert.deepEqual(entry.applicability?.licenses,['Permit-A']);
+  assert.deepEqual(entry.applicability?.deployment_forms,['Form-A']);
+  assert.deepEqual(new Set(entry.applicability?.inherited),new Set(['components','licenses','deployment_forms']));
+  const origins=entry.fragments.filter(fragment=>fragment.applicability?.length);
+  assert.ok(origins.length);
+  assert.ok(origins.every(fragment=>fragment.parser==='text@1'&&fragment.source===sha256(body)));
+ }
+});

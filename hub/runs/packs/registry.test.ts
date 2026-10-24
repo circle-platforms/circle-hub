@@ -379,6 +379,50 @@ test('a version is extracted read-only once published, and a second registry ove
   await assert.rejects(bed.registry.extractPack('../../etc'), ConflictError);
 });
 
+test('publication answers only explicit repair requests bound to the same pack and named publisher',async t=>{
+  const bed=await testbed(t);
+  const old=await bed.publish(bed.alice,workflowPack());
+  const {createRequestService}=await import('../../requests/api.ts');
+  const requests=createRequestService(bed.kit);
+  const request=await requests.write({pack_digest:old.version.digest,kind:'repair',audience:bed.alice.id,due:'2026-10-26T00:00:00.000Z',missing:'合成检查缺少逐条结果',next_action:'发布修复版本并明确回答本请求',source:old.version.record,code:'check_error'});
+  const unrelated=await bed.publish(bed.alice,workflowPack({version:'1.0.1'}));
+  assert.equal((await requests.inspect(request.digest))?.answered_by,null,'an unrelated publication never answers a request');
+  const correction=await bed.write(workflowPack({version:'1.0.2'}));
+  const answered=await bed.registry.publish(bed.alice,correction.dir,{answerRequests:[request.digest,request.digest]});
+  assert.ok(answered.ok,JSON.stringify(!answered.ok&&answered.problems));
+  assert.equal((await requests.inspect(request.digest))?.answered_by,answered.version.record);
+  const repeated=await bed.registry.publish(bed.alice,correction.dir,{answerRequests:[request.digest]});
+  assert.ok(repeated.ok);assert.equal(repeated.created,false);
+  assert.notEqual(unrelated.version.record,answered.version.record);
+});
+test('a publication cannot answer another publisher or pack request and refuses before publishing bytes',async t=>{
+  const bed=await testbed(t);
+  const old=await bed.publish(bed.alice,workflowPack());
+  const {createRequestService}=await import('../../requests/api.ts');const requests=createRequestService(bed.kit);
+  const request=await requests.write({pack_digest:old.version.digest,kind:'repair',audience:bed.alice.id,due:'2026-10-26T00:00:00.000Z',missing:'合成声明缺口',next_action:'发布修复版本',source:old.version.record,code:'check_error'});
+  const other=await bed.write(workflowPack({id:'other-review'}));
+  const denied=await bed.registry.publish(bed.bob,other.dir,{answerRequests:[request.digest]});
+  assert.equal(denied.ok,false);
+  assert.equal(await bed.registry.getPack('other-review'),null);
+  assert.equal((await requests.inspect(request.digest))?.answered_by,null);
+});
+
+test('a committed publication with an interrupted request answer accepts an exact retry',async t=>{
+  const bed=await testbed(t);
+  const old=await bed.publish(bed.alice,workflowPack());
+  const {createRequestService}=await import('../../requests/api.ts');const requests=createRequestService(bed.kit);
+  const question=await requests.write({pack_digest:old.version.digest,kind:'repair',audience:bed.alice.id,due:'2026-10-26T00:00:00.000Z',missing:'合成恢复验证',next_action:'发布并回答',source:old.version.record,code:'check_error'});
+  const next=await bed.write(workflowPack({version:'1.0.1'}));
+  const put=bed.kit.store.put.bind(bed.kit.store);let fail=true;
+  t.mock.method(bed.kit.store,'put',async(...args:Parameters<typeof put>)=>{const input=args[0];if(fail&&input.kind==='action'&&(input.body as {detail?:{request?:string}}).detail?.request===question.digest){fail=false;throw new Error('SyntheticAnswerStoreFailure');}return put(...args);});
+  await assert.rejects(bed.registry.publish(bed.alice,next.dir,{answerRequests:[question.digest]}),/包版本已发布，但请求作答尚未全部保存/);
+  assert.ok(await bed.registry.getVersion('demo-review','1.0.1'));
+  assert.equal((await requests.inspect(question.digest))?.answered_by,null);
+  const retried=await bed.registry.publish(bed.alice,next.dir,{answerRequests:[question.digest]});
+  assert.ok(retried.ok);assert.equal(retried.created,false);
+  assert.equal((await requests.inspect(question.digest))?.answered_by,retried.version.record);
+});
+
 test('published variable names belong permanently to one pack and keep their schema', async t => {
   const bed=await testbed(t);
   const registry=bed.second({variableNameAvailable:async()=>true});

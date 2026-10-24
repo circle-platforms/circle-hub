@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
+import { sandboxSkip, type Harness } from './testing/harness.ts';
+import { openRetryHarness as openHarness } from './testing/retry-harness.ts';
+import { standardDocument, toyMap } from './testing/mindmap.ts';
+let pg:TemporaryPostgres;let h:Harness;const skip=await sandboxSkip();
+before(async()=>{pg=await startPostgres();if(!skip)h=await openHarness(pg);});
+after(async()=>{await h?.close();await pg?.stop();});
+test('expired runs without an accepted submission get one incomplete delivery and a named disposition request', {skip},async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',submission_due:'2026-10-22T08:01:00.000Z',inputs:{map:{reference:map}}},h.call());
+  const run=started.run!;
+  assert.equal(run.submission_due,'2026-10-22T08:01:00.000Z');
+  h.advance(120000);
+  await h.service.startMaintenance();
+  await h.service.stopMaintenance();
+  const result=(await h.service.getRun(h.alice,run.run))!;
+  assert.equal(result.latest!.result.partitions.incomplete.length,run.items.length);
+  assert.ok(result.requests!.some(r=>r.kind==='disposition'&&r.audience===h.alice.id&&r.next_action.includes('predecessor')));
+  const listing=await h.service.listRuns(h.alice);
+  assert.ok(listing.open_runs?.includes(run.run));
+  assert.ok(listing.requests?.some(r=>r.run===run.run&&r.answered_by===null));
+  const first=result.latest!.record;
+  await h.service.maintain();
+  assert.equal((await h.service.getRun(h.alice,run.run))!.latest!.record,first);
+});
+test('new starts receive a finite deadline and reject a past explicit deadline before binding', {skip},async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const valid=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call());
+  assert.ok(Date.parse(valid.run!.submission_due!)>Date.parse(valid.run!.started_at));
+  const invalid=await h.service.startRun(h.alice,{pack:'toy-review',submission_due:'2026-10-21T00:00:00.000Z',inputs:{map:{reference:map}}},h.call());
+  assert.equal(invalid.call_result,'error');
+  assert.ok(invalid.errors.some(e=>e.path==='/submission_due'));
+});
