@@ -1,6 +1,7 @@
 // Validation of a pack read from its directory (T01, W02, W03, W05, C05, C07, A03): every declaration file parsed with its
 // contract shape, then the rules that hold ACROSS files. Messages are Chinese, name the file and the field and say how to
 // fix; nothing is published while one problem remains. Product dialect never appears here: only the shapes and the rules.
+import { packSchema } from '../engine/slots.ts';
 import type { z } from 'zod';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { ERROR_HANDLING, isCheckTier, labelOf, TARGET, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
@@ -498,6 +499,10 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
 async function validateProduct(c: Collector, policy: ImportPolicy): Promise<PackDeclarations | null> {
   const product = c.parse('product.shape', 'product.json', ProductDeclaration, 'product@1', 'contracts/src/product.ts');
   if (!product) return null;
+  for (const [i, variable] of (product.variables ?? []).entries()) {
+    const compiled = packSchema(variable.schema);
+    if (!compiled.ok || !compiled.schema.safeParse(variable.default).success) c.add(problem('variables.schema', 'product.json', `变量 ${variable.name} 的模式不能执行或默认值不合模式`, '按 Hub 支持的 JSON Schema 2020-12 写模式并提供合成默认值', {field:`/variables/${i}`}));
+  }
   product.names.forEach((name, i) => {
     if (name.trim() !== name) c.add(problem('product.name_space', 'product.json', `产品名 ${JSON.stringify(name)} 首尾有空白，调用方写的名字对不上`, '去掉首尾空白', { field: `/names/${i}` }));
   });
@@ -532,6 +537,11 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   for (const p of await scanTools(c.files)) c.add(p);
   for (const p of versionProblems(manifest)) c.add(p);
   for (const p of credentialProblems(directory)) c.add(p);
+  for (const file of directory.files) {
+    if (manifest.kind === 'product' && file.path === 'product.json') continue;
+    const text = utf8(file.bytes);
+    if (text && /\$\{(?:var|secret):/i.test(text)) c.add(problem('variables.reference',file.path,'这里不能引用变量或密钥','只在产品包 product.json 的 sync.options 或生产器 params 里引用已声明的普通变量'));
+  }
   for (const [i, file] of manifest.files.entries()) {
     const owner = DECLARATION_KIND.get(file.path);
     if (owner !== undefined && owner !== manifest.kind) {

@@ -1,4 +1,6 @@
 import {knowledgeSourceLoader} from './credential-policy.ts';
+import {resolveProductVariables} from './variables.ts';
+import type {VariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
 // context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
 // batches, memoized), validate its output, verify every entry (kind, storable text, fragments, path), place what code could
@@ -53,6 +55,7 @@ import {
   type CallTotals,
   type ElementPeek,
   type ListCallContext,
+  callSingleProducer,
   type ListState,
 } from './lists.ts';
 import { MAX_DESCRIPTION, type PlacementChild, type PlacementOutcome, type PlacementSpan } from './placement.ts';
@@ -83,6 +86,7 @@ const MAX_REASON_TEXT = 2000;
 const ENTRY_KINDS_TEXT = ENTRY_KIND.map((kind) => `${kind} ${labelOf('entry_kind', kind)}`).join('、');
 
 export interface ProduceInput {
+  variables?:VariableUse[];
   product: ProductHandle;
   build: KnownBuild;
   /** The admin whose context reads the sources; default the service's admin. */
@@ -431,7 +435,7 @@ async function keepLists(context: KnowledgeContext, lists: readonly ListedIds[],
 
 export async function produceTree(context: KnowledgeContext, input: ProduceInput): Promise<ProduceResult> {
   const startedAt = context.now().toISOString();
-  const { product } = input;
+  let { product } = input;
   const build = input.build;
   const by = await requireAdmin(context, input.by, '生产知识树');
   const pack = { id: product.id, version: product.version, digest: product.digest };
@@ -470,6 +474,12 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     ...partial,
   });
 
+  if(input.variables===undefined){
+    const resolved=await resolveProductVariables(product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
+    if('problems' in resolved)return result({reason:resolved.problems.join('；')});
+    product=resolved.product;
+    input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};
+  }
   // The build's own identity goes into every record of the production, the failure included: it is checked first.
   const parsedInfo = BuildInfo.safeParse({
     name: build.name,
@@ -630,8 +640,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     const slots = slotsOf.get(producer.id) ?? new Map<string, ParsedSource | null>();
     const list = planned.find((s) => s.producer === producer.id && s.many);
     if (list === undefined) {
-      totals.made++;
-      const output = await runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });
+      const output = product.product.variables?.length
+        ? await callSingleProducer(context,product,producer,handed,slots,totals)
+        : await (async()=>{totals.made++;return runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });})();
       if (!output.ok) return fail(output.reason);
       take(producer.id, verifyOutput(context, producer.id, output.value, singleSources(slots), loader, pathCache), { entries: 0, spans: 0 });
       continue;
@@ -851,6 +862,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         unplacedRows,
         parts: parted ? { composition, unplaced: unplacedRows, sources: listRows, entryBytes } : null,
         body: (parts) => ({
+          variables:input.variables??[],
           product: lineProduct,
           version: { line: info.line, build: info.name, family: info.family, platform: info.platform },
           build: recorded.build,

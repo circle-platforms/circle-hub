@@ -1,7 +1,7 @@
 // Deployment data chooses ordinary example sources. The core knows no product or system names.
 import {SourceLoader,type ExternalLoad} from './sources.ts';
 import type {KnowledgeContext} from './context.ts';
-import type {Principal,ActionBody} from '../records/api.ts';
+import type {Principal,ActionBody,VariableSnapshot} from '../records/api.ts';
 import {requestKnowledgeFact} from './requests.ts';
 import {ACTION,COMPONENTS} from './store.ts';
 export interface CredentialAcceptanceOptions {autoAcceptSources?:readonly {systemPack:string;slot:string}[];deadlineHours?:number}
@@ -31,7 +31,7 @@ async function clearRequests(context:KnowledgeContext,sha:string):Promise<void>{
   const now=context.now().toISOString();await context.store.putAction({action:ACTION.read,run:null,item:null,inputs:[`rec:${row.digest}`,`src:${sha}`],component:COMPONENTS.sync,lease:null,started_at:now,ended_at:now,result:'completed',error_code:null,acceptance:null,codes:[],detail:{resolved_request:row.digest,accepted:true}},[{key:'knowledge.credential.resolved',value:row.digest}]);
  }
 }
-export function knowledgeSourceLoader(context:KnowledgeContext,by:Principal,purpose:string):SourceLoader{
+export function knowledgeSourceLoader(context:KnowledgeContext,by:Principal,purpose:string,variables?:VariableSnapshot):SourceLoader{
  let loader:SourceLoader;
  const cleared=new Set<string>();
  const handle=async(load:Extract<ExternalLoad,{ok:true}>,slot?:string):Promise<void>=>{
@@ -61,6 +61,6 @@ export function knowledgeSourceLoader(context:KnowledgeContext,by:Principal,purp
   if(active.length>0)return;
   await requestKnowledgeFact(context,{kind:body.requested_read_tier==='retain_only'?'repair':'clarification',subject:`凭据命中 ${sha}`,missing:body.requested_read_tier==='retain_only'?'来源被明确要求仅保留，不能自动接受':'来源凭据命中尚无有效接受',action:body.requested_read_tier==='retain_only'?'管理员核对明确保留的原因；如为凭据回显，联系来源负责人去掉回显并按需更换凭据后重读，不能自动解除':'管理员分页核对命中，只按检测类显式接受已确认的示例，或修正来源后重新同步',inputs:[`src:${sha}`,...(failedAcceptance?[`rec:${failedAcceptance}`]:[])],credential:{sha256:sha,record:load.artifact.digest,external:load.id},deadlineHours:context.credentialAcceptance?.deadlineHours??72});
  };
- loader=new SourceLoader({external:context.external,artifacts:context.records.artifacts,parsers:context.parsers,records:context.records.store,onCredential:handle,onReadable:async load=>{if(load.artifact.body.scan.findings.length>0&&!cleared.has(load.artifact.body.sha256)){cleared.add(load.artifact.body.sha256);await clearRequests(context,load.artifact.body.sha256);}}},by,purpose);
+ loader=new SourceLoader({external:context.external,artifacts:context.records.artifacts,parsers:context.parsers,records:context.records.store,variables,onCredential:handle,onReadable:async load=>{if(load.artifact.body.scan.findings.length>0&&!cleared.has(load.artifact.body.sha256)){cleared.add(load.artifact.body.sha256);await clearRequests(context,load.artifact.body.sha256);}}},by,purpose);
  return loader;
 }

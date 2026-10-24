@@ -7,7 +7,7 @@ import {ReadManifest} from '../../contracts/src/resources.ts';
 import type {RecordStore} from '../records/api.ts';
 import { labelOf, type ReadTier } from '../../contracts/generated/vocabulary.ts';
 import { EXTERNAL_ARTIFACT, type ExternalReaderPort } from '../ports.ts';
-import type { Artifacts, Principal, SourceArtifact } from '../records/api.ts';
+import type { Artifacts, Principal, SourceArtifact, VariableSnapshot } from '../records/api.ts';
 import { ParseError, parserKey, recognize, type ParsedDocument, type ParserRegistry } from '../refs/api.ts';
 import { describeError } from './errors.ts';
 import { Lru } from './store.ts';
@@ -49,6 +49,7 @@ export interface SourceDeps {
   records?:Pick<RecordStore,'get'>;
   onCredential?:(load:Extract<ExternalLoad,{ok:true}>,slot?:string)=>Promise<void>;
   onReadable?:(load:Extract<ExternalLoad,{ok:true}>)=>Promise<void>;
+  variables?: VariableSnapshot;
 }
 
 /** The message for a source whose credential scan found something: names the digest and how an administrator unblocks it. */
@@ -140,7 +141,7 @@ export class SourceLoader {
     this.readCount++;
     let result;
     try {
-      result = await this.#deps.external.read(id, { principal: this.#by, run: null, purpose: this.#purpose });
+      result = await this.#deps.external.read(id, { principal: this.#by, run: null, purpose: this.#purpose, variables:this.#deps.variables });
     } catch (error) {
       // The port promises never to throw; a broken adapter is reported like a failed read.
       return { ok: false, id, reason: `读取失败（连接器出错：${describeError(error)}）` };

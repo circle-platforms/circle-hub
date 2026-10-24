@@ -74,3 +74,4 @@ export type { RelationFacts, RelationNodes, LiteralSource, LinkRequest } from '.
 export {completeKnowledgeView} from './complete-view.ts';
 
 export {scheduleSync} from './sync-schedule.ts';
+export {productVariableProblems,variableUsesOfRoot} from './variables.ts';

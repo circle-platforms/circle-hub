@@ -550,3 +550,4 @@ hash) and `authz.scan-accept.automatic` (the serialized boolean). Explicit/API
 acceptance records false; deployment-policy acceptance records true. This identifies
 the decision mechanism, not whether a human inspected every match. A later withdrawal
 does not rewrite the receipt or imply that the old decision is still effective.
+`authorizations.grant(by, input, tx?)` 可以加入调用方事务，许可核对不变；事务回滚时决定一起回滚。产品包声明变量时，在同一事务取名字锁、核对归属并写发布决定。

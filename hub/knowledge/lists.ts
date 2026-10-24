@@ -429,3 +429,21 @@ export async function callBatch(ctx: ListCallContext, batch: { index: number; of
     return stop(`生产器 ${producer.id} 第 ${batch.index + 1} 批出错：${describeError(error)}`);
   }
 }
+
+
+/** Single-slot calls of variable-consuming products reuse the same verified output store as list batches. */
+export async function callSingleProducer(context:KnowledgeContext,product:ProductHandle,producer:Producer,build:KnownBuild,slots:ReadonlyMap<string,ParsedSource|null>,totals:CallTotals):Promise<{ok:true;value:ProducerOutputType}|{ok:false;reason:string}>{
+  // Empty cannot be a slot name, so this key cannot collide with a list call.
+  const batch={index:0,of:1};
+  const key=memoKey({pack:product.digest,producer,build,list:'',batch,elements:[],slots});
+  const stored=await storedOutcome(context,key);
+  if(stored?.ok){totals.reused++;return {ok:true,value:stored.output};}
+  totals.made++;
+  const startedAt=context.now().toISOString();
+  const run=await runProducer(context,product,producer,{build,slots,params:producer.params??{}});
+  if(!run.ok)return {ok:false,reason:run.reason};
+  const state:ListState={succeeded:true,isolationCalls:0,isolationBudget:0,failure:null};
+  const ctx:ListCallContext={context,product,producer,build,buildDigest:buildDigest(build),slots,list:'',totals,state};
+  if(!await storeOutput(ctx,key,startedAt,batch,[],run.value))totals.warnings.push(`生产器 ${producer.id} 的输出没能存下复用，下次生产会再算一遍`);
+  return {ok:true,value:run.value};
+}

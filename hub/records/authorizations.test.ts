@@ -302,3 +302,13 @@ test('bulk resource configurations select latest active decisions and honor with
   const current=await kit.authorizations.resourceConfigs(['synthetic-one','synthetic-two']);
   assert.equal(current.has('synthetic-one'),false);assert.equal(current.has('synthetic-two'),true);
 });
+
+test('grant participates in the caller transaction and rolls back with it', async t => {
+  const kit=await openTestRecords({postgres}); t.after(()=>kit.close());
+  const {admin,alice}=await setup(kit);
+  await assert.rejects(kit.store.withTransaction(async tx=>{
+    await kit.authorizations.grant(admin,{permission:'assign',subject:alice.id,object:'demo-pack'},tx);
+    throw new Error('synthetic rollback');
+  }),/synthetic rollback/);
+  assert.equal(await kit.authorizations.latest('assign',alice.id,'demo-pack'),null);
+});

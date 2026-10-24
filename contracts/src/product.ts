@@ -5,6 +5,7 @@
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../generated/protocol.ts';
+import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
 import { EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
@@ -300,6 +301,7 @@ export const ProductDeclaration = z
     schema: z.literal('product@1'),
     id: ProductId,
     title: z.string().min(1),
+    variables: z.array(VariableDeclaration).optional(),
     names: z.array(z.string().min(1)).min(1).describe('every name of the product; each resolves to this line'),
     sync: SyncDeclaration.optional(),
     select_build: PackFunctionRef.optional().describe('SelectBuildInput -> SelectBuildOutput; without it the newest released build of the line is chosen'),
@@ -308,6 +310,31 @@ export const ProductDeclaration = z
     producers: z.array(Producer),
   })
   .superRefine((p, ctx) => {
+    const declared = new Set<string>();
+    for (const [i, variable] of (p.variables ?? []).entries()) {
+      if (declared.has(variable.name)) ctx.addIssue({code:'custom',path:['variables',i,'name'],message:`变量名字重复：${variable.name}`});
+      declared.add(variable.name);
+    }
+    const checkKeys = (value:unknown):void => {
+      if(!value || typeof value!=='object')return;
+      for(const [key,child] of Object.entries(value)){
+        if(/\$\{(?:var|secret):/i.test(key))ctx.addIssue({code:'custom',path:[],message:'变量引用必须占满一个值，引用不能作为属性名'});
+        checkKeys(child);
+      }
+    };
+    checkKeys(p);
+    const used = new Set<string>();
+    try {
+      for (const ref of referencesIn(p)) {
+        const allowed = ref.at.startsWith('/sync/options/') || /^\/producers\/[0-9]+\/params\//.test(ref.at);
+        if (ref.kind !== 'var' || !allowed || !declared.has(ref.name)) ctx.addIssue({code:'custom',path:[],message:`${ref.at}：只能在 sync.options 或生产器 params 里引用已声明的普通变量`});
+        used.add(ref.name);
+      }
+    } catch (error) {
+      if (!(error instanceof VariableInputError)) throw error;
+      ctx.addIssue({code:'custom',path:[],message:error.message});
+    }
+    for (const name of declared) if (!used.has(name)) ctx.addIssue({code:'custom',path:['variables'],message:`变量 ${name} 声明了却没有引用`});
     const lower = new Set<string>();
     p.names.forEach((n, i) => {
       const k = n.normalize('NFC').toLowerCase();

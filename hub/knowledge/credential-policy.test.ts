@@ -87,3 +87,15 @@ for(const failure of [false,true])test(`configured acceptance uses the administr
  assert.equal(result.ok,!failure);
  if(failure){const rows=await w.kit.store.find<any>({key:'knowledge.credential.acceptance-failed',value:load.artifact.body.sha256,kind:'action',limit:10});assert.equal(rows.items.length,1);assert.equal(rows.items[0].body.detail.administrator,w.admin.id);assert.ok(rows.items[0].body.detail.next_action);}
 });
+
+
+test('declared producer variables preserve automatic credential recovery during direct production',async t=>{
+ const w=await setup(t,true,false,true);
+ w.product.product.variables=[{name:'SYNTH_TRACE',description:'Synthetic trace flag',schema:{type:'boolean'},default:false}];
+ w.product.product.producers=w.product.product.producers.map(producer=>producer.id==='cases'?{...producer,params:{...producer.params,trace:'${var:SYNTH_TRACE}'}}:producer);
+ w.product.digest='e'.repeat(64);
+ const variable=await w.kit.variables.setVariable(w.admin,'SYNTH_TRACE',true,'合成变量设置');
+ const result=await w.knowledge.produceTree({product:w.product,build});assert.ok(result.ok,result.reason??'');assert.equal(result.skippedCount,0);
+ const composition=(await w.knowledge.store.composition(result.composition!))!;
+ assert.ok(composition.variables?.some(use=>use.name==='SYNTH_TRACE'&&use.decision===variable.value.decision.digest));
+});

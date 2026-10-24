@@ -943,3 +943,14 @@ writes `knowledge.credential.acceptance-failed` evidence and links it to the nam
 administrator request, without copying exception text or credential values. An
 unrecognized historical reason stays explicitly unrecognized, with a registered
 awaiting-step reason and automatic retry/reproduction as its next action.
+### 产品声明的部署变量
+
+真实同步开始时一次读取全部普通变量的当前决定；计划、外部读取、生产器参数都用这一份快照。声明中任何名字没设置或不合所属包的模式，产品在读页之前确定失败，报告逐名给出 `circle-hub var set <名字> --file <JSON文件> --reason <理由>`，不写值。直接生产入口同样核对，不把占位符交给函数。
+
+试运行不写知识结果，读取仍留审计：不写构建、知识根、生产或计划动作，真实读取照常保留原件、读清单与登录审计。只有试运行可以用缺失名字的合成默认值，报告逐名标明。发布检查只核对默认值合模式；Hub 无法证明值的业务来源。
+
+引用先解析再合并调用选项，调用选项优先。计划动作记录同步选项的每处 `VariableUse`；组成记录记录同步选项和参数的每处引用及决定，不把来历交给函数。变量决定变更触发重核，报告原、新版本；内容相同仍有相同的根节点摘要。列表调用照旧复用，声明变量的产品的普通单次生产调用也按实际输入摘要保存、完整性回读并重新核对输出；只改计划变量时不重算输入相同的生产器。
+
+Needs：依赖按实际交给函数的完整参数记录，不推断函数内部的名称族分支。要精确到只重产某个族，由产品包在对应接线任务中拆出只引用该族变量的独立产出范围。试运行保留读取审计，以及这个依赖边界，均经集成者确认（2026-10-24）。
+
+`var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
