@@ -26,3 +26,12 @@ test('the case-index documentation matches the null and invalid-floor contract',
  assert.match(section,/other values withhold case-bearing builds/);
  assert.doesNotMatch(section,/another value is noted\s+and replaced/);
 });
+
+test('mainline word examples and fixture pages use a synthetic deployment word',()=>{
+ const previous=['tls',String(13)].join('');
+ const previousDotted=['tls',String(1),'.',String(3)].join('');
+ for(const file of ['README.md','functions/naming.test.ts','functions/sync-plan.test.ts','testing/fixtures/index.html']){
+   const text=readFileSync(new URL('../'+file,import.meta.url),'utf8').toLowerCase();
+   assert.equal(text.includes(previous)||text.includes(previousDotted),false,file);
+ }
+});

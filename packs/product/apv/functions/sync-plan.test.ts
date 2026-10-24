@@ -14,13 +14,13 @@ const TREE = { name: 't.xml', href: 't.xml' };
 
 describe('planSync', () => {
   it('selects both families and explicitly configured additional mainline words', () => {
-    const plan = planSync({ index,options:{mainline_page_words:['tls13']} });
+    const plan = planSync({ index,options:{mainline_page_words:['demoqualifier']} });
     assert.deepEqual(
       plan.pages.map((page) => [page.page, page.family, page.line, page.kind, page.from]),
       [
         ['rel_apv_9_2', 'APV', '9.2', 'mainline', null],
         ['rel_apv_10_6', 'APV', '10.6', 'mainline', null],
-        ['rel_apv_10_6_tls13', 'APV', '10.6', 'mainline', null],
+        ['rel_apv_10_6_demoqualifier', 'APV', '10.6', 'mainline', null],
         ['rel_apv_10_6_1', 'APV', '10.6.1', 'mainline', null],
         ['rel_nsae_10_6', 'NSAE', '10.6', 'mainline', null],
         ['rel_nsae_10_6_1', 'NSAE', '10.6.1', 'mainline', null],
@@ -95,13 +95,13 @@ describe('planSync', () => {
   });
 
   it('opts platform and customer pages in by pattern and out by exclusion', () => {
-    const plan = planSync({ index, options: { include: ['*_hg_k', 'REL_NSAE_*_FT_*', 'rel_apv_10_6_1_?xamplebank_*'], exclude: ['*tls13', 'rel_apv_9_*'] } });
+    const plan = planSync({ index, options: { include: ['*_hg_k', 'REL_NSAE_*_FT_*', 'rel_apv_10_6_1_?xamplebank_*'], exclude: ['*demoqualifier', 'rel_apv_9_*'] } });
     const pages = plan.pages.map((page) => page.page);
     for (const page of ['rel_apv_hg_k_10_6_1_2_ipv6_hg_k', 'rel_nsae_10_6_1_ft_kylinv10', 'rel_apv_10_6_1_examplebank_poc']) assert.ok(pages.includes(page), page);
-    assert.ok(!pages.includes('rel_apv_10_6_tls13') && !pages.includes('rel_apv_9_2'));
+    assert.ok(!pages.includes('rel_apv_10_6_demoqualifier') && !pages.includes('rel_apv_9_2'));
     const ft = plan.pages.find((page) => page.page === 'rel_nsae_10_6_1_ft_kylinv10');
     assert.deepEqual(ft, { page: 'rel_nsae_10_6_1_ft_kylinv10', href: 'http://192.0.2.10/builds/rel_nsae_10_6_1_ft_kylinv10.html', from: null, family: 'NSAE', line: '10.6.1', platform: 'ft-kylinv10', kind: 'platform' });
-    assert.equal(plan.skipped.find((skip) => skip.page === 'rel_apv_10_6_tls13')?.reason, '被排除模式排除');
+    assert.equal(plan.skipped.find((skip) => skip.page === 'rel_apv_10_6_demoqualifier')?.reason, '被排除模式排除');
   });
 
   it('reads several index pages and ignores bad patterns', () => {

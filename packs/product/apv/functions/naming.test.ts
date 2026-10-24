@@ -61,7 +61,7 @@ describe('version lines', () => {
     assert.ok(sameLine('10.6', '10.6.0'));
     assert.ok(!sameLine('10.6.1', '10.6'));
     assert.ok(!sameLine(null, '10.6'));
-    assert.equal(lineKey('10.6.TLS1.3'), '10.6.tls1.3');
+    assert.equal(lineKey('10.6.DEMOQUALIFIER'), '10.6.demoqualifier');
   });
 
   it('orders lines numerically', () => {
@@ -75,7 +75,7 @@ describe('listing page names', () => {
     const cases: Array<[string, ReturnType<typeof parsePageName>]> = [
       ['rel_apv_10_6', { family: 'APV', line: '10.6', platform: null, kind: 'mainline', tokens: ['rel', 'apv', '10', '6'] }],
       ['rel_nsae_10_6_1', { family: 'NSAE', line: '10.6.1', platform: null, kind: 'mainline', tokens: ['rel', 'nsae', '10', '6', '1'] }],
-      ['rel_apv_10_6_tls13', { family: 'APV', line: '10.6', platform: null, kind: 'mainline', tokens: ['rel', 'apv', '10', '6', 'tls13'] }],
+      ['rel_apv_10_6_demoqualifier', { family: 'APV', line: '10.6', platform: null, kind: 'mainline', tokens: ['rel', 'apv', '10', '6', 'demoqualifier'] }],
       ['apv_10_6_2_special', { family: 'APV', line: '10.6.2', platform: null, kind: 'customer', tokens: ['apv', '10', '6', '2', 'special'] }],
       ['rel_apv_10_6_1_hg_uos', { family: 'APV', line: '10.6.1', platform: 'hg-uos', kind: 'platform', tokens: ['rel', 'apv', '10', '6', '1', 'hg', 'uos'] }],
       ['rel_nsae_10_6_1_ft_kylinv10', { family: 'NSAE', line: '10.6.1', platform: 'ft-kylinv10', kind: 'platform', tokens: ['rel', 'nsae', '10', '6', '1', 'ft', 'kylinv10'] }],
@@ -89,7 +89,7 @@ describe('listing page names', () => {
       ],
       ['rel_other_3_9', { family: 'other', line: '3.9', platform: null, kind: 'mainline', tokens: ['rel', 'other', '3', '9'] }],
     ];
-    for (const [name, expected] of cases) assert.deepEqual(parsePageName(name,['tls13']), expected, name);
+    for (const [name, expected] of cases) assert.deepEqual(parsePageName(name,['demoqualifier']), expected, name);
   });
 
   it('rejects names that are not listing pages of a version', () => {
