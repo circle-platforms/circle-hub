@@ -17,46 +17,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const CATEGORY_MAP: Record<string, CanonicalCategory> = {
-  functional: 'Functional',
-  function: 'Functional',
-  functions: 'Functional',
-  func: 'Functional',
-  功能: 'Functional',
-  功能测试: 'Functional',
-  基本功能: 'Functional',
-  configuration: 'Configuration',
-  configure: 'Configuration',
-  config: 'Configuration',
-  配置: 'Configuration',
-  配置测试: 'Configuration',
-  integration: 'Integration',
-  integrate: 'Integration',
-  集成: 'Integration',
-  集成测试: 'Integration',
-  compatibility: 'Compatibility',
-  compat: 'Compatibility',
-  兼容: 'Compatibility',
-  兼容性: 'Compatibility',
-  negative: 'Negative',
-  neg: 'Negative',
-  负向: 'Negative',
-  反向: 'Negative',
-  异常: 'Negative',
-  stress: 'Stress',
-  pressure: 'Stress',
-  压力: 'Stress',
-  压测: 'Stress',
-};
 
+
+/**
+ * A tag carries a team-template category only when it is exactly one of the closed set's own words (the author's
+ * declared closed-set field — owner's rule 10-24: a value that does not equal a declared member is a structure
+ * violation, never mapped to a synonym).
+ */
 export function normalizeTag(tag: string): CanonicalCategory | null {
-  const norm = normalizeText(tag).replace(/^[\[\(\{【（<]+/, '').replace(/[\]\)\}】）>]+$/, '');
-  const direct = CATEGORY_MAP[norm];
-  if (direct) return direct;
-  for (const [k, v] of Object.entries(CATEGORY_MAP)) {
-    if (norm === k || norm.startsWith(k) || norm.endsWith(k)) return v;
-  }
-  return null;
+  return (CANONICAL_CATEGORIES as readonly string[]).includes(tag) ? (tag as CanonicalCategory) : null;
 }
 
 /** Check 1: draft_shape - validates team case structure rules */
@@ -209,15 +178,14 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
       }
     }
 
-    // Duplicate check within submission
-    const normTitle = normalizeText(draft.title);
-    const normSteps = draft.steps.map((s) => normalizeCommand(s.command)).join(';');
-    const sig = `${normTitle}|${normSteps}`;
+    // Duplicate check within submission: the author-declared identity compared verbatim (title text, command lines
+    // as written, negative flag) — no folding, no normalization of free text (owner's rule 10-24).
+    const sig = JSON.stringify([draft.title, draft.negative, draft.steps.map((s) => s.command)]);
     if (seenSignatures.has(sig)) {
       outcomes.push({
         verdict: 'refute',
         code: CODES.DUPLICATE_DRAFT,
-        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（规范化标题与命令行完全相同）`,
+        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（标题、命令行与反向标记逐字相同）`,
         grounds: [],
         tier: 'blocking',
         ...own,
@@ -242,12 +210,12 @@ export { commandHeadOf } from './command-head.ts';
 
 /** Helper to match a command against catalog entries */
 function matchCatalogCommand(cmdText: string, catalogEntries: CatalogEntry[]): { matched: boolean; head?: string } {
-  const norm = normalizeCommand(cmdText);
-  const words = norm.split(' ').filter(Boolean);
+  // Word-by-word exact match against the catalog's words (no case or spacing folding — owner's rule 10-24).
+  const words = cmdText.split(' ').filter((word) => word !== '');
   if (words.length === 0) return { matched: false };
 
   for (const entry of catalogEntries) {
-    const entryWords = entry.words.map((w) => w.toLowerCase());
+    const entryWords = entry.words;
     if (words.length < entryWords.length) continue;
     const isPrefix = entryWords.every((w, i) => w === words[i]);
     if (!isPrefix) continue;
@@ -530,7 +498,6 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     const candidates = buckets[draftKey];
     if (!candidates || candidates.length === 0) continue;
 
-    const draftTitle = normalizeText((draft as { title?: string }).title ?? '');
 
     for (const cand of candidates) {
       // 1. Same negative flag
@@ -538,9 +505,10 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       if ((draft as { negative?: boolean }).negative === true !== candNegative) continue;
 
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
-      // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
-      const candTitle = normalizeText(cand.title);
-      const titlesEqual = draftTitle !== '' && (typeof cand.title_key === 'string' ? titleKey(draftTitle) === cand.title_key : draftTitle === candTitle);
+      // comparison is the title compared verbatim (plus the negative flag above and the command-set key that picked
+      // the bucket); a title that differs by case or spacing is only a same-titled case, not a duplicate.
+      const candTitle = cand.title;
+      const titlesEqual = (draft as { title?: string }).title === candTitle;
 
       if (titlesEqual) {
         duplicated.add(draft);

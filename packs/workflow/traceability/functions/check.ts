@@ -151,6 +151,23 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
     };
   }
   if (fields.cases.length > 0) {
+    const ambiguous = fields.ambiguous_cases ?? [];
+    if (ambiguous.length > 0) {
+      // Connected cases stay in the data, but a same-number case without a system field is not evidence for either
+      // system: the conclusion stays unknown, naming the missing fact and the next step.
+      const statement = `缺陷 ${fields.bug}（${sysText}）追溯到 ${fields.cases.length} 个已明确系统的用例；另有 ${ambiguous.length} 个同号用例未带系统，不能归入任何系统。缺少这些用例的系统来源事实；下一步由集成者按用例引用补取系统来源后重跑，不把未带系统的用例当作已有连接。`;
+      return {
+        verdict: 'unknown',
+        missing: '尚未取得本检查所需的事实：' + (statement),
+        reason: 'missing_input',
+        statement,
+        grounds,
+        tier: TIER,
+        item: item.id,
+        pointer,
+        data: dataOf(fields, info),
+      };
+    }
     return {
       verdict: 'support',
       statement: tracedStatement(fields, info),

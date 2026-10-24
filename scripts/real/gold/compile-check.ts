@@ -275,7 +275,7 @@ export function checkBedAddress(bed: RawBedManifest['beds'][number], raw: string
   if (!key) return fail(`无效字面地址 ${raw}`);
   const interfaces = bed.devices.flatMap(d => [...d.ipv4,...d.ipv6].map(cidr => ({device: d, ip: cleanIp(cidr), subnet: parseSubnet(cidr)!})));
   const match = interfaces.find(i => ipKey(i.ip) === key);
-  if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`台架之外的地址一律拒绝：${raw}`);
+  if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`台架之外的地址一律拒绝：${raw}`,'case-compile.address_outside_bed');
   if (role === 'listen' && match?.device.type !== 'load-balancer') return fail('监听地址必须是被测设备的接口地址');
   if (role === 'backend' && match?.device.type !== 'server') return fail('后端地址必须是服务器设备的接口地址','case-compile.backend_not_server');
   if ((role === 'listen' || role === 'virtual') && match?.device.type === 'load-balancer') {
@@ -587,7 +587,8 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       const address = (v: string, role: string): Answer => {
         if (!bed) return unknown('台架不存在');
         const answer = checkBedAddress(bed,v,role,allocated);
-        return answer.verdict === 'fail' && answer.reason?.startsWith('台架之外') && (!leases || !Number.isFinite(start))
+        // Route on the closed reason code, never on the message prose; the missing fact gets its own field.
+        return answer.verdict === 'fail' && answer.code === 'case-compile.address_outside_bed' && (!leases || !Number.isFinite(start))
           ? unknown('缺少冻结的租约视图或运行时间，无法判断分配地址') : answer;
       };
       if (!bed) add('address',0,`${base}/bucket`,fail('台架不存在'));

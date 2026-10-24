@@ -73,3 +73,41 @@ describe('an empty scope is a deterministic support, not an unknown', () => {
     assert.equal(outcomes[0].reason, 'check_error');
   });
 });
+
+describe('an uncovered path is a deterministic gap when the view scope is complete (decision: view scope)', () => {
+  it('skipped 0 and not truncated: refute (advisory) with the scope spelled out, never an unknown', () => {
+    const outcomes = checkOutcomes('uncovered_changes', {
+      items: [],
+      note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [{ path: '/commands/show', change: 'modified' }], skipped_to: 0, truncated: false, changed_paths: 1, include_added: true },
+    });
+    const gap = outcomes.find((o) => o.code === 'regression-scope.uncovered_path');
+    assert.ok(gap, JSON.stringify(outcomes));
+    assert.equal(gap.verdict, 'refute');
+    assert.equal(gap.tier, 'advisory');
+    assert.match(gap.statement, /\/commands\/show/);
+    assert.match(gap.statement, /没有用例覆盖/);
+    assert.match(gap.statement, /视图范围/);
+    assert.equal(gap.missing, undefined);
+    assert.equal(outcomes.some((o) => o.verdict === 'unknown' && o.statement.includes('/commands/show')), false, JSON.stringify(outcomes));
+  });
+
+  it('skipped sources keep the unknown with the missing fact and next step', () => {
+    const outcomes = checkOutcomes('uncovered_changes', {
+      items: [],
+      note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [{ path: '/commands/show', change: 'modified' }], skipped_to: 2, truncated: false, changed_paths: 1, include_added: true },
+    });
+    const unknown = outcomes.find((o) => o.verdict === 'unknown' && o.statement.includes('/commands/show'));
+    assert.ok(unknown, JSON.stringify(outcomes));
+    assert.match(unknown.statement, /缺少 2 份列出的文档/);
+    assert.match(unknown.missing ?? '', /尚未取得/);
+  });
+
+  it('a truncated view keeps the unknown', () => {
+    const outcomes = checkOutcomes('uncovered_changes', {
+      items: [],
+      note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [{ path: '/commands/show', change: 'modified' }], skipped_to: 0, truncated: true, changed_paths: 5, include_added: true },
+    });
+    assert.ok(outcomes.some((o) => o.verdict === 'unknown' && o.statement.includes('截断')), JSON.stringify(outcomes));
+    assert.equal(outcomes.some((o) => o.code === 'regression-scope.uncovered_path'), false, JSON.stringify(outcomes));
+  });
+});

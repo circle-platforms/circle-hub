@@ -95,11 +95,14 @@ export function negativeCommands(input:unknown):CheckOutcome[] {
   const catalog=isRecord(raw.catalog)?raw.catalog:{};
   if(!Array.isArray(raw.catalog)&&!Array.isArray(catalog.entries))return [{verdict:'unknown',reason:'missing_input',missing:'冻结命令目录；下一步：请集成者选择有命令目录的构建或恢复目录绑定后重开评审',statement:'缺少冻结命令目录；请集成者选择有命令目录的构建或恢复目录绑定后重开评审，不能据此断言用例没有命令',grounds:[],tier:'advisory',...own}];
   const entries=Array.isArray(raw.catalog)?raw.catalog.filter(isRecord):Array.isArray(catalog.entries)?catalog.entries.filter(isRecord):[];
-  const fold=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();
-  const found=phrases.filter(phrase=>entries.some(entry=>{
-    const head=typeof entry.head==='string'?entry.head:Array.isArray(entry.words)?entry.words.join(' '):'';
-    return head!=='' && (fold(phrase)===fold(head)||fold(phrase).startsWith(fold(head)+' '));
-  }));
+  // The owner's rule (10-24): no folding, no prefix heuristics on free text. A line carries a catalog command only
+  // when its leading words equal a locked catalog head word by word (exact match); the longest such head counts.
+  const wordLists=entries.map(entry=>Array.isArray(entry.words)?entry.words.filter((w):w is string=>typeof w==='string'&&w!==''):typeof entry.head==='string'&&entry.head!==''?entry.head.split(' '):[]);
+  const matchesHead=(phrase:string):boolean=>{
+    const words=phrase.split(' ').filter(w=>w!=='');
+    return wordLists.some(head=>head.length>0&&head.length<=words.length&&head.every((word,i)=>words[i]===word));
+  };
+  const found=phrases.filter(matchesHead);
   return found.length ? [{verdict:'support',statement:'反向用例有目录命令行，参数反驳由目录检查核验',grounds:[],tier:'advisory',...own}]
     : [{verdict:'refute',code:NEGATIVE_COMMAND_MISSING,statement:'按当前目录的行首解析，反向用例没有可核验命令行；请核对目录范围，将完整非法命令单独成行并写期望反驳后重开评审',grounds:[],tier:'advisory',...own,pointer:'/phrases',data:{path:'/phrases',matched_commands:0,catalog_entries:entries.length,provided_lines:phrases.length}}];
 }

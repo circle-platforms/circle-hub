@@ -33,13 +33,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "d63f08bdbe14403c5704a74907bb5e38e79a0a2665d0b13705f90bc340135545",
-      "size": 26198
+      "sha256": "093a9a7ecd436b6a8ea5165814dc29150171ab436dac9e56b3c9b7c1e1ecedb4",
+      "size": 25533
     },
     {
       "path": "functions/command-head.ts",
-      "sha256": "7806bc270f185ef1e7b6c323127a2a368ba2f3ecc53fcd6e3a777d33f408b8e3",
-      "size": 1081
+      "sha256": "5907dec4b5b0131d8f8a4fe7aafcb87f06f6159fb349da376a5e38845ce9a4b2",
+      "size": 1037
     },
     {
       "path": "functions/compact-index.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "cbfd89c74e338bc99f72e2db2bb41b246e8f5c5759ee29341e833bb7c0a3053f",
-      "size": 5405
+      "sha256": "4b227226ab1defe6ca76b190ae4d306bcee236f3cd6998d2ebedcbd896089880",
+      "size": 5453
     },
     {
       "path": "samples/negative/commands_out_of_range.json",

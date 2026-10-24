@@ -5,7 +5,7 @@ import { writePrivateJson } from '../gold/builds.ts';
 // The Hub's answers are compared with the gold file: version line, release train, module, build candidates,
 // and associated story and defect numbers. If the gold includes manual spot-check results in the defect system (plmFound),
 // they are listed at the end of the report as an informative section without affecting pass/fail checks.
-import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
+import { claimVerdict, resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import {
   MAX_PAGES,
   createPagerState,
@@ -311,7 +311,8 @@ export function checkCandidateBuilds(
   if (input === undefined) { add('构建候选：独立答案完整', false, '候选依据 1 份', '候选依据 0 份'); return checks; }
   const gold = orderGoldCandidates(Array.isArray(input) ? input : input.candidates);
   const claims = text.split('\n').filter(line => /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.test(line));
-  if (claims.length !== 1 || /，未知(?:，|；|$)/.test(claims[0])) { add('构建候选：文档自己的主张可用', false, '可用主张 1 条', '可用主张 0 条；缺候选事实；下一步：翻页读取本份 build_candidates 主张，仍缺则核对构建同步并重跑本份文档'); return checks; }
+  const claimVerdicts = claims.map(claimVerdict);
+  if (claims.length !== 1 || claimVerdicts[0] !== 'support' && claimVerdicts[0] !== 'refute') { add('构建候选：文档自己的主张可用', false, '可用主张 1 条（结构化判定字段可读且已确定）', (claimVerdicts[0] ?? null) === null ? '主张缺少结构化判定字段；答案不完整；下一步：翻页读取本份 build_candidates 主张，仍缺则核对构建同步并重跑本份文档' : '主张判定为未知；下一步：按回执缺失事实补齐后重跑本份文档'); return checks; }
   const statement = claims[0], reported = parseReportedCandidates(statement);
   const total = Number(/的构建候选\s+(\d+)\s+个/.exec(statement)?.[1] ?? -1);
   const aliases = Number(/其中别名\s+(\d+)\s+个/.exec(statement)?.[1] ?? 0);
@@ -389,14 +390,14 @@ export default function scenario(gold: LocationGold, detailsOut?: string): Scena
           }
         }
         const candidateClaims=ownClaimTexts(lines,doc.document,'build_candidates');
-        const candidateUnknown=candidateClaims.some(claim=>/，未知(?=[（(，；]|$)/.test(claim));
-        add(prefix+'构建候选结论已确定',candidateClaims.length>0&&!candidateUnknown,'未知 0 项',candidateUnknown?'构建候选检查仍未知；下一步按私有回执缺失事实重读或补齐后重跑':candidateClaims.length?'确定结论':'缺少构建候选结论；下一步翻页补读，仍缺则重跑');
+        const candidateUnknown=candidateClaims.some(claim=>claimVerdict(claim)==='unknown');
+        add(prefix+'构建候选结论已确定',candidateClaims.length>0&&!candidateUnknown&&candidateClaims.every(claim=>claimVerdict(claim)!==null),'未知 0 项',candidateUnknown?'构建候选检查仍未知；下一步按私有回执缺失事实重读或补齐后重跑':candidateClaims.length?(candidateClaims.every(claim=>claimVerdict(claim)!==null)?'确定结论':'主张缺少结构化判定字段，答案不完整；下一步翻页补读或重跑'):'缺少构建候选结论；下一步翻页补读，仍缺则重跑');
         if(candidateUnknown || !candidateClaims.length)countLines.push(`未完成核对 1 项；原因：构建候选${candidateUnknown?'仍未知':'缺结论'}；下一步按私有回执补齐事实后重读或重跑`);
         if(candidateUnknown)audits.push({document:doc.document,requirement:'build_candidates',statement:candidateClaims.join('\n'),next_action:'按本份回执的缺失事实重读或补齐，再重跑；未知不能作为通过'});
         checks.push(...checkCandidateBuilds(area, ownClaimTexts(lines, doc.document, 'build_candidates').join('\n'), doc.buildCandidates, doc.writtenBuilds, prefix));
       });
       if (destination !== undefined) { try { writePrivateJson(join(destination, 'case-location-details.json'), audits); } catch { add('定位私有明细已保存', false, '新明细文件 1 份', '明细文件 0 份；下一步：改用 Git 外新 --out 目录后重跑，不覆盖旧证据'); } }
-      const compared = docs.flatMap(doc => ownClaimTexts(lines, doc.document, 'build_candidates').filter(line => !/，未知(?:，|；|$)/.test(line)).flatMap(parseReportedCandidates));
+      const compared = docs.flatMap(doc => ownClaimTexts(lines, doc.document, 'build_candidates').filter(line => { const verdict = claimVerdict(line); return verdict === 'support' || verdict === 'refute'; }).flatMap(parseReportedCandidates));
       for (const [name, ok] of [['APV 名称族', compared.some(c => c.family === 'APV')], ['NSAE 名称族', compared.some(c => c.family === 'NSAE')], ['别名', compared.some(c => c.baseMention)]] as const) add('候选覆盖：' + name, ok, '至少 1 个', ok ? '至少 1 个' : '0 个；下一步：选择前 12 项覆盖两个名称族和别名的版本线后重跑');
       const longest = Math.max(0, ...resultTexts(turns).map(t => t.length));
       add('回答没有超过客户端能转交的长度', longest <= 30_000, '不超过 30000 个字符', `最长 ${longest} 个字符`);

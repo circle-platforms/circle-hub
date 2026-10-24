@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "47d147ffea91b078d667fe9df62b070eb428e544e1f6f79052640adf9aa73a9e",
-      "size": 12508
+      "sha256": "f48cc4b0fafc1eecc763e8686aa4ff089ad155ed31f24caa10b97a20194eb7de",
+      "size": 13462
     },
     {
       "path": "functions/counts.ts",

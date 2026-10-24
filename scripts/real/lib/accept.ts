@@ -2,6 +2,7 @@
 // (A separate module because the runner awaits its scenario modules at the top level, so a scenario must not import the runner.)
 import type { Respond } from '../scripted-model.ts';
 import type { Check, ReportSection } from './report.ts';
+import { labelOf, VERDICT } from '../../../contracts/generated/vocabulary.ts';
 
 export interface Scenario {
   name: string;
@@ -42,3 +43,24 @@ export function parseLog(text: string): LoggedTurn[] {
 
 /** The text of every tool result the model was shown, in order. */
 export const resultTexts = (turns: readonly LoggedTurn[]): string[] => turns.flatMap((t) => t.toolResults.map((r) => r.text));
+
+/**
+ * The verdict of one claim line the answer renders, read from the structured fields only: the line's labeled
+ * 陈述 segment carries the verdict label of the generated vocabulary as its own comma-separated part. A part equals
+ * a closed verdict label exactly or it is not a verdict — no scanning of the statement prose. Lines without a
+ * readable verdict (not claim lines, or a claim without its verdict field) answer null.
+ */
+const VERDICT_OF_LABEL = new Map<string, string>(VERDICT.map((code) => [labelOf('verdict', code), code]));
+export function claimVerdict(line: string): string | null {
+  // Works on a full answer line (the 陈述 segment among the labeled fields) and on a statement already extracted
+  // from one (ownClaimTexts strips the label): the verdict is a closed-set label standing as its own comma-separated
+  // part. Not a claim line or a claim without its verdict field: null.
+  const segments = line.split('；');
+  const statement = segments.find((segment) => segment.startsWith('陈述：'));
+  const text = statement !== undefined ? statement.slice('陈述：'.length) : line;
+  for (const part of text.split('，')) {
+    const code = VERDICT_OF_LABEL.get(part);
+    if (code !== undefined) return code;
+  }
+  return null;
+}

@@ -2,7 +2,7 @@
 // independent double-loop join in the gold file — every defect's listed cases are the same, a defect with no case is
 // is unresolved until closed-scope evidence exists; no unknown is accepted as a passing check.
 import { createHash } from 'node:crypto';
-import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
+import { resultTexts, type LoggedTurn, type Scenario, claimVerdict } from '../lib/accept.ts';
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
 import type { Check } from '../lib/report.ts';
 import { lengthBounded, runStarted } from './checks.ts';
@@ -228,7 +228,7 @@ export default function scenario(gold: TraceGold): Scenario {
       // only a gold that DID read statuses and found nothing points at other builds.
       const hasClosedStatus = gold.defects.some((d) => d.closed !== undefined) || gold.closed_defects !== undefined;
       checks.push({ area, name: '已关闭且已追溯的缺陷至少 1 个', expected: '至少 1 个', actual: positive > 0 ? `${positive} 个` : hasClosedStatus ? '0 个，正例没核到；导出其他构建并执行 trace-scan' : '未读：标准答案没有已关闭状态；重跑 trace.ts，加 --plm --closed-statuses', ok: positive > 0 });
-      const unresolved=lines.filter(line=>/，未知(?=[（(，；]|$)|缺陷系统[：:]\s*未知/.test(line));
+      const unresolved=lines.filter(line=>claimVerdict(line)==='unknown');
       if(unresolved.length)checks.push({area,name:'检查不能以未知结束',expected:'未知 0 项',actual:`未知 ${unresolved.length} 项；原因见私有原回执，下一步按缺失事实重读、补齐或重跑`,ok:false});
       if(unresolved.length)note('回执仍含未知主张或状态',unresolved.length);
       for(const [reason,count] of pending)countLines.push(`未完成核对 ${count} 项；原因：${reason}；下一步：由集成者按私有原回执补齐对应事实后重读或重跑`);
