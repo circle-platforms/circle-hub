@@ -749,3 +749,5 @@ technical terminals. A fresh parent execution observation supplies the actual an
 
 The workbook client permits only its declared pre-generation workbook-input gap; it still requires every other plan
 prerequisite and the exact bound byte identities. The successor verification, not generation, supplies dispatch evidence.
+
+A same-owner, same-pack successor stops replaying old submissions but never discards a trusted host-recovery gap. Maintenance appends a named administrator request and a system-input projection immediately, preserving the old result bytes and the actual retry count. A later trusted parent-success validation in that run or a same-pack successor answers the host-repair request; creating a successor alone never does. Unanswered requests keep their run open even after supersession.

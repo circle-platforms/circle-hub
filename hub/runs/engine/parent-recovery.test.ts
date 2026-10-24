@@ -22,7 +22,7 @@ async function setup(){
   const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call('observed-start'));
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));const run=started.run!;
   const args={run:run.run,model:'synthetic',items:run.items.map(item=>({item:item.id,handling:'handled',slots:{findings:[]}})),cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}]};
-  return{h,run,args};
+  return{h,run,args,map};
 }
 function unavailable(){
   const original=childProcess.spawn;let launches=0;
@@ -73,4 +73,30 @@ test('pack-authored sandbox data cannot schedule a parent recovery round',{skip}
     assert.equal((await h.service.getRun(h.alice,run.run))!.latest!.record,original);
     assert.ok(!(await actionsOf(h.kit.store,run.run)).some(action=>typeof action.body.detail.parent_recheck==='string'));
   }finally{await h.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('a same-pack successor hands trusted parent failure to an administrator without replaying the old run',{skip},async()=>{
+  const {h,run,args,map}=await setup();let failure=unavailable();
+  try{
+    await h.service.submitResult(h.alice,args,h.call('observed-submit'));
+    const original=(await h.service.getRun(h.alice,run.run))!.latest!;
+    failure.restore();
+    const next=await h.service.startRun(h.alice,{pack:'toy-review',predecessor:run.run,product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call('successor'));
+    assert.equal(next.call_result,'ok',JSON.stringify(next.errors));
+    failure=unavailable();await h.service.maintain();assert.equal(failure.count(),0,'old superseded work must not be replayed');
+    const detail=(await h.service.getRun(h.alice,run.run))!;
+    const question=detail.requests!.find(q=>q.kind==='repair'&&q.audience===h.admin.id&&q.missing.includes('后继'));
+    assert.ok(question);assert.equal(question.answered_by,null);
+    assert.ok(detail.latest!.result.system_input);
+    for(const layer of Object.values(detail.latest!.result.partitions).flat().flatMap(i=>i.requirements).flatMap(r=>r.layers)){
+      if(layer.reason==='check_error'){assert.deepEqual(layer.exit!.audience,{user:h.admin.id});assert.equal(layer.exit!.due,question.due);}
+    }
+    assert.deepEqual((await h.kit.store.get(original.record))!.body,original.result);
+    await h.service.maintain();assert.equal((await h.service.getRun(h.alice,run.run))!.latest!.record,detail.latest!.record);
+    assert.ok((await h.service.listRuns(h.admin)).open_runs?.includes(run.run),'an unanswered host repair stays open despite a successor');
+    failure.restore();h.advance(1000);
+    await h.service.submitResult(h.alice,{...args,run:next.run!.run},h.call('successor-submit'));
+    await h.service.maintain();
+    assert.ok((await h.service.listRequests!(h.admin,run.run)).find(q=>q.record===question.record)!.answered_by,'a later trusted parent success closes the host repair, without rewriting the old terminal');
+  }finally{failure.restore();await h.close();}
 });
