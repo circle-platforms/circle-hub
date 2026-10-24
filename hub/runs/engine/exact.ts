@@ -3,13 +3,13 @@
 // fragment its reference resolves to; every command resolves against the locked catalogs or, taken verbatim from a bound
 // source, as a quotation of it (T04 R[5]). A value that does not resolve keeps the whole submission from being accepted
 // (T03 R[3]); a statement the catalog contradicts is not an unresolved value but a fact the checks judge.
-import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
+import { CORE_VIOLATION_CODES,type ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
-import type { Submission } from '../../../contracts/src/submission.ts';
+import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
 import { canonicalize, sha256Hex, type Principal } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
@@ -365,6 +365,8 @@ export interface ItemEvidence {
 }
 
 export interface ExactResult {
+  criterionChanges?:Array<{index:number;change:CriterionChange}>;
+  criterionRefusals?:ProtocolError[];
   errors: ProtocolError[];
   items: Map<string, ItemEvidence>;
   cross: Map<string, ClaimEvidence>;
@@ -575,5 +577,39 @@ export async function resolveSubmission(
     result.cross.set(at, out);
     result.crossEntries.push(copy);
   }
+  const criteria=await resolveCriterionChanges(resolver,items,submission.criterion_changes??[]);
+  result.errors.push(...criteria.errors);
+  result.criterionChanges=criteria.accepted;result.criterionRefusals=criteria.refused;
   return result;
+}
+
+/** W10 exact boundary: role errors refuse one declaration; missing values and non-verbatim text refuse the submission. */
+export async function resolveCriterionChanges(resolver:Resolver,items:readonly {id:string}[],changes:NonNullable<Submission['criterion_changes']>):Promise<{errors:ProtocolError[];refused:ProtocolError[];accepted:Array<{index:number;change:CriterionChange}>}>{
+  const errors:ProtocolError[]=[],refused:ProtocolError[]=[];
+  const accepted:Array<{index:number;change:CriterionChange}>=[],seen=new Set<string>();
+  for(const [index,change] of changes.entries()){
+    const at=pointerOf('criterion_changes',index),before=errors.length;
+    if(!items.some(item=>item.id===change.item)){errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','判据变更声明的条目不在本运行中',{path:at+'/item',item:change.item}));continue;}
+    let expected=true;const canonical=structuredClone(change);
+    const locate=async(reference:string,quote:string,path:string,quotePath:string)=>{
+      const result=await resolver.resolve(reference,{grounds:true});
+      if(!result.ok||result.value.text===null){errors.push(protocolError('REFERENCE_UNRESOLVED',result.ok?'判据片段没有可核对的原文':result.message,{path,item:change.item}));return null;}
+      if(!quoteMatches(result.value.text,quote))errors.push(protocolError('QUOTE_MISMATCH','判据变更声明的原文或引文不逐字',{path:quotePath,item:change.item}));
+      if(result.value.role!=='expected')expected=false;
+      return result.value.reference;
+    };
+    const reference=await locate(change.criterion,change.old,at+'/criterion',at+'/old');
+    if(reference)canonical.criterion=reference;
+    for(const [j,ground] of change.grounds.entries()){
+      const ref=await locate(ground.reference,ground.quote,at+`/grounds/${j}/reference`,at+`/grounds/${j}/quote`);
+      if(ref)canonical.grounds[j]!.reference=ref;
+    }
+    const key=JSON.stringify([change.item,canonical.criterion]);
+    if(seen.has(key))errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','同一条目的同一处判据只许一条声明',{path:at+'/criterion',item:change.item}));
+    if(reference)seen.add(key);
+    if(errors.length>before)continue;
+    if(!expected){const code='core.criterion.source_role_mismatch' satisfies import('../../../contracts/generated/protocol.ts').CoreViolationCode;refused.push({code,message:'判据变更声明不是期望来源的片段',path:at,item:change.item,fix:CORE_VIOLATION_CODES[code].fix});continue;}
+    accepted.push({index,change:canonical});
+  }
+  return {errors,refused,accepted};
 }

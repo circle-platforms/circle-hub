@@ -563,6 +563,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
+    evaluation.result.errors.push(...(exact.criterionRefusals??[]));
     return { runtimeAdmission:evaluation.runtimeAdmission, result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
