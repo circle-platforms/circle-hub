@@ -19,12 +19,11 @@ test('certified pre-device refusals permit a new numbered attempt but device-rea
     const c = await setup({ mode: 'reject', alter: (name, value) => name === 'send_blob' ? { ...value, phase: 'admission', touched: reached } : value }); t.after(() => c.close());
     const proof = await c.kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic request journal certification'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.admin.id], admins: true, packs: [], shareable: false } });
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, premises: { request_journal: { version: '1', evidence: [`src:${proof.body.sha256}`] } }, receipt: { ...c.executor.definition.receipt, stage: '/phase', reached_device: '/touched', stages: { admission: 'target_rejected' } } });
+    await c.freezeExecutor();
     const result = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.equal(result.outcome, reached ? 'unknown' : 'target_rejected');
     assert.equal(result.frozen, reached);
     if (!reached) {
-      const current=await c.registry.get(c.executor.id);
-      await c.registry.update(c.admin,c.executor.id,{...current!.definition,poll_ms:current!.definition.poll_ms+1});
       const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
       const intents = await c.kit.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [c.run] });
       assert.ok(next.job !== result.job);

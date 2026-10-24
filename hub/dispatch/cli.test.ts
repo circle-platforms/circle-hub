@@ -53,7 +53,7 @@ test('invalid or misplaced flags never echo argument values and commands close o
   let closed = 0; c.service.options.close = async () => { closed++; };
   const source = c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
   source.plan_run = 'different';
-  await assert.rejects(jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]));
+  assert.equal(await jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]),1);
   assert.equal(closed, 1);
 });
 

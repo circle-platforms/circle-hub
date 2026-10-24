@@ -121,6 +121,54 @@
             "evidence"
           ],
           "additionalProperties": false
+        },
+        "retry_safety": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "evidence": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^src:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "required": [
+            "version",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "window_resend": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "evidence": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^src:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "required": [
+            "version",
+            "evidence"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

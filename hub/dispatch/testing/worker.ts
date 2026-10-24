@@ -1,3 +1,4 @@
+import {effectsDocument} from './effects.ts';
 // Synthetic child-process harness; credentials and database locations arrive over stdin, never argv or stdout.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,9 +14,11 @@ const kit = await openRecords(input.config, { migrate: false, keyProvider: new F
 const db = new Database(createPool(input.config.database, 2));
 try {
   const detail = input.detail as RunDetail;
-  const service = new DispatchService({ records: kit, leases: new LeaseService(db, { now: async () => now() }),
+  const proof=detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
+  const parameters={target:proof.bed.id,manifest_sha256:proof.bed.manifest_sha256,build:proof.build,sha256:proof.sha256,items:proof.autoids,generator:proof.generator};
+  const service = new DispatchService({ recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策支持',grounds:[],tier:'blocking'}]])),records: kit, leases: new LeaseService(db, { now: async () => now() }),
     runs: { getRun: async (_by, id) => id === detail.run.run ? detail : id === detail.run.predecessor ? { ...detail, run: { ...detail.run, run: id, predecessor: undefined } } : null },
-    workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }] } as unknown as LoadedWorkflow) }, now });
+    workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>effectsDocument(parameters) } as unknown as LoadedWorkflow) }, now });
   if (process.send) { process.send({ ready: true }); await new Promise(resolve => process.once('message', resolve)); }
   const result = await service.dispatch(input.admin, detail.run.run, input.executor);
   process.stdout.write(JSON.stringify({ job: result.job, outcome: result.outcome, frozen: result.frozen }));

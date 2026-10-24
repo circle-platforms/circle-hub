@@ -931,7 +931,7 @@ const base = z.strictObject({
   environment:EnvironmentSchema.optional(),
   retry_safety: RetrySafetySchema.default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
-  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional() }).default({}),
+  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),retry_safety:certificate.optional(),window_resend:certificate.optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !h.toLowerCase().startsWith('mcp-') && !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),
   precheck_context: z.record(z.string(), z.unknown()).default({}),
@@ -966,6 +966,7 @@ const definition=base.superRefine((d, ctx) => {
     if(w.evidence.call!==d.calls.result.tool || w.evidence.pointer!==d.result.sha256)ctx.addIssue({code:'custom',path:['calls','submit','write','evidence'],message:'回读证据须对应结果调用和摘要指针'});
     if(w.refusal.stage!==d.receipt.stage || w.refusal.reached_device!==d.receipt.reached_device)ctx.addIssue({code:'custom',path:['calls','submit','write','refusal'],message:'拒绝阶段须对应投递回执的声明'});
     if(w.before_state && (w.before_state.call.tool===d.calls.submit.tool || !d.allowed_tools.includes(w.before_state.call.tool)))ctx.addIssue({code:'custom',path:['calls','submit','write','before_state','call'],message:'前状态调用不在允许清单内'});
+    if(w.before_state?.conditional_write && countBindings(d.calls.submit.arguments,'before_state')!==1)ctx.addIssue({code:'custom',path:['calls','submit','arguments'],message:'条件写必须且只能绑定一次 before_state'});
   } else if(d.retry_safety!=='unsafe' && d.retry_safety!=='dedup_window')ctx.addIssue({code:'custom',path:['retry_safety'],message:'其他重试类须提供完整写声明'});
   const u = new URL(d.endpoint); const host = u.hostname.replace(/^\[|\]$/g, '');
   const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
