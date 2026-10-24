@@ -354,7 +354,7 @@ function notAccepted(base: Basis, errors: ProtocolError[]): ValidationResult {
     partitions: emptyPartitions(),
     cross_item: [],
     coverage: { complete: false, examined: 0, total: run.items.length, note: '提交未受理，没有分区' },
-    locks: { pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: base.call.traceId,
   };
 }
@@ -476,6 +476,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const refusals=new Map<string,string>();
   const admission=capability===undefined?undefined:{requirement:capability.requirement,outcomes:new Map<string,CheckOutcome[]>()};
   const contributionScope: ContributionScope = {
+          additionalRoots: run.unversioned_root ? [{ root: run.unversioned_root, composition: (()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='unversioned_root')?.statement.data?.composition;return typeof value==='string'?value:null;})() }] : [],
           model:submission.model,session:sessionOf(call),
           composition:(()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='build'&&c.statement.data?.root===run.root)?.statement.data?.composition;return typeof value==='string'?value:null;})(),
           root:run.root ?? null, product:run.product ?? null, resolve:async reference => {

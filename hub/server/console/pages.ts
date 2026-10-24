@@ -411,6 +411,9 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         current === null ? '—' : html`${link('/console/knowledge/tree', current.root.slice(0, 16), { root: current.root, path: '/' })}（${current.build.name}）`,
       ]);
     }
+    const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
+    rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
+      unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
     blocks.push(
       section(
         `${line.title}（${line.id}）`,
@@ -482,7 +485,7 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
       html`<p>${code(root)} ${link('/console/knowledge/tree', '浏览树', { root, path: '/' })}</p>
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],
-  infos.map((info) => [code(info.composition), info.product, info.build.name, info.build.family, info.build.line, info.produced_at]),
+  infos.map((info) => [code(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '—', info.build?.line ?? '不分版本', info.produced_at]),
 )}`,
     ),
   };

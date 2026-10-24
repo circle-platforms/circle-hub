@@ -815,6 +815,8 @@ function startText(v: StartOut, context: TextContext): string {
   const target = [r.product && `产品 ${headClip.field(r.product, CLIP.name, '产品名的超出部分')}`, r.version && `版本 ${headClip.field(r.version, CLIP.name, '版本名的超出部分')}`, r.build && `构建 ${headClip.field(r.build, CLIP.name, '构建名的超出部分')}`].filter(Boolean);
   if (target.length > 0) head.push(target.join('，'));
   head.push(r.root !== undefined ? `锁定的知识根 ${r.root}` : '知识根：没有锁定');
+  if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
+  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if (full !== null && layout !== null && production !== null) {

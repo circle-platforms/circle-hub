@@ -181,7 +181,7 @@ describe('tree references', () => {
     ]);
     for (const [info, sha] of [[acme, shaA], [zeta, shaZ]] as const) {
       const bound = await w.knowledge.treeReader({ composition: info.composition }).read(acme.root, '/commands/net/ping', entry, reader);
-      assert.deepEqual([...shas(bound?.grounds)], [sha], info.build.name);
+      assert.deepEqual([...shas(bound?.grounds)], [sha], info.build!.name);
       assert.deepEqual((bound?.validity as { premises: string[] }).premises.slice(0, 1), [`rec:${info.composition}`]);
     }
   });

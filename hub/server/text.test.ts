@@ -1266,6 +1266,12 @@ test('node definitions and children precede relation hints and the omitted hint 
   assert.ok(text.includes(view));
 });
 
+test('start_run prints the locked product-wide root beside the build root', () => {
+  const run = {...runOf(items(1)),version:'10.6',unversioned_root:H('b')};
+  const text = toolText('start_run',startAnswer(run));
+  assert.match(text,new RegExp(`不分版本的知识根 ${H('b')}`));
+});
+
 test('large function-only structure summaries have real cursor continuation without inventing source text',()=>{
  const reference=`src:${H('e')}`;
  const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['field'+i,'value'+i]));

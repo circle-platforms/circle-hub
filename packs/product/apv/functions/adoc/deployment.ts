@@ -91,6 +91,7 @@ export function addAdocSources(build:BuildInfo,options:Record<string,unknown>,re
 export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  const family=input.params.family;
  if(typeof family!=='string'||!(PRODUCT_LINE.names as readonly string[]).includes(family))return stop('family_not_a_name','生产器需要 product.json names 中的一个名称族');
+ if(!input.build)throw new TypeError('名称族手册构建生产缺少 build；下一步：按构建生产器声明绑定具体构建后重新生产');
  if(input.params.root===null)return manual(input);
  const root=directoryOf(input.params.root,input.build.line)!;
  const meta=input.slots.meta;

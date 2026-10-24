@@ -71,9 +71,9 @@ describe('a plan that lists 500 documents for a build', () => {
     // The build record names the list role; the production keeps the list the plan gave, by reference.
     const records = await w.kit.store.find<{ build: BuildInfo; lists?: string[] }>({ key: INDEX.build, value: 'acme/rel_acme_1_2_15', kind: 'claim', limit: 5 });
     assert.deepEqual(records.items[0].body.lists, ['cases']);
-    assert.equal(records.items[0].body.build.sources.cases, undefined);
+    assert.equal(records.items[0].body.build!.sources.cases, undefined);
     const production = await w.knowledge.store.latestProduction('acme', listed.name);
-    assert.equal((production?.detail.build.sources.cases as { count: number }).count, COUNT);
+    assert.equal((production?.detail.build!.sources.cases as { count: number }).count, COUNT);
     const root = report?.root as string;
     const page = await w.knowledge.getNodes({ root, paths: ['/commands/system/reboot', '/commands/net/ping'], depth: 0 }, w.admin);
     assert.deepEqual(page?.nodes.map((n) => n.entries.length), [1 + 250, 1 + 249]);
