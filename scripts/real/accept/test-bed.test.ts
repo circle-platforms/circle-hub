@@ -1,246 +1,113 @@
-// Tests of the test-bed scenario (synthetic tool results):
-// - a Hub-shaped answer with the exact free wording, the devices and the hours passes
-// - a missing qualifier, a missing bed, a wrong earliest-free moment, an unnamed device and wrong hours each fail
-// - the respond flow: search run -> its pages -> acquire run -> its pages -> done, following the next-page marker
+// Synthetic transcripts only: no connector, inventory read, model or persistent Hub is contacted.
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
-import type { LoggedTurn, Scenario } from '../lib/accept.ts';
-import type { Turn } from '../scripted-model.ts';
-import testBed, { IDLE_WORDING, earliestWording, type TestBedGold } from './test-bed.ts';
+import {describe,test} from 'node:test';
+import type {LoggedTurn} from '../lib/accept.ts';
+import type {Reply,Turn} from '../scripted-model.ts';
+import scenario,{IDLE_WORDING,earliestWording,type TestBedGold} from './test-bed.ts';
 
-const gold: TestBedGold = {
-  inventory: 'bed-topology',
-  need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 },
-  beds: [
-    { name: 'bed-a', free: 'idle' },
-    { name: 'bed-b', free: '2026-10-22T18:00:00.000Z' },
-  ],
-  acquire: { bed: 'bed-a', devices: ['apv0', 'client0'], hours: 2 },
-};
-
-const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-
-const searchRunText = [
-  '运行 run_1 完成：任务包 test-bed@1.1.0',
-  `完整结果 ${rec}：用 get_nodes 读第一页`,
-].join('\n');
-
-const searchPage = [
-  `内容 ${rec}：`,
-  `位置：条目 bed-a；陈述：台架 bed-a：${IDLE_WORDING}；没有记录（未知）`,
-  `位置：条目 bed-b；陈述：台架 bed-b：${earliestWording('2026-10-22T18:00:00.000Z')}；没有记录（未知）`,
-].join('\n');
-
-const acquireRunText = [
-  '运行 run_2 完成：任务包 test-bed@1.1.0',
-  `完整结果 ${rec}：用 get_nodes 读第一页`,
-].join('\n');
-
-const acquirePage = [
-  `内容 ${rec}：`,
-  '位置：条目 bed-a；陈述：预订 bed-a，设备 apv0、client0，2 小时',
-].join('\n');
-
-const turnsOf = (...texts: string[]): LoggedTurn[] => [
-  { index: 0, toolResults: [], tools: ['hub_start_run'] },
-  ...texts.map((text, at) => ({ index: at + 1, toolResults: [{ id: `r${at}`, text, isError: false }], tools: [] })),
+const FIX='台架预订不限时长，用完由运行释放';
+const gold:TestBedGold={inventory:'synthetic-bed-topology',need:{devices:[{type:'load-balancer',count:1},{type:'client',count:1}]},beds:[{name:'bed-a',free:'idle',ownership:'你登记的'},{name:'bed-b',free:'held',ownership:'有主人'},{name:'bed-c',free:'2026-10-24T18:00:00.000Z',ownership:'未登记'}],acquire:{bed:'bed-a',devices:['dut0','client0']},release:true};
+const run=(char:string)=>'run_'+char.repeat(26);
+const SEARCH=run('a'),BOOKING=run('b'),RELEASE=run('c');
+const reference=(char:string)=>'rec:'+char.repeat(64);
+const start=(id:string,ref:string)=>`运行 ${id}：任务包 test-bed@1.2.0\n完整结果 ${ref}：用 get_nodes 读第一页`;
+const refusal=`出错：SUBMISSION_SCHEMA_VIOLATION\n不再接受 hours 或 extend\n修正：${FIX}`;
+const searchPage=`台架 bed-a：${IDLE_WORDING}；你登记的\n台架 bed-b：Hub 记录里被占用，没有到期时刻（未排除本地操作）；有主人\n台架 bed-c：${earliestWording('2026-10-24T18:00:00.000Z')}；未登记`;
+const acquirePage='预订 bed-a，设备 dut0、client0，不限时长，用完由运行释放';
+const releasePage=`释放 bed-a 的预订 ${BOOKING}，设备 dut0、client0`;
+type Response={text:string;error?:boolean};
+const responses=():Response[]=>[
+ {text:start(SEARCH,reference('a'))},{text:searchPage},
+ {text:refusal,error:true},{text:refusal,error:true},
+ {text:start(BOOKING,reference('b'))},{text:acquirePage},
+ {text:refusal,error:true},
+ {text:start(RELEASE,reference('c'))},{text:releasePage},
 ];
+const turn=(index:number,response?:Response):Turn=>({index,system:null,messages:[],tools:[],toolResults:response?[{id:'r'+index,text:response.text,isError:response.error===true}]:[]});
+async function replay(values=responses()){
+ const s=scenario(gold),turns:LoggedTurn[]=[],replies:Reply[]=[];
+ for(let i=0;i<=values.length;i++){
+  const t=turn(i,values[i-1]);const reply=await s.respond(t);replies.push(reply);
+  turns.push({index:i,toolResults:t.toolResults,tools:reply.flatMap(block=>'tool'in block?[block.tool]:[])});
+ }
+ return {s,turns,replies};
+}
+const failed=(value:Awaited<ReturnType<typeof replay>>)=>value.s.check(value.turns).filter(check=>!check.ok);
 
-const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
-const fullTurns = (): LoggedTurn[] => turnsOf(searchRunText, searchPage, acquireRunText, acquirePage);
+describe('unlimited test-bed scenario',()=>{
+ test('searches without hours, verifies three legacy refusals, acquires without TTL and releases from the booking lineage',async()=>{
+  const value=await replay();assert.deepEqual(failed(value),[]);
+  const starts=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run').map(block=>(block as {input:any}).input);
+  assert.deepEqual(starts.map(input=>input.parameters),[
+   {action:'search',need:gold.need},
+   {action:'search',need:gold.need,hours:2},
+   {action:'search',need:{...gold.need,hours:2}},
+   {action:'acquire',bed:'bed-a',need:gold.need},
+   {action:'extend',booking:BOOKING},
+   {action:'release',booking:BOOKING},
+  ]);
+  assert.equal(starts[4].predecessor,BOOKING);assert.equal(starts[5].predecessor,BOOKING);
+  assert.ok(starts.every(input=>input.inputs.inventory.external==='doc:doc:synthetic-bed-topology'));
+  assert.equal(starts[3].predecessor,undefined);
+ });
+ test('old duration gold is refused before producing any request',()=>{
+  for(const change of [{need:{...gold.need,hours:2}},{acquire:{...gold.acquire,hours:2}},{extend:{hours:1}},{release:false}])assert.throws(()=>scenario({...gold,...change} as TestBedGold),/金标准/);
+ });
+ test('unexposed owner identities and registration prefixes are not silently accepted as checked gold',()=>{
+  for(const extra of [{owner:'synthetic-owner'},{prefix:'bed/bed-a/'}])assert.throws(()=>scenario({...gold,beds:[{...gold.beds[0],...extra}]}),/金标准/);
+ });
+ test('each successful operation needs its own run id and complete result reference',async()=>{
+  for(const at of [0,4,7]){const values=responses();values[at]={text:'出错：SOURCE_UNAVAILABLE',error:true};assert.ok(failed(await replay(values)).length);}
+  const values=responses();values[7].text=start(BOOKING,reference('c'));assert.ok(failed(await replay(values)).length);
+ });
+ test('legacy refusals require a tool error, the specific cause and the full correction in that same reply',async()=>{
+  for(const at of [2,3,6])for(const bad of [
+   {text:`运行 ${run('d')}\n${refusal}`,error:false},
+   {text:refusal,error:false},
+   {text:'出错：SOURCE_UNAVAILABLE\n'+FIX,error:true},
+   {text:'出错：不再接受 hours 或 extend',error:true},
+  ]){const values=responses();values[at]=bad;assert.ok(failed(await replay(values)).length,`${at}: ${JSON.stringify(bad)}`);}
+ });
+ test('a correction in another phase cannot make a missing refusal pass',async()=>{
+  const values=responses();values[2]={text:'出错：不再接受 hours 或 extend',error:true};values[1].text+='\n'+FIX;assert.ok(failed(await replay(values)).length);
+ });
+ test('the acquire must state unlimited duration and name every device and optional address',async()=>{
+  for(const text of [acquirePage.replace('不限时长，用完由运行释放','2 小时'),acquirePage.replace('、client0',''),acquirePage.replace('client0','client01')]){const values=responses();values[5].text=text;assert.ok(failed(await replay(values)).length);}
+  const value=await replay();const s=scenario({...gold,acquire:{...gold.acquire,addresses:['192.0.2.10']}});assert.ok(s.check(value.turns).some(check=>!check.ok));
+ });
+ test('release must name the actual booking and all devices; an echoed request does not prove release',async()=>{
+  for(const text of ['',releasePage.replace(BOOKING,SEARCH),releasePage.replace('、client0','')]){const values=responses();values[8].text=text;assert.ok(failed(await replay(values)).length);}
+ });
+ test('bed availability and ownership are checked on the search pages, not later echoed text',async()=>{
+  for(const bad of [searchPage.replace(IDLE_WORDING,'空闲'),searchPage.replace('没有到期时刻','稍后到期'),searchPage.replace('18:00:00','19:00:00'),searchPage.replace('；你登记的','；有主人'),searchPage.split('\n').slice(0,2).join('\n')]){
+   const values=responses();values[1].text=bad;values[5].text+='\n'+searchPage;assert.ok(failed(await replay(values)).length);
+  }
+ });
+ test('reads search pagination before probing or booking and never treats a capped page as complete',async()=>{
+  const s=scenario(gold);await s.respond(turn(0));await s.respond(turn(1,responses()[0]));
+  const more=`\n下一页：get_nodes {"reference":"${reference('a')}","cursor":"next"}`;
+  const reply=await s.respond(turn(2,{text:searchPage+more}));assert.deepEqual(reply,[{tool:'hub_get_nodes',input:{reference:reference('a'),cursor:'next'}}]);
+  for(let index=3;index<=5;index++)await s.respond(turn(index,{text:searchPage+more}));
+  const logs:LoggedTurn[]=[{index:0,toolResults:[],tools:['hub_start_run']},...Array.from({length:5},(_,i)=>({index:i+1,toolResults:[{id:'r',text:i===0?responses()[0].text:searchPage+more,isError:false}],tools:[]}))];
+  assert.ok(s.check(logs).some(check=>!check.ok));
+ });
+ test('an unrelated pagination reference stops the flow and fails instead of reading it',async()=>{
+  const s=scenario(gold);await s.respond(turn(0));await s.respond(turn(1,responses()[0]));
+  const reply=await s.respond(turn(2,{text:searchPage+`\n下一页：get_nodes {"reference":"${reference('f')}","cursor":"next"}`}));assert.ok('text'in reply[0]);
+ });
 
-describe('test-bed scenario checks', () => {
-  const scenario = testBed(gold);
-
-  test('holds on a Hub-shaped answer with the exact wording, the devices and the hours', () => {
-    assert.ok(allOk(scenario, fullTurns()), JSON.stringify(scenario.check(fullTurns()), null, 2));
-  });
-
-  test('fails when the idle qualifier is not the exact wording', () => {
-    const bad = fullTurns();
-    bad[2].toolResults[0].text = searchPage.replace(IDLE_WORDING, '空闲');
-    const checks = scenario.check(bad);
-    assert.ok(!checks.every((c) => c.ok));
-    const bedA = checks.find((c) => c.name.includes('台架 bed-a'));
-    assert.ok(bedA && !bedA.ok);
-  });
-
-  test('fails when a bed has no conclusion', () => {
-    const bad = fullTurns();
-    bad[2].toolResults[0].text = searchPage.split('\n').filter((line) => !line.includes('bed-b')).join('\n');
-    const checks = scenario.check(bad);
-    const bedB = checks.find((c) => c.name.includes('台架 bed-b'));
-    assert.ok(bedB && !bedB.ok && bedB.actual.includes('没有这个台架的结论'));
-  });
-
-  test('fails when the earliest-free moment differs from the gold', () => {
-    const bad = fullTurns();
-    bad[2].toolResults[0].text = searchPage.replace('2026-10-22T18:00:00.000Z', '2026-10-22T20:00:00.000Z');
-    const checks = scenario.check(bad);
-    const bedB = checks.find((c) => c.name.includes('台架 bed-b'));
-    assert.ok(bedB && !bedB.ok);
-  });
-
-  test('fails when the acquire conclusion does not name a device', () => {
-    const bad = fullTurns();
-    bad[4].toolResults[0].text = acquirePage.replace('apv0、client0', 'apv0');
-    const checks = scenario.check(bad);
-    const device = checks.find((c) => c.name.includes('client0'));
-    assert.ok(device && !device.ok);
-  });
-
-  test('fails when the hours differ', () => {
-    const bad = fullTurns();
-    bad[4].toolResults[0].text = acquirePage.replace('2 小时', '4 小时');
-    const checks = scenario.check(bad);
-    const hours = checks.find((c) => c.name.includes('时长'));
-    assert.ok(hours && !hours.ok);
-  });
-
-  test('fails when a run errors instead of producing a result', () => {
-    const bad = fullTurns();
-    bad[3].toolResults[0].text = '出错：LEASE_UNAVAILABLE：bed/bed-a/apv0 被占';
-    const checks = scenario.check(bad);
-    const runs = checks.find((c) => c.name.includes('次运行'));
-    assert.ok(runs && !runs.ok);
-  });
-});
-
-describe('test-bed scenario respond flow', () => {
-  const makeTurn = (index: number, text = ''): Turn => ({
-    index,
-    system: null,
-    messages: [],
-    tools: [],
-    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
-  });
-
-  test('search run, its pages, acquire run, its pages, done', async () => {
-    const s = testBed(gold);
-    const start = await s.respond(makeTurn(0));
-    assert.deepEqual(start, [{
-      tool: 'hub_start_run',
-      input: {
-        pack: 'test-bed',
-        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
-        parameters: { action: 'search', need: { devices: gold.need.devices, hours: 2 } },
-      },
-    }]);
-
-    const page1 = await s.respond(makeTurn(1, searchRunText));
-    assert.deepEqual(page1, [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
-
-    const acquire = await s.respond(makeTurn(2, searchPage));
-    assert.deepEqual(acquire, [{
-      tool: 'hub_start_run',
-      input: {
-        pack: 'test-bed',
-        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
-        parameters: { action: 'acquire', bed: 'bed-a', need: { devices: gold.need.devices, hours: 2 } },
-      },
-    }]);
-
-    const acquirePage1 = await s.respond(makeTurn(3, acquireRunText));
-    assert.deepEqual(acquirePage1, [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
-
-    const done = await s.respond(makeTurn(4, acquirePage));
-    assert.deepEqual(done, [{ text: '搜索和预订完成。' }]);
-  });
-
-  test('follows the next-page marker within a run, then moves on', async () => {
-    const s = testBed(gold);
-    await s.respond(makeTurn(0));
-    await s.respond(makeTurn(1, searchRunText));
-    const page1WithMore = `${searchPage}\n下一页：get_nodes {"reference":"${rec}","cursor":"1.0-token"}`;
-    const page2 = await s.respond(makeTurn(2, page1WithMore));
-    assert.deepEqual(page2, [{ tool: 'hub_get_nodes', input: { reference: rec, cursor: '1.0-token' } }]);
-    const acquire = await s.respond(makeTurn(3, searchPage));
-    assert.ok('tool' in acquire[0] && acquire[0].tool === 'hub_start_run');
-  });
-
-  test('finishes early when the search run gives no result reference', async () => {
-    const s = testBed(gold);
-    await s.respond(makeTurn(0));
-    const reply = await s.respond(makeTurn(1, '出错：SOURCE_UNAVAILABLE'));
-    assert.deepEqual(reply, [{ text: '搜索没有给出完整结果的引用。' }]);
-  });
-});
-
-describe('test-bed scenario with extend and release', () => {
-  const fullGold: TestBedGold = { ...gold, extend: { hours: 3 }, release: true };
-  const BOOKING = `run_${'a'.repeat(26)}`;
-  const EXTEND_RUN = `run_${'b'.repeat(26)}`;
-  const RELEASE_RUN = `run_${'c'.repeat(26)}`;
-  const acquireRunText2 = acquireRunText.replace('运行 run_2', `运行 ${BOOKING}`);
-  const extendRunText = ['运行 ' + EXTEND_RUN + ' 完成：任务包 test-bed@1.1.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
-  const extendPage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：续期 bed-a 的预订 ${BOOKING}，设备 apv0、client0，延长 3 小时`].join('\n');
-  const releaseRunText = ['运行 ' + RELEASE_RUN + ' 完成：任务包 test-bed@1.1.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
-  const releasePage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：释放 bed-a 的预订 ${BOOKING}，设备 apv0、client0`].join('\n');
-
-  const makeTurn = (index: number, text = ''): Turn => ({
-    index,
-    system: null,
-    messages: [],
-    tools: [],
-    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
-  });
-
-  test('the flow chains search, acquire, extend (predecessor is the booking) and release (predecessor is the extend run)', async () => {
-    const s = testBed(fullGold);
-    const search = await s.respond(makeTurn(0));
-    assert.deepEqual((search[0] as { input: { parameters: unknown } }).input.parameters, { action: 'search', need: { devices: gold.need.devices, hours: 2 } });
-    await s.respond(makeTurn(1, searchRunText));
-    const acquire = await s.respond(makeTurn(2, searchPage));
-    assert.deepEqual((acquire[0] as { input: { parameters: unknown } }).input.parameters, { action: 'acquire', bed: 'bed-a', need: { devices: gold.need.devices, hours: 2 } });
-    await s.respond(makeTurn(3, acquireRunText2));
-    const extend = await s.respond(makeTurn(4, acquirePage));
-    assert.deepEqual(extend, [{
-      tool: 'hub_start_run',
-      input: {
-        pack: 'test-bed',
-        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
-        parameters: { action: 'extend', booking: BOOKING, hours: 3 },
-        predecessor: BOOKING,
-      },
-    }]);
-    await s.respond(makeTurn(5, extendRunText));
-    const release = await s.respond(makeTurn(6, extendPage));
-    assert.deepEqual(release, [{
-      tool: 'hub_start_run',
-      input: {
-        pack: 'test-bed',
-        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
-        parameters: { action: 'release', booking: BOOKING },
-        predecessor: EXTEND_RUN,
-      },
-    }]);
-    await s.respond(makeTurn(7, releaseRunText));
-    const done = await s.respond(makeTurn(8, releasePage));
-    assert.deepEqual(done, [{ text: '释放完成。' }]);
-  });
-
-  const fullTurns2 = (): LoggedTurn[] => turnsOf(searchRunText, searchPage, acquireRunText2, acquirePage, extendRunText, extendPage, releaseRunText, releasePage);
-
-  test('checks hold on the full Hub-shaped answer', () => {
-    const s = testBed(fullGold);
-    assert.ok(allOk(s, fullTurns2()), JSON.stringify(s.check(fullTurns2()).filter((c) => !c.ok), null, 2));
-  });
-
-  test('checks fail when the extend conclusion names the wrong extension', () => {
-    const bad = fullTurns2();
-    bad[6].toolResults[0].text = extendPage.replace('延长 3 小时', '延长 5 小时');
-    const s = testBed(fullGold);
-    const checks = s.check(bad);
-    const extend = checks.find((c) => c.name.includes('续期结论'));
-    assert.ok(extend && !extend.ok);
-  });
-
-  test('checks fail when the release conclusion is missing', () => {
-    const bad = fullTurns2();
-    bad[8].toolResults[0].text = '内容：没有释放';
-    const s = testBed(fullGold);
-    const checks = s.check(bad);
-    const release = checks.find((c) => c.name.includes('释放结论'));
-    assert.ok(release && !release.ok);
-  });
+ test('a failed extend probe or acquire-page read still triggers release of the known booking',async()=>{
+  for(const at of [5,6]){const values=responses();values[at]={text:'出错：SOURCE_UNAVAILABLE',error:true};const value=await replay(values);
+   assert.ok(failed(value).length);
+   const releases=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run'&&(block.input as any).parameters.action==='release');
+   assert.equal(releases.length,1);assert.equal((releases[0] as {input:any}).input.predecessor,BOOKING);
+  }
+ });
+ test('an unregistered ownership gold adds no registration or forced-release action',async()=>{
+  const value=await replay();const actions=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run').map(block=>(block as {input:any}).input.parameters.action);
+  assert.ok(!actions.some(action=>['register','unregister','force_release'].includes(action)));
+ });
+ test('a new scenario instance can independently grade the logged transcript',async()=>{
+  const value=await replay();assert.ok(scenario(gold).check(value.turns).every(check=>check.ok));
+ });
 });
