@@ -702,3 +702,9 @@ Receipt reuse is gated by the current same-owner successor state and the frozen 
 settled contribution receipt does not stand in for a missing caller session; refused calls keep their own receipt and
 charge no session-repair round. Cached success cannot revive a superseded run. Ordinary settled contribution retries
 still reuse their original receipt and do not append effects.
+
+Error-handling selector priority is exact code, then generated reason, then `*`, regardless of row order. The wildcard
+also covers outcomes with a reason but no code. Layer routing and request projection use the same selector. Cause-based
+repair rows contribute the declared requirement budget and actually route artifact work through its exhaustion path.
+Reject handling applies only to a blocking artifact refutation with a code; an unknown never becomes a rejection through
+an exact-code or wildcard row.

@@ -1,3 +1,4 @@
+import {isReason} from '../../../contracts/generated/vocabulary.ts';
 import { isAbandonedResult } from './management.ts';
 // Run-specific B07 routing. Shared storage is owned by hub/requests.
 import { ReferenceUri } from '../../../contracts/src/reference.ts';
@@ -30,7 +31,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
   const workflow=await ctx.deps.workflows.byDigest(run.pack_digest);
   for(const error of [...result.errors]) {
     const template=workflow?.requirements.find(t=>t.key===error.requirement);
-    const row=template?.error_handling.find(r=>r.code===error.code||r.reason===error.code)??template?.error_handling.find(r=>r.code==='*');
+    const row=routeOf(template?.error_handling??[],error.code,isReason(error.code)?error.code:undefined);
     if(row?.action!=='unknown'&&row?.action!=='request')continue;
     const audience=run.runner??run.configurer;
     if(!audience)throw new Error('请求缺少具名运行者');

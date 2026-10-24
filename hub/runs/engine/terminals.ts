@@ -140,9 +140,11 @@ export function staticTerminal(input: StaticInput): RawStatic {
   return { terminal: judgment ? 'judgment' : 'pass', ...none };
 }
 
-/** The error handling row for a code: the exact code, else `*` (W02 F[7]). */
+/** Selector priority: exact code, then generated cause, then wildcard (W02 F[7]). */
 export function routeOf(rows: readonly ErrorHandlingRow[], code?: string, reason?: Reason): ErrorHandlingRow | undefined {
-  return (code === undefined ? undefined : rows.find(r => r.code === code)) ?? (reason === undefined ? undefined : rows.find(r => r.reason === reason)) ?? (code === undefined ? undefined : rows.find(r => r.code === '*'));
+  const exact=code===undefined||code==='*'?undefined:rows.find(row=>row.code===code);
+  const cause=reason===undefined?undefined:rows.find(row=>row.reason===reason);
+  return exact??cause??rows.find(row=>row.code==='*');
 }
 
 /** Repair rounds of a requirement: the largest max_rounds of its repair rows, 0 without one (RequirementSummary.repair_rounds). */
@@ -180,7 +182,7 @@ export interface RoutedStatic {
  */
 export function rowApplies(row: ErrorHandlingRow, o: JudgedOutcome): boolean {
   if (row.action === 'repair') return o.judges === 'artifact_under_verification';
-  if (row.action === 'reject') return o.judges === 'artifact_under_verification' && o.outcome.tier === 'blocking';
+  if (row.action === 'reject') return row.code!==undefined&&o.outcome.verdict==='refute'&&o.outcome.code!==undefined&&o.judges === 'artifact_under_verification' && o.outcome.tier === 'blocking';
   return true;
 }
 
