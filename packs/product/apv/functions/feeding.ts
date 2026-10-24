@@ -4,8 +4,8 @@ import {commandIdentity} from './commands.ts';
 import {isoTime} from './sync.ts';
 // Feeding projection composes existing APV structural readers. It never classifies free text or guesses a version.
 import {caseNodes} from './cases-nodes.ts';
-import {elementDocument} from './cases.ts';
-import {commandCatalog,textCommands} from './cases-commands.ts';
+import {elementDocument,caseBody} from './cases.ts';
+import {commandCatalog,stepCommands} from './cases-commands.ts';
 import {folderLine} from './documents.ts';
 import {parseBuildName,lineKey} from './naming.ts';
 import {parseListing} from './listing.ts';
@@ -30,9 +30,8 @@ export default function project(input:unknown):unknown{
   const catalog=tree?commandCatalog(tree.model as XmlModel,tree.sha256 as string).catalog:null;
   const document=elementDocument({model,external:s.external})??text(s.key);if(!document)throw Error('缺文档身份；补原始文档字段后重读');
   for(const node of scan.cases){const declaration=declareResourceTags(node.resource);if(node.priority!==null&&typeof node.priority!=='number')throw Error('priority 不是原始整数');
-   const steps=(node.stepTexts??[]).map(text=>({text})),expects=(node.expectedTexts??[]).map(text=>({text}));
-   const parsed=catalog?textCommands(catalog,steps.map(step=>step.text)).results:[];
-   const commands=parsed.flatMap(row=>row.identities??[]),unparsed_steps=steps.filter((_,index)=>!parsed[index]?.states?.length||parsed[index].identities?.length!==parsed[index].states?.length).length;
+   const {steps,expects}=caseBody(node);
+   const {commands,unparsed_steps}=stepCommands(catalog,steps);
    // Identity retains the source value. An invalid tag declaration is local evidence, never a document exception.
    const content={autoid:node.autoid,priority:node.priority,resources:node.resource===undefined?[]:node.resource,steps,expects};
    const resource_declaration={status:declaration.status,present:declaration.present,raw_json:JSON.stringify(declaration.raw),types:declaration.types,table:declaration.table,missing:declaration.missing,next_action:declaration.next_action,violations:declaration.valid?[]:[{field:'resource',tier:'advisory',allowed_values:[...RESOURCE_TAG_TEXTS],statement:'未声明的标签：'+declaration.issues.map(issue=>JSON.stringify(issue.raw)).join('、')+'；resource 应改为发布闭集的精确原文：'+RESOURCE_TAG_TEXTS.join('、')+'；不推测原值对应哪项',next_action:declaration.next_action!}]};

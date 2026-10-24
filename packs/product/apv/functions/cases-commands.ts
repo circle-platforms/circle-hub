@@ -29,3 +29,10 @@ export function textCommands(catalog:CommandCatalog,texts:readonly string[]):{re
   });
   return {results,warnings:[]};
 }
+
+/** The same fully consumed identity check for authored steps in either mind-map layout. A step with any
+ * unparsed line (or no checked tree) stays in the missing-step count; parent labels and expectations cannot fill it. */
+export function stepCommands(catalog:CommandCatalog|null,steps:readonly {text:string}[]):{commands:import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity[];unparsed_steps:number}{
+ const parsed=catalog?textCommands(catalog,steps.map(step=>step.text)).results:[];
+ return {commands:parsed.flatMap(row=>row.identities??[]),unparsed_steps:steps.filter((_,index)=>!parsed[index]?.states?.length||parsed[index].identities?.length!==parsed[index].states?.length).length};
+}
