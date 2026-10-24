@@ -474,7 +474,6 @@ export class KnowledgeViews {
       changedPaths++;
       attachedFrom += fromAll.length;
       attachedTo += toAll.length;
-      if (full || changedPaths <= page.offset) continue;
       const flaggedChange = [...before, ...after].filter((d) => exclude.has(d));
       if (flaggedChange.length > 0) {
         excludedPaths.push(node.path);
@@ -483,6 +482,7 @@ export class KnowledgeViews {
       }
       for (const digest of fromAll) if (exclude.has(digest)) excludedEntries.set(digest, treeReference(from.root, node.path, digest));
       for (const digest of toAll) if (exclude.has(digest)) excludedEntries.set(digest, treeReference(to.root, node.path, digest));
+      if (full || changedPaths <= page.offset) continue;
       const fromAttached = fromAll.filter((d) => !exclude.has(d));
       const toAttached = toAll.filter((d) => !exclude.has(d));
       const change: PathChange = { path: node.path, change: before.length === 0 ? 'added' : after.length === 0 ? 'removed' : 'modified', before, after };
