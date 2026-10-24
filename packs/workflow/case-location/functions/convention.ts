@@ -1,9 +1,19 @@
 // Product facts of the case-location scheme (pack data of the line the workflow binds, never core code): the agile tree's
-// folder convention under the product project (`NNN：<line>` → `NNN：<line>-<train>` → module → document), the owner's
-// version scheme over folder labels (build date `build<8 digits>`, patch `patch<n[.n]>`, version `[A-Za-z_-]*v?<n.n[.n[.n]]>`,
-// in that priority order) with its guards, version labels (a label that is only a version), and the build names written in
-// the line's name families (`Rel_<FAMILY>_<n>_<n>_<n>_<build>`), found as written and never derived. Labels are compared in
-// NFKC, so full-width digits and colons count like ASCII ones.
+// folder convention under the product project (`NNN：<line>` → `NNN：<line>-<train>` → module → document), the version
+// form of a whole folder label, version labels (a label that is only a version), and the build names written in the line's
+// name families (`Rel_<FAMILY>_<n>_<n>_<n>_<build>`), found as written and never derived.
+//
+// apv-directory@1 (declared grammar; origin: the line's directory naming as reviewed, docs/hub-r4-architecture.md 6a,
+// declared for the owner's R6 rule 2026-10-24). Every layer is read from a whole label, by syntax only:
+//   prefix code   three ASCII letters or digits with at least one digit, in up to four `-`-joined groups, then optional
+//                 spaces and an ASCII or full-width colon;
+//   line          the whole label after the code is `v?<n.n[.n[.n]]>`;
+//   train         the whole label after the code is `v?<n.n[.n[.n]]>`, one or more of `-`, `_` or a space, then a
+//                 non-empty single-line suffix;
+//   module        the whole label below a train node: one line, 1 to 1000 characters;
+//   version label the whole label is an optional name prefix of letters, `_` and `-`, an optional `v` and the numbers.
+// Nothing is folded (no NFKC, no case or width folding) and nothing is excluded by meaning: a label the grammar does not
+// read is an unknown layer with the exit that the pack author declares the form or the author renames the folder.
 import { PACK, fold, nfkc, validDate } from './text.ts';
 
 /** Chinese labels of the pack's closed sets (tables/codes.json declares the same). */
@@ -26,7 +36,7 @@ export const MAX_LABEL = 1000;
  */
 const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*[:：]\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
-const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_]([^\r\n]+)$/;
+const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_\s]+([^\r\n]+)$/i;
 
 export type Label = {
   /** The label in matching form (NFKC, white space squeezed, cut at MAX_LABEL). */
@@ -43,36 +53,50 @@ export function parseLabel(raw: string): Label {
   return match ? { text, code: match[1], rest: text.slice(match[0].length).trim() } : { text, code: null, rest: text };
 }
 
-/** The version line of a line node `NNN：<line>`, or null (also for a guarded number such as an address). */
+/** The version line of a line node `NNN：<line>`, or null when the label after the code is not wholly a line. */
 export function lineOfLabel(label: Label): string | null {
   if (label.code === null) return null;
+  // LINE consumes the whole label after the code, so an optional `v` prefix cannot hide a version mentioned in words.
   const match = LINE.exec(label.rest);
-  if (match === null) return null;
-  const start = label.rest.indexOf(match[1]);
-  return notAVersion(label.rest, start, start + match[1].length, match[1]) === null ? match[1] : null;
+  return match === null ? null : match[1];
 }
 
-/** A release train node `NNN：<line>-<suffix>` (or a space before the suffix): the train text and its version, or null. */
+/** A release train node `NNN：<line>-<suffix>` (or `_`, or a space before the suffix): the train text and its version, or null. */
 export function trainOfLabel(label: Label): { train: string; version: string } | null {
   if (label.code === null) return null;
+  // TRAIN consumes the whole label after the code, so the version it names cannot be one mentioned inside other words.
   const match = TRAIN.exec(label.rest);
-  if (match === null) return null;
-  const start = label.rest.indexOf(match[1]);
-  return notAVersion(label.rest, start, start + match[1].length, match[1]) === null ? { train: label.rest, version: match[1] } : null;
+  return match === null ? null : { train: label.rest, version: match[1] };
 }
 
-/** The owner's version expression over a whole label (after its prefix code): `10.6.1`, `V10.7.0`, `NSAE_10.7.3`. */
-const PURE_VERSION = /^[A-Za-z_-]*v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/;
+/** apv-directory@1, version form: two to four dotted numbers of one to three digits, with an optional `v` or `V`. */
+const NUMBERS = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
 
 /**
- * The version of a version label: a label that is only a version in the owner's expression and reads as one version of the
- * scheme (not a patch, a protocol version or an address). A version written among other words is only mentioned.
+ * The version of a whole text in the declared version form: the numbers alone (`10.6.1`, `V10.7.0`), or a declared name of
+ * the bound line, one `_` or `-`, and the numbers (`NSAE_10.7.3`, `APV-10.7.6`). The name is compared by exact equality
+ * with the names the run bound (U23: no case or width folding, no synonym), so an arbitrary word before the numbers is
+ * not a version form: `patch1.2`, `TLSv1.3` and `build20260315` are labels this grammar does not read, and the layer
+ * stays unknown with the author's exit, rather than becoming a version by its shape or by a retired word guard.
  */
-export function pureVersionOf(label: Label): string | null {
-  const match = PURE_VERSION.exec(label.rest);
-  if (match === null) return null;
-  const { matches } = schemeScan(label.rest);
-  return matches.length === 1 && matches[0].kind === 'version' && matches[0].value === match[1] ? match[1] : null;
+export function versionForm(text: string, names: readonly string[] = []): string | null {
+  const bare = NUMBERS.exec(text);
+  if (bare !== null) return bare[1];
+  for (const separator of ['_', '-']) {
+    const at = text.indexOf(separator);
+    if (at <= 0 || !names.includes(text.slice(0, at))) continue;
+    const rest = NUMBERS.exec(text.slice(at + 1));
+    if (rest !== null) return rest[1];
+  }
+  return null;
+}
+
+/**
+ * The version of a version label: a label whose whole text after the prefix code is a version in the declared form. A
+ * version written among other words is not read here (nothing is extracted from prose).
+ */
+export function pureVersionOf(label: Label, names: readonly string[] = []): string | null {
+  return versionForm(label.rest, names);
 }
 
 /** Module name of a label right below a release train: a plain name, not an activity, document, version or id folder. */
@@ -90,17 +114,18 @@ export type SchemeMatch = { kind: SchemeKind; value: string; start: number; end:
 /** A label part the scheme read but could not use: an invalid build date or patch number (kept for the notes). */
 export type SchemeReject = { kind: 'build' | 'patch'; text: string };
 
-const BUILD_DATE = /build[\s_-]*([0-9]{8})$/gu;
-const PATCH_RUN = /patch[\s_-]*([0-9][0-9.]*)/giu;
-const PATCH_NUMBER = /^[0-9]{1,3}(?:\.[0-9]{1,3})?$/;
-const VERSION = /(?<![0-9.])v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?![0-9]|\.[0-9])/giu;
-/** apv-directory@1 accepts a whole label only; no semantic exclusions or prose extraction. */
+// The retired build-date, patch-run and in-prose version patterns are gone: the scheme reads a whole label only.
+/** apv-directory@1 accepts a whole label only: a version that does not span the text is outside the grammar ('grammar').
+ * No semantic exclusion (protocol, unit, quantity, address) is applied any more — the syntax decides, and a label the
+ * grammar does not read is an unknown layer with its exit. */
 export function notAVersion(text:string,start:number,end:number,_value:string): string|null {
   return start===0 && end===text.length ? null : 'grammar';
 }
-export function schemeScan(text: string): { matches: SchemeMatch[]; rejects: SchemeReject[] } {
-  const version = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/.exec(text);
-  return {matches:version ? [{kind:'version',value:version[1],start:0,end:text.length}] : [], rejects:[]};
+/** The scheme over one text: the declared version form when the whole text is a version, otherwise nothing. No prose is
+ * scanned and no build date or patch number is read any more, so nothing is rejected for its shape either. */
+export function schemeScan(text: string, names: readonly string[] = []): { matches: SchemeMatch[]; rejects: SchemeReject[] } {
+  const value = versionForm(text, names);
+  return { matches: value === null ? [] : [{ kind: 'version', value, start: 0, end: text.length }], rejects: [] };
 }
 export function schemeMatches(text: string): SchemeMatch[] {
   return schemeScan(text).matches;

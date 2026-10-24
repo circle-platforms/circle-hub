@@ -131,7 +131,7 @@ type Level = {
  * label that is only a version), with every line node of the path. Its versions must name one version line.
  */
 function versionLevel(labels: readonly Label[], conv: Convention, names: readonly string[], notes: Notes): Level {
-  const pure = labels.map(pureVersionOf);
+  const pure = labels.map((label) => pureVersionOf(label, names));
   const builds = labels.map(label => buildVersionsOf(label, names));
   const firstPure = pure.findIndex((v, at) => v !== null || builds[at].length > 0);
   const end = conv.trainAt >= 0 ? conv.trainAt : conv.lineNodes.length > 0 ? conv.lineNodes[0].at : firstPure;
@@ -246,8 +246,8 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   // ---- line, train, module and the version level
   const conv = convention(labels, notes);
   const level = versionLevel(labels, conv, names, notes);
-  const scans = labels.map((l) => schemeScan(l.text));
-  const titleScan = title === null ? null : schemeScan(parseLabel(title).text);
+  const scans = labels.map((l) => schemeScan(l.rest, names));
+  const titleScan = title === null ? null : schemeScan(parseLabel(title).text, names);
   scans.forEach((s) => rejected(s.rejects, '目录', notes));
   if (titleScan !== null) rejected(titleScan.rejects, '标题', notes);
   const versionsOf = (matches: readonly SchemeMatch[]): string[] => matches.filter((m) => m.kind === 'version').map((m) => m.value);
