@@ -723,3 +723,9 @@ A known layer that misses the expectation makes its requirement unsatisfied; oth
 pending. This integrator decision changes no raw layer, recovery exit, partition membership or unknown count.
 
 Submission-handling errors apply only to actual submit_result bodies. Fact production checks its bound artifacts directly and does not require a model handling declaration.
+
+Accepted unknowns following exhausted transient parent unavailability are rechecked by maintenance at most once per
+pass and at most three times. Only structured onAttempt evidence can set that signal; pack-authored sandbox fields
+cannot. Rechecks preserve the originally observed session, frozen input and distinct-submission repair charge. Continued
+failure appends a recomputable system-delivery input and a real administrator repair request, retaining old bytes and
+technical terminals. A fresh parent execution observation supplies the actual answer record after recovery.

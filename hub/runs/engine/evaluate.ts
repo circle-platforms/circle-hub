@@ -1,3 +1,4 @@
+import {attachParentRecovery} from './parent-recovery.ts';
 // The Hub recomputes everything itself (T03 R[1], W08): every check of every requirement re-runs through hub/rules with the
 // pack's table, the locked catalog and the subject; outcomes become the terminals of each (item, requirement, layer), the
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
@@ -85,6 +86,7 @@ export interface Evaluation {
   /** Requirements of the items the submission did not cover (W07 R[3]: also a repair round). */
   uncovered: Set<string>;
   retryAttempts: Array<Record<string, unknown>>;
+  parentObservedSuccess:boolean;
 }
 
 type Slots = Record<string, unknown> | null;
@@ -208,11 +210,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
   const retryAttempts: Array<Record<string, unknown>> = [];
+  let parentObservedSuccess=false;
   const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
     retryWallTimeout: true,
     onAttempt: attempt => {
+      if(attempt.code===undefined)parentObservedSuccess=true;
       if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('validate', run.pack, attempt, { ...extra,
+        ...(attempt.code==='SANDBOX_UNAVAILABLE'&&!attempt.retry&&attempt.attempt>1?{parent_unavailable:true}:{}),
         ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}) }));
       try { ctx.deps.sandbox?.onAttempt?.(attempt); } catch { /* Diagnostics cannot change a check. */ }
     },
@@ -950,5 +955,6 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     locks: { pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
-  return { result, errors, problems, uncovered, retryAttempts };
+  attachParentRecovery(result,retryAttempts,ctx.now());
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess };
 }

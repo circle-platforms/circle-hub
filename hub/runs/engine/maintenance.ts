@@ -1,3 +1,5 @@
+import {parentUnavailable,needsParentRecovery} from './parent-recovery.ts';
+import {ENGINE_COMPONENT} from './deps.ts';
 import { abandonDecision,finishAbandon } from './management.ts';
 import { canSeeRun } from './readers.ts';
 import { recheckProduction } from './start.ts';
@@ -20,7 +22,7 @@ export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
   await repairedPackRequests(ctx);
@@ -252,4 +254,51 @@ async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRec
 /** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
 function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
   return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,events:j.status.events,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
+}
+
+/** Replay the same frozen work, with its recorded observer, after trusted transient parent exhaustion. */
+async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
+  const run=stored.body,store=ctx.deps.records.store,actions=await actionsOf(store,run.run);
+  const observed=(action:(typeof actions)[number])=>action.body.component===ENGINE_COMPONENT&&action.body.action==='validate'&&action.body.detail.parent_observed_success===true&&!parentUnavailable(action.body.detail.retry_attempts);
+  const recoveredAt=actions.findLastIndex(observed);
+  for(const question of await requestRecords(ctx,run.run)){
+    if(question.answered_by!==null)continue;
+    const source=actions.findIndex(a=>a.digest===question.source&&typeof a.body.detail.parent_recovery_exhausted==='string');
+    const proof=recoveredAt>source&&source>=0?actions[recoveredAt]:null;
+    if(proof&&typeof proof.body.detail.result==='string')await answerRequest(ctx,question.record,proof.body.detail.result);
+  }
+  const latest=await latestAccepted(store,run.run);if(!latest||!needsParentRecovery(latest.body))return;
+  const successors=await import('./store.ts').then(m=>m.successorsOf(store,run.run));
+  if(successors.some(s=>(s.body.runner??s.body.configurer)===(run.runner??run.configurer)&&s.body.pack.split('@')[0]===run.pack.split('@')[0]))return;
+  const validator=[...actions].reverse().find(a=>a.body.component===ENGINE_COMPONENT&&a.body.action==='validate'&&a.body.detail.submission===latest.body.submission&&Array.isArray(a.body.detail.retry_attempts));
+  if(!validator||!parentUnavailable(validator.body.detail.retry_attempts))return;
+  const account=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');if(!account||account.disabled||!canSeeRun(account,run))return;
+  const source=latest.body.submission,attempts=actions.slice(recoveredAt+1).filter(a=>a.body.detail.parent_recheck===source).length;
+  const by={id:account.id,name:account.name,role:account.role};
+  if(attempts<3){
+    if(validator.body.detail.production===true)await ctx.lock('submit:'+run.run,()=>recheckProduction(ctx,stored,by,randomBytes(16).toString('hex')));
+    else{
+      const original=await submissionByDigest(store,run.run,source);if(!original||!isObject(original.body)||isVerbatimObject(original))return;
+      const session=typeof validator.body.detail.session==='string'?validator.body.detail.session:null;
+      if(session===null&&run.requirements.some(r=>r.accepted_producer==='independent_judgment'))return;
+      await submitResult(ctx,by,original.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true);
+    }
+    const result=await latestAccepted(store,run.run),at=ctx.now().toISOString();
+    await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+latest.digest],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{parent_recheck:source,attempt:attempts+1,result:result?.digest??null,repair:[]}});
+    if(attempts+1<3||!result||!needsParentRecovery(result.body))return;
+    const fresh=(await actionsOf(store,run.run)).findLast(a=>a.body.detail.submission===source&&Array.isArray(a.body.detail.retry_attempts));if(!fresh||!parentUnavailable(fresh.body.detail.retry_attempts))return;
+  }
+  await ctx.lock('submit:'+run.run,async()=>{
+    const result=await latestAccepted(store,run.run);if(!result||!needsParentRecovery(result.body))return;
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);if(!admin)throw new Error('父级核验恢复缺少具名管理员');
+    const input={run:run.run,source_result:result.digest,source_submission:source,automatic_rechecks:3,observed_at:ctx.now().toISOString()};
+    const action=await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+result.digest],startedAt:ctx.now().toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],detail:{input,parent_recovery_exhausted:source}});
+    const question=await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:action.digest,code:'check_error',missing:'父级核验能力在三次自动重评后仍未恢复，缺少可用的宿主沙箱执行观察',next_action:'管理员核对宿主沙箱及进程资源并修复；恢复后请原运行者带原会话用 submit_result 原样重交，实际父级执行成功后关闭本请求；不修改旧结果、不声称包作者已发布修复版本'});
+    const projected=structuredClone(result.body);projected.submission=digestOf(input);projected.system_input='rec:'+action.digest;projected.trace=randomBytes(16).toString('hex');
+    const exit={action:'request' as const,request_kind:'repair' as const,audience:{user:admin.id},due:question.body.due};
+    for(const item of Object.values(projected.partitions).flat())for(const requirement of item.requirements)for(const layer of requirement.layers){if(layer.exit?.action==='reevaluate')layer.exit=structuredClone(exit);for(const gap of layer.gaps??[])if(gap.exit.action==='reevaluate')gap.exit=structuredClone(exit);}
+    for(const error of projected.errors)if(error.code==='check_error')error.fix='三次自动重评仍未恢复；请求 rec:'+question.digest+'：'+question.body.next_action;
+    projected.errors.push({code:'check_error',message:question.body.missing,path:'',fix:'请求 rec:'+question.digest+'：'+question.body.next_action});
+    await putResult(store,projected,ctx.now().toISOString());
+  });
 }

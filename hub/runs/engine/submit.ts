@@ -275,7 +275,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
-    extra: { reevaluation:refresh,retry_attempts: saved.retryAttempts, ...(sessionMissing ? {refusal:'session_missing'} : {}) },
+    extra: { reevaluation:refresh,retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
   return answerOf(saved.result.body);
 }
@@ -297,6 +297,7 @@ interface Validated {
   /** Requirements whose problems in this submission count as a repair round. */
   problems: Set<string>;
   retryAttempts?: Array<Record<string, unknown>>;
+  parentObservedSuccess?:boolean;
   prepared?: Map<string, PreparedContribution>;
   refusals?:Map<string,string>;
   model?: string;
@@ -539,7 +540,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts], ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
+    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);
