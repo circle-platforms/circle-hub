@@ -109,3 +109,5 @@ Hub 对提交进行两层核对：
 Hub 在 duplicate_check 构造主体后，按锁定目录解析出的草稿命令头从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
 
 缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令头，逗号分隔>&fields=commands,document,node,title,negative`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。
+
+每条草稿声明稳定 id、每步完整 identity、每个 expected 的 identity/after；引用必须带原始 byte span。不要用相同标题或文字前缀查重。索引须有作者 case_structure；缺声明就请求作者补结构后重产新根，缺原件就补读，截断按冻结根续读。不能把不完整键当空集合。发布状态只取原始 JSON status，缺字段请发布页或缺陷系统维护者补声明。

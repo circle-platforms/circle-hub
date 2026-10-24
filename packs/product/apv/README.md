@@ -1004,3 +1004,9 @@ Complete zero selections emit source inventory proofs: specifications cite the b
 command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:.../xml@1/... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
 
 R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例提交全部期望叶子的逐字引文及判断，由 Hub 核验身份、路径和引文；不可读原件保持未知并补读。quality-board 仅接 Hub 绑定的同根、同原件、已受理且有效的 case-review 记录；重复回执去重，同原件相互冲突的判断单计冲突并留在未判断中，不挑最后一句。含糊率分母仅为已判断数；零分母显示未判断并补评审，不能显示 0% 或判阈值通过。资源类型比例另按精确声明分母计算。旧结果不改写，新版本须重产新根和评审后再开看板。本次续接未运行验证。
+
+R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/defects[].bug/status/text，status 来自生成词表 release_status；complete 必须为 true，构建与冻结构建精确相等。HTML/Markdown 标题、文件角色及数字外形不再补 fixed/known，缺字段给来源维护人补原始 JSON 后重产。可选 version、released、module、system 只读声明，不从正文猜测。
+
+查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，APV 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
+
+主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本次续接未运行验证。

@@ -1,0 +1,11 @@
+{
+  "id": "defect-to-case.case-structure@2",
+  "origin": "Owner R7 ruling of 2026-10-24: complete command identities and original expected quotation identities only",
+  "structure_schema": "case-structure@2",
+  "commands_order": "preserve",
+  "expectations_order": "preserve",
+  "multiplicity": "preserve",
+  "after": "one-based command position",
+  "parameter_projection": ["position", "name", "type.name", "type.grammar", "type.declaration", "parsed"],
+  "excluded_annotations": ["title", "priority", "negative", "resource", "raw", "role"]
+}

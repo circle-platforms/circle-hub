@@ -43,6 +43,10 @@
       "minLength": 1,
       "description": "Name of the catalog in the pack knowledge declaration (knowledge.json) that the caller binds"
     },
+    "strict_signatures": {
+      "description": "Membership claims require a complete executable signature; a menu or a bare head with required arguments is not membership",
+      "type": "boolean"
+    },
     "commands": {
       "description": "Subject locations holding command text: a string, or an array of strings, one phrase each",
       "type": "array",

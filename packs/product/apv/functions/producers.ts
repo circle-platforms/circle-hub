@@ -12,14 +12,13 @@ import {labelOf} from './generated/vocabulary.ts';
 //   verified placement proposals is an owner decision, K04 R[6]), applicable to the build
 import type { ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
-import { produceCommandEntries } from './command-tree.ts';
-import { fixedBugEntries } from './fixed-bugs.ts';
+import { produceCommandEntries, bindCommandSource } from './command-tree.ts';
 import { produceManualEntries } from './manual.ts';
 import { produceReleaseEntries } from './release-notes.ts';
 import type { CommandTreeParams, FragmentRef, MarkdownModel, ProducedEntry, Unplaced, XmlModel } from './types.ts';
 import { internalError, isRecord } from './util.ts';
 
-type Slot = { parser?: unknown; model?: unknown } | null | undefined;
+type Slot = { sha256?:unknown; parser?: unknown; model?: unknown } | null | undefined;
 
 function slotOf(input: unknown, name: string): Slot {
   const slots = isRecord(input) && isRecord(input.slots) ? input.slots : {};
@@ -52,7 +51,7 @@ export function commandTree(input: unknown): ProducerOutput {
       const held=groups.get(key);if(held)held.count++;else groups.set(key,{diagnostic,count:1});
     }
     const summaries=[...groups.values()].map(({diagnostic:d,count})=>`${d.attribute}：${labelOf('type_declaration_status',d.type_declaration_status)}；${labelOf('command_parse_status',d.command_parse_status)}（${count} 处）；缺失事实：${d.missing}；下一步：${d.next_action}；由 ${d.audience} 在 ${d.due} 完成`);
-    return {...out,entries:out.entries as ProducedEntry[],warnings:[...new Set([...summaries,...out.warnings])]};
+    return {...out,entries:isRecord(slot)&&typeof slot.sha256==='string'?bindCommandSource(out.entries as ProducedEntry[],slot.sha256):out.entries as ProducedEntry[],warnings:[...new Set([...summaries,...out.warnings])]};
 
   } catch (error) {
     return empty(internalError(error));
@@ -129,13 +128,11 @@ export function releaseNotes(input: unknown): ProducerOutput {
     const slot = slotOf(input, 'notes');
     if (slot === null || slot === undefined) return empty('没有修复缺陷清单');
     const build = buildName(input);
-    if (slot.parser === 'html@1') return fixedBugEntries(slot.model, build);
-    if (slot.parser === 'markdown@1') {
-      const out = produceReleaseEntries(slot.model as MarkdownModel);
-      const entries = out.entries.map((entry) => (build !== null && out.build === null ? { ...entry, applicability: { builds: [build] } } : entry));
-      return { entries, warnings: out.warnings };
+    if(slot.parser==='json@1'){
+      const out=produceReleaseEntries(slot.model,build);
+      return {entries:out.entries,warnings:out.warnings,grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};
     }
-    return empty(`修复缺陷清单的格式读不了（解析器 ${String(slot.parser)}）`);
+    return {entries:[],warnings:['缺 release-notes@2 结构化发布状态；下一步发布页或缺陷系统维护者补原始 JSON status 字段，重读并重产；不从 HTML/Markdown 补 fixed/known'],grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:false}};
   } catch (error) {
     return empty(internalError(error));
   }

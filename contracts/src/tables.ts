@@ -1,3 +1,4 @@
+import {Versioned} from './common.ts';
 // Shapes owned by the tables work package (the rules package): the table kinds read by the Hub's core interpreters (C04, C05),
 // the catalog entry the catalog interpreter matches against (C07) and the outcome every check returns (V01).
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY, which
@@ -12,7 +13,7 @@
 import { z } from 'zod';
 import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema, TypeDeclarationStatusSchema } from '../generated/vocabulary.ts';
 import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
-import { ReferenceUri } from './reference.ts';
+import { ReferenceUri,Ground } from './reference.ts';
 
 /** Limits of the pattern@1 samples, so validating a table stays cheap (the matcher also caps its work on them). */
 export const PATTERN_LIMITS = { rules: 64, samples: 32, sampleLength: 1000 } as const;
@@ -148,6 +149,7 @@ export const CatalogTable = z
     schema: z.literal('catalog@1'),
     ...common,
     catalog: z.string().min(1).describe('Name of the catalog in the pack knowledge declaration (knowledge.json) that the caller binds'),
+    strict_signatures:z.boolean().optional().describe('Membership claims require a complete executable signature; a menu or a bare head with required arguments is not membership'),
     commands: z
       .array(JsonPath)
       .optional()
@@ -205,6 +207,7 @@ export type CatalogUncheckedConstraint=z.infer<typeof CatalogUncheckedConstraint
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
+    native_type:z.strictObject({name:z.string().min(1),declaration:Ground,grammar:Versioned}).optional(),
     type: CatalogParamType.optional(),
     type_declaration_status: TypeDeclarationStatusSchema.optional(),
     unchecked_constraints:z.array(CatalogUncheckedConstraint).min(1).optional(),

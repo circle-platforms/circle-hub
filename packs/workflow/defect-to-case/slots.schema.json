@@ -23,7 +23,25 @@
             "type": "array"
           },
           "steps": {
-            "type": "array"
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "完整 CommandIdentity；缺失时 not_duplicate 未核对"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            }
           },
           "expected": {
             "type": "array",
@@ -53,6 +71,14 @@
                       "description": "引用"
                     }
                   }
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "ExpectedQuoteIdentity，原件摘要、parser/路径及原始 byte span"
+                },
+                "after": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               }
             }
@@ -63,6 +89,12 @@
           },
           "resource": {
             "type": "array"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "稳定草稿 id；按结构字段连接，不解析标题或 statement"
           }
         }
       }

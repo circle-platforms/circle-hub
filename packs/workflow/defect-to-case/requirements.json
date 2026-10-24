@@ -55,7 +55,8 @@
       "accepted_producer": "fact",
       "checks": [
         "commands_catalog",
-        "commands_refutation"
+        "commands_refutation",
+        "refutation_catalog"
       ],
       "error_handling": [
         {

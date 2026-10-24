@@ -6847,6 +6847,21 @@
      "label": "未归位（没有命令归属的用例）"
     }
    ]
+  },
+  {
+   "axis": "release_status",
+   "label": "发布说明状态",
+   "owner": "K02",
+   "values": [
+    {
+     "code": "fixed",
+     "label": "已修复"
+    },
+    {
+     "code": "known",
+     "label": "已知"
+    }
+   ]
   }
  ],
  "kernelMapping": [

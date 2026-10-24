@@ -80,6 +80,7 @@ export const AXES = {
   command_parse_status: { label: '命令解析状态', owner: 'C07', values: [{ code: 'parsed', label: '命令已解析' }, { code: 'not_command', label: '不是命令' }, { code: 'parameters_unchecked', label: '参数未核' }] },
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
   knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
+  release_status: { label: '发布说明状态', owner: 'K02', values: [{ code: 'fixed', label: '已修复' }, { code: 'known', label: '已知' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -777,6 +778,15 @@ export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
   return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
 }
 
+/** 发布说明状态 (K02) */
+export const RELEASE_STATUS = ['fixed', 'known'] as const;
+export type ReleaseStatus = (typeof RELEASE_STATUS)[number];
+export const RELEASE_STATUS_LABEL = { 'fixed': '已修复', 'known': '已知' } as const satisfies { readonly [K in ReleaseStatus]: string };
+export const ReleaseStatusSchema = z.enum(RELEASE_STATUS);
+export function isReleaseStatus(value: unknown): value is ReleaseStatus {
+  return (RELEASE_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -855,6 +865,7 @@ export interface AxisValues {
   command_parse_status: CommandParseStatus;
   declaration_status: DeclarationStatus;
   knowledge_count: KnowledgeCount;
+  release_status: ReleaseStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -935,6 +946,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   command_parse_status: COMMAND_PARSE_STATUS_LABEL,
   declaration_status: DECLARATION_STATUS_LABEL,
   knowledge_count: KNOWLEDGE_COUNT_LABEL,
+  release_status: RELEASE_STATUS_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */
