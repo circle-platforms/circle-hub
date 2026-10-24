@@ -23,10 +23,11 @@ export default function scenario(gold: GapGold): Scenario {
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
       const has = (needle: string): boolean => text.includes(needle);
+      const categoriesListed = /缺 \d+ 个模板类别(?:（[^（）\r\n]+）)?：/.test(text);
       return [
         { area, name: '模型拿到了运行结果，不是错误', expected: '回答里有“运行 run_…”，没有“出错”', actual: has('运行 run_') && !has('出错：') ? '有运行结果' : text.slice(0, 120), ok: has('运行 run_') && !has('出错：') },
         { area, name: '用例数与独立的数法一致', expected: `用例 ${gold.cases} 个`, actual: has(`用例 ${gold.cases} 个`) ? '一致' : '不一致', ok: has(`用例 ${gold.cases} 个`) },
-        { area, name: '给出缺的类别，不是只给一个数', expected: '条目摘要里有“缺 N 个模板类别”和类别名', actual: /缺 \d+ 个模板类别：/.test(text) ? '有' : '没有', ok: /缺 \d+ 个模板类别：/.test(text) },
+        { area, name: '给出缺的类别，不是只给一个数', expected: '条目摘要里有“缺 N 个模板类别”和类别名', actual: categoriesListed ? '有' : '没有', ok: categoriesListed },
         { area, name: '回答没有超过客户端能转交的长度', expected: '每个工具结果不超过 30000 个字符', actual: `最长 ${Math.max(0, ...resultTexts(turns).map((t) => t.length))} 个字符`, ok: resultTexts(turns).every((t) => t.length <= 30_000) },
       ];
     },
