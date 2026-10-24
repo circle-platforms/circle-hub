@@ -109,7 +109,7 @@ export async function openBed(options: BedOptions): Promise<Bed> {
       origins: { 'build-site': `${stubs.buildSite.origin}${site.SITE_BASE}` },
       settings: { index_page: 'index.html' },
     });
-    const storeResource = await hub.addResource({ system_pack: SYSTEM.store, name: '合成文档库', environment: 'test', origins: { 'manual-store': stubs.webdav.origin } });
+    const storeResource = await hub.addResource({ system_pack: SYSTEM.store, name: '合成文档库', environment: 'test', origins: { 'manual-store': stubs.webdav.origin }, settings: {spec_folders:['spec']} });
 
     for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成验收显式部署设置');
 

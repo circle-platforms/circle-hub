@@ -356,21 +356,26 @@ const searchOf = (type: string): { folder: Setting; title: string } => SEARCHES[
 
 const LEGACY_SPEC = '旧设置 spec_folder 已并入 spec_folders，下一步资源管理员改用 spec_folders';
 /** One normalized list for both listing and search; legacy settings add one member, never a second read path. */
-export function specFolders(settings: Record<string, unknown>): { folders: string[]; warnings: string[] } {
+export function specFolders(settings: Record<string, unknown>,searchDefault=false): { folders: string[]; warnings: string[] } {
   const given = settings.spec_folders;
   if (given !== undefined && (!Array.isArray(given) || given.some(v => typeof v !== 'string'))) throw new TypeError('spec_folders 需要目录列表；下一步资源管理员修正设置后重读');
   const values: unknown[] = given === undefined ? [] : [...given as string[]];
   const warnings: string[] = [];
   if (settings.spec_folder !== undefined) { values.push(settings.spec_folder); warnings.push(LEGACY_SPEC); }
-  if (given === undefined && settings.spec_folder === undefined) values.push(DEFAULTS.spec_folder);
+  if (given === undefined && settings.spec_folder === undefined) {
+    if(!searchDefault)throw new TypeError('规格目录设置 spec_folders 未声明；下一步资源管理员配置目录列表后重读');
+    values.push(DEFAULTS.spec_folder);
+  }
   const folders = values.map(value => {
     if (typeof value !== 'string') throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
     const path = value.replace(/^\/+|\/+$/g, '');
     if (path.length > 255 || !path.split('/').every(s => SEGMENT.test(s))) throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
     return path;
   });
-  if (folders.length > 32) throw new TypeError('spec_folders 超过 32 个目录；下一步资源管理员拆分资源后重读');
-  return { folders: [...new Set(folders)], warnings };
+  const unique=[...new Set(folders)];
+  if(unique.length===0)throw new TypeError('spec_folders 没有可读取的目录清单原件；下一步资源管理员至少配置一个目录（可以是空目录）后重读');
+  if (unique.length > 32) throw new TypeError('spec_folders 超过 32 个目录；下一步包作者提高读请求上限并发布后重读');
+  return { folders: unique, warnings };
 }
 const listKey = (folders: readonly string[], at: number): string => folders.length === 1 ? 'list' : `list-${at}`;
 export function specListPlan(input: unknown): PlanOutput {
@@ -380,10 +385,12 @@ export function specListPlan(input: unknown): PlanOutput {
 export function specListProject(input: unknown): unknown {
   const {settings,responses} = partsOf(input); const {folders,warnings} = specFolders(settings);
   const files: Array<{name:string;path:string;title?:string}> = []; const unread: string[] = [];
+  const directories:Array<{name:string;path:string}>=[];
   folders.forEach((folder, at) => {
     const response = responses[listKey(folders, at)];
     if (!response?.ok || !isRecord(response.model) || !isRecord(response.model.root)) { unread.push(folder); warnings.push(`${folder}/ 目录读不到；下一步资源管理员核对读权限和目录后重读`); return; }
     const listing = membersOf(response.model); const warning = skippedWarning(folder,listing.skipped);
+    directories.push(...listing.members.filter(entry=>entry.collection).sort(byName).map(entry=>({name:entry.name,path:`${folder}/${entry.name}`})));
     if (warning) warnings.push(warning);
     const titles=new Map<string,string>();
     const walk=(element:XmlElement,depth=0):void=>{
@@ -397,11 +404,11 @@ export function specListProject(input: unknown): unknown {
     walk(response.model.root as XmlElement);
     files.push(...listing.members.filter(e=>!e.collection).sort(byName).map(e=>({name:e.name,path:`${folder}/${e.name}`,...(titles.has(e.path)?{title:titles.get(e.path)}:{})})));
   });
-  return {artifacts:[{name:'content',media_type:'application/json',json:{folders,files,unread,complete:unread.length===0}}],warnings,...(unread.length?{complete:false}:{})};
+  return {artifacts:[{name:'content',media_type:'application/json',json:{folders,files,directories,unread,complete:unread.length===0}}],warnings,...(unread.length?{complete:false}:{})};
 }
 
 function searchFolders(type: string, settings: Record<string,unknown>): {folders:string[];warnings:string[]} {
-  return type === 'spec-search' || !SEARCHES[type] ? specFolders(settings) : {folders:[setting(settings,searchOf(type).folder)],warnings:[]};
+  return type === 'spec-search' || !SEARCHES[type] ? specFolders(settings,true) : {folders:[setting(settings,searchOf(type).folder)],warnings:[]};
 }
 function searchCandidates(type:string,key:string,settings:Record<string,unknown>,responses:Record<string,Response>) {
   const {folders,warnings} = searchFolders(type,settings);

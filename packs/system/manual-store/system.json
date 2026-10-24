@@ -129,7 +129,7 @@
     {
       "name": "spec-list",
       "external": "manual:spec-list",
-      "description": "列出 spec_folders 配置目录的直接文件成员，不跟链接；旧 spec_folder 并入同一列表并警告",
+      "description": "列出 spec_folders 配置目录的直接成员（文件与子目录分开），不跟链接；旧 spec_folder 并入同一列表并警告",
       "plan": {
         "module": "functions/webdav.ts",
         "export": "specListPlan"

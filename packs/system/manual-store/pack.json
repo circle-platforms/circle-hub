@@ -8,13 +8,13 @@
   "files": [
     {
       "path": "functions/webdav.ts",
-      "sha256": "1a609a360df94af117747f45ef886058b1cbd938fd6eef5d765e3ffc7c1a8843",
-      "size": 27105
+      "sha256": "5840e20624301583279953270b55481a1361a41721e88077d8b2be65c7fb47a3",
+      "size": 27716
     },
     {
       "path": "system.json",
-      "sha256": "93fd73e7ca5c8e4bea2619e010e716f909d568071bfa91d389a7d24b2f092ad4",
-      "size": 4406
+      "sha256": "d26b890b43a7843c85d830f1fadefd1305370782251d844f62909da862da3aff",
+      "size": 4430
     }
   ]
 }
