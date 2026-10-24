@@ -8,7 +8,7 @@ import { lineKey } from './naming.ts';
 import { asArray, guarded, internalError, isRecord, squeeze } from './util.ts';
 
 // apv-directory@1, declared in README: prefix code, colon, version line, train, then module.
-const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*:\s*/;
+const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*[:：]\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
 const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
 const MAX_LABELS = 64;
