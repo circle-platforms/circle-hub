@@ -330,15 +330,22 @@ what is wired to it:
 - **Display** (`hub/server/claims.ts`): `terminalLabel` puts the observed distribution beside the dynamic terminal
   (display rule 16), e.g. `通过（3/3 次未见失败）`.
 
-Not wired yet, and the next step of this item: per-round dispatch in `hub/dispatch` (one effect per round with the round
-in the intent key order, at most one successful dispatch per (subject, round), the first pass stopping the rest, a fresh
-lease and session per round when `fresh_context`, the environment and per-device read-only probe before each round when
-`baseline_first` — a round that fails it is `not_run` with `integrity_unproven`, not a failure — the window measured from
-the first round's written intent with a round started outside it left in the denominator as `budget_exhausted`,
-`job dispatch` running all frozen rounds in one command with each round passing the pre-effect boundary, `job resume`
-only reconciling rounds already started, and `job status` listing rounds). Until that lands a subject is dispatched once,
-so the aggregation sees one round; the target's own per-round report and the `unattributed` attribution of a missing
-aggregate (V04 R[1], V08 hypotheses) also wait for it.
+Per-round dispatch lives in `hub/dispatch`. One `job dispatch` is one job and, in that command, runs every frozen round
+in order. Each round is its own effect: the intent key's order component is the round, and the same (subject, round)
+succeeds at most once. A round above the frozen count or the effect row's `repetition` is refused at the pre-effect
+boundary. `first_pass` stops when a round meets the expectation; the rounds that did not run are not effects, stay in
+the denominator, and the observation says which round passed and how many remain. `fresh_context` takes a new gateway
+lease and session for each round. `baseline_first` repeats the environment check and the per-device read-only probe in
+that round's lease; a miss is `not_run` with `integrity_unproven`, not a failure. The window starts when the first
+round's intent is written; a round that would start outside it is not dispatched and stays in the denominator as
+`not_run` / `budget_exhausted`. A gateway result with `complete=false` is `no_verdict` once the status has ended, and
+`incomplete` (still pending, exit is wait or reconcile) when the status never ends. `job resume` only reconciles rounds
+already started. `job status` lists each round. A single-round dispatch keeps the one-submit key `dispatch.bytes:<S>:<attempt>`.
+
+The projection's `rounds` array is what aggregation reads, so one job's rounds are not collapsed into a single round.
+The target's own per-round report is one observation claim (`目标报告：…`) and does not satisfy a fact-only requirement.
+An aggregate that misses the expectation is `unattributed`; the three causes (被测对象缺陷, 环境, 执行上下文) are a
+`hypothesis-set@1` record and are not the attribution. An aggregate that meets, including an early stop, carries neither.
 
 ## Limits
 
