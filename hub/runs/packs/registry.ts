@@ -22,6 +22,8 @@ import {
   RecordsError,
   WHOLE_HUB,
   isSha256,
+  canonicalize,
+  type Transaction,
   type AuthorizationRecord,
   type Page,
   type Principal,
@@ -57,6 +59,8 @@ export type RegistryRecords = Pick<RecordsKit, 'store' | 'objects' | 'authorizat
 
 export interface PackRegistryOptions {
   records: RegistryRecords;
+  /** Trusted deployment-name check; called under the variable-name lock in the publication transaction. */
+  variableNameAvailable?: (name: string, tx: Transaction) => Promise<boolean>;
   /** Absolute directory for extracted packs (created 0700). */
   extractDir: string;
   /** Clock for pack_version records; default the system clock. */
@@ -124,6 +128,8 @@ export interface PackRegistry {
   canUse(userId: string, packId: string): Promise<boolean>;
   /** Every active product pack in the version it is used in (the highest that is not withdrawn). */
   activeProducts(): Promise<ActiveProduct[]>;
+  /** Permanent declarations, including withdrawn versions; only committed publications claim names. */
+  variableDeclarations(tx?: Transaction): Promise<Array<{pack:string;version:string;product:ProductDeclaration}>>;
   /**
    * The active product pack that declares this name (NFC, case-insensitive) or this product line id; null when none, and
    * null when several do (reported to onError: the registry refuses such states, so one slipped past it).
@@ -433,6 +439,22 @@ class Registry implements PackRegistry {
     return this.#records.authorizations.unassign(by, userId, packId, note);
   }
 
+  async variableDeclarations(tx?: Transaction): Promise<Array<{pack:string;version:string;product:ProductDeclaration}>> {
+    const decisions = await allPages(cursor => this.#records.store.find<AuthorizationRecord['body']>({kind:'authorization',key:'authz.permission',value:'publish',newestFirst:false,limit:500,cursor},tx));
+    const out: Array<{pack:string;version:string;product:ProductDeclaration}>=[];
+    const seen=new Set<string>();
+    for(const row of decisions){
+      if(row.body.revoked || !row.body.bound || seen.has(row.body.object))continue;
+      seen.add(row.body.object);
+      const records=await this.#records.store.find<PackVersionBody>({kind:'pack_version',key:'pack.digest',value:row.body.bound,limit:1},tx);
+      const record=records.items[0];
+      if(!record || record.body.kind!=='product')continue;
+      const declarations=await this.declarations(row.body.bound);
+      if(declarations?.kind==='product' && declarations.product.variables?.length)out.push({pack:record.body.pack,version:record.body.version,product:declarations.product});
+    }
+    return out;
+  }
+
   async activeProducts(): Promise<ActiveProduct[]> {
     const ids = await this.#records.authorizations.packsFor(WHOLE_HUB);
     const out: ActiveProduct[] = [];
@@ -690,6 +712,20 @@ class Registry implements PackRegistry {
         if (refusals.length > 0) return refuse(refusals, report);
 
         const store = async (): Promise<PublishOutcome> => {
+          // Immutable bytes may precede the decision. Name ownership and publication become visible together.
+          const product = pack.declarations.kind==='product' ? pack.declarations.product : null;
+          const committed = await this.#records.store.withTransaction(async tx => {
+          if(product){
+            if(product.variables?.length && !this.#options.variableNameAvailable)return refuse([problem('variables.port_missing','product.json','产品变量的部署名字核对端口未接线','请管理员修正装配端口后重新发布')],report);
+            await this.#records.store.lock('pack-products',tx);
+            for(const name of [...(product.variables??[])].map(v=>v.name).sort())await this.#records.store.lock('variable-name:'+name,tx);
+            const previous=await this.variableDeclarations(tx);
+            for(const variable of product.variables??[]){
+              const claims=previous.filter(p=>p.product.variables?.some(v=>v.name===variable.name));
+              if(claims.some(c=>c.pack!==manifest.id) || (claims.length===0 && !(await this.#options.variableNameAvailable?.(variable.name,tx)))) return refuse([problem('variables.unavailable','product.json','名字不可用','换一个变量名字')],report);
+              if(claims.some(c=>c.product.variables?.some(v=>v.name===variable.name && canonicalize(v.schema)!==canonicalize(variable.schema)))) return refuse([problem('variables.schema_changed','product.json',`变量 ${variable.name} 的模式和已发布版本不同`,'模式要改请换一个变量名字')],report);
+            }
+          }
           for (const file of read.pack.files) await this.#records.objects.put(file.bytes, mediaTypeOf(file.path));
           await this.#records.objects.put(read.pack.manifestBytes, 'application/json');
           const body: PackVersionBody = {
@@ -719,18 +755,18 @@ class Registry implements PackRegistry {
             });
           }
           try {
-            await authorizations.grant(owner, { permission: 'publish', subject: account.id, object: packVersionKey(manifest.id, manifest.version), bound: digest });
+            await authorizations.grant(owner, { permission: 'publish', subject: account.id, object: packVersionKey(manifest.id, manifest.version), bound: digest }, tx);
           } catch (error) {
             if (error instanceof RecordsError && !(error instanceof IntegrityError)) return refuse([problem('publish.refused', 'pack.json', `发布被拒绝：${error.message}`, error.fix ?? '核对发布权和包的所有者')], report);
             throw error;
           }
-          if (staged !== null) {
-            await staged.promote();
-            staged = null;
-          }
-          const version = await this.getVersion(manifest.id, manifest.version);
-          if (version === null) throw new IntegrityError('发布之后读不到这个版本', { detail: { digest } });
-          return { ok: true, created: true, version, report };
+          return null;
+          });
+          if(committed!==null)return committed;
+          if(staged!==null){await staged.promote();staged=null;}
+          const version=await this.getVersion(manifest.id,manifest.version);
+          if(version===null)throw new IntegrityError('发布之后读不到这个版本');
+          return {ok:true,created:true,version,report};
         };
 
         if (manifest.kind !== 'product') return await store();

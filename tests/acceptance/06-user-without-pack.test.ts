@@ -65,8 +65,9 @@ describe('scenario 6: user without pack', () => {
     assert.ok(unassignedCall, 'call log entry exists');
     assert.equal(unassignedCall.call_result, 'error');
     assert.equal(unassignedCall.error_code, 'SOURCE_UNAVAILABLE');
-    // Admin note captures the real internal reason
-    assert.ok(unassignedCall.admin_note && unassignedCall.admin_note.length > 0, 'admin_note contains real reason');
+    // Private administrator reasons capture the internal cause, outside the bounded summary.
+    assert.ok(unassignedCall.admin_reasons?.some(reason=>reason.length>0), 'admin_reasons contains the real reason');
+    assert.equal(unassignedCall.admin_note, `管理员理由 ${unassignedCall.admin_reasons?.length} 条；详见管理员调用日志详情`);
 
     // 4. Console log check
     const callsPage = await consoleClient.get('/console/admin/calls');

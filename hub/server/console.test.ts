@@ -417,3 +417,11 @@ describe('pages', () => {
     assert.equal((await get('/console/admin/calls?cursor=%21%21', session)).status, 400);
   });
 });
+
+test('full administrator reasons are escaped in console details and unavailable to an ordinary reader',async()=>{
+ const user=await person();
+ await server.records.callLog.append({traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,runId:null,userId:user.user.id,tool:'submit_result',arguments:{},callResult:'ok',durationMs:1,adminNote:'摘要',adminReasons:['合成完整理由 <script>unsafe</script>']});
+ const session=await signIn(server.admin.token);const path=`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`;
+ const calls=await get(path,session);assert.equal(calls.status,200);assert.match(calls.body,/完整理由（1 条）/);assert.match(calls.body,/合成完整理由 &lt;script&gt;unsafe&lt;\/script&gt;/);assert.ok(!calls.body.includes('<script>unsafe</script>'));
+ assert.equal((await get(path,await signIn(user.token))).status,404);
+});

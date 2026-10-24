@@ -149,8 +149,10 @@ const OUTCOME_TEXT = { produced: '产出', registered: '登记', skipped: '跳�
 export function formatSyncReport(report: SyncReport): string {
   const lines: string[] = [];
   lines.push(`知识同步 ${report.sync}：产品 ${report.product}（${report.pack}）${report.dry_run ? '，试运行' : ''}`);
+  if(report.dry_run)lines.push('试运行不写知识结果，读取仍留审计');
   lines.push(`开始 ${report.started_at}，结束 ${report.ended_at}`);
   if (report.error !== null) lines.push(`同步失败：${report.error}`);
+  for(const variable of report.variables??[])lines.push(`变量 ${variable.name}：${variable.default?'试运行使用默认值':`第 ${variable.version} 版`}`);
   const plan = report.plan;
   lines.push(
     `计划：${plan.rounds} 轮，读了 ${plan.reads} 页（失败 ${plan.failed_reads.length} 页），列出 ${plan.builds} 个构建，${plan.done ? '计划已完成' : '计划未完成'}` +

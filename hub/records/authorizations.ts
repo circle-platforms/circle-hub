@@ -85,8 +85,8 @@ export class RecordAuthorizations implements Authorizations {
     this.#now = now;
   }
 
-  async grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord> {
-    return this.#decide(by, input, false);
+  async grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord> {
+    return this.#decide(by, input, false, tx);
   }
 
   async revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord> {
@@ -139,14 +139,17 @@ export class RecordAuthorizations implements Authorizations {
     return this.revoke(by, { permission: PUBLISH_RIGHT, subject: userId(user), object: WHOLE_HUB, note: reason });
   }
 
-  async configureResource(by: Principal, resourceId: string, bound: string, reason?: string | null): Promise<AuthorizationRecord> {
+  async configureResource(by: Principal, resourceId: string, bound: string, reason?: string | null, tx?: Transaction): Promise<AuthorizationRecord> {
     if (!isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
-    return this.grant(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason });
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason }, false, tx);
   }
 
   async configureResourceInTransaction(by: Principal, object: string, bound: string | null, reason: string, tx: Transaction, revoked = false): Promise<AuthorizationRecord> {
-    if (!revoked && !isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
-    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, revoked, tx);
+    if (!revoked) {
+      if (!isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
+      return this.configureResource(by,object,bound,reason,tx);
+    }
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, true, tx);
   }
 
   async resourceConfig(resourceId: string): Promise<AuthorizationRecord | null> {

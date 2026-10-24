@@ -517,7 +517,7 @@ export interface Authorizations {
    * the pack id (the subject of its first publication); a version once published keeps its content. Withdrawing a
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
-  grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord>;
+  grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
   revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
@@ -530,7 +530,7 @@ export interface Authorizations {
   grantPublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
   revokePublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Resource configuration (deployment instance, environment class, source-to-tree mapping, freeze release), bound to a content digest. */
-  configureResource(by: Principal, resourceId: string, bound: string, note?: string | null): Promise<AuthorizationRecord>;
+  configureResource(by: Principal, resourceId: string, bound: string, note?: string | null, tx?: Transaction): Promise<AuthorizationRecord>;
   /** Appends a resource decision inside the caller's transaction; the ordinary authorization checks still apply. */
   configureResourceInTransaction(by: Principal, object: string, bound: string | null, note: string, tx: Transaction, revoked?: boolean): Promise<AuthorizationRecord>;
   /** Latest active configuration of a resource, or null. */
@@ -651,6 +651,8 @@ export interface CallLogInput {
   durationMs: number;
   /** The real reason behind a neutral answer such as SOURCE_UNAVAILABLE. Kept outside the record; shown to admins only. */
   adminNote?: string | null;
+  /** Full private reasons, individually stored outside the public record and JSONL. */
+  adminReasons?:readonly string[];
 }
 
 /** Body of a `call_log@1` record: one MCP call (B08). The admin note is not part of it. */
@@ -671,12 +673,14 @@ export interface CallLogEntry {
   duration_ms: number;
 }
 
-/** One call log line as returned and as written to <log dir>/calls-YYYY-MM-DD.jsonl (that file is for admins). */
+/** A queried call-log line; JSONL stores its receipt fields only and omits private database metadata. */
 export interface CallLogLine extends CallLogEntry {
   /** Digest of the call_log record; it does not cover the admin note. */
   digest: string;
-  /** The real reason behind a neutral answer; present for admins (and in the file and in append's result) only. */
+  /** The real reason behind a neutral answer; present for admins and in append's result, never in JSONL. */
   admin_note?: string | null;
+  /** Full reasons returned only by administrator queries; absent from JSONL and ordinary reader queries. */
+  admin_reasons?:string[];
 }
 
 export interface CallLogQuery extends PageQuery {

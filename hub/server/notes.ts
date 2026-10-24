@@ -1,8 +1,9 @@
 // Admin notes and operator log text. Records take an admin note only as 1 to 2000 characters of well-formed text without
 // NUL; a note cut inside a surrogate pair, or one that quotes a NUL, would make the whole call-log line fail. Every note
-// therefore goes through clipNote: NUL removed, lone surrogates replaced, cut between code points.
+// summaries therefore use clipNote. Full reasons are normalized without shortening at the MCP boundary and validated
+// by records; their private rows are separate from the bounded summary.
 
-/** Longest admin note of one call-log line (records: 1 to 2000 UTF-16 code units). */
+/** Longest admin note summary of one call-log line (records: 1 to 2000 UTF-16 code units). */
 export const MAX_ADMIN_NOTE = 2000;
 
 const isHighSurrogate = (code: number): boolean => code >= 0xd800 && code <= 0xdbff;

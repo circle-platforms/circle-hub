@@ -1,4 +1,5 @@
 import { readRunJobs } from '../../dispatch/api.ts';
+import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
 // its three ports, the connectors (resources, logins, read plugins) with the ExternalReaderPort and the resource catalog,
@@ -123,6 +124,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
 
   // 3. The pack registry and the ports it provides.
   const registry = createPackRegistry({
+    variableNameAvailable: (name,tx)=>productVariableNameAvailable(records,name,tx),
     records,
     extractDir: options.extractDir ?? join(config.dataDir, 'packs'),
     ...(now === undefined ? {} : { now }),

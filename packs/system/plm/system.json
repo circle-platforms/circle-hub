@@ -200,7 +200,10 @@
         "module": "functions/plm.ts",
         "export": "detailProject"
       },
-      "max_requests": 1
+      "max_requests": 1,
+      "absent_codes": [
+        "plm.absent"
+      ]
     },
     {
       "name": "bugs",
@@ -228,7 +231,10 @@
         "module": "functions/plm.ts",
         "export": "detailProject"
       },
-      "max_requests": 1
+      "max_requests": 1,
+      "absent_codes": [
+        "plm.absent"
+      ]
     },
     {
       "name": "stories",

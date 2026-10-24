@@ -21,6 +21,7 @@ test('production and paged reading agree on all 150 drift literals, while ordina
   const kit=await openTestRecords({postgres});t.after(()=>kit.close());const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
   const external=new Manuals(kit),packs=new FakePacks(),directory=fileURLToPath(new URL('../',import.meta.url));
   const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:'1.3.1',digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   const literals=Array.from({length:150},(_,i)=>`demo missing${i}`);
   const manual=['# 合成章节','',`合法的准备提法是 \`demo pool add HostName\`。`,'',literals.map(literal=>`提到 \`${literal}\`。`).join('，')].join('\n');
@@ -58,6 +59,7 @@ test('the fixed manual fixture has identical declared production drift and paged
   const kit=await openTestRecords({postgres});t.after(()=>kit.close());const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
   const external=new Manuals(kit),packs=new FakePacks(),directory=fileURLToPath(new URL('../',import.meta.url));
   const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:'1.3.1',digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   external.set('site:tree:links',{bytes:fixtureBytes('command-tree.xml'),mediaType:'application/xml'});external.set('manual:cli:10.6.1',{bytes:fixtureBytes('manual.md'),mediaType:'text/markdown'});
   const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
@@ -83,6 +85,7 @@ test('an HTML tree source leaves manual literals unchecked in both production an
   const kit=await openTestRecords({postgres});t.after(()=>kit.close());const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
   const external=new Manuals(kit),packs=new FakePacks(),directory=fileURLToPath(new URL('../',import.meta.url));
   const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
+  for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:'1.3.1',digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   external.set('site:tree:links',{bytes:'<html><body>synthetic unavailable tree</body></html>',mediaType:'text/html'});
   external.set('manual:cli:10.6.1',{bytes:'**demo pool add** *<name>*\n\n参考 `demo pool create` 和 `demo probe`。\n',mediaType:'text/markdown'});

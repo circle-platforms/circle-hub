@@ -48,6 +48,7 @@
       "description": "一个版本线的 CLI 手册",
       "plan": { "module": "functions/webdav.ts", "export": "manualPlan" },
       "project": { "module": "functions/webdav.ts", "export": "manualProject" },
+      "absent_codes": ["manual.not_found"],
       "max_requests": 6
     },
     {
@@ -56,6 +57,7 @@
       "description": "一个版本线的应用手册",
       "plan": { "module": "functions/webdav.ts", "export": "manualPlan" },
       "project": { "module": "functions/webdav.ts", "export": "manualProject" },
+      "absent_codes": ["manual.not_found"],
       "max_requests": 6
     },
     {

@@ -3,7 +3,7 @@
 // system pack), takes the documents of the roots titled with a product name (both name families: APV and NSAE are one
 // product), locates each one with locate.ts and lists, in the sources of every build that has its own command tree:
 // - `case_documents`: the agile:case ids of the documents whose version line is not later than the build's line and not
-//   earlier than the option `min_line` (default 10.4.2), ordered by document id (numbers by value). The order only has to be
+//   earlier than the option `min_line` (explicit null means no floor), ordered by document id (numbers by value). The order only has to be
 //   stable: an unchanged tree gives the same list, so the Hub keeps the build's root (its list digest is unchanged). A
 //   changed list re-runs every batch of that build: the Hub keys a stored producer call by the whole build, list included.
 //   Over the role's limit the documents of the oldest lines (earliest release-train date) are left out first;
@@ -13,7 +13,7 @@
 // ids. While the tree is not read, cannot be read or is incomplete (a configured root not read, a root title unknown), the
 // builds that would list documents are not listed at all (sync.ts): a root produced now would lose every case it had.
 // Which line is not later than a build's line is the earliest release-train date of that line in the tree (YYYY/M in the
-// train label), not the numeric order of the dotted line. Brief section 8: 10.4.5 and 10.4.6 are newer lines than 10.5.
+// train label), not numeric order of version components.
 // A line with no dated train is listed only for a build of that same line. min_line is the same date floor when the tree
 // dates that line; a line with no date is not dropped as earlier than min_line.
 import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_PREFIX, CASE_TREE_ID, CASE_TREE_ROLE, DEFAULT_MIN_LINE } from './cases-rules.ts';
@@ -27,19 +27,24 @@ export const MAX_CASE_DOCUMENTS = 20000;
 export const NOTE_EXAMPLES = 3;
 const DOTTED = /^[0-9]{1,3}(?:\.[0-9]{1,3}){1,3}$/;
 
-export type CaseIndexOptions = { on: boolean; minLine: string; notes: string[] };
+export type CaseIndexOptions = { on: boolean; minLine: string | null; notes: string[]; invalidMinLine?: true };
 
 /** The case index options of the sync declaration (as the caller overrode them). */
 export function caseIndexOptions(options: unknown): CaseIndexOptions {
   const record = isRecord(options) ? options : {};
   const notes: string[] = [];
-  let minLine = DEFAULT_MIN_LINE;
+  let minLine: string | null = DEFAULT_MIN_LINE;
+  let invalidMinLine = false;
   if (Object.hasOwn(record, 'min_line')) {
     const value = typeof record.min_line === 'string' ? record.min_line.trim() : '';
-    if (DOTTED.test(value)) minLine = lineKey(value);
-    else notes.push(`同步选项 min_line 不是版本线（例如 ${DEFAULT_MIN_LINE}），按 ${DEFAULT_MIN_LINE} 处理`);
+    if(record.min_line===null)minLine=null;
+    else if (DOTTED.test(value)) minLine = lineKey(value);
+    else {
+      invalidMinLine=true;
+      notes.push('同步选项 min_line 应是点分版本线或显式 null；未套用下限。下一步 circle-hub var set APV_MIN_LINE --file <JSON文件> --reason <理由>，修正后重跑同步');
+    }
   }
-  return { on: record.case_index === true, minLine: lineKey(minLine), notes };
+  return { on: record.case_index === true, minLine: minLine===null?null:lineKey(minLine), notes, ...(invalidMinLine?{invalidMinLine:true as const}:{}) };
 }
 
 /** A located document. `at` is the release-train month (YYYY-MM-01) when the train label carries one. */
@@ -123,6 +128,7 @@ const byId = (a: CaseDocument, b: CaseDocument): number => {
 
 /** The documents of the read tree that can be listed, or why there are none to list yet. */
 export function caseTree(read: Record<string, unknown>, options: CaseIndexOptions, names: readonly string[] = PRODUCT_LINE.names): CaseTree {
+  if(options.invalidMinLine)return {status:'failed',reason:options.notes[0]};
   if (!Object.hasOwn(read, CASE_TREE_ID)) return { status: 'pending' };
   const entry = read[CASE_TREE_ID];
   if (!isRecord(entry) || entry.ok !== true) {
@@ -195,7 +201,7 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
     found.push({ id: doc.id, line, at: trainInstant(located.train) });
   }
   const ranks = lineRanks(found);
-  const floor = ranks.get(options.minLine);
+  const floor = options.minLine===null?undefined:ranks.get(options.minLine);
   const documents: CaseDocument[] = [];
   for (const doc of found) {
     const at = ranks.get(doc.line);
@@ -265,11 +271,12 @@ export function caseNote(tree: CaseTree, options: CaseIndexOptions, extra: { lis
   if (tree.status === 'pending') return '用例文档：敏捷平台的用例树还没有读';
   if (tree.status === 'failed') {
     const withheld = extra.withheld ?? 0;
-    return `用例文档：敏捷平台的用例树（${CASE_TREE_ID}）${tree.reason}，这次不列 ${withheld} 个会列出用例文档的构建（版本线 ${options.minLine} 起有自己命令树的构建），免得产出缺少用例的根；不需要用例索引时把同步选项 case_index 设为 false`;
+    if(options.invalidMinLine)return `用例文档：${tree.reason}；这次不列 ${withheld} 个会列出用例文档的构建，旧根不动`;
+    return `用例文档：敏捷平台的用例树（${CASE_TREE_ID}）${tree.reason}，这次不列 ${withheld} 个会列出用例文档的构建（版本线 ${options.minLine===null?'不设下限':options.minLine+' 起'}有自己命令树的构建），免得产出缺少用例的根；不需要用例索引时把同步选项 case_index 设为 false`;
   }
   const c = tree.counts;
   const parts = [
-    `用例文档：读到 ${c.roots} 个根，产品的根 ${c.productRoots.length} 个（${c.productRoots.join('、') || '无'}）下有 ${c.documents} 份文档，按版本线（${options.minLine} 起）可列 ${c.located} 份，构建里共列出 ${extra.listed} 份次`,
+    `用例文档：读到 ${c.roots} 个根，产品的根 ${c.productRoots.length} 个（${c.productRoots.join('、') || '无'}）下有 ${c.documents} 份文档，按版本线（${options.minLine===null?'不设下限':options.minLine+' 起'}）可列 ${c.located} 份，构建里共列出 ${extra.listed} 份次`,
   ];
   const uncovered = extra.uncovered ?? [];
   const unlisted = [

@@ -471,3 +471,51 @@ test('publication refuses reject by reason even when an artifact blocking check 
   const pack=checks(file=>{file.checks[0].judges='artifact_under_verification';});
   await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
 });
+
+
+test('product variable declarations accept a referenced synthetic default and reject invalid contracts', async () => {
+  const declared = () => editJson<Json>(productPack(), 'product.json', p => {
+    p.variables = [{name:'DEMO_OPTIONS',description:'Synthetic options',schema:{type:'array',items:{type:'string'}},default:[]}];
+    p.producers[0].params = {options:'${var:DEMO_OPTIONS}'};
+  });
+  await accepted(declared());
+  for (const edit of [
+    (p:Json) => { delete p.variables[0].default; },
+    (p:Json) => { p.variables[0].default = 1; },
+    (p:Json) => { p.variables[0].schema = {type:'string',pattern:'.*'}; p.variables[0].default='demo'; },
+    (p:Json) => { p.variables.push(p.variables[0]); },
+    (p:Json) => { p.variables[0].name='DEMO_PASSWORD'; },
+    (p:Json) => { delete p.producers[0].params; },
+    (p:Json) => { p.title='${var:DEMO_OPTIONS}'; },
+    (p:Json) => { p.producers[0].params.options='${var:DEMO_MISSING}'; },
+    (p:Json) => { p.producers[0].params.options='${secret:DEMO_OPTIONS}'; },
+    (p:Json) => { p.producers[0].params.options='prefix ${var:DEMO_OPTIONS}'; },
+  ]) {
+    const outcome=await validated(editJson<Json>(declared(),'product.json',edit));
+    assert.equal(outcome.ok,false);
+  }
+  await refused(withFiles(systemPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
+  await refused(withFiles(workflowPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
+});
+
+const variableProduct = () => editJson<Json>(productPack(), 'product.json', p => {
+  p.variables=[{name:'DEMO_OPTIONS',description:'Synthetic options',schema:{type:'array',items:{type:'string'}},default:[]}];
+  p.producers[0].params={options:'${var:DEMO_OPTIONS}'};
+});
+
+test('variable declaration diagnostics explain repeated names in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.variables.push(p.variables[0]);}),'product.shape');
+ assert.match(p.message,/变量名字重复/);
+});
+test('variable declaration diagnostics explain reference property names in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.producers[0].params['${var:DEMO_OPTIONS}']='synthetic';}),'product.shape');
+ assert.match(p.message,/引用不能作为属性名/);
+});
+test('variable declaration diagnostics explain allowed reference positions in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.title='${var:DEMO_OPTIONS}';}),'product.shape');
+ assert.match(p.message,/只能在 sync.options 或生产器 params 里引用已声明的普通变量/);
+});
+test('variable declaration diagnostics explain unused declarations in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{delete p.producers[0].params;}),'product.shape');
+ assert.match(p.message,/DEMO_OPTIONS.*声明了却没有引用/);
+});

@@ -4,6 +4,7 @@ import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
 import type { RunsService } from '../ports.ts';
+import { IntegrityError } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
 import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs/api.ts';
 
@@ -26,7 +27,7 @@ export function sourceReaderFor(
       }
       if (source.bytes === null && source.readTier !== 'retain_only') {
         note(`source ${sha256} withholds its bytes from consumer ${consumer} (${source.readTier})`);
-        return null;
+        throw new IntegrityError('有权来源未返回原件字节');
       }
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },

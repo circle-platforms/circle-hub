@@ -2,6 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "concurrency": {
+      "description": "Optional lower in-flight limit for this plan; the resource limit still applies",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
     "requests": {
       "maxItems": 1000,
       "type": "array",

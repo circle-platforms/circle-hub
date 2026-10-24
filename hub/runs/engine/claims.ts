@@ -4,6 +4,8 @@
 // what it cites.
 import { QUALIFIER_MARK, type BasisRank, type Independence, type QualifierMark, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Claim, type ValueResolution } from '../../../contracts/src/claim.ts';
+import type {Coverage} from '../../../contracts/src/common.ts';
+import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { SlotClaim } from '../../../contracts/src/pack.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
 import { parseReference } from '../../refs/api.ts';
@@ -45,7 +47,21 @@ export function strongestRole(roles: Iterable<SourceRole | null | undefined>): S
   return best;
 }
 
+
+/** Read observations of the actually addressed sources; never infer full coverage from absent legacy metadata. */
+export function sourceCoverage(sources:readonly SourceBinding[],references:Iterable<string>):Coverage|undefined {
+  const roots=new Set([...references].map(reference=>/^[a-f0-9]{64}$/.test(reference)?reference:rootDigest(reference)).filter((root):root is string=>root!==null));
+  const selected=sources.filter(source=>roots.has(rootDigest(source.reference)??''));
+  const missing=selected.filter(source=>source.external!==undefined && source.coverage===undefined).length;
+  const covered=selected.filter(source=>source.coverage!==undefined).map(source=>source.coverage!);
+  if(covered.length===0)return undefined;
+  if(covered.length===1 && missing===0)return {...covered[0]};
+  const note=[...new Set(covered.flatMap(value=>value.note?[value.note]:[])),...(missing?[`另有 ${missing} 个所依外部来源未声明覆盖；当前计数只合计有声明的来源，重读缺项后再确认范围`]:[])].join('；');
+  return {complete:missing===0 && covered.every(value=>value.complete),examined:covered.reduce((n,value)=>n+value.examined,0),...(missing===0 && covered.every(value=>value.total!==undefined)?{total:covered.reduce((n,value)=>n+value.total!,0)}:{}),...(note?{note}:{} )};
+}
+
 export interface JudgmentClaimInput {
+  coverage?:Coverage;
   item?: string;
   requirement?: string;
   pointer: string;
@@ -66,7 +82,7 @@ export interface JudgmentClaimInput {
 
 /** A model's statement: nature judgment, provenance declared, the model as producer, semantics unasserted (V02 R[1]). */
 export function judgmentClaim(input: JudgmentClaimInput): Claim {
-  const marks = unique<QualifierMark>(['semantics_unasserted', ...input.marks]);
+  const marks = unique<QualifierMark>(['semantics_unasserted', ...input.marks,...(input.coverage?.complete===false?['partial' as const]:[])]);
   const claim: Claim = {
     ...(input.item !== undefined ? { item: input.item } : {}),
     ...(input.requirement !== undefined ? { requirement: input.requirement } : {}),
@@ -83,6 +99,7 @@ export function judgmentClaim(input: JudgmentClaimInput): Claim {
       basis_rank: 'judgment',
       ...(input.sourceRole !== undefined ? { source_role: input.sourceRole } : {}),
       marks,
+      ...(input.coverage?{coverage:input.coverage}:{}),
     },
     grounds: groundsOnly(input.grounds),
     warrant: { producer: 'model', id: input.model, ...(input.independence !== undefined ? { independence: input.independence } : {}) },
@@ -99,6 +116,7 @@ function worstResolution(resolutions: readonly ValueResolution[]): ValueResoluti
 }
 
 export interface FactClaimInput {
+  coverage?:Coverage;
   item?: string;
   requirement?: string;
   // Check outputs validate their tier at the check boundary. Projection facts have no check tier to consume here.
@@ -128,7 +146,7 @@ export function factClaim(input: FactClaimInput): Claim {
   const basis: BasisRank = input.overClaims ? 'rule_over_claims' : 'rule_over_observation';
   const conditional = known && input.overClaims;
   // Vocabulary order (QUALIFIER_MARK), deduplicated: the marks the run adds and the check's own sample marks.
-  const marks = unique<QualifierMark>([...(conditional ? ['conditional_on_judgment' as const] : []), ...(input.discrimination ? ['discrimination_not_established' as const] : []), ...(input.sampleMarks ?? [])]).sort(
+  const marks = unique<QualifierMark>([...(conditional ? ['conditional_on_judgment' as const] : []), ...(input.discrimination ? ['discrimination_not_established' as const] : []), ...(input.sampleMarks ?? []),...(input.coverage?.complete===false?['partial' as const]:[])]).sort(
     (a, b) => QUALIFIER_MARK.indexOf(a) - QUALIFIER_MARK.indexOf(b),
   );
   const claim: Claim = {
@@ -148,6 +166,7 @@ export function factClaim(input: FactClaimInput): Claim {
       ...(known ? { basis_rank: basis } : {}),
       source_role: input.judges,
       marks,
+      ...(input.coverage?{coverage:input.coverage}:{}),
       ...(input.discrimination ? { discriminating_power: 'not_established' as const } : {}),
     },
     grounds: groundsOnly(o.grounds),

@@ -132,7 +132,7 @@ Every tool call:
    reference the caller's `cursor`; for `start_run`, from `ServerDeps.runsDetail.startRunDetailed`, `record:
    rec:<run record>`, `production` (the whole result, only when it is the one the answer's `result` names), `unavailable`
    and `gaps`; for `submit_result` `record: rec:<validation result>`, looked up with `runsDetail.getResult` by the
-   result's run and submission digest (an answer stands when the lookup fails; the reason goes to the admin note).
+   result's run and submission digest. A missing or failed lookup is retried once; each miss records a private `defect.result_lookup_miss metric=1` event. Exhaustion preserves the receipt and result, adds a structured SOURCE_RETRYABLE diagnostic naming the missing reference, next retry time and console/admin recovery, and never charges a repair round.
    Without `runsDetail` start_run uses `RunsService.startRun` and the texts name the console page instead of records.
 
 Trace id: the trace-id of a valid W3C `traceparent` (version 00 exactly four fields, not `ff`, no all-zero ids), else a
@@ -170,8 +170,7 @@ Semantics owned by the server:
 - `resolve_reference`, `submit_result`: `RunsService`; a `submit_result` answer that carries a result also gets its stored
   record from `runsDetail.getResult`.
 
-Absent and forbidden give the same `SOURCE_UNAVAILABLE` ("对你不可用") answer with the same empty shape everywhere; the
-tests compare the two answers byte for byte apart from the trace.
+For readers without established permission, absent and forbidden give the same `SOURCE_UNAVAILABLE` ("对你不可用") shape; tests compare it byte for byte apart from the trace. Authorized bad cursors, missing locked roots, retry exhaustion and integrity faults have explicit corrections. Connector absence is a determined SOURCE_ABSENT observation, rather than this neutral answer.
 
 **Record visibility by reference (R02).** Records decides `source_artifact` records for everyone, admins included
 (`Artifacts.canRead`: a read with a person's own credential, `visibility.admins: false`, is theirs alone, B02 R[3]). A
@@ -519,3 +518,13 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 客户端用 `circle-hub local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <回环地址>]` 安装。令牌仅从标准输入读取，不接受令牌参数或环境令牌，不打开数据库或钥匙串；默认地址取 CIRCLE_HUB_PORT，只允许回环地址，不跟随重定向。下载用 `node:http` 直连这个回环地址，不走环境变量里的代理。先钉住规范清单的包号，再按清单下载全部原文件并重算大小、摘要及响应完整性头；同级私有临时目录全部通过后才改名，任一失败清理临时产物。SIGINT 和 SIGTERM 会删掉这份临时目录。上次安装留下的锁目录，以及所属进程已经不在的临时目录，由下一次安装清掉；所属进程还在的临时目录留着。已有目标相同时答“已安装”，不同时拒绝，不覆盖。改名撞上已有目录时，按那份目录再核对一次。连不上 Hub、令牌无效、版本不可用、完整性不符和本地写失败，各有自己的下一步，不都说成 pack.json。
 
 `circle-hub local-tools verify <目录> --digest <包号>` 必须带包号。先比目录里 pack.json 的 SHA-256 和这个包号，不等就失败；再按 pack.json 重算每个文件，指出第一处不符的路径并列出多出的文件。只读，不联网，拒绝链接。清单里某个文件的摘要或大小不符时，报的是这个文件的路径。它也能核对集成者手工安装的完整清单目录。同步修改清单和文件会得到另一个包号，用发布时的包号核，这一份过不了。输出只含包号、版本、文件数、字节数及不符路径，不含文件正文或令牌。没有运行任何下载代码。
+
+读取说明收尾（hub-read-absence）：管理员备注上限 2,000 字，MCP 当前只写理由条数和管理员详情入口，不拼接理由原文。MCP 把每条完整理由分别交给 CallLog，迁移 4 的 call_reasons 在同一调用事务中一次批量写入；管理员查询与控制台“完整理由”展示它们，普通读者、调用记录正文和 JSONL 均不带完整理由。理由按序、只追加，重复 span 不重写；NUL 与不成对代理项先规范化。结果记录引用重查两次仍缺时，给出的是缺少引用这一事实，不改已经算出的校验结果；同一提交再交可恢复引用而不多算修复轮。缺陷计数的持久口径是上述 metric=1 理由行数，按追踪／运行归属查询，不另向模型回显内部异常。
+
+结构摘要超过文字预算时，get_nodes 按实际结构行与行内偏移分页，用同一引用的 cursor 续读，不伪造原文件字节区间，也不把摘要称为原文；通用预算的回退说明仍带可读入口。旧适配器不声明 cursor 能力时不能凭空承诺分页，需要提供可公开的结构摘录入口。
+
+Needs：登录停止的具名管理员请求、处置后的自动重读等 hub-unknown-exits 的请求记录接口；未接入前不声称已发出请求。按运行开始时授权读取冻结输入的第 9 条仍等整合者通知相关依赖合并，本分支没有改成绕过当前查看权限。
+
+首轮复核补充：管理员理由只在数据库私有字段查询；calls JSONL 和重建路径均不序列化私有摘要或完整理由，短理由也不例外。
+
+可重试读取的下一次时刻统一由本次调用的 Hub 时钟计算；get_nodes 按引用读取也向解析器传入同一时钟，不另取 Date.now。

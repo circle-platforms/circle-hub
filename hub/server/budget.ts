@@ -319,7 +319,9 @@ export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted 
   }
   // Only for pathological input (hundreds of blocks): a short fixed note and whatever fits beside it. The note itself is cut
   // only for a budget shorter than it and the tail (about 70 characters), never for TEXT_BUDGET.
-  const note = `${labelOf('qualifier_mark', 'partial')}：这段回答以 ${budget} 个字符为限，有些内容没有显示。`;
+  const recovery=options.fallback??leftOut(prepared,fill(prepared,0),undefined).mores[0]??'缺少其余部分的读取入口；请管理员补充可读引用后用 get_nodes 读取';
+  const shortRecovery=recovery.length<Math.max(80,budget/2)?recovery:'请管理员补充未显示部分的可读引用，再用 get_nodes 读取';
+  const note = `${labelOf('qualifier_mark', 'partial')}：这段回答以 ${budget} 个字符为限，有些内容没有显示。读其余部分：${shortRecovery}`;
   const filled = fill(prepared, Math.max(0, budget - tailSize - note.length - 1));
   const text = assemble(prepared, filled, note, tail);
   return text.length <= budget ? { text, cut: true, shown: filled.shown } : { text: note.slice(0, budget), cut: true, shown: prepared.map(() => 0) };

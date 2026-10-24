@@ -339,7 +339,7 @@ function callTable(lines: readonly CallLogLine[], admin: boolean, users: Readonl
         line.session ?? '',
         html`${code(line.args_digest.slice(0, 16))}（${line.args_size}）`,
       ];
-      if (admin) row.push(line.admin_note ?? '');
+      if (admin) row.push(line.admin_reasons?.length?html`${line.admin_note??''}<details><summary>完整理由（${line.admin_reasons.length} 条）</summary><ol>${line.admin_reasons.map(reason=>html`<li><pre>${reason}</pre></li>`)}</ol></details>`:line.admin_note??'');
       return row;
     }),
     '没有调用',
