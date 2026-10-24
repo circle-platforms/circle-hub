@@ -42,12 +42,11 @@
 <arg name="" type="IPADDR" help_string="Address 3" length="" limit="" optional="NO" default_value=""></arg>
 <arg name="" type="IPADDR" help_string="Address 4" length="" limit="" optional="NO" default_value=""></arg>
 <arg name="" type="IPADDR" help_string="Address 5" length="" limit="" optional="NO" default_value=""></arg>
-<arg name="" type="IPADDR" help_string="Address 6" length="" limit="" optional="NO" default_value=""></arg>
 </arguments><results></results></item>
 </menu>
 <item name="log" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_log" help_string="Set the log level and the station address"><arguments>
 <arg name="" type="U16" help_string="Log level" length="" limit="[10 - 1]" optional="NO" default_value=""></arg>
-<arg name="" type="MACADDR" help_string="Station address" length="" limit="" optional="maybe" default_value=""></arg>
+<arg name="" type="MACADDR" help_string="Station address" length="" limit="" optional="NO" default_value=""></arg>
 </arguments><results></results></item>
 </menu>
 <item name="ping" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_ENABLE" func="demo_ping" help_string="Send echo requests"><arguments>
@@ -63,7 +62,6 @@
 </menu>
 </menu>
 
-<item name="" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_USER" func="nameless" help_string="An item without a name"><arguments></arguments><results></results></item>
 <menu name="clear counters" help_string="Clear counters" user_level="DEMO_LEVEL_CONFIG">
 <item name="all" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_clear_all" help_string="Clear every counter"><results></results></item>
 </menu>

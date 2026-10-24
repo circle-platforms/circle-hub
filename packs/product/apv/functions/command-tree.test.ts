@@ -69,7 +69,7 @@ describe('command entries from the command tree', () => {
       type: 'enum',
       values: ['rr', 'lc', 'hash'],
       optional: true,
-      default: '&quot;rr&quot;',
+      default: 'rr',
       description: 'Balancing mode',
     });
     const {unchecked_constraints:lengthGaps,...description}=data('/commands/demo/pool/description').signatures[0].params[1];
@@ -79,7 +79,7 @@ describe('command entries from the command tree', () => {
       type: 'string',
       optional: true,
       // Default text keeps its character references decoded exactly once, so the source's quoted empty value survives.
-      default: '&quot;&quot;',
+      default: '',
       description: 'Description, ie cn=pool,dc=example,dc=invalid',
     });
     assert.deepEqual(
@@ -118,8 +118,36 @@ describe('command entries from the command tree', () => {
         '  arg2: Member address or host name',
       ].join('\n'),
     );
-    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="&quot;rr&quot;">]');
-    assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="&quot;all&quot;">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
+    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="rr">]');
+    assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
+  });
+
+  it('refuses a document the declared grammar cannot verify completely, and says what to fix', () => {
+    // apv-command-tree@2 (apv README, 命令语法): a nameless item, an `optional` value outside YES/NO and a union
+    // expansion beyond 32 overloads are structural violations. The whole document is refused — nothing is truncated,
+    // nothing is guessed and no type falls back to STRING — and every refusal carries the missing fact and the exit.
+    const item = (attributes: string, args: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<CLICONFIG>
+<menu name="demo" help_string="Demo commands" user_level="DEMO_LEVEL_CONFIG">
+<item name="mesh" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_mesh" help_string="Mesh" ${attributes}><arguments>${args}</arguments><results></results></item>
+</menu>
+</CLICONFIG>
+`;
+    const address = '<arg name="" type="IPADDR" help_string="Address" length="" limit="" optional="NO" default_value=""></arg>';
+    const cases: Array<[string, string]> = [
+      ['a nameless item', item('name=""', '')],
+      ['an optional value outside YES/NO', item('name="mesh" optional="maybe"', address)],
+      ['a union expansion beyond 32 overloads', item('name="mesh"', address.repeat(6))],
+    ];
+    for (const [label, source] of cases) {
+      const refused = produceCommandEntries(xmlDocument(source).model);
+      assert.deepEqual(refused.entries, [], `${label}: nothing is produced from an unverifiable document`);
+      assert.ok(refused.warnings.length > 0, `${label}: the refusal is reported`);
+      for (const warning of refused.warnings) {
+        assert.match(warning, /\p{Script=Han}/u, `${label}: written in the author language`);
+        assert.match(warning, /下一步/, `${label}: names the author's exit`);
+      }
+    }
   });
 
   it('reads escaped quotes and attributes and reports what it could not verify', () => {
@@ -135,7 +163,9 @@ describe('command entries from the command tree', () => {
     assert.equal(station.type_declaration_status, 'undeclared');
     assert.deepEqual(data('/commands/demo/log').signatures[0].params.map((param) => [param.type ?? null, param.minimum ?? null, param.maximum ?? null, param.optional ?? null]), [
       ['int', 0, 65535, null],
-      [null, null, null, true],
+      // The station parameter's type is not in the pack's declared type table, so the whole parameter stays unchecked:
+      // no type, no range and no optional flag is read from it (an undeclared type is never completed from `optional`).
+      [null, null, null, null],
     ]);
   });
 

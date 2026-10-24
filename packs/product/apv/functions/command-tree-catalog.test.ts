@@ -18,24 +18,39 @@ test('explicit hostname types and address roles survive production and enforce t
  assert.equal(data(produced).signatures[0].params[0].maxLength,undefined);
  assert.deepEqual(check(produced,['demo lookup peer.invalid 192.0.2.7','demo lookup peer.invalid 2001:db8::7','demo lookup peer.invalid target.invalid','demo lookup https://peer.invalid target.invalid','demo lookup peer.invalid https://target.invalid']).map(outcome=>outcome.verdict),['support','support','support','refute','refute']);
 });
-test('explicit role declarations need an origin, may leave the native type unchanged, and never infer a role from a name',()=>{
+test('explicit role declarations need the pack schema and origin, may leave the native type unchanged, and never infer a role from a name',()=>{
  const model=tree('<arg name="client" type="DOTTEDIP" address_role="source-endpoint"/><arg name="server" type="DOTTEDIP"/>');
- const produced=produceCommandEntries(model,{argumentTypes:[{command:'demo lookup',position:1,address_role:'target-endpoint',origin:'synthetic published role declaration'},{command:'demo lookup',position:2,address_role:'ignored-endpoint'}] as never});
+ // A published declaration only overrides the tree when it carries the exact schema and the origin this pack authorizes;
+ // anything else is ignored with a warning and the tree's own field stands (no silent precedence).
+ const authorized={schema:'apv-command-argument-types@1',origin:'product:apv/README.md#command-grammar'};
+ const produced=produceCommandEntries(model,{argumentTypes:[
+  {...authorized,command:'demo lookup',position:1,address_role:'target-endpoint'},
+  {...authorized,command:'demo lookup',position:2,address_role:'ignored-endpoint',origin:'synthetic published role declaration'},
+ ] as never});
  assert.equal(data(produced).signatures[0].params[0].type,'ipv4');
  assert.equal(data(produced).signatures[0].params[0].address_role,'target-endpoint');
  assert.equal(data(produced).signatures[0].params[1].address_role,undefined);
- assert.ok(produced.warnings.some(warning=>warning.includes('来源')));
+ assert.ok(produced.warnings.some(warning=>warning.includes('origin')),JSON.stringify(produced.warnings));
 });
-test('hostname descriptions retain IPv4-only source bounds and use the broad union only for an either-family address',()=>{
+test('the help string is kept as a description and never changes a declared type',()=>{
+ // apv README (命令语法): 类型只按原始 `type` 精确字段和本包的 ARGUMENT_TYPES 定义；help 只保留说明，不能改变类型。
  const v4=produceCommandEntries(tree('<arg type="DOTTEDIP" help_string="IPv4 address or hostname"/>'));
- assert.deepEqual(data(v4).signatures.map(signature=>signature.params[0].type),['ipv4','hostname']);
- assert.deepEqual(check(v4,['demo lookup 192.0.2.8','demo lookup peer.invalid','demo lookup 2001:db8::8','demo lookup https://peer.invalid']).map(outcome=>outcome.verdict),['support','support','refute','refute']);
+ assert.deepEqual(data(v4).signatures.map(signature=>signature.params[0].type),['ipv4']);
+ assert.equal(data(v4).signatures[0].params[0].description,'IPv4 address or hostname');
+ assert.deepEqual(check(v4,['demo lookup 192.0.2.8','demo lookup peer.invalid','demo lookup 2001:db8::8']).map(outcome=>outcome.verdict),['support','refute','refute']);
+ // A union type expands into exactly its declared alternatives, each overload consuming every parameter.
  const either=produceCommandEntries(tree('<arg type="IPADDR" help_string="IP address or hostname"/>'));
- assert.equal(data(either).signatures[0].params[0].type,'ip_or_hostname');
- const host=produceCommandEntries(tree('<arg type="DOTTEDIP" help_string="Hostname of the peer"/>'));
+ assert.deepEqual(data(either).signatures.map(signature=>signature.params[0].type),['ipv4','ipv6']);
+ const mask=produceCommandEntries(tree('<arg type="IPMASK"/>'));
+ assert.deepEqual(data(mask).signatures.map(signature=>[signature.params[0].type,signature.params[0].maximum??null]),[['mask',null],['int',128]]);
+ const host=produceCommandEntries(tree('<arg type="HOSTNAME" help_string="Hostname of the peer"/>'));
  assert.equal(data(host).signatures[0].params[0].type,'hostname');
- const url=produceCommandEntries(tree('<arg type="DOTTEDIP" help_string="IP or hostname or URL"/>'));
- assert.equal(data(url).signatures[0].params[0].type,'string');
+ const union=produceCommandEntries(tree('<arg type="IP_OR_HOSTNAME" help_string="IP or hostname or URL"/>'));
+ assert.equal(data(union).signatures[0].params[0].type,'ip_or_hostname');
+ // An unknown type stays undeclared with its recovery instead of falling back to a guessed string.
+ const unknown=produceCommandEntries(tree('<arg type="WIDGET" help_string="Anything"/>'));
+ assert.equal(data(unknown).signatures[0].params[0].type,undefined);
+ assert.equal(data(unknown).signatures[0].params[0].type_declaration_status,'undeclared');
 });
 
 test('only inclusive bracket ranges become constraints; every other nonempty spelling stays unchecked',()=>{
