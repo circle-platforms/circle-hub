@@ -225,7 +225,7 @@ function commandPath(words: readonly string[]): string | null {
 
 /** Trailing spaces off every line, outer blank lines off: the canonical text of a block. */
 /** The applicability of a multi-row table statement: only when every data row states the same condition. */
-function tableEveryRow(statement: string): ProducedEntry['applicability'] {
+function tableEveryRow(statement: string, vocabulary:ClosedSets): ProducedEntry['applicability'] {
   const lines = statement.split('\n').filter((line) => line.trim() !== '');
   const data = lines.filter((line) => {
     const cells = line.split('|').map((cell) => cell.trim()).filter((cell) => cell !== '');
@@ -234,7 +234,7 @@ function tableEveryRow(statement: string): ProducedEntry['applicability'] {
   if (data.length === 0) return null;
   let acc: ProducedEntry['applicability'] = null;
   for (const line of data) {
-    const own = toApplicability(conditionsOf(line));
+    const own = toApplicability(conditionsOf(line,vocabulary));
     if (own === null) return null;
     if (acc === null) acc = own;
     else if (JSON.stringify(acc) !== JSON.stringify(own)) return null;
@@ -382,7 +382,67 @@ function commonPrefix(lists: readonly string[][]): string[] {
 // heading, a sibling block or another row (a section-wide rule waits on the owner's decision). `builds` is never set
 // on a manual entry: which builds use the manual is said by the per-build roots and their compositions. Vague,
 // inclusive, exception and negated writings are not conditions and stay unread (they stay in the entry's text).
-type Conditions = { platforms?: string[]; models?: string[] };
+type Conditions = NonNullable<ProducedEntry['applicability']>;
+type ClosedSets = {components:ReadonlySet<string>;licenses:ReadonlySet<string>;deployment_forms:ReadonlySet<string>};
+function closedVocabulary(options:ManualOptions):ClosedSets {
+  const read=(value:unknown):ReadonlySet<string>=>{
+    if(value===undefined)return new Set<string>();
+    if(!Array.isArray(value)||value.some(word=>typeof word!=='string'||word.trim()===''))throw new TypeError('适用条件闭集须为非空词的字符串列表；请管理员核对产品变量后重新同步');
+    return new Set(value);
+  };
+  return {components:read(options.components),licenses:read(options.licenses),deployment_forms:read(options.deployment_forms)};
+}
+const SERIES_SEPARATOR = /\s*(?:以及|或者|、|,|，|\/|和|与|及|或|并)\s*/u;
+function closedSeries(text:string,words:ReadonlySet<string>):string[]|null {
+  const clean=text.trim();
+  if(words.has(clean))return [clean];
+  const items=clean.split(SERIES_SEPARATOR).map(item=>item.replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').trim());
+  return items.length&&items.every(item=>item!==''&&words.has(item))?[...new Set(items)].sort(compareText):null;
+}
+/** Read only closed names and explicit positive restrictions; never keep a recognized prefix of a failed list. */
+function closedConditions(text:string,vocabulary:ClosedSets):Conditions {
+  if(!vocabulary.components.size&&!vocabulary.licenses.size&&!vocabulary.deployment_forms.size)return {};
+  const withWords=new Set<string>(),withoutWords=new Set<string>(),licenses=new Set<string>(),forms=new Set<string>();
+  const unread={components:false,licenses:false,deployment_forms:false};
+  const out:Conditions={};
+  for(const clause of text.split(/[。；：\n]/u)){
+    const bad=[...clause.matchAll(/不|未|无|非|没|勿|除|之外|以外|其余|其他|等等?|可能|通常|一般|某些|部分|大概|也|还|亦/gu)].map(match=>match.index);
+    const outside=(start:number,end:number)=>bad.some(at=>at<start||at>=end);
+    const explicit=(pattern:RegExp,field:keyof ClosedSets,absent=false)=>{
+      for(const match of clause.matchAll(pattern)){
+        const start=match.index,end=start+match[0].length;
+        const values=closedSeries(match[1]!,vocabulary[field])??(field==='components'?closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary[field]):null);
+        const tail=clause.slice(end);
+        const continued=/^\s*(?:、|以及|或者|和|与|及|或|并|\/)/u.test(tail)||(/^\s*[，,]/u.test(tail)&&/(?:部件|许可|部署形态|部署方式)/u.test(tail));
+        if(outside(start,end)||!values||continued){unread[field]=true;continue;}
+        const found=field==='components'?(absent?withoutWords:withWords):field==='licenses'?licenses:forms;
+        for(const value of values)found.add(value);
+      }
+    };
+    explicit(/装有\s*([^。；：\n]{1,200}?)\s*时/gu,'components');
+    explicit(/没有\s*([^。；：\n]{1,200}?)\s*时/gu,'components',true);
+    explicit(/需要\s*([^。；：\n]{1,200}?)\s*许可/gu,'licenses');
+    for(const pattern of [/适用于\s*([^。；：\n]{1,200})/gu,/(?:仅|只)\s*([^。；：\n]{1,200}?)\s*支持/gu])for(const match of clause.matchAll(pattern)){
+      let candidate=match[1]!.trim(),end=match.index+match[0].length;
+      const when=candidate.indexOf('时');
+      if(when>=0){end=match.index+match[0].indexOf(match[1]!)+match[1]!.indexOf('时')+1;candidate=candidate.slice(0,when).trim();}
+      else if(end<clause.length)continue;
+      if(outside(match.index,end))continue;
+      const candidates=[
+        {field:'components' as const,words:vocabulary.components,values:withWords,noun:/\s*部件$/u},
+        {field:'licenses' as const,words:vocabulary.licenses,values:licenses,noun:/\s*许可$/u},
+        {field:'deployment_forms' as const,words:vocabulary.deployment_forms,values:forms,noun:/\s*(?:部署形态|部署方式|部署)$/u},
+      ];
+      const reads=candidates.flatMap(row=>{const values=closedSeries(candidate,row.words)??closedSeries(candidate.replace(row.noun,''),row.words);return values?[{...row,read:values}]:[];});
+      if(reads.length!==1)continue;
+      const row=reads[0]!;for(const value of row.read)row.values.add(value);
+    }
+  }
+  if(!unread.components&&(withWords.size||withoutWords.size))out.components={...(withWords.size?{with:[...withWords].sort(compareText)}:{}),...(withoutWords.size?{without:[...withoutWords].sort(compareText)}:{})};
+  if(!unread.licenses&&licenses.size)out.licenses=[...licenses].sort(compareText);
+  if(!unread.deployment_forms&&forms.size)out.deployment_forms=[...forms].sort(compareText);
+  return out;
+}
 
 /** Platform values a manual may name: the pack's platform tokens (hyphen-joined) plus the Han words 虚拟/物理. */
 const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequence) => sequence.join('-')), '虚拟', '物理']);
@@ -416,7 +476,7 @@ const SUB_CLAUSE_END = /[，,]/;
  * connectives and the field's noun, must all be readable; a trailing 等 (a partial listing) or another connective
  * after the series makes it unread; one unreadable token makes the whole series unread, never a narrowed one.
  */
-function conditionsOf(text: string): Conditions {
+function conditionsOf(text: string, vocabulary: ClosedSets): Conditions {
   const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
   // One clause split for the whole text (bounded: every clause is scanned once, every candidate's series window is
   // capped, so hostile paragraphs stay linear — closure findings 7 and 15).
@@ -481,7 +541,7 @@ function conditionsOf(text: string): Conditions {
   const out: Conditions = {};
   if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
   if (found.models.size > 0) out.models = [...found.models].sort(compareText);
-  return out;
+  return {...out,...closedConditions(text,vocabulary)};
 }
 
 /** One series candidate: the items up to and through the field noun, tokens by field, or null when unread. */
@@ -574,11 +634,12 @@ const CLAUSE_WINDOW = 200;
 
 /** The applicability of an entry, or null (未声明) when nothing declares a condition. */
 function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
-  return conditions.platforms === undefined && conditions.models === undefined ? null : conditions;
+  return Object.keys(conditions).length===0 ? null : conditions;
 }
 
 function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, options: ManualOptions, warnings: string[]): ManualResult {
   const entries: ProducedEntry[] = [];
+  const vocabulary=closedVocabulary(options);
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
   const sections: Section[] = asArray(model.sections).map((value) => {
@@ -675,8 +736,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     // declares the others. Non-table statements read their own text as before.
     const isTableText = init.block === 'table' && init.statement.includes('\n');
     const applicability = isTableText
-      ? tableEveryRow(init.statement)
-      : toApplicability(conditionsOf(init.statement));
+      ? tableEveryRow(init.statement,vocabulary)
+      : toApplicability(conditionsOf(init.statement,vocabulary));
     const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability };
     // A multi-command row's own anchors are recorded as signature literals by the caller: its prose must not add them
     // back as unresolved spans.
@@ -711,7 +772,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     headingAnchors.set(index, { anchor, path: placed });
     const sectionCite = options.sectionSelector === undefined ? (section.selector as string) : options.sectionSelector(sectionSegments(index) ?? []);
     const entry = signatureEntry(anchor, placed, { parser: parserOf(options), selector: sectionCite });
-    entry.applicability = toApplicability(conditionsOf(section.title));
+    entry.applicability = toApplicability(conditionsOf(section.title,vocabulary));
     entries.push(entry);
   });
 
@@ -935,7 +996,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       const placed = anchorPathOf(anchor, catalog, options) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
 
-      entry.applicability = toApplicability(conditionsOf(text));
+      entry.applicability = toApplicability(conditionsOf(text,vocabulary));
       entries.push(entry);
       current = { path: placed, words: anchor.words, params: anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(anchor) };
       continue;
@@ -990,7 +1051,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const path = anchorPathOf(one, catalog, options) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
 
-            signature.applicability = toApplicability(conditionsOf(rowText));
+            signature.applicability = toApplicability(conditionsOf(rowText,vocabulary));
             split.push(signature);
             const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
             if (described.length > 0) split.push(textEntry({ path, statement: described.join('；'), block: 'table', section: block.section, words: one.words, fragments: [rowFragment] }));
@@ -1017,7 +1078,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const quiet: number[] = [];
           for (const line of rowLines) {
             const rowText = table.lines[line].trimEnd();
-            const own = conditionsOf(rowText);
+            const own = conditionsOf(rowText,vocabulary);
             if (toApplicability(own) !== null) {
               entries.push(
                 textEntry({
@@ -1242,7 +1303,8 @@ export default function manual(input: unknown): ManualResult {
     () => {
       if (isRecord(input) && 'model' in input && !isMarkdown(input) && !isCatalog(input)) {
         const name = typeof input.name === 'string' && input.name !== '' ? input.name : undefined;
-        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, name === undefined ? {} : { name });
+        const params=isRecord(input.params)?input.params:{};
+        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, {components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined,...(name===undefined?{}:{name})});
       }
       return produceManualEntries(input as MarkdownModel);
     },

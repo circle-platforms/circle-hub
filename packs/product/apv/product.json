@@ -2,15 +2,29 @@
   "schema": "product@1",
   "id": "apv",
   "title": "APV / NSAE",
-  "names": ["APV", "NSAE"],
+  "names": [
+    "APV",
+    "NSAE"
+  ],
   "sync": {
-    "start": ["buildsite:listing:index"],
-    "plan": { "module": "functions/sync.ts" },
-    "options": { "include": [], "exclude": [], "case_index": true, "min_line": "10.4.2" },
+    "start": [
+      "buildsite:listing:index"
+    ],
+    "plan": {
+      "module": "functions/sync.ts"
+    },
+    "options": {
+      "include": [],
+      "exclude": [],
+      "case_index": true,
+      "min_line": "10.4.2"
+    },
     "max_rounds": 6,
     "max_reads": 300
   },
-  "select_build": { "module": "functions/select.ts" },
+  "select_build": {
+    "module": "functions/select.ts"
+  },
   "links": [
     {
       "id": "manual-literals",
@@ -50,41 +64,129 @@
     }
   ],
   "catalogs": [
-    { "id": "commands@1", "entry_kind": "definition", "producer": "command-tree", "complete": true, "case_sensitive": false }
+    {
+      "id": "commands@1",
+      "entry_kind": "definition",
+      "producer": "command-tree",
+      "complete": true,
+      "case_sensitive": false
+    }
   ],
   "producers": [
     {
       "id": "command-tree",
       "title": "命令树（构建自带的 command_tree XML）",
-      "function": { "module": "functions/producers.ts", "export": "commandTree" },
-      "inputs": { "tree": { "source": "tree" } }
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "commandTree"
+      },
+      "inputs": {
+        "tree": {
+          "source": "tree"
+        }
+      }
     },
     {
       "id": "manual",
       "title": "CLI 手册与应用手册（版本线的手册）",
-      "function": { "module": "functions/producers.ts", "export": "manual" },
-      "inputs": {
-        "cli": { "external": "manual:cli:{line}", "optional": true },
-        "app": { "external": "manual:app:{line}", "optional": true },
-        "tree": { "source": "tree" }
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "manual"
       },
-      "placement": "judgment_allowed"
+      "inputs": {
+        "cli": {
+          "external": "manual:cli:{line}",
+          "optional": true
+        },
+        "app": {
+          "external": "manual:app:{line}",
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        }
+      },
+      "placement": "judgment_allowed",
+      "params": {
+        "components": "${var:APV_COMPONENTS}",
+        "licenses": "${var:APV_LICENSES}",
+        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
+      }
     },
     {
       "id": "release-notes",
       "title": "修复的缺陷（构建的修复缺陷清单）",
-      "function": { "module": "functions/producers.ts", "export": "releaseNotes" },
-      "inputs": { "notes": { "source": "fixed_bugs", "optional": true } }
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "releaseNotes"
+      },
+      "inputs": {
+        "notes": {
+          "source": "fixed_bugs",
+          "optional": true
+        }
+      }
     },
     {
       "id": "cases",
       "title": "用例（敏捷平台的测试脑图，按用例涉及的命令归档）",
-      "function": { "module": "functions/cases.ts", "export": "cases" },
+      "function": {
+        "module": "functions/cases.ts",
+        "export": "cases"
+      },
       "inputs": {
-        "documents": { "source": "case_documents", "many": true, "batch": 40, "optional": true },
-        "tree": { "source": "tree" },
-        "folders": { "source": "case_tree", "optional": true }
+        "documents": {
+          "source": "case_documents",
+          "many": true,
+          "batch": 40,
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        },
+        "folders": {
+          "source": "case_tree",
+          "optional": true
+        }
       }
+    }
+  ],
+  "variables": [
+    {
+      "name": "APV_COMPONENTS",
+      "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "APV_LICENSES",
+      "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "APV_DEPLOYMENT_FORMS",
+      "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
     }
   ]
 }

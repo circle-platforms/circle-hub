@@ -1,3 +1,4 @@
+import type { Applicability as SourceApplicability } from '../../../../contracts/src/product.ts';
 // Input and output shapes of the APV/NSAE product pack functions. Types only: every import here is erased at run time,
 // so the functions stay pure modules inside the pack.
 import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
@@ -187,7 +188,7 @@ export type FragmentRef = {
 };
 
 /** Applicability conditions the producer read from the source structure; null on an entry means "未声明" (K02 F[6]). */
-export type Applicability = { builds?: string[]; platforms?: string[]; models?: string[] };
+export type Applicability = SourceApplicability;
 
 export type ProducedEntry = {
   kind: EntryKind;
@@ -237,7 +238,7 @@ export type ManualCatalog = {
   worked_examples?: Array<{ lines: string[]; src?: string }>;
 };
 
-export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string };
+export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string; params?: {components?:string[];licenses?:string[];deployment_forms?:string[]} };
 
 /**
  * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
@@ -247,6 +248,10 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
  */
 export type ManualOptions = {
+  /** Deployment closed sets. Omission is the empty set used only by direct examples. */
+  components?: readonly string[];
+  licenses?: readonly string[];
+  deployment_forms?: readonly string[];
   name?: string;
   catalog?: CommandCatalog | null;
   /** A production whose tree slot is unusable: signatures stay at their section nodes (no synthetic paths). */

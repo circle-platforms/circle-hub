@@ -883,3 +883,15 @@ classification and current-parameter/value-row state. K1's standalone drift accu
 signature groups use the declared exact primary/alternatives rule, other cells retain prose mentions, and Hub production and
 reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
 of depending on a truncated field or a producer-local warning.
+
+## 适用条件闭集（kb-applicability）
+
+`APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS` 是部署变量，三者均声明为字符串列表，
+样例／试运行默认值均为空列表。真实生产前须分别 `circle-hub var set <名字> --file <JSON文件> --reason <理由>`；
+确实没有值时显式设 `[]`。生产器只接解析后的 params，变量决定由核心冻结进组成记录；仓库不带真实闭集。
+
+支持的窄写法：部件用“装有 X 时”“没有 X 时”（可带“部件”）；许可用“需要 X 许可”；
+三个闭集均可用“适用于 X”“仅 X 支持”，可带对应字段名。名称逐字比较，不补同义词或大小写别名；
+并列列表的每一项都须在同一闭集中，且只能确定一个字段。否定、例外、部分、可能、也等扩泛写法不抽，
+整组留在原文；未知成员不截成已知前缀。单个条件组读取上限 200 字符，超出的不作猜测。
+部件缺席只在明确“没有 X 时”中记录 without。空闭集不会为该字段产生条件。
