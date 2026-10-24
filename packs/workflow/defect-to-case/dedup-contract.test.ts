@@ -1,3 +1,4 @@
+import type {CommandIdentity,ExpectedQuoteIdentity} from '../../../contracts/generated/shared-interfaces.ts';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
@@ -17,7 +18,7 @@ test('identical titles with different parameter values do not duplicate',()=>{
  assert.equal(check(draft,view).verdict,'support');
 });
 for(const field of ['source_sha256','parser','path','offset','length','after'])test('quote identity includes '+field,()=>{
- const draft=makeDuplicateDraft();const expected=draft.expected[0],identity=expected.identity!;
+ const draft=makeDuplicateDraft();const expected=draft.expected[0],identity=expected.identity as ExpectedQuoteIdentity;
  if(field==='after'){draft.steps.push(nativeStep('show health'));expected.after=2;}
  else if(field==='offset'||field==='length')identity.span[field]++;
  else if(field==='source_sha256')identity.source_sha256='e'.repeat(64);
@@ -29,5 +30,5 @@ test('missing command or quote identity remains unknown even with identical titl
 });
 test('raw spelling of a typed integer is not part of the parsed parameter key',()=>{
  const draft=makeGoodDraft(),view=structuredClone(SYNTHETIC_INDEX_VIEW);Object.values(view.entries)[0].data.case_structure={schema:'case-structure@2',commands:draft.steps.map(s=>s.identity),expected:draft.expected.map(e=>({after:e.after,quote:e.identity}))};
- draft.steps[0].identity!.parameters[0].raw='060';assert.equal(check(draft,view).verdict,'refute');
+ (draft.steps[0].identity as CommandIdentity).parameters[0].raw='060';assert.equal(check(draft,view).verdict,'refute');
 });
