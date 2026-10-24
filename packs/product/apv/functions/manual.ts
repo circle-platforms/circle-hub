@@ -826,7 +826,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       for(const [field,local] of locals.get(item)??[]){
         const outer=parent.get(field);
         if(outer&&(!equal(outer.declaration,local.declaration,field)||outer.conflict!==local.conflict))report.overrides.push({field,section:sectionOrigin(item),values:[...outer.origins,...local.origins].map(origin=>origin.meta.declaration),fragments:[...outer.origins,...local.origins].map(origin=>origin.fragment)});
-        current.set(field,local);
+        current.set(field,outer?{...local,origins:[...local.origins,...outer.origins.map(origin=>({...origin,meta:{...origin.meta,superseded:true}}))]}:local);
       }
       scopes.set(item,current);parent=current;
     }
@@ -850,6 +850,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         if(opening&&locals.get(context.section)?.get(field)?.declaration===null){delete (effective as Record<string,unknown>)[field];for(const origin of scope?.origins??[])attach(entry,origin);continue;}
         if(ownTopics.has(field)){
           if(own[field]===undefined){delete (effective as Record<string,unknown>)[field];}
+          if(opening&&scope?.origins.some(origin=>origin.meta.superseded))for(const origin of scope.origins)attach(entry,origin);
           continue;
         }
         if(!scope)continue;

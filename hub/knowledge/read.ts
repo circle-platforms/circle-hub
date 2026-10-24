@@ -38,7 +38,8 @@ export interface TreeLock {
 }
 
 /** Display text of an entry's applicability (K02 R[2]: undeclared is said, never hidden). */
-export function applicabilityText(applicability: Applicability | null, sources:readonly {field:ApplicabilityField;section:readonly string[];declaration?:Applicability;conflict?:boolean}[]=[]): string {
+export function applicabilityText(applicability: Applicability | null, sources:readonly {field:ApplicabilityField;section:readonly string[];declaration?:Applicability;conflict?:boolean;superseded?:boolean}[]=[]): string {
+  sources=sources.filter(source=>!source.superseded);
   const conflicts=new Set(sources.filter(source=>source.conflict).map(source=>source.field));
   const unread=new Set(sources.filter(source=>source.declaration!==undefined&&source.declaration[source.field]===undefined).map(source=>source.field));
   if(applicability===null&&!conflicts.size&&!unread.size)return UNDECLARED;
@@ -577,7 +578,7 @@ export class TreeReading {
         if (visible) contradictions.push({ source: relation.source, at: relation.at, other: relation.other });
       }
       if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
-      const sourceConflicts=applicabilitySourcesOf(digests).filter(source=>source.conflict);
+      const sourceConflicts=applicabilitySourcesOf(digests).filter(source=>source.conflict&&!source.superseded);
       if(sourceConflicts.length)conditions.push({condition:'contradicted',source:'章节开头条件冲突；未裁决：'+sourceConflicts.map(source=>labelOf('applicability_field',source.field)+' '+source.fragment).join('、')});
       let status: ValidityStatus = 'valid';
       for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }

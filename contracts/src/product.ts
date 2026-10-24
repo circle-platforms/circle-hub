@@ -243,7 +243,7 @@ export const Applicability = z.strictObject({
 export type Applicability = z.infer<typeof Applicability>;
 
 /** Declared field provenance; conflict preserves competing source declarations without choosing a value. */
-export const ApplicabilityOrigin=z.strictObject({field:ApplicabilityFieldSchema,section:z.array(z.string()),declaration:Applicability,conflict:z.boolean().optional()});
+export const ApplicabilityOrigin=z.strictObject({field:ApplicabilityFieldSchema,section:z.array(z.string()),declaration:Applicability,conflict:z.boolean().optional(),superseded:z.boolean().optional().describe('An inner scope replaced this declaration; retained as provenance only')});
 export type ApplicabilityOrigin=z.infer<typeof ApplicabilityOrigin>;
 
 /** A piece of a stored source: parser, selector and an optional UTF-8 byte range inside the fragment. */

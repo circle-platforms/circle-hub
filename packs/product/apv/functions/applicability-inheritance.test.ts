@@ -40,7 +40,7 @@ test('same-section conflicts retain both values and origins, omit that field and
   const out=result('# Outer 装有 Card-A 时\n\n## Inner 装有 Card-A 时\n\n装有 Card-B 时。\n\n### Leaf\n\n普通正文。\n');
   const body=out.entries.find(e=>e.statement==='普通正文。')!;
   assert.equal(body.applicability?.components,undefined);
-  const origins=body.fragments.flatMap(fragment=>fragment.applicability??[]).filter(origin=>origin.field==='components');
+  const origins=body.fragments.flatMap(fragment=>fragment.applicability??[]).filter(origin=>origin.field==='components'&&!origin.superseded);
   assert.equal(origins.length,2);assert.ok(origins.every(origin=>origin.conflict));
   assert.deepEqual(new Set(origins.flatMap(origin=>origin.declaration.components?.with??[])),new Set(['Card-A','Card-B']));
   assert.equal(out.applicability_report?.conflicts.length,1);
@@ -70,4 +70,14 @@ test('an explicit unknown part or mixed closed list still blocks a narrower inhe
     assert.equal(entry.applicability?.components,undefined,prose);
     assert.ok(entry.fragments.some(fragment=>fragment.applicability?.some(origin=>origin.field==='components'&&origin.declaration.components===undefined)),prose);
   }
+});
+
+test('an overridden outer declaration remains attached with a superseded marker',()=>{
+  const out=result('# Outer 装有 Card-A 时\n\n## Inner\n\n装有 Card-B 时。\n\n普通正文。\n');
+  const entry=out.entries.find(row=>row.statement==='普通正文。')!;
+  const origins=entry.fragments.flatMap(fragment=>fragment.applicability??[]).filter(origin=>origin.field==='components');
+  assert.deepEqual(origins.filter(origin=>origin.superseded).map(origin=>origin.declaration.components),[{with:['Card-A']}]);
+  assert.deepEqual(origins.filter(origin=>!origin.superseded).map(origin=>origin.declaration.components),[{with:['Card-B']}]);
+  const direct=out.entries.find(row=>row.statement==='装有 Card-B 时。')!;
+  assert.ok(direct.fragments.some(fragment=>fragment.applicability?.some(origin=>origin.superseded)));
 });

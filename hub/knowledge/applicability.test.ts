@@ -35,3 +35,12 @@ test('component presence and absence stay inside one labelled field',()=>{
   const text=applicabilityText({components:{with:['Card-A'],without:['Card-B']},licenses:['Permit-A']});
   assert.equal(text,'部件 装有 Card-A，没有 Card-B；许可 Permit-A');
 });
+
+test('superseded conflicts and unread declarations remain provenance rather than effective conditions',()=>{
+ const text=applicabilityText({components:{with:['Card-C']},inherited:['components']},[
+   {field:'components',section:['Outer'],declaration:{components:{with:['Card-A']}},conflict:true,superseded:true},
+   {field:'components',section:['Outer'],declaration:{},superseded:true},
+   {field:'components',section:['Inner'],declaration:{components:{with:['Card-C']}}}
+ ]);
+ assert.equal(text,'部件 装有 Card-C（继承自章节开头：Inner）');
+});

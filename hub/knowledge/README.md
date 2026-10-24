@@ -970,3 +970,5 @@ not disjoint source totals. Scope notes name the root, skipped count and produce
 actually retained in the bounded summary, disclose absent legacy producer detail,
 and request source/producer repair followed by automatic resync and a new run.
 They never infer that no entries exist from a source that did not produce.
+
+适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。

@@ -934,3 +934,7 @@ ROOT 的三种情形：
 当前包版本为 1.4.1：部署约定和按族 adoc 接线已进入包声明。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
 
 在 Literal links 的生产器范围中，`source_producers` 为 `manual-apv` 与 `manual-nsae`，`target_producers` 仍为 `command-tree`；两族共用同一套关系规则和规范化器。
+
+被内层取代的外层声明也保留在组成记录的 `applicability_sources`，标 `superseded: true`。
+它们仍带原值和核验后的片段；读时不把它们当作生效字段、继承路径或当前冲突。
+因此同步 warning 被条数或长度预算截断后，内外层来源仍可经组成记录回查。

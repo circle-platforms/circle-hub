@@ -541,6 +541,10 @@
                     },
                     "conflict": {
                       "type": "boolean"
+                    },
+                    "superseded": {
+                      "description": "An inner scope replaced this declaration; retained as provenance only",
+                      "type": "boolean"
                     }
                   },
                   "required": [
