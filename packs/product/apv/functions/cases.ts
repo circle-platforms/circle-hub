@@ -13,6 +13,7 @@
 // (model.meta.agile.id), so every element carries its identity however the Hub cuts the list into calls; an element that
 // carries its own external id is taken at its word. The id must be one the build lists. An element without either is a
 // document of unknown identity (document, line, train and module null), never guessed from its position.
+import {labelOf} from './generated/vocabulary.ts';
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
@@ -98,7 +99,8 @@ export function caseStatement(data: Record<string, unknown>): string {
   const priority = typeof data.priority === 'string' ? JSON.stringify(data.priority) : valueOf(data.priority, '无');
   lines.push(`优先级：${priority}；标签：${listOf(data.tags, '、', ITEM)}；负向：${yesNo(data.negative, '未标注')}`);
   if (data.tags_note === '正负向和测试类型未声明') lines.push(data.tags_note);
-  lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${data.vague_expected === true ? '笼统' : '不笼统'}）；步骤：${valueOf(data.steps_count, '无')} 个`);
+  lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${labelOf('judgment_status','unjudged')}）；步骤：${valueOf(data.steps_count, '无')} 个`);
+  lines.push(`原件：${valueOf(data.source_sha256, '未知')}；用例位置：${valueOf(data.case_location, '未知')}`);
   lines.push(`命令：${listOf(data.commands, '、', ITEM)}`);
   lines.push(`需求：${listOf(data.stories, '、', ITEM)}；缺陷：${listOf(data.defects, '、', ITEM)}`);
   lines.push(`版本线：${valueOf(data.line, '未知')}；发布火车：${valueOf(data.train, '未知')}；模块：${valueOf(data.module, '未知')}`);
@@ -346,7 +348,8 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         ...(!node.tags.some(tag => !isBlank(tag)) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: node.expectedCount,
         has_expected: node.hasExpected,
-        vague_expected: node.vague,
+        source_sha256: doc.sha256,
+        case_location: `src:${doc.sha256}/${PARSER}/${node.selector}`,
         steps_count: node.steps,
         commands: paths,
         command_identities: results.flatMap(r=>r.identities??[]),

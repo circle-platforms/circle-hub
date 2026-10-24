@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.15",
+  "version": "1.1.17",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "8072488bec59468bf8a24925971c56e9d4dbdbeccf95d497c2c3448336a609cf",
-      "size": 3707
+      "sha256": "afc5bde3f02a7b7e41df7ca1282c70e33558c2323d5152d233e3708a3d867ecf",
+      "size": 4132
     },
     {
       "path": "examples/start-run.json",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "af20c30d16030b664a03606a15cc26cca4987832611c900fca7ba5ab57f52bcb",
-      "size": 27584
+      "sha256": "e9eaac8a49ed8c250d234463cb926466d6fe56c1add35e6d3230c7d98275c897",
+      "size": 27685
     },
     {
       "path": "functions/projection.ts",
@@ -98,13 +98,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a5ed6a6c51f3a9458f423cd22d73e9a41c2f4d9169d2c35cac889c152f287f3e",
-      "size": 12275
+      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
+      "size": 12339
     },
     {
       "path": "requirements.json",
-      "sha256": "f111af9b1e56126e924b60e06c8ba6c9bee2924de92eba58a3c9ea0335ee8acb",
-      "size": 4047
+      "sha256": "cc72ecfa3207eae62b130fbe3e5d422733052437c232fba5f344806cb6a68286",
+      "size": 4805
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -233,8 +233,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "6155249d46fe5be3783ac9abfa2a833620a0a1c7205252d7bddb770dfd4b3e4e",
-      "size": 2381
+      "sha256": "57adab74c6c1822fc9b6d23e090b6f8346c4256aae3c24cb78a1b81924e6a41d",
+      "size": 4002
     },
     {
       "path": "tables/catalog.json",
@@ -290,6 +290,11 @@
       "path": "workflow.json",
       "sha256": "ce5d1815ed859e774b5ef15e427426da5cf7754806255c61dcc830487a53b33d",
       "size": 5953
+    },
+    {
+      "path": "functions/expected-quality.ts",
+      "sha256": "78b17136ed985dd8d5030feb2b6f90ff457828cbb78b97afd5362680354a6d49",
+      "size": 3113
     }
   ]
 }

@@ -7,9 +7,13 @@ export const DECLARATION_STATUS = ['declared', 'undeclared'] as const;
 export type DeclarationStatus = (typeof DECLARATION_STATUS)[number];
 export const DECLARATION_STATUS_LABEL = { 'declared': '已声明', 'undeclared': '未声明' } as const satisfies Record<DeclarationStatus, string>;
 export function isDeclarationStatus(value: unknown): value is DeclarationStatus { return typeof value === 'string' && (DECLARATION_STATUS as readonly string[]).includes(value); }
-export interface AxisValues { knowledge_count: KnowledgeCount; declaration_status: DeclarationStatus; }
+export const JUDGMENT_STATUS = ['judged', 'unjudged'] as const;
+export type JudgmentStatus = (typeof JUDGMENT_STATUS)[number];
+export const JUDGMENT_STATUS_LABEL = { 'judged': '已判断', 'unjudged': '未判断' } as const satisfies Record<JudgmentStatus, string>;
+export function isJudgmentStatus(value: unknown): value is JudgmentStatus { return typeof value === 'string' && (JUDGMENT_STATUS as readonly string[]).includes(value); }
+export interface AxisValues { knowledge_count: KnowledgeCount; declaration_status: DeclarationStatus; judgment_status: JudgmentStatus; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { knowledge_count: KNOWLEDGE_COUNT_LABEL, declaration_status: DECLARATION_STATUS_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { knowledge_count: KNOWLEDGE_COUNT_LABEL, declaration_status: DECLARATION_STATUS_LABEL, judgment_status: JUDGMENT_STATUS_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }
 
 // Business values come only from the published package table; they are not core vocabulary axes.

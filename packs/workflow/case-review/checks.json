@@ -106,6 +106,17 @@
       "tier": "advisory"
     },
     {
+      "id": "expected_quality_evidence",
+      "title": "期望质量的完整逐字证据",
+      "function": {
+        "module": "functions/expected-quality.ts"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "R3：语义由模型主张；原件、用例所属全部期望叶子及逐字引文由 Hub 核验，不使用含糊短语表"
+    },
+    {
       "id": "negative_commands",
       "title": "反向用例自身有命令行",
       "function": {

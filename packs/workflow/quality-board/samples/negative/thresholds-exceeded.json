@@ -2,12 +2,12 @@
   "id": "thresholds_exceeded",
   "source": "author",
   "check": "thresholds",
-  "note": "合成样例：无期望结果占 40.0% 超过上限 5.0%，含糊期望占 30.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过",
+  "note": "合成样例：无期望结果占 40.0% 超过上限 5.0%，已判断 6 个中含糊 3 个占 50.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过",
   "subject": {
     "items": [
       {
         "id": "10.6.1/WebUI",
-        "location": "src:5c0e951586ff3771a685a505f1994b08edc5df0d321f06b3aa8a6d48deff1cba/json@1/p/rows",
+        "location": "src:61066056e6b93d39477f41d9a2dee3836db520f3e2939f7ef107b8469b273c92/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "WebUI",
@@ -18,6 +18,12 @@
             "vague": 3,
             "negative": 0
           },
+          "quality": {
+            "judged": 6,
+            "unjudged": 4,
+            "conflicted": 0,
+            "sources": []
+          },
           "ratios": {
             "missing": {
               "num": 4,
@@ -25,7 +31,7 @@
             },
             "vague": {
               "num": 3,
-              "den": 10
+              "den": 6
             },
             "negative": {
               "num": 0,
@@ -34,7 +40,7 @@
           },
           "display": {
             "missing": 0.4,
-            "vague": 0.3,
+            "vague": 0.5,
             "negative": 0
           }
         }
@@ -51,7 +57,7 @@
         {
           "placement": {
             "unplaced": 0,
-            "source": "src:fdfc251fb761d46b0884a71c4a7fe89a11cf8b80ec800e774a47025fbf05b8a6",
+            "source": "src:7127126a17c6f74ad21dc0bb35cf21c2a7d4e125624445e47f70ba6f5b9b78c9",
             "skipped": 0,
             "truncated": false
           },
@@ -59,7 +65,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:5c0e951586ff3771a685a505f1994b08edc5df0d321f06b3aa8a6d48deff1cba",
+            "source": "src:61066056e6b93d39477f41d9a2dee3836db520f3e2939f7ef107b8469b273c92",
             "total": 10,
             "truncated": false,
             "skipped": 0,

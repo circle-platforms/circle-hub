@@ -100,6 +100,7 @@ export type CaseFields = {
   expected: string[];
   /** Number of expected results, also when `expected` is clipped. */
   expectedCount: number;
+  expectedSelectors?: string[];
   steps: CaseStep[];
   /** Leaves inside the case marked with the precondition priority. */
   preconditions: string[];
@@ -175,6 +176,7 @@ export type StructureSubject = {
   otherTags: string[];
   expected: string[];
   expectedCount: number;
+  expectedSelectors?: string[];
   /** null when the case has no non-blank tag. */
   negative: boolean | null;
 };

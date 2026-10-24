@@ -103,6 +103,28 @@
       ]
     },
     {
+      "key": "expected_quality",
+      "name": "期望质量判断",
+      "description": "模型逐用例判断全部期望是否含糊，以 data.vague 声明并逐字引用每个期望叶子；Hub 只核原件、数量、对应位置与逐字引文。没有判断保持未判断，不当明确或含糊。可后补此项，不改变已有评审要求。",
+      "target": "item",
+      "required": false,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "expected_quality_evidence"
+      ],
+      "error_handling": [
+        {
+          "code": "case-review.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
       "key": "level",
       "name": "等级",
       "description": "整个被评审对象（一份文档或一个分块）的等级，P0 到 P7 选一个，写成一条跨条目主张（码 level）：陈述里写理由和证据缺口（没有读到或读不到的证据组），grounds 引用所依据的来源",

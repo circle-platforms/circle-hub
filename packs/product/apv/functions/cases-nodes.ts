@@ -9,7 +9,7 @@
 // Passes over the visited nodes (walk with an explicit stack, flags from the leaves up, roles top down) keep a document
 // linear in its size; hostile models (invalid child indices, cycles, shared children, deep trees) are survived and counted.
 // caseKeys gives each case the node part of its case-review item id (`<document>:<key>`).
-import { CASE_RULE, isBlank, isVague } from './cases-rules.ts';
+import { CASE_RULE, isBlank } from './cases-rules.ts';
 import { isRecord } from './util.ts';
 
 export type CaseNode = {
@@ -29,8 +29,6 @@ export type CaseNode = {
   expectedCount: number;
   /** Some expected text is not blank. */
   hasExpected: boolean;
-  /** Every expected text that is not blank is a vague phrase (false when there is none). */
-  vague: boolean;
   steps: number;
   /** Step and expected-result text, kept for the same deterministic command scan as titles. */
   bodyTexts: string[];
@@ -154,7 +152,6 @@ export function caseNodes(model: unknown): CaseScan {
         resource: visit.data.resource,
         expectedCount: 0,
         hasExpected: false,
-        vague: true,
         steps: 0,
         bodyTexts: [],
         autoid: autoid === null || isBlank(autoid) ? null : autoid,
@@ -173,13 +170,11 @@ export function caseNodes(model: unknown): CaseScan {
         state.expectedCount += 1;
         if (!isBlank(visit.text)) {
           state.hasExpected = true;
-          if (!isVague(visit.text)) state.vague = false;
         }
       } else stepOf[v] = parentStep;
     }
   }
   for (const state of states) {
-    if (!state.hasExpected) state.vague = false;
     if (state.selector === '') out.malformed += 1;
     else out.cases.push(state);
   }

@@ -7,6 +7,10 @@ export const DECLARATION_STATUS = ['declared', 'undeclared'] as const;
 export type DeclarationStatus = (typeof DECLARATION_STATUS)[number];
 export const DECLARATION_STATUS_LABEL = { 'declared': '已声明', 'undeclared': '未声明' } as const satisfies Record<DeclarationStatus, string>;
 export function isDeclarationStatus(value: unknown): value is DeclarationStatus { return typeof value === 'string' && (DECLARATION_STATUS as readonly string[]).includes(value); }
+export const JUDGMENT_STATUS = ['judged', 'unjudged'] as const;
+export type JudgmentStatus = (typeof JUDGMENT_STATUS)[number];
+export const JUDGMENT_STATUS_LABEL = { 'judged': '已判断', 'unjudged': '未判断' } as const satisfies Record<JudgmentStatus, string>;
+export function isJudgmentStatus(value: unknown): value is JudgmentStatus { return typeof value === 'string' && (JUDGMENT_STATUS as readonly string[]).includes(value); }
 export const TYPE_DECLARATION_STATUS = ['declared', 'undeclared'] as const;
 export type TypeDeclarationStatus = (typeof TYPE_DECLARATION_STATUS)[number];
 export const TYPE_DECLARATION_STATUS_LABEL = { 'declared': '类型已声明', 'undeclared': '类型未声明' } as const satisfies Record<TypeDeclarationStatus, string>;
@@ -19,9 +23,9 @@ export const REASON = ['no_check', 'check_error', 'timeout', 'missing_input', 'd
 export type Reason = (typeof REASON)[number];
 export const REASON_LABEL = { 'no_check': '未装检查', 'check_error': '检查出错', 'timeout': '超时', 'missing_input': '缺输入', 'declared_skip': '模型声明跳过', 'not_covered': '提交未覆盖', 'awaiting_step': '在等某一步', 'output_failed': '出件失败', 'repair_exhausted': '修复轮数用完', 'budget_exhausted': '预算用完', 'integrity_unproven': '完整性未证明' } as const satisfies Record<Reason, string>;
 export function isReason(value: unknown): value is Reason { return typeof value === 'string' && (REASON as readonly string[]).includes(value); }
-export interface AxisValues { applicability_field: ApplicabilityField; declaration_status: DeclarationStatus; type_declaration_status: TypeDeclarationStatus; command_parse_status: CommandParseStatus; reason: Reason; }
+export interface AxisValues { applicability_field: ApplicabilityField; declaration_status: DeclarationStatus; judgment_status: JudgmentStatus; type_declaration_status: TypeDeclarationStatus; command_parse_status: CommandParseStatus; reason: Reason; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL, declaration_status: DECLARATION_STATUS_LABEL, type_declaration_status: TYPE_DECLARATION_STATUS_LABEL, command_parse_status: COMMAND_PARSE_STATUS_LABEL, reason: REASON_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL, declaration_status: DECLARATION_STATUS_LABEL, judgment_status: JUDGMENT_STATUS_LABEL, type_declaration_status: TYPE_DECLARATION_STATUS_LABEL, command_parse_status: COMMAND_PARSE_STATUS_LABEL, reason: REASON_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }
 
 // Business values come only from the published package table; they are not core vocabulary axes.
