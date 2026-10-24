@@ -39,3 +39,20 @@ export function recordDigest(envelope: DigestEnvelope): string {
 export function envelopeCanonical(meta: Omit<DigestEnvelope, 'body'>, bodyCanonical: string): string {
   return `{"body":${bodyCanonical},"created_at":${JSON.stringify(meta.created_at)},"kind":${JSON.stringify(meta.kind)},"provenance":${JSON.stringify(meta.provenance)},"schema":${JSON.stringify(meta.schema)}}`;
 }
+
+/** Same envelope digest without flattening a second string containing the entire stored body. */
+export function envelopeDigest(meta: Omit<DigestEnvelope, 'body'>, bodyCanonical: string): string {
+  const hash = createHash('sha256').update('{"body":');
+  // Reuse one UTF-8 scratch buffer: a string update otherwise allocates native transcoding storage for every chunk.
+  if (bodyCanonical.length <= 16 * 1024) hash.update(bodyCanonical);
+  else {
+    const scratch = Buffer.allocUnsafe(64 * 1024);
+    for (let offset = 0; offset < bodyCanonical.length;) {
+      let end = Math.min(bodyCanonical.length, offset + 16 * 1024);
+      if (end < bodyCanonical.length && bodyCanonical.charCodeAt(end - 1) >= 0xd800 && bodyCanonical.charCodeAt(end - 1) <= 0xdbff && bodyCanonical.charCodeAt(end) >= 0xdc00 && bodyCanonical.charCodeAt(end) <= 0xdfff) end--;
+      const written = scratch.write(bodyCanonical.slice(offset, end), 'utf8');
+      hash.update(scratch.subarray(0, written)); offset = end;
+    }
+  }
+  return hash.update(`,"created_at":${JSON.stringify(meta.created_at)},"kind":${JSON.stringify(meta.kind)},"provenance":${JSON.stringify(meta.provenance)},"schema":${JSON.stringify(meta.schema)}}`).digest('hex');
+}
