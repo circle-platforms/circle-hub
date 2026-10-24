@@ -112,6 +112,6 @@ node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
 
 ## hub-pack-findings 第 1 条（已确认的切分）
 
-本次按系统与编号分别投影；已知同号跨系统为 traceability.id_collision 提示档反驳，不把缺系统的用例任意连到某一边。未知系统仅在编号唯一归属一个已读系统时连接；Bugzilla 明确显示“状态未读：系统未接入”，统计单列 status_unread，不算临时状态未知。无条目的启动拒绝按 skipped、缺条目内容、truncated、当前视图空集、状态过滤的实际事实分别说明。SKILL 要求客户端先按本构建的原始编号用 only= 收窄缺陷视图，再绑定开跑；当前不会把既有 CheckReads 误当作可发新查询的动态接口。
+本次按系统与编号分别投影；已知同号跨系统为 traceability.id_collision 提示档反驳，不把缺系统的用例任意连到某一边。未知系统仅在编号唯一归属一个已读系统时连接；Bugzilla 明确显示“状态未读：系统未接入”，统计单列 status_unread，不算临时状态未知。无条目的启动拒绝按 skipped、缺条目内容、truncated、当前视图空集、状态过滤的实际事实分别说明。SKILL 要求绑定缺陷索引和用例索引时不要写 only= 或 fields=，也不要向用户索取缺陷编号；Hub 按该构建修复清单给用例索引补上 only= 和追溯字段。当前不会把既有 CheckReads 误当作可发新查询的动态接口。
 
 待 hub-read-absence / hub-view-scope 合入：用标准缺席观察与视图范围完成 traceability.untraced 确定反驳。当前不自造缺席证据，不把未知当通过。

@@ -74,6 +74,63 @@
               "pack"
             ],
             "additionalProperties": false
+          },
+          "index_default": {
+            "description": "When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays",
+            "type": "object",
+            "properties": {
+              "only_from": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "build_defects"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "input_ids"
+                      },
+                      "slot": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "slot"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Identifiers already present on another input slot’s external ids; an empty slot adds nothing"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,40}$"
+                }
+              }
+            },
+            "required": [
+              "only_from",
+              "fields"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

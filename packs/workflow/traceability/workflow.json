@@ -4,7 +4,7 @@
     {
       "slot": "defects",
       "role": "subject",
-      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。构建的 release notes 列出的缺陷，一个条目一个缺陷：data.bug 是编号，data.status 是 fixed（已修复）或 known（已知）；按本构建原始缺陷编号设置 only=，不能将其他系统的同号混成一个条目",
+      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。知识根里 fixed-bugs 与发布页生产的缺陷条目，一个条目一个缺陷：data.bug 是编号，data.status 是 fixed 或 known。不要写 only=，不要向用户索取缺陷编号；不能将其他系统的同号混成一个条目",
       "accepts": [
         "knowledge:index"
       ],
@@ -14,7 +14,11 @@
     {
       "slot": "cases",
       "role": "expected",
-      "description": "同一构建的用例索引视图（瘦身：fields=document,node,title,system）：knowledge:index:<产品>:<构建>?kind=case&key=defects&fields=document,node,title,system。按用例文档标题和目录携带的缺陷编号索引用例条目；构建名要和 defects 视图指向同一个知识根（任一名称族的写法都可以）",
+      "description": "同一构建的用例索引视图：knowledge:index:<产品>:<构建>?kind=case&key=defects。不要写 only= 或 fields=，不要向用户索取缺陷编号。Hub 按该构建缺陷索引的编号自动补上 only=，并补上 fields=case,defects,document,node,system,title。构建名要和 defects 视图指向同一个知识根（任一名称族的写法都可以）",
+      "index_default": {
+        "only_from": {"source": "build_defects"},
+        "fields": ["document", "node", "title", "system", "case", "defects"]
+      },
       "accepts": [
         "knowledge:index"
       ],

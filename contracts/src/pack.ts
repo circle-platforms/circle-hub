@@ -466,6 +466,16 @@ export type SlotsFile = z.infer<typeof SlotsFile>;
 
 /** An explicit slot-level default source, including the workflow whose submitted result is accepted. */
 export const PredecessorInputDefault = z.strictObject({pack:PackId});
+const IndexFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
+/** How the Hub fills a missing only= on a knowledge index. Values come from structured records, never from a word list. */
+export const IndexBindingDefault = z.strictObject({
+  only_from: z.discriminatedUnion('source', [
+    z.strictObject({source: z.literal('build_defects')}).describe('Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root'),
+    z.strictObject({source: z.literal('input_ids'), slot: Key}).describe('Identifiers already present on another input slot’s external ids; an empty slot adds nothing'),
+  ]),
+  fields: z.array(IndexFieldName).min(1).max(12),
+});
+export type IndexBindingDefault = z.infer<typeof IndexBindingDefault>;
 export const WorkflowInput = z.strictObject({
   slot: Key,
   role: SourceRoleSchema,
@@ -474,10 +484,16 @@ export const WorkflowInput = z.strictObject({
   required: z.boolean(),
   many: z.boolean(),
   default_from_predecessor: PredecessorInputDefault.optional().describe('When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win'),
+  index_default: IndexBindingDefault.optional().describe('When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays'),
 }).superRefine((slot,ctx)=>{
-  if(slot.default_from_predecessor===undefined)return;
-  if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor'});
-  if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
+  if(slot.default_from_predecessor!==undefined){
+    if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor'});
+    if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
+  }
+  if(slot.index_default===undefined)return;
+  if(!slot.accepts.includes('knowledge:index'))ctx.addIssue({code:'custom',path:['index_default'],message:'index_default applies to a knowledge:index input'});
+  if(new Set(slot.index_default.fields).size!==slot.index_default.fields.length)ctx.addIssue({code:'custom',path:['index_default','fields'],message:'fields names a field once'});
+  if(slot.index_default.only_from.source==='input_ids'&&slot.index_default.only_from.slot===slot.slot)ctx.addIssue({code:'custom',path:['index_default','only_from','slot'],message:'index_default reads identifiers from another slot'});
 });
 export type WorkflowInput = z.infer<typeof WorkflowInput>;
 
@@ -533,6 +549,10 @@ export const WorkflowFile = z
     });
     w.context?.forEach((key, k) => {
       if (w.context!.findIndex((x) => x === key) !== k) ctx.addIssue({ code: 'custom', path: ['context', k], message: `context key ${key} is declared twice` });
+    });
+    w.inputs.forEach((input, k) => {
+      const from = input.index_default?.only_from;
+      if (from?.source === 'input_ids' && !w.inputs.some((slot) => slot.slot === from.slot)) ctx.addIssue({ code: 'custom', path: ['inputs', k, 'index_default', 'only_from', 'slot'], message: `index_default names an unknown slot ${from.slot}` });
     });
   });
 export type WorkflowFile = z.infer<typeof WorkflowFile>;
