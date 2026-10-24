@@ -354,7 +354,7 @@ export class RecordArtifacts implements Artifacts {
     return this.#sourceChoice(choice, consumer);
   }
 
-  async sourceForRun(principal: Principal, sha256: string, run: string, options: {consumer?: ProducerKind} = {}): Promise<ArtifactSource | null> {
+  async sourceForRun(principal: Principal, sha256: string, run: string, options: {consumer?: ProducerKind;record?:string} = {}): Promise<ArtifactSource | null> {
     const consumer = options.consumer ?? MODEL;
     if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
     if (!RunId.safeParse(run).success || !isSha256(sha256)) return null;
@@ -368,8 +368,9 @@ export class RecordArtifacts implements Artifacts {
     const visible = viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now());
     if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
+    const requested=pinned(options.record);if(requested&&!captures.includes(requested))return null;
     if(captures.length){
-      for(const digest of captures){const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!=='source_artifact@1'||stored.body.sha256!==sha256)continue;const direct=await this.source(principal,sha256,{consumer,record:digest});if(direct)return direct;if('generated'in stored.body.origin)return this.#sourceChoice(await this.#effectiveChoice(stored as SourceArtifact,[stored as SourceArtifact]),consumer);}
+      for(const digest of requested?[requested]:captures){const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!=='source_artifact@1'||stored.body.sha256!==sha256)continue;const direct=await this.source(principal,sha256,{consumer,record:digest});if(direct)return direct;if('generated'in stored.body.origin)return this.#sourceChoice(await this.#effectiveChoice(stored as SourceArtifact,[stored as SourceArtifact]),consumer);}
       return null;
     }
     const all = await this.records(sha256);

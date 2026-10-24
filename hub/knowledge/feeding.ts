@@ -1,3 +1,5 @@
+import type {ProductHandle} from '../ports.ts';
+import {CompositionView} from './composition.ts';
 import {feedingFunctionCall,FeedingFunctionFailure,type FeedingErrorDetail} from './feeding-errors.ts';
 import type {FeedingCut,KnowledgeStructureObject} from './feeding-types.ts';
 export type {FeedingCut,FeedingReader,KnowledgeStructureObject} from './feeding-types.ts';
@@ -24,7 +26,7 @@ import {KnowledgeError} from './errors.ts';
 const PROJECTION='knowledge.feeding.projection';
 export const FEEDING_BOUNDS={waitMs:250,concurrency:2,queued:32,callMs:5000,rows:1000} as const;
 const FEEDING_CALL_MS=FEEDING_BOUNDS.callMs,MAX_FEEDING_ROWS=FEEDING_BOUNDS.rows;
-interface FeedingJob {key:string;principal:Principal;sha:string;scope:FeedingScope;state:'queued'|'running';done:Promise<FeedingReceipt>;resolve:(value:FeedingReceipt)=>void;announced:Promise<void>;}
+interface FeedingJob {key:string;captureKey:string;pack:ProductHandle|null;principal:Principal;sha:string;scope:FeedingScope;state:'queued'|'running';done:Promise<FeedingReceipt>;resolve:(value:FeedingReceipt)=>void;announced:Promise<void>;}
 
 const LOG='knowledge.feeding.log',OBJECT='knowledge.feeding.object',USAGE='knowledge.feeding.usage',BINDING='knowledge.feeding.binding',RETRACT='knowledge.feeding.retraction',TODO='knowledge.feeding.todo';
 const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -70,12 +72,25 @@ export class FeedingLayer {
   for(const input of body.origin.generated.inputs){const ref=parseReference(input);if(ref.scheme!=='rec')continue;const record=await this.context.records.store.get(ref.record);if(record?.kind!=='source_artifact'||record.schema!=='source_artifact@1')continue;const parent=record as SourceArtifact;const source=await this.context.records.artifacts.source(principal,parent.body.sha256,{consumer:'function',record:parent.digest});if(!source?.bytes)continue;const external=await this.origin(principal,parent,undefined,new Set(seen));if(external)origins.set(canonicalize(external),external);}
   return origins.size===1?[...origins.values()][0]:null;
  }
- private async source(principal:Principal,sha:string,record?:string,manifest?:string):Promise<Source>{
-  const found=await this.context.records.artifacts.source(principal,sha,{consumer:'function',...(record?{record}:{})});if(!found?.bytes||found.readTier!=='model_readable')fail('来源不存在、保留中或当前不可读');
+ private async source(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null):Promise<Source>{
+  if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  let found=await this.context.records.artifacts.source(principal,sha,{consumer:'function',...(record?{record}:{})});
+  if(!found&&record&&run){const stored=await runById(this.context.records.store,run);if(stored&&await canViewRun(principal,stored.body,this.context.records.store)&&stored.body.sources.some(binding=>binding.artifact===record&&(!manifest||binding.read_manifest===manifest)&&(()=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha;})())){const scoped=await this.context.records.artifacts.sourceForRun(principal,sha,run,{consumer:'function',record});if(scoped?.artifact.digest===record)found=scoped;}}
+  if(!found?.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源不存在、保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found?.readTier??'未获读取授权或缺记录'}；核对这条采集记录和读取身份后重读`,{code:'SOURCE_UNAVAILABLE'});
   const parsed=recognize(this.context.parsers,found.bytes,found.mediaType);if(!parsed)fail('来源格式不能按已声明解析器读取');
-  return {artifact:found.artifact,bytes:found.bytes,parser:parserKey(parsed.parser),model:parsed.document.model,external:await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined)};
+  let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  return {artifact:found.artifact,bytes:found.bytes,parser:parserKey(parsed.parser),model:parsed.document.model,external};
  }
- private async metadataSource(principal:Principal,sha:string,record?:string,manifest?:string):Promise<Source>{const source=await this.source(principal,sha,record,manifest);const parser=this.context.parsers.get('json@1');if(!parser)fail('缺 JSON 元数据解析器；管理员恢复后重读');return {...source,parser:'json@1',model:parser.parse(source.bytes).model};}
+ private async metadataSource(principal:Principal,sha:string,record?:string,manifest?:string):Promise<Source>{const source=await this.source(principal,sha,record,manifest,'metadata');const parser=this.context.parsers.get('json@1');if(!parser)fail('缺 JSON 元数据解析器；管理员恢复后重读');return {...source,parser:'json@1',model:parser.parse(source.bytes).model};}
+ /** Root readability authorizes parsing its exact frozen input, not arbitrary elevated artifact reads. */
+ private async commandSource(principal:Principal,seed:import('../../contracts/src/knowledge.ts').SeedlingBody){
+  const origin=seed.origin.find(row=>row.role==='command-tree');if(!origin)fail('树苗缺命令原件');const body=await this.context.store.composition(seed.composition);if(!body||body.root!==seed.root||body.product!==seed.product)fail('树苗组成与锁定根不匹配');
+  const composition=new CompositionView(this.context.store,seed.composition,body);const captures=(await composition.sources()).filter(row=>row.producer===origin.producer&&row.slot===origin.slot&&row.external===origin.external&&row.sha256===origin.sha256);if(!captures.length)fail('锁定组成缺命令树采集记录；管理员恢复树苗组成后重读');
+  const configured=this.context.admin?await this.context.records.principals.get(this.context.admin.id):null;const custodian=configured&&!configured.disabled&&configured.role==='admin'?configured:(await this.context.records.principals.list?.()??[]).find(row=>row.role==='admin'&&!row.disabled)??principal;
+  return this.source(custodian,origin.sha256,captures[0].artifact,undefined,'command_tree');
+ }
+ private async currentPack(pack?:ProductHandle|null){return !pack||(await this.context.packs.productById(pack.product.id))?.digest===pack.digest;}
+ private superseded(sha:string){return this.pendingReceipt(sha,'投影所用包已被新摘要替代，旧结果未写入喂入层','按当前已发布包重读该来源；不把旧包失败当成终局');}
  private quoteRef(quote:QuoteEvidence){return 'identity'in quote?{sha:quote.identity.source_sha256,parser:quote.identity.parser,selector:quote.identity.path,span:quote.identity.span,range:null}:{...(()=>{const ref=parseReference(quote.reference);if(ref.scheme!=='src'||!ref.parser||!ref.selector)fail('喂入引文必须是带解析器和选择器的 src 引用');return {sha:ref.sha256,parser:ref.parser,selector:ref.selector,range:ref.range??null};})(),span:null};}
  async quote(principal:Principal,quote:QuoteEvidence):Promise<void>{
   const ref=this.quoteRef(quote),source=await this.context.records.artifacts.source(principal,ref.sha,{consumer:'model'});if(!source?.bytes||source.readTier!=='model_readable')fail('引文原件不存在或当前不可读');
@@ -87,12 +102,12 @@ export class FeedingLayer {
  private feedingLimits(){return {...this.context.sandbox.producer,timeoutMs:Math.min(this.context.sandbox.producer.timeoutMs??FEEDING_CALL_MS,FEEDING_CALL_MS)};}
  private feedingOptions(){return {...this.context.sandbox,retryWallTimeout:false};}
  async seedFor(product:string,line:string){return (await this.seedsFor(product,[line])).get(line)??null;}
- private async seedsFor(product:string,requested:readonly string[]){
+ private async seedsFor(product:string,requested:readonly string[],selectedPack?:ProductHandle|null){
   const result=new Map<string,import('../../contracts/src/knowledge.ts').SeedlingBody>();
   const lines=[...new Set(requested)];if(!lines.length)return result;
   for(const line of lines){const target=await currentSeedling(this.context,product,line);if(!target)continue;const direct=await seedlingRecord(this.context,target);if(direct){result.set(line,direct);continue;}const rows=await this.context.store.all<unknown>({key:INDEX.seedling,value:product+'/'+line,kind:'claim'});for(const row of rows){const parsed=SeedlingBody.safeParse(row.body);if(row.schema==='seedling@1'&&parsed.success&&parsed.data.root===target)result.set(line,parsed.data);}}
   if(result.size===lines.length)return result;
-  const pack=await this.context.packs.productById(product),fn=pack?.product.feeding?.normalize_line;if(!pack||!fn)return result;
+  const pack=selectedPack===undefined?await this.context.packs.productById(product):selectedPack,fn=pack?.product.feeding?.normalize_line;if(!pack||!fn)return result;
   const seeds:import('../../contracts/src/knowledge.ts').SeedlingBody[]=[];
   for(const pointer of await this.context.records.pointers.list('seedling/'+product+'/')){if(!pointer.target)continue;const direct=await seedlingRecord(this.context,pointer.target);if(direct){seeds.push(direct);continue;}const rows=await this.context.store.all<unknown>({key:INDEX.seedlingRoot,value:product+'/'+pointer.target,kind:'claim'});let selected:import('../../contracts/src/knowledge.ts').SeedlingBody|undefined;for(const row of rows){const parsed=SeedlingBody.safeParse(row.body);if(row.schema==='seedling@1'&&parsed.success&&seedlingName(product,parsed.data.line)===pointer.name)selected=parsed.data;}if(selected)seeds.push(selected);}
   const values=[...new Set([...lines,...seeds.map(seed=>seed.line)])].sort();if(values.length>2048)fail('版本线核验超过单文档批量上限；管理员缩小树苗范围后重读');
@@ -101,7 +116,7 @@ export class FeedingLayer {
   const canonical=await pending;for(const line of lines){const value=canonical.get(line);if(value===null||value===undefined)continue;const candidates=seeds.filter(seed=>canonical.get(seed.line)===value);if(new Set(candidates.map(seed=>seed.root)).size>1)fail('同一规范版本线存在冲突树苗，管理员核对后重试');if(candidates.length)result.set(line,candidates[0]);}
   return result;
  }
- private async requireLines(product:string,lines:readonly string[]){const found=await this.seedsFor(product,lines);for(const line of new Set(lines))if(!found.has(line))throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});}
+ private async requireLines(product:string,lines:readonly string[],pack?:ProductHandle|null){const found=await this.seedsFor(product,lines,pack);for(const line of new Set(lines))if(!found.has(line))throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});}
  private async seed(product:string,line:string){const seed=await this.seedFor(product,line);if(!seed)throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});return seed;}
 
  // A seedling indexed on the locked root stays the anchor. A per-build root with none hangs on the current seedling of its
@@ -125,9 +140,9 @@ export class FeedingLayer {
   if(seed.root!==locked&&!await this.reading.mayReadRoot(principal,seed.root))fail('锁定树苗不存在或当前不可读');
   return {seed,attached:seed.root!==locked};
  }
- private async projection(principal:Principal,source:Source,scope:FeedingScope):Promise<Projected>{
+ private async projection(principal:Principal,source:Source,scope:FeedingScope,selectedPack?:ProductHandle|null):Promise<Projected>{
   if(!scope.product)return {rows:[],pack:'hub.feeding@1',digest:source.artifact.digest,attachment:null};
-  const pack=await this.context.packs.productById(scope.product);if(!pack?.product.feeding)return {rows:[],pack:'hub.feeding@1',digest:source.artifact.digest,attachment:null};
+  const pack=selectedPack===undefined?await this.context.packs.productById(scope.product):selectedPack;if(!pack?.product.feeding)return {rows:[],pack:'hub.feeding@1',digest:source.artifact.digest,attachment:null};
   if(!await this.reading.mayReadProducts(principal,[scope.product]))fail('产品当前不可读');
   if(scope.root&&!await this.reading.mayReadRoot(principal,scope.root))fail('锁定根当前不可读');
   const anchor=scope.root?await this.root(principal,scope.product,scope.root,scope.composition,scope.line):null;
@@ -143,7 +158,7 @@ export class FeedingLayer {
    const project=async()=>await feedingFunctionCall(pack.id+'@'+pack.version+'/'+pack.product.feeding!.project.module+'#'+(pack.product.feeding!.project.export??'default'),[source.model,meta,tree?.model],()=>callPackFunction({packDir:pack.directory,...pack.product.feeding!.project},{product:scope.product,root:scope.root??null,model:source.model,meta,parser:source.parser,tree,source:{system:source.external?.system,type:source.external?.type,key:source.external?.key,revision:source.external?.revision,external:source.external?.id,bytes:source.artifact.body.sha256}},this.feedingLimits(),this.feedingOptions()));
    let result=await project();
    if(!object(result.output)||!Array.isArray(result.output.rows)||result.output.rows.length>MAX_FEEDING_ROWS)fail('产品包喂入投影没有给出单文档有界结构对象（最多 '+MAX_FEEDING_ROWS+' 条）');
-   if(result.output.rows.length&&anchor){const origin=anchor.seed.origin.find(row=>row.role==='command-tree');if(origin){const original=await this.source(this.context.admin??principal,origin.sha256);if(original.parser!=='xml@1')fail('锁定命令树不是原始 XML');tree={model:original.model,sha256:origin.sha256};result=await project();}}
+   if(result.output.rows.length&&anchor){const origin=anchor.seed.origin.find(row=>row.role==='command-tree');if(origin){const original=await this.commandSource(principal,anchor.seed);if(original.parser!=='xml@1')fail('锁定命令树不是原始 XML');tree={model:original.model,sha256:origin.sha256};result=await project();}}
    if(!object(result.output)||!Array.isArray(result.output.rows)||result.output.rows.length>MAX_FEEDING_ROWS)fail('产品包喂入投影结构不完整或超过单文档上限');
   const rows=result.output.rows as Projection[];
   for(const row of rows){if(row.missing&&(!Array.isArray(row.missing)||row.missing.length>1000||row.missing.some(gap=>!object(gap)||typeof gap.missing!=='string'||!gap.missing||typeof gap.next_action!=='string'||!gap.next_action)))fail('产品包缺失事实出口不合格式');if(!object(row.body)||!Array.isArray(row.lines)||row.lines.some(line=>typeof line!=='string')||typeof row.selector!=='string'||typeof row.grammar!=='string'||typeof row.conflict!=='boolean')fail('产品包喂入行结构不完整');row.body={...row.body,object:sha256Hex(canonicalize(row.identity))};if(!KnowledgeStructureSchema.safeParse(row.body).success)fail('原件投影不合 knowledge-structure@1；修正类型或缺失字段');}
@@ -152,7 +167,7 @@ export class FeedingLayer {
    await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'projected',unique_key:'feeding.projection:'+key,body:{action:'read',run:null,item:null,component:'hub.feeding@2',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{key,sha256:stored.sha256}},index:[{key:PROJECTION,value:key}]});return value;
   })();this.projecting.set(key,pending);void pending.finally(()=>this.projecting.delete(key)).catch(()=>{});}
   const projected=await pending;
-  await this.requireLines(scope.product,[...projected.rows.flatMap(row=>row.lines),...(scope.declaredLine?[scope.declaredLine]:[])]);
+  await this.requireLines(scope.product,[...projected.rows.flatMap(row=>row.lines),...(scope.declaredLine?[scope.declaredLine]:[])],pack);
   return projected;
  }
  private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}):ClaimBody{return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});}
@@ -187,41 +202,64 @@ export class FeedingLayer {
  }
  async sourceLines(principal:Principal,sha:string,scope:FeedingScope):Promise<string[]>{const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest);const projected=await this.projection(principal,source,{...scope,root:null});return [...new Set(projected.rows.flatMap(row=>row.lines))];}
  private pendingReceipt(sha:string,missing='文档投影进行中（尚未完成，未当作已喂入）',next='继续处理本次运行；后续 get_nodes 会返回进度和喂入清单，Hub 重启后重读该来源续做'):FeedingReceipt{return {objects:[],offset:null,pending:[{source:sha,missing,next_action:next}]};}
- private async jobRecord(job:Pick<FeedingJob,'key'|'principal'|'sha'|'scope'>,state:'queued'|'running'|'completed'|'unknown',receipt?:FeedingReceipt){const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:job.scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+job.sha],lease:null,started_at:at,ended_at:at,result:state==='completed'?'completed':'unknown',error_code:null,acceptance:null,codes:[],detail:{feeding_job:{key:job.key,by:job.principal.id,source:job.sha,scope:job.scope,state,pending:receipt?.pending??this.pendingReceipt(job.sha).pending}}},index:[{key:'knowledge.feeding.job',value:job.scope.run??job.principal.id}]});}
+ private async jobRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:'queued'|'running'|'completed'|'unknown'|'superseded',receipt?:FeedingReceipt){const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:job.scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+job.sha],lease:null,started_at:at,ended_at:at,result:state==='completed'?'completed':'unknown',error_code:null,acceptance:null,codes:[],detail:{feeding_job:{key:job.key,capture_key:job.captureKey,pack_digest:job.pack?.digest??null,product:job.pack?.product.id??job.scope.product??null,by:job.principal.id,source:job.sha,scope:job.scope,state,pending:receipt?.pending??this.pendingReceipt(job.sha).pending}}},index:[{key:'knowledge.feeding.job',value:job.scope.run??job.principal.id}]});}
  private pump(){while(this.activeJobs<FEEDING_BOUNDS.concurrency&&this.queue.length){const job=this.queue.shift()!;this.activeJobs++;job.state='running';void (async()=>{
    await job.announced;
-   await this.source(job.principal,job.sha,job.scope.sourceRecord,job.scope.readManifest);
    await this.jobRecord(job,'running');
    await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(job.principal,job.sha,job.scope,tx);});
-   return this.observeSource(job.principal,job.sha,job.scope);
-  })().catch(error=>this.pendingReceipt(job.sha,error instanceof Error?error.message:'投影没有完成回执','修正或恢复原件后重读该来源；不把未完成投影当已喂入')).then(async receipt=>{try{await this.jobRecord(job,receipt.pending.length?'unknown':'completed',receipt);}catch{/* Original sources and the run remain readable; absence of a completion record is still unknown. */}job.resolve(receipt);}).finally(()=>{this.jobs.delete(job.key);this.activeJobs--;this.pump();});}}
+   return this.observeSource(job.principal,job.sha,job.scope,job.pack??undefined);
+  })().catch(error=>this.pendingReceipt(job.sha,error instanceof Error?error.message:'投影没有完成回执','修正或恢复原件后重读该来源；不把未完成投影当已喂入')).then(async receipt=>{try{await this.jobRecord(job,!await this.currentPack(job.pack)?'superseded':receipt.pending.length?'unknown':'completed',receipt);}catch{/* Original sources and the run remain readable; absence of a completion record is still unknown. */}job.resolve(receipt);}).finally(()=>{this.jobs.delete(job.key);this.activeJobs--;this.pump();});}}
  /** Read hooks wait at most one small slice; queued work has a separate finite worker/call budget. */
  async observeSourceBounded(principal:Principal,sha:string,scope:FeedingScope={}):Promise<FeedingReceipt>{
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};
-  const key=sha256Hex(canonicalize({by:principal.id,sha,scope:captureScope(scope)}));let job=this.jobs.get(key);
-  if(!job&&!scope.metaSource&&!scope.sourceRecord)job=[...this.jobs.values()].find(candidate=>candidate.principal.id===principal.id&&candidate.sha===sha&&candidate.scope.product===scope.product&&candidate.scope.root===scope.root&&candidate.scope.composition===scope.composition&&candidate.scope.run===scope.run);
-  if(!job){if(this.queue.length>=FEEDING_BOUNDS.queued){const receipt=this.pendingReceipt(sha,'文档投影队列已达上限，本次尚未开始','稍后重读该来源；本次运行不等待队列、不当作已喂入');const refused={key,principal,sha,scope};void this.jobRecord(refused,'unknown',receipt).catch(()=>{});return receipt;}
-   let resolve!:(value:FeedingReceipt)=>void;const done=new Promise<FeedingReceipt>(yes=>{resolve=yes;});job={key,principal,sha,scope,state:'queued',done,resolve,announced:Promise.resolve()};this.jobs.set(key,job);this.queue.push(job);job.announced=this.jobRecord(job,'queued').catch(()=>{});this.pump();
+  const pack=scope.product?await this.context.packs.productById(scope.product):null,captureKey=sha256Hex(canonicalize({by:principal.id,sha,scope:captureScope(scope)}));const key=sha256Hex(canonicalize({captureKey,pack:pack?.digest??null}));let job=this.jobs.get(key);
+  if(!job&&!scope.metaSource&&!scope.sourceRecord)job=[...this.jobs.values()].find(candidate=>candidate.pack?.digest===pack?.digest&&candidate.principal.id===principal.id&&candidate.sha===sha&&candidate.scope.product===scope.product&&candidate.scope.root===scope.root&&candidate.scope.composition===scope.composition&&candidate.scope.run===scope.run);
+  if(!job){if(this.queue.length>=FEEDING_BOUNDS.queued){const receipt=this.pendingReceipt(sha,'文档投影队列已达上限，本次尚未开始','稍后重读该来源；本次运行不等待队列、不当作已喂入');const refused={key,captureKey,pack,principal,sha,scope};void this.jobRecord(refused,'unknown',receipt).catch(()=>{});return receipt;}
+   let resolve!:(value:FeedingReceipt)=>void;const done=new Promise<FeedingReceipt>(yes=>{resolve=yes;});job={key,captureKey,pack,principal,sha,scope,state:'queued',done,resolve,announced:Promise.resolve()};this.jobs.set(key,job);this.queue.push(job);job.announced=this.jobRecord(job,'queued').catch(()=>{});this.pump();
   }
   let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([job.done,new Promise<FeedingReceipt>(yes=>{timer=setTimeout(()=>yes(this.pendingReceipt(sha)),FEEDING_BOUNDS.waitMs);})]);}finally{if(timer)clearTimeout(timer);}
  }
  async drain():Promise<void>{while(this.jobs.size)await Promise.all([...this.jobs.values()].map(job=>job.done));}
  async pending(principal:Principal,run:string):Promise<FeedingReceipt['pending']>{
   const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];
-  const states=new Map<string,{source:string;state:string;pending:FeedingReceipt['pending']}>();for(const row of await this.context.store.all<any>({key:'knowledge.feeding.job',value:run,kind:'action'})){const value=row.body.detail?.feeding_job;if(value)states.set(value.key,value);}
-  for(const job of this.jobs.values())if(job.scope.run===run)states.set(job.key,{source:job.sha,state:job.state,pending:this.pendingReceipt(job.sha).pending});
-  const out=new Map<string,FeedingReceipt['pending'][number]>();for(const [key,value]of states){if(value.state==='completed'||!await this.visible(value.source,principal))continue;const rows=(value.state==='running'||value.state==='queued')&&!this.jobs.has(key)?this.pendingReceipt(value.source,'缺少文档投影完成回执，当前进程没有这项进行中的任务','重读该来源以续做投影；不把原进程的进行中状态当完成').pending:value.pending;for(const row of rows)out.set(canonicalize(row),row);}return [...out.values()];
+  type Status={source:string;state:string;pending:FeedingReceipt['pending'];pack_digest?:string|null;product?:string|null;by?:string;scope?:FeedingScope};
+  const states=new Map<string,Status>();for(const row of await this.context.store.all<any>({key:'knowledge.feeding.job',value:run,kind:'action'})){const value=row.body.detail?.feeding_job;if(value)states.set(value.key,value);}
+  for(const job of this.jobs.values())if(job.scope.run===run)states.set(job.key,{source:job.sha,state:job.state,pending:this.pendingReceipt(job.sha).pending,pack_digest:job.pack?.digest??null,product:job.scope.product,by:job.principal.id,scope:job.scope});
+  const packages=new Map<string,string|null>();for(const value of states.values()){const product=value.product??value.scope?.product??owned.body.product;if(product&&!packages.has(product))packages.set(product,(await this.context.packs.productById(product))?.digest??null);}
+  const contextKey=(value:Status)=>canonicalize({source:value.source,by:value.by??null,product:value.product??value.scope?.product??owned.body.product??null,root:value.scope?.root??null,composition:value.scope?.composition??null});
+  const current=new Set([...states.values()].filter(value=>value.pack_digest&&value.pack_digest===packages.get(value.product??value.scope?.product??owned.body.product??'')).map(contextKey));
+  const out=new Map<string,FeedingReceipt['pending'][number]>();for(const [key,value]of states){if(value.state==='completed'||!await this.visible(value.source,principal))continue;const digest=packages.get(value.product??value.scope?.product??owned.body.product??'');
+   const old=value.pack_digest?value.pack_digest!==digest:current.has(contextKey(value));if(old&&current.has(contextKey(value)))continue;
+   const rows=old?this.pendingReceipt(value.source,'包摘要已变更，缺新包的投影完成回执；旧失败不是终局','按当前已发布包重读该来源').pending:(value.state==='running'||value.state==='queued')&&!this.jobs.has(key)?this.pendingReceipt(value.source,'缺少文档投影完成回执，当前进程没有这项进行中的任务','重读该来源以续做投影；不把原进程的进行中状态当完成').pending:value.pending;
+   for(const row of rows)out.set(canonicalize(row),row);
+  }return [...out.values()];
  }
- async observeSource(principal:Principal,sha:string,scope:FeedingScope={}):Promise<FeedingReceipt>{
+ async observeSource(principal:Principal,sha:string,scope:FeedingScope={},selectedPack?:ProductHandle):Promise<FeedingReceipt>{
+  const pack=selectedPack??(scope.product?await this.context.packs.productById(scope.product):undefined);
+  try{return await this.observeCaptured(principal,sha,scope,pack??undefined);}catch(error){return this.failedAttempt(principal,sha,scope,error,pack);}
+ }
+ private async failedAttempt(principal:Principal,sha:string,scope:FeedingScope,error:unknown,pack?:ProductHandle|null):Promise<FeedingReceipt>{
+  if(!await this.currentPack(pack))return this.superseded(sha);
+  let external:ReturnType<typeof parseExternal>=null;const record=scope.sourceRecord?await this.context.records.store.get<any>(scope.sourceRecord):null;
+  if(record?.kind==='source_artifact'&&record.body.sha256===sha){if(scope.readManifest&&Sha256.safeParse(scope.readManifest).success)external=await this.manifestOrigin(principal,record as SourceArtifact,scope.readManifest);else if('read'in record.body.origin)external=parseExternal(record.body.origin.read.object);}
+  // Administrative todo identity may name the verified read request even when its capture pin is broken.
+  // This labels the failure; it never substitutes another artifact for the failed read.
+  if(!external&&scope.readManifest){const action=await this.context.records.store.get(scope.readManifest);const parsed=action?.kind==='action'&&action.schema==='read-manifest@1'&&action.provenance==='observed'?ReadManifest.safeParse(action.body):null;if(parsed?.success&&(principal.role==='admin'||parsed.data.principal===principal.id)&&parsed.data.artifacts.some(item=>item.sha256===sha))external=parseExternal(parsed.data.external);}
+  const missing=error instanceof Error?error.message:'喂入读取或投影没有完成回执',next='核对本次原件、目录元数据及锁定命令树各自的采集记录和读取身份后，按当前包重读；不把失败缓存当终局';
+  await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:external?.system??'capture',document:external?.key??scope.sourceRecord??sha},scope.product??null,missing,next,tx,error instanceof FeedingFunctionFailure?error.detail:undefined);});
+  return {objects:[],offset:await this.offset(),pending:[{source:sha,missing,next_action:next}]};
+ }
+ private async observeCaptured(principal:Principal,sha:string,scope:FeedingScope,pack?:ProductHandle):Promise<FeedingReceipt>{
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};
   if(scope.run&&!scope.metaSource&&!scope.sourceRecord){const prior=await this.context.store.all<any>({key:'knowledge.feeding.job',value:scope.run,kind:'action'});for(const row of prior){const job=row.body.detail?.feeding_job,old=job?.scope;if(job?.by===principal.id&&job.source===sha&&old?.product===scope.product&&old.root===scope.root&&old.composition===scope.composition)scope={...scope,metaSource:old.metaSource,metaRecord:old.metaRecord,readManifest:old.readManifest,sourceRecord:old.sourceRecord,declaredLine:old.declaredLine};}}
-  const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest),pending:FeedingReceipt['pending']=[];
+  const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest,'input_source',scope.run),pending:FeedingReceipt['pending']=[];
   if(!scope.product){const products=new Set<string>();for(const entry of await this.all('knowledge.feeding.source',sha)){const value=this.body(entry);if(value?.product&&await this.recordVisible(entry,principal))products.add(value.product);}if(products.size===1)scope={...scope,product:[...products][0]};}
   if('upload'in source.artifact.body.origin){return this.upload(principal,source.artifact,scope);}
   if(!scope.metaSource)for(const previous of await this.all('knowledge.feeding.source',sha)){const meta=previous.body.statement.data?.meta_source;if(typeof meta==='string'&&await this.recordVisible(previous,principal))scope={...scope,metaSource:meta};}
   if(!source.external&&'generated'in source.artifact.body.origin&&scope.product&&(await this.context.packs.productById(scope.product))?.product.feeding){const receipt=this.pendingReceipt(sha,'来源身份未声明：缺本次生成件对应的读取动作；同内容多个出处不是冲突，不能按摘要反挑一条','经原外部标识重新读取并绑定原件记录与读取清单；旧记录保留，不猜补出处');await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:'capture',document:source.artifact.digest},scope.product!,receipt.pending[0].missing,receipt.pending[0].next_action,tx);});return {...receipt,offset:await this.offset()};}
   let projection:Awaited<ReturnType<FeedingLayer['projection']>>;
-  try{projection=await this.projection(principal,source,scope);}catch(error){const missing=error instanceof Error?error.message:'原件投影没有返回可核对结构',next=error instanceof KnowledgeError&&error.code==='REFERENCE_UNRESOLVED'?'管理员先育苗或恢复锁定树苗，再重读该来源；不把运行目标当绑定':'原件整份未进入喂入层；维护者修正声明格式后重新读取，原件仍按原权限保留';await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},scope.product??null,missing,next,tx,error instanceof FeedingFunctionFailure?error.detail:undefined);});return {objects:[],offset:await this.offset(),pending:[{source:sha,missing,next_action:next}]};}
+  try{projection=await this.projection(principal,source,scope,pack);}catch(error){return this.failedAttempt(principal,sha,scope,error,pack);}
+  if(!await this.currentPack(pack))return this.superseded(sha);
   const observationKey=sha256Hex(canonicalize({version:3,by:principal.id,source:source.artifact.digest,sha,scope:captureScope(scope),pack:projection.digest,seedling:projection.attachment?.seedling_composition??null}));const completed=(await this.context.records.store.find<any>({key:'knowledge.feeding.observed',value:observationKey,kind:'action',limit:1})).items[0];if(completed)return {...completed.body.detail.receipt,offset:await this.offset()};
   const evidenceSource=scope.metaSource?await this.metadataSource(principal,scope.metaSource,scope.metaRecord,scope.readManifest):source;const evidence={source:evidenceSource,document:this.context.parsers.get(scope.metaSource?'json@1':evidenceSource.parser)!.parse(evidenceSource.bytes)};
   const ids=projection.rows.map(row=>row.body.object as string);for(const row of projection.rows)for(const gap of row.missing??[])pending.push({source:sha,...gap});
@@ -246,7 +284,7 @@ export class FeedingLayer {
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
   const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&principal.role!=='admin'&&body.by!==principal.id)return false;
   if(body.product&&!await this.reading.mayReadProducts(principal,[body.product]))return false;
-  for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;const source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});return Boolean(source?.bytes&&source.readTier==='model_readable');}
+  for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;let source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});const run=record.body.statement.data?.run;if(!source&&typeof run==='string'){const scoped=await this.context.records.artifacts.sourceForRun(principal,original.body.sha256,run,{consumer:'model',record:original.digest});if(scoped?.artifact.digest===original.digest)source=scoped;}return Boolean(source?.bytes&&source.readTier==='model_readable');}
   return false;
  }
  async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
@@ -301,7 +339,7 @@ export class FeedingLayer {
     for(const ground of node?.grounds??[]){const g=parseReference(ground);if(g.scheme!=='src'||g.sha256!==q.sha||g.parser!==q.parser||g.selector!==q.selector)continue;const original=await this.context.records.artifacts.source(principal,g.sha256,{consumer:'model'}),parsed=this.context.parsers.get(q.parser);const fragment=original?.bytes&&parsed?parsed.parse(original.bytes).locate(q.selector):null;if(!fragment)continue;const text=g.range?fragment.text.slice(g.range[0],g.range[1]):fragment.text;if(text.includes(proposal.quote.text))owned=true;}if(!owned)fail('手册引文与目标章节没有精确来源对应');
    }
    if(key==='command_link'){
-    if(!scope.root||!pack)fail('命令关联缺锁定树苗');const found=await this.root(principal,scope.product!,scope.root,scope.composition,scope.line);const seed=found.seed;const tree=seed.origin.find(origin=>origin.role==='command-tree');if(!tree)fail('树苗缺命令原件');const known=await this.context.store.node(seed.root);if(!known||proposal.command.tree_root!==tree.sha256)fail('命令身份不在锁定命令树');if(!await this.reading.nodeAt(seed.root,pathSegments(proposal.command.path)))fail('命令路径解析不出');const fn=pack.product.feeding?.verify_command;if(!fn)fail('产品包未声明完整命令核验回调');const original=await this.source(this.context.admin??principal,tree.sha256);const verified=await callPackFunction({packDir:pack.directory,...fn},{command:proposal.command,tree:{model:original.model,sha256:tree.sha256}},this.context.sandbox.producer,this.context.sandbox);if(!object(verified.output)||!verified.output.identity||canonicalize(verified.output.identity)!==canonicalize(proposal.command))fail('命令身份不能按锁定原树完整解析');
+    if(!scope.root||!pack)fail('命令关联缺锁定树苗');const found=await this.root(principal,scope.product!,scope.root,scope.composition,scope.line);const seed=found.seed;const tree=seed.origin.find(origin=>origin.role==='command-tree');if(!tree)fail('树苗缺命令原件');const known=await this.context.store.node(seed.root);if(!known||proposal.command.tree_root!==tree.sha256)fail('命令身份不在锁定命令树');if(!await this.reading.nodeAt(seed.root,pathSegments(proposal.command.path)))fail('命令路径解析不出');const fn=pack.product.feeding?.verify_command;if(!fn)fail('产品包未声明完整命令核验回调');const original=await this.commandSource(principal,seed);const verified=await callPackFunction({packDir:pack.directory,...fn},{command:proposal.command,tree:{model:original.model,sha256:tree.sha256}},this.context.sandbox.producer,this.context.sandbox);if(!object(verified.output)||!verified.output.identity||canonicalize(verified.output.identity)!==canonicalize(proposal.command))fail('命令身份不能按锁定原树完整解析');
    }
    if(key==='relations'||key==='case_link'){if(proposal.object===body.object)fail('关系两端不能是同一对象');if(!await this.visible(proposal.object,principal))fail('关系目标不存在或当前不可读');}
    if(key==='applicability'){
