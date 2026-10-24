@@ -238,7 +238,7 @@ export type ManualCatalog = {
   worked_examples?: Array<{ lines: string[]; src?: string }>;
 };
 
-export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string; params?: {components?:string[];licenses?:string[];deployment_forms?:string[]} };
+export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string; params?: {models?:string[];platforms?:string[];components?:string[];licenses?:string[];deployment_forms?:string[]} };
 
 /**
  * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
@@ -248,7 +248,10 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
  */
 export type ManualOptions = {
+  known_builds?:readonly string[];
   /** Deployment closed sets. Omission is the empty set used only by direct examples. */
+  models?: readonly string[];
+  platforms?: readonly string[];
   components?: readonly string[];
   licenses?: readonly string[];
   deployment_forms?: readonly string[];

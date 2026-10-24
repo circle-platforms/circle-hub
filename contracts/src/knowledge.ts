@@ -1,3 +1,4 @@
+import {ApplicabilityFieldSchema} from '../generated/vocabulary.ts';
 import { VariableUse } from './variables.ts';
 // Shapes owned by the knowledge work package (K01-K05): the records of the content-addressed knowledge tree, its builds,
 // current-root moves, calibration sets and the two layers beside the tree. Register every record or pack-file schema in
@@ -261,6 +262,8 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
  * the producing product pack, every source with its basis and decider, and per entry the fragments that provide it.
  */
 export const TreeRootBody = z.strictObject({
+  known_builds:z.array(z.strictObject({name:z.string().min(1),record:Sha256})).max(50000).optional(),
+  applicability_context:z.strictObject({grammar:Versioned,closed_sets:z.partialRecord(ApplicabilityFieldSchema,z.array(z.string()))}).optional(),
   variables:z.array(VariableUse).optional(),
   product: ProductId,
   version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }).nullable(),

@@ -1,3 +1,4 @@
+import {requestKnowledgeFact} from './requests.ts';
 // One call of a product pack's producer function in the sandbox, with its output checked against producer-output@1. A
 // failure says whether a smaller call could succeed (the function threw, its output was too large or outside the contract,
 // its input too large, it hit the memory limit or ran past the time limit), so a list batch can be split to find the one
@@ -30,7 +31,7 @@ export interface ProducerCall {
 export async function runProducer(context: KnowledgeContext, product: ProductHandle, producer: Producer, call: ProducerCall): Promise<ProducerRun> {
   const slots: ProducerInput['slots'] = {};
   for (const [slot, source] of call.slots) slots[slot] = source === null ? null : slotOf(source);
-  const payload: ProducerInput = { ...(call.build === null ? {} : { build: call.build }), slots, params: call.params };
+  const payload: ProducerInput = { ...(call.build === null ? {} : { build: call.build }), slots, params: call.params, ...(context.knownBuildInventory?{known_builds:context.knownBuildInventory.map(v=>v.name)}:{}) };
   if (call.list !== undefined) {
     payload.lists = { [call.list.slot]: call.list.elements.map(slotOf) };
     payload.batch = call.list.batch;
@@ -59,5 +60,6 @@ export async function runProducer(context: KnowledgeContext, product: ProductHan
     const issue = parsed.error.issues[0];
     return { ok: false, reason: `生产器 ${producer.id} 的输出不符合 producer-output@1：${issue === undefined ? '' : `${issue.path.join('/')} ${issue.message}`}`, isolatable: true, timeout: false };
   }
+  if(parsed.data.incomplete){const gap=parsed.data.incomplete;const request=await requestKnowledgeFact(context,{kind:'clarification',subject:'生产器 '+producer.id+' 补证',missing:gap.missing,action:gap.next_action,inputs:[...call.slots.values()].flatMap(source=>source?['src:'+source.sha256]:[])});return {ok:false,reason:gap.missing+'；下一步：'+gap.next_action+'；管理员 '+request.audience_user+'，请求 '+request.reference+'，期限 '+request.deadline,isolatable:true,timeout:false};}
   return { ok: true, value: parsed.data };
 }

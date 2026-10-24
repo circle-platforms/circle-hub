@@ -1,3 +1,5 @@
+import {QuoteEvidenceSchema} from '../generated/shared-interfaces.ts';
+import {ApplicabilityFieldSchema,DeclarationStatusSchema,JudgmentStatusSchema} from '../generated/vocabulary.ts';
 // K03/P10 document contributions are ordinary workflow artifacts, not Hub-local candidates.
 import { z } from 'zod';
 import { DocumentOutputKindSchema, TaskOutputKindSchema, RelationKindSchema, ProvenanceTypeSchema, BasisRankSchema, KnowledgeLayerSchema, ValidityStatusSchema } from '../generated/vocabulary.ts';
@@ -14,10 +16,16 @@ export const TaskOutputValue=z.strictObject({output:OutputKey,value:z.unknown()}
 export const ContributionQuote=z.strictObject({reference:ReferenceUri,quote:z.string().min(1).max(65536)});
 // Input relation: both endpoints are verified before it can become a stored relation record.
 export const ContributionRelation=z.strictObject({kind:RelationKindSchema,other:ContributionQuote});
+export const ApplicabilityClaimInput=z.strictObject({entry:Sha256,field:ApplicabilityFieldSchema,value:z.unknown().refine(v=>v!==undefined,'declare a value'),section:z.array(z.string()),evidence:QuoteEvidenceSchema});
+export const AdmittedApplicabilityClaim=ApplicabilityClaimInput.extend({admission:z.strictObject({composition:Sha256,criteria_digest:Sha256,declarations:z.array(Sha256)})});
+export const ApplicabilityFieldView=z.strictObject({declaration_status:DeclarationStatusSchema.nullable(),judgment_status:JudgmentStatusSchema.nullable(),declaration_value:z.unknown(),judgments:z.array(Sha256),legacy_value:z.unknown().optional(),conflicted:z.boolean(),missing:z.string().optional(),next_action:z.string().optional()});
+export const ApplicabilityFields=z.record(ApplicabilityFieldSchema,ApplicabilityFieldView);
+export type ApplicabilityFields=z.infer<typeof ApplicabilityFields>;
 export const ContributionInput=z.strictObject({
   kind:DocumentOutputKindSchema,statement:z.string().min(1).max(65536),
   root:Sha256,path:TreePath,source:ContributionQuote,relation:ContributionRelation.optional(),
-}).superRefine((v,ctx)=>{if((v.kind==='relation')!==(v.relation!==undefined))ctx.addIssue({code:'custom',path:['relation'],message:'only a relation output has a relation endpoint'});});
+  applicability_claim:ApplicabilityClaimInput.optional(),
+}).superRefine((v,ctx)=>{if((v.kind==='applicability_claim')!==(v.applicability_claim!==undefined))ctx.addIssue({code:'custom',path:['applicability_claim'],message:'only applicability_claim carries a typed field claim'});if((v.kind==='relation')!==(v.relation!==undefined))ctx.addIssue({code:'custom',path:['relation'],message:'only a relation output has a relation endpoint'});});
 export type ContributionInput=z.infer<typeof ContributionInput>;
 export const ContributionSource=ContributionQuote.extend({
   fragment:Sha256,provenance:ProvenanceTypeSchema.extract(['observed','projected']),records:z.array(Sha256).min(1),sources:z.array(Sha256).min(1),
@@ -31,13 +39,14 @@ export const KnowledgeContributionBody=z.strictObject({
   layer:KnowledgeLayerSchema.extract(['contribution']),product:ProductId,root:Sha256,path:TreePath,
   cited_fragment:Sha256,kind:DocumentOutputKindSchema,statement:z.string().min(1),source:ContributionSource,
   relation:ContributionRelationRecord.optional(),
+  applicability_claim:AdmittedApplicabilityClaim.optional(),
   submitted_by:UserId,session:z.string().nullable(),submitted_at:IsoTime,
   model:z.string().describe('client-declared integration model/configuration, not an evidence grade'),
   basis_rank:BasisRankSchema,applicability:Applicability.nullable(),
 });
 export type KnowledgeContributionBody=z.infer<typeof KnowledgeContributionBody>;
 export const WithheldContributionSource=ContributionSource.omit({quote:true});
-export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true}).extend({
+export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true,applicability_claim:true}).extend({
   source:WithheldContributionSource,relation:ContributionRelationRecord.omit({other:true}).extend({other:WithheldContributionSource}).optional(),
 });
 export const KnowledgeContributionView=z.union([

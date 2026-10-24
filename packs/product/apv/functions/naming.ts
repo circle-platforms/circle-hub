@@ -193,3 +193,6 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
   else kind = 'customer';
   return { family, line, platform, kind, tokens };
 }
+
+/** Complete native grammar only; the Hub separately checks exact membership in its frozen build inventory. */
+export function validateBuildNames(input:unknown):{accepted:string[];rejected:string[]}{const values=input&&typeof input==='object'&&'names'in input&&Array.isArray(input.names)?input.names:[];return{accepted:values.filter((v):v is string=>typeof v==='string'&&parseBuildName(v).line!==null),rejected:values.filter((v):v is string=>typeof v==='string'&&parseBuildName(v).line===null)};}

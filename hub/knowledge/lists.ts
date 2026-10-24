@@ -184,6 +184,7 @@ export function buildDigest(build: KnownBuild | null): string {
 }
 
 export interface MemoKeyInput {
+  known_builds?:readonly string[];
   pack: string;
   producer: Producer;
   /** The build as the function receives it. */
@@ -214,6 +215,7 @@ function memoKeyOf(input: Omit<MemoKeyInput, 'build'> & { build: string }): stri
       producer: input.producer.id,
       function: input.producer.function,
       params: input.producer.params ?? {},
+      ...(input.known_builds?{known_builds:input.known_builds}:{}),
       build: input.build,
       list: input.list,
       batch: { index: input.batch.index, of: input.batch.of },
@@ -349,7 +351,7 @@ type CallResult = { ok: true; output: ProducerOutputType } | { ok: false; reason
 
 /** One call for exactly these elements: the stored outcome when the memo key recurs, else the sandbox (its outcome is stored). */
 async function callOnce(ctx: ListCallContext, batch: { index: number; of: number }, part: readonly ParsedSource[]): Promise<CallResult> {
-  const key = memoKeyOf({ pack: ctx.product.digest, producer: ctx.producer, build: ctx.buildDigest, list: ctx.list, batch, elements: part, slots: ctx.slots });
+  const key = memoKeyOf({ known_builds:ctx.context.knownBuildInventory?.map(v=>v.name),pack: ctx.product.digest, producer: ctx.producer, build: ctx.buildDigest, list: ctx.list, batch, elements: part, slots: ctx.slots });
   const stored = await storedOutcome(ctx.context, key);
   if (stored !== null && (stored.ok || !ctx.retryFailures)) {
     ctx.totals.reused++;
@@ -435,7 +437,7 @@ export async function callBatch(ctx: ListCallContext, batch: { index: number; of
 export async function callSingleProducer(context:KnowledgeContext,product:ProductHandle,producer:Producer,build:KnownBuild | null,slots:ReadonlyMap<string,ParsedSource|null>,totals:CallTotals):Promise<{ok:true;value:ProducerOutputType}|{ok:false;reason:string}>{
   // Empty cannot be a slot name, so this key cannot collide with a list call.
   const batch={index:0,of:1};
-  const key=memoKey({pack:product.digest,producer,build,list:'',batch,elements:[],slots});
+  const key=memoKey({known_builds:context.knownBuildInventory?.map(v=>v.name),pack:product.digest,producer,build,list:'',batch,elements:[],slots});
   const stored=await storedOutcome(context,key);
   if(stored?.ok){totals.reused++;return {ok:true,value:stored.output};}
   totals.made++;

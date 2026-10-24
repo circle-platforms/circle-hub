@@ -79,3 +79,13 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 1.0.1 删除包内重复码表；回注准入码由 contracts/codes.json 的核心登记和生成物唯一提供，发出方是核心准入核对，不是包解释器。凭据拒绝使用 CREDENTIAL_IN_UPLOAD。每个异常在抛出时绑定生成码与登记修正动作，不依赖包名或错误文案分类。
 
 普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它仍收到中性 SOURCE_UNAVAILABLE，操作指引由 SKILL 第 1、3 步给出，不通过错误细节泄露权限事实。
+
+## 结构声明与适用条件主张
+
+作者声明只认 apv-applicability@1 的完整 JSON 代码块，scope.section 与原解析章节路径精确相等，descendants:true 明确授权机械继承；不按正文连词、否定词、单位话题或型号词触发条件。模型不进入生产器：在现有 knowledge-contribution 运行中以 code=applicability_claim 提交 data.applicability_claim={entry,field,value,section,evidence}，evidence 为共享 QuoteEvidence（原件摘要、parser/路径、原始 byte span 和逐字 text），source 与该引文一致。Hub 核对锁定根上的具体条目、冻结闭集、构建语法/已知名单、原始字节和章节位置，受理后保存独立判断记录，保留模型/运行/提交/原件身份，不改写原条目的作者条件。字段语义仍是判断，引文存在不证明语义正确。
+
+APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYMENT_FORMS 都是精确部署闭集；空闭集不放行任何成员，大小写、全半角、空白或同义词不映射。构建不增加变量，由原包构建名语法和根中冻结的已知构建记录共同核对；数组保持原声明次序，不从文字推连续区间。内存只接显式字节边界及 inclusive，raw 必须在原引文内，不读“至少/大约/例外”等关系词。
+
+读取分开给 declaration_status 与 judgment_status。没有结构声明为 undeclared，没有已核主张为 unjudged，条件值 null 不代表无条件适用；旧条目声明出处未核时明确缺出处，不强填确定状态。分页或保留来源尚未核读完时判断状态保持未知，按 next/回注引用续读或由管理员恢复来源。相互冲突的作者字段和模型值都保留，不能挑有利值合并。主张只用于其受理时的相同组成与校验准则；上下文改变后按新组成重跑回注。
+
+缺原包、闭集或保真范围时走具名管理员请求并带期限；结构声明报错保留 missing/next_action，不以空结果冒充完整生产。旧根和记录不改写；旧关键词规则受影响的适用字段需用新包重产新根、新模型运行并按原件和前驱保留血缘。本次续接未运行验证、测量或真实模型。

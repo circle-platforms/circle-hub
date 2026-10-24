@@ -122,7 +122,8 @@ export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  const mapped=toK1Model(one.model,one.composition,familyManualName(family,'cli'));
  const treeSlot=input.slots.tree;
  const catalog=treeSlot?.parser==='xml@1'?commandCatalog(treeSlot.model as Parameters<typeof commandCatalog>[0]).catalog:null;
- const placed=produceAdocEntries(mapped,{name:familyManualName(family,'cli'),slot:'files',catalog,components:input.params.components as string[]|undefined,licenses:input.params.licenses as string[]|undefined,deployment_forms:input.params.deployment_forms as string[]|undefined});
+ const placed=produceAdocEntries(mapped,{name:familyManualName(family,'cli'),slot:'files',catalog,known_builds:input.known_builds,models:input.params.models as string[]|undefined,platforms:input.params.platforms as string[]|undefined,components:input.params.components as string[]|undefined,licenses:input.params.licenses as string[]|undefined,deployment_forms:input.params.deployment_forms as string[]|undefined});
+ if(!placed.ok&&placed.incomplete)return {entries:[],warnings:[],incomplete:placed.incomplete};
  if(!placed.ok)throw new ManualSourceError(placed.error.code,placed.error.message,placed.error.next_action);
  return {entries:placed.entries,unplaced:placed.unplaced,warnings:[...placed.warnings,one.attributes.note,`名称族 ${family}：同修订号原件 ${Object.keys(files).length} 份；条件分支 ${one.report.conditions.length} 处；未能核对原文 ${one.report.unverified_count} 处` ]};
 }
