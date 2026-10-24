@@ -13,7 +13,7 @@ import type { ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
 import { produceCommandEntries } from './command-tree.ts';
 import { fixedBugEntries } from './fixed-bugs.ts';
-import { produceManualEntries } from './manual.ts';
+import { ApplicabilitySourceError,produceManualEntries } from './manual.ts';
 import { produceReleaseEntries } from './release-notes.ts';
 import type { CommandTreeParams, FragmentRef, MarkdownModel, ProducedEntry, Unplaced, XmlModel } from './types.ts';
 import { internalError, isRecord } from './util.ts';
@@ -87,7 +87,7 @@ export function manual(input: unknown): ProducerOutput {
   const warnings: string[] = [];
   try {
     const params=paramsOf(input);
-    const conditionOptions={components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined};
+    const conditionOptions={models:params.models as string[]|undefined,platforms:params.platforms as string[]|undefined,components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined};
     const heads = Array.isArray(paramsOf(input).heads) ? (paramsOf(input).heads as unknown[]).filter((h): h is string => typeof h === 'string') : null;
     // The command catalog of the build is built once, when a manual is actually read.
     let catalog: CommandCatalog | null | undefined;
@@ -132,6 +132,7 @@ export function manual(input: unknown): ProducerOutput {
     }
     return { entries, unplaced, warnings };
   } catch (error) {
+    if(error instanceof ApplicabilitySourceError)throw error;
     return { entries, unplaced, warnings: [...warnings, internalError(error)] };
   }
 }

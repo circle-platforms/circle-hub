@@ -238,7 +238,7 @@ export type ManualCatalog = {
   worked_examples?: Array<{ lines: string[]; src?: string }>;
 };
 
-export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string; params?: {components?:string[];licenses?:string[];deployment_forms?:string[]} };
+export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel | ManualCatalog; heads?: string[]; name?: string; params?: {models?:string[];platforms?:string[];components?:string[];licenses?:string[];deployment_forms?:string[]} };
 
 /**
  * Options of the markdown manual producer: `name` is the manual's segment under the manual namespace (the slot name:
@@ -249,6 +249,8 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  */
 export type ManualOptions = {
   /** Deployment closed sets. Omission is the empty set used only by direct examples. */
+  models?: readonly string[];
+  platforms?: readonly string[];
   components?: readonly string[];
   licenses?: readonly string[];
   deployment_forms?: readonly string[];

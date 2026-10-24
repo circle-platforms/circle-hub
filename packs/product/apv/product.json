@@ -136,6 +136,8 @@
         "attributes": {
           "NSAE": "${var:APV_ADOC_ATTRIBUTES_NSAE}"
         },
+        "models": "${var:APV_MODELS}",
+        "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
@@ -179,6 +181,8 @@
         "attributes": {
           "APV": "${var:APV_ADOC_ATTRIBUTES_APV}"
         },
+        "models": "${var:APV_MODELS}",
+        "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
         "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
@@ -315,6 +319,8 @@
       },
       "default": {}
     },
+    {"name": "APV_MODELS", "description": "Exact model identities permitted in structured applicability declarations; no synonym mapping", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "APV_PLATFORMS", "description": "Exact platform identities permitted in structured applicability declarations; no synonym mapping", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
     {"name": "APV_COMPONENTS", "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
     {"name": "APV_LICENSES", "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
     {"name": "APV_DEPLOYMENT_FORMS", "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []}

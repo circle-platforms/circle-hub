@@ -49,6 +49,8 @@ export function catalogRefusal(family?: string): { code: string; message: string
 }
 
 export interface AdocEntryOptions {
+  models?:readonly string[];
+  platforms?:readonly string[];
   components?:readonly string[];
   licenses?:readonly string[];
   deployment_forms?:readonly string[];
@@ -73,7 +75,7 @@ export type Produced =
 export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): Produced {
   const placed = produceManualEntries(mapped.model, options.heads ?? null, {
     name: options.name,
-    components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
+    models:options.models,platforms:options.platforms,components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
     ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
   });
   const unresolved: string[] = [];

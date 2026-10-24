@@ -25,8 +25,7 @@ import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated
 // `data.form` says signature or text.
 import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
 import { type CommandCatalog } from './cases-commands.ts';
-import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
-import { canonicalJson, asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
+import { canonicalJson, asArray, asString, asStrings, compareText, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
 // The fragment parser key of this call's input model (K1: a document model with section paths; the adoc producer
@@ -225,23 +224,7 @@ function commandPath(words: readonly string[]): string | null {
 }
 
 /** Trailing spaces off every line, outer blank lines off: the canonical text of a block. */
-/** The applicability of a multi-row table statement: only when every data row states the same condition. */
-function tableEveryRow(statement: string, vocabulary:ClosedSets): ProducedEntry['applicability'] {
-  const lines = statement.split('\n').filter((line) => line.trim() !== '');
-  const data = lines.filter((line) => {
-    const cells = line.split('|').map((cell) => cell.trim()).filter((cell) => cell !== '');
-    return cells.length > 0 && !cells.every((cell) => /^:?-+:?$/.test(cell));
-  });
-  if (data.length === 0) return null;
-  let acc: ProducedEntry['applicability'] = null;
-  for (const line of data) {
-    const own = toApplicability(conditionsOf(line,vocabulary));
-    if (own === null) return null;
-    if (acc === null) acc = own;
-    else if (JSON.stringify(acc) !== JSON.stringify(own)) return null;
-  }
-  return acc;
-}
+
 
 function blockText(text: string): string {
   return stripNul(text)
@@ -378,311 +361,75 @@ function commonPrefix(lists: readonly string[][]): string[] {
   return out;
 }
 
-// Explicit condition extraction is local to each source block. The scope pass below applies verified chapter-opening
-// declarations per field, after row and signature placement. Builds still come from roots and compositions.
+// Applicability is author-declared JSON under the pack's versioned grammar. No prose is interpreted.
 type Conditions = NonNullable<ProducedEntry['applicability']>;
-type ClosedSets = {components:ReadonlySet<string>;licenses:ReadonlySet<string>;deployment_forms:ReadonlySet<string>};
+type ListField=Exclude<ApplicabilityField,'memory'|'builds'>;
+type ClosedSets=Record<ListField,ReadonlySet<string>>;
+const CONDITION_SCHEMA='apv-applicability@1';
+export class ApplicabilitySourceError extends Error {
+  readonly code='apv.applicability.declaration_invalid';
+  readonly next_action='来源维护者按包声明语法修复该条件后重新生产；保留原根与原记录';
+  constructor(message:string){super(message+'；下一步：来源维护者按包声明语法修复该条件后重新生产；保留原根与原记录');}
+}
 function closedVocabulary(options:ManualOptions):ClosedSets {
   const read=(value:unknown):ReadonlySet<string>=>{
     if(value===undefined)return new Set<string>();
-    if(!Array.isArray(value)||value.some(word=>typeof word!=='string'||word.trim()===''))throw new TypeError('适用条件闭集须为非空词的字符串列表；请管理员核对产品变量后重新同步');
+    if(!Array.isArray(value)||value.some(word=>typeof word!=='string'||word.trim()===''))throw new ApplicabilitySourceError('适用条件闭集须为非空词的字符串列表；请管理员核对产品变量后重新同步');
     return new Set(value);
   };
-  return {components:read(options.components),licenses:read(options.licenses),deployment_forms:read(options.deployment_forms)};
+  return {models:read(options.models),platforms:read(options.platforms),components:read(options.components),licenses:read(options.licenses),deployment_forms:read(options.deployment_forms)};
 }
-const SERIES_SEPARATOR = /\s*(?:以及|或者|、|,|，|\/|和|与|及|或|并)\s*/u;
-function closedSeries(text:string,words:ReadonlySet<string>):string[]|null {
-  const clean=text.trim();
-  if(words.has(clean))return [clean];
-  const items=clean.split(SERIES_SEPARATOR).map(item=>item.replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').trim());
-  return items.length&&items.every(item=>item!==''&&words.has(item))?[...new Set(items)].sort(compareText):null;
+/** An exact code-block protocol marker or an explicit JSON schema identity; never a prose candidate search. */
+function authoredConditionBlock(raw:Record<string,unknown>):Record<string,unknown>|null {
+  if(raw.kind!=='code_block'||raw.example===true||typeof raw.text!=='string')return null;
+  const lines=raw.text.split('\n');let json=raw.text;
+  if(lines[0]==='```'+CONDITION_SCHEMA){
+    if(lines.at(-1)!=='```')throw new ApplicabilitySourceError('适用条件声明缺少完整代码围栏；请按包声明语法修复后重产');
+    json=lines.slice(1,-1).join('\n');
+  }
+  let parsed:unknown;try{parsed=JSON.parse(json);}catch{
+    if(lines[0]==='```'+CONDITION_SCHEMA)throw new ApplicabilitySourceError('适用条件声明不是合法 JSON；请修复声明后重产');
+    return null;
+  }
+  return isRecord(parsed)&&parsed.schema===CONDITION_SCHEMA?parsed:null;
 }
-/** Read only closed names and explicit positive restrictions; never keep a recognized prefix of a failed list. */
-function closedConditions(text:string,vocabulary:ClosedSets):Conditions {
-  if(!vocabulary.components.size&&!vocabulary.licenses.size&&!vocabulary.deployment_forms.size)return {};
-  const withWords=new Set<string>(),withoutWords=new Set<string>(),licenses=new Set<string>(),forms=new Set<string>();
-  const unread={components:false,licenses:false,deployment_forms:false};
+function authoredConditions(input:Record<string,unknown>,vocabulary:ClosedSets):Conditions {
   const out:Conditions={};
-  for(const clause of text.split(/[。；：\n]/u)){
-    const bad=[...clause.matchAll(/不|未|无|非|没|勿|除|之外|以外|其余|其他|等等?|可能|通常|一般|某些|部分|大概|也|还|亦/gu)].filter(match=>!clause.startsWith('不少于',match.index)&&!clause.startsWith('不超过',match.index)).map(match=>match.index);
-    const outside=(start:number,end:number)=>bad.some(at=>at<start||at>=end);
-    const explicit=(pattern:RegExp,field:keyof ClosedSets,absent=false)=>{
-      for(const match of clause.matchAll(pattern)){
-        const start=match.index,end=start+match[0].length;
-        const values=closedSeries(match[1]!,vocabulary[field])??(field==='components'?closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary[field]):null);
-        const tail=clause.slice(end);
-        const continued=/^\s*(?:、|以及|或者|和|与|及|或|并|\/)/u.test(tail)||(/^\s*[，,]/u.test(tail)&&/(?:部件|许可|部署形态|部署方式)/u.test(tail));
-        if(outside(start,end)||!values||continued){unread[field]=true;continue;}
-        const found=field==='components'?(absent?withoutWords:withWords):field==='licenses'?licenses:forms;
-        for(const value of values)found.add(value);
-      }
-    };
-    explicit(/装有\s*([^。；：\n]{1,200}?)\s*时/gu,'components');
-    explicit(/没有\s*([^。；：\n]{1,200}?)\s*时/gu,'components',true);
-    explicit(/需要\s*([^。；：\n]{1,200}?)\s*许可/gu,'licenses');
-    for(const pattern of [/适用于\s*([^。；：\n]{1,200})/gu,/(?:仅|只)\s*([^。；：\n]{1,200}?)\s*支持/gu])for(const match of clause.matchAll(pattern)){
-      let candidate=match[1]!.trim(),end=match.index+match[0].length;
-      const when=candidate.indexOf('时');
-      if(when>=0){end=match.index+match[0].indexOf(match[1]!)+match[1]!.indexOf('时')+1;candidate=candidate.slice(0,when).trim();}
-      else if(end<clause.length)continue;
-      if(outside(match.index,end))continue;
-      const candidates=[
-        {field:'components' as const,words:vocabulary.components,values:withWords,noun:/\s*部件$/u},
-        {field:'licenses' as const,words:vocabulary.licenses,values:licenses,noun:/\s*许可$/u},
-        {field:'deployment_forms' as const,words:vocabulary.deployment_forms,values:forms,noun:/\s*(?:部署形态|部署方式|部署)$/u},
-      ];
-      const reads=candidates.flatMap(row=>{const values=closedSeries(candidate,row.words)??closedSeries(candidate.replace(row.noun,''),row.words);return values?[{...row,read:values}]:[];});
-      if(reads.length!==1)continue;
-      const row=reads[0]!;for(const value of row.read)row.values.add(value);
+  const invalid=(field:string):never=>{throw new ApplicabilitySourceError('适用条件结构违规：'+field+'；按 '+CONDITION_SCHEMA+' 的字段和部署闭集精确声明后重产');};
+  const keys=(value:Record<string,unknown>,allowed:readonly string[])=>{for(const key of Object.keys(value))if(!allowed.includes(key))invalid(key);};
+  const list=(value:unknown,field:ListField):string[]|undefined=>{
+    if(!Array.isArray(value)||!value.length||value.some(item=>typeof item!=='string'))return invalid(field);
+    if(!vocabulary[field].size)return undefined;
+    if(value.some(item=>!vocabulary[field].has(item as string)))return invalid(field);
+    return [...new Set(value as string[])].sort(compareText);
+  };
+  const bound=(value:unknown)=>{
+    if(!isRecord(value))return invalid('memory');keys(value,['bytes','inclusive']);
+    if(typeof value.bytes!=='number'||!Number.isSafeInteger(value.bytes)||value.bytes<0||typeof value.inclusive!=='boolean')return invalid('memory');
+    return {bytes:value.bytes,inclusive:value.inclusive};
+  };
+  for(const field of Object.keys(input)){
+    if(!(APPLICABILITY_FIELD as readonly string[]).includes(field))return invalid(field);
+    const value=input[field];if(value===null)continue;
+    if(field==='components'){
+      if(!isRecord(value))return invalid(field);keys(value,['with','without']);if(!Object.keys(value).length)return invalid(field);
+      const withValues=value.with===undefined?undefined:list(value.with,'components'),withoutValues=value.without===undefined?undefined:list(value.without,'components');
+      if(withValues?.some(item=>withoutValues?.includes(item)))return invalid(field);
+      if(withValues||withoutValues)out.components={...(withValues?{with:withValues}:{}),...(withoutValues?{without:withoutValues}:{})};
+    }else if(field==='memory'){
+      if(!isRecord(value))return invalid(field);keys(value,['minimum','maximum','raw']);
+      const minimum=value.minimum===undefined?undefined:bound(value.minimum),maximum=value.maximum===undefined?undefined:bound(value.maximum);
+      if(!minimum&&!maximum||typeof value.raw!=='string'||!value.raw.trim())return invalid(field);
+      if(minimum&&maximum&&(minimum.bytes>maximum.bytes||minimum.bytes===maximum.bytes&&(!minimum.inclusive||!maximum.inclusive)))return invalid(field);
+      out.memory={...(minimum?{minimum}:{}),...(maximum?{maximum}:{}),raw:value.raw};
+    }else if(field==='builds'){
+      return invalid('builds：缺少锁定知识库已知构建列表，下一步同步构建所在列表页并提供该列表后重新生产');
+    }else{
+      const values=list(value,field as ListField);if(values)(out as Record<string,unknown>)[field]=values;
     }
   }
-  if(!unread.components&&(withWords.size||withoutWords.size))out.components={...(withWords.size?{with:[...withWords].sort(compareText)}:{}),...(withoutWords.size?{without:[...withoutWords].sort(compareText)}:{})};
-  if(!unread.licenses&&licenses.size)out.licenses=[...licenses].sort(compareText);
-  if(!unread.deployment_forms&&forms.size)out.deployment_forms=[...forms].sort(compareText);
   return out;
 }
-
-
-/** Binary memory units; accept only exact integer byte counts representable by JSON numbers. */
-function memoryBytes(number:string,unit:string):number|null {
-  const [whole,fraction='']=number.split('.');
-  const denominator=10n**BigInt(fraction.length);
-  const numerator=BigInt(whole+fraction)*(unit==='GB'||unit==='G'?1024n**3n:1024n**2n);
-  if(numerator%denominator!==0n)return null;
-  const bytes=numerator/denominator;
-  return bytes<=BigInt(Number.MAX_SAFE_INTEGER)?Number(bytes):null;
-}
-function memoryCondition(text:string,vocabulary:ClosedSets):Conditions['memory'] {
-  if(!text.includes('内存'))return undefined;
-  const dimension='(?<mark>\\*\\*|__)?(?<number>[0-9]{1,18}(?:\\.[0-9]{1,18})?)\\s*(?<unit>GB|G|MB|M)\\k<mark>(?![A-Za-z0-9_.])';
-  const patterns=[
-    new RegExp('内存\\s*(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension,'gu'),
-    new RegExp('(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension+'\\s*(?:的)?内存(?:的设备)?','gu'),
-    new RegExp('内存\\s*(?:为\\s*)?'+dimension+'\\s*(?<relation>以上|以下)','gu'),
-    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*(?<relation>以上|以下)\\s*(?:的)?内存(?:的设备)?','gu'),
-    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*内存的设备','gu'),
-  ];
-  const results:NonNullable<Conditions['memory']>[]=[];let unread=false;
-  for(const clause of text.split(/[。；：]/u)){
-    type Found={start:number;end:number;minimum?:{bytes:number;inclusive:boolean};maximum?:{bytes:number;inclusive:boolean}};
-    const found:Found[]=[];
-    for(const pattern of patterns)for(const match of clause.matchAll(pattern)){
-      const start=match.index,end=start+match[0].length;
-      if(found.some(previous=>start<previous.end&&end>previous.start))continue;
-      const bytes=memoryBytes(match.groups!.number!,match.groups!.unit!);
-      if(bytes===null){unread=true;continue;}
-      const relation=match.groups?.relation;
-      const lower=relation===undefined||relation==='不少于'||relation==='至少'||relation==='大于'||relation==='以上';
-      const upper=relation===undefined||relation==='小于'||relation==='不超过'||relation==='以下';
-      const inclusive=relation!=='大于'&&relation!=='小于';
-      found.push({start,end,...(lower?{minimum:{bytes,inclusive}}:{}),...(upper?{maximum:{bytes,inclusive}}:{})});
-    }
-    if(!found.length)continue;
-    found.sort((a,b)=>a.start-b.start);
-    const otherScopes=[...clause.matchAll(/(?:装有|没有)\s*([^。；：\n]{1,200}?)\s*时/gu)].filter(match=>closedSeries(match[1]!,vocabulary.components)!==null||closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary.components)!==null).map(match=>({start:match.index,end:match.index+match[0].length}));
-    const outside=[...clause.matchAll(/不|未|无|非|没|除|之外|以外|等等?|可能|约|通常|一般|左右|较|或/gu)].some(match=>![...found,...otherScopes].some(span=>match.index>=span.start&&match.index<span.end));
-    if(outside){unread=true;continue;}
-    let minimum:Found['minimum'],maximum:Found['maximum'];let conflict=false;
-    for(const match of found){
-      if(match.minimum){if(minimum&&JSON.stringify(minimum)!==JSON.stringify(match.minimum))conflict=true;minimum=match.minimum;}
-      if(match.maximum){if(maximum&&JSON.stringify(maximum)!==JSON.stringify(match.maximum))conflict=true;maximum=match.maximum;}
-    }
-    if(conflict){unread=true;continue;}
-    results.push({...(minimum?{minimum}:{}),...(maximum?{maximum}:{}),raw:clause.slice(found[0]!.start,found.at(-1)!.end)});
-  }
-  if(unread||!results.length)return undefined;
-  const bounds=(value:NonNullable<Conditions['memory']>)=>JSON.stringify({minimum:value.minimum,maximum:value.maximum});
-  return results.every(value=>bounds(value)===bounds(results[0]!))?results[0]:undefined;
-}
-
-/** Platform values a manual may name: the pack's platform tokens (hyphen-joined) plus the Han words 虚拟/物理. */
-const PLATFORM_WORDS: ReadonlySet<string> = new Set([...PAGE_PLATFORMS.map((sequence) => sequence.join('-')), '虚拟', '物理']);
-/** The product's own names are never models (APV and NSAE name one product). */
-const PRODUCT_NAMES_LOWER: ReadonlySet<string> = new Set(PRODUCT_LINE.names.map((name) => name.toLowerCase()));
-
-/** A model value is a listed ASCII model atom (research 3 rec 1; the 7f046dde rewrite lost this shape). */
-const MODEL_ATOM = /^[A-Za-z0-9][A-Za-z0-9-]{0,31}$/;
-
-/** Escapes a literal for use inside a RegExp. */
-const escapeRe = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** List connectives between items (a coordinated list counts only when every item is readable). */
-const CONNECTIVES = ['、', ',', '，', '/', '和', '与', '及', '以及', '或者', '或', '并'];
-/** A list followed by 等 never counts (the source says it is partial), and an exception list (以外/之外) inverts. */
-const ETC = /等等?|以外|之外|除外|其余|其他/;
-/** Any of these in the clause before the trigger makes the whole match unread (a negation over the condition). */
-const CLAUSE_NEGATION = /[不未无非没勿]/;
-/** A widening word anywhere in the clause before the trigger (也可/亦可/同样可以/还可以/也能…适用于) widens instead of restricting: unread (closure 6). */
-const ALSO_BEFORE = /(?:也|亦|同样|还)(?:可以?|能)?|该命令也能/;
-/** The applicability triggers: what follows one, up to the clause's end, is the candidate series. */
-const TRIGGERS = [/适用于/gu];
-
-/** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
-const CLAUSE_END = /[。；：\n]/;
-/** The end of a sub-clause: a comma starts a new remark, so a series' own checks stop here (c3 item 4). */
-const SUB_CLAUSE_END = /[，,]/;
-
-/**
- * The conditions one text declares, per field — read linearly, never by a backtracking series regex. For every
- * trigger: the clause before it may not carry a negation or a widening word; the tokens after it, split on the
- * connectives and the field's noun, must all be readable; a trailing 等 (a partial listing) or another connective
- * after the series makes it unread; one unreadable token makes the whole series unread, never a narrowed one.
- */
-function conditionsOf(text: string, vocabulary: ClosedSets): Conditions {
-  const found: { platforms: Set<string>; models: Set<string> } = { platforms: new Set(), models: new Set() };
-  // One clause split for the whole text (bounded: every clause is scanned once, every candidate's series window is
-  // capped, so hostile paragraphs stay linear — closure findings 7 and 15).
-  const CLAUSE_BOUND = 200;
-  const clauses: Array<{ start: number; end: number }> = [];
-  {
-    let start = 0;
-    for (let k = 0; k < text.length; k += 1) {
-      if (CLAUSE_END.test(text[k] ?? '')) {
-        clauses.push({ start, end: k });
-        start = k + 1;
-      }
-    }
-    clauses.push({ start, end: text.length });
-  }
-  for (const clause of clauses) {
-    const slice = text.slice(clause.start, clause.end);
-    // Every trigger position in this clause (适用于, and 仅/只 whose clause holds 支持 right after a noun).
-    const positions: number[] = [];
-    const tight: number[] = [];
-    const loose: number[] = [];
-    let from = 0;
-    for (;;) {
-      const at = slice.indexOf('适用于', from);
-      if (at < 0) break;
-      positions.push(at + 3);
-      from = at + 3;
-    }
-    from = 0;
-    for (;;) {
-      const rest = slice.slice(from);
-      const at = new RegExp('(?:仅|只)(\\s*)').exec(rest);
-      if (at === null) break;
-      const tightOnly = from === 0 && at.index === 0;
-      const itemsAt = from + at.index + at[0].length;
-      (tightOnly ? tight : loose).push(itemsAt);
-      from = itemsAt;
-      if (from >= slice.length) break;
-    }
-    positions.push(...loose, ...tight);
-    for (const itemsAt of positions) {
-      // Negations and widening words count only within the trigger's OWN sub-clause (back to the previous comma
-      // or the clause start): a remark like 无需重启， or 不同…， before it does not suppress the condition (c3 item 4).
-      let windowStart = Math.max(0, itemsAt - 64);
-      for (let k = itemsAt - 1; k >= windowStart; k -= 1) {
-        if (SUB_CLAUSE_END.test(slice[k] ?? '')) { windowStart = k + 1; break; }
-      }
-      const before = slice.slice(windowStart, itemsAt);
-      if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
-      // Every 仅/只 candidate is a restriction ONLY in the documented form — the series noun itself followed by
-      // 支持 ('仅 hg-k 平台支持', c3 item 2): a mid-clause 仅 about one platform's difference is not one.
-      const isOnlyCandidate = tight.includes(itemsAt) || loose.includes(itemsAt);
-      if (isOnlyCandidate && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
-      // The candidate series: at most CLAUSE_BOUND characters from the trigger.
-      const candidate = slice.slice(itemsAt, Math.min(slice.length, itemsAt + CLAUSE_BOUND)).trim();
-      const read = readSeries(candidate);
-      if (read === null) continue;
-      for (const token of read.platforms) found.platforms.add(token);
-      for (const token of read.models) found.models.add(token);
-    }
-  }
-  const out: Conditions = {};
-  if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
-  if (found.models.size > 0) out.models = [...found.models].sort(compareText);
-  const memory=memoryCondition(text,vocabulary);
-  return {...out,...closedConditions(text,vocabulary),...(memory?{memory}:{})};
-}
-
-/** One series candidate: the items up to and through the field noun, tokens by field, or null when unread. */
-
-function readSeries(candidate: string): { platforms: string[]; models: string[] } | null {
-  const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
-  let rest = candidate;
-  const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
-  const tokensOk = (): boolean => tokensByField.platforms.length + tokensByField.models.length > 0;
-  let field: Extract<ApplicabilityField,'platforms'|'models'> | null = null;
-  let nounAteSupport = false;
-  let afterConnective = false;
-  const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
-  let guard = 0;
-  for (;;) {
-    if (guard++ > 64) return null;
-    const head = NOUN_RE.exec(rest);
-    if (head === null) {
-      const left = rest;
-      if (left.trim() === '') break;
-      const continued = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})`, 'u').exec(left);
-      if (continued !== null) {
-        const afterConnective = left.slice(continued[0].length);
-        if (NOUN_RE.exec(afterConnective) === null) {
-          // A connective before a start-build tail (，自 X 起…) ends the series quietly; a connective before any
-          // other non-item (或其他平台) makes it unread.
-          if (/^自\s*\S+\s*起/.test(afterConnective.trim())) break;
-          return null;
-        }
-        rest = afterConnective;
-        continue;
-      }
-      // The quiet tail: a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only when the noun
-      // ate its own 支持), or plain Han prose with no field noun, connective, ETC word or negation in its own
-      // sub-clause (平台环境, 系列设备 — c3 item 4). An unfinished item after a connective is none of these.
-      const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
-      const tailSub = (() => { const at = SUB_CLAUSE_END.exec(left); return at === null ? left : left.slice(0, at.index); })();
-      // Plain Han prose ends the series ONLY when no connective asked for another item (物理设备 after 和 is an
-      // unfinished item: the series stays unread — closure 14).
-      const quietHan = !afterConnective && tailSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(tailSub) && !CONNECTIVES.some((word) => tailSub.includes(word)) && !ETC.test(tailSub) && !CLAUSE_NEGATION.test(tailSub);
-      if (left.trim() !== '' && !startTailHere && !(quietHan && tokensOk()) && !(/^的/u.test(left.trim()) && nounAteSupport)) return null;
-      break;
-    }
-    if (head.index > CLAUSE_WINDOW) return null;
-    const itemPart = rest.slice(0, head.index);
-    const nounWord = head[1]!;
-    const nextField: Extract<ApplicabilityField,'platforms'|'models'> = nounWord === '平台' ? 'platforms' : 'models';
-    if (field === null) field = nextField;
-    else if (field !== nextField) return null;
-    const pieceTokens = itemPart.split(itemSplit).map((token) => squeeze(token)).filter((token) => token !== '' && token !== nounWord);
-    if (itemPart.trim() !== '' && pieceTokens.length === 0) return null;
-    if (field === 'platforms' && !pieceTokens.every((token) => PLATFORM_WORDS.has(token.toLowerCase()))) return null;
-    if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) return null;
-    tokensByField[field].push(...pieceTokens);
-    nounAteSupport = head[2] !== undefined;
-    afterConnective = false;
-    rest = rest.slice(head.index + head[0].length);
-    if (rest.trim() === '') break;
-    // Forward checks stop at the sub-clause end: a remark after a comma is not part of the series (c3 item 4).
-    const subEnd = (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })();
-    const own = rest.slice(0, subEnd);
-    if (ETC.test(own) || CLAUSE_NEGATION.test(own) || /^\s*(?:外|除外)/u.test(own)) return null;
-    const connective = new RegExp(`^\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\s*`, 'u').exec(rest);
-    if (connective !== null) {
-      const next = rest.slice(connective[0].length);
-      const afterSub = (() => { const at = SUB_CLAUSE_END.exec(next); return at === null ? next : next.slice(0, at.index); })();
-      // A comma connective before a remark (，用于配置成员) ends the series quietly: the remark is not a list item.
-      if (SUB_CLAUSE_END.test(connective[0]) && !/(?:平台|系列|机型|型号)/u.test(afterSub)) break;
-      afterConnective = true;
-      rest = next;
-      continue;
-    }
-    if (NOUN_RE.test(rest.trim())) continue;
-    // A leftover is quiet when it is a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only
-    // when the noun ate its own 支持 — c3 item 2), or plain Han prose with no field noun, connective, ETC word or
-    // negation in its own sub-clause (平台环境, 系列设备 — c3 item 4). Anything else keeps the series unread.
-    const startTail = /^自\s*\S+\s*起/.test(rest.trim());
-    const restSub = rest.slice(0, (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })());
-    const quietHan = restSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(restSub) && !CONNECTIVES.some((word) => restSub.includes(word)) && !ETC.test(restSub) && !CLAUSE_NEGATION.test(restSub);
-    if (rest.trim() !== '' && !startTail && !quietHan && !(/^的/u.test(rest.trim()) && nounAteSupport)) return null;
-    break;
-  }
-  if (field === null) return null;
-  const tokens = tokensByField[field].filter((token, k, all) => all.indexOf(token) === k);
-  if (tokens.length === 0) return null;
-  return field === 'platforms' ? { platforms: tokens, models: [] } : { platforms: [], models: tokens };
-}
-
-const CLAUSE_WINDOW = 200;
 
 /** The applicability of an entry, or null (未声明) when nothing declares a condition. */
 function toApplicability(conditions: Conditions): ProducedEntry['applicability'] {
@@ -740,76 +487,31 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   type Origin={fragment:FragmentRef;meta:OriginMeta};
   type Scope={declaration:Conditions|null;origins:Origin[];conflict:boolean};
   const report:NonNullable<ManualResult['applicability_report']>={counts:Object.fromEntries(APPLICABILITY_FIELD.map(field=>[field,{direct:0,inherited:0}])) as NonNullable<ManualResult['applicability_report']>['counts'],overrides:[],conflicts:[]};
-  const firstBlocks=new Map<number,{raw:Record<string,unknown>;position:number}>();
-  asArray(model.blocks).forEach((raw,position)=>{if(isRecord(raw)&&Number.isInteger(raw.section)&&!firstBlocks.has(raw.section as number))firstBlocks.set(raw.section as number,{raw,position});});
-  const firstDescendant=new Map<number,number>();
-  for(const [owner,first] of firstBlocks){const visited=new Set<number>();for(let parent=sections[owner]?.parent;parent!==null&&parent!==undefined&&!visited.has(parent);parent=sections[parent]?.parent){visited.add(parent);firstDescendant.set(parent,Math.min(firstDescendant.get(parent)??Infinity,first.position));}}
-  const openingParagraphs=new Map<number,Record<string,unknown>>();
-  for(const [index,first] of firstBlocks){
-    if(index<=0||first.raw.kind!=='paragraph'||typeof first.raw.text!=='string'||typeof first.raw.selector!=='string')continue;
-    if((firstDescendant.get(index)??Infinity)<first.position)continue;
-    const rawSection=asArray(model.sections)[index];
-    if(isRecord(rawSection)&&rawSection.cite===undefined&&typeof first.raw.line==='number'){
-      const childBefore=asArray(model.sections).some(child=>isRecord(child)&&child.parent===index&&typeof child.line==='number'&&child.line<=(first.raw.line as number));
-      if(childBefore)continue;
-    }
-    openingParagraphs.set(index,first.raw);
-  }
-  const sectionOrigin=(index:number):string[]=>[...(sectionSegments(index)??titleChains[index]??[])];
-  const headingFragment=(index:number):FragmentRef|null=>{
-    const raw=asArray(model.sections)[index];
-    if(!isRecord(raw))return null;
-    if(options.sectionSelector!==undefined)return {parser:parserOf(options),selector:options.sectionSelector(sectionOrigin(index))};
-    // Mapped formats own their citation rewrite. Markdown can cite just the physical heading line.
-    if(raw.cite===null)return null;
-    if(raw.cite===undefined&&Number.isInteger(raw.line)&&Number(raw.line)>=0)return {parser:'text@1',selector:'l/'+(Number(raw.line)+1)};
-    return sections[index]?.selector?{parser:parserOf(options),selector:sections[index]!.selector!}:null;
-  };
+  const sectionOrigin=(index:number):string[]=>[...(sectionSegments(index)??[])];
   const declaration=(value:Conditions,field:Field):Conditions=>value[field]===undefined?{}:{[field]:structuredClone(value[field])} as Conditions;
-  const equal=(left:Conditions|null,right:Conditions|null,field:Field):boolean=>{
-    const value=(app:Conditions|null)=>field==='memory'&&app?.memory?{minimum:app.memory.minimum,maximum:app.memory.maximum}:app?.[field];
-    return JSON.stringify(value(left))===JSON.stringify(value(right));
-  };
-  const topics=(text:string,own:Conditions):Set<Field>=>{
-    const found=new Set<Field>(APPLICABILITY_FIELD.filter(field=>own[field]!==undefined));
-    const hasMember=(candidate:string,words:ReadonlySet<string>,noun:RegExp)=>candidate.split(SERIES_SEPARATOR).some(part=>words.has(part.trim().replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').replace(noun,'').trim()));
-    if(vocabulary.components.size)for(const match of text.matchAll(/(?:装有|没有)\s*([^。；\n]{1,200}?)\s*时/gu)){
-      if(hasMember(match[1]!,vocabulary.components,/\s*(?:部件|单板|模块|卡)$/u)||/(?:部件|单板|模块|卡$)/u.test(match[1]!))found.add('components');
-    }
-    if(vocabulary.licenses.size&&/需要[^。；\n]{1,200}许可/u.test(text))found.add('licenses');
-    if(/(?:适用于|仅|只)[^。；\n]{0,200}平台/u.test(text))found.add('platforms');
-    if(/(?:适用于|仅|只)[^。；\n]{0,200}(?:型号|机型|系列)/u.test(text))found.add('models');
-    if(vocabulary.deployment_forms.size&&/(?:适用于|仅|只)[^。；\n]{0,200}部署(?:形态|方式)?/u.test(text))found.add('deployment_forms');
-    if(/内存\s*(?:不少于|至少|大于|小于|不超过|[0-9]|较大|较小)|[0-9]\s*(?:GB|G|MB|M)\s*内存/u.test(text))found.add('memory');
-    // A mixed closed series still identifies its field when at least one member is known; do not inherit a narrower parent.
-    for(const match of text.matchAll(/(?:适用于|仅|只)\s*([^。；：\n]{1,200})/gu)){
-      const parts=match[1]!.split(SERIES_SEPARATOR).map(value=>value.trim());
-      if(parts.some(value=>vocabulary.components.has(value)))found.add('components');
-      if(parts.some(value=>vocabulary.licenses.has(value)))found.add('licenses');
-      if(parts.some(value=>vocabulary.deployment_forms.has(value)))found.add('deployment_forms');
-    }
-    return found;
-  };
+  const equal=(left:Conditions|null,right:Conditions|null,field:Field):boolean=>JSON.stringify(left?.[field])===JSON.stringify(right?.[field]);
   const locals=new Map<number,Map<Field,Scope>>();
-  for(let index=1;index<sections.length;index++){
-    const heading=conditionsOf(sections[index]!.title,vocabulary),paragraph=openingParagraphs.get(index);
-    const body=paragraph?conditionsOf(paragraph.text as string,vocabulary):{};
-    const headerTopics=topics(sections[index]!.title,heading),bodyTopics=paragraph?topics(paragraph.text as string,body):new Set<Field>();
-    const local=new Map<Field,Scope>();
+  const declarationBlocks=new Set<string>();
+  for(const raw of asArray(model.blocks)){
+    if(!isRecord(raw))continue;
+    const authored=authoredConditionBlock(raw);if(authored===null)continue;
+    if(typeof raw.selector!=='string'||!Number.isInteger(raw.section))throw new ApplicabilitySourceError('适用条件声明没有可解析源位置；修复解析结构后重产');
+    declarationBlocks.add(raw.selector);
+    for(const key of Object.keys(authored))if(!['schema','scope','conditions'].includes(key))throw new ApplicabilitySourceError('适用条件声明含未声明字段 '+key+'；修复声明后重产');
+    const scope=authored.scope;
+    if(!isRecord(scope)||!Array.isArray(scope.section)||scope.section.some(part=>typeof part!=='string')||scope.descendants!==true||Object.keys(scope).some(key=>!['section','descendants'].includes(key)))throw new ApplicabilitySourceError('适用条件作用域须声明 section 路径和 descendants:true；修复声明后重产');
+    const candidates=sections.map((_,index)=>index).filter(index=>JSON.stringify(sectionOrigin(index))===JSON.stringify(scope.section));
+    if(candidates.length!==1)throw new ApplicabilitySourceError('适用条件声明的章节路径不存在或不唯一；按源解析器给出的路径修复后重产');
+    if(!isRecord(authored.conditions)||!Object.keys(authored.conditions).length)throw new ApplicabilitySourceError('适用条件 conditions 须显式声明字段；修复声明后重产');
+    const index=candidates[0]!,values=authoredConditions(authored.conditions,vocabulary),local=locals.get(index)??new Map<Field,Scope>();
     for(const field of APPLICABILITY_FIELD){
-      if(!headerTopics.has(field)&&!bodyTopics.has(field))continue;
-      const origins:Origin[]=[];
-      const h=headerTopics.has(field),b=bodyTopics.has(field);
-      const add=(app:Conditions,fragment:FragmentRef|null)=>{
-        if(fragment)origins.push({fragment,meta:{field,section:sectionOrigin(index),declaration:declaration(app,field)}});
-        else warnings.push('章节开头条件缺可核对片段：'+sectionOrigin(index).join('/')+'；下一步修复源定位后重新生产');
-      };
-      if(h)add(heading,headingFragment(index));
-      if(b)add(body,{parser:parserOf(options),selector:paragraph!.selector as string});
-      const conflict=h&&b&&heading[field]!==undefined&&body[field]!==undefined&&!equal(heading,body,field);
-      const unread=(h&&heading[field]===undefined)||(b&&body[field]===undefined)||origins.length!==Number(h)+Number(b);
-      if(conflict){for(const origin of origins)origin.meta={...origin.meta,conflict:true};report.conflicts.push({field,section:sectionOrigin(index),values:origins.map(origin=>origin.meta.declaration),fragments:origins.map(origin=>origin.fragment)});}
-      local.set(field,{declaration:conflict||unread?null:declaration(b?body:heading,field),origins,conflict});
+      if(!Object.hasOwn(authored.conditions,field))continue;
+      const fragment:FragmentRef={parser:parserOf(options),selector:raw.selector};
+      const origin:Origin={fragment,meta:{field,section:sectionOrigin(index),declaration:declaration(values,field)}};
+      const old=local.get(field),own=declaration(values,field),conflict=old!==undefined&&(old.conflict||!equal(old.declaration,own,field));
+      const origins=[...(old?.origins??[]),origin];
+      if(conflict){for(const item of origins)item.meta={...item.meta,conflict:true};report.conflicts.push({field,section:sectionOrigin(index),values:origins.map(item=>item.meta.declaration),fragments:origins.map(item=>item.fragment)});}
+      local.set(field,{declaration:conflict?null:own,origins,conflict});
     }
     locals.set(index,local);
   }
@@ -843,19 +545,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const applyScopes=()=>{
     for(const entry of entries){
       const context=entryContexts.get(entry);if(!context)continue;
-      const own=entry.applicability??{},ownTopics=topics(context.text,own),effective:Conditions={...own};
-      const inherited:Field[]=[];const opening=context.heading||openingParagraphs.get(context.section)?.selector===entry.fragments[0]?.selector;
+      const effective:Conditions={};
+      const inherited:Field[]=[];
       for(const field of APPLICABILITY_FIELD){
-        const scope=scopeOf(context.section).get(field);
-        if(opening&&locals.get(context.section)?.get(field)?.declaration===null){delete (effective as Record<string,unknown>)[field];for(const origin of scope?.origins??[])attach(entry,origin);continue;}
-        if(ownTopics.has(field)){
-          if(own[field]===undefined){delete (effective as Record<string,unknown>)[field];}
-          if(opening&&scope?.origins.some(origin=>origin.meta.superseded))for(const origin of scope.origins)attach(entry,origin);
-          continue;
-        }
-        if(!scope)continue;
+        const scope=scopeOf(context.section).get(field);if(!scope)continue;
         for(const origin of scope.origins)attach(entry,origin);
-        if(scope.declaration?.[field]!==undefined){(effective as Record<string,unknown>)[field]=structuredClone(scope.declaration[field]);inherited.push(field);}
+        if(scope.declaration?.[field]!==undefined){(effective as Record<string,unknown>)[field]=structuredClone(scope.declaration[field]);if(!locals.get(context.section)?.has(field))inherited.push(field);}
       }
       if(inherited.length)effective.inherited=inherited;
       entry.applicability=toApplicability(effective);
@@ -904,21 +599,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   /**
    * A behaviour entry. `data` is placement-independent and heading-independent (K01 R[1], K02 F[1]): only `form` and
    * `words` (whenever the block follows an anchor); the section chain is provenance and lives in the fragment
-   * selectors and the section-node paths, never in the digest. Explicit conditions come from this entry; the scope pass adds chapter-opening conditions per field.
+   * selectors and the section-node paths, never in the digest. Explicit condition blocks define structure scopes; the scope pass never reads prose.
    */
   const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[]; noLiterals?: boolean }): ProducedEntry => {
     // Data stays identical across placements (K01 R[1]) and across heading edits (K02 F[1], R[4]): the section
     // chain is provenance and lives in the fragment selectors and the section-node paths, never in the digest.
     const data: { [key: string]: unknown } = { form: 'text' };
     if (init.words !== undefined) data.words = init.words;
-    // A multi-line table statement (an unsplit table block, or the shared remainder rows) declares a condition only
-    // when EVERY data row of it states it (closure finding 8): a header condition or one row's condition never
-    // declares the others. Non-table statements read their own text as before.
-    const isTableText = init.block === 'table' && init.statement.includes('\n');
-    const applicability = isTableText
-      ? tableEveryRow(init.statement,vocabulary)
-      : toApplicability(conditionsOf(init.statement,vocabulary));
-    const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability };
+    const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability:null };
     // A multi-command row's own anchors are recorded as signature literals by the caller: its prose must not add them
     // back as unresolved spans.
     if (init.noLiterals !== true) putLiterals(entry, init.block, init.statement);
@@ -953,7 +641,6 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     headingAnchors.set(index, { anchor, path: placed });
     const sectionCite = options.sectionSelector === undefined ? (section.selector as string) : options.sectionSelector(sectionSegments(index) ?? []);
     const entry = signatureEntry(anchor, placed, { parser: parserOf(options), selector: sectionCite });
-    entry.applicability = toApplicability(conditionsOf(section.title,vocabulary));
     entryContexts.set(entry,{section:index,text:section.title,heading:true});
     entries.push(entry);
   });
@@ -1162,6 +849,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       invalid++;
       continue;
     }
+    if(declarationBlocks.has(value.selector))continue;
     const block: Block = { kind: value.kind, section: value.section as number, text: value.text, selector: value.selector };
     if (block.section !== section) {
       section = block.section;
@@ -1178,7 +866,6 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       const placed = anchorPathOf(anchor, catalog, options) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
 
-      entry.applicability = toApplicability(conditionsOf(text,vocabulary));
       entryContexts.set(entry,{section:block.section,text});
       entries.push(entry);
       current = { path: placed, words: anchor.words, params: anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(anchor) };
@@ -1234,7 +921,6 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const path = anchorPathOf(one, catalog, options) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
 
-            signature.applicability = toApplicability(conditionsOf(rowText,vocabulary));
             entryContexts.set(signature,{section:block.section,text:rowText});
             split.push(signature);
             const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
@@ -1255,29 +941,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           split.push(rowEntry);
         }
         const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
-        // Rows that state their own condition become their own row entries (a row's condition is read from that row
-        // alone, never shared with the other rows of the entry); the unconditioned rows keep the shared entry, whose
-        // applicability is null (K02 F[6]: 未声明).
+        // Applicability no longer changes row grouping by prose; only explicit structure scopes apply.
         const emitRows = (rowLines: number[], withHeader: boolean): void => {
-          const quiet: number[] = [];
-          for (const line of rowLines) {
-            const rowText = table.lines[line].trimEnd();
-            const own = conditionsOf(rowText,vocabulary);
-            if (toApplicability(own) !== null) {
-              entries.push(
-                textEntry({
-                  path: remainderPath,
-                  statement: rowText,
-                  block: 'table',
-                  section: block.section,
-                  fragments: [{ parser: parserOf(options), selector: block.selector, range: ranges[line] } as FragmentRef],
-                  ...(current !== null ? { words: current.words } : {}),
-                }),
-              );
-            } else {
-              quiet.push(line);
-            }
-          }
+          const quiet = rowLines;
           if (quiet.length === 0) return;
           const lines = (withHeader ? [table.lines[0]] : []).concat(quiet.map((line) => table.lines[line])).map((line) => line.trimEnd());
           entries.push(
@@ -1331,7 +997,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       else report.counts[field].direct++;
     }
     const count=report.counts[field];
-    warnings.push(`适用条件统计：${labelOf('applicability_field',field)}：直接抽取 ${count.direct} 条，继承 ${count.inherited} 条`);
+    warnings.push(`适用条件统计：${labelOf('applicability_field',field)}：结构声明 ${count.direct} 条，继承 ${count.inherited} 条`);
   }
   for(const difference of report.overrides)warnings.push(`适用条件内外层不同：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}`);
   for(const difference of report.conflicts)warnings.push(`适用条件同章冲突，未裁决：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}；缺少一致的来源声明；下一步：来源维护者核对这些片段，在再次同步前修订或明确保留矛盾，再重新生产`);
@@ -1488,21 +1154,22 @@ export function produceManualEntries(input: MarkdownModel | ManualCatalog, heads
     if (isMarkdown(input)) return fromMarkdown(input, known !== null && known.size > 0 ? known : null, options, warnings);
     return { entries: [], unplaced: [], warnings: ['输入既不是 markdown@1 模型，也不是手册命令目录（ist.manual-command-catalog）'] };
   } catch (error) {
+    if(error instanceof ApplicabilitySourceError)throw error;
     return { entries: [], unplaced: [], warnings: [...warnings, internalError(error)] };
   }
 }
 
 /** Pack function entry: the model or catalog, or `{ model, heads, name }` (`name` is the segment under /manual). */
 export default function manual(input: unknown): ManualResult {
-  return guarded(
-    () => {
-      if (isRecord(input) && 'model' in input && !isMarkdown(input) && !isCatalog(input)) {
-        const name = typeof input.name === 'string' && input.name !== '' ? input.name : undefined;
-        const params=isRecord(input.params)?input.params:{};
-        return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, {components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined,...(name===undefined?{}:{name})});
-      }
-      return produceManualEntries(input as MarkdownModel);
-    },
-    (warning) => ({ entries: [], unplaced: [], warnings: [warning] }),
-  );
+  try {
+    if (isRecord(input) && 'model' in input && !isMarkdown(input) && !isCatalog(input)) {
+      const name = typeof input.name === 'string' && input.name !== '' ? input.name : undefined;
+      const params=isRecord(input.params)?input.params:{};
+      return produceManualEntries(input.model as MarkdownModel, Array.isArray(input.heads) ? asStrings(input.heads) : null, {models:params.models as string[]|undefined,platforms:params.platforms as string[]|undefined,components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined,...(name===undefined?{}:{name})});
+    }
+    return produceManualEntries(input as MarkdownModel);
+  }catch(error){
+    if(error instanceof ApplicabilitySourceError)throw error;
+    return {entries:[],unplaced:[],warnings:[internalError(error)]};
+  }
 }
