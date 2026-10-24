@@ -833,6 +833,10 @@ run. Current summaries do not acquire a dependency on reloading the package; lis
 
 `criterion_changes` declares a proposed replacement without changing bound source bytes. The Hub resolves the criterion and
 all grounds and checks their quotes before accepting the submission; source-role errors refuse only that declaration.
+For a W10 tree criterion or quote, every provenance fragment must be a src reference whose exact digest is bound as expected
+in this run. Missing provenance, an unbound original or any mixed non-expected original locally refuses the declaration.
+The general tree citation role stays unchanged. This uses parsed reference syntax and explicit source bindings, without text
+heuristics.
 The ordinary checks and error-table budget still apply to the original run. Each accepted declaration creates a judgment
 request at its submission record and JSON pointer, with the original run's submission deadline. Resubmission of the same
 item and canonical criterion appends a superseding answer; it never edits the earlier request or result.

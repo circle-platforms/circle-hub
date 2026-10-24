@@ -146,6 +146,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
 }
 
 export interface ResolvedValue {
+  /** W10: all tree provenance fragments resolve to src bindings explicitly marked expected. */
+  expectedSourceBound?: boolean;
   /** Canonical reference (the parser's canonical selector for src fragments). */
   reference: string;
   text: string | null;
@@ -257,8 +259,10 @@ function valueOf(result: Resolved, ref: Reference, scope: RunScope): ResolvedVal
     case 'src':
       return { reference: result.reference, text: result.text, role: scope.sources.get(ref.sha256) ?? null, digest: ref.sha256, source: ref.sha256 };
     case 'tree': {
-      const ground = result.grounds.map((g) => /^src:([0-9a-f]{64})/.exec(g)?.[1]).find((s) => s !== undefined) ?? null;
-      return { reference: result.reference, text: result.text, role: 'expected', digest: ref.root, source: ground };
+      const originals = result.grounds.map(parseReference);
+      const sources = originals.flatMap(origin => origin.scheme === 'src' ? [origin.sha256] : []);
+      const expectedSourceBound = originals.length > 0 && originals.every(origin => origin.scheme === 'src' && scope.sources.get(origin.sha256) === 'expected');
+      return { reference: result.reference, text: result.text, role: 'expected', digest: ref.root, source: sources[0] ?? null, expectedSourceBound };
     }
     case 'rec':
       return { reference: result.reference, text: result.text, role: scope.records.get(ref.record) ?? null, digest: ref.record, source: ref.record };
@@ -595,7 +599,7 @@ export async function resolveCriterionChanges(resolver:Resolver,items:readonly {
       const result=await resolver.resolve(reference,{grounds:true});
       if(!result.ok||result.value.text===null){errors.push(protocolError('REFERENCE_UNRESOLVED',result.ok?'判据片段没有可核对的原文':result.message,{path,item:change.item}));return null;}
       if(!quoteMatches(result.value.text,quote))errors.push(protocolError('QUOTE_MISMATCH','判据变更声明的原文或引文不逐字',{path:quotePath,item:change.item}));
-      if(result.value.role!=='expected')expected=false;
+      if(result.value.role!=='expected'||parseReference(result.value.reference).scheme==='tree'&&result.value.expectedSourceBound!==true)expected=false;
       return result.value.reference;
     };
     const reference=await locate(change.criterion,change.old,at+'/criterion',at+'/old');
