@@ -5,6 +5,7 @@ import { isKnowledgeContributionSchema } from '../../../contracts/src/contributi
 // to; absent and forbidden give the same null.
 import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
+import { runIsSharedWith } from '../../records/api.ts';
 import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
 import { SCHEMAS, runById } from './store.ts';
@@ -14,6 +15,11 @@ export function canSeeRun(user: Principal, run: Pick<RunRecord, 'runner' | 'host
   if (user.role === 'admin') return true;
   if (run.host === 'hub') return false;
   return run.runner !== undefined && run.runner === user.id;
+}
+
+/** Read-only sharing never changes canSeeRun, the submission and lineage guard. */
+export async function canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean> {
+  return canSeeRun(user, run) || await runIsSharedWith(store, user.id, run);
 }
 
 export function identityOf(user: Principal, run?: string): ReaderIdentity {
@@ -62,7 +68,8 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
         const run = runOfRecord(record);
         if (run === null) return null;
         const owner = record.kind === 'run' ? (record.body as RunRecord) : (await runById(store, run))?.body;
-        if (owner === undefined || !canSeeRun(principalOf(reader), owner)) return null;
+        if (owner === undefined || !await canViewRun(principalOf(reader), owner, store)) return null;
+        if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
     },

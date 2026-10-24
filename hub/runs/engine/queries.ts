@@ -7,7 +7,7 @@ import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { RunDetail, RunSubmissionView } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
-import { canSeeRun } from './readers.ts';
+import { canSeeRun, canViewRun } from './readers.ts';
 import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionsOf } from './store.ts';
 import { isObject, receivedDigest } from './util.ts';
 
@@ -19,7 +19,7 @@ export interface StoredResult {
 
 async function visibleRun(ctx: EngineContext, user: Principal, run: string): Promise<StoredRecord<RunRecord> | null> {
   const stored = await runById(ctx.deps.records.store, run);
-  return stored !== null && canSeeRun(user, stored.body) ? stored : null;
+  return stored !== null && await canViewRun(user, stored.body, ctx.deps.records.store) ? stored : null;
 }
 
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
@@ -51,17 +51,36 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
 }
 
 export async function listRuns(ctx: EngineContext, user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecord>> {
-  const filter = { ...(user.role === 'admin' ? {} : { user: user.id }), ...(query.pack !== undefined ? { pack: query.pack } : {}) };
-  let page: Page<StoredRecord<RunRecord>>;
-  try {
-    page = await listRunRecords(ctx.deps.records.store, filter, { limit: query.limit, cursor: query.cursor ?? null });
-  } catch (error) {
-    // A cursor or limit the store refuses is the caller's mistake: the same empty page as nothing visible. Integrity and
-    // other faults of the store (its RecordsError subclasses) are not.
-    if (error instanceof TypeError || error instanceof RangeError || (error instanceof RecordsError && error.name === 'RecordsError')) return { items: [], next: null };
-    throw error;
+  const limit = query.limit ?? 100;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) return { items: [], next: null };
+  const pack = query.pack ?? null;
+  let after: { at: string; id: string } | null = null;
+  if (query.cursor !== undefined && query.cursor !== null) {
+    try {
+      const value = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
+      if (value.reader !== user.id || value.pack !== pack || typeof value.at !== 'string' || typeof value.id !== 'string') return { items: [], next: null };
+      after = value;
+    } catch { return { items: [], next: null }; }
   }
-  return { items: page.items.map((r) => r.body).filter((r) => canSeeRun(user, r)), next: page.next };
+  const rows: RunRecord[] = [];
+  let cursor: string | null = null;
+  do {
+    let page: Page<StoredRecord<RunRecord>>;
+    try { page = await listRunRecords(ctx.deps.records.store, query.pack === undefined ? {} : {pack:query.pack}, { limit:500, cursor }); }
+    catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError || error instanceof RecordsError && error.name === 'RecordsError') return {items:[],next:null};
+      throw error;
+    }
+    for (const record of page.items) if (await canViewRun(user,record.body,ctx.deps.records.store)) rows.push(record.body);
+    cursor = page.next;
+  } while (cursor !== null);
+  const order = (a: RunRecord,b: RunRecord): number => b.started_at.localeCompare(a.started_at) || b.run.localeCompare(a.run);
+  rows.sort(order);
+  const following = after === null ? rows : rows.filter(row => row.started_at < after!.at || row.started_at === after!.at && row.run < after!.id);
+  const items = following.slice(0,limit);
+  const last = items.at(-1);
+  const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
+  return { items, next };
 }
 
 /** One validation result of a run: of a submission by its digest as received, or the latest accepted one. */
@@ -70,7 +89,7 @@ export async function getResult(ctx: EngineContext, user: Principal, run: string
   if (stored === null) return null;
   const store = ctx.deps.records.store;
   const found = submission === undefined ? await latestAccepted(store, run) : await resultFor(store, run, submission);
-  return found === null ? null : { record: found.digest, result: found.body };
+  return found === null || !canSeeRun(user,stored.body) && found.body.acceptance !== 'accepted' ? null : { record: found.digest, result: found.body };
 }
 
 /** The runs of one pack the user may see, newest first. */

@@ -600,3 +600,17 @@ unfinished jobs while the lock is held; a competing reservation rechecks fences 
 The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
 Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
 older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.
+
+## Shared read access
+
+`canSeeRun` remains the synchronous owner/administrator capability used by submissions and predecessor checks.
+`canViewRun` adds only the current sharing decisions and assignment checks. Production policies evaluate the frozen
+requirements, include Hub-side runs, and never include judgment workflows. Shared readers receive the original run,
+including runner, session and client key; accepted validation results and run-scoped submission/action records remain
+citable by their exact record digests. Rejected validation bodies, administrator notes and call logs are not shared.
+
+Run lists filter visible records before paging, ordered by start time with run identity as the stable tie breaker.
+Cursors bind the reader, package filter and last ordering key; hidden records cannot create visible empty pages.
+Sharing confers no submission, lease lineage, repair round or client-key ownership. The model's conditional read-only
+predecessor exception requires a workflow declaration that the present format does not yet expose; this task keeps the
+existing predecessor guard, as specified by its task page, and introduces no such declaration.
