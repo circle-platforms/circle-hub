@@ -1,3 +1,4 @@
+import {completeKnowledgeView} from '../../knowledge/api.ts';
 // Binding the start_run inputs to the workflow's input slots (W02 F[8], P02, A03): a reference the caller may read (an
 // upload_file result, or a Hub record reference, B03 R[4]) or an external object read through its system pack as the
 // caller. Each source is parsed with the core parser for its media type; required slots must be given and the media type or
@@ -164,7 +165,8 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
+    const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
+    const read = id.startsWith('knowledge:') ? await completeKnowledgeView(id,readContext,ctx.deps.external,{artifacts,store}) : await ctx.deps.external.read(id,readContext);
     if (!read.ok) {
       if (read.inputError !== undefined) {
         if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
@@ -225,7 +227,7 @@ export async function bindInputs(
     const given = inputs[slot.slot];
     const list = given === undefined ? [] : Array.isArray(given) ? given : [given];
     if (list.length === 0) {
-      if (slot.required) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, `在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
+      if (slot.required) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, slot.default_from_predecessor?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 显式给出有权读取的完整 rec: 结果引用`:`在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
       continue;
     }
     if (!slot.many && list.length > 1) {

@@ -58,6 +58,7 @@ export const CORE_VIOLATION_CODES = {
   'core.contribution.record_not_original': { interpreter: 'contribution', when: '记录转述或已有回注不能作为新的回注原文根据', fix: '改引锁定根里 get_nodes 返回的原文 tree: 引用；本条先标为 skipped' },
   'core.contribution.self_relation': { interpreter: 'contribution', when: '关系双方是同一片段或重叠引文而非两个独立端点', fix: '改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped' },
   'core.contribution.composition_missing': { interpreter: 'contribution', when: '缺少与运行锁定产品和根一致的组成快照', fix: '恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped' },
+  'core.criterion.source_role_mismatch': { interpreter: 'criterion', when: '判据变更声明的判据或引文不是期望来源的片段，仅拒绝该条声明', fix: '判据只能取期望来源的片段（A03 R[0]）' },
 } as const;
 
 export type CoreViolationCode = keyof typeof CORE_VIOLATION_CODES;
@@ -76,4 +77,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 10;
+export const MODEL_VERSION = 13;

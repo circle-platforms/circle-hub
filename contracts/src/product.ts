@@ -4,6 +4,7 @@
 // build choice; the shapes of the functions' inputs and outputs below are the contract between them and the pack authors.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import { PROTOCOL_CODES, type ProtocolCode } from '../generated/protocol.ts';
 import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
 import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
@@ -117,7 +118,18 @@ export const SyncPlanInput = z.strictObject({
 });
 export type SyncPlanInput = z.infer<typeof SyncPlanInput>;
 
+/** A source observation that cannot produce a root; reasons are registered protocol codes. */
+export const FailedBuild = z.strictObject({
+  source: ExternalObjectId,
+  build: BuildInfo,
+  raw: z.record(z.string(), z.unknown()),
+  reason: z.enum(Object.keys(PROTOCOL_CODES) as [ProtocolCode, ...ProtocolCode[]]),
+  fix: z.string().min(1),
+});
+export type FailedBuild = z.infer<typeof FailedBuild>;
+
 export const SyncPlanOutput = z.strictObject({
+  failed_builds: z.array(FailedBuild).optional(),
   scope: BuildInfo.shape.sources.optional().describe('product-wide sources without a declared build'),
   fetch: z.array(ExternalObjectId).describe('more pages to read before the plan is complete; asked again with their answers'),
   builds: z.array(BuildInfo).describe('every build found so far; the list of the last round is the plan'),
@@ -274,6 +286,12 @@ export const Unplaced = z.strictObject({ fragment: FragmentRef, section: z.strin
 export type Unplaced = z.infer<typeof Unplaced>;
 
 export const ProducerOutput = z.strictObject({
+  inventory: z.array(z.strictObject({
+    label: z.string().min(1).max(80),
+    listed: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON array of the complete source inventory'),
+    complete: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON true declaring the inventory complete'),
+    selected: z.number().int().nonnegative(),
+  })).max(32).optional().describe('Evidence for a complete zero selection; the Hub verifies fragments and counts before admitting an empty product-wide root'),
   entries: z.array(ProducedEntry),
   unplaced: z.array(Unplaced).optional(),
   warnings: z.array(z.string()),

@@ -33,13 +33,17 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   const cutDocuments = new Set<string>();
   let full = false;
   let root: string | undefined;
+  let secondarySnapshot: string | undefined;
   let product: string | undefined;
   for (const value of views) {
     const identity=record(value)&&value.schema==='index-view@1'&&value.kind==='case'&&value.key==='document';
     if(identity){if(Array.isArray(value.only))for(const key of value.only)requested.add(documentKey(String(key)));else full=true;}
     let raw:Record<string,any>;try{raw=indexView(value);}catch(error){if(!(error instanceof IndexInputError))throw error;rejectedViews++;if(error.reason==='wrong_view')gap('视图类型不符','第 2 步的文档用例索引','用第 2 步指定的 key=document、kind=case 引用重新导出',error.message);else hubDefects.push(error.message);continue;}
-    if (root !== undefined && (root !== raw.build.root || product !== raw.product)) gap('根不一致','同一产品和根的分片','重新导出同一产品和构建根的全部分片','索引根或产品不同');
-    root = raw.build.root; product = String(raw.product);
+    const secondary=raw.unversioned===undefined||raw.unversioned===null?null:raw.unversioned;
+    if(secondary!==null&&(!record(secondary)||typeof secondary.root!=='string'||!/^[a-f0-9]{64}$/.test(secondary.root)||typeof secondary.composition!=='string'||!/^[a-f0-9]{64}$/.test(secondary.composition)||secondary.build!==null)){hubDefects.push('不分版本根的来源声明不合格');continue;}
+    const snapshot=JSON.stringify(secondary===null?null:{root:secondary.root,composition:secondary.composition});
+    if (root !== undefined && (root !== raw.build.root || product !== raw.product || secondarySnapshot!==snapshot)) gap('根不一致','同一产品和根的分片','重新导出同一产品和构建根的全部分片','索引根或产品不同');
+    root = raw.build.root; product = String(raw.product);secondarySnapshot=snapshot;
     const cut = Array.isArray(raw.cut_keys) ? raw.cut_keys : [];
     for (const key of cut) if (typeof key === 'string') cutDocuments.add(key); else hubDefects.push('cut_keys 含有不是文档键的值');
     if (raw.cut_keys !== undefined && !Array.isArray(raw.cut_keys)) hubDefects.push('cut_keys 不是数组');
@@ -68,18 +72,21 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     for (const [digest, entry] of Object.entries(raw.entries)) {
       if (!listed.has(digest) || !record(entry) || entry.kind !== 'case' || !record(entry.data) || typeof entry.data.document !== 'string' || typeof entry.data.node !== 'string' || !Array.isArray(entry.data.commands) || entry.data.commands.some((v) => typeof v !== 'string') || typeof entry.reference !== 'string') { hubDefects.push('索引条目缺少必要事实'); continue; }
       const match = /^tree:([a-f0-9]{64})(\/[^@]*)@([a-f0-9]{64})$/.exec(entry.reference);
-      if (!match || match[1] !== root || match[3] !== digest || entry.entry !== digest) { hubDefects.push('条目引用与索引根或摘要不符'); continue; }
+      const scopeEntry=entry.build===null;
+      if (!match || (scopeEntry ? secondary===null||match[1]!==secondary.root||entry.root!==secondary.root : match[1]!==root||entry.root!==undefined&&entry.root!==root||entry.build!==undefined) || match[3] !== digest || entry.entry !== digest) { hubDefects.push('条目引用与索引根或摘要不符'); continue; }
       const doc = documentKey(entry.data.document); const node = entry.data.node; const key = `${doc}:${node}`;
       if (!Array.isArray(raw.keys[entry.data.document]) || !(raw.keys[entry.data.document] as unknown[]).includes(digest)) { hubDefects.push('条目文档与索引键不符'); continue; }
       hubDocs.add(doc);
       const allPaths = allHub.get(key) ?? new Set<string>();
-      if (match[2] !== '/') allPaths.add(match[2]);
+      const commands = new Set(entry.data.commands as string[]);
+      for(const path of commands)allPaths.add(path);
+      // An index cites the first placement once; it does not enumerate every tree placement.
+      if(match[2] !== (sorted(commands)[0]??'/'))dataMismatches.add(key);
       allHub.set(key, allPaths);
       if (!comparableNode(node) || excludedGold.has(key)) { ignored.add(key); continue; }
       const paths = hub.get(key) ?? new Set<string>();
-      if (match[2] !== '/') paths.add(match[2]);
+      for(const path of commands)paths.add(path);
       hub.set(key, paths);
-      const commands = new Set(entry.data.commands as string[]);
       const old = declared.get(key);
       if (old && JSON.stringify(sorted(old)) !== JSON.stringify(sorted(commands))) dataMismatches.add(key);
       declared.set(key, commands);
@@ -89,7 +96,8 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   if (!views.length) gap('没有视图','索引导出文件','提供完整索引视图及其分片','没有索引视图');
   if (!full && rejectedViews===0 && expectedDocuments.some((doc) => !requested.has(documentKey(doc)))) gap('缺少分片','金标准文档对应的全部分片','补齐对应 only= 分片再比较','分片没有请求全部金标准文档：补导出缺少的 only= 文档');
   for (const [key, paths] of hub) if (JSON.stringify(sorted(paths)) !== JSON.stringify(sorted(declared.get(key) ?? []))) dataMismatches.add(key);
-  const goldMap = new Map(gold.cases.filter((c) => c.comparable).map((c) => [c.key, new Set(c.paths.map((p) => p.path))]));
+  const expectedPaths=(c:CommandsGold["cases"][number])=>c.placement_paths??c.paths;
+  const goldMap = new Map(gold.cases.filter((c) => c.comparable).map((c) => [c.key, new Set(expectedPaths(c).map((p) => p.path))]));
   const goldKeys = new Set(goldMap.keys()); const hubKeys = new Set(hub.keys());
   const shared = sorted(goldKeys).filter((key) => hub.has(key));
   const onlyGold = difference(goldKeys, hubKeys); const onlyHub = difference(hubKeys, goldKeys);
@@ -108,10 +116,10 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     excluded_gold: gold.cases.filter((c) => !c.comparable).length, excluded_hub: ignored.size,
     commands_equal: shared.length - different.filter((row) => goldKeys.has(row.key) && hubKeys.has(row.key)).length, commands_different: different.filter((row) => goldKeys.has(row.key) && hubKeys.has(row.key)).length,
     paths_gold_only: onlyGoldPaths.length, paths_hub_only: different.reduce((n, row) => n + row.hub.length, 0),
-    paths_gold_abbreviated: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.abbreviated).length,
-    paths_gold_via_no: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.via_no).length,
-    paths_gold_single_word: onlyGoldPaths.filter(({ key, path }) => goldCases.get(key)!.paths.find((p) => p.path === path)!.words === 1).length,
-    unplaced_gold: gold.cases.filter((c) => !c.paths.length).length, unplaced_hub: [...allHub.values()].filter((paths) => !paths.size).length,
+    paths_gold_abbreviated: onlyGoldPaths.filter(({ key, path }) => expectedPaths(goldCases.get(key)!).find((p) => p.path === path)!.abbreviated).length,
+    paths_gold_via_no: onlyGoldPaths.filter(({ key, path }) => expectedPaths(goldCases.get(key)!).find((p) => p.path === path)!.via_no).length,
+    paths_gold_single_word: onlyGoldPaths.filter(({ key, path }) => expectedPaths(goldCases.get(key)!).find((p) => p.path === path)!.words === 1).length,
+    unplaced_gold: gold.cases.filter((c) => !expectedPaths(c).length).length, unplaced_hub: [...allHub.values()].filter((paths) => !paths.size).length,
     unplaced_gold_comparable: goldUnplaced.size, unplaced_hub_comparable: hubUnplaced.size,
     unplaced_both: [...goldUnplaced].filter((key) => hubUnplaced.has(key)).length,
     unplaced_gold_only: difference(goldUnplaced, hubUnplaced).length, unplaced_hub_only: difference(hubUnplaced, goldUnplaced).length,

@@ -1,3 +1,4 @@
+import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
@@ -13,7 +14,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
+import { ContextBuild, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -50,6 +51,7 @@ export const ItemProjection = z.strictObject({
 export type ItemProjection = z.infer<typeof ItemProjection>;
 
 export const RequirementSummary = z.strictObject({
+  independence_by_account:z.boolean().optional(),
   key: z.string(),
   name: z.string(),
   description: z.string(),
@@ -58,6 +60,8 @@ export const RequirementSummary = z.strictObject({
   accepted_producer: AcceptedProducerSchema,
   observation:Versioned.optional().describe('The declared P07 observation contract for the dynamic layer'),
   repair_rounds: z.number().int().nonnegative(),
+  rules: z.array(z.string().min(1)).describe('locked rule@version identities that judge this requirement'),
+  run_interpreters: z.array(Versioned).describe('ledger-permitted interpreters for inline runtime tables; empty when disabled'),
 });
 export type RequirementSummary = z.infer<typeof RequirementSummary>;
 
@@ -68,6 +72,7 @@ export const InputSlotSummary = z.strictObject({
   accepts: z.array(z.string()).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
+  default_from_predecessor: PredecessorInputDefault.optional(),
 });
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 
@@ -94,7 +99,16 @@ export const SlotSchema = z.strictObject({
 });
 export type SlotSchema = z.infer<typeof SlotSchema>;
 
+/** A default selected by the Hub at start_run; the full record identity is retained, never a fragment. */
+export const InputDefault = z.strictObject({
+  slot: z.string().min(1),
+  predecessor: RunId,
+  reference: referenceUriOf('rec').refine(reference=>!reference.includes('#'),'a complete validation record is required'),
+});
+export type InputDefault = z.infer<typeof InputDefault>;
+
 export const RunSummary = z.strictObject({
+  criterion_changes:z.array(CriterionNotice).optional(),
   run: RunId,
   pack: z.string(),
   pack_digest: Sha256,
@@ -114,6 +128,7 @@ export const RunSummary = z.strictObject({
   instructions: z.string().describe('the pack procedure, plain text'),
   instructions_digest: Sha256,
   predecessor: RunId.optional(),
+  input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>row.slot)).size===rows.length,'defaulted slots are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings'),
   session: z.string().optional().describe('client session id observed from the request header'),
   started_at: IsoTime,
   submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),
@@ -133,7 +148,16 @@ const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs
   if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
 });
 
-export const RunRecord = RunSummary.extend({
+// Historical records keep their original bytes; only public summaries require ruling metadata.
+const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_interpreters:true}).superRefine((row,ctx)=>{
+  if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
+});
+export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
+  accepted_criteria:z.array(AcceptedCriterionRef).optional(),
+  criterion_requests:z.array(Sha256).optional(),
+  criterion_review:z.strictObject({submission:Sha256,requests:z.array(Sha256)}).optional(),
+  predecessor_access:z.literal('view').optional(),
+  requirements:z.array(PersistedRequirementSummary),
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
   trigger: TriggerSchema,
@@ -188,3 +212,5 @@ export const RunRecord = RunSummary.extend({
 /** Strict new-write shape; the base RunRecord remains a historical reader. */
 export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;
+/** Derived read view: historical originals stay unchanged. */
+export type RunRecordView = RunRecord & {requirements:RequirementSummary[];criterion_changes?:z.infer<typeof CriterionNotice>[]};

@@ -16,7 +16,7 @@
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
-import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, negativeOf } from './cases-rules.ts';
+import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, isBlank, negativeOf } from './cases-rules.ts';
 import { idsFromTitle } from './ids.ts';
 import { locateFromAncestors } from './locate.ts';
 import { lineKey } from './naming.ts';
@@ -97,6 +97,7 @@ export function caseStatement(data: Record<string, unknown>): string {
   lines.push(`上级节点：${listOf(data.path_labels, ' › ', LABEL)}`);
   const priority = typeof data.priority === 'string' ? JSON.stringify(data.priority) : valueOf(data.priority, '无');
   lines.push(`优先级：${priority}；标签：${listOf(data.tags, '、', ITEM)}；负向：${yesNo(data.negative, '未标注')}`);
+  if (data.tags_note === '正负向和测试类型未声明') lines.push(data.tags_note);
   lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${data.vague_expected === true ? '笼统' : '不笼统'}）；步骤：${valueOf(data.steps_count, '无')} 个`);
   lines.push(`命令：${listOf(data.commands, '、', ITEM)}`);
   lines.push(`需求：${listOf(data.stories, '、', ITEM)}；缺陷：${listOf(data.defects, '、', ITEM)}`);
@@ -187,6 +188,7 @@ export function cases(input: unknown): ProducerOutput {
   const warnings: string[] = [];
   try {
     const record = isRecord(input) ? input : {};
+    const rawPhrases=isRecord(record.params)&&record.params.command_phrases===true;
     const slots = isRecord(record.slots) ? record.slots : {};
     const lists = isRecord(record.lists) ? record.lists : {};
     const batch = isRecord(record.batch) ? record.batch : null;
@@ -194,13 +196,13 @@ export function cases(input: unknown): ProducerOutput {
     const count = (value: unknown, add: number): string => (typeof value === 'number' && Number.isSafeInteger(value) ? String(value + add) : '?');
     const where = batch === null ? '' : `第 ${count(batch.index, 1)}/${count(batch.of, 0)} 批：`;
     if (elements.length === 0) {
-      if (batch === null || batch.of === 1) warnings.push('这个构建没有列出用例文档');
-      return { entries: [], warnings };
+      if (batch === null || batch.of === 1) warnings.push(rawPhrases?'这个不分版本范围没有列出用例文档':'这个构建没有列出用例文档');
+      return { entries: [], warnings,...(rawPhrases&&isRecord(slots.folders)?{inventory:[{label:'未覆盖用例',listed:{slot:'folders',parser:'json@1',selector:'p/documents'},complete:{slot:'folders',parser:'json@1',selector:'p/complete'},selected:0}]}:{}) };
     }
     const tree = isRecord(slots.tree) ? slots.tree : null;
     let catalog: CommandCatalog;
     if (tree === null || tree.parser !== 'xml@1') {
-      warnings.push(`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
+      warnings.push(rawPhrases?`${where}不分版本范围不带命令树，这一批 ${elements.length} 份文档的命令短语照录，用例条目保留为未归位`:`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
       catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
     } else {
       const built = commandCatalog(tree.model as XmlModel);
@@ -213,7 +215,7 @@ export function cases(input: unknown): ProducerOutput {
     const identity = elementDocuments(elements, record.build);
     if (identity.anonymous > 0) warnings.push(`${where}${identity.anonymous} 份文档的内容没有写明是敏捷平台的哪份文档（不是 ${CASE_PREFIX}<编号> 读到的内容），它们的用例的文档编号、版本线、发布火车、模块和目录里的编号记为未知`);
     if (identity.unlisted > 0) warnings.push(`${where}${identity.unlisted} 份文档写明的编号不在这个构建的用例文档清单里，按未知文档处理`);
-    return produce(elements, identity.documents, folders, catalog, where, warnings);
+    return produce(elements, identity.documents, folders, catalog, where, warnings,rawPhrases);
   } catch (error) {
     return { entries: [], warnings: [...warnings, internalError(error)] };
   }
@@ -221,7 +223,7 @@ export function cases(input: unknown): ProducerOutput {
 
 type Located = { line: string | null; train: string | null; module: string | null };
 
-function produce(elements: readonly unknown[], documents: ReadonlyArray<string | null>, folders: Map<string, Folder> | null, catalog: CommandCatalog, where: string, warnings: string[]): ProducerOutput {
+function produce(elements: readonly unknown[], documents: ReadonlyArray<string | null>, folders: Map<string, Folder> | null, catalog: CommandCatalog, where: string, warnings: string[],rawPhrases=false): ProducerOutput {
   const counts = { documents: 0, cases: 0, filed: 0, toPlace: 0, noPhrase: 0, unresolved: 0, noCase: 0, notMindmap: 0, repeated: 0, malformed: 0, deep: 0, notInTree: 0 };
   const parsers = new Set<string>();
   // 1. The case nodes of every usable document: a known document once, an unknown one wherever it is.
@@ -272,7 +274,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
     }
     return at;
   };
-  for (const doc of docs) for (const node of doc.cases) [node.title, ...node.path].forEach(indexOf);
+  for (const doc of docs) for (const node of doc.cases) [node.title, ...node.path, ...node.bodyTexts].forEach(indexOf);
   const scanned = textCommands(catalog, texts);
   for (const warning of scanned.warnings) warnings.push(`${where}${warning}`);
 
@@ -305,7 +307,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
     doc.cases.forEach((node, k) => {
       counts.cases++;
       const key = doc.keys[k];
-      const results = [node.title, ...node.path].map((text) => scanned.results[textIndex.get(text) as number]);
+      const results = [node.title, ...node.path, ...node.bodyTexts].map((text) => scanned.results[textIndex.get(text) as number]);
       const paths = [...new Set(results.flatMap((r) => r.paths))].sort(compareText);
       if (paths.length === 0) {
         counts.toPlace++;
@@ -333,6 +335,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         priority: typeof node.priority === 'string' ? storable(node.priority, MAX_TAG) : node.priority,
         tags: node.tags.slice(0, MAX_TAGS).map((tag) => storable(tag, MAX_TAG)),
         negative: negativeOf(node.tags),
+        ...(!node.tags.some(tag => !isBlank(tag)) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: node.expectedCount,
         has_expected: node.hasExpected,
         vague_expected: node.vague,
@@ -346,6 +349,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         autoid: node.autoid === null ? null : storable(node.autoid, MAX_TAG),
       };
       const statement = caseStatement(data);
+      if(rawPhrases)data.command_phrases=[...new Set([node.title,...node.path].flatMap(text=>[...text.matchAll(/(?<![A-Za-z0-9_])[a-z][a-z0-9_.?:/-]*(?:[ \t]+[A-Za-z0-9_<>{}\[\].?:/=-]+)*/g)].map(match=>match[0])))];
       const fragments = [{ slot: LIST_SLOT, source: doc.sha256, parser: PARSER, selector: node.selector }];
       for (const path of paths.length === 0 ? [null] : paths) entries.push({ kind: KIND, path, statement, data, fragments, applicability: null });
     });
@@ -355,9 +359,9 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
   const toPlace =
     counts.toPlace === 0
       ? ''
-      : `，${counts.toPlace} 个用例的命令代码归不了档，各给一条不带路径的条目，交给归类判断（Jev）定位置，没有校准的判断时不挂树、可引用：` +
+      : `，${counts.toPlace} 个用例没引用目录里的任何命令，各保留一条可引用的不带路径条目：` +
         [
-          ...(counts.noPhrase > 0 ? [`${counts.noPhrase} 个的标题和上级节点里没有能提取的命令短语${examplesText(examples, 'no_phrase')}`] : []),
+          ...(counts.noPhrase > 0 ? [`${counts.noPhrase} 个的标题、上级节点、步骤和预期行里没有能提取的命令短语${examplesText(examples, 'no_phrase')}`] : []),
           ...(counts.unresolved > 0 ? [`${counts.unresolved} 个提取到的命令短语在这个构建的命令目录里都解析不出${examplesText(examples, 'unresolved')}`] : []),
         ].join('，');
   warnings.push(`${where}${counts.documents} 份文档、${counts.cases} 个用例；${counts.filed} 个用例按命令归档${toPlace}；共 ${entries.length} 条`);

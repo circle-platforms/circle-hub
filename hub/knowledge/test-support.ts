@@ -588,11 +588,11 @@ export async function makeWorld(
 export { startPostgres };
 
 /** A synthetic product-wide document beside a released build on line 10.6. */
-export async function makeUnversionedWorld(postgres: TemporaryPostgres, versioned = false): Promise<World> {
+export async function makeUnversionedWorld(postgres: TemporaryPostgres, versioned = false, scopeOptions: {entries?:number;statementBytes?:number} = {}): Promise<World> {
   const build = { name: 'Synthetic_10_6', base: 'Synthetic_10_6', family: 'ACME', line: '10.6', platform: null, built_at: null, released_at: '2026-10-24T00:00:00.000Z', sources: { tree: 'site:tree:synthetic' } };
   const w = await makeWorld(postgres, { pack: { functions: {
     'plan.ts': `export default input => ({fetch:[],builds:[${JSON.stringify(build)}],...(input.options.scope === false ? {} : {scope:{docs:'site:tree:scope'}}),done:true});`,
-    'scope.ts': `export default input => ({entries:[{path:'/docs',kind:'case',statement:'合成用例',data:{document:'synthetic-document',module:'network',defects:['61061']},fragments:[{slot:'docs',parser:'xml@1',selector:'x/catalog'}],applicability:null}],warnings:[]});`,
+    'scope.ts': `export default input => ({entries:${JSON.stringify(Array.from({length:scopeOptions.entries??1},(_,i)=>({path:'/docs',kind:'case',statement:scopeOptions.statementBytes?'x'.repeat(scopeOptions.statementBytes):'合成用例',data:{document:i===0?'synthetic-document':'synthetic-document-'+i,module:i===0?'network':'network-'+i,defects:['61061']},fragments:[{slot:'docs',parser:'xml@1',selector:'x/catalog'}],applicability:null})))},warnings:[]});`,
   }, declaration: { sync:{...DEFAULT_SYNC,options:{scope:!versioned}}, producers: [...DEFAULT_PRODUCERS, {id:'docs',title:'文档',unversioned:!versioned,function:{module:'functions/scope.ts'},inputs:{docs:versioned?{external:'site:tree:scope'}:{source:'docs'}}}] } } });
   w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
   w.external.set('site:tree:scope',{bytes:'<catalog/>',mediaType:'application/xml'});

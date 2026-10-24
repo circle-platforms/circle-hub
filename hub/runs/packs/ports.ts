@@ -38,7 +38,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     title: info.title,
     description: info.description,
     products: names,
-    inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many })),
+    inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}) })),
     parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
     requirements: declarations.requirements.requirements.map((r) => ({
       key: r.key,
@@ -47,6 +47,8 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
       layers: [...r.layers],
       done_rule: r.done_rule,
       accepted_producer: r.accepted_producer,
+      rules: r.checks.flatMap(id=>{const c=declarations.checks.checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${info.id}.${c.id}@${info.version}`] : [];}),
+      run_interpreters: r.run_table ? (declarations.ledger?.shapes.filter(row=>row.requirement===r.key).map(row=>row.interpreter) ?? []) : [],
       // The most rounds any repair row of the requirement allows (W02 F[7]); 0 without repair rows.
       repair_rounds: Math.max(0, ...r.error_handling.map((row) => row.max_rounds ?? 0)),
     })),
@@ -115,6 +117,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       checks: d.checks.checks,
       slots: d.slots,
       knowledge: d.knowledge,
+      ledger: d.ledger,
       instructions: d.instructions,
       instructionsDigest: d.instructionsDigest,
       readJson: opened.readJson,

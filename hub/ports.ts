@@ -7,11 +7,11 @@ import type { z } from 'zod';
 import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
-import type { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
+import type { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
 import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
-import type { RunRecord } from '../contracts/src/run.ts';
+import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
 import type { ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
@@ -62,6 +62,7 @@ export interface LoadedWorkflow {
   checks: ChecksFile['checks'];
   slots: SlotsFile;
   knowledge: KnowledgeFile | null;
+  ledger?: LedgerFile | null;
   /** SKILL.md: the procedure start_run hands to the model, as plain text. */
   instructions: string;
   /** SHA-256 of the SKILL.md bytes. */
@@ -134,7 +135,7 @@ export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
-  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
+  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -173,7 +174,7 @@ export interface RunRequestView {
 /** Everything the console shows about one run. */
 export interface RunDetail {
   management?:{record:string;disposition:'abandon';result:string|null};
-  run: RunRecord;
+  run: RunRecordView;
   submissions: RunSubmissionView[];
   requests?: RunRequestView[];
   /** The latest validation result (an accepted submission, or the result of a production run), with its record digest. */
@@ -182,7 +183,7 @@ export interface RunDetail {
   production: { record: string; result: ValidationResult } | null;
 }
 
-export interface RunListing extends Page<RunRecord> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
+export interface RunListing extends Page<RunRecordView> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;

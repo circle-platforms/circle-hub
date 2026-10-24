@@ -144,15 +144,22 @@ Producers (K02, K04, C07)
   proposals (K04 R[6]) is an owner decision. `command-tree`, `release-notes`, and `cases` keep default `code_only` to
   prevent internal defects and test case titles from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
-  `data` is catalog-entry@1 without `reference`. Types: STRING and XSTRING → string, U16 → int 0..65535, U32 → int
-  0..4294967295, DOTTEDIP → ipv4, IPADDR → ipv4 or ipv6, IPMASK → mask or int 0..128; other types → string with a
-  warning. A DOTTEDIP argument whose help text names another form (`or ...`, a host name, a URL: `OTHER_FORMS`, with its
-  origin) is a string, with a warning count. Declared argument types (`params.argumentTypes`: `{ command, position, type,
-  origin }`, `type` a key of `ARGUMENT_TYPES`) win over both; rows without an origin, of unknown type or never used are
-  warnings. A union argument expands into overloads (`k.1`, `k.2`, ...), at most 32 per list, beyond that string. `limit`
-  `[a - b]` is a value range (int, narrowed to the type range) or a length range (string); `{a|b}` an enumeration; `length`
-  a maximum or a range of the length. Defaults are entity-decoded once more (the tree escapes them twice) and unquoted.
-  Unnamed arguments are `arg1`, `arg2`, ... The statement has one line per overload plus its help texts.
+  `data` is catalog-entry@1 without `reference`. STRING/XSTRING map to string, U16/U32 retain their unsigned
+  numeric bounds, DOTTEDIP to IPv4, IPADDR to either address family, IPMASK to a mask or prefix length. Explicit
+  HOSTNAME and IP_OR_HOSTNAME map to the corresponding generic catalog types. Hostname-only address help narrows to
+  hostname; explicit IPv4/hostname alternatives retain IPv4 plus hostname overloads, while either-family IPADDR with
+  hostname uses ip_or_hostname. URL/list/empty-value help retains the documented string fallback and warning.
+  Address roles come only from address_role in the source or an origin-bearing params.argumentTypes declaration;
+  argument names never infer roles. A declaration may specify type, address_role or both.
+
+  Owner's read-only survey of 12 command trees across both name families and several lines found only inclusive
+  bracket ranges [N - N] among nonempty limit values, and no nonempty length. Only that bracket-range grammar is
+  interpreted: numeric ranges intersect native numeric bounds, string-like ranges bound length. Every other nonempty
+  limit and every nonempty length creates unchecked_constraints on that parameter, with the XML attribute path relative to its overload fragment (the warning carries the full path),
+  source value, reason, missing="这种 limit 写法的含义" and the action "包作者在 README 声明这种 limit 写法的含义后重产".
+  Empty attributes imply no constraint. The production warning and statement disclose the unchecked constraint;
+  catalog checks return unknown with top-level missing and optional exit left to the Hub. Native type failures remain
+  independently checkable. Optional values, documented defaults and overloads retain their existing source semantics.
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
@@ -872,6 +879,20 @@ signature groups use the declared exact primary/alternatives rule, other cells r
 reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
 of depending on a truncated field or a producer-local warning.
 
+View-scope: build timestamps also accept time followed by a slash date. A timestamp that cannot be parsed is a determined
+listing failure, with its build name and a repair instruction; the sync plan excludes it from successful builds.
+Catalog address roles, hostname types and unchecked constraints now use the merged contract. Unrecognized limit syntax is retained with missing semantics and an author recovery action; it never creates a guessed restriction.
+
+未打有效标签的用例在 data.tags_note 和陈述中写明“正负向和测试类型未声明”；negative 仍是 null，
+不能据此推断正向或任何测试类型。空白标签与未打标签相同。
+
+用例命令归位把标题、上级节点、步骤、预期文本送进同一个命令解析器。没有任何目录命中时明确计数
+“没引用目录里的任何命令”，保留可引用的未归位条目；bot 可经 placement_proposal 提议，Hub 核验。
+
+The command-tree follow-up is signed as 1.3.2. Its limit policy follows the owner's read-only survey and does not assign
+semantics to spellings absent from that evidence. Diagnostic parameters remain machine-readable through knowledge
+production and catalog matching; the next action is for the pack author to document the grammar here and reproduce.
+
 ## 适用条件闭集（kb-applicability）
 
 `APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS` 是部署变量，三者均声明为字符串列表，
@@ -931,7 +952,7 @@ ROOT 的三种情形：
 
 属性来源由 Hub 组成记录的 `variables` 固定；生产器不自己宣称“从部署取得”。试运行不写知识结果，读取仍留审计。合成默认值和上述测试都不构成真实手册验收，真实属性、目录、主文件和主线词由集成者核对并写部署数据。
 
-当前包版本为 1.4.1：部署约定和按族 adoc 接线已进入包声明。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
+1.4.1 把部署约定和按族 adoc 接线带入包声明（此后包版本以 `pack.json` 为准）。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
 
 在 Literal links 的生产器范围中，`source_producers` 为 `manual-apv` 与 `manual-nsae`，`target_producers` 仍为 `command-tree`；两族共用同一套关系规则和规范化器。
 
@@ -942,3 +963,25 @@ ROOT 的三种情形：
 首轮复核合并主线的名称族部署接线后，包升至 1.4.2 并重签。`familyManual` 从解析后的 params
 把 components、licenses、deployment_forms 透传给条目适配器，Markdown 和 adoc 两路使用同一组部署闭集；
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
+
+合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+## Product-wide specifications
+
+`spec_index: true` reads `manual:spec-list:configured`. Only files whose filename or WebDAV display title contains a declared product name (NFKC, case-insensitive, ASCII letter boundaries) enter `scope.spec_documents`; other members are counted as 不属于这条产品线 and remain addressable at their original reference. Missing/incomplete directory observations withhold the whole scope so an existing root cannot lose its specifications.
+
+The `specifications` producer runs only with `unversioned: true`. Supported Markdown sections use the existing K1 producer, under `/spec/<resource-relative document path encoded as one segment>/<section path>`, without a command tree. It retains source literals and K02 applicability extraction/inheritance; `data.document_lines` preserves the written version tokens for information only and declares no build. `displayname` is the listing title when WebDAV supplies it; no title is guessed from a filename. Sources in other formats refuse with a conversion/reproduction action.
+
+## Product-wide case documents (step 2)
+
+The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
+
+The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+
+Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
+
+This step raises APV from 1.4.2 to 1.4.3, manual-store from 1.0.3 to 1.0.4 and OpenKM from 1.0.2 to 1.0.3, and re-signs all three manifests.
+
+两条支线各自把 APV 记为 1.4.3 而内容不同（view-scope 一侧的构建时间失败诊断与未打标签说明，这一侧的产品级规格与未覆盖用例），合并后 APV 升为 1.4.4，按合并后的原字节重签（`node packs/product/apv/api.ts sign`）；manual-store 1.0.4 与 OpenKM 1.0.3 两侧不冲突，取较新的一版。
+
+Complete zero selections emit source inventory proofs: specifications cite the bound directory files/complete fields; uncovered cases cite the bound tree documents/complete fields. The core independently verifies both before accepting an empty product-wide root. The composition stores each observed list total and selected=0; sync and reads say “不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）”. An empty selection can clear previously populated scope content; unread/incomplete inventories cannot do so. Specification filenames are percent-encoded when made into external references and decoded for document metadata, so an authored @ never becomes revision syntax.

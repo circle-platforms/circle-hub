@@ -6,6 +6,15 @@
       "type": "string",
       "const": "workflow@1"
     },
+    "predecessor_access": {
+      "description": "Read-only predecessor visibility; never grants mutation or lineage lease rights",
+      "type": "string",
+      "const": "view"
+    },
+    "criterion_review": {
+      "description": "W10 review protocol over an explicitly bound declaration submission",
+      "type": "boolean"
+    },
     "predecessor": {
       "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
       "type": "string",
@@ -51,6 +60,20 @@
           },
           "many": {
             "type": "boolean"
+          },
+          "default_from_predecessor": {
+            "description": "When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win",
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

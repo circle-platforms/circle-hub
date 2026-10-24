@@ -81,7 +81,7 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
   const all = node.nodes[0].entries.filter(e => e.kind === 'case');
   assert.equal(all.length,200);
   assert.equal(root.sources.length + root.parts.sources.reduce((n,p) => n+p.rows,0),3000);
-  const expected = all.map(e => e.entry).sort().slice(0,100);
+  const expected = all.map(e => e.entry).sort();
   let phase: 'setup' | 'view' | 'read' = 'setup';
   const stats = {view:{queries:0,scans:0,bytes:0},read:{queries:0,scans:0,bytes:0}};
   const query = pg.Client.prototype.query;
@@ -94,9 +94,8 @@ migrate: false, keyProvider: w.kit.keyProvider, onCredentialScan: length => {
     if (phase === 'setup') return;
     const s=stats[phase]; s.scans++; s.bytes+=length;
     if (phase === 'read') throw new Error('a read rescanned credential bytes');
-    if (s.scans > 224) throw new Error('synthetic scanner-call budget exceeded');
-    }
-});
+    if (s.scans > 226) throw new Error('synthetic scanner-call budget exceeded');
+  }});
   w.kit.artifacts = counted.artifacts;
   switchStage('view');
   phase = 'view';
@@ -106,20 +105,23 @@ migrate: false, keyProvider: w.kit.keyProvider, onCredentialScan: length => {
   assert.equal(result.ok,true,result.ok ? '' : result.reason); if (!result.ok) return;
   const output = result.artifacts[0].artifact;
   assert.equal(output.body.read_tier,'model_readable'); assert.equal(output.body.scan.truncated,false);
-  assert.equal(output.body.scan.findings.length,100);
+  assert.equal(output.body.scan.findings.length,200);
   phase = 'read';
   const read = await w.kit.artifacts.source(w.user,output.body.sha256,{record:output.digest});
   phase = 'setup';
   assert.ok(read?.bytes);
   const view = IndexView.parse(JSON.parse(Buffer.from(read.bytes).toString()));
   assert.deepEqual(Object.keys(view.entries).sort(),expected);
-  assert.ok(view.notes.some(n => /100 个条目.*来源的受理覆盖/.test(n)));
-  assert.ok(view.notes.some(n => /100 个条目因整份扫描的命中上限没有留下/.test(n)));
-  assert.equal(stats.view.scans,224,'20 sources + 200 entries + index key, skeleton, final answer and meta');
-  assert.ok(stats.view.bytes <= admittedBytes + 4*canonicalBytes(all).length + 2*output.body.size + 4096);
+  assert.ok(view.notes.some(n => /200 个条目.*来源的受理覆盖/.test(n)));
+  assert.ok(!view.notes.some(n => /命中上限没有留下/.test(n)));
+  const scopeParts=[...new Set(Object.values(view.scope??{}).flatMap(value=>typeof value==='object'&&value!==null&&'parts' in value?(value as {parts:Array<{sha256:string}>}).parts.map(part=>part.sha256):[]))];
+  const scopeBytes=(await Promise.all(scopeParts.map(sha=>w.kit.objects.get(sha)))).reduce((sum,bytes)=>sum+(bytes?.byteLength??0),0);
+  assert.equal(scopeParts.length,2,'the 3000-source scope is stored in two bounded chunks');
+  assert.equal(stats.view.scans,226,'20 sources + 200 entries + index key, skeleton, final answer, meta and two scope chunks');
+  assert.ok(stats.view.bytes <= admittedBytes + 4*canonicalBytes(all).length + 2*output.body.size + scopeBytes + 4096);
   assert.deepEqual([stats.read.scans,stats.read.bytes],[0,0]);
   assert.ok(performance.now() - started < 60_000, 'loose wall-clock regression allowance; controlled measurements establish the 30-second target');
-  t.diagnostic(JSON.stringify({sources:3000,admitted:20,entries:200,kept:100,limited:100,sourceScanBytes:admittedBytes,view:stats.view,read:stats.read}));
+  t.diagnostic(JSON.stringify({sources:3000,admitted:20,entries:200,kept:200,limited:0,sourceScanBytes:admittedBytes,view:stats.view,read:stats.read}));
   // Withdrawal is visible without re-scanning; the immutable coverage fact must not be recalculated on a read.
   assert.ok(output.body.scan.derived?.sources.length);
   await w.kit.artifacts.revokeFindings(w.admin,output.body.scan.derived.sources[0].sha256);

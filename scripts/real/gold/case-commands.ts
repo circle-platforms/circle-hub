@@ -1,17 +1,33 @@
-// Independent case-to-command gold. Only the two independent file-format readers are reused.
+// Independent case-to-command gold; imports only independent format readers, never Hub/pack implementations.
+// Rule sources, sentence by sentence (the owner's stricter 2026-10-24 instruction takes precedence):
+// - docs/hub-r4-tasks/hub-view-scope.md:18: "用例也从步骤和预期行解析命令（同一个解析器）".
+// - packs/product/apv/README.md:889-890: "把标题、上级节点、步骤、预期文本送进同一个命令解析器";
+//   "没有任何目录命中时明确计数". Every text below uses the same build-specific grammar.
+// - packs/product/apv/README.md:280-285: leaves are expected results, precondition-priority leaves are not;
+//   "a case below a case is its own". A body belongs to its nearest case; nested bodies never leak outward.
+// - hub/knowledge/README.md:1083: retain paths (title/ancestors), steps (direct operations), and placement_paths
+//   (title/ancestors/body union); exclude precondition leaves and nested case bodies. Consumers use the full set.
+// - packs/product/apv/README.md:301-302: "ONE entry per resolved command"; no hit is unplaced. Deduplicate paths.
+// - hub/knowledge/README.md:1083: the index cites the first canonical placement, not all mounts. Retain the gold's
+//   existing code-unit path ordering; input text order cannot change the set or its first canonical reference.
+// - Owner instruction 2026-10-24: no keyword, synonym, prefix or prose-regex classification. Parse a whole
+//   command statement against exact tree words and declared arguments. Unrecognized/ambiguous statements are not commands.
+//   This supersedes the abbreviation/prose rules in README:286-300 and the obsolete title-only note at :723.
+// Command statements are newline-delimited; node boundaries never concatenate words into a command.
+// Quotes delimit argument literals only. XML/number/range lexing below is grammar parsing, not prose classification.
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { caseNodesOf, parseMindMap } from './cases.ts';
-import { parseTree } from './command-diff.ts';
+import { XmlReader, type XmlNode } from './command-diff.ts';
+import { isIP } from 'node:net';
 
 export interface Match { path: string; abbreviated: boolean; via_no: boolean; words: number }
-export interface CaseCommands { key: string; document: string; node: string; comparable: boolean; paths: Match[]; steps: Match[] }
+// paths and steps retain the original title/ancestor and direct-operation measurements; placement_paths adds the admitted body scope.
+export interface CaseCommands { key: string; document: string; node: string; comparable: boolean; paths: Match[]; steps: Match[]; placement_paths?: Match[] }
 export interface CommandsGold { schema: 'case-commands-gold@1'; tree_sha256: string; documents: string[]; document_cases: Record<string, number>; cases: CaseCommands[]; totals: { cases: number; comparable: number; excluded: number; unplaced: number; step_placed: number } }
-interface Trie { children: Map<string, Trie>; prefixes: Map<string, string | null>; path?: string }
-const trie = (): Trie => ({ children: new Map(), prefixes: new Map() });
-// English short words cannot introduce an abbreviated command (README rule, independent small list).
-const SHORT = new Set('an as at be by do for he if in is it me my of on or so the to up us we'.split(' '));
-const STOP = new Set('a an and are as at be been being but by can could did do does for from had has have he her here him his how i if in into is it its may might my not of on or our please should that the their them then there these they this those to too was we were what when where which who will with would you your xxx'.split(' '));
+interface Argument { type: string; limit: string; length: string; optional: boolean; valid: boolean }
+interface GrammarNode { words: Map<string, GrammarNode>; rules: Array<{ path: string; arguments: Argument[] }> }
+const grammarNode = (): GrammarNode => ({ words: new Map(), rules: [] });
 export const sha256 = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 export const documentKey = (value: string): string => value.replace(/^agile:(?:case|mindmap):/, '');
 export const comparableNode = (value: string): boolean => value !== '' && !value.startsWith('@') && !/#\d+$/.test(value);
@@ -34,98 +50,115 @@ function validateXml(xml: string): void {
   if (stack.length || roots !== 1 || stripped.slice(end).trim() !== '') throw new Error('命令树 XML 不完整');
 }
 
+/** Lex one entire statement. No case folding, prefix expansion or prose extraction. */
+interface Token { value: string; quoted: boolean }
+function tokensOf(line: string): Token[] | null {
+  const out: Token[] = [];
+  for (let i = 0; i < line.length;) {
+    if (line[i] === ' ' || line[i] === '\t' || line[i] === '\r') { i++; continue; }
+    let value = '';
+    const quoted = line[i] === '"' || line[i] === "'";
+    if (line[i] === '"' || line[i] === "'") {
+      const quote = line[i++]; let closed = false;
+      while (i < line.length) {
+        const c = line[i++];
+        if (c === quote) { closed = true; break; }
+        if (c === '\\') { if (i === line.length || line[i] !== quote && line[i] !== '\\') return null; value += line[i++]; }
+        else value += c;
+      }
+      if (!closed || i < line.length && line[i] !== ' ' && line[i] !== '\t' && line[i] !== '\r') return null;
+    } else {
+      while (i < line.length && line[i] !== ' ' && line[i] !== '\t' && line[i] !== '\r') value += line[i++];
+    }
+    out.push({ value, quoted });
+  }
+  return out;
+}
+const childrenOf = (node: XmlNode): XmlNode[] => node.children.flatMap(child => 'element' in child ? [child.element] : []);
+
+/** Constraint syntax belongs to the XML grammar, not to natural-language help text. Unknown syntax never matches. */
+function constraint(raw: string, value: string, magnitude: number | undefined): boolean {
+  if (!raw) return true;
+  const range = /^\[\s*(-?\d+)\s*-\s*(-?\d+)\s*\]$/.exec(raw);
+  if (range) return magnitude !== undefined && Number.isSafeInteger(Number(range[1])) && Number.isSafeInteger(Number(range[2])) && Number(range[1]) <= magnitude && magnitude <= Number(range[2]);
+  if (raw[0] === '{' && raw.at(-1) === '}') { const alternatives = raw.slice(1, -1).split('|'); return alternatives.every(part => part.length > 0) && alternatives.some(part => part === value); }
+  return false;
+}
+function accepts(argument: Argument, value: string): boolean {
+  if (!argument.valid) return false;
+  let magnitude: number | undefined;
+  const unsigned = (s: string) => s.length > 0 && [...s].every(c => c >= '0' && c <= '9');
+  switch (argument.type) {
+    case 'STRING': case 'XSTRING': magnitude = [...value].length; break;
+    case 'U16': case 'U32': {
+      if (!unsigned(value)) return false;
+      magnitude = Number(value);
+      if (!Number.isSafeInteger(magnitude) || magnitude > (argument.type === 'U16' ? 65535 : 4294967295)) return false;
+      break;
+    }
+    case 'DOTTEDIP': if (isIP(value) !== 4) return false; break;
+    case 'IPADDR': if (!isIP(value) || value.includes('%')) return false; break;
+    case 'IPMASK': {
+      if (unsigned(value)) { magnitude = Number(value); if (magnitude > 128) return false; }
+      else {
+        if (isIP(value) !== 4) return false;
+        const bits = value.split('.').map(octet => Number(octet).toString(2).padStart(8, '0')).join('');
+        let zero = false; for (const bit of bits) { if (bit === '0') zero = true; else if (zero) return false; }
+      }
+      break;
+    }
+    default: return false;
+  }
+  return constraint(argument.limit, value, magnitude) && constraint(argument.length, value, [...value].length);
+}
+function argumentsMatch(rule: readonly Argument[], tokens: readonly string[]): boolean {
+  const memo = new Map<string, boolean>();
+  const match = (at: number, token: number): boolean => {
+    const key = at + ':' + token; if (memo.has(key)) return memo.get(key)!;
+    const result = at === rule.length ? token === tokens.length
+      : rule[at].valid && (rule[at].optional && match(at + 1, token) || token < tokens.length && accepts(rule[at], tokens[token]) && match(at + 1, token + 1));
+    memo.set(key, result); return result;
+  };
+  return match(0, 0);
+}
 export function commandScanner(xml: string): (text: string) => Match[] {
   validateXml(xml);
-  const root = trie();
-  const pathVariants = new Map<string, Set<string>>();
-  for (const { path } of parseTree(xml)) {
-    let node = root;
-    for (const word of path.slice('/commands/'.length).toLowerCase().split('/')) {
-      if (!node.children.has(word)) node.children.set(word, trie());
-      node = node.children.get(word)!;
-    }
-    node.path = path;
-    const variants = pathVariants.get(path.toLowerCase()) ?? new Set<string>(); variants.add(path); pathVariants.set(path.toLowerCase(), variants);
-  }
-  const index = (node: Trie): void => {
-    for (const [word, child] of node.children) {
-      for (let n = 2; n < word.length; n++) {
-        const key = word.slice(0, n);
-        node.prefixes.set(key, node.prefixes.has(key) ? null : word);
+  const root = grammarNode();
+  const walk = (node: XmlNode, prefix: string[]) => {
+    const names = tokensOf(node.attributes.name ?? '');
+    if (names === null || names.some(token => token.quoted)) throw new Error('命令树路径不是合法词序列');
+    const own = names.map(token => token.value);
+    const words = node.name === 'menu' ? [...prefix, ...own] : prefix;
+    if (node.name === 'item') {
+      if (!own.length) throw new Error('命令树 item 缺少完整路径');
+      const pathWords = [...prefix, ...own]; let head = root;
+      for (const word of pathWords) { if (!head.words.has(word)) head.words.set(word, grammarNode()); head = head.words.get(word)!; }
+      const lists = childrenOf(node).filter(child => child.name === 'arguments');
+      for (const list of lists.length ? lists : [{ ...node, children: [] }]) {
+        const args = childrenOf(list).filter(child => child.name === 'arg').map(arg => {
+          const optional = arg.attributes.optional?.toLowerCase();
+          return { type: arg.attributes.type ?? '', limit: arg.attributes.limit ?? '', length: arg.attributes.length ?? '',
+            optional: optional === 'yes' || optional === 'true' || optional === '1',
+            valid: optional === undefined || ['yes', 'true', '1', 'no', 'false', '0'].includes(optional) };
+        });
+        head.rules.push({ path: '/commands/' + pathWords.join('/'), arguments: args });
       }
-      index(child);
+      return;
     }
+    for (const child of childrenOf(node)) if (!['arg', 'arguments', 'results'].includes(child.name)) walk(child, words);
   };
-  index(root);
-  const resolve = (tokens: string[], start: number): Match | null => {
-    let node = root;
-    let abbreviated = false;
-    let best: Match | null = null;
-    for (let i = start; i < tokens.length; i++) {
-      const raw = tokens[i];
-      const word = raw.toLowerCase();
-      let next = node.children.get(word);
-      if (!next) {
-        if (!/^[a-z]+$/i.test(raw) || raw.length < (raw === raw.toUpperCase() ? 3 : 2) || (i === start && SHORT.has(word))) break;
-        const full = node.prefixes.get(word);
-        if (!full) break;
-        next = node.children.get(full)!;
-        abbreviated = true;
-      }
-      node = next;
-      const words = i - start + 1;
-      if (node.path && (!abbreviated || words >= 2)) best = { path: node.path, abbreviated, via_no: false, words };
-    }
-    return best;
-  };
-  return (text) => {
-    const folded = text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-      .replace(/[\r\n\v\f\u0085\u2028\u2029]/g, '\n').replace(/[\p{White_Space}\u200b-\u200d\u2060\ufeff]/gu, (c) => c === '\n' ? c : ' ')
-      .replace(/\d+[.、）)](?=[A-Za-z])/g, ' ');
+  for (const node of XmlReader.read(xml)) walk(node, []);
+  return text => {
     const found = new Map<string, Match>();
-    // Track complete quote pairs independently of word tokenization. Unclosed marks are not quoted evidence.
-    const quoteRanges: Array<[number, number]> = [];
-    const pairs: Record<string, string> = { '"': '"', "'": "'", '`': '`', '“': '”', '‘': '’', '「': '」', '『': '』' };
-    const stack: Array<{ close: string; start: number }> = [];
-    for (let k = 0; k < folded.length; k++) {
-      if (folded[k] === "'" && /[A-Za-z]/.test(folded[k - 1] ?? '') && /[A-Za-z]/.test(folded[k + 1] ?? '')) continue;
-      if (stack.at(-1)?.close === folded[k]) { const open = stack.pop()!; quoteRanges.push([open.start, k]); }
-      else if (pairs[folded[k]]) stack.push({ close: pairs[folded[k]], start: k });
-    }
-    for (const segment of folded.matchAll(/[A-Za-z0-9_\-]+(?:[ \t]+[A-Za-z0-9_\-]+)*/g)) {
-      const words = [...segment[0].matchAll(/[A-Za-z0-9_\-]+/g)];
-      const tokens = words.map((word) => word[0]);
-      const at = (i: number): Match | null => {
-        const own = resolve(tokens, i);
-        if (own) return own;
-        const base = tokens[i]?.toLowerCase() === 'no' ? resolve(tokens, i + 1) : null;
-        return base ? { ...base, via_no: true } : null;
-      };
-      for (let i = 0; i < tokens.length;) {
-        const match = at(i);
-        if (!match) { i++; continue; }
-        const start = segment.index + words[i].index;
-        const headEndIndex = i + match.words + Number(match.via_no);
-        const end = segment.index + words[headEndIndex - 1].index + words[headEndIndex - 1][0].length;
-        const quoted = quoteRanges.some(([from, to]) => from < start && to >= end);
-        const before = folded.slice(0, start).trimEnd();
-        const after = folded.slice(end).trimStart();
-        const englishBefore = /[A-Za-z_-]$/.test(before);
-        // Stop words and placeholders trim a phrase back to its head, never provide arguments to a lone word.
-        let next = headEndIndex;
-        while (next < tokens.length && (at(next)?.words ?? 0) < 2) next++;
-        const args = tokens.slice(headEndIndex, next);
-        const hasArgs = !englishBefore && args.length > 0 && !args.some((arg) => STOP.has(arg.toLowerCase()));
-        const chineseContext = /\p{Script=Han}$/u.test(before) || /^\p{Script=Han}/u.test(after);
-        const lone = match.words + Number(match.via_no) === 1 && !hasArgs;
-        if (!lone || quoted || (chineseContext && !after.startsWith('命令'))) {
-          for (const path of pathVariants.get(match.path.toLowerCase()) ?? [match.path]) {
-            const old = found.get(path);
-            found.set(path, old ? { ...match, path, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : { ...match, path });
-          }
-        }
-        i = next;
+    for (const line of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+      const tokens = tokensOf(line); if (!tokens?.length) continue;
+      const matches = new Map<string, Match>(); let head = root;
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i].quoted) break;
+        const next = head.words.get(tokens[i].value); if (!next) break; head = next;
+        for (const rule of head.rules) if (argumentsMatch(rule.arguments, tokens.slice(i + 1).map(token => token.value))) matches.set(rule.path, { path: rule.path, words: i + 1, abbreviated: false, via_no: false });
       }
+      if (matches.size === 1) { const match = [...matches.values()][0]; found.set(match.path, match); }
     }
     return [...found.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   };
@@ -138,7 +171,7 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
   const document_cases = Object.create(null) as Record<string, number>;
   const union = (texts: string[]): Match[] => {
     const found = new Map<string, Match>();
-    for (const text of texts) for (const match of scan(text)) {
+    for (const text of new Set(texts)) for (const match of scan(text)) {
       const old = found.get(match.path);
       found.set(match.path, old ? { ...match, abbreviated: old.abbreviated || match.abbreviated, via_no: old.via_no || match.via_no } : match);
     }
@@ -154,16 +187,24 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
     const caseIndices = new Set(nodes.map((node) => node.index));
     const counts = new Map<string, number>();
     for (const node of nodes) counts.set(node.id, (counts.get(node.id) ?? 0) + 1);
+    // The independent format reader is preorder: a parent's owner is known before its children.
+    const owners = new Int32Array(map.nodes.length).fill(-1);
+    const body = new Map(nodes.map(node => [node.index, [] as string[]]));
+    for (const item of map.nodes) {
+      const isCase = caseIndices.has(item.index);
+      owners[item.index] = isCase ? item.index : item.parent === null ? -1 : owners[item.parent];
+      if (!isCase && owners[item.index] >= 0 && !(item.children.length === 0 && item.priority === 3)) body.get(owners[item.index])!.push(item.text);
+    }
     for (const node of nodes) {
       const steps = node.children.filter((index) => !caseIndices.has(index) && map.nodes[index].children.length > 0).map((index) => map.nodes[index].text);
       cases.push({ key: `${document}:${node.id}`, document, node: node.id, comparable: comparableNode(node.id) && counts.get(node.id) === 1,
-        paths: union([...node.ancestors, node.text]), steps: union(steps) });
+        paths: union([...node.ancestors, node.text]), steps: union(steps), placement_paths: union([...node.ancestors,node.text,...body.get(node.index)!]) });
     }
   }
   cases.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
   return { schema: 'case-commands-gold@1', tree_sha256: sha256(Buffer.from(xml)), documents: [...documents].sort(), document_cases, cases,
     totals: { cases: cases.length, comparable: cases.filter((c) => c.comparable).length, excluded: cases.filter((c) => !c.comparable).length,
-      unplaced: cases.filter((c) => !c.paths.length).length, step_placed: cases.filter((c) => !c.paths.length && c.steps.length).length } };
+      unplaced: cases.filter((c) => !c.placement_paths!.length).length, step_placed: cases.filter((c) => !c.paths.length && c.steps.length).length } };
 }
 
 export function main(argv: string[]): number {

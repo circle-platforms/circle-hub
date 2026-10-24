@@ -1,3 +1,5 @@
+import {scheduleSync} from './sync-schedule.ts';
+import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
@@ -24,7 +26,8 @@ import { KnowledgeViews } from './views.ts';
 import { withReadCache } from './read-cache.ts';
 
 export interface KnowledgeOptions {
-  additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
+  /** Additional declared scope (for example unversioned knowledge); roots and compositions must belong to this product. */
+  additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   parsers: ParserRegistry;
   packs: PacksPort;
@@ -37,6 +40,7 @@ export interface KnowledgeOptions {
   limits?: Partial<KnowledgeLimits>;
   /** Default admin context of syncs and productions that name none. */
   admin?: Principal | null;
+  credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
 }
 
 export interface BuildCalibrationInput {
@@ -75,6 +79,8 @@ export interface Knowledge extends KnowledgePort {
   produceTree(input: ProduceInput): Promise<ProduceResult>;
   /** Syncs of one product run one after the other in this process. */
   syncProduct(product: ProductHandle, options?: SyncOptions): Promise<SyncReport>;
+  /** Explicit opt-in periodic synchronization; the caller owns and stops this handle. */
+  scheduleSync(product:ProductHandle,options:{intervalMs:number;sync?:SyncOptions;onReport?:(report:SyncReport)=>void}):ReturnType<typeof scheduleSync<SyncReport>>;
   /** What a run locks: the root of a named build (any family), else the current root of the line. */
   lockRoot(product: string, target: { line?: string | null; build?: string | null }): Promise<RootInfo | null>;
   /** An enabled admin moves a current root, with the completed generate action that produced it as `cause` (K01 R[6], B05 R[4]). */
@@ -93,11 +99,14 @@ export interface Knowledge extends KnowledgePort {
 
 export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const now = options.clock ?? (() => new Date());
+  const deadlineHours=options.credentialAcceptance?.deadlineHours??72;
+  if(!Number.isFinite(deadlineHours)||deadlineHours<=0||!Number.isFinite(new Date(now().getTime()+deadlineHours*3600000).getTime()))throw new TypeError('凭据核对期限必须是有效的正数小时');
   const store = new KnowledgeStore(options.records.store);
   const placer = new Placer({ jev: options.jev ?? null, store, now });
   const calibration = new CalibrationStore(store, options.records.principals);
   const context: KnowledgeContext = {
     additionalScopeRoots: options.additionalScopeRoots,
+    additionalScopeRootsDeclared: options.additionalScopeRoots !== undefined,
     records: options.records,
     store,
     parsers: options.parsers,
@@ -113,6 +122,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     },
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
+    credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };
   const builds = new Builds(context);
@@ -227,6 +237,9 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ extras
     produceTree: (input) => produceTree(context, input),
     syncProduct: (product, syncOptions = {}) => syncOne(product, syncOptions),
+    scheduleSync(product,options){
+      return scheduleSync(signal=>syncOne(product,{...options.sync,signal}),{intervalMs:options.intervalMs,onReport:options.onReport,onError:async()=>{await requestKnowledgeFact(context,{kind:'repair',subject:product.product.id,missing:'定时知识同步未能完成',action:'管理员核对该产品同步动作的错误并修复后重新同步',inputs:[]});}});
+    },
     async lockRoot(product, target) {
       if (target.build !== undefined && target.build !== null && target.build !== '') return builds.rootOfBuild(product, target.build);
       if (target.line !== undefined && target.line !== null && target.line !== '') return builds.currentRoot(product, target.line);

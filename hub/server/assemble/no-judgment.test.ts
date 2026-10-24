@@ -1,3 +1,4 @@
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 // Assembly insurance of the owner decision of 2026-10-22 (docs/hub-r4-tasks/no-judgment-in-hub.md): even with a key
 // of the judgment service left in the vault from before the removal, the assembled Hub builds no placement client,
 // nothing reads that vault entry, a knowledge sync of a product whose producer declared its path-less entries
@@ -89,7 +90,8 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
     const report = await hub.knowledge.syncProduct(handle, { by: admin });
     const produced = report.builds.find((build) => build.outcome === 'produced');
     assert.ok(produced?.root, JSON.stringify(report.builds.map((b) => [b.name, b.outcome, b.reason])));
-    assert.match(produced.reason, /\d+ 个条目未归位，留在根下/, 'the report says the entries stay unplaced at the root');
+    assert.ok((produced.entry_counts?.unplaced ?? 0) > 0);
+    assert.ok(produced.reason.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ` ${produced.entry_counts!.unplaced} 个，留在根下`), 'the report names and counts missing tree positions');
     assert.doesNotMatch(produced.reason, /判断服务|模型归类/, 'no judgment-service wording in the report');
 
     // The production records no judged span; the declared path-less entries are unplaced rows at the root.

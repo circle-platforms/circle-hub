@@ -13,5 +13,5 @@ test('a locked absent scope describes the snapshot and requests a new run even a
   const view=JSON.parse(Buffer.from(source.bytes).toString()),notes=view.notes.join('\n');assert.equal(view.unversioned,null);
   assert.match(notes,/本次.*锁定.*没有不分版本/);assert.match(notes,/同样输入新开运行/);assert.ok(!notes.includes('这条产品线还没有不分版本的根'));
  }
- const explicit=await w.knowledge.views.index('acme',{build:build.build.name,root:build.root},'case','document',null,null,new Set(),null);assert.match(explicit.notes.join('\n'),/同样输入新开运行/);
+ const explicit=await w.knowledge.views.index('acme',{build:build.build.name,root:build.root},'case','document',null,null,new Set(),null,undefined,null);assert.match(explicit.notes.join('\n'),/同样输入新开运行/);
 });

@@ -158,7 +158,9 @@
                     "not_realtime",
                     "partial",
                     "intermittent",
-                    "decision_shape_unruled"
+                    "decision_shape_unruled",
+                    "legacy_keyword_rules",
+                    "possible_credentials"
                   ]
                 }
               },
@@ -458,6 +460,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "independence_by_account": {
+            "type": "boolean"
+          },
           "key": {
             "type": "string"
           },
@@ -502,6 +507,22 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "locked rule@version identities that judge this requirement"
+          },
+          "run_interpreters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+            },
+            "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
           }
         },
         "required": [
@@ -638,6 +659,35 @@
       "type": "string",
       "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
+    "input_defaults": {
+      "description": "Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings",
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "predecessor": {
+            "type": "string",
+            "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          }
+        },
+        "required": [
+          "slot",
+          "predecessor",
+          "reference"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session": {
       "description": "client session id observed from the request header",
       "type": "string"
@@ -652,6 +702,66 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "accepted_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "declaration": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          },
+          "review": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          },
+          "reviewer": {
+            "type": "string",
+            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+          }
+        },
+        "required": [
+          "declaration",
+          "review",
+          "reviewer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "criterion_requests": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "criterion_review": {
+      "type": "object",
+      "properties": {
+        "submission": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "submission",
+        "requests"
+      ],
+      "additionalProperties": false
+    },
+    "predecessor_access": {
+      "type": "string",
+      "const": "view"
     },
     "runner": {
       "description": "the user the run is executed for; absent only when the Hub itself executes a standing obligation",

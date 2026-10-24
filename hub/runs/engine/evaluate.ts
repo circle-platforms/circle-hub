@@ -1,10 +1,13 @@
+import {replacedCriteria,frozenCriteria} from './criterion-changes.ts';
+import {authorAccountsOf} from './lineage.ts';
+import {accountIndependenceOf,authorAccount} from './independence.ts';
 import {attachParentRecovery} from './parent-recovery.ts';
 // The Hub recomputes everything itself (T03 R[1], W08): every check of every requirement re-runs through hub/rules with the
 // pack's table, the locked catalog and the subject; outcomes become the terminals of each (item, requirement, layer), the
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { FragmentRead, PermissionRole, ProvenanceType, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { SubjectBlocked, MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
@@ -16,6 +19,8 @@ import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { receivedDigest } from './util.ts';
+import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
@@ -62,6 +67,7 @@ export interface EvaluationInput {
   submission: Submission | null;
   /** Digest of the submission as received, or of the run record for a production result. */
   submissionDigest: string;
+  submissionRecord?: string;
   exact: ExactResult | null;
   carried: ReadonlyMap<string, CarriedItem>;
   /** Repair rounds each requirement used in earlier submissions of the run. */
@@ -82,7 +88,27 @@ export function productionEvaluationInput(run: RunRecord, workflow: LoadedWorkfl
   return {run,workflow,submission:null,submissionDigest:runDigest,exact:null,carried:new Map(),roundsUsed:new Map(),origin:null,author:null,traceId};
 }
 
+export interface RuntimeAdmission {
+  admitted: boolean;
+  provenance: ProvenanceType;
+  missing?: string;
+  next_action?: string;
+  requirement: string;
+  interpreter: string;
+  table_sha256: string;
+  samples: Array<{
+    item: string;
+    expect: NonNullable<Submission['checks']>[number]['samples'][number]['expect'];
+    source_provenance: {reference:string;record:string;provenance:string;origin:unknown;author:unknown;outside_author:boolean} | null;
+    outcome: CheckOutcome[];
+    passed: boolean;
+    missing?: string;
+    next_action?: string;
+  }>;
+}
+
 export interface Evaluation {
+  runtimeAdmission: RuntimeAdmission[];
   result: ValidationResult;
   /** Item-level refutations routed by the error table and the items the submission did not cover (also in result.errors). */
   errors: ProtocolError[];
@@ -215,6 +241,7 @@ export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks
 export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
 export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
   const { run, workflow, submission } = input;
+  const accountAuthors=workflow.requirements.some(t=>t.independence_by_account)?await authorAccountsOf(ctx,run.predecessor):null;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
   const retryAttempts: Array<Record<string, unknown>> = [];
@@ -235,16 +262,36 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // samples carry author_samples_only. A model judgment never takes them — they speak about a rule's samples.
   const sampleMarks = publishCheckMarks(workflow);
   const exclude = input.exclude ?? new Set<string>();
-  const templates = workflow.requirements;
+  const runtimeChecks = new Map<string, NonNullable<Submission['checks']>[number]>();
+  const runtimeCatalogGaps = new Map<string,{missing:string;next_action:string}>();
+  for (const [index,declared] of (submission?.checks ?? []).entries()) {
+    const allowed=workflow.requirements.some(t=>t.key===declared.requirement && t.run_table)
+      && workflow.ledger?.shapes.some(row=>row.requirement===declared.requirement && row.interpreter===declared.interpreter);
+    const interpreter=getInterpreter(declared.interpreter);
+    if(allowed && interpreter && !interpreter.validateTable(declared.table).length) runtimeChecks.set(`@runtime.${index}`,declared);
+  }
+  const unruledChecks=(submission?.checks ?? []).map((check,index)=>({check,index})).filter(({check})=>workflow.requirements.some(t=>t.key===check.requirement && t.run_table) && !workflow.ledger?.shapes.some(row=>row.requirement===check.requirement && row.interpreter===check.interpreter));
+  const templates = workflow.requirements.map(t=>({...t,checks:[...t.checks,...[...runtimeChecks].filter(([,check])=>check.requirement===t.key).map(([id])=>id)]}));
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
+  for(const [id,declared] of runtimeChecks){
+    const check:CheckEntry={id,interpreter:declared.interpreter,applies:'item',judges:'subject'};
+    if(declared.interpreter==='catalog@1'){
+      const requirement=workflow.requirements.find(t=>t.key===declared.requirement)!;
+      const catalogs=[...new Set(workflow.checks.filter(base=>requirement.checks.includes(base.id)).flatMap(base=>base.catalog?[base.catalog]:[]))];
+      if(catalogs.length===1)check.catalog=catalogs[0];
+      else runtimeCatalogGaps.set(id,{missing:`要求项 ${requirement.key} 的唯一目录绑定（当前 ${catalogs.length} 个）`,next_action:'请运行者联系包作者，在新版本中为该要求项明确唯一目录绑定，发布后重开运行'});
+    }
+    checks.set(id,check);
+  }
   if(input.admission!==undefined)checks.set(ADMISSION_CHECK,{id:ADMISSION_CHECK,title:'Hub 回注来源核验',applies:'item',judges:'artifact_under_verification',tier:'blocking',basis:'K03 R[4]-R[6]：回注根据与入层约束'});
   // Whole-refusal diagnostics must never check unresolved items, including fact checks and run-level subjects.
   // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
   const items = run.items.filter(it => !exclude.has(it.id));
   const itemIds = new Set(items.map((it) => it.id));
-  const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : [])];
+  const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
+  const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -252,7 +299,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const hasItemJudgments = itemTemplates.some((t) => isJudgment(t) && itemSlotKeys.has(t.key));
   const artifactRequirements = new Set(itemTemplates.filter(t => t.checks.some(id => checks.get(id)?.judges === 'artifact_under_verification')).map(t => t.key));
   const sets = closedSets(workflow);
-  const context = runContextOf(run);
+  const criteria=await frozenCriteria(ctx,run.accepted_criteria??[]);
+  const context = {...runContextOf(run),...(criteria.length?{accepted_criteria:criteria}:{})};
 
   const handlingOf = (id: string): Handling => {
     if (input.carried.has(id)) return 'handled';
@@ -487,7 +535,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   };
 
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>, item?: string): Promise<CheckOutcome[]> => {
-    let table: unknown;
+    const gap=runtimeCatalogGaps.get(check.id);
+    if(gap)return [{verdict:'unknown',reason:'missing_input',statement:gap.missing,missing:gap.missing,grounds:[],tier:'advisory',data:{fix:gap.next_action}}];
+    let table: unknown = runtimeChecks.get(check.id)?.table;
     if (check.table !== undefined) {
       try {
         table = workflow.readJson(check.table);
@@ -498,7 +548,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
-    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
+    await warmQuoted(runtimeChecks.has(check.id)?[subject,table]:subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
     const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
       {
@@ -559,7 +609,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   };
 
   // ---- run every check
-  const used = workflow.checks.filter((c) => requirementsOf.has(c.id) && (input.replayChecks===undefined||input.replayChecks.has(c.id)));
+  const used = [...checks.values()].filter((c) => requirementsOf.has(c.id) && (input.replayChecks===undefined||input.replayChecks.has(c.id)));
   const runOutcomes = new Map<string, { own: Map<string, CheckOutcome[]>; loose: CheckOutcome[] }>();
   const itemOutcomes = new Map<string, Map<string, CheckOutcome[]>>();
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
@@ -601,6 +651,47 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const builderInput = (it: ItemProjection) => {
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
     return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context };
+  };
+  const runtimeAdmission: RuntimeAdmission[] = [];
+  const admittedChecks = new Map<string,RuntimeAdmission>();
+  for (const [index,declared] of (submission?.checks ?? []).entries()) {
+    const requirement = templates.find(t=>t.key===declared.requirement);
+    const interpreter = getInterpreter(declared.interpreter);
+    if (!requirement?.run_table || !workflow.ledger?.shapes.some(row=>row.requirement===declared.requirement && row.interpreter===declared.interpreter) || !interpreter || interpreter.validateTable(declared.table).length) continue;
+    const record: RuntimeAdmission = {admitted:false,provenance:'declared',requirement:declared.requirement,interpreter:declared.interpreter,table_sha256:receivedDigest(declared.table).digest,samples:[]};
+    for (const sample of declared.samples) {
+      const item = items.find(it=>it.id===sample.item);
+      if (!item) continue; // The submission boundary refuses nonexistent sample items.
+      const itemInput=builderInput(item);
+      const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence};
+      const texts=evidenceOf(item.id).texts;
+      await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
+      const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
+      const ref=parseReference(item.location);
+      const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
+      const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
+      const passed=sample.expect.length===outcome.length && sample.expect.every((expected,i)=>Object.entries(expected).every(([key,value])=>outcome[i][key as keyof CheckOutcome]===value));
+      record.samples.push({item:item.id,expect:sample.expect,source_provenance:proof,outcome,passed,...(proof===null?{missing:`条目 ${item.id} 所在源文件的读取或上传来源记录`,next_action:'由运行者重新读取或上传该源文件，绑定新来源后重验'}:{})});
+    }
+    record.admitted=record.samples.length===declared.samples.length && record.samples.length>0 && record.samples.every(sample=>sample.passed && sample.outcome.every(o=>o.verdict==='support'||o.verdict==='refute'))
+      && record.samples.some(sample=>sample.expect.every(e=>e.verdict==='support'))
+      && record.samples.some(sample=>sample.expect.some(e=>e.verdict==='refute'))
+      && record.samples.some(sample=>sample.source_provenance?.outside_author);
+    if(!record.admitted){record.missing=`要求项 ${record.requirement} 的通过正反对照和至少一份作者之外样例的准入证据`;record.next_action='重读外部来源或由其他账号提供样例，补齐正反对照后重交；本次结论以判断为前提';}
+    const bindingGap=runtimeCatalogGaps.get(`@runtime.${index}`);
+    if(bindingGap){record.missing=bindingGap.missing;record.next_action=bindingGap.next_action;}
+    runtimeAdmission.push(record);
+    admittedChecks.set(`@runtime.${index}`,record);
+  }
+  const runtimeFactOf = (check: CheckEntry) => {
+    const admission=admittedChecks.get(check.id);
+    if(!admission)return {};
+    const index=Number(check.id.slice('@runtime.'.length));
+    return {runtime:{admitted:admission.admitted,admission:`rec:${input.submissionRecord??input.submissionDigest}#/checks/${index}/samples`,run:receivedDigest(run).digest,table:admission.table_sha256,submission:input.submissionDigest}};
+  };
+  const claimRuleOf = (check:CheckEntry):string => {
+    const admission=admittedChecks.get(check.id);
+    return admission ? `运行内检查@${admission.table_sha256}` : ruleOf(workflow,check);
   };
   const builders = new Map<string, { target: PackFunctionTarget; entries: Map<string, unknown> }>();
   for (const check of perItem) {
@@ -706,7 +797,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const partitionInputs: PartitionInput[] = [];
   const required = new Set(itemTemplates.filter((t) => t.required).map((t) => t.key));
   const roundsLeftOf = (t: RequirementTemplate): number => Math.max(0, repairRounds(t) - (input.roundsUsed.get(t.key) ?? 0));
-  const marksFor = (t: RequirementTemplate): ('independence_declared')[] => (t.independent_of !== undefined && t.accepts_declared_independence === true ? ['independence_declared'] : []);
+  const marksFor = (t: RequirementTemplate): ('independence_declared')[] => (t.independent_of !== undefined && !t.independence_by_account && t.accepts_declared_independence === true ? ['independence_declared'] : []);
 
   for (const it of items) {
     const handling = handlingOf(it.id);
@@ -715,7 +806,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const carried = input.carried.get(it.id);
     const entry = entries.get(it.id);
     const origin = carried?.origin ?? input.origin;
-    const independence = origin === null ? 'unknown' : independenceOf(origin, input.author);
+    const modelIndependence = origin === null ? 'unknown' : independenceOf(origin, input.author);
     // W07 F[1]: a slot record comes with the digest of the context it was written in; one written in one go is marked no_reuse
     // (decision row 18 (b)). A context that is a SHA-256 binds the claims; any other spelling stays in the stored submission.
     const context = entry !== undefined && entry.entry.handling === 'handled' ? (entry.entry.context ?? null) : null;
@@ -727,6 +818,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     let handlingErrorRecorded=false;
     const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
+      const independence=t.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):modelIndependence;
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
       const outcomes = outcomesFor(t, it.id);
@@ -740,6 +832,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : submission !== null && artifactRequirements.has(t.key) ? handling : null,
         expectation,
       });
+      if ((raw.terminal==='pass'||raw.terminal==='judgment') && unruledChecks.some(({check})=>check.requirement===t.key)) raw={...raw,terminal:'judgment'};
       if ((raw.reason === 'declared_skip' || raw.reason === 'not_covered') && roundsLeftOf(t) === 0) raw = {...raw, reason:'repair_exhausted'};
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0, outcomes);
       const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
@@ -762,7 +855,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         } else layers.push(layer);
       }
       const missingSessions=[...(input.author?.missingSessions??[]),...(run.session===undefined?[`运行 ${run.run} 的开始会话（原运行者 ${run.runner??run.configurer??'记录未给出'}）`]:[])];
-      if(t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
+      if(!t.independence_by_account&&t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
         const runner=run.runner??run.configurer;
         if(!runner)throw new Error('历史独立性缺少具名受众');
         const missing=`缺少被判工作来源会话：${missingSessions.join('；')}`;
@@ -770,14 +863,27 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
         errors.push({code:'missing_input',message:missing,item:it.id,requirement:t.key,fix:'请所列原运行者带 Circle-Session-Id，以原工作为 predecessor 开新修订并重新提交，再对新修订开复核运行'});
       }
+      if(t.independence_by_account&&independence==='unknown'){
+        const administrator=administrators[0]?.id;if(!administrator)throw new Error('作者账号恢复请求缺少具名管理员');
+        const next='管理员 '+administrator+' 从可信备份恢复缺失的运行记录与 runner/configurer 身份，再核验账号并重开复核；不能补造历史身份';
+        const missing='缺少完整的作者账号血缘，无法证明复核者不是任一作者；下一步：'+next;
+        const gap={reason:'integrity_unproven' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:administrator},due:run.submission_due??new Date(ctx.now().getTime()+86400000).toISOString()}};
+        for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
+        errors.push({code:'integrity_unproven',message:missing,item:it.id,requirement:t.key,fix:next});
+      }
       const status = requirementStatus({
+        producer:t.accepted_producer,
         layers,
         hasProducer,
         expectation,
         expectedRefutation: routed.expectedRefutation,
         independence: t.independent_of !== undefined ? independence : null,
-        acceptsDeclared: t.accepts_declared_independence === true,
+        acceptsDeclared: t.independence_by_account!==true&&t.accepts_declared_independence === true,
+        accountVerified:t.independence_by_account===true,
       });
+      if(status.status==='satisfied' && t.requires_discrimination && (!t.checks.some(id=>admittedChecks.get(id)?.admitted) || t.checks.some(id=>admittedChecks.has(id) && !admittedChecks.get(id)!.admitted))) {
+        status.status='unsatisfied';status.unsatisfied_reason='outcome_mismatch';
+      }
       const claims: Claim[] = [];
       if (isJudgment(t) && hasProducer && handling === 'handled' && !exclude.has(it.id)) {
         if (carried) claims.push(...(carried.claims.get(t.key) ?? []));
@@ -793,7 +899,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
                 pointer,
                 ...statementOf(claim),
                 model: submission.model,
-                ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence) } : {}),
+                ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence,t.independence_by_account===true) } : {}),
                 marks: [...marksFor(t), ...writtenAlone],
                 sourceRole: strongestRole(ce.roles),
                 coverage:sourceCoverage(run.sources,[it.location,...ce.grounds,...ce.bound]),
@@ -814,7 +920,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             requirement: t.key,
             coverage:sourceCoverage(run.sources,[it.location,...o.outcome.grounds,...sourcesForReads(check).map(s=>s.reference)]),
             outcome: o.outcome,
-            rule: ruleOf(workflow, check),
+            rule: claimRuleOf(check),
+            ...runtimeFactOf(check),
             judges: o.judges,
             sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
@@ -831,7 +938,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         errors.push({
           code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
           message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
-          fix: r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交',
+          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交'),
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
@@ -850,7 +957,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         problems.add(t.key);
         if (routed.routed.some(r => r.outcome === outcome)) continue;
         const check=checks.get(outcome.check);
-        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
+        errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:runtimeCatalogGaps.get(outcome.check)?.next_action??'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
       if (submission!==null&&(handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
         handlingErrorRecorded=true;
@@ -896,13 +1003,19 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // ---- cross-item claims: Hub facts of run-level checks and of run-level requirements, then the submitted entries
   const crossBound = [...baseBound, ...itemDigests];
   const cross: Claim[] = [];
+  for(const {check,index} of unruledChecks)cross.push(judgmentClaim({
+    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版台账裁定`,
+    data:{requirement:check.requirement,interpreter:check.interpreter},model:submission!.model,
+    marks:['decision_shape_unruled'],grounds:[],resolutions:[],bound:[...crossBound,input.submissionDigest,receivedDigest(run).digest],
+  }));
   const factOf = (o: CheckOutcome, check: CheckEntry, requirement: string): Claim =>
     factClaim({
       ...(o.item !== undefined && itemIds.has(o.item) ? { item: o.item } : {}),
       requirement,
       coverage:sourceCoverage(run.sources,[...items.map(it=>it.location),...o.grounds,...sourcesForReads(check).map(s=>s.reference)]),
       outcome: o,
-      rule: ruleOf(workflow, check),
+      rule: claimRuleOf(check),
+            ...runtimeFactOf(check),
       judges: check.judges,
       sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',
@@ -935,7 +1048,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       const key = runRequirementOf(workflow.slots, entry.code);
       const template = key === null ? undefined : templates.find((t) => t.key === key);
       const ce = input.exact?.cross.get(pointer) ?? { resolutions: [], roles: [] as SourceRole[], bound: [], grounds: [...entry.grounds] };
-      const independence = template?.independent_of !== undefined ? independenceOf(origin, input.author) : null;
+      const independence = template?.independent_of !== undefined ? template.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):independenceOf(origin, input.author) : null;
       cross.push(
         judgmentClaim({
           ...(key !== null ? { requirement: key } : {}),
@@ -945,7 +1058,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           ...(entry.rank !== undefined ? { rank: entry.rank } : {}),
           ...(entry.nature === 'fact' ? { data: { declared_nature: 'fact' } } : {}),
           model: submission.model,
-          ...(independence !== null ? { independence: warrantIndependence(independence) } : {}),
+          ...(independence !== null ? { independence: warrantIndependence(independence,template?.independence_by_account===true) } : {}),
           marks: [...(entry.nature === 'fact' ? (['unverified_submission'] as const) : []), ...(template ? marksFor(template) : [])],
           sourceRole: strongestRole(ce.roles),
           coverage:sourceCoverage(run.sources,[...ce.grounds,...ce.bound]),
@@ -959,6 +1072,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   }
 
   const partitions = partitionItems(partitionInputs, items.map((it) => it.id));
+  const replacements=await replacedCriteria(ctx,criteria);
+  for(const row of Object.values(partitions).flat()){const changes=replacements.filter(change=>change.item===row.item).map(({item,...change})=>change);if(changes.length)row.replaced_criteria=changes;}
   const max = templates.reduce((m, t) => Math.max(m, repairRounds(t)), 0);
   const usedRounds = Math.min(max, templates.reduce((m, t) => Math.max(m, Math.min(input.roundsUsed.get(t.key) ?? 0, repairRounds(t))), 0));
   const handled = items.filter((it) => handlingOf(it.id) === 'handled').length;
@@ -982,5 +1097,5 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());
-  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess };
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission };
 }

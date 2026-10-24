@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {before,after,test} from 'node:test';
+import {makeWorld,startPostgres,BASE_CATALOG,DEFAULT_PRODUCERS,casesProducer,catalogXml,mindMap} from './test-support.ts';
+import {documentScope} from './scope.ts';
+import {CompositionView} from './composition.ts';
+let postgres:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('an unrecognized legacy source reason remains explicit rather than becoming missing input',async t=>{
+ const w=await makeWorld(postgres,{pack:{declaration:{producers:[...DEFAULT_PRODUCERS,casesProducer({optional:true})]}}});t.after(()=>w.close());
+ w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+ w.external.set('store:mindmap:good',{bytes:mindMap({id:'good'},[{id:'case',text:'[cmd: system show] synthetic case'}]),mediaType:'application/json'});
+ const name='Synthetic_10_6';const result=await w.knowledge.produceTree({product:w.product,build:{name,base:name,line:'10.6',family:'ACME',platform:null,built_at:null,released_at:null,root:null,sources:{tree:'site:tree:synthetic',cases:['store:mindmap:good','store:mindmap:missing']}}});assert.ok(result.ok,result.reason??'');
+ const production=(await w.knowledge.store.latestProduction('acme',name))!;
+ const rows=[{external:'store:mindmap:missing',producer:'cases',slot:'cases',reason_code:'future_source_reason',retry:true}];
+ const chunk=await w.kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify(rows)),mediaType:'application/json',origin:{generated:{generator:'synthetic@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+ await w.knowledge.store.putAction({...production.record.body,detail:{...production.record.body.detail,problem_chunks:{warnings:[],refused:[],skipped:[{record:chunk.digest,sha256:chunk.body.sha256,rows:1}]}}},[{key:'knowledge.produce.composition',value:result.composition!}]);
+ const body=(await w.knowledge.store.composition(result.composition!))!;
+ const scope=await documentScope({store:w.knowledge.store,records:w.kit,additionalScopeRoots:async()=>[]} as never,'acme',[new CompositionView(w.knowledge.store,result.composition!,body)],false);
+ const missing=scope.not_in_roots.find(row=>row.external==='store:mindmap:missing')!;
+ assert.notEqual(missing.reason,'missing_input');assert.match(missing.explanation!,/词表.*future_source_reason|future_source_reason.*词表/);assert.match(missing.next_action!,/重.*产|重新生产/);
+});

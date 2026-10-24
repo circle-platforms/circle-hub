@@ -38,6 +38,9 @@ export type Build = {
   number: string | null;
   /** Build time as listed, ISO 8601 without a zone (the page states none): 2024-06-26T12:06:23. */
   built: string | null;
+  /** A determined listing failure; never interpreted as a successful build with an unknown timestamp. */
+  failure?: string;
+  built_raw?: string;
   /** Release date, ISO 8601: 2024-06-27, or 2024-06 when the page gives only the month; null when not released. */
   released: string | null;
   /** The build this one is based on (NSAE-named builds of the older lines name their base APV build). */
@@ -204,10 +207,10 @@ export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]
 
 /**
  * A declared argument type (pack data, authored from the help texts of the tree): argument `position` (1-based) of the
- * command `command` (its words joined by spaces) is read as the tree type `type` (a key of ARGUMENT_TYPES, STRING for
- * example). `origin` says where the declaration comes from; a row without one is ignored.
+ * command `command` (its words joined by spaces) may declare a tree `type` (a key of ARGUMENT_TYPES), an explicit
+ * `address_role`, or both. `origin` says where the declaration comes from; a row without one is ignored.
  */
-export type ArgumentTypeDeclaration = { command: string; position: number; type: string; origin: string };
+export type ArgumentTypeDeclaration = { command: string; position: number; type?: string; address_role?:string; origin: string };
 
 export type CommandTreeParams = {
   /** Tree path the commands go under; default /commands. */

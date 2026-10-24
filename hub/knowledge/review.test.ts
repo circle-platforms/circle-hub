@@ -202,7 +202,8 @@ describe('documents the producer fails on (findings: callBatch blame, the empty 
     assert.deepEqual(result.skipped.map((s) => s.external), [ids[0]]);
     assert.match(result.skipped[0].reason, /超过了时间上限/);
     assert.equal(result.entries, 4 + 2);
-    assert.equal((await detail(w, result.action)).lists[0].skipped[0].retry, false);
+    assert.equal((await detail(w, result.action)).lists[0].skipped[0].retry, true);
+    assert.equal((await detail(w, result.action)).lists[0].skipped[0].reason_code, 'timeout');
   });
 });
 
@@ -305,7 +306,7 @@ describe('the memo key covers what the function receives (finding: build and bat
 });
 
 describe('recheck (finding: more than 50 documents skipped for good make every recheck produce again)', () => {
-  test('a recheck with more than 50 documents skipped for good finds nothing changed', { timeout: 120_000 }, async (t) => {
+  test('oversized documents are tried alone and an unchanged successful root can be reused', { timeout: 120_000 }, async (t) => {
     const tree = Buffer.byteLength(catalogXml(BASE_CATALOG), 'utf8');
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()], { pack: { functions: { 'plan.ts': STATIC_PLAN_SOURCE } }, knowledge: { limits: { maxBuildBytes: tree + 4000 } } });
     const ids = documents(w, 1, 110);
@@ -315,31 +316,29 @@ describe('recheck (finding: more than 50 documents skipped for good make every r
     const first = await w.knowledge.syncProduct(w.product, { by: w.admin, options: plan });
     const row = first.builds.find((b) => b.name === A);
     assert.equal(row?.outcome, 'produced', row?.reason);
-    assert.ok((row?.skipped ?? 0) > 50, `more than 50 documents skipped for good (${row?.skipped})`);
+    assert.equal(row?.skipped,0,'large documents are tried alone rather than omitted');
     const recheck = await w.knowledge.syncProduct(w.product, { by: w.admin, options: plan, recheck: true });
     const again = recheck.builds.find((b) => b.name === A);
     assert.equal(again?.outcome, 'skipped', again?.reason);
     assert.match(again?.reason ?? '', /重读后来源摘要没有变/);
-    assert.equal(row?.skipped, 52, 'only the big documents, each over the cap alone');
+    assert.equal(row?.skipped, 0, 'the batching budget does not exclude individual documents');
   });
 });
 
 describe('index keys from data values (finding: __proto__)', () => {
-  test('__proto__ as a value is left out with a note; the other keys, constructor among them, are served', async (t) => {
+  test('a prototype-reserved index key refuses the whole page and can be narrowed explicitly', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const modules = ['__proto__', 'M1', 'constructor', 'toString'];
     const ids = documents(w, 1, 4, (i) => modules[i - 1]);
     const result = await w.knowledge.produceTree({ product: w.product, build: build(A, ids) });
     assert.equal(result.ok, true, result.reason ?? '');
     const views = reader(w);
-    const index = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module`)).value);
-    assert.deepEqual(Object.keys(index.keys).sort(), ['M1', 'constructor', 'toString']);
-    assert.equal(index.total_keys, 4);
-    assert.equal(index.truncated, true);
-    assert.ok(index.notes.some((n) => /取值 __proto__ 不能作为这个视图的键/.test(n)), index.notes.join('\n'));
-    const only = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module&only=__proto__`)).value);
-    assert.deepEqual(only.keys, {});
-    assert.ok(only.notes.some((n) => /带它的 2 个条目没有按它列出/.test(n)), only.notes.join('\n'));
+    const rejected=await views.read(`knowledge:index:acme:${A}?kind=case&key=module`);
+    assert.equal(rejected.ok,false);if(!rejected.ok)assert.match(rejected.reason,/__proto__.*only/);
+    const index=IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=module&only=M1,constructor,toString`)).value);
+    assert.deepEqual(Object.keys(index.keys).sort(),['M1','constructor','toString']);assert.equal(index.truncated,false);
+    const only=await views.read(`knowledge:index:acme:${A}?kind=case&key=module&only=__proto__`);
+    assert.equal(only.ok,false);
     const facets = FacetView.parse((await views.json(`knowledge:facets:acme:${A}?kind=case&by=module`)).value);
     assert.equal(facets.rows.find((r) => r.values.module === '__proto__')?.count, 2, 'a value, not a key, in a facet row');
   });
@@ -633,13 +632,9 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     const w = await world(t, [DEFAULT_PRODUCERS[0], extraProducer('titles', { entries })], { knowledge: { limits: { maxViewBytes: 64 * 1024 + 200 * 1024, facetCombinations: 100 } } });
     const produced = await w.knowledge.produceTree({ product: w.product, build: build(A, undefined) });
     assert.equal(produced.ok, true, produced.reason ?? '');
-    const { value, bytes } = await reader(w).json(`knowledge:facets:acme:${A}?kind=case&by=title`);
-    const view = FacetView.parse(value);
-    assert.ok(bytes <= 64 * 1024 + 200 * 1024, `${bytes} bytes`);
-    assert.equal(view.truncated, true);
-    assert.equal(view.total, 120);
-    assert.ok(view.rows.length > 10 && view.rows.length < 100, String(view.rows.length));
-    assert.ok(view.notes.some((n) => /超过 100 种以后出现的新组合没有收集：20 个条目/.test(n)), view.notes.join('\n'));
+    const rejected=await reader(w).read(`knowledge:facets:acme:${A}?kind=case&by=title`);
+    assert.equal(rejected.ok,false);
+    if(!rejected.ok)assert.match(rejected.reason,/组合超过可计算上限.*减少 by/);
   });
 
   test('an index whose listed entries were not held during the scan reads them again and gives the same entries', async (t) => {
@@ -661,7 +656,7 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     assert.deepEqual(cut.entries[digest], all.entries[digest]);
   });
 });
-test('the view budget also charges credential-bearing index keys once and keeps a deterministic prefix', async t => {
+test('a complete accepted scan covers credential-bearing index keys and all entries beyond the old display cap', async t => {
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:5})]);
   const ids:string[]=[];
   for(let d=0;d<5;d++) {
@@ -679,7 +674,6 @@ test('the view budget also charges credential-bearing index keys once and keeps 
   const expected:string[]=[],keys=new Set<string>();let hits=0;
   for(const entry of entries) {
     const key=String(entry.data?.module),cost=2+(keys.has(key)?0:1);
-    if(hits+cost>100)break;
     hits+=cost;keys.add(key);expected.push(entry.entry);
   }
   const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);assert.ok(result.ok);
@@ -688,13 +682,14 @@ test('the view budget also charges credential-bearing index keys once and keeps 
   const bytes=await w.kit.artifacts.source(w.user,artifact.body.sha256);assert.ok(bytes?.bytes);
   const value=IndexView.parse(JSON.parse(Buffer.from(bytes.bytes).toString()));
   assert.deepEqual(Object.keys(value.entries).sort(),expected);
-  assert.ok(value.notes.some(n=>n.includes(`${200-expected.length} 个条目因整份扫描的命中上限没有留下`)));
+  assert.equal(expected.length,200);assert.equal(hits,405);assert.equal(value.truncated,false);
+  assert.ok(!value.notes.some(n=>n.includes('命中上限没有留下')));
 });
 
 // Inject two single-hit undercounts only into the public per-part estimate. The real private ingest
 // scanner and coverage assessment still run, so this exercises an actual truncated
 // stored answer and the single safe retry, rather than fabricating an ingest receipt.
-test('a truncated whole-answer scan retries once without hit entries and distinguishes fallback omissions', async t => {
+test('the private whole-answer scan verifies covered content beyond the old cap despite a public estimate undercount', async t => {
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]);
   const ids:string[]=[];
   for (let d=0;d<2;d++) {
@@ -731,17 +726,12 @@ test('a truncated whole-answer scan retries once without hit entries and disting
   const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);
   assert.ok(result.ok,result.ok ? '' : result.reason);
   assert.equal(undercounted,2);
-  assert.equal(answers.length,2,'one initial ingest and exactly one fallback');
-  assert.equal(answers[0].body.scan.truncated,true);
-  assert.equal(answers[0].body.read_tier,'retain_only');
-  assert.equal(answers[1].body.scan.truncated,false);
-  assert.equal(answers[1].body.read_tier,'model_readable');
-  assert.equal(result.artifacts[0].artifact.digest,answers[1].digest);
-  const source=await w.kit.artifacts.source(w.user,answers[1].body.sha256); assert.ok(source?.bytes);
+  assert.equal(answers.length,1,'a complete scan below the maintenance bound needs no omission fallback');
+  assert.equal(answers[0].body.scan.truncated,false);
+  assert.equal(answers[0].body.scan.findings.length,104,'the private scanner counts every hit despite the estimate undercount');
+  assert.equal(answers[0].body.read_tier,'model_readable');
+  const source=await w.kit.artifacts.source(w.user,answers[0].body.sha256);assert.ok(source?.bytes);
   const view=IndexView.parse(JSON.parse(Buffer.from(source.bytes).toString()));
-  assert.deepEqual(view.entries,{}); assert.deepEqual(view.keys,{});
-  assert.equal(view.truncated,true);
-  assert.ok(view.notes.some(note=>note.startsWith('有 1 个条目因整份扫描的命中上限没有留下')));
-  assert.ok(view.notes.some(note=>note==='有 51 个条目原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉'));
-  assert.ok(!view.notes.some(note=>/52 个条目因整份扫描/.test(note)));
+  assert.equal(Object.keys(view.entries).length,52);assert.equal(view.truncated,false);
+  assert.ok(!view.notes.some(note=>note.includes('截断')||note.includes('回退')));
 });

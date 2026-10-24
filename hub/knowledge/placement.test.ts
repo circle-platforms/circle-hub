@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 // Placement by the typed-judgment model (K04) with the scripted judge: a high probability descends level by level, choosing
 // none (abstaining) or a probability below the calibrated threshold stops at the parent, an uncalibrated chain places nothing
 // below the parent and keeps the answer as a flagged candidate, every judgment is recorded and reused for unchanged input,
@@ -530,11 +531,11 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
     const report = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
     assert.equal(report.counts.produced, 1);
     const buildReport = report.builds[0];
-    assert.match(buildReport.reason, /1 个条目未归位，留在根下/);
+    assert.ok(buildReport.reason.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 1 个，留在根下'));
     assert.doesNotMatch(buildReport.reason, /判断服务|模型归类/);
     assert.deepEqual(buildReport.placement_skipped, { defects: 1 });
     const formatted = formatSyncReport(report);
-    assert.match(formatted, /1 个条目未归位，留在根下/);
+    assert.ok(formatted.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 1 个，留在根下'));
     assert.doesNotMatch(formatted, /判断服务|模型归类/);
   });
 });

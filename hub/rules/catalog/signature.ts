@@ -26,12 +26,14 @@ export interface SignatureMatch {
   /** 1-based position of the overload in the entry. */
   overload: number;
   cost: number;
+  unchecked:Array<{param:string;position:number;constraint:NonNullable<CatalogParam['unchecked_constraints']>[number]}>;
   violations: ArgumentViolation[];
   bindings: ArgumentBinding[];
 }
 
 export type SignatureResult =
   | { kind: 'match'; best: SignatureMatch }
+  | { kind: 'unchecked'; best: SignatureMatch }
   | { kind: 'violations'; best: SignatureMatch }
   | { kind: 'arity'; arities: { min: number; max: number }[] };
 
@@ -59,12 +61,12 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
   };
   const cost = (i: number, j: number): number => {
     if (j === n) return i === m ? 0 : Number.POSITIVE_INFINITY;
-    if (i === m) return optionalFrom[j] ? 0 : Number.POSITIVE_INFINITY;
+    if (i === m) return optionalFrom[j] ? params.slice(j).filter(param=>param.default!==undefined&&param.unchecked_constraints?.length).length/(n+1) : Number.POSITIVE_INFINITY;
     const key = i * (n + 1) + j;
     const known = memo.get(key);
     if (known !== undefined) return known;
     const c = check(i, j);
-    const own = c.ok ? 0 : c.code === 'core.catalog.param_out_of_range' ? 1 : 2;
+    const own = c.ok ? (params[j].unchecked_constraints?.length?1/(n+1):0) : c.code === 'core.catalog.param_out_of_range' ? 1 : 2;
     let best = own + cost(i + 1, j + 1);
     let choice: 'take' | 'skip' = 'take';
     if (params[j].optional === true) {
@@ -82,6 +84,7 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
   if (!Number.isFinite(total)) return undefined;
   const bindings: ArgumentBinding[] = [];
   const violations: ArgumentViolation[] = [];
+  const unchecked:SignatureMatch['unchecked']=[];
   let i = 0;
   for (let j = 0; j < n; j++) {
     const p = params[j];
@@ -89,12 +92,14 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
       bindings.push({ param: p.name, value: args[i] });
       const c = check(i, j);
       if (!c.ok) violations.push({ param: p.name, position: i + 1, value: args[i], code: c.code, expected: c.expected });
+      for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:i+1,constraint});
       i += 1;
     } else {
+      if(p.default!==undefined)for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:j+1,constraint});
       bindings.push({ param: p.name, omitted: true, ...(p.default !== undefined ? { default: p.default } : {}) });
     }
   }
-  return { signature, overload, cost: total, violations, bindings };
+  return { signature, overload, cost: total, violations, bindings, unchecked };
 }
 
 export function matchSignatures(entry: CatalogEntry, args: readonly string[], fold: boolean): SignatureResult {
@@ -107,5 +112,5 @@ export function matchSignatures(entry: CatalogEntry, args: readonly string[], fo
   if (!best) {
     return { kind: 'arity', arities: signatures.map((s) => ({ min: s.params.filter((p) => p.optional !== true).length, max: s.params.length })) };
   }
-  return best.violations.length === 0 ? { kind: 'match', best } : { kind: 'violations', best };
+  return best.violations.length>0?{kind:'violations',best}:best.unchecked.length>0?{kind:'unchecked',best}:{kind:'match',best};
 }
