@@ -21,7 +21,7 @@ import { hasCommandTree } from './builds.ts';
 import { CASE_TREE_ID } from './cases-rules.ts';
 import { caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, uncoveredDocuments, unversionedCaseSources, type CaseTree } from './cases-sync.ts';
 import { parseListing } from './listing.ts';
-import { compareLines, lineKey } from './naming.ts';
+import { compareLines, deviceSpelling, lineKey } from './naming.ts';
 import { indexBuilds, resolveBase } from './select-build.ts';
 import { INDEX_ID, SOURCE_ROLES, fileId, listingId } from './sources.ts';
 import { planSync } from './sync-plan.ts';
@@ -242,6 +242,13 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         }
       }
       pushBuild(build, base, sources);
+      // The device display spelling of a build with its own tree is its verified alias (the pack's naming declaration,
+      // C07 R[9]: the one replacement _→.). Listed name-only with the build as its base, so a device version probe that
+      // compares the extracted value against the locked build and its verified aliases recognises the spelling the
+      // device displays. Nothing is read for it: it is not on any page and carries no sources of its own.
+      if (base === build.name && deviceSpelling(build.name) !== build.name) {
+        pushBuild({ ...build, name: deviceSpelling(build.name), basedOn: build.name }, build.name, {});
+      }
     }
     for (const build of namesOnly) pushBuild(build, namesOnlyBase.get(build.name) ?? build.name, {});
     builds.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));

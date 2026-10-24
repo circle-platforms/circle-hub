@@ -74,6 +74,16 @@ Index → hub pages → listing pages, depth 2, tolerant of dead links:
 3. Read every page in `pages`: `parseListing({ model, context: { platform } })`.
 4. `syncBuilds({ builds, existingRoots })` → `produce`, `aliases`, `skipped`, `unreleased`.
 
+## The device display spelling (C07 R[9] identity rule of this pack)
+
+A device's version display shows a build with every `_` of the build-site spelling replaced by `.` (synthetic example:
+`Beta_APV-ZX-U_10_8_0_901` displays as `Beta.APV-ZX-U.10.8.0.901`; the vendor prefix is removed by the executor's
+extraction pattern, not here). `naming.ts deviceSpelling` is that one declared replacement and nothing else — no case
+folding, no other separator handling. The sync lists the spelling of every build with its own tree as its verified alias:
+name-only, the build as its base, no sources of its own; the provenance is this naming declaration alone. A device
+version probe then recognises the extracted value by exact comparison against the locked build and its verified aliases;
+the Hub core never normalises, folds or strips separators. The build choice never selects the alias over the build.
+
 ## Decisions
 
 Builds and lines

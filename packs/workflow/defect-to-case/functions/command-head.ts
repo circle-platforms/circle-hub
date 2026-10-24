@@ -17,3 +17,20 @@ export function commandHeadOf(line: string, catalogEntries: CatalogEntry[]): str
   }
   return best?.head ?? null;
 }
+
+/** CommandIdentity path of the longest catalog head: the tree reference path, or `/commands/` plus the head words. */
+export function commandPathOf(line: string, catalog: ReadonlyArray<{ words?: unknown; reference?: unknown }>): string | null {
+  const words = line.split(' ').filter(word => word !== '');
+  if (words.length === 0) return null;
+  let best: { path: string; length: number } | null = null;
+  for (const entry of catalog) {
+    if (!Array.isArray(entry.words) || entry.words.length === 0 || entry.words.length > words.length) continue;
+    if (!entry.words.every((word, index) => typeof word === 'string' && word === words[index])) continue;
+    const reference = typeof entry.reference === 'string' ? entry.reference : '';
+    const rooted = reference.startsWith('tree:') && /^[0-9a-f]{64}\//.test(reference.slice(5));
+    const path = rooted ? reference.slice(69).split('@')[0] : '/commands/' + entry.words.join('/');
+    if (!path.startsWith('/') || path.length > 512) continue;
+    if (best === null || entry.words.length > best.length) best = { path, length: entry.words.length };
+  }
+  return best?.path ?? null;
+}

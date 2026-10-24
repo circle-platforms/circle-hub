@@ -86,6 +86,7 @@ test('the CLI --check includes every pack snapshot in its drift verdict', t => {
   cpSync(join(repo, 'contracts'), join(root, 'contracts'), { recursive: true });
   mkdirSync(join(root, 'tools'));
   copyFileSync(join(repo, 'tools/gen-contracts.ts'), join(root, 'tools/gen-contracts.ts'));
+  copyFileSync(join(repo, 'tools/slot-schema.ts'), join(root, 'tools/slot-schema.ts'));
   symlinkSync(join(repo, 'node_modules'), join(root, 'node_modules'), 'dir');
   copyResourceSource(root);
   const run = (...args: string[]) => spawnSync(process.execPath, [join(root, 'tools/gen-contracts.ts'), ...args], { encoding: 'utf8', cwd: root });

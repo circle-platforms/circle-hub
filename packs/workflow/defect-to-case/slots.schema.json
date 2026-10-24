@@ -32,7 +32,7 @@
                 },
                 "identity": {
                   "type": "object",
-                  "description": "完整 CommandIdentity；缺失时 not_duplicate 未核对"
+                  "description": "不要填写。Hub 从命令目录解析 CommandIdentity，并用它的完整路径作去重读取键"
                 },
                 "note": {
                   "type": "string"
@@ -68,13 +68,13 @@
                     },
                     "reference": {
                       "type": "string",
-                      "description": "引用"
+                      "description": "resolve_reference 给出的 src:摘要/解析器@主版本/片段路径。不要另写 digest、sha256、span 或 byte_span；Hub 据此推出 ExpectedQuoteIdentity"
                     }
                   }
                 },
                 "identity": {
                   "type": "object",
-                  "description": "ExpectedQuoteIdentity，原件摘要、parser/路径及原始 byte span"
+                  "description": "不要填写。Hub 从 quote.reference 和原件字节推出 ExpectedQuoteIdentity"
                 },
                 "after": {
                   "type": "integer",

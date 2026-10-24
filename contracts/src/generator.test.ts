@@ -67,6 +67,7 @@ describe('on a temporary copy', () => {
     root = mkdtempSync(join(tmpdir(), 'hub-contracts-'));
     mkdirSync(join(root, 'tools'));
     cpSync(join(repo, 'tools', 'gen-contracts.ts'), join(root, 'tools', 'gen-contracts.ts'));
+    cpSync(join(repo, 'tools', 'slot-schema.ts'), join(root, 'tools', 'slot-schema.ts'));
     writeFileSync(join(root, 'package.json'), '{ "type": "module" }\n');
     symlinkSync(join(repo, 'node_modules'), join(root, 'node_modules'), 'dir');
     // The generator also reads the declared resource-tag table and writes package-local vocabulary snapshots and copied

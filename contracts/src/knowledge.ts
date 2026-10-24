@@ -1,3 +1,4 @@
+import {CompositionBasisSchema} from '../generated/vocabulary.ts';
 import {ApplicabilityFieldSchema} from '../generated/vocabulary.ts';
 import { VariableUse } from './variables.ts';
 // Shapes owned by the knowledge work package (K01-K05): the records of the content-addressed knowledge tree, its builds,
@@ -33,9 +34,8 @@ export function levelOfHeight(height: number): NodeLevel {
  * build site of a released build), a device echo, or a declaration (a source the product pack maps to the version, or a
  * build that has no release record). Named by the model, no vocabulary axis yet (README, Needs).
  */
-export const COMPOSITION_BASES = ['release_record', 'device_echo', 'declared'] as const;
-export type CompositionBasis = (typeof COMPOSITION_BASES)[number];
-export const CompositionBasisSchema = z.enum(COMPOSITION_BASES);
+export {COMPOSITION_BASIS as COMPOSITION_BASES,CompositionBasisSchema} from '../generated/vocabulary.ts';
+export type {CompositionBasis} from '../generated/vocabulary.ts';
 
 const SrcReferenceUri = referenceUriOf('src');
 const sortedUnique = (values: readonly string[]): boolean => values.every((v, i) => i === 0 || values[i - 1] < v);

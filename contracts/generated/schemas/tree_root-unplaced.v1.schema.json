@@ -219,6 +219,7 @@
             "enum": [
               "release_record",
               "device_echo",
+              "source_structure",
               "declared"
             ]
           },

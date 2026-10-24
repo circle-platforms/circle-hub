@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { pathOf, selectorOf } from '../../../../hub/refs/api.ts';
-import { compareLines, lineKey, parseBuildName, parseHubName, parsePageName, sameLine } from './naming.ts';
+import { compareLines, deviceSpelling, lineKey, parseBuildName, parseHubName, parsePageName, sameLine } from './naming.ts';
 import { canonicalJson, compareDotted, globMatch, pathSegments, pathText, selectorText, utf8Offsets } from './util.ts';
 import { randomText, seeded } from '../testing/test-support.ts';
 
@@ -174,5 +174,21 @@ describe('codecs and glob', () => {
       assert.ok(globMatch('*', text));
       assert.equal(globMatch(text.replaceAll('*', '').replaceAll('?', ''), text.replaceAll('*', '').replaceAll('?', '')), true);
     }
+  });
+});
+
+describe('the device display spelling (C07 R[9] identity rule of this pack)', () => {
+  it('is the one declared replacement of every _ with a dot, and parses to the same build', () => {
+    assert.equal(deviceSpelling('Beta_APV-ZX-U_10_8_0_901'), 'Beta.APV-ZX-U.10.8.0.901');
+    assert.deepEqual(parseBuildName(deviceSpelling('Beta_APV-ZX-U_10_8_0_901')), parseBuildName('Beta_APV-ZX-U_10_8_0_901'));
+    assert.equal(deviceSpelling('Rel_APV_10_8'), 'Rel.APV.10.8');
+  });
+  it('does nothing else: case is kept, no separator is invented, no prefix is stripped', () => {
+    assert.equal(deviceSpelling('Beta_apv-ZX-U_10_8_0_901'), 'Beta.apv-ZX-U.10.8.0.901');
+    assert.equal(deviceSpelling('Rel-APV_10_8'), 'Rel-APV.10.8');
+    assert.equal(deviceSpelling('Vendor Beta.APV-ZX-U.10.8.0.901'), 'Vendor Beta.APV-ZX-U.10.8.0.901');
+  });
+  it('is never equal to a build-site spelling that has a separator, so the alias never shadows the build', () => {
+    for (const name of ['Beta_APV-ZX-U_10_8_0_901', 'Rel_APV_10_8', 'Rel_NSAE_10_8']) assert.notEqual(deviceSpelling(name), name);
   });
 });

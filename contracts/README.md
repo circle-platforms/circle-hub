@@ -337,3 +337,5 @@ Verification: `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.t
 R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.native_type 保存原始类型名、声明引用和 grammar；它是来源证据，不进入语法影响比较。catalog@1 的 strict_signatures 让成员主张必须完整匹配执行签名，目录菜单及缺参数命令头不算执行成员。
 
 适用条件主张沿 document_output_kind.applicability_claim 与 ContributionInput 的受限载荷进入现有回注运行；admission 由 Hub 填写，客户端不得自报。ProducerInput.known_builds 与 tree_root 的构建记录/条件上下文冻结同一名册，生产器缓存键包含该输入。受控 ProducerOutput.incomplete 保留缺失事实与下一步，并产生具名、有期限的现有澄清请求。knowledge-contribution/slots.schema.json 由 gen-contracts 从单一 ContributionInput 与生成枚举产生，不手改。
+
+knowledge-structure@1（方向 2）：模型定义 fed-case/fed-defect/fed-spec/fed-build/fed-note、version-binding、usage、feeding-offset、retraction 的封闭形状，生成于 shared-interfaces.ts，由 src/feeding.ts 注册。来源、运行目标、采集时间、派生命令解析和回注均不偷偷加入对象身份。具体身份投影见模型 knowledgeStructure.identity。source_structure 是生成的组成依据；binding_status/binding_basis 与 covers 关系也只从模型生成。模型判版本禁止，运行目标只形成 usage；来源结构和人的直接声明保留各自依据，冲突不覆盖。该步只建立合约，不表示已实现喂入存储或真实资源接入。

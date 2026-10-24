@@ -85,3 +85,42 @@ test('dispatch recomputation keeps an unruled static judgment unmet for a fact-o
   assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='dynamic')!.terminal,'pass');
   assert.equal(requirementOf(observed).status,'unsatisfied');
 });
+
+test('a meeting intermittent carries no attribution and a missing one is unattributed with a hypothesis set', {skip}, async () => {
+  const template = h.review.requirements.find(row => row.key === 'catalog')!;
+  template.layers = ['static', 'dynamic']; template.observation = 'dispatch@1';
+  const map = await h.upload(h.alice, toyMap(standardDocument()));
+  const started = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: map } } }, h.call())).run!;
+  const submitted = await h.service.submitResult(h.alice, { run: started.run, model: 'synthetic', items: started.items.map(row => ({ item: row.id, handling: 'handled', slots: { findings: [] } })), cross_item: [{ nature: 'judgment', statement: '合成等级', grounds: [], code: 'draft_level', rank: 'P4' }] }, h.call('synthetic-rounds'));
+  assert.equal(submitted.acceptance, 'accepted');
+  const result = submitted.result!;
+  const item = started.items[0].id;
+  const record = (await h.service.getRun(h.alice, started.run))!.run;
+  const frozen = record.requirements.find(row => row.key === 'catalog')!;
+  frozen.repetition = { count: 3, aggregation: 'first_pass', basis: 'explicit', declared: { count: true, aggregation: true, k: false } };
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const project = async (rounds: Array<{ round: number; terminal: string; meets: boolean | null; early_stop?: boolean }>, digest: string) => {
+    const artifact = await h.kit.artifacts.ingest({ bytes: canonicalBytes({ job: digest, sha256: 'e'.repeat(64), rows: [{ item, dynamic_terminal: rounds.find(round => round.terminal === 'pass' || round.terminal === 'fail')?.terminal ?? 'not_run', accepted_as_fact: false, qualifier: { nature: 'judgment', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] }, missing_facts: [] }], rounds }), mediaType: 'application/json', origin: { generated: { generator: 'dispatch@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: false } });
+    const job: RunJob = { job: digest, verification_run: started.run, plan_run: started.run, verification_item: item, items: [item], sha256: 'e'.repeat(64), status: { job: digest, phase: 'complete', outcome: 'effective', frozen: false, events: 4, result: `src:${artifact.body.sha256}` } };
+    return job;
+  };
+  const early = structuredClone(result);
+  await applyDispatchResults(ctx, record, early, [await project([{ round: 1, terminal: 'fail', meets: false }, { round: 2, terminal: 'pass', meets: true }, { round: 3, terminal: 'not_run', meets: null, early_stop: true }], 'a'.repeat(64))]);
+  const earlyLayer = Object.values(early.partitions).flat().find(row => row.item === item)!.requirements.find(row => row.requirement === 'catalog')!.layers.find(layer => layer.layer === 'dynamic')!;
+  assert.equal(earlyLayer.terminal, 'pass');
+  assert.equal(earlyLayer.attribution, undefined);
+  assert.match(earlyLayer.observation ?? '', /第 2 轮通过，按策略提前停，剩 1 轮未跑/);
+  assert.equal((await h.kit.store.find({ kind: 'claim', key: 'runs.hypothesis.item', value: `${started.run}:${item}:catalog`, limit: 1 })).items.length, 0);
+  frozen.repetition = { ...frozen.repetition, aggregation: 'all' };
+  const missed = structuredClone(result);
+  await applyDispatchResults(ctx, record, missed, [await project([{ round: 1, terminal: 'pass', meets: true }, { round: 2, terminal: 'fail', meets: false }, { round: 3, terminal: 'pass', meets: true }], 'b'.repeat(64))]);
+  const missedRequirement = Object.values(missed.partitions).flat().find(row => row.item === item)!.requirements.find(row => row.requirement === 'catalog')!;
+  const missedLayer = missedRequirement.layers.find(layer => layer.layer === 'dynamic')!;
+  assert.equal(missedLayer.terminal, 'fail');
+  assert.equal(missedLayer.attribution, 'unattributed');
+  assert.equal(missedLayer.intermittent, true);
+  assert.match(missedRequirement.claims.find(claim => claim.statement.text.startsWith('目标报告：'))?.statement.text ?? '', /目标报告：3 次里/);
+  const hypothesis = await h.kit.store.find({ kind: 'claim', key: 'runs.hypothesis.item', value: `${started.run}:${item}:catalog`, limit: 1 });
+  assert.equal(hypothesis.items.length, 1);
+  assert.deepEqual((hypothesis.items[0].body as { hypotheses: Array<{ statement: string }> }).hypotheses.map(entry => entry.statement), ['被测对象缺陷', '环境', '执行上下文']);
+});

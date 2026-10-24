@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "criterion-review",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "workflow",
   "title": "判据变更声明复核",
   "description": "非作者账号复核声明；不修改原件、不代替人判断",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "95aa3b84d9ce53a2a89ff89be870a4bd4cb54894b8f1f7d7896458f888fed7db",
-      "size": 1168
+      "sha256": "0691becdbe953b13ee19a2c84f4f9b9883a67b57bc6cb674ee1f56366b07ab87",
+      "size": 1642
     },
     {
       "path": "checks.json",

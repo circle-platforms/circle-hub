@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.15",
+  "version": "1.6.17",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "12fdc2885ce0ef2eafe5a83e0a27796f9f0f2f0da08dd012ad43cb551c568546",
-      "size": 10464
+      "sha256": "7efc304a78defa029b8828e7f58f2b389129bb6aaa4f401effb6a8305af1c12d",
+      "size": 9381
     },
     {
       "path": "checks.json",
-      "sha256": "f8d14b907092c62656622c8611b21812797380d57b63484fb8a17f6053533e62",
-      "size": 5263
+      "sha256": "4ee70aab06148b3371ffd43cd74fd7e6ba4abe9abc23b08370e39266ff735320",
+      "size": 5289
     },
     {
       "path": "examples/start-run.json",
@@ -38,13 +38,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "435aa0e1e1eacd95f88129e7d0c282d2b5bf4f456ccf5cb5cb306f098f8d8a95",
-      "size": 22124
+      "sha256": "99a437a5c2ef13c8aa2c1a56dcc0f5839473a5320596e06349d27c1121fc9627",
+      "size": 23277
     },
     {
       "path": "functions/command-head.ts",
-      "sha256": "5907dec4b5b0131d8f8a4fe7aafcb87f06f6159fb349da376a5e38845ce9a4b2",
-      "size": 1037
+      "sha256": "656421e495d8825fa8402465b2147679ef38a4e792ae3fa91b5506bb12f5cf45",
+      "size": 2174
     },
     {
       "path": "functions/compact-index.ts",
@@ -72,9 +72,14 @@
       "size": 8453
     },
     {
+      "path": "functions/quote-identity.ts",
+      "sha256": "752fc76f979cc14d0dc96a0a4bebe6998e2c8c5293dfb9643487bee6c6d09fe5",
+      "size": 8791
+    },
+    {
       "path": "functions/subjects.ts",
-      "sha256": "15d89de8012a0eb4931cb28033617474f4b22f0e5bf01c90e303b6921f9faa54",
-      "size": 6258
+      "sha256": "3699292679c23e70c15158d4b30466bf565455a383840789bb4c50140bd23c89",
+      "size": 6825
     },
     {
       "path": "functions/types.ts",
@@ -178,8 +183,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "30b7da21d4432a8e1c870bc6ef66f9af1f0c3b9003cd4d423f92debad8b562b8",
-      "size": 2823
+      "sha256": "260f5e2d07750f85727b2a16ad697f3a7ad87cad1b76afb618569cdcf809151b",
+      "size": 3035
     },
     {
       "path": "tables/case-structure-rules.json",
@@ -218,8 +223,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "d75597bf9f828704724a5c8516f17ea5c1e3fc2bd9897f906c611b2c23c613f3",
-      "size": 2298
+      "sha256": "1eb0ff71c27ebf9332723884d2e1b0d5325718e385c83ba355b8721bf70b368d",
+      "size": 1911
     }
   ]
 }

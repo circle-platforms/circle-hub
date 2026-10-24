@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "feeding-offset@1"
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "root": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "schema",
+    "run",
+    "root",
+    "offset"
+  ],
+  "additionalProperties": false,
+  "title": "feeding-offset@1",
+  "description": "Append-only layer sequence frozen with the run root. Replays read the same object horizon; later retractions still invalidate withdrawn evidence."
+}

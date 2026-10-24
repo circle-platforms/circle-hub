@@ -1,3 +1,4 @@
+import {feedingExamples} from './feeding-fixtures.ts';
 // Shared model-owned interfaces; only synthetic raw sources and identities.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -13,6 +14,7 @@ const command={tree_root:H,path:'/commands/synthetic/show',signature:src,paramet
 const producer={model_id:'synthetic-model-a',model_family_id:'synthetic-family-a'};
 const claim={item:'case-a',category_id:'synthetic_category',quote:{identity:quoteIdentity,text:'合成原文'},producer};
 const examples:Record<string,unknown[]>={
+ ...feedingExamples(),
  'source-span@1':[quoteIdentity.span],
  'expected-quote-identity@1':[quoteIdentity],
  'quote-evidence@1':[claim.quote],
