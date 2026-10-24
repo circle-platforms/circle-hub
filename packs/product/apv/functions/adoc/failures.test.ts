@@ -102,7 +102,7 @@ test('the engine refusal reads structured severities and the reader flag, never 
   // A structural severity refuses whatever its text says, and the reason is the same for other words.
   for (const text of ['unterminated listing block', 'synthetic words with no structural meaning', 'JavaScript heap out of memory']) {
     const reason = engineStructuralFailure({ messages: [{ severity: 'ERROR', text }] });
-    assert.ok(reason !== null && reason.startsWith('引擎按 severity ERROR 报告结构错误'), reason);
+    assert.ok(reason !== null && reason.startsWith('引擎按 severity ERROR 报告结构错误'), String(reason));
   }
   assert.equal(
     engineStructuralFailure({ messages: [{ severity: 'FATAL', text: 'a' }] })?.replace(/：.*/, ''),

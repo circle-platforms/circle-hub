@@ -1,7 +1,7 @@
 {
   "schema": "system@1",
   "title": "敏捷测试平台",
-  "description": "敏捷平台只读访问：配置根的子树、脑图及相似清单检索。所有配置根按读取预算读取，覆盖不足时明确披露；脑图和搜索共享聚合树，文档不在完整的配置范围内时直说。HTTP 200 信封 code=1000 成功；登录换令牌，明确过期仅登录一次，再失败即停。",
+  "description": "敏捷平台只读访问：配置根的子树、脑图及文档清单（关键词检索已退役：标题不打分、不选文档、不读正文，检索词只作披露）。所有配置根按读取预算读取，覆盖不足时明确披露；脑图和搜索共享聚合树，文档不在完整的配置范围内时直说。HTTP 200 信封 code=1000 成功；登录换令牌，明确过期仅登录一次，再失败即停。",
   "roles": [
     { "name": "agile-oauth", "description": "登录接口所在的地址（只用于登录，不读数据）" },
     { "name": "agile-api", "description": "平台接口所在的地址；请求头 Authorization 直接带令牌，不加前缀" }
@@ -106,7 +106,7 @@
     {
       "name": "search",
       "external": "agile:search",
-      "description": "标题里检索词最多的测试清单（最多五份，前三份带提纲），不含检索词里 ! 排除的文档，只作线索",
+      "description": "列出配置的根里的文档（编号、标题、上级目录、根），不含 ! 后精确编号排除的文档；关键词检索已退役（所有者裁定 U19/U20，2026-10-24）：标题不打分、不选文档、不读正文，检索词只作披露；只作线索",
       "plan": { "module": "functions/agile.ts", "export": "searchPlan" },
       "project": { "module": "functions/agile.ts", "export": "searchProject" },
       "max_requests": 4
