@@ -353,7 +353,7 @@ describe('ValidationResult', () => {
   test('the partitions and the layer union cover exactly their vocabularies', () => {
     assert.deepEqual(Object.keys(Partitions.shape), [...PARTITION]);
     assert.deepEqual(LayerResult.options.map((o) => o.shape.layer.value), [...LAYER]);
-    assert.deepEqual(Object.keys(PartitionCounts.shape), [...PARTITION, 'unknown']);
+    assert.deepEqual(Object.keys(PartitionCounts.shape), [...PARTITION, 'unknown', 'pending_unknown']);
   });
   test('wrong values are rejected', () => {
     rejects(ValidationResult, { ...accepted, schema: 'validation@2' }, 'schema');
@@ -391,7 +391,7 @@ describe('ValidationResult', () => {
   test('layer terminals carry what V03 and V04 R[1] say', () => {
     const at = ['partitions', 'delivered', 0, 'requirements', 0, 'layers', 0];
     rejectsAt(ValidationResult, withLayer({ layer: 'static', terminal: 'violation' }), [...at, 'code'], 'violation without code');
-    rejectsAt(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'fail' }), [...at, 'code'], 'fail without code');
+    roundTrips(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'fail' }));
     rejectsAt(ValidationResult, withLayer({ layer: 'static', terminal: 'pass', attribution: 'author_input' }, { status: 'satisfied' }), [...at, 'attribution'], 'attribution on pass');
     rejectsAt(ValidationResult, withLayer({ layer: 'static', terminal: 'judgment', attribution: 'author_input' }), [...at, 'attribution'], 'attribution on a judgment');
     rejectsAt(ValidationResult, withLayer({ layer: 'dynamic', terminal: 'pass', attribution: 'transient' }, { status: 'satisfied' }), [...at, 'attribution'], 'attribution on a dynamic pass');

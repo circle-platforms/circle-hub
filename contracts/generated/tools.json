@@ -1462,6 +1462,12 @@
                   "minimum": 0,
                   "maximum": 9007199254740991,
                   "description": "items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])"
+                },
+                "pending_unknown": {
+                  "description": "Additional count, not a partition: items whose layers retain unresolved unknown gaps beside their primary terminal",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -3407,7 +3413,13 @@
             "submission": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$",
-              "description": "digest of the submission as received, the idempotency key together with the run"
+              "description": "Digest of the received user submission; with system_input, digest of that action detail.input instead; legacy production uses the run record digest"
+            },
+            "system_input": {
+              "description": "System-delivery input action; detail.input contains the exact canonical input whose digest is submission; never a user receipt",
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
             },
             "acceptance": {
               "type": "string",
@@ -3896,7 +3908,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -4334,7 +4346,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -5207,7 +5219,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -5645,7 +5657,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -6531,7 +6543,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -6969,7 +6981,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -7855,7 +7867,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -8293,7 +8305,7 @@
                                         }
                                       },
                                       "code": {
-                                        "description": "violation code; required when the terminal is violation or fail",
+                                        "description": "violation code; required for a static violation, optional for observed dynamic failure",
                                         "type": "string",
                                         "minLength": 1
                                       },
@@ -9217,6 +9229,12 @@
               "minimum": 0,
               "maximum": 9007199254740991,
               "description": "items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])"
+            },
+            "pending_unknown": {
+              "description": "Additional count, not a partition: items whose layers retain unresolved unknown gaps beside their primary terminal",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             }
           },
           "required": [

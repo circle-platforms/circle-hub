@@ -67,7 +67,7 @@ describe('scenario 19: concurrency with parallel submissions', () => {
     }
   });
 
-  test('two parallel submit_result calls for the same (run, digest) are idempotent and yield a single stored record', async () => {
+  test('parallel transitional repeats keep one original and append serialized current results', async () => {
     // Start a new run
     const run = await startReview(client, {
       product: bed.product.names[0],
@@ -101,9 +101,13 @@ describe('scenario 19: concurrency with parallel submissions', () => {
     assert.equal(result1.partitions.delivered.length, run.items.length);
     assert.equal(result2.partitions.delivered.length, run.items.length);
 
-    // Exactly ONE validation result record is stored in the database
+    // Each unresolved validation is current; only the original and repair charge are deduplicated.
     const stored = await bed.hub.records.store.find({ key: 'runs.result.run', value: run.run });
-    assert.equal(stored.items.length, 1);
+    assert.ok(ans1.out.counts!.unknown>0&&ans2.out.counts!.unknown>0);
+    assert.equal(stored.items.length,2);
+    assert.equal((await bed.hub.records.store.find({key:'runs.submission.run',value:run.run})).items.length,1);
+    const third=await client.call('submit_result',submission);
+    assert.equal(resultOf(third).rounds.used,Math.max(result1.rounds.used,result2.rounds.used));
 
     // Both calls are recorded in the call log
     const logPage = await bed.hub.records.callLog.query(bed.hub.admin.principal, { runId: run.run });

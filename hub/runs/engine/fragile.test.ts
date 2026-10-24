@@ -1,3 +1,4 @@
+import { assertLayers } from './testing/assertions.ts';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { after, before, test } from 'node:test';
@@ -64,9 +65,9 @@ test('a check function that throws is unknown (check error, V01 R[6]): unchecked
     for (const id of IDS) {
       const { partition, item } = itemOf(result, id);
       const fragile = item.requirements.find((r) => r.requirement === 'fragile')!;
-      assert.deepEqual(terminalFields(fragile.layers), [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], id);
-      assert.deepEqual(fragile.layers[0].exit?.audience, { user: h.alice.id });
-      assert.equal(fragile.layers[0].exit?.request_kind, 'repair');
+      assertLayers(fragile.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], id);
+      assert.deepEqual(fragile.layers[0].exit?.audience,{user:h.review.owner});
+      assert.equal(fragile.layers[0].exit?.request_kind,'repair');
       assert.equal(fragile.status, 'pending');
       // an unknown is delivered as it is (V05 R[3]: only incomplete layers make an item incomplete)
       assert.equal(partition, 'delivered');
@@ -88,7 +89,7 @@ test('a check function that never returns is ended at its time limit: unknown (t
   const { h, result, counts } = await reviewed({ review: { fragile: 'spin' }, sandboxLimits: { timeoutMs: 1500 } });
   try {
     const fragile = itemOf(result, ITEM.c1).item.requirements.find((r) => r.requirement === 'fragile')!;
-    assert.deepEqual(terminalFields(fragile.layers), [{ layer: 'static', terminal: 'unchecked', reason: 'timeout', attribution: 'transient' }]);
+    assertLayers(fragile.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'timeout', attribution: 'transient' }]);
     assert.equal(fragile.claims[0].statement.data?.sandbox, 'SANDBOX_TIMEOUT');
     assert.equal(counts.unknown, 4);
     assert.equal(counts.incomplete, 0);
@@ -101,7 +102,7 @@ test('a declared dynamic layer is not run (no check installed) and keeps the req
   const { h, result } = await reviewed({ review: { dynamic: true } });
   try {
     const catalog = itemOf(result, ITEM.c1).item.requirements.find((r) => r.requirement === 'catalog')!;
-    assert.deepEqual(terminalFields(catalog.layers), [
+    assertLayers(catalog.layers, [
       { layer: 'static', terminal: 'pass' },
       { layer: 'dynamic', terminal: 'not_run', reason: 'no_check', attribution: 'unattributed' },
     ]);
@@ -134,16 +135,16 @@ test('a skipped or uncovered item is incomplete at every layer its requirements 
     );
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
     const layersOf = (id: string) => itemOf(answer.result!, id).item.requirements.find((r) => r.requirement === 'findings')!.layers;
-    assert.deepEqual(terminalFields(layersOf(ITEM.c3)), [
+    assertLayers(layersOf(ITEM.c3), [
       { layer: 'static', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed' },
       { layer: 'dynamic', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed' },
     ]);
-    assert.deepEqual(terminalFields(layersOf(ITEM.c4)), [
+    assertLayers(layersOf(ITEM.c4), [
       { layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' },
       { layer: 'dynamic', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' },
     ]);
     // a handled item: the dynamic layer has no check installed and is not run
-    assert.deepEqual(terminalFields(layersOf(ITEM.c1))[1], { layer: 'dynamic', terminal: 'not_run', reason: 'no_check', attribution: 'unattributed' });
+    assertLayers(layersOf(ITEM.c1)[1], { layer: 'dynamic', terminal: 'not_run', reason: 'no_check', attribution: 'unattributed' });
   } finally {
     await h.close();
   }
@@ -155,7 +156,7 @@ test('a check whose catalog the root lacks stays unknown (missing input): unchec
     const catalog = itemOf(result, ITEM.c1);
     assert.equal(catalog.partition, 'delivered');
     const r = catalog.item.requirements.find((q) => q.requirement === 'catalog')!;
-    assert.deepEqual(terminalFields(r.layers), [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }]);
+    assertLayers(r.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }]);
     assert.equal(r.status, 'pending');
     assert.equal(counts.unknown, 4);
     // the unknown claim carries no basis rank (A02) and, over a judgment, nothing it would be conditional on

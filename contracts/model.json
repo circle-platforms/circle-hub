@@ -4005,6 +4005,12 @@
     "fix": "对新运行提交"
    },
    {
+    "code": "RUN_ABANDONED",
+    "when": "运行已由具名操作者管理放弃，新提交仍原样保存但不受理（W06、B07）",
+    "fix": "用 start_run 以本运行为 predecessor 开新修订；不改写已放弃运行和旧结果",
+    "source": "集成者（模型负责人）2026-10-24，hub-unknown-exits 授权"
+   },
+   {
     "code": "CREDENTIAL_IN_UPLOAD",
     "when": "上传里扫出明文凭据（B02）",
     "fix": "去掉凭据后重传"
@@ -4068,6 +4074,12 @@
     "code": "EFFECT_RELEASE_UNMET",
     "when": "P11 R[3] 第 3 款：放行条件未满足",
     "fix": "先完成声明的核验要求项，再派发其已核验产物"
+   },
+   {
+    "code": "EFFECT_UNKNOWN_DISPOSED",
+    "when": "效果原结局仍未证明，运行者已具名选择标记失败处置（V05 R[2]）",
+    "fix": "按处置记录归入已拒收；原效果结局与冻结/解除许可仍按原记录，不把处置当作已证明未执行",
+    "source": "集成者（模型负责人）2026-10-24，hub-unknown-exits 授权"
    },
    {
     "code": "EFFECT_BUDGET_EXHAUSTED",

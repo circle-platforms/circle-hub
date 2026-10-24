@@ -4,7 +4,7 @@ A reference implementation of the boundary-validation rules, written from the mo
 
 `expected(run, submission, outcomes)` returns the acceptance, the repair rounds, every item's partition and per-requirement layer terminals (with status, unsatisfied reason and attribution), the static and dynamic cell of each item, the partition counts, the unknown-item count and the errors summary.
 
-## Choices the model text does not settle
+## Reference scope and explicit choices
 
 1. **One terminal from several outcomes.** A layer holds one terminal (the validation contract). A refutation is named ahead of an unknown, and an unknown ahead of a support, which is the worst-first order V03 R[3] gives the cell (不通过, then 未核对, then 通过). The cell still counts every non-pass terminal of the item, so an unknown on another requirement is not hidden behind a pass or a violation.
 
@@ -12,7 +12,7 @@ A reference implementation of the boundary-validation rules, written from the mo
 
 3. **Which unknown reason is named.** The first unknown outcome, in the same order.
 
-4. **Rounds already used.** `roundsUsed` is how many submissions were validated on this run before this one, and every repair row sees that count for requirements whose checks judge the artifact under verification. Refutations of the subject do not enter repair and consume no rounds. Rounds left are that row's budget minus `roundsUsed`. The current refutation does not consume a round of its own: with nothing used and a budget of 2, two rounds remain. W02 F[7] puts the budget on the code's row, so a code with a budget of 1 is exhausted while a code on the same requirement with a budget of 3 is not. The run's maximum is the largest such budget.
+4. **Rounds already used.** New descriptions can provide a separate charged count per requirement. Each distinct received submission charges a requirement once for unresolved work, a skip or an eligible repair, regardless of how many item errors it has. A repeated body does not charge another round. The older scalar input is retained for the artifact-repair-only hand calculations. Budgets remain those declared on the code's row; unconsumed rounds are not invented.
 
 5. **Several unsatisfied reasons.** V03 F[2] lists them in one order and the result holds one. The earliest listed is named: no producer, then abandoned, then an outcome that misses the expectation, then independence unknown.
 
@@ -24,13 +24,13 @@ A reference implementation of the boundary-validation rules, written from the mo
 
 9. **A check's declared tier** replaces the tier of each of its refutations (the check entry's `tier`).
 
-10. **An item the submission does not mention** is incomplete, including when every requirement is optional. The "required" flag selects which incomplete requirement moves a covered item; not being covered is about the item (W07 R[3], V05 R[3]).
+10. **Skipped or missing items.** Judgment requirements and facts needing the submitted artifact are incomplete; target facts retain the result of checking the frozen original. Only a required incomplete requirement chooses the incomplete partition. At zero remaining rounds, missing work is repair exhausted.
 
-11. **Not covered and the rounds left.** The error names the run's remaining rounds (the maximum minus the rounds used). The model says a missing item counts toward the repair rounds and does not say which requirement's budget.
+11. **Every unresolved fact is visible.** Receipt errors name each requirement and remaining budget. A run-level coverage error separately summarizes omitted items; its remaining budget is the minimum of the affected declared judgment slots, or zero when there are none.
 
-12. **Error and item order.** Items follow the run's projection order. On an accepted submission the errors are, per item and in requirement order, a request, a repair whose rounds are used up, and every reject-routed refutation, then a not-covered error for an item the submission does not mention. A repair that still has rounds left stays on the terminal (W02 R[5]). A submission that is not accepted lists its protocol codes and then every item-level refutation, including an open repair with the rounds left (W08 R[1]). The model does not prescribe this order; the differential comparison sorts before it compares.
+12. **Error order.** The differential comparison sorts before comparing. Unknown outcomes, missing-work errors and layer recovery errors remain separate from known refutations; recording unknown handling retains the known refutation and names its request. It does not turn that violation into an unknown verdict.
 
-13. **What one check's silence about a handled item means.** Not specified. The reference refuses the scenario. The generator always supplies an outcome.
+13. **Installed check silence.** V03 now explicitly calls this a check error. This generator always supplies an outcome; the dedicated engine tests cover silence.
 
 ## Not covered
 
@@ -44,4 +44,14 @@ The generator does not build these, because the scenario has no field for them o
 - The gating done-rule and the discrimination display (V06). Required requirements are enforced only through the partition order.
 - The text of a cross-item claim. A run-level requirement key is accepted and, by V05 R[4], does not appear on an item. The claim itself is not built.
 - Carry-over of a predecessor fragment, check silence, target-side attribution, and the request id or options of an error. Author-input attribution is produced for a refutation of the subject.
-- A second outcome from the same check, and two declared models that share a word but are not the same string. The reference takes the declared string as the family, because A04 names a family and does not say how to split a name. The random loop also stays on handled items, a first repair round, and `support` for `loose`, `recorded`, `both` and `dyn`. Skip, missing, a second repair round, the unknown action, an omitted check tier, a same-pack predecessor and a later submission on an already independent run are pinned on their own, because the engine disagrees there. `both` is not refuted in the random loop: a static violation beside a dynamic layer that was not run is a combination the model does not rank, and the two sides disagree; that pair is pinned and not called a defect.
+- A second outcome from the same check and the full declared-model-family parser. This generator uses distinct synthetic names; the engine tests pin its conservative word rule.
+
+## Legacy declaration playback
+
+The driving pack intentionally retains old declarations with no static check or dynamic observation, so it cannot be newly admitted. A separate negative test verifies that fresh admission refuses it and creates a named package repair request. Legacy playback seeds a synthetic frozen run from an admitted bootstrap's parsed sources and projection, pinned to the legacy pack's actual bytes. This fixture setup uses record storage only; the independent expected answer never imports engine or interpreter functions. No runtime admission rule is bypassed.
+
+Target-check scripts are part of the synthetic source original and remain readable when a submission skips an item. Artifact checks read the submitted slots. Each random case uses a fresh frozen run, so its stated initial counters are true. Fixed repeated-body cases separately pin per-requirement charging and the existing independent-session rules. Missing facts and exits themselves have dedicated boundary and read-only historical tests.
+
+## Cross-layer status
+
+Integrator decision 2026-10-24: a known terminal that misses the declared expectation makes the requirement unsatisfied even when another layer remains transitional. With no known miss, an unsettled layer keeps it pending. The separate regression compares both answers, retains the raw dynamic unknown and its exit, and the engine property test verifies unchanged partition membership and unknown counts.

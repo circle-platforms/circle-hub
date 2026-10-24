@@ -11,9 +11,11 @@ import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { CheckTier, Layer } from '../../../contracts/generated/vocabulary.ts';
 import type { ChecksFile, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import type { ItemResult, RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
-import type { RunSummary } from '../../../contracts/src/run.ts';
+import { RunSummary } from '../../../contracts/src/run.ts';
+import {seedLegacyRun} from '../../../hub/runs/engine/testing/legacy-run.ts';
 import { itemCell, readPackDirectory, validatePack } from '../../../hub/runs/api.ts';
-import { openHarness, sandboxSkip, type Harness } from '../../../hub/runs/engine/testing/harness.ts';
+import { sandboxSkip, type Harness } from '../../../hub/runs/engine/testing/harness.ts';
+import {openRetryHarness as openHarness} from '../../../hub/runs/engine/testing/retry-harness.ts';
 import { writePack, type PackSpec } from '../../../hub/runs/engine/testing/packs.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { expected, type CheckOutcomes, type Expected, type Outcome, type RequirementDescription, type RunDescription, type SubmissionDescription } from './oracle.ts';
@@ -36,6 +38,8 @@ before(async () => {
   const draft = await writePack(scratch, pack('oracle-draft'));
   await harness.workflows.add(dir);
   await harness.workflows.add(draft);
+  await harness.workflows.add(await writePack(scratch,pack('oracle-bootstrap',true)));
+  harness.workflows.assign(harness.alice.id,'oracle-bootstrap');
   harness.workflows.assign(harness.alice.id, 'oracle');
   harness.workflows.assign(harness.alice.id, 'oracle-draft');
 });
@@ -82,16 +86,19 @@ const SPECS: Spec[] = [
   { key: 'level', producer: 'judgment', layers: ['static'], required: true, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: true, errorTable: [] },
 ];
 
-const CHECK_SOURCE = (key: string): string => `
+const CHECK_SOURCE = (key: string, judges:'subject'|'artifact_under_verification'): string => `
 export default function check(input) {
   const subject = input && input.subject;
   const claims = subject && subject.slots && subject.slots[${JSON.stringify(key)}];
   const data = Array.isArray(claims) && claims[0] && claims[0].data;
-  const list = data && Array.isArray(data.outcomes) ? data.outcomes : [{ verdict: 'unknown', tier: 'blocking', reason: 'missing_input' }];
+  const frozen = subject && subject.fields && subject.fields.scripted_outcomes && subject.fields.scripted_outcomes[${JSON.stringify(key)}];
+  const source = ${judges==='subject'?'frozen':'data && data.outcomes'};
+  const list = Array.isArray(source) ? source : [{ verdict: 'unknown', tier: 'blocking', reason: 'missing_input' }];
   return list.map((o) => {
     const out = { verdict: o.verdict, statement: '合成检查', grounds: [], tier: o.tier || 'blocking' };
     if (typeof o.code === 'string') out.code = o.code;
     if (typeof o.reason === 'string') out.reason = o.reason;
+    if (o.verdict === 'unknown') out.missing = '合成检查缺少脚本声明的判定事实';
     return out;
   });
 }
@@ -113,7 +120,7 @@ export default function project(input) {
       id: String(node.data.id),
       label: node.text || String(node.data.id),
       location: { parser: 'kityminder@1', selector: node.selector },
-      fields: { negative: node.data.negative === true },
+      fields: { negative: node.data.negative === true,scripted_outcomes:node.data.scripted_outcomes },
     });
   }
   if (items.length === 0) return { error: { code: 'oracle.no_item', message: '没有条目', fix: '给节点加上 resource' }, warnings: [] };
@@ -121,7 +128,7 @@ export default function project(input) {
 }
 `;
 
-function pack(id = 'oracle'): PackSpec {
+function pack(id = 'oracle', admissible=false): PackSpec {
   const requirements = SPECS.map((spec) => ({
     key: spec.key,
     name: spec.key,
@@ -142,6 +149,13 @@ function pack(id = 'oracle'): PackSpec {
       ? []
       : [{ id: spec.check.id, function: { module: `functions/${spec.check.id}.ts` }, applies: 'item' as const, judges: spec.check.judges, ...(spec.check.tier === null ? {} : { tier: spec.check.tier, basis: '合成检查' }) }],
   );
+  if(admissible){
+    for(const requirement of requirements){
+      if(requirement.key==='bare')requirement.checks=['bootstrap'];
+      if(requirement.accepted_producer==='fact'&&requirement.layers.includes('dynamic'))Object.assign(requirement,{observation:'synthetic.observation@1'});
+    }
+    checks.push({id:'bootstrap',function:{module:'functions/bootstrap.ts'},applies:'item',judges:'subject',tier:'blocking'});
+  }
   const itemSlots: SlotsFile['item'] = {};
   for (const spec of SPECS) {
     if (spec.runLevel || spec.check === undefined) continue;
@@ -182,7 +196,8 @@ function pack(id = 'oracle'): PackSpec {
     'SKILL.md': '# 合成判定\n\n按槽位里的脚本返回检查结论。\n',
     'functions/project.ts': PROJECT_SOURCE,
   };
-  for (const spec of SPECS) if (spec.check !== undefined) files[`functions/${spec.check.id}.ts`] = CHECK_SOURCE(spec.key);
+  for (const spec of SPECS) if (spec.check !== undefined) files[`functions/${spec.check.id}.ts`] = CHECK_SOURCE(spec.key,spec.check.judges);
+  if(admissible)files['functions/bootstrap.ts']="export default () => [{verdict:'support',statement:'合成引导检查',grounds:[],tier:'blocking'}];";
   return { id, version: '1.0.0', kind: 'workflow', title: '合成判定', description: '差分测试用的合成任务包', files };
 }
 
@@ -200,6 +215,7 @@ interface Plan {
   seed: number;
   /** Submissions already validated on this run, as choice 10 counts them. */
   roundsUsed: number;
+  chargedRounds?:Record<string,number>;
   items: ItemPlan[];
   judge: { session: string; model: string };
   author: { session: string; model: string } | null;
@@ -268,6 +284,7 @@ function referenceOf(plan: Plan): Expected {
     runLevel: SPECS.filter((spec) => spec.runLevel).map((spec) => spec.key),
     checks: SPECS.flatMap((spec) => (spec.check === undefined ? [] : [{ id: spec.check.id, judges: spec.check.judges, tier: spec.check.tier }])),
     roundsUsed: plan.roundsUsed,
+    ...(plan.chargedRounds?{chargedRounds:plan.chargedRounds}:{}),
     author: plan.author,
   };
   const submission: SubmissionDescription = {
@@ -284,11 +301,11 @@ function referenceOf(plan: Plan): Expected {
   return expected(run, submission, outcomes);
 }
 
-function mindMap(items: { id: string; negative: boolean }[]): Uint8Array {
+function mindMap(items: { id: string; negative: boolean;outcomes?:Record<string,Outcome[]> }[]): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({
     root: {
       data: { id: 'root', text: '合成', created: 1 },
-      children: items.map((item) => ({ data: { id: item.id, text: item.id, created: 1, resource: ['case'], negative: item.negative }, children: [] })),
+      children: items.map((item) => ({ data: { id: item.id, text: item.id, created: 1, resource: ['case'], negative: item.negative,scripted_outcomes:item.outcomes??Object.fromEntries(SPECS.filter(spec=>spec.check!==undefined).map(spec=>[spec.key,[{verdict:'support'}]])) }, children: [] })),
     },
     template: 'default',
     theme: 'fresh-blue',
@@ -314,15 +331,20 @@ function submissionOf(run: RunSummary, plan: Plan): Record<string, unknown> {
   return { run: run.run, model: plan.judge.model, items };
 }
 
-async function start(items: { id: string; negative: boolean }[], predecessor?: string, session = 'sess-start', map?: string, packId = 'oracle'): Promise<RunSummary> {
+async function start(items: { id: string; negative: boolean;outcomes?:Record<string,Outcome[]> }[], predecessor?: string, session = 'sess-start', map?: string, packId = 'oracle'): Promise<RunSummary> {
   const reference = map ?? (await harness.upload(harness.alice, mindMap(items)));
   const answer = await harness.service.startRun(
     harness.alice,
-    { pack: packId, product: 'Meadow', version: '3.2', inputs: { map: { reference } }, ...(predecessor === undefined ? {} : { predecessor }) },
+    { pack: 'oracle-bootstrap', product: 'Meadow', version: '10.6.1',build:'Rel_MEADOW_10_6_1_7', inputs: { map: { reference } }, ...(predecessor === undefined ? {} : { predecessor }) },
     harness.call(session),
   );
   assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
-  return answer.run as RunSummary;
+  // Explicit legacy record fixture: fresh admission is tested separately and is never bypassed in runtime code.
+  // The admitted bootstrap supplies genuine parsed inputs and projection; only the synthetic old declaration is seeded.
+  const old=await harness.workflows.forUser(harness.alice,packId);
+  assert.ok(old);
+  const requirements=answer.run!.requirements.map(({observation:_observation,...requirement})=>requirement);
+  return seedLegacyRun(harness.kit,answer.run!,old.pack,requirements);
 }
 
 async function submit(run: RunSummary, plan: Plan): Promise<{ acceptance: string; result?: ValidationResult; counts?: Record<string, number>; errors: { code: string; item?: string; requirement?: string; rounds_left?: number }[] }> {
@@ -429,7 +451,8 @@ async function agree(plan: Plan, run: RunSummary): Promise<void> {
   const want = referenceOf(plan);
   if (plan.defects.length > 0) {
     assert.equal(got.acceptance, 'not_accepted', JSON.stringify(got.errors));
-    assert.equal(got.result, undefined);
+    assert.ok(got.result);
+    assert.ok(Object.values(got.result.partitions).every(items=>items.length===0),'refused submissions retain their receipt without item partitions');
     assert.equal(want.acceptance, 'not_accepted');
     assert.deepEqual(want.items, []);
     return;
@@ -497,12 +520,19 @@ function shownLayer(view: { items: { item: string; requirements: { requirement: 
   return { status: requirementResult?.status, layer: requirementResult?.layers[0] };
 }
 
-test('the engine and the reference agree on random submissions and the fixed branches', { skip, timeout: 300_000 }, async () => {
+test('fresh admission refuses the legacy oracle declarations before any fixture playback',{skip},async()=>{
+  const map=await harness.upload(harness.alice,mindMap(ITEMS));
+  const answer=await harness.service.startRun(harness.alice,{pack:'oracle',product:'Meadow',version:'3.2',inputs:{map:{reference:map}}},harness.call('observed-admission'));
+  assert.equal(answer.call_result,'error');assert.equal(answer.run,undefined);
+  assert.ok(answer.errors.some(e=>e.path==='/pack'&&e.fix?.includes('请求 rec:')));
+});
+
+test('random submissions and the revised fixed branches agree with the independent reference', { skip, timeout: 300_000 }, async () => {
   const run = await start(ITEMS);
   const judge = { session: 'sess-judge', model: 'beta@2' };
-  // The engine leaves repair rounds at 0 across submissions (pinned below), so every compared submission is a first round.
+  // Each randomized comparison starts from its own frozen run and explicitly zero charged counters.
   const plans = Array.from({ length: 48 }, (_, index) => randomPlan(SEED + index, 0, ITEMS, judge, null));
-  for (const plan of plans) await agree(plan, run);
+  for (const plan of plans) await agree(plan,await start(plan.items));
 
   // Independence against a predecessor whose accepted submission names the author.
   const author = { session: 'sess-author', model: 'alpha@1' };
@@ -560,21 +590,21 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.equal(shownLayer(laterEngine, 'i1', 'indep').status, 'unsatisfied');
   assert.equal(laterWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'unsatisfied');
 
-  // W02 R[5]: a second refutation of a repair code with one round is used up. The engine leaves the counter at 0 and
-  // the terminal a violation. W02 F[7] "记未知" keeps the refutation (V01 R[6]); the engine records an integrity failure.
+  // A repeated transitional body is rechecked without another charge. Subject refutations stay known violations;
+  // the prior unresolved dynamic work contributes one charged round. Record-unknown handling retains the refutation.
   const roundSeed = SEED + 200;
   const roundOutcomes = { ...supportOutcomes, short: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }], recorded: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }] };
   const roundItems = handledItems(roundOutcomes);
-  const roundRun = await start(ITEMS);
-  const roundPlan = (roundsUsed: number): Plan => ({ seed: roundSeed, roundsUsed, items: roundItems, judge, author: null, defects: [] });
+  const roundRun = await start(roundItems);
+  const roundPlan = (roundsUsed: number): Plan => ({ seed: roundSeed, roundsUsed,chargedRounds:{bare:roundsUsed,closed:roundsUsed,both:roundsUsed,dyn:roundsUsed}, items: roundItems, judge, author: null, defects: [] });
   await acceptedView(roundPlan(0), roundRun);
   const roundEngine = await acceptedView(roundPlan(1), roundRun);
   const roundWant = referenceOf(roundPlan(1));
   const engineShort = shownLayer(roundEngine, 'i1', 'short');
   const wantShort = roundWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'short');
-  assert.equal(roundEngine.rounds.used, 0);
+  assert.equal(roundEngine.rounds.used, 1);
   assert.equal(engineShort.layer?.terminal, 'violation');
-  assert.equal(roundWant.rounds.used, 0);
+  assert.equal(roundWant.rounds.used, 1);
   assert.equal(wantShort?.layers[0]?.terminal, 'violation');
   assert.equal(wantShort?.layers[0]?.attribution, 'author_input');
   const engineRecorded = shownLayer(roundEngine, 'i1', 'recorded');
@@ -633,7 +663,7 @@ test('the engine and the reference agree on random submissions and the fixed bra
 
   const tierSeed = SEED + 201;
   const legacyPlan: Plan = { seed: tierSeed, roundsUsed: 0, items: handledItems({ ...supportOutcomes, loose: [{ verdict: 'refute' as const, code: legacyHit, tier: 'blocking' as const }] }), judge, author: null, defects: [] };
-  const legacyEngine = await acceptedView(legacyPlan, await start(ITEMS, undefined, 'sess-legacy', undefined, 'oracle-legacy'));
+  const legacyEngine = await acceptedView(legacyPlan, await start(legacyPlan.items, undefined, 'sess-legacy', undefined, 'oracle-legacy'));
   const missingTier = shownLayer(legacyEngine, 'i1', 'loose').layer;
   assert.equal(missingTier?.terminal, 'unchecked');
   assert.equal(missingTier?.reason, 'check_error');
@@ -656,7 +686,7 @@ test('the engine and the reference agree on random submissions and the fixed bra
     }
   }
 
-  // W07 R[2]: a declared skip makes every requirement incomplete at every declared layer.
+  // W07 R[2]: only artifact-dependent work is missing; target facts retain their independently frozen checks.
   const skipSeed = SEED + 7;
   const skipPlan: Plan = {
     seed: skipSeed,
@@ -670,17 +700,21 @@ test('the engine and the reference agree on random submissions and the fixed bra
   const skipWant = referenceOf(skipPlan);
   const skipFact = shownLayer(skipEngine, 'i1', 'fact');
   const skipJudged = shownLayer(skipEngine, 'i1', 'judged');
-  assert.equal(skipFact.layer?.terminal, 'incomplete');
-  assert.equal(skipFact.layer?.reason, 'declared_skip');
-  assert.equal(skipFact.layer?.attribution, 'unattributed');
+  assert.equal(skipFact.layer?.terminal,'pass');
+  assert.equal(skipFact.layer?.reason,undefined);
+  assert.equal(skipFact.layer?.attribution,undefined);
   assert.equal(skipJudged.layer?.terminal, 'incomplete');
-  assert.equal(skipJudged.layer?.reason, 'declared_skip');
-  assert.equal(skipJudged.layer?.attribution, 'unattributed');
+  assert.equal(skipJudged.layer?.reason,'repair_exhausted');
+  assert.equal(skipJudged.layer?.attribution,'producer_error');
   const skipOracle = skipWant.items.find((item) => item.item === 'i1');
-  assert.ok(skipOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
-  assert.ok(skipEngine.items.find((item) => item.item === 'i1')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
+  const artifactKeys=new Set(SPECS.filter(spec=>!spec.runLevel&&(spec.producer!=='fact'||spec.check?.judges==='artifact_under_verification')).map(spec=>spec.key));
+  for(const view of [skipOracle,skipEngine.items.find(item=>item.item==='i1')]){
+    assert.ok(view);
+    assert.ok(view.requirements.filter(requirement=>artifactKeys.has(requirement.requirement)).every(requirement=>requirement.layers.every(layer=>layer.terminal==='incomplete'&&layer.reason==='repair_exhausted')));
+    assert.equal(view.requirements.find(requirement=>requirement.requirement==='fact')!.layers[0].terminal,'pass');
+  }
 
-  // W07 R[3]: a missing item is incomplete at every requirement and named in errors, and the submission stays accepted.
+  // W07 R[3]: omitted artifact work is named per requirement; target facts remain and acceptance is unchanged.
   const missingSeed = SEED + 8;
   const missingPlan: Plan = {
     seed: missingSeed,
@@ -696,21 +730,31 @@ test('the engine and the reference agree on random submissions and the fixed bra
     missingEngine.errors.some((error) => error.code === 'core.coverage.shortfall' && error.item === 'i3' && error.rounds_left === 0),
     JSON.stringify(missingEngine.errors),
   );
-  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.terminal, 'incomplete');
-  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason, 'not_covered');
-  assert.equal(shownLayer(missingEngine, 'i3', 'judged').layer?.reason, 'not_covered');
-  assert.ok(missingEngine.items.find((item) => item.item === 'i3')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered')));
-  const missingOracle = missingWant.items.find((item) => item.item === 'i3');
-  assert.equal(missingOracle?.reason, 'not_covered');
-  assert.ok(missingOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered' && layer.attribution === 'unattributed')));
-  assert.deepEqual(missingWant.errors.filter((error) => error.item === 'i3'), [{ kind: 'not_covered', item: 'i3', rounds_left: 3 }]);
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.terminal,'pass');
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason,undefined);
+  assert.equal(shownLayer(missingEngine, 'i3', 'judged').layer?.reason,'repair_exhausted');
+  const missingOracle=missingWant.items.find(item=>item.item==='i3')!;
+  assert.equal(missingOracle.reason,'repair_exhausted');
+  for(const view of [missingOracle,missingEngine.items.find(item=>item.item==='i3')!]){
+    assert.ok(view.requirements.filter(requirement=>artifactKeys.has(requirement.requirement)).every(requirement=>requirement.layers.every(layer=>layer.terminal==='incomplete'&&layer.reason==='repair_exhausted')));
+    assert.equal(view.requirements.find(requirement=>requirement.requirement==='fact')!.layers[0].terminal,'pass');
+  }
+  assert.equal(missingWant.errors.filter(error=>error.item==='i3'&&error.code==='repair_exhausted').length,artifactKeys.size);
+  assert.equal(missingWant.errors.find(error=>error.item==='i3'&&error.code==='core.coverage.shortfall')!.rounds_left,0);
 
-  // One static violation beside a dynamic layer that was not run. The model does not rank the combination. The reference
-  // keeps the missed expectation; the engine leaves the requirement pending. Not treated as a settled defect.
-  const bothSeed = SEED + 10;
-  const bothPlan: Plan = { seed: bothSeed, roundsUsed: 0, items: handledItems({ ...supportOutcomes, both: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }] }), judge, author: null, defects: [] };
-  const bothEngine = await acceptedView(bothPlan, await start(ITEMS));
-  const bothWant = referenceOf(bothPlan);
-  assert.equal(shownLayer(bothEngine, 'i1', 'both').status, 'pending');
-  assert.equal(bothWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'both')?.status, 'unsatisfied');
+});
+
+// Integrator 2026-10-24: a known expectation miss wins over an unsettled layer; raw layers remain separate.
+test('a known cross-layer expectation miss agrees without hiding the dynamic unknown',{skip},async()=>{
+  const judge={session:'sess-both',model:'beta@2'};
+  const supporting=Object.fromEntries(SPECS.filter(spec=>spec.check!==undefined).map(spec=>[spec.key,[{verdict:'support' as const}]]));
+  const outcomes={...supporting,both:[{verdict:'refute' as const,code:HIT,tier:'blocking' as const}]};
+  const plan:Plan={seed:SEED+10,roundsUsed:0,items:ITEMS.map(item=>({...item,handling:'handled',outcomes})),judge,author:null,defects:[]};
+  const answer=await submit(await start(plan.items),plan);
+  assert.equal(answer.acceptance,'accepted');assert.ok(answer.result);
+  const actual=Object.values(answer.result.partitions).flat().find(item=>item.item==='i1')!.requirements.find(requirement=>requirement.requirement==='both')!;
+  const independent=referenceOf(plan).items.find(item=>item.item==='i1')!.requirements.find(requirement=>requirement.requirement==='both')!;
+  assert.equal(actual.status,'unsatisfied');assert.equal(independent.status,'unsatisfied');
+  assert.equal(actual.unsatisfied_reason,'outcome_mismatch');assert.equal(independent.unsatisfied_reason,'outcome_mismatch');
+  const dynamic=actual.layers.find(layer=>layer.layer==='dynamic')!;assert.equal(dynamic.terminal,'not_run');assert.ok(dynamic.missing&&dynamic.exit);
 });
