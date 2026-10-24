@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/cases-sync.ts",
-      "sha256": "343e3802ef649f7298f8983587f226eee742b63479d604047b4826272ae0d0cb",
-      "size": 16766
+      "sha256": "102ba31202d11f913e010185757928e8776b6cb3e7bdc5b7365780a0d7b2d33e",
+      "size": 16569
     },
     {
       "path": "functions/cases.ts",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/documents.ts",
-      "sha256": "56a96048f95df722085f51a3f24389e1ee204628a1dd67b32d44613ca897c0af",
-      "size": 3232
+      "sha256": "7d7350494bac270f76a1c28dda2404bd699adb54ee2a2552c3fa317eaa3fe457",
+      "size": 3177
     },
     {
       "path": "functions/fixed-bugs.ts",
@@ -133,18 +133,18 @@
     },
     {
       "path": "functions/ids.ts",
-      "sha256": "0e4a4abb64774805ef04940d0d4fe9d4898235620f4313ff2df464a8d5075e42",
-      "size": 8528
+      "sha256": "73f5ee140ed38c220091c6e2d8162b46d65e1a41cecc75e19afd32721b40185f",
+      "size": 1237
     },
     {
       "path": "functions/listing.ts",
-      "sha256": "bd3bd277a227f5c102ae9ad618ac144a9b54048ba1fa7b8d100324d0733c2d1d",
-      "size": 15338
+      "sha256": "518155b5cac4e82993e812689e4ae975d02e5dfe59a27df8502abbf2a69b602b",
+      "size": 15528
     },
     {
       "path": "functions/locate.ts",
-      "sha256": "d8bf6064b4f355ccf3b129faf5d3c58c862af9ae7bc84dc6dad9bd296f49d350",
-      "size": 4689
+      "sha256": "1380fad2524bada6dc09bec7c5250865fac188b3a6678c283fd18128da90c254",
+      "size": 4461
     },
     {
       "path": "functions/manual.ts",
@@ -153,8 +153,8 @@
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "84e995b348ca0b19d8236d83a5b21dcb7198dc9ed53c18dc86ea67e01562b886",
-      "size": 8514
+      "sha256": "0469d9b18cbb15bda89caa2c379c2e0afc07e9e213d4f813d2b4f269351222a1",
+      "size": 8741
     },
     {
       "path": "functions/producers.ts",

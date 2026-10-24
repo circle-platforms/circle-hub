@@ -16,200 +16,20 @@ import { PACK, failure, guarded, isRecord, warningSink, type WarningSink } from 
 import { clip, collapseWhitespace, isBlank, mustEncodeInExternalId, percentEncode, textOf } from './text.ts';
 import type { ExternalObjectId, FoundId, IdKind, IdRange, SourceBasis, SourcesOutput } from './types.ts';
 
-/** Code units of one title or label that are scanned; real titles are far shorter. */
-const MAX_SCAN = 2000;
-const MAX_TERM = 32;
-const DEFAULT_TERMS = 8;
-const MAX_TERMS = 16;
-const MAX_NAMED = 20;
-
-const KIND_LABEL: Record<IdKind, string> = { story: '需求', bug: '缺陷' };
-
-// A word before numbers. Matched on NFKC, lower-cased text; ASCII words must not continue a word.
-const MARKER = /(?<![a-z0-9])(?:bug[\s_-]*to[\s_-]*cases?|bug2case|bugs?|stor(?:y|ies)|plm)|缺陷|需求单?/gu;
-// A second word right after the first one ("bug to case-需求20931"): the one next to the number wins.
-const INNER_MARKER = /(?:需求单?|缺陷|stor(?:y|ies)|bugs?)/uy;
-const SEPARATORS = /[\s#:：\-_~.—–]*/uy;
-const DIGITS = /[0-9]+/y;
-const LIST_SEPARATOR = /\s*[&、,，+;；]\s*#?(?=[0-9])/uy;
-const BARE_LIST_SEPARATOR = /\s*[&、,，+;；]\s*(?=[0-9])|\s+(?=[0-9])/uy;
-const NEUTRAL_PREFIXES = ['regression', '二轮回归', '三轮回归', '回归测试', '回归', 'test', '测试'];
-
-/** The kind a word names; null for "bug to case" (a document type) and "PLM" (the defect system). */
-function kindOfMarker(marker: string): IdKind | null {
-  if (marker === 'plm' || marker.startsWith('bug2case') || /^bug[\s_-]*to/.test(marker)) return null;
-  return marker.startsWith('bug') || marker.startsWith('缺陷') ? 'bug' : 'story';
+const DEFAULT_TERMS=8,MAX_TERMS=16,MAX_NAMED=20;
+const KIND_LABEL: Record<IdKind,string>={story:'需求',bug:'缺陷'};
+/** apv-id-fields@1: entire field 'bug:<decimal>' or 'story:<decimal>'; comma-separated decimal lists. Origin: owner R6, 2026-10-24. */
+function fields(text:string): Array<{kind:'bug'|'story'|null;id:string}> {
+  const match=/^(bug|story):([1-9][0-9]{0,11}(?:,[1-9][0-9]{0,11})*)$/.exec(text);
+  return match ? match[2].split(',').map(id=>({kind:match[1] as 'bug'|'story',id})) : [];
 }
 
-function sticky(pattern: RegExp, text: string, at: number): string | null {
-  pattern.lastIndex = at;
-  const match = pattern.exec(text);
-  return match === null ? null : match[0];
-}
-
-/** Numbers read from `at`: a list joined by &, 、, commas or +, each within the digit bounds; stops at the first bad one. */
-function readIds(text: string, at: number, bare: boolean): { ids: string[]; end: number } {
-  const ids: string[] = [];
-  let pos = at;
-  for (;;) {
-    const digits = sticky(DIGITS, text, pos);
-    if (digits === null) break;
-    const after = text.slice(pos + digits.length, pos + digits.length + 2);
-    const min = bare ? 4 : 2;
-    const max = bare ? 7 : 9;
-    if (digits.length < min || digits.length > max || digits.startsWith('0')) break;
-    if (/^\.[0-9]/.test(after)) break; // a version number
-    if (bare) {
-      if (digits.length === 4 && Number(digits) >= 1900 && Number(digits) <= 2099) break; // a year
-      if (/^\s*[:：/年月日号]/u.test(text.slice(pos + digits.length, pos + digits.length + 4))) break; // an ordering prefix or a date
-    }
-    ids.push(digits);
-    pos += digits.length;
-    const separator = sticky(bare ? BARE_LIST_SEPARATOR : LIST_SEPARATOR, text, pos);
-    if (separator === null) break;
-    pos += separator.length;
-  }
-  return { ids, end: pos };
-}
-
-/** Ids after a word anywhere in the text; the kind is null after "bug to case" and "PLM". */
-export function markedIds(text: string): FoundId[] {
-  const lower = text.slice(0, MAX_SCAN).normalize('NFKC').toLowerCase();
-  const out: FoundId[] = [];
-  MARKER.lastIndex = 0;
-  for (let match = MARKER.exec(lower); match !== null; match = MARKER.exec(lower)) {
-    let word = match[0];
-    let pos = match.index + word.length;
-    pos += (sticky(SEPARATORS, lower, pos) ?? '').length;
-    const inner = sticky(INNER_MARKER, lower, pos);
-    if (inner !== null) {
-      word = inner;
-      pos += inner.length;
-      pos += (sticky(SEPARATORS, lower, pos) ?? '').length;
-    }
-    const { ids, end } = readIds(lower, pos, false);
-    if (ids.length === 0) continue;
-    const kind = kindOfMarker(word);
-    const snippet = lower.slice(match.index, end);
-    for (const id of ids) out.push({ kind, id, marker: kind === null ? null : word, text: snippet });
-    MARKER.lastIndex = end;
-  }
-  return out;
-}
-
-/** Unmarked ids at the very start of the text, after an optional neutral word ("回归", "Test"). */
-export function leadingIds(text: string): FoundId[] {
-  const lower = text.slice(0, MAX_SCAN).normalize('NFKC').toLowerCase();
-  let pos = (sticky(/\s*/uy, lower, 0) ?? '').length;
-  for (const prefix of NEUTRAL_PREFIXES) {
-    if (lower.startsWith(prefix, pos)) {
-      pos += prefix.length;
-      pos += (sticky(SEPARATORS, lower, pos) ?? '').length;
-      break;
-    }
-  }
-  const { ids, end } = readIds(lower, pos, true);
-  const snippet = lower.slice(0, end);
-  return ids.map((id) => ({ kind: null, id, marker: null, text: snippet }));
-}
-
-/** Every id of one text, once: the ones a word names, then the unmarked ones (a number a word names is not repeated). */
-export function extractIds(text: string): FoundId[] {
-  const found = [...markedIds(text), ...leadingIds(text)];
-  const named = new Set(found.filter((entry) => entry.kind !== null).map((entry) => entry.id));
-  const seen = new Set<string>();
-  return found.filter((entry) => {
-    if (entry.kind === null && named.has(entry.id)) return false;
-    const key = `${entry.kind}:${entry.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-// Search terms -----------------------------------------------------------------------------------------------------------
-
-const TOKEN = /[a-z0-9]+(?:[._][a-z0-9]+)*|\p{Script=Han}+/giu;
-/** Words that end a term wherever they stand in a Han run. */
-const SPLIT_WORDS = [
-  '测试用例', '用例', '测试', '回归', '二轮', '三轮', '需求', '缺陷', '支持', '验证', '问题', '修复', '版本', '场景', '情况', '是否', '能否', '可以', '无法',
-  '不能', '进行', '使用', '通过', '特定', '偶发', '导致', '一个', '多个', '所有', '以及',
-].sort((a, b) => b.length - a.length);
-/**
- * Conjunctions: they split a run only with two Han characters or more on each side. 的 and the positional characters
- * (后, 时, 在, 对, 下, 中) never split: they are parts of common words (目的地址, 后端, 时间, 在线, 对端, 下发, 中心).
- */
-const JOINERS = new Set(['和', '与', '及', '或']);
-/** Too general to search for alone; kept inside longer runs (健康检查). */
-const GENERIC = new Set(['功能', '检查']);
-const ASCII_STOP = new Set(['bug', 'bugs', 'to', 'case', 'cases', 'test', 'tests', 'testing', 'list', 'of', 'the', 'a', 'an', 'and', 'or', 'for', 'in', 'on', 'with', 'story', 'plm', 'support', 'supports', 'fix', 'regression', 'bug2case']);
-/** A last segment of exactly three Han characters after a dash or underscore: in sampled titles nearly always the author's name. */
-const TRAILING_NAME = /[-_—–]\s*\p{Script=Han}{3}\s*$/u;
-
-function splitRun(run: string): string[] {
-  let parts = [run];
-  for (const word of SPLIT_WORDS) parts = parts.flatMap((part) => part.split(word));
-  const out: string[] = [];
-  for (const part of parts) {
-    const chars = [...part];
-    let start = 0;
-    for (let i = 0; i < chars.length; i++) {
-      if (JOINERS.has(chars[i]) && i - start >= 2 && chars.length - i - 1 >= 2) {
-        out.push(chars.slice(start, i).join(''));
-        start = i + 1;
-      }
-    }
-    out.push(chars.slice(start).join(''));
-  }
-  return out.filter((part) => [...part].length >= 2 && !GENERIC.has(part));
-}
-
-/** Feature words of a title: Han runs split at function words, and ASCII words; ids, versions, dates, markers, product names and a trailing author name left out. */
-export function featureTerms(title: string, productNames: readonly string[] = [], max = DEFAULT_TERMS): string[] {
-  let text = title.slice(0, MAX_SCAN).normalize('NFKC');
-  const name = TRAILING_NAME.exec(text);
-  if (name !== null && name.index > 0) text = text.slice(0, name.index);
-  const names = productNames.map((entry) => entry.normalize('NFKC').toLowerCase()).filter((entry) => entry !== '');
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const add = (term: string): void => {
-    const key = term.toLowerCase();
-    if (out.length >= max || seen.has(key)) return;
-    seen.add(key);
-    out.push([...term].slice(0, MAX_TERM).join(''));
-  };
-  for (const match of text.matchAll(TOKEN)) {
-    const token = match[0];
-    if (/^\p{Script=Han}/u.test(token)) {
-      for (const part of splitRun(token)) add(part);
-      continue;
-    }
-    const lower = token.toLowerCase();
-    if (token.length < 2 || ASCII_STOP.has(lower)) continue;
-    if (/^[0-9._]+$/.test(token) || /[0-9]{4,}/.test(token) || /[0-9]+\.[0-9]+\.[0-9]+/.test(token)) continue;
-    if (/^(?:plm|bug|story)[0-9]/.test(lower)) continue;
-    if (names.some((entry) => lower === entry || (lower.startsWith(entry) && /^[0-9._]/.test(lower.slice(entry.length))))) continue;
-    add(token);
-  }
-  return out;
-}
-
-/** One search term inside an external id: white space, '@', '%', '+' and controls percent-encoded, lone surrogates dropped. */
-function encodeTerm(term: string): string {
-  let out = '';
-  for (const ch of term) {
-    const code = ch.codePointAt(0) as number;
-    if (code >= 0xd800 && code <= 0xdfff) continue;
-    out += mustEncodeInExternalId(code) ? percentEncode(code) : ch;
-  }
-  return out;
-}
-
-export function specSearchId(terms: readonly string[]): ExternalObjectId | null {
-  const encoded = terms.map(encodeTerm).filter((term) => term !== '');
-  return encoded.length === 0 ? null : `manual:spec-search:${encoded.join('+')}`;
-}
-
+export function markedIds(text:string):FoundId[]{return fields(text).map(f=>({...f,marker:f.kind,text}));}
+export function leadingIds(_text:string):FoundId[]{return [];}
+export function extractIds(text:string):FoundId[]{return markedIds(text);}
+/** Source selection is by declared identities only; free-text retrieval is retired by R6. */
+export function featureTerms(_title:string,_names:readonly string[]=[],_max=8):string[]{return [];}
+export function specSearchId(_terms:readonly string[]):ExternalObjectId|null{return null;}
 // The function ---------------------------------------------------------------------------------------------------------------
 
 type BareIds = 'both' | IdKind | 'skip';
@@ -256,7 +76,7 @@ function readRange(value: unknown): IdRange | null | undefined {
 }
 
 function readParams(raw: unknown, warnings: WarningSink): Params {
-  const params: Params = { stories: null, bugs: null, ranges: null, bareIds: 'both', specSearch: true, maxTerms: DEFAULT_TERMS };
+  const params: Params = { stories: null, bugs: null, ranges: null, bareIds: 'both', specSearch: false, maxTerms: DEFAULT_TERMS };
   if (!isRecord(raw)) return params;
   const ignored = (parameter: string, message: string): void => warnings.note({ code: `${PACK}.parameter_ignored`, message, data: { parameter } });
   params.stories = idList(raw.stories, 'stories', warnings);
@@ -382,6 +202,7 @@ export function expectedSources(input: unknown): SourcesOutput {
       data: { ids: named, count: unknownKind.length, read: params.bareIds === 'both' ? 'both' : 'none' },
     });
   }
+  if (!explicit && external.length===0) warnings.note({code:PACK+'.id_kind_unknown',message:'缺少显式来源编号；下一步作者用参数 stories、bugs 声明来源，或由模型提交逐字引文并经 Hub 核验；没有按正文检索候选'});
   return { external, basis, warnings: warnings.list() };
 }
 

@@ -27,8 +27,6 @@ export const MAX_LABEL = 1000;
 const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*:\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
 const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
-/** Words of activities and documents, not of functional modules. */
-const NOT_MODULE = /测试|回归|用例|需求|缺陷|bug|case|patch|build|story|plm|提测/i;
 
 export type Label = {
   /** The label in matching form (NFKC, white space squeezed, cut at MAX_LABEL). */
@@ -40,7 +38,7 @@ export type Label = {
 };
 
 export function parseLabel(raw: string): Label {
-  const text = nfkc(raw.slice(0, MAX_LABEL));
+  const text = raw.slice(0, MAX_LABEL);
   const match = PREFIX.exec(text);
   return match ? { text, code: match[1], rest: text.slice(match[0].length).trim() } : { text, code: null, rest: text };
 }
@@ -78,12 +76,8 @@ export function pureVersionOf(label: Label): string | null {
 }
 
 /** Module name of a label right below a release train: a plain name, not an activity, document, version or id folder. */
-export function moduleOfLabel(label: Label, hasIds: (text: string) => boolean): string | null {
-  const text = label.rest;
-  if (text === '' || [...text].length > 40 || NOT_MODULE.test(text)) return null;
-  if (LINE.test(text) || TRAIN.test(text) || /[0-9]{4,}/.test(text)) return null;
-  if (schemeMatches(text).length > 0 || hasIds(text)) return null;
-  return text;
+export function moduleOfLabel(label: Label, _hasIds: (text: string) => boolean): string | null {
+  return /^[^/\r\n]{1,1000}$/.test(label.rest) ? label.rest : null;
 }
 
 // ---------------------------------------------------------------- the version scheme
@@ -100,65 +94,14 @@ const BUILD_DATE = /build[\s_-]*([0-9]{8})(?![0-9])/giu;
 const PATCH_RUN = /patch[\s_-]*([0-9][0-9.]*)/giu;
 const PATCH_NUMBER = /^[0-9]{1,3}(?:\.[0-9]{1,3})?$/;
 const VERSION = /(?<![0-9.])v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?![0-9]|\.[0-9])/giu;
-/**
- * A number right after a protocol name is a protocol version (TLSv1.3, SSL3.0, HTTP/1.1), never a product version; after a
- * space only a short one is (TLS 1.2, but SSL 10.6.1 names a module and a product version).
- */
-const PROTOCOL_GLUED = /(?:tls|ssl|dtls|https?|snmp|ssh|tlcp|quic|smb)[v/]?$/i;
-const PROTOCOL_SPACED = /(?:tls|ssl|dtls|https?|snmp|ssh|tlcp|quic|smb)\s+v?$/i;
-const SHORT_PROTOCOL_VERSION = /^[0-3]\.[0-9]$/;
-/** A number followed by a unit is a quantity (1.5倍, 0.5 秒, 2.5GB), never a version. */
-const UNIT_AFTER = /^\s*(?:倍|秒|分钟|小时|天|次|个|条|%|ms\b|s\b|kb\b|mb\b|gb\b|kbps\b|mbps\b|gbps\b|万)/i;
-
-/** Why a dotted number is not a version (a guard of this pack beside the owner's regular expression), or null. */
-export function notAVersion(text: string, start: number, end: number, value: string): string | null {
-  const before = text.slice(Math.max(0, start - 8), start);
-  if (PROTOCOL_GLUED.test(before) || (PROTOCOL_SPACED.test(before) && SHORT_PROTOCOL_VERSION.test(value))) return 'protocol';
-  if (UNIT_AFTER.test(text.slice(end, end + 8))) return 'quantity';
-  const parts = value.split('.');
-  if ((parts.length === 4 && Number(parts[0]) >= 100) || /^[/:][0-9]/.test(text.slice(end, end + 2))) return 'address';
-  return null;
+/** apv-directory@1 accepts a whole label only; no semantic exclusions or prose extraction. */
+export function notAVersion(text:string,start:number,end:number,_value:string): string|null {
+  return start===0 && end===text.length ? null : 'grammar';
 }
-
-/**
- * The scheme on one text in matching form, in priority order: build dates first (and masked), then patches (masked), then
- * versions, so that `patch1.2` is a patch and never version 1.2. Matches are returned in text order.
- */
 export function schemeScan(text: string): { matches: SchemeMatch[]; rejects: SchemeReject[] } {
-  const matches: SchemeMatch[] = [];
-  const rejects: SchemeReject[] = [];
-  let masked = text;
-  const mask = (start: number, end: number): void => {
-    masked = `${masked.slice(0, start)}${' '.repeat(end - start)}${masked.slice(end)}`;
-  };
-  for (const m of text.matchAll(BUILD_DATE)) {
-    const digits = m[1];
-    const start = m.index ?? 0;
-    const end = start + m[0].length;
-    if (validDate(Number(digits.slice(0, 4)), Number(digits.slice(4, 6)), Number(digits.slice(6, 8)))) matches.push({ kind: 'build', value: digits, start, end });
-    else rejects.push({ kind: 'build', text: m[0] });
-    mask(start, end);
-  }
-  for (const m of masked.matchAll(PATCH_RUN)) {
-    const start = m.index ?? 0;
-    const end = start + m[0].length;
-    // One trailing dot ends a sentence; a run like patch1.2.3 is no patch number. It is masked either way, so it never
-    // reads as a version.
-    const number = m[1].endsWith('.') ? m[1].slice(0, -1) : m[1];
-    if (PATCH_NUMBER.test(number)) matches.push({ kind: 'patch', value: number, start, end });
-    else rejects.push({ kind: 'patch', text: text.slice(start, end) });
-    mask(start, end);
-  }
-  for (const m of masked.matchAll(VERSION)) {
-    const value = m[1];
-    const end = (m.index ?? 0) + m[0].length;
-    const start = end - value.length;
-    if (notAVersion(masked, start, end, value) === null) matches.push({ kind: 'version', value, start, end });
-  }
-  matches.sort((a, b) => a.start - b.start);
-  return { matches, rejects };
+  const version = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/.exec(text);
+  return {matches:version ? [{kind:'version',value:version[1],start:0,end:text.length}] : [], rejects:[]};
 }
-
 export function schemeMatches(text: string): SchemeMatch[] {
   return schemeScan(text).matches;
 }

@@ -1,3 +1,4 @@
+// U24 owner ruling 2026-10-24: line leading zeroes and trailing .0 do not change version-line identity; build ids remain exact.
 // Naming of the APV/NSAE product line (product knowledge, pack data): the two name families, build names, listing page
 // names and version lines. Pure functions over strings.
 import type { Family, PageKind } from './types.ts';
@@ -188,8 +189,9 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
     tail = tail.slice(0, tail.length - trailing.length);
   }
   let kind: PageKind;
-  if (tail.some((token) => token === 'patch' || token.startsWith('patch'))) kind = 'patch';
+  if (tail.length === 1 && /^patch[0-9]+(?:\.[0-9]+)?$/.test(tail[0])) kind = 'patch';
   else if (extra.length === 0 && tail.every((token) => mainlineWords.includes(token))) kind = platform === null ? 'mainline' : 'platform';
-  else kind = 'customer';
+  else if (tail.length === 2 && tail[0] === 'customer' && /^[A-Za-z0-9]+$/.test(tail[1])) kind = 'customer';
+  else return null;
   return { family, line, platform, kind, tokens };
 }

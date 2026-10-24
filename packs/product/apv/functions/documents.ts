@@ -10,7 +10,7 @@ import { guarded, isRecord } from './util.ts';
 
 const FOLDER = /^rel_(apv|nsae)_([0-9]{1,3}(?:_[0-9]{1,3}){1,3})$/i;
 /** A version token: an optional product name, an optional v/V, two or three numbers of at most two digits, not part of a longer number. */
-const TOKEN = /(?<![0-9A-Za-z._])(?:(APV|NSAE)[\s_-]*)?[vV]?([0-9]{1,2}(?:[._][0-9]{1,2}){1,2})(?![0-9]|[._][0-9])/g;
+const TOKEN = /^(?:(APV|NSAE)[ _-])?[vV]?([0-9]{1,3}(?:[._][0-9]{1,3}){1,3})$/g;
 const MAX_TEXT = 4096;
 
 /** The line of a manual folder (rel_apv_10_6_4 and rel_nsae_10_6_4 are 10.6.4); null for any other name. */
@@ -34,7 +34,7 @@ export function documentLines(text: string): DocumentLine[] {
   if (typeof text !== 'string') return [];
   const out: DocumentLine[] = [];
   const seen = new Set<string>();
-  for (const match of text.slice(0, MAX_TEXT).normalize('NFKC').matchAll(TOKEN)) {
+  for (const match of text.slice(0, MAX_TEXT).matchAll(TOKEN)) {
     const line = lineKey(match[2].replaceAll('_', '.'));
     if (seen.has(line)) continue;
     seen.add(line);

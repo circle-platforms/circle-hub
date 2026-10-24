@@ -312,3 +312,5 @@ case-location@1.3.1 改用生成词表的类型及包内运行时快照。包内
 case-location@1.3.3 只把注释中的版本示例换成合成线，解析规则不变；包内文件字节改变，升补丁版本并重签清单。
 
 1.4.0 applies the settled conventions and decimal identifier normalization; APV ids is re-signed without changing its version, pending integrator alignment with K1.
+
+R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。apv-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。apv-assets@1 只识别完整 Rel_APV/NSAE_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。

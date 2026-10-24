@@ -160,11 +160,11 @@ function basename(href: string): string {
 type FileKind = 'commandTree' | 'bugsFixed' | 'mib' | 'image';
 
 function fileKind(name: string): FileKind | null {
-  const lower = name.toLowerCase();
-  if (/command[_-]?tree/.test(lower) && lower.endsWith('.xml')) return 'commandTree';
-  if (/bugs?[_-]?fixed/.test(lower)) return 'bugsFixed';
-  if (/mib/.test(lower) && /\.(?:txt|mib|my)$/.test(lower)) return 'mib';
-  if (/\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\.gz)$/.test(lower)) return 'image';
+  // apv-assets@1: complete filenames, never substrings. Origin and extensions are declared in README.
+  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_command-tree\.xml$/.test(name)) return 'commandTree';
+  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_bugs-fixed\.json$/.test(name)) return 'bugsFixed';
+  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_mib\.(?:txt|mib|my)$/.test(name)) return 'mib';
+  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\.gz)$/.test(name)) return 'image';
   return null;
 }
 
