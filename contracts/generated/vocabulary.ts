@@ -74,6 +74,7 @@ export const AXES = {
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
   share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
   applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
+  knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -717,6 +718,15 @@ export function isApplicabilityField(value: unknown): value is ApplicabilityFiel
   return (APPLICABILITY_FIELD as readonly unknown[]).includes(value);
 }
 
+/** 知识计数口径 (K05) */
+export const KNOWLEDGE_COUNT = ['tree_unplaced_entries', 'commandless_cases'] as const;
+export type KnowledgeCount = (typeof KNOWLEDGE_COUNT)[number];
+export const KNOWLEDGE_COUNT_LABEL = { 'tree_unplaced_entries': '未挂到树上位置的条目', 'commandless_cases': '未归位（没有命令归属的用例）' } as const satisfies { readonly [K in KnowledgeCount]: string };
+export const KnowledgeCountSchema = z.enum(KNOWLEDGE_COUNT);
+export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
+  return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -789,6 +799,7 @@ export interface AxisValues {
   digest_rule: DigestRule;
   share_audience: ShareAudience;
   applicability_field: ApplicabilityField;
+  knowledge_count: KnowledgeCount;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -863,6 +874,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   digest_rule: DIGEST_RULE_LABEL,
   share_audience: SHARE_AUDIENCE_LABEL,
   applicability_field: APPLICABILITY_FIELD_LABEL,
+  knowledge_count: KNOWLEDGE_COUNT_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

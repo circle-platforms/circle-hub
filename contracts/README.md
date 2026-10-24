@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 61 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 72 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -193,7 +193,7 @@ automatic actions. Dates are validated structurally, never against wall time whe
 entry points: the latter returns `{result, notices}` with paths and “出口未写” / “缺失事实未写”, without backfilling either
 field in the record. Consumers must switch history rendering to this reader; no historical records are rewritten here.
 The new conditional requirements are also emitted in JSON Schema, not only Zod refinements. The generator's full-snapshot
-symlink test now sizes its capture buffer from the actual serialized expected snapshot; no production or timeout limit is
+symlink test writes the full snapshot to a temporary file for exact comparison and sizes its unexpected-output capture buffer from the serialized expected snapshot; no production or timeout limit is
 changed. hub-unknown-exits must derive actions/create requests, preserve gaps, and use the strict writer after binding exits.
 
 ### Table absence and empty aggregates (task item 6)
@@ -274,6 +274,15 @@ The strict check-outcome boundary intentionally rejects a new unknown without to
 still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
 runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
 
+### Unchecked source constraints in catalogs
+
+`CatalogParam.unchecked_constraints` preserves each uninterpreted source constraint's path, reason, missing fact,
+next_action and optional source_value. It does not invent a generic restriction from an unknown source grammar.
+After known parameter checks, a matching but unchecked signature yields unknown with top-level missing; exit stays
+optional for Hub binding. An independently complete matching overload wins, omitted optional arguments without a
+source default do not require a value constraint, and known native type violations remain independently refutable.
+The parameter's diagnostic locator and recovery wording are excluded from catalog syntax comparisons.
+
 History rendering is connected through `readStoredValidationResult` and `StoredPartitionItem`: `get_nodes` retains
 counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as
 “出口未写” and “缺失事实未写”, including partition/item pointers and paged results. Reading never backfills those fields
@@ -301,3 +310,10 @@ W04 public RequirementSummary requires `rules` and `run_interpreters`. Historica
 without defaults being inserted into their record bodies; supplying just one is invalid. The engine derives a read view
 from the locked package when necessary. Missing locked declarations are explicitly unavailable and never become empty
 rule lists. Public run-summary@1 remains strict and requires both arrays.
+
+
+## Predecessor input defaults
+
+`WorkflowInput.default_from_predecessor` explicitly declares `{pack: <workflow id>}`. Only artifact-under-verification inputs accepting `application/json` may declare it. Absent declarations never opt in; explicit bindings always win. The runtime selects only an accepted validation of a real predecessor submission, preserving the existing predecessor access and lineage guards. The optional declaration is also returned in input-slot summaries.
+
+`RunSummary.input_defaults` freezes `{slot, predecessor, reference}` for every Hub-selected default. References name complete validation records without fragments; historical and explicitly bound runs omit this field. The record and tool reply use the same frozen facts. Cross-field declaration eligibility, unique defaulted slot names and the no-fragment requirement are runtime refinements beyond the generated JSON Schema; callers must still pass these checks.

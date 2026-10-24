@@ -128,13 +128,13 @@ describe('get_nodes under load', () => {
     assert.deepEqual(big[big.length - 1].coverage, { complete: true, examined: 1, total: 1 });
   });
 
-  test('an authorized cursor beyond the walk gets a correction', async (t) => {
+  test('an authorized cursor beyond the walk has a determined remedy', async (t) => {
     const w = await produced(t, { knowledge: { limits: { pageNodes: 3 } } });
     const first = await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6 }, w.user);
     assert.ok(first?.next);
     const decoded = JSON.parse(Buffer.from(first.next, 'base64url').toString('utf8')) as Record<string, unknown>;
     const forged = Buffer.from(JSON.stringify({ ...decoded, o: 1_000_000 }), 'utf8').toString('base64url');
-    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: forged }, w.user), /游标/);
+    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: forged }, w.user), /游标.*首页/);
     const second = await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: first.next }, w.user);
     assert.equal(second?.nodes.length, 3);
   });

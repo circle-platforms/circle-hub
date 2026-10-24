@@ -80,8 +80,9 @@ describe('a plan that lists 500 documents for a build', () => {
 
     // A rerun: nothing changed, only the document that could not be loaded is tried again.
     const second = await w.knowledge.syncProduct(w.product, { by: w.admin });
-    assert.equal(second.builds[0].outcome, 'skipped');
-    assert.match(second.builds[0].reason, /已有根，来源和生产器都没有变/);
+    assert.equal(second.builds[0].outcome, 'produced');
+    assert.deepEqual(second.builds[0].calls,{made:1,reused:10},'all skipped sources are retried while successful calls remain reusable');
+    assert.match(second.builds[0].reason, /上次跳过 1 份来源，本次全部重试/);
     assert.equal(docReads(w), COUNT + 1);
 
     // The document appears. A dry run says it would produce again and stores no load of its own.

@@ -1,3 +1,4 @@
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 // Independently compare every (version line, module) group from agile tree locations and mindmap counts.
 import { createPagerState, pagedRespond } from '../lib/pager.ts';
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
@@ -166,10 +167,12 @@ export default function scenario(gold: BoardGold): Scenario {
       // Whenever placement is bound the Hub states the unplaced count; without a gold number a missing sentence is
       // a mismatch (a Hub output never given is 不符), with one the numbers must agree.
       if (gold.placement === true || gold.unplaced !== undefined || gold.types === true) {
-        const count = /(\d+) 个用例没有解析出命令/.exec(text);
+        const label = labelOf('knowledge_count', 'commandless_cases');
+        // Current generated wording, with legacy receipts still readable.
+        const count = /^(\d+) 个/.exec(text.split(label + ' ')[1] ?? '') ?? /(\d+) 个用例没有解析出命令/.exec(text);
         const bound = gold.placement === true || gold.unplaced !== undefined || gold.types === true;
         const ok = bound && count !== null && (gold.unplaced === undefined || Number(count[1]) === gold.unplaced);
-        checks.push({ area, name: gold.unplaced === undefined ? 'Hub 写出未归位用例数' : '未归位用例数与独立依据一致', expected: gold.unplaced === undefined ? '摘要里有“N 个用例没有解析出命令”' : `${gold.unplaced}`, actual: count ? `${count[1]}` : '未读到', ok });
+        checks.push({ area, name: gold.unplaced === undefined ? 'Hub 写出未归位用例数' : '未归位用例数与独立依据一致', expected: gold.unplaced === undefined ? `摘要里有“${label} N 个”` : `${gold.unplaced}`, actual: count ? `${count[1]}` : '未读到', ok });
       }
 
       checks.push({

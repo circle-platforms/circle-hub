@@ -5,6 +5,7 @@
 // through CompositionView, whether they are one record or parts.
 import { KnowledgeError } from './errors.ts';
 import { createHash } from 'node:crypto';
+import {requestKnowledgeFact} from './requests.ts';
 import { ApplicabilityFieldSchema, labelOf, type ApplicabilityField, EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
@@ -277,15 +278,16 @@ export class TreeReading {
       }
       paths.push({ text: path, segments });
     }
+    const badCursor = (reason:string):never => {throw new KnowledgeError(`游标${reason}；请从首页重新读取`,{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'},fix:'移除 cursor，从同一根、路径和深度的首页重新读取，再使用返回的 next'});};
     const decoded=query.cursor?decodeCursor(query.cursor):null;
-    if(query.cursor&&!decoded)throw new KnowledgeError('游标格式无效；保持 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
-    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)throw new KnowledgeError('游标与锁定的组成不匹配；从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+    if(query.cursor&&!decoded)return badCursor('写法无效');
+    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)return badCursor('不属于所给组成');
     const hint=query.composition!==undefined?query.composition:decoded?.c;
     const relationComposition=hint===null?null:await this.#relations?.compositionFor(root,reader,hint)??null;
     if(hint&&!relationComposition)throw new KnowledgeError('所给组成不属于该根；按运行锁定的组成重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const cursorComposition=relationComposition&&(relationComposition.body.links!==undefined||typeof hint==='string')?relationComposition.record:undefined;
     const queryKey=createHash('sha256').update(JSON.stringify([root,paths.map(p=>p.text),depth,...(cursorComposition?[cursorComposition]:[])])).digest('hex').slice(0,16);
-    if(decoded&&decoded.q!==queryKey)throw new KnowledgeError('游标不属于本次查询；保持原 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+    if(decoded&&decoded.q!==queryKey)return badCursor('不属于本次读取范围');
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
     if ((await this.#context.store.node(root)) === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
     const composition = relationComposition ?? await this.compositionOf(root);
@@ -370,7 +372,7 @@ export class TreeReading {
       if (!(await visit(path.segments, found.digest, found.node, depth))) break;
     }
     // A cursor that points past the walk (or into a node without such an entry) was not made by this query.
-    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) throw new KnowledgeError('游标位置已失效；按原查询从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) return badCursor('位置已经超出本次读取范围');
     const notes: string[] = [];
     if (walk.split !== null) notes.push(walk.split);
     if (missing.length > 0) notes.push(`这些路径在这个根里不存在：${cutText(missing.join('、'), 1000)}`);
@@ -500,14 +502,17 @@ export class TreeReading {
     // The reader's root Y (K01 R[6], K03 R[5]): in a run, the root of the composition the lock names; outside a run,
     // the CURRENT-ROOT POINTER of the product line the cited root belongs to. When the pointer cannot be taken (the
     // line has no root yet) there is no Y and nothing is claimed, honestly (README).
-    const readerRoot = bound !== null
-      ? (await this.#context.store.composition(bound))?.root ?? null
-      : await (async () => {
-          const body = all[0]?.body;
-          if (body === undefined) return null;
-          const pointer = await this.#context.records.pointers.get(pointerName(body.product, body.version?.line ?? null));
-          return pointer?.target ?? null;
-        })();
+    const readerRoot=await(async():Promise<string|null>=>{
+      if(bound!==null){
+        const target=await this.#context.store.composition(bound);
+        return target!==null&&await this.mayReadProducts({id:reader.user},[target.product])?target.root:null;
+      }
+      // Only readable compositions may select comparison targets. Several readable scopes are unambiguous only
+      // when every current pointer names the same root; otherwise the reader must supply a composition.
+      const scopes=new Map(compositions.map(composition=>[pointerName(composition.body.product,composition.body.version?.line ?? null),true]));
+      const targets=await Promise.all([...scopes.keys()].map(async name=>(await this.#context.records.pointers.get(name))?.target??null));
+      return targets.length>0&&targets.every(root=>root!==null)&&new Set(targets).size===1?targets[0]:null;
+    })();
     // Pack lookups of one read are cached (a withdrawn version is asked once, not once per row).
     const packCache = new Map<string, Promise<boolean>>();
     const withdrawn = (ref: string): Promise<boolean> => {
@@ -518,7 +523,7 @@ export class TreeReading {
       }
       return hit;
     };
-    const CONDITIONS = ValidityStatusSchema.extract(['rule_withdrawn', 'cited_fragment_changed', 'contradicted']);
+    const CONDITIONS = ValidityStatusSchema.extract(['rule_withdrawn', 'grounds_withdrawn', 'credential_unreadable', 'premise_failed', 'cited_fragment_changed', 'contradicted']);
     type Condition = (typeof CONDITIONS.options)[number];
     const ORDER: readonly Condition[] = CONDITIONS.options;
     type Relation = { digest: string; source: string; at: string; other: string; by: string; provenance: string };
@@ -546,6 +551,7 @@ export class TreeReading {
 
     const validityOfRows = async (digests: readonly string[]): Promise<{
       status: ValidityStatus;
+      unevaluated: Array<{condition: ValidityStatus; missing: string; action: string; request?: string; audience_user?: string; deadline?: string}>;
       bound: string[];
       conditions: Array<{ condition: Condition; source: string }>;
       contradictions: Array<{ source: string; at: string; other: string }>;
@@ -553,6 +559,32 @@ export class TreeReading {
       reader_root?: string;
     }> => {
       const conditions: Array<{ condition: Condition; source: string }> = [];
+      const unevaluated: Array<{condition: ValidityStatus; missing: string; action: string; request?: string; audience_user?: string; deadline?: string}> = [];
+      if (readerRoot === null && digests.length > 0) unevaluated.push({condition:'cited_fragment_changed',missing:'读者锁定的组成或当前根指针',action:'管理员核对该版本线的当前根并设置指针，或用运行锁定的组成重读'});
+      const fragments=groundsOf(digests).grounds;
+      const sourceRows=(await Promise.all(compositions.map(c=>c.sources()))).flat().filter(source=>fragments.some(fragment=>fragment.startsWith(`src:${source.sha256}/`)));
+      if (digests.length > 0 && fragments.length === 0) unevaluated.push({condition:'grounds_withdrawn',missing:'条目在组成中的来源片段',action:'管理员从原始来源重新生产该构建并核对片段'});
+      const checkedSources=new Set<string>();
+      for(const source of sourceRows){
+        if(checkedSources.has(source.artifact))continue;checkedSources.add(source.artifact);
+        const admin=this.#context.admin;
+        if(!admin){unevaluated.push({condition:'grounds_withdrawn',missing:'读取原件的同步管理员上下文',action:'配置同步管理员后重新读取'});continue;}
+        try{
+          const observed=await this.#context.records.artifacts.source(admin,source.sha256,{consumer:'model',record:source.artifact});
+          if(observed===null)unevaluated.push({condition:'grounds_withdrawn',missing:'当前核验身份可读的已锁定原件记录',action:'管理员核对原件是否存在及共享读取授权，恢复核验条件后重新读取'});
+          else if(observed.readTier==='retain_only')conditions.push({condition:'credential_unreadable',source:`rec:${source.artifact}`});
+          else if(observed.bytes===null)unevaluated.push({condition:'grounds_withdrawn',missing:'模型可读的原件',action:'管理员核对原件读取档位后重读'});
+        }catch{unevaluated.push({condition:'grounds_withdrawn',missing:'可核验的原件字节',action:'管理员恢复来源原件并重新读取'});}
+      }
+      for(const digest of digests){
+        const content=await this.#contentOf(rowsOf[0]??null,digest);
+        const declared=Object.entries(content?.applicability??{}).filter(([,values])=>Array.isArray(values)&&values.length>0);
+        if(declared.length>0)unevaluated.push({condition:'premise_failed',missing:`适用条件的目标事实：${declared.map(([key])=>key).join('、')}`,action:'管理员核对条目声明与运行目标的构建、平台和型号后重读'});
+      }
+      for(const pending of unevaluated){
+        const request=await requestKnowledgeFact(this.#context,{subject:`tree:${root}${canonical}`,missing:pending.missing,action:pending.action,inputs:premises});
+        Object.assign(pending,{request:request.reference,audience_user:request.audience_user,deadline:request.deadline});
+      }
       // rule_withdrawn: the pack version that decided a row is no longer published.
       const decidedBy = new Set<string>();
       for (const [i, c] of compositions.entries()) for (const digest of digests) {
@@ -580,16 +612,17 @@ export class TreeReading {
       if (contradictions.length > 0) conditions.push({ condition: 'contradicted', source: contradictions.map((c) => c.source).join('、') });
       const sourceConflicts=applicabilitySourcesOf(digests).filter(source=>source.conflict&&!source.superseded);
       if(sourceConflicts.length)conditions.push({condition:'contradicted',source:'章节开头条件冲突；未裁决：'+sourceConflicts.map(source=>labelOf('applicability_field',source.field)+' '+source.fragment).join('、')});
-      let status: ValidityStatus = 'valid';
+      let status: ValidityStatus = unevaluated.length > 0 ? 'not_evaluated' : 'valid';
       for (const condition of ORDER) if (conditions.some((c) => c.condition === condition)) { status = condition; break; }
       const result: {
         status: ValidityStatus;
+      unevaluated: Array<{condition: ValidityStatus; missing: string; action: string; request?: string; audience_user?: string; deadline?: string}>;
         bound: string[];
         conditions: Array<{ condition: Condition; source: string }>;
         contradictions: Array<{ source: string; at: string; other: string }>;
         cited_root?: string;
         reader_root?: string;
-      } = { status, bound: [root, ...digests], conditions, contradictions };
+      } = { status, unevaluated, bound: [root, ...digests], conditions, contradictions };
       if (digests.length === 1 && readerRoot !== null && readerRoot !== root) {
         result.cited_root = root;
         result.reader_root = readerRoot;
@@ -668,10 +701,7 @@ export class TreeReading {
         if (data.summary !== undefined) entry.summary = data.summary;
         kept.push({ entry, segments: pathSegments(row.path) });
       }
-      const catalog =
-        kept.length === 0
-          ? null
-          : createCatalogView(
+      const catalog = createCatalogView(
               kept.map((m) => m.entry),
               { reference: treeReference(root, pathOf(commonAncestor(kept.map((m) => m.segments)))), complete: declaration.complete, caseSensitive: declaration.case_sensitive },
             );

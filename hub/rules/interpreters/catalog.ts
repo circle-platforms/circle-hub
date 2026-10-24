@@ -32,7 +32,7 @@ const arityText = (arities: { min: number; max: number }[]): string =>
   `${arities.map((a) => (a.min === a.max ? `${a.min}` : `${a.min} 到 ${a.max}`)).join('、')} 个`;
 
 /** Why arguments after a head fit none of its signatures, for statements. */
-function misfit(result: Exclude<SignatureResult, { kind: 'match' }>, args: readonly string[]): string {
+function misfit(result: Exclude<SignatureResult, { kind: 'match'|'unchecked' }>, args: readonly string[]): string {
   if (result.kind === 'arity') return `有 ${args.length} 个参数，签名要求 ${arityText(result.arities)}`;
   const first = result.best.violations[0];
   return `参数 ${first.param} 取值 ${quoted(first.value)}，应为${first.expected}`;
@@ -53,6 +53,7 @@ function membership(catalog: CatalogView, tokens: string[], fold: boolean) {
     const grounds = [match.entry.reference, ...(result.best.signature.reference ? [result.best.signature.reference] : [])];
     return { exists: true, grounds, head } as const;
   }
+  if(result.kind==='unchecked')return {exists:null,grounds:[match.entry.reference],head,unchecked:result.best.unchecked} as const;
   // The head exists but the rest fits no signature: the absence rests on the head entry and on the catalog as a whole.
   return { exists: false, grounds: [match.entry.reference, ...(catalog.reference ? [catalog.reference] : [])], head, misfit: misfit(result, args) } as const;
 }
@@ -145,7 +146,9 @@ export const catalogInterpreter = defineInterpreter({
           const { best } = result;
           if (best.signature.reference) grounds.push(best.signature.reference);
           const data = { command, head: headText, overload: best.overload, signature: best.signature.id ?? null, arguments: best.bindings };
-          if (result.kind === 'violations') {
+          if(result.kind==='unchecked'){
+            phraseOutcomes.push({...unknown(phraseBase,best.unchecked[0].constraint.reason,`${quoted(command)} 的参数约束未核对；${best.unchecked.map(gap=>gap.constraint.next_action).join('；')}`,{pointer,grounds,data:{...data,unchecked_constraints:best.unchecked}}),missing:[...new Set(best.unchecked.map(gap=>gap.constraint.missing))].join('；')});
+          } else if (result.kind === 'violations') {
             const first = best.violations[0];
             phraseOutcomes.push(
               refute(phraseBase, first.code, `${quoted(command)} 的参数 ${first.param} 取值 ${quoted(first.value)}，应为${first.expected}`, {
@@ -183,7 +186,9 @@ export const catalogInterpreter = defineInterpreter({
         const grounds = [...found.grounds];
         const data = { command, claims_present: claimsPresent, in_catalog: found.exists, ...(found.head !== undefined ? { head: found.head } : {}) };
         const why = 'misfit' in found && found.misfit ? `（有命令“${found.head}”，但${found.misfit}）` : '';
-        if (found.exists && claimsPresent) claimOutcomes.push(support(base, `目录里有 ${quoted(command)}，与陈述一致`, { pointer, grounds, data }));
+        if(found.exists===null){
+          claimOutcomes.push({...unknown(base,found.unchecked[0].constraint.reason,`尚未核对 ${quoted(command)} 的参数约束，不能据此判断存在或不存在`,{pointer,grounds,data:{...data,unchecked_constraints:found.unchecked}}),missing:[...new Set(found.unchecked.map(gap=>gap.constraint.missing))].join('；')});
+        } else if (found.exists && claimsPresent) claimOutcomes.push(support(base, `目录里有 ${quoted(command)}，与陈述一致`, { pointer, grounds, data }));
         else if (found.exists) {
           claimOutcomes.push(refute(base, 'core.catalog.membership_contradicted', `陈述说 ${quoted(command)} 不存在，目录里有这个命令`, { pointer, grounds, data }));
         } else if (!catalog.complete) {

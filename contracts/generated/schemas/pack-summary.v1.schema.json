@@ -70,6 +70,19 @@
           },
           "many": {
             "type": "boolean"
+          },
+          "default_from_predecessor": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

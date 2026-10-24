@@ -27,7 +27,7 @@ export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
-export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, CREDENTIAL_DETECTORS } from './scan.ts';
+export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
@@ -294,7 +294,7 @@ export interface CredentialScan {
   /** True only when the bytes were inspected and nothing was found. A credential hit is `findings.length > 0`. */
   clean: boolean;
   findings: CredentialFinding[];
-  /** True when more findings existed than were kept. A truncated scan can never be accepted (README decision 18). */
+  /** True when more findings existed than were kept. Truncated evidence alone cannot establish acceptance; an administrator may rescan all findings by detector class. */
   truncated: boolean;
   /**
    * Present only on a read or generated artifact the Hub read or made (no person as author), stored while an admin's
@@ -375,7 +375,10 @@ export interface ArtifactSource {
 }
 
 /** What acceptFindings decided: the configuration record and the fresh scan it covers (positions and detector ids only). */
+export interface CredentialFindingsPage {scanner:string;findings:CredentialFinding[];next:string|null;total:number;detectors:Record<string,number>}
 export interface FindingsAcceptance {
+  detectors?:string[];
+  complete?:boolean;
   /** resource_config, subject WHOLE_HUB, object `scanAcceptanceKey(sha256)`, bound `scanDigest(scan)`. */
   authorization: AuthorizationRecord;
   scan: CredentialScan;
@@ -432,13 +435,15 @@ export interface Artifacts {
    * `scanDigest` of that scan is recorded (B04, append-only). AccessError for anyone but an enabled admin; ConflictError
    * when the bytes are not stored (a refused upload keeps none), when no record of them was read or made by the Hub (only
    * uploads or records with a person as author), when the scan finds nothing, or when it found more than it keeps
-   * (`truncated`). A note the credential scanner flags, or one that copies six or more consecutive characters from the
+   * (`truncated`) without an explicit detector-class rescan. scanFindings pages positions only; selected classes add
+   * decisions, and effective access is lifted only when every actual class of the complete scan is covered. A note the credential scanner flags, or one that copies six or more consecutive characters from the
    * lines carrying a finding, is refused (RecordsError) before anything is recorded. It takes effect for read and
    * generated artifacts' effective reads, including a historical scan-imposed hold, never for what a person supplied.
    * The stored tier stays historical; explicit requested retention is preserved. Other bytes, scanner versions or
    * finding sets are not covered.
    */
-  acceptFindings(by: Principal, sha256: string, note?: string | null): Promise<FindingsAcceptance>;
+  scanFindings(by:Principal,sha256:string,options?:{after?:string|null;limit?:number}):Promise<CredentialFindingsPage>;
+  acceptFindings(by: Principal, sha256: string, note?: string | null, options?:{detectors?:readonly string[];automatic?:boolean}): Promise<FindingsAcceptance>;
   /**
    * Withdraws an acceptance: a new decision in the same chain (the earlier ones stay). Admin only (AccessError); the note
    * rule of acceptFindings applies. From then on the bytes read as retain_only again and new ingests are stored at

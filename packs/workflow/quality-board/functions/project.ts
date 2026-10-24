@@ -1,3 +1,4 @@
+import { labelOf } from './generated/vocabulary.ts';
 // Item projection of the quality-board pack (W01): the bound facet view becomes one item per (line, module) group, with the
 // counts and the exact ratios frozen in the item fields and the view facts frozen in the run's groups for the totals check.
 // The grouping itself is board.ts; both the summary here and the checks read the same groups. A run too large is a refusal
@@ -11,6 +12,7 @@ import { readFacetView } from './views.ts';
 
 /** The input slot (workflow.json). */
 export const SLOT = 'facets';
+const COMMANDLESS_CASES = labelOf('knowledge_count', 'commandless_cases');
 const PARSER = 'json@1';
 
 /** Budgets under the sandbox's default limits, so that a run too large is a refusal with a fix. */
@@ -37,7 +39,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
   const bound = (input.inputs as unknown[]).filter(isRecord);
   const inputs = bound.filter((b) => b.slot === SLOT);
-  const fix = 'inputs.facets 绑定一个 by=line,module,has_expected,vague_expected,negative 计数视图，可再绑一个 by=line,module,tags 标签视图；inputs.placement 必填，绑定 by=commands 未归位视图，三个视图同产品同知识根';
+  const fix = `inputs.facets 绑定一个 by=line,module,has_expected,vague_expected,negative 计数视图，可再绑一个 by=line,module,tags 标签视图；inputs.placement 必填，绑定 by=commands ${COMMANDLESS_CASES}视图，三个视图同产品同知识根`;
   if (inputs.length < 1 || inputs.length > 2) return refusal('invalid_input', 'facets 需要一个计数视图和可选的一个标签视图', fix);
   const countInputs = inputs.filter((b) => isRecord(b.model) && Array.isArray(b.model.by) && b.model.by.includes('has_expected'));
   const tagInputs = inputs.filter((b) => { const model = b.model; if (!isRecord(model) || !Array.isArray(model.by)) return false; const by = model.by; return by.length === 3 && ['line', 'module', 'tags'].every((key) => by.includes(key)); });
@@ -54,13 +56,13 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
     if (tags.product !== view.product || tags.root !== view.root || tags.total !== view.total) return refusal('view_mismatch', '标签和计数视图必须同产品同知识根，且 total 相同', fix);
   }
   const placements = bound.filter((b) => b.slot === 'placement');
-  if (placements.length !== 1) return refusal('invalid_input', '缺少未归位数来源：placement 必须绑定一个视图', fix);
+  if (placements.length !== 1) return refusal('invalid_input', `缺少${COMMANDLESS_CASES}计数来源：placement 必须绑定一个视图`, fix);
   const placeRead = readFacetView(placements[0] as unknown as BoundInput, 'placement', ['commands']);
   if (!placeRead.ok) return refusal(placeRead.code, placeRead.message, placeRead.fix);
   const placement = placeRead.view;
-  if (placement.by.length !== 1 || placement.product !== view.product || placement.root !== view.root || placement.total !== view.total) return refusal('view_mismatch', '未归位视图必须是同产品同知识根的 by=commands 视图，且 total 相同', fix);
+  if (placement.by.length !== 1 || placement.product !== view.product || placement.root !== view.root || placement.total !== view.total) return refusal('view_mismatch', `${COMMANDLESS_CASES}视图必须是同产品同知识根的 by=commands 视图，且 total 相同`, fix);
   const nullRows = placement.rows.filter((row) => row.values.commands === null);
-  if (placement.truncated && nullRows.length === 0) return refusal('wrong_view', '缺少事实：未归位数；视图截断且没有读到空组', '自动重新读取同根未截断的 by=commands 视图并重试；当前分面接口不能分页或按 only= 补读，若仍被截断，报告知识包的汇总能力缺口，请集成者补取不可截断的未归位汇总字段，不能结束为未知');
+  if (placement.truncated && nullRows.length === 0) return refusal('wrong_view', `缺少事实：${COMMANDLESS_CASES}计数；视图截断且没有读到空组`, `自动重新读取同根未截断的 by=commands 视图并重试；当前分面接口不能分页或按 only= 补读，若仍被截断，报告知识包的汇总能力缺口，请集成者补取不可截断的${COMMANDLESS_CASES}汇总字段，不能结束为未知`);
   const unplaced = nullRows.reduce((sum, row) => sum + row.count, 0);
   const warnings: PackWarning[] = [];
 

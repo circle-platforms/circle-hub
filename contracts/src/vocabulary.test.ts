@@ -11,8 +11,8 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
 const exported = vocabulary as unknown as Record<string, unknown>;
 const pascal = (s: string): string => s.split('_').map((p) => p[0].toUpperCase() + p.slice(1)).join('');
 
-test('the model declares 71 axes and the generated AXES lists exactly those, in order', () => {
-  assert.equal(model.vocabulary.length, 71);
+test('the model declares 72 axes and the generated AXES lists exactly those, in order', () => {
+  assert.equal(model.vocabulary.length, 72);
   assert.deepEqual(Object.keys(AXES), model.vocabulary.map((a) => a.axis));
 });
 
