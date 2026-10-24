@@ -141,9 +141,11 @@ function scanMarked(text: string): Array<{ id: string; kind: 'story' | 'bug' | n
   MARKER_REGEX.lastIndex = 0;
   for (let match = MARKER_REGEX.exec(text); match !== null; match = MARKER_REGEX.exec(text)) {
     let kind: 'story' | 'bug' | null = null;
-    if (match[1] !== undefined || match[4] !== undefined) {
+    // The published bug-to-case family marks defects; PLM names a system, not a record kind.
+    // The immediately following explicit type word below still overrides this family default.
+    if (match[4] !== undefined) {
       kind = null;
-    } else if (match[2] !== undefined || match[5] !== undefined) {
+    } else if (match[1] !== undefined || match[2] !== undefined || match[5] !== undefined) {
       kind = 'bug';
     } else {
       kind = 'story';
