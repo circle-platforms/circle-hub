@@ -200,10 +200,18 @@ export type ProducedEntry = {
   /** Source fragments in order; for a command entry one per overload (signature id k or k.j names fragments[k-1]). */
   fragments: FragmentRef[];
   applicability: Applicability | null;
+  /** Provenance of a command entry's signatures, beside `data` so that `data` stays exactly catalog-entry@1. */
+  declarations?: SignatureDeclarations;
 };
 
+/** Where a produced signature and each of its parameters came from in the source document: the XML selector of the
+ * argument list and, per parameter, its native type name and its own selector. This is the pack's provenance map, so it
+ * rides beside `data` on the produced entry and never inside it — `data` is exactly catalog-entry@1 (strict), and an
+ * extra key there would make every strict consumer refuse the entry. */
+export type SignatureDeclarations = Record<string, { selector: string; parameters: Array<{ name: string; selector: string; native?: boolean }> }>;
+
 /** Data of a command entry: the catalog-entry@1 fields except the tree reference, which the knowledge package adds. */
-export type CommandEntryData = { signature_declarations?:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>; words: string[]; signatures: CatalogSignature[]; summary?: string };
+export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]; summary?: string };
 
 /**
  * A declared argument type authorized by the versioned apv-command-argument-types@1 schema: argument `position` (1-based) of the

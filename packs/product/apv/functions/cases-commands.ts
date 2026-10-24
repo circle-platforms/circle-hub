@@ -10,7 +10,7 @@ export function commandCatalog(model:XmlModel,source?:string):{catalog:CommandCa
   const produced=produceCommandEntries(model,{});
   const definitions=(source?bindCommandSource(produced.entries,source):produced.entries).flatMap(entry=>{
     if(!entry.path||!isRecord(entry.data)||!Array.isArray(entry.data.words)||!Array.isArray(entry.data.signatures))return [];
-    const declarations=entry.data.signature_declarations as CommandDefinition['declarations'];
+    const declarations=entry.declarations as CommandDefinition['declarations'];
     return [{path:entry.path,words:entry.data.words as string[],declarations,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>({...signature,...(source&&declarations?.[signature.id??'']?{reference:`src:${source}/xml@1/${declarations[signature.id??''].selector}`}: {})}))}];
   });
   const catalog=compileGrammar(definitions);catalog.tree_root=source;return {catalog,warnings:produced.warnings};
