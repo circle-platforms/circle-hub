@@ -3,16 +3,15 @@
 // module -> document), 300 KityMinder test mind maps, and the truth of every document and case, built while the documents
 // are built (never computed by the code under test). Case titles, group labels and document titles come from table.ts, so
 // the commands each case must resolve are the table's. Names, commands and addresses (192.0.2.0/24, 2001:db8::/32) are
-// invented. The dotted lines (10.4.2 and the rest) are the synthetic scenario the product pack's default min_line exercises;
-// a document is on a build when the release-train month in its train label is not later than that build's, and in this
-// corpus those months happen to follow the dotted order. That is not a lineage claim. The product names are a parameter:
+// invented. The synthetic lines (10.6.142 and the rest) are the synthetic scenario the product pack's default min_line exercises;
+// a document is on a build when the release-train month in its train label is not later than that build's, and numeric order is deliberately not used as a lineage claim. The product names are a parameter:
 // product packs pass their own, this directory never names a product.
 import { CATALOG_A, CATALOG_B, type Command } from './catalog.ts';
 import { tableRow } from './table.ts';
 
 export const DEFAULT_NAMES: readonly [string, string] = ['ORBIT', 'COMET'];
-/** The earliest version line whose documents are listed (the product pack's default). */
-export const MIN_LINE = '10.4.2';
+/** The synthetic deployment default: no lower release-train bound. */
+export const MIN_LINE: string | null = null;
 /** Expected-result texts that say nothing checkable; a case whose expected texts are all among them is vague. */
 export const VAGUE_TEXTS: readonly string[] = ['设备正常', '显示正确', '操作成功', '符合预期', '正常', '设备正常。'];
 
@@ -111,15 +110,22 @@ export function compareLine(a: string, b: string): number {
   return x.length - y.length;
 }
 
-/**
- * The documents a build of this line lists, in id order, by dotted comparison. In this corpus that agrees with the
- * release-train months on the trains. The product pack orders by those months (cases-sync.ts), not by this function.
- */
-export function listedFor(corpus: Corpus, buildLine: string, minLine = MIN_LINE): string[] {
-  return corpus.truth
-    .filter((d) => d.product && d.line !== null && compareLine(minLine, d.line) <= 0 && compareLine(d.line, buildLine) <= 0)
-    .map((d) => d.id)
-    .sort(byNumber);
+/** Independent corpus reference: release-train dates decide inclusion, including lines out of numeric order. */
+export function listedFor(corpus: Corpus, buildLine: string, minLine: string | null = MIN_LINE): string[] {
+  const ranks=new Map<string,string>();
+  for(const d of corpus.truth){
+    if(!d.product||d.line===null||d.train===null)continue;
+    const month=/([0-9]{4})\/([0-9]{1,2})(?![0-9])/.exec(d.train);
+    if(!month)continue;
+    const date=month[1]+'-'+month[2].padStart(2,'0');const key=lineForm(d.line);
+    if(!ranks.has(key)||date<ranks.get(key)!)ranks.set(key,date);
+  }
+  const target=lineForm(buildLine),end=ranks.get(target),floor=minLine===null?undefined:ranks.get(lineForm(minLine));
+  return corpus.truth.filter(d=>{
+    if(!d.product||d.line===null)return false;
+    const key=lineForm(d.line),date=ranks.get(key);
+    return (floor===undefined||date===undefined||date>=floor)&&(key===target||date!==undefined&&end!==undefined&&date<=end);
+  }).map(d=>d.id).sort(byNumber);
 }
 
 // ---------------------------------------------------------------- the mind maps
@@ -424,17 +430,17 @@ function slots(names: readonly [string, string]): Slot[] {
     { root: 'first', folders: ['产品说明'], count: 2, placement: { line: null, train: null, module: null, unlisted: 'no_line' } },
     { root: 'first', folders: ['常见问题'], count: 2, placement: { line: null, train: null, module: null, unlisted: 'no_line' } },
     { root: 'first', folders: [], count: 1, placement: { line: null, train: null, module: null, unlisted: 'no_line' } },
-    line('059：10.4.1', '001：10.4.1-R1-2025/9', '健康检查', 10, '10.4.1', '10.4.1-R1-2025/9', 'before_min_line'),
-    line('059：10.4.1', '001：10.4.1-R1-2025/9', '端点', 10, '10.4.1', '10.4.1-R1-2025/9', 'before_min_line'),
-    line('060：10.4.2', '002：10.4.2-R1-2025/12', '健康检查', 20, '10.4.2', '10.4.2-R1-2025/12'),
-    line('060：10.4.2', '002：10.4.2-R1-2025/12', '会话保持', 15, '10.4.2', '10.4.2-R1-2025/12'),
-    line('060：10.4.2', '002：10.4.2-R1-2025/12', '池管理', 15, '10.4.2', '10.4.2-R1-2025/12'),
+    line('059：10.6.141', '001：10.6.141-R1-2025/9', '健康检查', 10, '10.6.141', '10.6.141-R1-2025/9'),
+    line('059：10.6.141', '001：10.6.141-R1-2025/9', '端点', 10, '10.6.141', '10.6.141-R1-2025/9'),
+    line('060：10.6.142', '002：10.6.142-R1-2025/12', '健康检查', 20, '10.6.142', '10.6.142-R1-2025/12'),
+    line('060：10.6.142', '002：10.6.142-R1-2025/12', '会话保持', 15, '10.6.142', '10.6.142-R1-2025/12'),
+    line('060：10.6.142', '002：10.6.142-R1-2025/12', '池管理', 15, '10.6.142', '10.6.142-R1-2025/12'),
     line('061：10.6.4', '003：10.6.4-R1-2026/11', '健康检查', 25, '10.6.4', '10.6.4-R1-2026/11'),
     line('061：10.6.4', '003：10.6.4-R1-2026/11', 'WebUI', 15, '10.6.4', '10.6.4-R1-2026/11'),
     line('061：10.6.4', '004：10.6.4-R2-2027/2', '日志', 20, '10.6.4', '10.6.4-R2-2027/2'),
     line('061：10.6.4', '004：10.6.4-R2-2027/2', '认证', 20, '10.6.4', '10.6.4-R2-2027/2'),
-    line('062：10.5', '005：10.5-主线-2026/8', '网络', 25, '10.5', '10.5-主线-2026/8'),
-    line('062：10.5', '005：10.5-主线-2026/8', '系统', 15, '10.5', '10.5-主线-2026/8'),
+    line('062：10.6.150', '005：10.6.150-主线-2026/8', '网络', 25, '10.6.150', '10.6.150-主线-2026/8'),
+    line('062：10.6.150', '005：10.6.150-主线-2026/8', '系统', 15, '10.6.150', '10.6.150-主线-2026/8'),
     line('063：10.6.1', '006：10.6.1-R1-2026/9', '健康检查', 30, '10.6.1', '10.6.1-R1-2026/9'),
     line('063：10.6.1', '006：10.6.1-R1-2026/9', '端点', 18, '10.6.1', '10.6.1-R1-2026/9'),
     // A document folder under the train (no module), and documents right under the version line (no train).
