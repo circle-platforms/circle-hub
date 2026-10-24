@@ -11,8 +11,10 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
 const exported = vocabulary as unknown as Record<string, unknown>;
 const pascal = (s: string): string => s.split('_').map((p) => p[0].toUpperCase() + p.slice(1)).join('');
 
-test('the model declares 77 axes and the generated AXES lists exactly those, in order', () => {
-  assert.equal(model.vocabulary.length, 77);
+test('the generated AXES lists exactly the axes the model declares, in order', () => {
+  // The count belongs to the model: a number written down here went stale every time an axis was added or retired.
+  assert.ok(model.vocabulary.length > 0, 'the model declares axes');
+  assert.equal(new Set(model.vocabulary.map((a) => a.axis)).size, model.vocabulary.length, 'axis names are unique');
   assert.deepEqual(Object.keys(AXES), model.vocabulary.map((a) => a.axis));
 });
 

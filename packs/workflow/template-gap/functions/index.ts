@@ -36,9 +36,12 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
       const entry = v.entries[digest];
       if (!sha.test(digest) || !isRecord(entry) || entry.entry !== digest || entry.kind !== 'case' || typeof entry.reference !== 'string' || !entry.reference.startsWith(`tree:${v.build.root}/`) || !entry.reference.endsWith(`@${digest}`)) return bad('条目身份、种类或 tree 引用不一致');
       if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || typeof entry.data.title !== 'string' || !strings(entry.data.path_labels) || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
-      if (entry.data.command_identities !== undefined) {
-        const identities=entry.data.command_identities;
-        if (!Array.isArray(identities) || !identities.every(i => readCommandIdentity(i,typeof entry.data.command_tree_root==='string'?entry.data.command_tree_root:undefined)!==null)) return bad('command_identities 不是冻结命令树来源下的完整 CommandIdentity 列表');
+      // The guard above narrowed entry.data; a closure does not keep that narrowing, so the checked value is held once.
+      const data = entry.data;
+      if (data.command_identities !== undefined) {
+        const identities=data.command_identities;
+        const treeRoot=typeof data.command_tree_root==='string'?data.command_tree_root:undefined;
+        if (!Array.isArray(identities) || !identities.every(i => readCommandIdentity(i,treeRoot)!==null)) return bad('command_identities 不是冻结命令树来源下的完整 CommandIdentity 列表');
         const paths=[...new Set(identities.map(i => readCommandIdentity(i)!.path))].sort(compareText);
         if (JSON.stringify(paths)!==JSON.stringify([...new Set(entry.data.commands as string[])].sort(compareText))) return bad('commands 必须恰好是 command_identities 派生的路径集合');
       }
