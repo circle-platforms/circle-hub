@@ -14,7 +14,7 @@
       "module": "functions/sync.ts"
     },
     "options": {
-      "include": [],
+      "include": "${var:APV_INCLUDE_PAGES}",
       "exclude": [],
       "case_index": false,
       "min_line": "${var:APV_MIN_LINE}",
@@ -189,6 +189,7 @@
   ],
   "variables": [
     {"name": "APV_MIN_LINE", "description": "Minimum release-train line for case indexing; null imposes no floor", "schema": {"type": ["string", "null"]}, "default": null},
+    {"name": "APV_INCLUDE_PAGES", "description": "Glob patterns over listing page names that opt platform, customer and patch pages into the sync; empty selects only the mainline pages", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
     {"name": "APV_MAINLINE_PAGE_WORDS", "description": "Additional literal tokens permitted after a mainline page version", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
     {"name": "APV_ADOC_ROOT", "description": "SVN directory template with {line}; explicit null selects Markdown", "schema": {"type": ["string", "null"]}, "default": null},
     {"name": "APV_ADOC_MAIN", "description": "Main adoc file relative to the configured family directory", "schema": {"type": "string", "minLength": 1}, "default": "book.adoc"},

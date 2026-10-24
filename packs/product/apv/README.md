@@ -122,6 +122,11 @@ Sync plan
   build numbers). No customer names are in the code.
 - Default: mainline listing pages of APV and NSAE. `include` / `exclude` are case-insensitive globs (`*`, `?`) over page
   names; exclude wins and also applies to hub pages. The result does not depend on the order of the hub pages given.
+  `include` itself is the pack-declared variable `APV_INCLUDE_PAGES` (`${var:APV_INCLUDE_PAGES}`, D01 R[12]; synthetic
+  default `[]` selects only the mainline pages).
+- An opted-in page also lists its newest build per version line, name family and platform, released or not (a Beta build
+  under test: `released_at` null, so an `includeUnreleased` sync can produce its root when the page links its command
+  tree; without a tree link the build is listed by name only, as the page states).
 - `syncBuilds` produces each base build that is released or the base of a released alias, has a command tree and is not
   in `existingRoots`; it lists every resolved alias (`{ alias, base, released, platform }`, `released` null for an
   unreleased alias) for the knowledge package to record, even when the base root exists, and why other released builds
