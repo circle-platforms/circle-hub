@@ -681,7 +681,7 @@ for (const mode of ['sandbox exception', 'empty plan'] as const) {
     t.after(() => server.close());
     server.deps.runs.startRun = (_principal, input, context) => h.service.startRun(h.alice, input, context);
     const user = await server.createUser('合成读者');
-    const client = await server.client(user.token);
+    const client = await server.client(user.token,{sessionId:'synthetic-diagnostic-observer'});
     const answer = await client.call('start_run', { pack: 'toy-review', product: 'Meadow', inputs: { map: { external: 'toy:mindmap:docq7' } } });
     const adminLog = await server.records.callLog.query(server.admin.principal, { tool: 'start_run', limit: 1 });
     assert.doesNotMatch(JSON.stringify(answer.structuredContent), /settings\.repository_path/);
