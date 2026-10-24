@@ -447,9 +447,9 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
   }
   if (doubts.length === 0) return { verdict: 'support', statement: `按目录树定位${basis}：${described(answer)}`, brief: '' };
   return {
-    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位不确定：${doubts.map((d) => d.text).join('；')}。${doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]).join('')}已知${basis}：${described(answer)}`),
+    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位不确定：${doubts.map((d) => d.text).join('；')}。${[...new Set(doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]))].join('')}已知${basis}：${described(answer)}`),
     reason: 'missing_input',
-    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]).join('')}已知${basis}：${described(answer)}`,
+    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${[...new Set(doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]))].join('')}已知${basis}：${described(answer)}`,
     brief: doubts.map((d) => d.brief).join('，'),
   };
 }

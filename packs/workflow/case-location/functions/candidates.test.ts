@@ -90,7 +90,7 @@ describe('candidatesOutcomes', () => {
   });
 
   it('a written name equal to a candidate or to the base of an alias is known (support)', () => {
-    const outcomes = candidatesOutcomes(subjectOf([item('24002', '回归 Rel_NSAE_10_6_1_57 证书'), item('24003', 'Rel_APV_10_6_1_60 升级')]));
+    const outcomes = candidatesOutcomes(subjectOf([item('24002', 'Rel_NSAE_10_6_1_57 回归 证书'), item('24003', 'Rel_APV_10_6_1_60 升级')]));
     const supports = byVerdict(outcomes, 'support').filter((o) => (o.data as { kind?: string }).kind === 'written_build');
     assert.equal(supports.length, 2);
     assert.match(supports[0].statement, /Rel_NSAE_10_6_1_57/);
@@ -98,7 +98,7 @@ describe('candidatesOutcomes', () => {
   });
 
   it('a written name of another line is an advisory violation naming that line', () => {
-    const outcomes = candidatesOutcomes(subjectOf([item('24004', '回归 Rel_APV_10_7_4_101')]));
+    const outcomes = candidatesOutcomes(subjectOf([item('24004', 'Rel_APV_10_7_4_101 回归')]));
     const violation = byVerdict(outcomes, 'refute')[0];
     assert.deepEqual([violation.code, violation.tier, violation.item], ['case-location.build_other_line', 'advisory', '24004']);
     assert.match(violation.statement, /10\.7\.4/);
@@ -107,7 +107,7 @@ describe('candidatesOutcomes', () => {
   });
 
   it('a written name the build site does not list is a deterministic advisory refutation, never an unknown', () => {
-    const outcomes = candidatesOutcomes(subjectOf([item('24005', '回归 Rel_APV_10_9_9_9')]));
+    const outcomes = candidatesOutcomes(subjectOf([item('24005', 'Rel_APV_10_9_9_9 回归')]));
     const refute = outcomes.find((o) => o.code === 'case-location.build_not_listed');
     assert.ok(refute, JSON.stringify(outcomes));
     assert.equal(refute.item, '24005');
@@ -132,8 +132,8 @@ describe('candidatesOutcomes', () => {
   });
 
   it('the outcome does not depend on the order of the context builds', () => {
-    const one = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_7_4_101 和 Rel_NSAE_10_6_1_57')]));
-    const two = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_7_4_101 和 Rel_NSAE_10_6_1_57')], [...BUILDS].reverse()));
+    const one = candidatesOutcomes(subjectOf([item('24008', 'Rel_APV_10_7_4_101 回归')]));
+    const two = candidatesOutcomes(subjectOf([item('24008', 'Rel_APV_10_7_4_101 回归')], [...BUILDS].reverse()));
     assert.deepEqual(two, one);
   });
 
@@ -153,7 +153,7 @@ describe('candidatesOutcomes', () => {
     for (let i = 0; i < 2000; i++) many.push(build(`Rel_APV_10_6_${1 + (i % 40)}_${i}`, 'APV', `10.6.${1 + (i % 40)}`, { released_at: i % 3 === 0 ? `2026-09-${String(1 + (i % 28)).padStart(2, '0')}T00:00:00.000Z` : null }));
     many.push(build('Rel_NSAE_10_6_1_57', 'NSAE', '10.6.1', { base: 'Rel_APV_10_6_1_57', released_at: '2026-09-05T00:00:00.000Z' }));
     const started = performance.now();
-    const outcomes = candidatesOutcomes(subjectOf([item('24010', '回归 Rel_NSAE_10_6_1_57')], many));
+    const outcomes = candidatesOutcomes(subjectOf([item('24010', 'Rel_NSAE_10_6_1_57 回归')], many));
     const elapsed = performance.now() - started;
     assert.ok(elapsed < 2000, `${elapsed.toFixed(0)} ms`);
     const [candidates] = outcomes;
@@ -186,7 +186,8 @@ describe('candidatesOutcomes', () => {
   it('every classification of a written build name carries the name in its statement', () => {
     // Rel_APV_10_6_1_58 is not a build of the line; only the alias Rel_NSAE_10_6_1_58 is based on it.
     const withBaseOnly = [...BUILDS, build('Rel_NSAE_10_6_1_58', 'NSAE', '10.6.1', { base: 'Rel_APV_10_6_1_58', released_at: '2026-09-06T00:00:00.000Z' })];
-    const outcomes = candidatesOutcomes(subjectOf([item('24013', '回归 Rel_APV_10_6_1_58、Rel_APV_10_7_4_101 与 Rel_APV_10_9_9_9')], withBaseOnly));
+    // One name per label, at its start: the declared scope of the build-name grammar is the label, not prose inside it.
+    const outcomes = candidatesOutcomes(subjectOf([item('24013', 'Rel_APV_10_6_1_58 回归'), item('24019', 'Rel_APV_10_7_4_101 回归'), item('24020', 'Rel_APV_10_9_9_9 回归')], withBaseOnly));
     const written = outcomes.filter((o) => (o.data as { kind?: string } | undefined)?.kind === 'written_build');
     assert.equal(written.length, 3);
     for (const outcome of written) assert.match(outcome.statement, /Rel_APV_10_(6_1_58|7_4_101|9_9_9)/);
@@ -254,7 +255,7 @@ it('a version-only label uses that version as the candidate line', () => {
 
 describe('a written build name the build site does not list', () => {
   it('is a deterministic advisory refutation, never an unknown', () => {
-    const subject = subjectOf([item('2499', '回归 Rel_APV_10_9_9_2')]);
+    const subject = subjectOf([item('2499', 'Rel_APV_10_9_9_2 回归')]);
     const outcomes = candidatesOutcomes(subject);
     const outcome = outcomes.find((o) => o.code === 'case-location.build_not_listed');
     assert.ok(outcome, JSON.stringify(outcomes));
