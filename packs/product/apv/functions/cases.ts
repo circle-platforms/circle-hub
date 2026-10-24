@@ -205,7 +205,7 @@ export function cases(input: unknown): ProducerOutput {
       warnings.push(rawPhrases?`${where}不分版本范围不带命令树，这一批 ${elements.length} 份文档的命令短语照录，用例条目保留为未归位`:`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
       catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
     } else {
-      const built = commandCatalog(tree.model as XmlModel);
+      const built = commandCatalog(tree.model as XmlModel, typeof tree.sha256==='string'?tree.sha256:undefined);
       catalog = built.catalog;
       for (const warning of built.warnings) warnings.push(`${where}${warning}`);
       if (catalog.size === 0) warnings.push(`${where}命令树里没有命令，这一批 ${elements.length} 份文档的用例都记为不带路径的条目`);
@@ -308,7 +308,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
       counts.cases++;
       const key = doc.keys[k];
       const results = [node.title, ...node.path, ...node.bodyTexts].map((text) => scanned.results[textIndex.get(text) as number]);
-      const paths = [...new Set(results.flatMap((r) => r.paths))].sort(compareText);
+      const paths = [...new Set(results.flatMap(r => (r.identities ?? []).map(identity => identity.path)))].sort(compareText);
       if (paths.length === 0) {
         counts.toPlace++;
         if (results.reduce((sum, r) => sum + r.phrases, 0) === 0) {
@@ -349,6 +349,8 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         vague_expected: node.vague,
         steps_count: node.steps,
         commands: paths,
+        command_identities: results.flatMap(r=>r.identities??[]),
+        command_tree_root: catalog.tree_root ?? null,
         stories: [...stories].sort(byNumber),
         defects: [...defects].sort(byNumber),
         line: located.line,
@@ -357,7 +359,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         autoid: node.autoid === null ? null : storable(node.autoid, MAX_TAG),
       };
       const statement = caseStatement(data);
-      if(rawPhrases)data.command_phrases=[...new Set([node.title,...node.path].flatMap(text=>[...text.matchAll(/(?<![A-Za-z0-9_])[a-z][a-z0-9_.?:/-]*(?:[ \t]+[A-Za-z0-9_<>{}\[\].?:/=-]+)*/g)].map(match=>match[0])))];
+      if(rawPhrases)data.command_phrases=[];
       const fragments = [{ slot: LIST_SLOT, source: doc.sha256, parser: PARSER, selector: node.selector }];
       for (const path of paths.length === 0 ? [null] : paths) entries.push({ kind: KIND, path, statement, data, fragments, applicability: null });
     });

@@ -10,7 +10,7 @@
 // mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
 // "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema, TypeDeclarationStatusSchema } from '../generated/vocabulary.ts';
 import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
 import { ReferenceUri } from './reference.ts';
 
@@ -205,7 +205,8 @@ export type CatalogUncheckedConstraint=z.infer<typeof CatalogUncheckedConstraint
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
-    type: CatalogParamType,
+    type: CatalogParamType.optional(),
+    type_declaration_status: TypeDeclarationStatusSchema.optional(),
     unchecked_constraints:z.array(CatalogUncheckedConstraint).min(1).optional(),
     address_role:z.string().regex(/\S/).optional().describe('Role identifier from the bound published runtime/bed contract, not an inferred core role'),
     optional: z.boolean().optional().describe('The argument may be omitted'),
@@ -217,6 +218,10 @@ export const CatalogParam = z
     values: z.array(z.string().min(1)).optional().describe('enum: the allowed values'),
     keyword: z.string().min(1).optional().describe('keyword: the literal word; defaults to the parameter name'),
     description: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
+  })
+  .superRefine((param,ctx)=>{
+    if(param.type===undefined&&(param.type_declaration_status!=='undeclared'||!param.unchecked_constraints?.length))ctx.addIssue({code:'custom',message:'an absent native type requires undeclared status and a recovery-bearing unchecked constraint'});
+    if(param.type!==undefined&&param.type_declaration_status==='undeclared')ctx.addIssue({code:'custom',message:'an undeclared native type cannot be replaced with a guessed type'});
   })
   .describe('One typed parameter of a signature. A producer interprets a scalar source limit by that source format and emits generic constraints: an exact numeric value uses equal minimum/maximum, a ceiling uses maximum, a member uses values, a length uses maxLength; raw limit is not guessed by the core');
 export type CatalogParam = z.infer<typeof CatalogParam>;

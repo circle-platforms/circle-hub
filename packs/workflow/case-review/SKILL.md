@@ -122,3 +122,6 @@ Hub 自己判定字面问题（空字段、取值、重复用例、节点编号�
 stories、bugs（直接给需求和缺陷编号）；id_ranges、bare_ids（标题里没有标明类型的编号怎么读）；spec_search、strategy_search、history_search、max_terms（检索规格书、测试策略和历史测试清单）；case_rule、case_priority、group_priority、precondition_priority（哪些节点是用例）；block、slice（分块、分段）。
 
 本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
+
+
+命令引用须逐字给出本用例的一条完整原文行，不能省略参数、擦除提示符或改大小写/空白；是否为命令及类型是否合法由锁定目录完整核验。不要凭 show/config/no 等前缀或自由文字猜测。
