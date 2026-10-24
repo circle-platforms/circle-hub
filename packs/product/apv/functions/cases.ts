@@ -308,7 +308,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
       counts.cases++;
       const key = doc.keys[k];
       const results = [node.title, ...node.path, ...node.bodyTexts].map((text) => scanned.results[textIndex.get(text) as number]);
-      const paths = [...new Set(results.flatMap((r) => r.paths))].sort(compareText);
+      const paths = [...new Set(results.flatMap(r => (r.identities ?? []).map(identity => identity.path)))].sort(compareText);
       if (paths.length === 0) {
         counts.toPlace++;
         if (results.reduce((sum, r) => sum + r.phrases, 0) === 0) {
