@@ -1,5 +1,5 @@
 {
- "version": 11,
+ "version": 12,
  "elements": [
   {
    "id": "B01",
@@ -145,7 +145,8 @@
     "源文件或片段：整份源文件，或按解析器@版本给出的片段定位（语法由解析器声明）找到的片段",
     "知识树节点：根摘要 + 路径（可再带条目摘要）",
     "知识条目：条目摘要（不能单独作根据，见 B01）",
-    "Hub 记录：记录摘要 + 记录内的指针（JSON Pointer）：提交、校验结果、分区清单中的分区或条目、主张、动作、效果"
+    "Hub 记录：记录摘要 + 记录内的指针（JSON Pointer）：提交、校验结果、分区清单中的分区或条目、主张、动作、效果",
+    "ExpectedQuoteIdentity 固定源摘要、parser@major、片段路径及原始源字节 offset/length（零起点、正长度），QuoteEvidence 将原文与该身份配对"
    ],
    "rules": [
     "解析时重验摘要，并带出被指记录的有效条件。读者权限分两种：Hub 自己评估一次运行时（边界核对与检查、只出事实的生产结果、检查按声明读来源、自动重判），按运行开始时的授权读这次运行冻结的输入（输入与期望来源、绑定的 Hub 记录、前驱的结果、锁定的根），不按运行者此刻的权限重查，Hub 侧运行按配置者开始时的授权；别人查看时（运行者本人也一样），按读者当前的权限重验，分享撤回或账号停用以后答“对你不可用”。读取档位和凭据受理每次都核，不随授权冻结；没绑定的摘要照旧解析不出",
@@ -189,6 +190,9 @@
    ],
    "changes11": [
     "逐字引文在原始源摘要与声明解析器语法定位的片段中按原文文本序列精确存在；编码解码与片段表示必须声明语法并保留原字节身份，不把宽窄字、同义字符、空白删除或折叠当逐字相同。语义主张的引文必须属于它声明的条目范围，兄弟条目、祖先标题或文档别处的词不能代替本条证据。（来源：决定（集成者，10-24，关键词整改））"
+   ],
+   "changes12": [
+    "ExpectedQuoteIdentity 固定源摘要、parser@major、片段路径及原始源字节 offset/length（零起点、正长度），QuoteEvidence 将原文与该身份配对（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
    ]
   },
   {
@@ -1185,13 +1189,17 @@
     "无编号身份由包声明（审计 11）"
    ],
    "fields": [
-    "分类状态取 classification_status：已分类或未分类；分类只记录作者精确闭集声明，或已受理模型类别主张，均保留条目身份、来源和引用。分类状态不是条目身份或静态层终态。"
+    "分类状态取 classification_status：已分类或未分类；分类只记录作者精确闭集声明，或已受理模型类别主张，均保留条目身份、来源和引用。分类状态不是条目身份或静态层终态。",
+    "AuthoredCategoryFields 的 category_ids 与 test_type_ids 独立；CategoryDeclaration 与 CategoryJudgment/AcceptedCategoryJudgment 分开，不从同义标签造类别"
    ],
    "changes11": [
     "分类状态取 classification_status：已分类或未分类；分类只记录作者精确闭集声明，或已受理模型类别主张，均保留条目身份、来源和引用。分类状态不是条目身份或静态层终态。（来源：决定（集成者，10-24，关键词整改））",
     "模板类别的 id、label、group 和模型可读说明由发布的工作流表声明，不含 contains、prefixes、equals、tags 一类文字匹配字段；测试类型是该表显式声明的闭集或子集，不在通用模型重建业务类别表。作者标签值只接受恰好等于声明 id 的值，变体是提示档结构违规，列出允许值或作者已显式指定的修正值，不经同义映射猜对应值；非法/未声明类型不能被当作正向或反向。（来源：决定（集成者，10-24，关键词整改））",
     "逐用例类别归属只有作者精确声明与模型主张两来源。模型对每个用例给出类别 id、逐字引文和本用例范围内可解析路径，Hub 只核 id 与引用再做集合运算。没有任一来源的用例为未分类，缺类别判断，出口是客户端判断或作者补标签；不计缺类别，未分类使相应缺席/完整覆盖结论不能成立。（来源：决定（集成者，10-24，关键词整改））",
     "classification_status 是已受理分类输入的状态，不是类别业务词表或交付终态（来源：决定（集成者，10-24，关键词整改））"
+   ],
+   "changes12": [
+    "AuthoredCategoryFields 的 category_ids 与 test_type_ids 独立；CategoryDeclaration 与 CategoryJudgment/AcceptedCategoryJudgment 分开，不从同义标签造类别（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
    ]
   },
   {
@@ -1378,11 +1386,15 @@
     "“候选”改称“未判定的产出”（审计 14）"
    ],
    "fields": [
-    "语义主张槽包含稳定 item 身份、发布闭集中的值、逐字 quote/reference、片段路径/范围、来源/判断者及受理记录引用；来源选择槽只给显式 source id 或带逐字引文、可核路径的模型候选。分类、判断、类型声明和命令解析状态分别取对应词表，不把自然语言错误句当结构字段。"
+    "语义主张槽包含稳定 item 身份、发布闭集中的值、逐字 quote/reference、片段路径/范围、来源/判断者及受理记录引用；来源选择槽只给显式 source id 或带逐字引文、可核路径的模型候选。分类、判断、类型声明和命令解析状态分别取对应词表，不把自然语言错误句当结构字段。",
+    "新增 sharedInterfaces 共用接口的可生成封闭形状（字段、类型、必填性与原件边界均写进模型），不再只给说明性字段列表；业务值由所属包声明，不在生成器里手写业务接口"
    ],
    "changes11": [
     "语义主张槽包含稳定 item 身份、发布闭集中的值、逐字 quote/reference、片段路径/范围、来源/判断者及受理记录引用；来源选择槽只给显式 source id 或带逐字引文、可核路径的模型候选。分类、判断、类型声明和命令解析状态分别取对应词表，不把自然语言错误句当结构字段。（来源：决定（集成者，10-24，关键词整改））",
     "工作流闭集与原合约角色/类型是发布声明，不是同义词词典；业务枚举由所属包的闭集表作唯一词表源，表 id 与显式值精确相等。通用模型只提供状态/限定及通用协议，不把某团队模板类别或产品命名族写成核心枚举；未分类/未判断的缺口有 A06 出口，空主张不能冒充已完成判断。（来源：决定（集成者，10-24，关键词整改））"
+   ],
+   "changes12": [
+    "新增 sharedInterfaces 共用接口的可生成封闭形状（字段、类型、必填性与原件边界均写进模型），不再只给说明性字段列表；业务值由所属包声明，不在生成器里手写业务接口（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
    ]
   },
   {
@@ -2181,7 +2193,9 @@
    "changes3": [
     "分区清单可作封闭集（复核 P3.G1）"
    ],
-   "fields": [],
+   "fields": [
+    "CommandIdentity 固定锁定树根、完整路径、签名引用与 typed 参数解析结果；TypedParameter 的结构形状与树中真实类型/原文的吻合仍由边界核验"
+   ],
    "changes10": [
     "闭集缺席记反驳；目录不完整时先给确定的部分结论，缺席记未知并给补全的出口（来源：所有者 2026-10-23 的规矩；任务页 hub-unknown-model 第 6 条；未知普查第 3 节第 4 条、第 4.2 节第 8、18、20 条）",
     "按索引算的视图也声明完备范围，范围内的缺席是确定的结论（来源：任务页 hub-unknown-model 第 6 条；未知普查第 3 节第 4 条）",
@@ -2193,6 +2207,9 @@
     "参数类型只取命令树的结构化声明与有版本/来源的类型定义；不读 help 散文的 or、hostname 等词推类型。类型未声明或没有可核验类型定义时记 type_declaration_status.undeclared，相关参数未核、层未核对，缺类型声明，出口是包作者或命令树补类型，不判参数对错、不回退 string。optional 和编号、构建名都按明确来源的正式语法解析，未知值不得作同义布尔或必填兜底。（来源：决定（集成者，10-24，关键词整改））",
     "产品目录各层、资产角色和版本线由产品包声明完整命名语法、版本与出处；不识别的层记未知并补语法，不用活动词排除表或文件子串猜类。产品包可依所有者明确决定声明版本线等价规则，例如前导零及末尾 .0 不改变版本线；这属于该命名语法的身份规则，不推广到构建 id 或产品名称同义映射，核心不猜版本等价。（来源：决定（集成者，10-24，关键词整改））",
     "type_declaration_status 与 command_parse_status 分别表达类型声明证据和完整命令解析结果，不改变 V03 终态（来源：决定（集成者，10-24，关键词整改））"
+   ],
+   "changes12": [
+    "CommandIdentity 固定锁定树根、完整路径、签名引用与 typed 参数解析结果；TypedParameter 的结构形状与树中真实类型/原文的吻合仍由边界核验（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
    ]
   },
   {
@@ -3072,7 +3089,8 @@
     "出口政策",
     "隔离前提（默认为假）",
     "执行器源定义（登记内容，部署数据，允许在已声明位置含变量引用；按规范 JSON 的源定义摘要经资源配置许可生效；当次作业的解析结果另有摘要，见 R[2]）：端点与固定 CA；环境类别（D01 R[6]）；允许调用的工具与不许出现的工具；各个调用的工具名、参数位置和提交调用的写声明（D03）；回答里各字段的 JSON 指针；对方状态词到词表码的映射；派发所据的证明（R[7]）；只读核对与逐台探测（R[8]）；前提的认证（D02 R[1]）；在 Hub 之外会做的事（R[9]）",
-    "编译调用合约：方法精确身份、原签名、每个参数的结构化类型及用途、角色闭集、效果表引用和合约身份；角色/type 的闭集由发布合约声明，不能从参数名、动作名或数值外形猜。参数类型声明状态取 type_declaration_status。"
+    "编译调用合约：方法精确身份、原签名、每个参数的结构化类型及用途、角色闭集、效果表引用和合约身份；角色/type 的闭集由发布合约声明，不能从参数名、动作名或数值外形猜。参数类型声明状态取 type_declaration_status。",
+    "DeclaredParameterType/Role 和 TypedAddressValue 给出可导入共用形状；类型未声明不能被凑成 typed 参数，派发前仍核原声明与效果表"
    ],
    "rules": [
     "以“作业”效果类接收派发，只执行通过核验的那份产物：收冻结脚本或补丁的引用，或收字节而回执回显的摘要必须等于核验得出的摘要",
@@ -3124,6 +3142,9 @@
     "编译调用合约：方法精确身份、原签名、每个参数的结构化类型及用途、角色闭集、效果表引用和合约身份；角色/type 的闭集由发布合约声明，不能从参数名、动作名或数值外形猜。参数类型声明状态取 type_declaration_status。（来源：决定（集成者，10-24，关键词整改））",
     "地址、掩码、前缀与普通文字/数值的类型和用途只来自原合约声明及完整命令语法的结构参数；外形像地址、相邻空白、前一地址、网络/广播数值都不能推用途。只对 typed address 位置做 IP 语法、数值集合和一一对应替换核验，不扫描所有参数或期望全文找地址。（来源：决定（集成者，10-24，关键词整改））",
     "派发安全只由合约声明的方法、角色闭集、允许效果表及其冻结预算/放行条件核验，禁止拒绝词表或删引号后文字匹配。没有参数类型、角色、方法或效果授权的证明，相关项未核对且不得派发，出口是管理员/包作者补合约并以新修订重核；编译、生成前检查、产物回读与派发前核验使用同一 typed 约束。（来源：决定（集成者，10-24，关键词整改））"
+   ],
+   "changes12": [
+    "DeclaredParameterType/Role 和 TypedAddressValue 给出可导入共用形状；类型未声明不能被凑成 typed 参数，派发前仍核原声明与效果表（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
    ]
   },
   {
@@ -4283,7 +4304,7 @@
   ],
   "keywordRemediation": {
    "source": "决定（集成者，10-24，关键词整改）",
-   "scope": "模型语义和生成词表的前置提交；以下字段形状是下一步实现合同，当前不改 contracts/src 运行时 schema 或 Hub/包实现，不宣称这些字段已可提交或持久化",
+   "scope": "模型语义、生成词表及 sharedInterfaces 的共用生成接口；不改 Hub/包运行时、现有工具入参或存储形状，不能把新接口的形状通过当作业务验收通过",
    "grammarDeclaration": {
     "fields": [
      "grammar_id",
@@ -4305,14 +4326,13 @@
    "semanticClaim": {
     "fields": [
      "item",
-     "value",
+     "category_id",
      "quote",
-     "reference",
-     "scope",
-     "producer",
-     "accepted_result"
+     "producer"
     ],
-    "rule": "value 取包闭集；quote 在该 item 范围逐字存在；Hub 机械核引用/路径，性质仍是 judgment；独立标注答案在执行前冻结"
+    "rule": "value 取包闭集；quote 在该 item 范围逐字存在；Hub 机械核引用/路径，性质仍是 judgment；独立标注答案在执行前冻结",
+    "interface": "CategoryJudgment",
+    "accepted_interface": "AcceptedCategoryJudgment"
    },
    "evidenceStates": {
     "classification": "classification_status",
@@ -4336,18 +4356,21 @@
      "model_family_id",
      "configuration_reference"
     ],
-    "rule": "客户端显式声明，族完全相等比较；会话身份由 Hub 观察，缺族不猜补；W10 仍按账号核独立"
+    "rule": "客户端显式声明，族完全相等比较；会话身份由 Hub 观察，缺族不猜补；W10 仍按账号核独立",
+    "interface": "ModelIdentity"
    },
    "typedArgument": {
     "fields": [
-     "method_reference",
-     "parameter_reference",
-     "type_reference",
-     "role_reference",
-     "value",
-     "effect_reference"
+     "position",
+     "name",
+     "type",
+     "raw",
+     "parsed",
+     "role"
     ],
-    "rule": "各身份/类型/角色/效果来自冻结的原合约；类型或权限证据缺失则未核对且不派发，不靠拒绝词表"
+    "rule": "各身份/类型/角色/效果来自冻结的原合约；类型或权限证据缺失则未核对且不派发，不靠拒绝词表",
+    "interface": "TypedParameter",
+    "context": "方法和效果表的冻结身份由调用/派发上下文提供；TypedParameter 只定义参数位置、类型/角色原声明与解析结果，不冒充效果授权"
    },
    "duplicateStructure": {
     "fields": [
@@ -4355,7 +4378,11 @@
      "typed_parameters",
      "expected_quote_identities"
     ],
-    "rule": "引用身份包括源摘要、解析器、路径和必要跨度；缺字段不作查重键，不解析 statement"
+    "rule": "引用身份包括源摘要、解析器、路径和必要跨度；缺字段不作查重键，不解析 statement",
+    "interfaces": [
+     "CommandIdentity",
+     "ExpectedQuoteIdentity"
+    ]
    },
    "reviewAggregation": {
     "fields": [
@@ -4392,6 +4419,594 @@
     "U01-U18_U21-U23_U25": "集成者（模型负责人），2026-10-24，按 kw-undecided 推荐裁定；U15/U16 仅限声明结构用途",
     "U19_U20": "所有者，2026-10-24，关键词检索候选来源一律禁止，结果不作输入/查全依据",
     "U24": "所有者，2026-10-24，版本线前导零与末尾 .0 等价由产品包 README 和 naming 文件头显式声明，按 grammar 解析，不是启发式"
+   },
+   "categoryInputs": {
+    "author_fields": "AuthoredCategoryFields",
+    "author_declaration": "CategoryDeclaration",
+    "model_claim": "CategoryJudgment",
+    "accepted_claim": "AcceptedCategoryJudgment",
+    "rule": "category_ids 与 test_type_ids 独立；具体闭集取发布包的声明 id，不把通用接口字符串形状当成员资格证明"
+   }
+  },
+  "sharedInterfaces": {
+   "source": "决定（集成者，10-24，关键词整改）",
+   "status": "模型中的封闭 JSON Schema 子集生成 TypeScript 类型、Zod 形状与 JSON Schema；不新增存储记录种类，不改变现有工具提交入口，也不代替 Hub 的引用存在/闭集/类型解析核验",
+   "language": {
+    "name": "model-shape@1",
+    "keywords": [
+     "$ref",
+     "const",
+     "anyOf",
+     "type",
+     "properties",
+     "required",
+     "additionalProperties",
+     "items",
+     "minItems",
+     "maxItems",
+     "minLength",
+     "maxLength",
+     "minimum",
+     "maximum",
+     "format",
+     "description"
+    ],
+    "references": "#/$defs/<earlier-name>, vocabulary:<axis>[/<exact-code>], or one of the explicitly bound contract primitives; no expressions, dynamic imports, semantic regex or unknown keywords"
+   },
+   "module": "shared-interfaces.ts",
+   "exports": "Each definition exports <Name>Schema and type <Name>; SharedInterfaceSchemas maps schema ids to validators. State/qualifier values are imported from vocabulary.ts without aliases.",
+   "definitions": [
+    {
+     "name": "SourceSpan",
+     "id": "source-span@1",
+     "meaning": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "unit": {
+        "const": "byte"
+       },
+       "offset": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "length": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+       }
+      },
+      "required": [
+       "unit",
+       "offset",
+       "length"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "ExpectedQuoteIdentity",
+     "id": "expected-quote-identity@1",
+     "meaning": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "source_sha256": {
+        "$ref": "contract:common/Sha256"
+       },
+       "parser": {
+        "$ref": "contract:common/Versioned"
+       },
+       "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 8192
+       },
+       "span": {
+        "$ref": "#/$defs/SourceSpan"
+       }
+      },
+      "required": [
+       "source_sha256",
+       "parser",
+       "path",
+       "span"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "QuoteEvidence",
+     "id": "quote-evidence@1",
+     "meaning": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "identity": {
+        "$ref": "#/$defs/ExpectedQuoteIdentity"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1048576
+       }
+      },
+      "required": [
+       "identity",
+       "text"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "DeclaredParameterType",
+     "id": "declared-parameter-type@1",
+     "meaning": "Exact type name and declaration from the original contract/tree. Optional catalog_type reuses the existing catalog vocabulary; no help-text inference. Missing types have a separate undeclared state, not a string fallback.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "declaration": {
+        "$ref": "contract:reference/Ground"
+       },
+       "grammar": {
+        "$ref": "contract:common/Versioned"
+       },
+       "catalog_type": {
+        "$ref": "contract:tables/CatalogParamType"
+       }
+      },
+      "required": [
+       "name",
+       "declaration",
+       "grammar"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "DeclaredParameterRole",
+     "id": "declared-parameter-role@1",
+     "meaning": "Exact role name and its published closed-set declaration; Hub checks membership, without name heuristics.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "declaration": {
+        "$ref": "contract:reference/Ground"
+       }
+      },
+      "required": [
+       "name",
+       "declaration"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "TypedAddressValue",
+     "id": "typed-address-value@1",
+     "meaning": "A value at a declared address/mask/prefix position only. Mask contiguity, address membership, and agreement with the referenced type are boundary checks; the spelling never determines its purpose.",
+     "schema": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "ipv4"
+         },
+         "value": {
+          "type": "string",
+          "format": "ipv4"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "ipv6"
+         },
+         "value": {
+          "type": "string",
+          "format": "ipv6"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "mask"
+         },
+         "value": {
+          "type": "string",
+          "format": "ipv4"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "ipv4_prefix"
+         },
+         "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "ipv6_prefix"
+         },
+         "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    {
+     "name": "ParsedParameterValue",
+     "id": "parsed-parameter-value@1",
+     "meaning": "Parsed representation selected by the referenced declared type. The boundary checks the parse against original bytes and type, not just this shape.",
+     "schema": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "text"
+         },
+         "value": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1048576
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "int"
+         },
+         "value": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "number"
+         },
+         "value": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "boolean"
+         },
+         "value": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "const": "address"
+         },
+         "value": {
+          "$ref": "#/$defs/TypedAddressValue"
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    {
+     "name": "TypedParameter",
+     "id": "typed-parameter@1",
+     "meaning": "An explicit supplied parameter at its zero-based signature position, bound to exact type and optional role declarations; no inferred defaults. Undeclared parameters cannot be represented as verified typed values.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "position": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "type": {
+        "$ref": "#/$defs/DeclaredParameterType"
+       },
+       "raw": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 1048576
+       },
+       "parsed": {
+        "$ref": "#/$defs/ParsedParameterValue"
+       },
+       "role": {
+        "$ref": "#/$defs/DeclaredParameterRole"
+       }
+      },
+      "required": [
+       "position",
+       "name",
+       "type",
+       "raw",
+       "parsed"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "CommandIdentity",
+     "id": "command-identity@1",
+     "meaning": "Complete command identity: locked command-tree root and full path, exact overload/signature reference and typed parsed supplied parameters. Hub resolves each declaration and fully consumes the command grammar; structural validity alone does not prove it is a command. Identity equality uses the canonical typed parameter projection in identityRules.command; raw text and role evidence are annotations, not duplicate-key inputs.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "tree_root": {
+        "$ref": "contract:common/Sha256"
+       },
+       "path": {
+        "$ref": "contract:reference/TreePath"
+       },
+       "signature": {
+        "$ref": "contract:reference/Ground"
+       },
+       "parameters": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/TypedParameter"
+        },
+        "minItems": 0,
+        "maxItems": 256
+       }
+      },
+      "required": [
+       "tree_root",
+       "path",
+       "signature",
+       "parameters"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "AuthoredCategoryFields",
+     "id": "authored-category-fields@1",
+     "meaning": "Two independent author fields: category_ids for R1 and test_type_ids for R2. Every value must exactly equal an id in the respective published closed declaration. Omission means not declared; empty lists are not category evidence; no synonym mapping between the fields.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "category_ids": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        },
+        "minItems": 1,
+        "maxItems": 256
+       },
+       "test_type_ids": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        },
+        "minItems": 1,
+        "maxItems": 256
+       }
+      },
+      "required": [],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "CategoryDeclaration",
+     "id": "category-declaration@1",
+     "meaning": "Author-written labels and the exact item/field source. Empty labels contain no classification evidence. Hub reads the source fields and checks exact ids against the bound pack declaration; a client cannot merely claim to be the author.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "item": {
+        "$ref": "contract:common/ItemId"
+       },
+       "reference": {
+        "$ref": "contract:reference/Ground"
+       },
+       "labels": {
+        "$ref": "#/$defs/AuthoredCategoryFields"
+       }
+      },
+      "required": [
+       "item",
+       "reference",
+       "labels"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "ModelIdentity",
+     "id": "model-identity@1",
+     "meaning": "Explicit client-declared exact model and family identities, separate from the observed session id; not inferred from model-name words.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "model_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       },
+       "model_family_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+       },
+       "configuration_reference": {
+        "$ref": "contract:reference/Ground"
+       }
+      },
+      "required": [
+       "model_id",
+       "model_family_id"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "CategoryJudgment",
+     "id": "category-judgment@1",
+     "meaning": "A submitted model category claim with verbatim evidence inside the same case. Category id is checked against the locked pack declaration; quote existence is not semantic truth.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "item": {
+        "$ref": "contract:common/ItemId"
+       },
+       "category_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "quote": {
+        "$ref": "#/$defs/QuoteEvidence"
+       },
+       "producer": {
+        "$ref": "#/$defs/ModelIdentity"
+       }
+      },
+      "required": [
+       "item",
+       "category_id",
+       "quote",
+       "producer"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "AcceptedCategoryJudgment",
+     "id": "accepted-category-judgment@1",
+     "meaning": "A category claim linked to its accepted validation result. Hub resolves acceptance and exact claim/item identity; a caller-supplied reference alone does not establish acceptance.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "claim": {
+        "$ref": "#/$defs/CategoryJudgment"
+       },
+       "accepted_result": {
+        "$ref": "contract:reference/RecUri"
+       }
+      },
+      "required": [
+       "claim",
+       "accepted_result"
+      ],
+      "additionalProperties": false
+     }
+    }
+   ],
+   "boundaryChecks": [
+    "CommandIdentity: resolve tree_root/path/signature in the locked build; consume every command token and validate each parsed parameter, declaration, role and supplied position against the original tree/contract. Shape acceptance is not command membership proof.",
+    "ExpectedQuoteIdentity: resolve source_sha256/parser/path, check the original-byte offset and length and exact decoded quote; a judgment quote belongs to the same item, not an ancestor or sibling.",
+    "TypedParameter: type and role are exact closed declarations; parsed kind and value must agree with the declared type, raw source and effect policy. Missing type is type_declaration_status.undeclared and prevents dispatch.",
+    "AuthoredCategoryFields: read category_ids and test_type_ids independently from the author source, compare each with the appropriate closed declaration id; missing fields are not false or a default category.",
+    "CategoryJudgment: only accepted judgments or exact authored labels supply classification. No evidence means classification_status.unclassified with missing/exit; judgment_status.unjudged is not a negative semantic answer.",
+    "Existing states and marks remain in vocabulary.ts: classification_status, judgment_status, type_declaration_status, command_parse_status, declaration_status, qualifier_mark.legacy_keyword_rules and qualifier_mark.possible_credentials."
+   ],
+   "identityRules": {
+    "command": "Compare tree_root, full path, exact signature and parameters in the declared signature order by position/name, exact type declaration identity and canonical parsed value. parameters[*].raw and role evidence are retained annotations, not free-text duplicate keys; never compare statement prefixes or normalize prose.",
+    "quote": "Compare source_sha256, parser, exact path and original byte offset/length. Quote text is evidence, not a substitute for its identity; same words in another source or span have a different identity.",
+    "typing": "The generated shape does not infer parsed kind from value spelling. The boundary must prove parsed kind/value against the referenced original type declaration and verify address/mask/prefix roles and effect authority."
    }
   }
  },
