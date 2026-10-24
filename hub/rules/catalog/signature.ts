@@ -33,7 +33,7 @@ export interface SignatureMatch {
 
 export type SignatureResult =
   | { kind: 'match'; best: SignatureMatch }
-  | { kind: 'unchecked'; best: SignatureMatch }
+  | { kind: 'unchecked'; best: SignatureMatch; missing:string; exit:{next_action:string;audience:string;due:string} }
   | { kind: 'violations'; best: SignatureMatch }
   | { kind: 'arity'; arities: { min: number; max: number }[] };
 
@@ -112,5 +112,5 @@ export function matchSignatures(entry: CatalogEntry, args: readonly string[], fo
   if (!best) {
     return { kind: 'arity', arities: signatures.map((s) => ({ min: s.params.filter((p) => p.optional !== true).length, max: s.params.length })) };
   }
-  return best.violations.length>0?{kind:'violations',best}:best.unchecked.length>0?{kind:'unchecked',best}:{kind:'match',best};
+  return best.violations.length>0?{kind:'violations',best}:best.unchecked.length>0?{kind:'unchecked',best,missing:[...new Set(best.unchecked.map(g=>g.constraint.missing))].join('；'),exit:{next_action:[...new Set(best.unchecked.map(g=>g.constraint.next_action))].join('；'),audience:'包作者',due:'补结构化类型并重产之前'}}:{kind:'match',best};
 }

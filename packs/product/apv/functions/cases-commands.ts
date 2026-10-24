@@ -1,30 +1,30 @@
 // R4 / C07: use one locked build grammar for titles, ancestor labels, operations and expectations.
 // Each original line is a whole candidate slot; no phrase extraction, alias, prefix or spelling normalization.
 import { produceCommandEntries } from './command-tree.ts';
-import { compileGrammar, commandLines, parseCommand, parseCommandState, type CommandGrammar } from './commands.ts';
+import { compileGrammar, commandLines, parseCommand, parseCommandState, commandIdentity, type CommandGrammar } from './commands.ts';
 import type { XmlModel } from './types.ts';
 import type { CatalogSignature } from '../../../../contracts/src/tables.ts';
 import { isRecord } from './util.ts';
 export type CommandCatalog = CommandGrammar;
-export function commandCatalog(model:XmlModel):{catalog:CommandCatalog;warnings:string[]} {
+export function commandCatalog(model:XmlModel,source?:string):{catalog:CommandCatalog;warnings:string[]} {
   const produced=produceCommandEntries(model,{});
   const definitions=produced.entries.flatMap(entry=>{
     if(!entry.path||!isRecord(entry.data)||!Array.isArray(entry.data.words)||!Array.isArray(entry.data.signatures))return [];
-    return [{path:entry.path,words:entry.data.words as string[],signatures:entry.data.signatures as CatalogSignature[]}];
+    return [{path:entry.path,words:entry.data.words as string[],signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>({...signature,...(source&&entry.fragments[0]?{reference:`src:${source}#${entry.fragments[0].parser}:${entry.fragments[0].selector}`}:{})}))}];
   });
-  return {catalog:compileGrammar(definitions),warnings:produced.warnings};
+  const catalog=compileGrammar(definitions);catalog.tree_root=source;return {catalog,warnings:produced.warnings};
 }
 export function resolvePhrasePaths(catalog:CommandCatalog,phrase:string):string[]{const path=parseCommand(catalog,phrase);return path===null?[]:[path];}
 export function resolvePhrase(catalog:CommandCatalog,phrase:string):string|null{return parseCommand(catalog,phrase);}
 // Historical public helpers are identity functions; retaining the names cannot restore heuristic folding.
 export const foldText=(text:string):string=>text;
 export const withoutListNumbers=(text:string):string=>text;
-export type TextCommands={paths:string[];phrases:number;unresolved:number;states?:ReturnType<typeof parseCommandState>[]};
+export type TextCommands={paths:string[];phrases:number;unresolved:number;identities?:import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity[];states?:ReturnType<typeof parseCommandState>[]};
 export function textCommands(catalog:CommandCatalog,texts:readonly string[]):{results:TextCommands[];warnings:string[]} {
   const results=texts.map(text=>{
-    const lines=commandLines(text);const paths=new Set<string>();const states:ReturnType<typeof parseCommandState>[]=[];let unresolved=0,phrases=0;
-    for(const line of lines){if(!line.text.length)continue;const state=parseCommandState(catalog,line.text);states.push(state);if(state.status!=='not_command')phrases++;const path=state.path;if(state.status==='parameters_unchecked')unresolved++;if(path!==null)paths.add(path);}
-    return {paths:[...paths].sort((a,b)=>a<b?-1:a>b?1:0),phrases,unresolved,states};
+    const lines=commandLines(text);const paths=new Set<string>();const identities:import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity[]=[];const states:ReturnType<typeof parseCommandState>[]=[];let unresolved=0,phrases=0;
+    for(const line of lines){if(!line.text.length)continue;const state=parseCommandState(catalog,line.text);states.push(state);if(state.status!=='not_command')phrases++;const path=state.path;if(state.status==='parameters_unchecked')unresolved++;if(path!==null){const identity=commandIdentity(catalog,line.text);if(identity){paths.add(identity.path);identities.push(identity);}else unresolved++;}}
+    return {paths:[...paths].sort((a,b)=>a<b?-1:a>b?1:0),phrases,unresolved,states,identities};
   });
   return {results,warnings:[]};
 }

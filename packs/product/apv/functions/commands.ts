@@ -10,7 +10,7 @@ import { guarded, isRecord } from './util.ts';
 
 export type CommandDefinition = { path: string; words: readonly string[]; signatures: readonly CatalogSignature[] };
 export type GrammarNode = { children: Map<string, GrammarNode>; path: string | null; signatures?: readonly CatalogSignature[] };
-export type CommandGrammar = { root: GrammarNode; size: number; heads: string[] };
+export type CommandGrammar = { root: GrammarNode; size: number; heads: string[]; definitions?:readonly CommandDefinition[]; tree_root?:string };
 const node = (): GrammarNode => ({children:new Map(),path:null,signatures:[]});
 type Token = {value:string;quoted:boolean};
 
@@ -42,7 +42,7 @@ export function compileGrammar(definitions:readonly CommandDefinition[]):Command
     if(current.path===null){size++;heads.push(definition.words.join(' '));}
     current.path=definition.path;current.signatures=[...(current.signatures??[]),...definition.signatures];
   }
-  return {root,size,heads};
+  return {root,size,heads,definitions};
 }
 const digits=(value:string)=>value.length>0&&[...value].every(c=>c>='0'&&c<='9');
 function ipv4(value:string):boolean {const parts=value.split('.');return parts.length===4&&parts.every(p=>digits(p)&&p.length<=3&&(p==='0'||p[0]!=='0')&&Number(p)<=255);}
@@ -125,4 +125,31 @@ export function extractCommands(input:{text:string;heads?:string[];definitions?:
 }
 export default function commands(input:unknown):CommandsResult {
   return guarded(()=>extractCommands(input as Parameters<typeof extractCommands>[0]),warning=>({phrases:[],warnings:[warning]}));
+}
+
+/** Fully consumed, uniquely typed identity; no identity exists for an undeclared type. */
+export function commandIdentity(grammar:CommandGrammar,text:string):import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity|null {
+ const tokens=commandTokens(text),state=parseCommandState(grammar,text);
+ if(!tokens||state.status!=='parsed'||!grammar.tree_root)return null;
+ const identities:import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity[]=[];
+ for(const definition of grammar.definitions??[]){
+  if(definition.path!==state.path||!definition.words.every((word,i)=>tokens[i]?.value===word))continue;
+  const args=tokens.slice(definition.words.length);
+  for(const signature of definition.signatures){
+   if(!signature.reference||!signatureMatches(signature,args))continue;
+   const bind=(p:number,t:number):Array<{position:number;raw:string}>|null=>{
+    if(p===signature.params.length)return t===args.length?[]:null;
+    const param=signature.params[p];
+    if(t<args.length&&accepts(param,args[t].value)){const tail=bind(p+1,t+1);if(tail)return [{position:p,raw:args[t].value},...tail];}
+    return param.optional===true?bind(p+1,t):null;
+   };
+   const bound=bind(0,0);if(!bound)continue;
+   const parameters=bound.map(({position,raw})=>{const param=signature.params[position];
+    const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='int'||param.type==='port'?{kind:'int',value:Number(raw)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value:raw}}:{kind:'text',value:raw};
+    return {position,name:param.name,raw,type:{name:param.type!,catalog_type:param.type!,declaration:signature.reference!,grammar:'apv-command-tree@2'},parsed};
+   });
+   identities.push({tree_root:grammar.tree_root,path:definition.path,signature:signature.reference,parameters});
+  }
+ }
+ return identities.length===1?identities[0]:null;
 }

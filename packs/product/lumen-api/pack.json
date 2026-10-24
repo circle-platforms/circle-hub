@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "lumen-api",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "kind": "product",
   "title": "Lumen API（合成的 REST 接口产品）",
   "description": "第二个合成产品，用来证明核心与产品无关：版本来自文档库里的发布清单，命令目录 commands@1 由每个构建的接口参考生成（方法、路径和带类型的参数），用同一个 case-review 工作流包评审",
