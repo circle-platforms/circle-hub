@@ -886,7 +886,7 @@ export class KnowledgeViews {
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
     if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
     let scopeRoot=await this.#scope(handle.product.id,context);
-    let pageCursor=request.cursor, cursorComposition:string|undefined;
+    let pageCursor=request.cursor, cursorComposition:string|undefined, savedScopeCut:number|undefined;
     if(pageCursor!==null){
       let decoded:unknown;
       try{decoded=JSON.parse(Buffer.from(pageCursor,'base64url').toString('utf8'));}catch{}
@@ -895,6 +895,8 @@ export class KnowledgeViews {
         if(typeof wrapper.cursor!=='string'||!Sha256.safeParse(wrapper.c).success||!(value===null||value!==null&&typeof value==='object'&&'root' in value&&'composition' in value&&Sha256.safeParse(value.root).success&&Sha256.safeParse(value.composition).success))throw new LinkRefusal('分页游标缺少有效的不分版本快照；从第一页重新读取');
         const saved=value===null?null:value as ScopeRoot;
         if(context.run&&canonicalize(saved)!==canonicalize(scopeRoot))throw new LinkRefusal('分页游标与运行的不分版本快照不同；从本次运行的第一页重新读取');
+        if(wrapper.scope_cut!==undefined&&(!Number.isSafeInteger(wrapper.scope_cut)||Number(wrapper.scope_cut)<0))throw new LinkRefusal('分页游标的不分版本截断计数无效；从首页重新读取');
+        savedScopeCut=wrapper.scope_cut as number|undefined;
         scopeRoot=saved;pageCursor=wrapper.cursor;cursorComposition=String(wrapper.c);
       }
     }
@@ -938,22 +940,35 @@ export class KnowledgeViews {
     }
     const revision=scopeRoot===null?composition:sha256Hex(canonicalize({composition,scope:scopeRoot}));
     if(request.revision!==null&&request.revision!==revision)return {ok:false,id:bare,reason:'要求的修订与锁定组成不同，请按锁定组成重读'};
-    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,...(named?{build:request.build}:{})});
     const scope=await this.#scopeView(handle.product.id,scopeRoot);
     const summary=await this.#scopeSummary(scope,ENTRY_KIND);
-    if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next})).toString('base64url');
+    const firstPage=pageCursor===null;
+    const entries:Record<string,ViewEntry>={};
+    let cut=savedScopeCut??0;
+    if(scope){
+      const budget=Math.max(0,Math.floor((this.#context.limits.maxViewBytes-4096)/2));
+      let used=2,full=false;cut=0;
+      for(const kind of ENTRY_KIND)for await(const row of entriesOfKind(scope,kind)){
+        if(full){cut++;continue;}
+        const entry=viewEntry(row.entry,row.content,scope.body.root,row.path,true),size=memberBytes(row.entry,entry);
+        if(full||used+size>budget){full=true;cut++;continue;}
+        used+=size;if(firstPage)entries[row.entry]=entry;
+      }
+    }
+    if(savedScopeCut!==undefined&&savedScopeCut!==cut)throw new LinkRefusal('分页游标的不分版本截断计数与根和预算不符；请从首页重新读取');
+    if(summary)summary.totals.cut_entries=cut;
+    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary)]}).byteLength;
+    const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,maxBytes:Math.max(0,this.#context.limits.maxViewBytes-reserve),...(named?{build:request.build}:{})});
+    if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next,scope_cut:cut})).toString('base64url');
     view.unversioned=summary;
     view.notes.push(this.#scopeNote(summary));
-    if(view.totals)Object.assign(view.totals,this.#scopeCounts(summary));
     if(scope){
-      const entries:Record<string,ViewEntry>={};let bytes=canonicalBytes(view).byteLength;
-      for(const kind of ENTRY_KIND)for await(const row of entriesOfKind(scope,kind)){
-        const entry=viewEntry(row.entry,row.content,scope.body.root,row.path,true),size=memberBytes(row.entry,entry);
-        if(bytes+size>this.#budget){view.truncated=true;continue;}
-        entries[row.entry]=entry;bytes+=size;
-      }
-      view.entries=entries;
+      view.entries=firstPage?entries:{};
+      if(cut>0){view.truncated=true;view.notes.push(`不分版本条目只在首页交付；有 ${cut} 条被字节预算截断，按 get_nodes 从根 ${scope.body.root} 分页读取剩余条目`);}
+      else view.notes.push('不分版本条目只在首页交付，后续页不重复发送');
     }
+    if(view.totals)Object.assign(view.totals,this.#scopeCounts(summary),summary?{unversioned_entries_cut:cut}:{});
+    if(canonicalBytes(view).byteLength>this.#context.limits.maxViewBytes)throw new LinkRefusal('链接视图的固定范围说明超过字节上限；请维护者调整字节预算后从首页重读');
     LinksView.parse(view);
     const inputs=[`tree:${body.root}/`,`rec:${composition}`],origin={generated:{generator:COMPONENTS.views,inputs}},sources=new Set<string>();
     const sourceView=new CompositionView(this.#context.store,composition,body);

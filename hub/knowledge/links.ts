@@ -23,7 +23,7 @@ export function relationNode(entries:readonly {kind:string;producers:readonly st
 
 type UncheckedLiteral=Backlinks['entries'][number]&{rule:string;literals:number};
 export interface RelationFacts { links: LinkEdge[]; drift: LinkDrift[]; entries: number; literals: number;diagnostics:LinkDiagnostic[];rule_diagnostics:LinkRuleDiagnostic[];unchecked:UncheckedLiteral[] }
-export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string }
+export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string;maxBytes?:number }
 /** A known request refusal, distinct from unavailable immutable records or computation failures. */
 export class LinkRefusal extends Error {}
 export class RelationReadError extends Error {
@@ -208,7 +208,7 @@ export class LinkReading {
       if(item.diagnostic)output.diagnostics!.push(item.diagnostic);
       else if(item.edge)output.links.push(item.edge);
       else if(item.group&&item.occurrence){const key=canonicalize([item.group.rule,item.group.literal]),g=picked.get(key)??{...item.group,occurrences:[]};g.occurrences.push(item.occurrence);picked.set(key,g);output.drift=[...picked.values()];}
-      if(canonicalBytes(output).byteLength>this.#context.limits.maxViewBytes-4096){
+      if(canonicalBytes(output).byteLength>Math.min(this.#context.limits.maxViewBytes,request.maxBytes??this.#context.limits.maxViewBytes)-4096){
         if(at===offset)throw new LinkRefusal('单条链接视图记录超过当前服务字节上限；需维护者补充分段读取能力后，再核验这份组成');
         if(item.diagnostic)output.diagnostics!.pop();else if(item.edge)output.links.pop();else if(item.group){const g=picked.get(canonicalize([item.group.rule,item.group.literal]))!;g.occurrences.pop();output.drift=[...picked.values()].filter(g=>g.occurrences.length);}
         break;

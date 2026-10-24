@@ -35,6 +35,12 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
+                },
+                "cut_entries": {
+                  "description": "product-wide entries omitted by the links first-page payload budget; repeated unchanged on later pages",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -423,6 +429,12 @@
               "maximum": 9007199254740991
             },
             "unversioned_documents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unversioned_entries_cut": {
+              "description": "product-wide entries cut from the first-page-only payload",
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991

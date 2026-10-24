@@ -30,7 +30,7 @@ export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 export const UnversionedView = z.strictObject({
   root: Sha256, composition: Sha256, build: z.null(),
   skipped_sources: z.number().int().nonnegative(),
-  totals: z.strictObject({ entries: z.number().int().nonnegative(), documents: z.number().int().nonnegative() }),
+  totals: z.strictObject({ entries: z.number().int().nonnegative(), documents: z.number().int().nonnegative(), cut_entries: z.number().int().nonnegative().optional().describe('product-wide entries omitted by the links first-page payload budget; repeated unchanged on later pages') }),
 });
 export type UnversionedView = z.infer<typeof UnversionedView>;
 const ScopeCounts = { unversioned_entries: z.number().int().nonnegative().optional(), unversioned_documents: z.number().int().nonnegative().optional() };
@@ -174,7 +174,7 @@ export const LinkDiagnostic=LinkOccurrence.extend({rule:z.string(),reason:Reason
 export type LinkDiagnostic=z.infer<typeof LinkDiagnostic>;
 export const LinkRuleDiagnostic=z.strictObject({rule:z.string(),namespace:TreePath,reason:ReasonSchema,message:z.string(),next_action:z.string(),unchecked_literals:z.number().int().nonnegative()});
 export type LinkRuleDiagnostic=z.infer<typeof LinkRuleDiagnostic>;
-export const LinkTotals = z.strictObject({ ...ScopeCounts, entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative(),diagnosed_entries:z.number().int().nonnegative().optional(),unchecked_literals:z.number().int().nonnegative().optional() });
+export const LinkTotals = z.strictObject({ ...ScopeCounts, unversioned_entries_cut:z.number().int().nonnegative().optional().describe('product-wide entries cut from the first-page-only payload'), entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative(),diagnosed_entries:z.number().int().nonnegative().optional(),unchecked_literals:z.number().int().nonnegative().optional() });
 export const Backlinks = z.strictObject({ view_id: z.string().optional().describe('Exact external view id for composition-pinned continuation'), composition: Sha256.nullable(), configured: z.boolean(), total: z.number().int().nonnegative().nullable(), entries: z.array(LinkOccurrence), truncated: z.boolean(), notes: z.array(z.string()) }).refine(value=>value.configured===(value.total!==null)&&(!value.configured||value.composition!==null),'computed backlinks require a pinned composition and total');
 export const LinksView = z.strictObject({
   unversioned: UnversionedView.nullable().optional(),

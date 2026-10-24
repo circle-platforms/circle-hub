@@ -943,3 +943,12 @@ runs. Scope pointers use the observation captured before production and the exac
 successful action matching the returned composition, so a concurrent newer root
 cannot be overwritten or mistaken for this production's cause. An already aborted
 scope is reported without consulting production storage.
+
+Links scope payloads use half of the shared page budget after the same 4096-byte
+reserve as the relationship page. The build-side page receives the remaining byte
+budget and the final artifact is checked as a whole. Product-wide entry details are
+sent only on the first page; cursors retain the original cut count and snapshot.
+`unversioned.totals.cut_entries` remains available even without configured relations;
+`totals.unversioned_entries_cut` mirrors it when link totals exist. Both count entries
+omitted by that first-page detail budget, independently of total scope membership.
+The note directs readers to get_nodes on the scope root for omitted details.
