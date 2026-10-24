@@ -31,7 +31,7 @@ test('minimum conditions may bind seat counts and topology digest failures preve
 test('the verified bytes must occupy the declared artifact slot', async t => {
   const c = await setup(); t.after(() => c.close());
   c.detail.run.sources[0].slot = 'untrusted-slot';
-  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
@@ -62,6 +62,6 @@ test('one artifact proof cannot silently select the first item of a multi-item v
   const c = await setup(); t.after(() => c.close());
   c.detail.run.items.push({ ...c.detail.run.items[0], id: 'another-synthetic-item' });
   c.detail.latest!.result.partitions.delivered.push({ ...c.detail.latest!.result.partitions.delivered[0], item: 'another-synthetic-item' });
-  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
   assert.equal(c.calls.includes('send_blob'), false);
 });

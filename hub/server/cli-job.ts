@@ -51,7 +51,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   if (sub === 'list' && !parsed.positionals.length) {
     const entries=await registry.sources(by);
     for(const source of entries){
-      try{const e=await registry.get(source.id);if(e)await executorLine(s,registry,by,e);}
+      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);}}
       catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
     }
     s.out(`执行器 ${entries.length}`); return 0;
