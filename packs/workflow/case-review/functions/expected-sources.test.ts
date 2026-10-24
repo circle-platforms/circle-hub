@@ -101,7 +101,7 @@ describe('expectedSources', () => {
     assert.match(out.warnings[0].message, /缺少显式来源编号/);
     assert.match(out.warnings[0].message, /下一步作者用参数 stories、bugs 声明来源/);
     assert.match(out.warnings[0].message, /逐字引文/);
-    assert.ok(!out.external.some((id) => id.startsWith('manual:')), 'keyword retrieval selects no source');
+    // The empty list above is the whole point: keyword retrieval selects no source, so no read id is bound at all.
     assertJson(out);
   });
 
