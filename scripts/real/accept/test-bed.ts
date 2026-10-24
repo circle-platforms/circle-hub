@@ -1,240 +1,129 @@
-// The test-bed pack through the real client: the scripted model searches the beds of the named inventory document,
-// acquires one bed, and then — when the gold asks for it — extends and releases the booking through the run lineage
-// (every later run starts with its predecessor, the booking parameter names the booking run). The Hub's answers are
-// compared with the answers written down independently in the gold file (the supervisor reads the real inventory
-// document by hand: which beds fit the need and are free, which devices and addresses the acquire must name, for how
-// long, and how long the extend adds).
-//
-// The lease keys never appear in the client-facing text (claims render their statement, not their data), so the gold
-// holds the devices, addresses and hours the conclusions must name; the keys are mechanical from them
-// (bed/<bed>/<device>, bed/<bed>/ip/<address>).
-import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
-import type { Check } from '../lib/report.ts';
-import { parseNextCall, parseRecReference } from './case-location.ts';
+// Synthetic-bed acceptance through the client; no time-based booking or renewal is a successful operation.
+// New independent gold (replace the external old gold; obsolete need.hours/acquire.hours/extend are rejected):
+// { inventory: "synthetic-bed-topology", need: { devices: [{type:"load-balancer",count:1}] },
+//   beds: [{name:"bed-a",free:"idle",ownership:"你登记的"}],
+//   acquire: {bed:"bed-a",devices:["dut0"]}, release: true }
+// free is "idle", "held" (occupied with no expiry), or the exact earliest-free ISO timestamp.
+// Optional ownership is the search disclosure "你登记的" / "有主人" / "未登记". Owner identities and registration
+// prefixes (owner/prefix in the gold are refused) are not exposed by this conclusion: do not derive a bed/<name>/ prefix and call it independent proof.
+// Optional acquire.addresses lists expected addresses, as in the previous gold; no new address request is invented.
+// Three fixed negative probes exercise top-level hours, need.hours and action=extend separately. Each must return
+// the specific refusal and correction in its own error reply. Search/acquire/release are graded independently of
+// those expected errors, including their complete result pages. Release always names and descends from the booking,
+// never the refused extend. No register/unregister or other ownership mutation is performed by this scenario.
+import {resultTexts,type LoggedTurn,type Scenario} from '../lib/accept.ts';
+import type {Check} from '../lib/report.ts';
+import type {Reply,Turn} from '../scripted-model.ts';
+import {parseNextCall,parseRecReference} from './case-location.ts';
 
 export interface SearchBedGold {
-  /** The bed name as the manifest writes it. */
-  name: string;
-  /** 'idle' when the bed must get the exact idle qualifier; otherwise the ISO moment it must name as earliest free. */
-  free: 'idle' | string;
+  name:string;
+  free:'idle'|'held'|string;
+  ownership?:'你登记的'|'有主人'|'未登记';
 }
-
-export interface AcquireGold {
-  bed: string;
-  /** The device names the acquire conclusion must name (the picked devices, written down independently). */
-  devices: string[];
-  /** The addresses the conclusion must name, when addresses are requested. */
-  addresses?: string[];
-  /** Hours of the lease; defaults to need.hours, then 2. */
-  hours?: number;
-}
-
-export interface ExtendGold {
-  /** The hours the extend adds; the conclusion must say “延长 <hours> 小时”. */
-  hours: number;
-}
-
+export interface AcquireGold {bed:string;devices:string[];addresses?:string[]}
 export interface TestBedGold {
-  /** The named document holding the inventory manifest, without the doc:doc: prefix. */
-  inventory: string;
-  /** The need of both runs: device types and counts, and the hours when the acquire does not override them. */
-  need: { devices: Array<{ type: string; count: number }>; hours?: number };
-  /** Every bed the supervisor verified in the document, with the free wording it must get. */
-  beds: SearchBedGold[];
-  acquire: AcquireGold;
-  /** Present when the scenario extends the booking after acquiring (same devices as the acquire). */
-  extend?: ExtendGold;
-  /** True when the scenario releases the booking at the end (after the extend when there is one). */
-  release?: boolean;
+  inventory:string;
+  need:{devices:Array<{type:string;count:number}>};
+  beds:SearchBedGold[];
+  acquire:AcquireGold;
+  release:true;
+}
+export const IDLE_WORDING='Hub 记录里空闲（未排除本地操作）';
+export const earliestWording=(moment:string):string=>`Hub 记录里最早 ${moment} 空闲（未排除本地操作）`;
+export const MAX_PAGES=4;
+export function parseRunId(text:string):string|null{return /\b(run_[0-9a-z]{26})\b/.exec(text)?.[1]??null;}
+const CORRECTION='台架预订不限时长，用完由运行释放';
+const UNLIMITED='不限时长，用完由运行释放';
+const HELD='Hub 记录里被占用，没有到期时刻（未排除本地操作）';
+type Step='search'|'hours'|'need-hours'|'acquire'|'extend'|'release';
+interface Evidence {texts:string[];pages:string[];run:string|null;complete:boolean;refused:boolean}
+interface Machine {consume:(turn:Pick<Turn,'index'|'toolResults'>)=>Reply;evidence:Record<Step,Evidence>;failure:()=>string|null}
+const textOf=(turn:Pick<Turn,'toolResults'>)=>turn.toolResults.map(result=>result.text).join('\n');
+const errorOf=(turn:Pick<Turn,'toolResults'>)=>turn.toolResults.some(result=>result.isError)||turn.toolResults.some(result=>result.text.includes('出错：'));
+const refusalOf=(turn:Pick<Turn,'toolResults'>)=>turn.toolResults.length===1&&turn.toolResults.some(result=>result.isError&&result.text.includes('不再接受 hours 或 extend')&&result.text.includes(CORRECTION)&&parseRunId(result.text)===null);
+
+function machine(gold:TestBedGold):Machine {
+  const empty=():Evidence=>({texts:[],pages:[],run:null,complete:false,refused:false});
+  const evidence:Record<Step,Evidence>={search:empty(),hours:empty(),'need-hours':empty(),acquire:empty(),extend:empty(),release:empty()};
+  let step:Step='search',paging=false,pagesRead=0,reference:string|null=null,booking:string|null=null,done=false,failure:string|null=null;
+  const start=(next:Step):Reply=>{
+    step=next;paging=false;pagesRead=0;reference=null;
+    const parameters:Record<string,unknown>=next==='search'?{action:'search',need:gold.need}
+      :next==='hours'?{action:'search',need:gold.need,hours:2}
+      :next==='need-hours'?{action:'search',need:{...gold.need,hours:2}}
+      :next==='acquire'?{action:'acquire',bed:gold.acquire.bed,need:gold.need}
+      :next==='extend'?{action:'extend',booking}
+      :{action:'release',booking};
+    return [{tool:'hub_start_run',input:{pack:'test-bed',inputs:{inventory:{external:`doc:doc:${gold.inventory}`}},parameters,...(next==='extend'||next==='release'?{predecessor:booking}:{})}}];
+  };
+  const stop=(reason:string):Reply=>{
+    failure??=reason;
+    // A known booking must still be released when reading or a negative probe fails.
+    if(booking!==null&&step!=='release'&&!evidence.release.complete)return start('release');
+    done=true;return [{text:`核验未完成：${reason}；下一步：核对本次工具回执，${booking===null?'修复后重新运行场景':`核对预订 ${booking} 的释放结果，必要时由该运行谱系重试释放`}。`}];
+  };
+  const finished=():Reply=>[{text:failure===null?'本轮搜索、旧入口拒绝与释放回执已读完。':`核验未完成：${failure}；下一步：核对本次回执${booking===null?'并修复后重跑':`及预订 ${booking} 的释放结果，必要时由该运行谱系重试释放`}。`}];
+  const advance=():Reply=>step==='search'?start('hours'):step==='hours'?start('need-hours'):step==='need-hours'?start('acquire'):step==='acquire'?start('extend'):step==='extend'?start('release'):(done=true,finished());
+  return {evidence,failure:()=>failure,consume(turn){
+    if(turn.index===0)return start('search');
+    if(done)return finished();
+    const current=evidence[step],text=textOf(turn);current.texts.push(text);
+    if(step==='hours'||step==='need-hours'||step==='extend'){
+      current.refused=refusalOf(turn);current.complete=current.refused;
+      return current.refused?advance():stop(`${step} 未返回确定的旧入口拒绝原因和修正说明`);
+    }
+    if(errorOf(turn))return stop(`${step} 工具调用失败`);
+    if(!paging){
+      current.run=parseRunId(text);
+      if(step==='acquire')booking=current.run;
+      const rec=parseRecReference(text);
+      if(current.run===null||rec===null)return stop(`${step} 缺少运行号或完整结果引用`);
+      reference=rec;paging=true;pagesRead=1;
+      return [{tool:'hub_get_nodes',input:{reference:rec}}];
+    }
+    current.pages.push(text);
+    const next=parseNextCall(text);
+    if(next!==null){
+      if(next.reference!==reference)return stop(`${step} 分页引用改变`);
+      if(pagesRead>=MAX_PAGES)return stop(`${step} 在 ${MAX_PAGES} 页内仍未读全`);
+      pagesRead++;return [{tool:'hub_get_nodes',input:next}];
+    }
+    current.complete=true;return advance();
+  }};
 }
 
-/** The idle wording and the earliest-free wording, exactly as functions/match.ts writes them. */
-export const IDLE_WORDING = 'Hub 记录里空闲（未排除本地操作）';
-export const earliestWording = (moment: string): string => `Hub 记录里最早 ${moment} 空闲（未排除本地操作）`;
-
-/** Maximum result pages to read per run with hub_get_nodes. */
-export const MAX_PAGES = 4;
-
-/** The run id of a start_run result text (“运行 run_<ulid> …”). */
-export function parseRunId(text: string): string | null {
-  const match = /\b(run_[0-9a-z]{26})\b/.exec(text);
-  return match ? match[1] : null;
-}
-
-export default function scenario(gold: TestBedGold): Scenario {
-  const area = '台架';
-  const pack = 'test-bed';
-  const hours = gold.acquire.hours ?? gold.need.hours ?? 2;
-  const inputs = { inventory: { external: `doc:doc:${gold.inventory}` } };
-  const need = { devices: gold.need.devices, hours };
-
-  type Phase = 'search-rec' | 'search-pages' | 'acquire-rec' | 'acquire-pages' | 'extend-rec' | 'extend-pages' | 'release-rec' | 'release-pages' | 'done';
-  let phase: Phase = 'search-rec';
-  let reference: string | null = null;
-  let pagesRead = 0;
-  let booking: string | null = null;
-  let lastRun: string | null = null;
-
-  const getNodes = (input: { reference: string; cursor?: string }): { tool: string; input: unknown } => ({ tool: 'hub_get_nodes', input });
-  const startRun = (parameters: Record<string, unknown>, predecessor?: string): { tool: string; input: unknown } => ({
-    tool: 'hub_start_run',
-    input: { pack, inputs, parameters, ...(predecessor !== undefined ? { predecessor } : {}) },
-  });
-  const readPages = (lastText: string, next: Phase): { tool: string; input: unknown }[] | null => {
-    const rec = parseRecReference(lastText);
-    if (rec !== null) {
-      reference = rec;
-      pagesRead = 1;
-      phase = next;
-      return [getNodes({ reference: rec })];
-    }
-    return null;
-  };
-  const pageOrMove = (lastText: string, move: () => { tool: string; input: unknown }[] | { text: string }[]): { tool: string; input: unknown }[] | { text: string }[] => {
-    const next = parseNextCall(lastText);
-    if (next !== null && pagesRead < MAX_PAGES) {
-      pagesRead++;
-      return [getNodes(next)];
-    }
-    return move();
-  };
-
+export default function scenario(gold:TestBedGold):Scenario {
+  if(!gold||!gold.need||!gold.acquire||Object.hasOwn(gold.need,'hours')||Object.hasOwn(gold.acquire,'hours')||Object.hasOwn(gold,'extend')||gold.release!==true)throw new TypeError('台架金标准已改为不限时长并由运行释放：删除 need.hours、acquire.hours 和 extend，写 release:true');
+  if(gold.beds.some(bed=>Object.hasOwn(bed,'owner')||Object.hasOwn(bed,'prefix')))throw new TypeError('台架金标准不能声称已核验 owner 或 prefix：当前搜索结论只披露 ownership 登记状态；主人身份和登记前缀需要额外只读接口');
+  const area='台架',live=machine(gold);
   return {
-    name: 'test-bed',
-    area,
-    prompt: `请在台架清单 ${gold.inventory} 里搜索满足需求的台架，然后预订 ${gold.acquire.bed}，${hours} 小时${gold.extend !== undefined ? `，再续期 ${gold.extend.hours} 小时` : ''}${gold.release === true ? '，最后释放' : ''}。`,
-    respond: (turn) => {
-      const lastText = turn.toolResults.map((r) => r.text).join('\n');
-      if (turn.index === 0) {
-        phase = 'search-rec';
-        return [startRun({ action: 'search', need })];
+    name:'test-bed',area,
+    prompt:`在合成清单 ${gold.inventory} 只读搜索台架，核对旧 hours 和 extend 请求的确定拒绝；不限时预订 ${gold.acquire.bed}，用完由预订运行谱系释放。`,
+    respond:turn=>live.consume(turn),
+    check(turns:LoggedTurn[]):Check[]{
+      const replay=machine(gold);for(const turn of turns)replay.consume(turn);
+      const e=replay.evidence,checks:Check[]=[];
+      const add=(name:string,expected:string,actual:string,ok:boolean)=>checks.push({area,name,expected,actual:actual.slice(0,250),ok});
+      const runs=[e.search.run,e.acquire.run,e.release.run];
+      add('搜索、预订和释放各有独立完整结果','3 个不同运行，均读完完整结果',runs.join('、'),runs.every(run=>run!==null)&&new Set(runs).size===3&&[e.search,e.acquire,e.release].every(result=>result.complete));
+      add('流程没有未处理错误或截断','没有未处理错误，分页读全',replay.failure()??'无',replay.failure()===null);
+      for(const step of ['hours','need-hours','extend'] as const)add(`旧入口 ${step} 返回确定修正`,CORRECTION,e[step].texts.join('\n'),e[step].refused);
+      const search=e.search.pages.join('\n').split('\n');
+      for(const bed of gold.beds){
+        const lines=search.filter(line=>line.includes(`台架 ${bed.name}：`));
+        const wording=bed.free==='idle'?IDLE_WORDING:bed.free==='held'?HELD:earliestWording(bed.free);
+        add(`台架 ${bed.name} 的空闲结论`,wording,lines.join('\n')||'没有这个台架的结论',lines.some(line=>line.includes(wording)));
+        if(bed.ownership!==undefined)add(`台架 ${bed.name} 的登记状态`,bed.ownership,lines.join('\n'),lines.some(line=>line.split('；').some(part=>part.trim()===bed.ownership)));
       }
-      if (phase === 'search-rec') {
-        const pages = readPages(lastText, 'search-pages');
-        if (pages !== null) return pages;
-        phase = 'done';
-        return [{ text: '搜索没有给出完整结果的引用。' }];
-      }
-      if (phase === 'search-pages') {
-        return pageOrMove(lastText, () => {
-          phase = 'acquire-rec';
-          return [startRun({ action: 'acquire', bed: gold.acquire.bed, need })];
-        });
-      }
-      if (phase === 'acquire-rec') {
-        booking = parseRunId(lastText);
-        lastRun = booking;
-        const pages = readPages(lastText, 'acquire-pages');
-        if (pages !== null) return pages;
-        phase = 'done';
-        return [{ text: '预订没有给出完整结果的引用。' }];
-      }
-      if (phase === 'acquire-pages') {
-        return pageOrMove(lastText, () => {
-          if (gold.extend !== undefined && booking !== null) {
-            phase = 'extend-rec';
-            return [startRun({ action: 'extend', booking, hours: gold.extend.hours }, booking)];
-          }
-          if (gold.release === true && booking !== null && lastRun !== null) {
-            phase = 'release-rec';
-            return [startRun({ action: 'release', booking }, lastRun)];
-          }
-          phase = 'done';
-          return [{ text: '搜索和预订完成。' }];
-        });
-      }
-      if (phase === 'extend-rec') {
-        lastRun = parseRunId(lastText) ?? lastRun;
-        const pages = readPages(lastText, 'extend-pages');
-        if (pages !== null) return pages;
-        phase = 'done';
-        return [{ text: '续期没有给出完整结果的引用。' }];
-      }
-      if (phase === 'extend-pages') {
-        return pageOrMove(lastText, () => {
-          if (gold.release === true && booking !== null && lastRun !== null) {
-            phase = 'release-rec';
-            return [startRun({ action: 'release', booking }, lastRun)];
-          }
-          phase = 'done';
-          return [{ text: '续期完成。' }];
-        });
-      }
-      if (phase === 'release-rec') {
-        const pages = readPages(lastText, 'release-pages');
-        if (pages !== null) return pages;
-        phase = 'done';
-        return [{ text: '释放没有给出完整结果的引用。' }];
-      }
-      if (phase === 'release-pages') {
-        return pageOrMove(lastText, () => {
-          phase = 'done';
-          return [{ text: '释放完成。' }];
-        });
-      }
-      return [{ text: '完成。' }];
-    },
-    check(turns: LoggedTurn[]): Check[] {
-      const text = resultTexts(turns).join('\n');
-      const lines = text.split('\n');
-      const runs = (text.match(/运行 run_/g) ?? []).length;
-      const wantRuns = 2 + (gold.extend !== undefined ? 1 : 0) + (gold.release === true ? 1 : 0);
-      const checks: Check[] = [
-        { area, name: `${wantRuns} 次运行都拿到了结果，不是错误`, expected: `${wantRuns} 个“运行 run_…”，没有“出错”`, actual: `${runs} 个运行${text.includes('出错：') ? '，有出错' : ''}`, ok: runs >= wantRuns && !text.includes('出错：') },
-      ];
-      for (const bed of gold.beds) {
-        const wording = bed.free === 'idle' ? IDLE_WORDING : earliestWording(bed.free);
-        const found = lines.some((line) => line.includes(`台架 ${bed.name}`) && line.includes(wording));
-        checks.push({
-          area,
-          name: `台架 ${bed.name} 的空闲结论与独立依据一致`,
-          expected: `台架 ${bed.name}：…${wording}`,
-          actual: found ? '一致' : (lines.find((line) => line.includes(`台架 ${bed.name}`)) ?? '没有这个台架的结论').slice(0, 160),
-          ok: found,
-        });
-      }
-      const acquireLine = lines.find((line) => line.includes(`预订 ${gold.acquire.bed}，`));
-      checks.push({
-        area,
-        name: `预订 ${gold.acquire.bed} 的结论出现`,
-        expected: `预订 ${gold.acquire.bed}，…，${hours} 小时`,
-        actual: acquireLine !== undefined ? acquireLine.slice(0, 200) : '没有预订结论',
-        ok: acquireLine !== undefined,
-      });
-      for (const device of gold.acquire.devices) {
-        const found = acquireLine !== undefined && acquireLine.includes(device);
-        checks.push({ area, name: `预订结论点名设备 ${device}`, expected: device, actual: found ? '点名' : '没有点名', ok: found });
-      }
-      for (const address of gold.acquire.addresses ?? []) {
-        const found = acquireLine !== undefined && acquireLine.includes(address);
-        checks.push({ area, name: `预订结论点名地址 ${address}`, expected: address, actual: found ? '点名' : '没有点名', ok: found });
-      }
-      const hoursFound = acquireLine !== undefined && acquireLine.includes(`${hours} 小时`);
-      checks.push({ area, name: `预订结论的时长是 ${hours} 小时`, expected: `${hours} 小时`, actual: hoursFound ? `${hours} 小时` : '不一致', ok: hoursFound });
-      if (gold.extend !== undefined) {
-        const extendLine = lines.find((line) => line.includes(`续期 ${gold.acquire.bed} 的预订`));
-        const hoursOk = extendLine !== undefined && extendLine.includes(`延长 ${gold.extend.hours} 小时`);
-        const devicesOk = gold.acquire.devices.every((device) => extendLine !== undefined && extendLine.includes(device));
-        checks.push({
-          area,
-          name: `续期结论点名预订、设备和延长 ${gold.extend.hours} 小时`,
-          expected: `续期 ${gold.acquire.bed} 的预订 run_…，…，延长 ${gold.extend.hours} 小时`,
-          actual: extendLine !== undefined ? extendLine.slice(0, 200) : '没有续期结论',
-          ok: extendLine !== undefined && hoursOk && devicesOk,
-        });
-      }
-      if (gold.release === true) {
-        const releaseLine = lines.find((line) => line.includes(`释放 ${gold.acquire.bed} 的预订`));
-        const devicesOk = gold.acquire.devices.every((device) => releaseLine !== undefined && releaseLine.includes(device));
-        checks.push({
-          area,
-          name: `释放结论点名预订和设备`,
-          expected: `释放 ${gold.acquire.bed} 的预订 run_…，…`,
-          actual: releaseLine !== undefined ? releaseLine.slice(0, 200) : '没有释放结论',
-          ok: releaseLine !== undefined && devicesOk,
-        });
-      }
-      checks.push({ area, name: '回答没有超过客户端能转交的长度', expected: '每个工具结果不超过 30000 个字符', actual: `最长 ${Math.max(0, ...resultTexts(turns).map((t) => t.length))} 个字符`, ok: resultTexts(turns).every((t) => t.length <= 30_000) });
+      const acquired=e.acquire.pages.join('\n').split('\n').find(line=>line.includes(`预订 ${gold.acquire.bed}，`));
+      add('预订明确不限时长并由运行释放',UNLIMITED,acquired??'没有预订结论',acquired!==undefined&&acquired.includes(UNLIMITED)&&!/[0-9]+\s*小时/u.test(acquired));
+      const named=(line:string|undefined,label:string,name:string):boolean=>line?.split('，').some(part=>part.startsWith(label+' ')&&part.slice(label.length+1).split('、').some(value=>value.trim()===name))===true;
+      for(const name of gold.acquire.devices)add(`预订点名设备 ${name}`,name,acquired??'没有预订结论',named(acquired,'设备',name));
+      for(const name of gold.acquire.addresses??[])add(`预订点名地址 ${name}`,name,acquired??'没有预订结论',named(acquired,'地址',name));
+      const released=e.release.pages.join('\n').split('\n').find(line=>line.includes(`释放 ${gold.acquire.bed} 的预订 ${e.acquire.run}`));
+      add('释放点名原预订和全部设备',`释放 ${gold.acquire.bed} 的预订 ${e.acquire.run}，${gold.acquire.devices.join('、')}`,released??'没有原预订的释放结论',released!==undefined&&gold.acquire.devices.every(name=>named(released,'设备',name))&&(gold.acquire.addresses??[]).every(name=>named(released,'地址',name)));
+      const texts=resultTexts(turns);add('回答没有超过客户端能转交的长度','每个工具结果不超过 30000 个字符',`最长 ${Math.max(0,...texts.map(text=>text.length))} 个字符`,texts.every(text=>text.length<=30_000));
       return checks;
     },
   };

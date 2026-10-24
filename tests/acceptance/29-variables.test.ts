@@ -126,6 +126,8 @@ test('a real verification run refuses drift before intent and a fresh verificati
     }) => { const data = { mode, sha256: psha, bed: { id: 'demo-bed', manifest_sha256: msha }, build: bed.site.RELEASED, ...(plan ? { plan_run: plan.run } : {}) }; const proof = await client.upload(canonicalBytes({ p: data }), 'demo-proof.json'); const answer = await client.call('start_run', { pack: PACK, product: bed.product.names[0], build: bed.site.RELEASED, inputs: { proof: { reference: proof }, payload: { reference: p }, manifest: { reference: m }, ...(plan ? { plan: { reference: plan.result } } : {}) }, ...(plan ? { predecessor: plan.run } : {}) }); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.result); return { run: answer.out.run!.run, result: answer.out.result!.reference }; };
     const plan = await start('plan');
     const verified = await start('verify', plan);
+    const detail=await bed.hub.deps.runs.getRun(owner,verified.run);assert.ok(detail?.latest);
+    assert.deepEqual(detail.latest.result.errors,[],JSON.stringify(detail.latest.result.errors));
     let submissions = 0;
     let submitted: any;
     let targetVarChanges = false;

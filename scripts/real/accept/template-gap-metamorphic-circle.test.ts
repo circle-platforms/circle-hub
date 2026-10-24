@@ -29,7 +29,7 @@ function goldOf(): { gold: any; dir: string } {
 }
 interface CopyInfo { name: string; tree: MindTree; sha: string; document: number; kind: string; category?: string; ordinal?: number }
 interface Answer { count: number; missing: Set<string> }
-interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean; dropSingleRow?: boolean }
+interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean; dropSingleRow?: boolean; prelude?: string; corruptSummaryLength?: boolean }
 function truth(tree: MindTree): Answer {
   const map = parseMindMap(tree); const raw: any[] = []; const walk = (node: any) => { raw.push(node); (node.children ?? []).forEach(walk); }; walk(tree.root);
   const cases = caseNodesOf(map); const present = new Set<string>();
@@ -81,10 +81,13 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
       } else {
         assert.equal(call.tool, 'hub_get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
         if (summary === undefined) { isError = true; text = toolText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
-        else text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: summary } }), { paging: true });
+        else {
+          text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: summary } }), { paging: true });
+          if (options.corruptSummaryLength) text = text.replace(/原文（\d+ 个字符）/, '原文（1 个字符）');
+        }
       }
       if (call.tool === 'hub_get_nodes' && !isError && text.split('\n').some(line=>line.startsWith('用例 '))) rawSummaryReads++;
-      results.push({ id: `tool-${seq}`, text, isError });
+      results.push({ id: `tool-${seq}`, text: (options.prelude ?? '') + text, isError });
     }
     if (tools.every(call => call.tool === 'hub_upload_file')) results.reverse();
   }
@@ -122,12 +125,46 @@ test('truncationReference and summaryOfGetNodes', () => {
   assert.equal(summaryOfGetNodes('别的形状'), null);
 });
 
+test('full summary accepts only recognized client preludes and checks declared UTF-16 character counts', () => {
+  const reference = `rec:${'a'.repeat(64)}#/items/0/summary`;
+  const summary = '用例 2 个；24 个模板类别都已覆盖；合成😀';
+  for (const prefix of ['', '\n', 'Hook allowed this call.\n\n']) {
+    const text = `${prefix}内容 ${reference}：模型可读\n原文（${summary.length} 个字符）：\n${summary}\n追踪 ${'1'.repeat(32)}`;
+    assert.equal(summaryOfGetNodes(text, reference), summary);
+    assert.equal(summaryOfGetNodes(JSON.stringify(text), reference), summary);
+    assert.equal(summaryOfGetNodes(text.replace(`（${summary.length} 个字符）`, `（${summary.length + 1} 个字符）`), reference), null);
+    assert.equal(summaryOfGetNodes(text.replace('模型可读', '只保留')), null);
+  }
+  for (const prefix of ['Unrecognized prelude\n', 'Hook allowed this call.\nUnrecognized prelude\n', 'Hook allowed this call. extra\n']) {
+    assert.equal(summaryOfGetNodes(`${prefix}内容 ${reference}：模型可读\n原文（${summary.length} 个字符）：\n${summary}\n追踪 synthetic`, reference), null);
+  }
+});
+
 test('the scenario walks the three phases with batch-bounded replies', () => {
   const { gold } = goldOf(); gold.batch = 4; const scenario = build(gold); const result = drive(scenario);
   assert.equal(result.done, '检查完成。'); assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
   for (const batch of result.calls) assert.ok(batch.length <= gold.batch);
   const counts = Object.fromEntries(['a','b','c','d','e','f'].map(kind => [kind, result.infos.filter(info => info.kind === kind).length]));
   assert.deepEqual(counts, { a: 2, b: 2, c: 4, d: 6, e: 6, f: 4 });
+});
+
+test('hook-prefixed real-shaped results complete all phases and full-summary reads', () => {
+  const { gold } = goldOf(); gold.batch = 4;
+  const result = drive(build(gold), undefined, { prelude: 'Hook allowed this call.\n\n' });
+  assert.ok(result.rawSummaryReads >= 4);
+  assert.equal(result.done, '检查完成。');
+  assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
+});
+
+test('a wrong summary character count names the missing full text and reference-based recovery', () => {
+  const { gold } = goldOf(); gold.batch = 4;
+  const scenario = build(gold);
+  const result = drive(scenario, undefined, { prelude: 'Hook allowed this call.\n\n', corruptSummaryLength: true });
+  assert.ok(result.rawSummaryReads >= 4);
+  assert.ok(result.checks.some(check => !check.ok));
+  const report = JSON.stringify(scenario.sections);
+  assert.match(report, /缺少与原文声明 1 个字符一致的完整摘要（实际 \d+ 个字符）/);
+  assert.match(report, /下一步.*rec:[a-f0-9]{64}#\/items\/\d+\/summary.*hub_get_nodes 重读/);
 });
 test('a refused start records the batch as unknown, and the scenario still finishes', () => {
   const { gold } = goldOf(); const scenario = build(gold); const result = drive(scenario, undefined, { refuseStart: true });

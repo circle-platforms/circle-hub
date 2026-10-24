@@ -90,6 +90,7 @@ before(async () => {
   admin = { id: boot.user.id, name: boot.user.name, role: 'admin' };
   const directory = fileURLToPath(new URL('..', import.meta.url));
   const declaration = ProductDeclaration.parse(JSON.parse(readFileSync(join(directory, 'product.json'), 'utf8')));
+  for(const variable of declaration.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成空闭集');
   const packJson = JSON.parse(readFileSync(join(directory, 'pack.json'), 'utf8')) as { version: string };
   const digest = createHash('sha256').update(readFileSync(join(directory, 'pack.json'))).update(readFileSync(join(directory, 'product.json'))).digest('hex');
   product = { id: 'apv', version: packJson.version, digest, kind: 'product', directory, product: declaration };

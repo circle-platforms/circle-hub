@@ -12,7 +12,7 @@ import { findQuote, normalizeReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { unavailableError } from './errors.ts';
 import { buildScope, createResolver, resolveCommand } from './exact.ts';
-import { canSeeRun } from './readers.ts';
+import { canViewRun } from './readers.ts';
 import { issuesOf } from './slots.ts';
 import { runById } from './store.ts';
 
@@ -39,7 +39,7 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
   if (!parsed.success) return { call_result: 'error', errors: issuesOf(parsed.error, ''), references: [], diagnostics: [] };
   const input = parsed.data;
   const stored = await runById(ctx.deps.records.store, input.run);
-  if (stored === null || !canSeeRun(user, stored.body)) {
+  if (stored === null || !await canViewRun(user, stored.body, ctx.deps.records.store)) {
     ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
     return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
   }
@@ -49,8 +49,17 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
   }
   // What the model will be shown: text the model may read (consumer model).
-  const scope = await buildScope(ctx, stored.body, workflow, user, 'model');
-  const resolver = createResolver(ctx, scope, 'model');
+  const artifacts = ctx.deps.records.artifacts;
+  const scopedArtifacts = new Proxy(artifacts, { get(target, property) {
+    if (property === 'source') return async (principal: Principal, sha: string, options: Parameters<typeof artifacts.source>[2]) =>
+      await artifacts.source(principal,sha,options) ?? await artifacts.sourceForRun(principal,sha,stored.body.run,options);
+    const value = Reflect.get(target,property,target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  }});
+  const readContext = {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,artifacts:scopedArtifacts}}};
+  let scope = await buildScope(readContext, stored.body, workflow, user, 'model');
+  if (stored.body.product !== undefined && !(await ctx.deps.packs.readableProducts(user)).has(stored.body.product)) scope = {...scope,catalogs:[]};
+  const resolver = createResolver(readContext, scope, 'model');
   const expect = expectOf(input.expect);
   const diagnostics: string[] = [PREVIEW];
   const references: { reference: string; text: string; role?: SourceRole }[] = [];

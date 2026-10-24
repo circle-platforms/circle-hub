@@ -86,6 +86,8 @@ export function manual(input: unknown): ProducerOutput {
   const unplaced: Unplaced[] = [];
   const warnings: string[] = [];
   try {
+    const params=paramsOf(input);
+    const conditionOptions={components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined};
     const heads = Array.isArray(paramsOf(input).heads) ? (paramsOf(input).heads as unknown[]).filter((h): h is string => typeof h === 'string') : null;
     // The command catalog of the build is built once, when a manual is actually read.
     let catalog: CommandCatalog | null | undefined;
@@ -122,8 +124,8 @@ export function manual(input: unknown): ProducerOutput {
       // rule 1), and the warning above names the missing fact and the next action.
       const built = catalogOf();
       const out = built === null
-        ? produceManualEntries(slot.model as MarkdownModel, heads, { name, noTree: true })
-        : produceManualEntries(slot.model as MarkdownModel, heads, { name, catalog: built });
+        ? produceManualEntries(slot.model as MarkdownModel, heads, { ...conditionOptions, name, noTree: true })
+        : produceManualEntries(slot.model as MarkdownModel, heads, { ...conditionOptions, name, catalog: built });
       for (const entry of out.entries) entries.push({ ...entry, fragments: entry.fragments.map((f) => withSlot(f, name)) });
       for (const span of out.unplaced) unplaced.push({ ...span, fragment: withSlot(span.fragment, name) });
       warnings.push(...out.warnings.map((w) => `${name}：${w}`));

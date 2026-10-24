@@ -452,6 +452,10 @@ test('reason selectors remain typed causes rather than installed-interpreter cod
   assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
 });
 
+test('static fact layers without checks cannot be newly published',async()=>{
+  await refused(editJson(workflowPack(),'requirements.json',(json:Json)=>{const requirement=json.requirements.find((r:Json)=>r.accepted_producer==='fact');requirement.checks=[];}),'requirements.shape',{field:'/requirements/0/checks'});
+});
+
 test('publication rejects static facts without checks and dynamic facts without an observation',async()=>{
   for(const target of ['item','run']){
     await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['static'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/checks'});

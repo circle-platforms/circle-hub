@@ -139,6 +139,10 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (!(await registry.canUse(account.id, parsed.id))) return 'unassigned';
       return null;
     },
+    async publicationOf(digest: string): Promise<string | null> {return (await registry.byDigest(digest))?.record??null;},
+    async ownerOf(digest: string): Promise<string | null> {
+      return (await registry.byDigest(digest))?.owner ?? null;
+    },
     async byDigest(digest: string): Promise<LoadedWorkflow | null> {
       const info = await registry.byDigest(digest);
       return info === null ? null : load(info);

@@ -198,9 +198,9 @@ Producers (K02, K04, C07)
   Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
   The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
   mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
-- Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
-  table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
-  row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
+- Applicability (K02 F[6]): explicit conditions on an entry take priority; otherwise each field inherits the nearest
+  chapter-opening declaration. A chapter opening is its title and first paragraph before any other block or child.
+  Ordinary sibling blocks and table rows never supply scope to each other. `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
   from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
   `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
   never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
@@ -674,8 +674,10 @@ accepted.
   recorded too and then shows up in the drift candidates; what is a command is decided when a literal is resolved at
   read time.
 - Only pipe tables split by row; a grid, multiline or simple table stays one block at its section node.
-- The section-opening scope of applicability is gone: every entry reads only its own text (a section-wide rule waits on
-  the owner's decision).
+- Chapter-opening fields inherit independently. Same-section title/paragraph disagreement leaves that field undeclared,
+  retains both values and verified source fragments, and marks conflict without adjudication or outer fallback.
+  Inner scope takes priority over outer scope, with the difference reported. Provenance stays in composition metadata,
+  outside entry content: heading edits alone do not change inherited entry digests.
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
@@ -870,6 +872,38 @@ signature groups use the declared exact primary/alternatives rule, other cells r
 reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
 of depending on a truncated field or a producer-local warning.
 
+## 适用条件闭集（kb-applicability）
+
+`APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS` 是部署变量，三者均声明为字符串列表，
+样例／试运行默认值均为空列表。真实生产前须分别 `circle-hub var set <名字> --file <JSON文件> --reason <理由>`；
+确实没有值时显式设 `[]`。生产器只接解析后的 params，变量决定由核心冻结进组成记录；仓库不带真实闭集。
+
+支持的窄写法：部件用“装有 X 时”“没有 X 时”（可带“部件”）；许可用“需要 X 许可”；
+三个闭集均可用“适用于 X”“仅 X 支持”，可带对应字段名。名称逐字比较，不补同义词或大小写别名；
+并列列表的每一项都须在同一闭集中，且只能确定一个字段。否定、例外、部分、可能、也等扩泛写法不抽，
+整组留在原文；未知成员不截成已知前缀。单个条件组读取上限 200 字符，超出的不作猜测。
+部件缺席只在明确“没有 X 时”中记录 without。空闭集不会为该字段产生条件。
+
+内存只读紧挨“内存”的明写数值与关系：不少于／至少／以上含下端点，大于不含；不超过／以下含上端点，小于不含。
+“N G 内存的设备”是两端相等且都包含端点。GB、G 按 1024³ 字节，MB、M 按 1024² 字节；
+普通十进制小数只有在能精确换成安全整数个字节时才记录，不四舍五入。不读模糊大小、约数、指数、其他单位和不安全数值。
+原文写法单独保存为 raw，不含无关的章节标题；读取字段不声称目标已经满足它。或分支、例外和不一致的多个范围不合成条件。
+
+章节条件的来历按字段绑定到原片段和章节路径，存在组成记录的 `applicability_sources`，不参与条目摘要。
+同章标题与首段矛盾时不裁决，也不回退外层；字段按未声明显示，双方声明与片段保留，并标记冲突。
+显式但无法结构化的章节条件同样阻止该字段向外回退，原文仍可回读。
+
+生产结果的 warnings 沿用知识同步报告通道：七个字段逐一报告直接抽取条目数和继承条目数（含零），
+签名、正文、拆分表格行分别按实际条目计数。内外层不同和同章冲突逐处列出字段、章节、声明值及源选择器，
+包内不截断这些明细；核心同步报告仍有保留条数和每条 1000 字符上限，完整字段来源及冲突双方以组成记录为准。冲突写明来源维护者在再次同步前核对原片段、修订或保留矛盾再生产。
+这里的计数只证明合成输入下的规则行为，不证明目标上的部件、内存、许可或部署形态已满足条件。
+
+适用条件扩展初版为 1.4.0，未发布。新变量启用前须显式设置三个闭集（允许 []）。
+
+adoc 的条目适配器 `functions/adoc/entries.ts` 转交三个闭集选项及字段来历，并以合成展开模型核验。
+名称族部署接线已合入；`familyManual` 传入解析后的闭集，不能以未传参的空集代替显式部署设置。
+include 展开、AST 和源读取没有改动。
+
 ## 部署约定与变量（决定 44）
 
 真实取值属于部署数据，不进包、不进 Git。由集成者在这一版发布以后、启用以前，用 `circle-hub var set <名字> --file <Git外暂存文件> --reason <理由>` 显式设置。变量默认值仅供发布样例和试运行；真实同步的任一引用未设置，会在读任何页之前确定拒绝，并给出逐名设置命令。即使决定不设下限或不用 adoc，也必须显式设置对应的 null。
@@ -900,3 +934,11 @@ ROOT 的三种情形：
 当前包版本为 1.4.1：部署约定和按族 adoc 接线已进入包声明。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
 
 在 Literal links 的生产器范围中，`source_producers` 为 `manual-apv` 与 `manual-nsae`，`target_producers` 仍为 `command-tree`；两族共用同一套关系规则和规范化器。
+
+被内层取代的外层声明也保留在组成记录的 `applicability_sources`，标 `superseded: true`。
+它们仍带原值和核验后的片段；读时不把它们当作生效字段、继承路径或当前冲突。
+因此同步 warning 被条数或长度预算截断后，内外层来源仍可经组成记录回查。
+
+首轮复核合并主线的名称族部署接线后，包升至 1.4.2 并重签。`familyManual` 从解析后的 params
+把 components、licenses、deployment_forms 透传给条目适配器，Markdown 和 adoc 两路使用同一组部署闭集；
+两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。

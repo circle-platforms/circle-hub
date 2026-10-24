@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {after,before,test} from 'node:test';
+import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
+import {openRetryHarness} from './testing/retry-harness.ts';
+import {sandboxSkip} from './testing/harness.ts';
+import {standardDocument,toyMap} from './testing/mindmap.ts';
+let pg:TemporaryPostgres;let h:Awaited<ReturnType<typeof openRetryHarness>>;const skip=await sandboxSkip();
+before(async()=>{pg=await startPostgres();if(!skip)h=await openRetryHarness(pg);});
+after(async()=>{await h?.close();await pg?.stop();});
+test('a settled cached receipt cannot revive a run superseded by its own successor',{skip},async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const input={pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}};
+  const run=(await h.service.startRun(h.alice,input,h.call('original-start'))).run!;
+  const args={run:run.run,model:'synthetic',items:run.items.map(item=>({item:item.id,handling:'handled',slots:{findings:[]}})),cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}]};
+  const first=await h.service.submitResult(h.alice,args,h.call('original-submit'));
+  assert.equal(first.acceptance,'accepted');assert.equal(first.counts!.unknown,0);
+  const successor=await h.service.startRun(h.alice,{...input,predecessor:run.run},h.call('successor-start'));
+  assert.equal(successor.call_result,'ok',JSON.stringify(successor.errors));
+  const repeated=await h.service.submitResult(h.alice,args,h.call('original-submit'));
+  assert.equal(repeated.acceptance,'not_accepted');assert.equal(repeated.errors[0].code,'RUN_SUPERSEDED');
+});

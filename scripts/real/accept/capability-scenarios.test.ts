@@ -9,13 +9,13 @@ import type { LoggedTurn, Scenario } from '../lib/accept.ts';
 import caseLocation from './case-location.ts';
 import maintenanceSweep, { type SweepGold } from './maintenance-sweep.ts';
 import qualityBoard, { type BoardGold } from './quality-board.ts';
-import regressionScope, { facetCountCheck, facetReader, type ScopeGold } from './regression-scope.ts';
+import regressionScope, { facetCountCheck, facetReader, withoutFacetPages, type ScopeGold } from './regression-scope.ts';
 import templateGap from './template-gap.ts';
 import traceability, { type TraceGold } from './traceability.ts';
 
 const FACET_SOURCE = `src:${'a'.repeat(64)}`;
 const facetValue = (count = 0) => ({ schema: 'facet-view@1', product: 'synthetic', build: { build: 'Later', root: 'b'.repeat(64) }, kind: 'case', by: ['commands'], rows: count ? [{ values: { commands: null }, count }] : [], total: count, truncated: false, skipped: 0, notes: [] });
-const sourceResult = (value: unknown) => `内容 ${FACET_SOURCE}：模型可读\n原文（100 个字符）：\n${JSON.stringify(value)}\n追踪 synthetic`;
+const sourceResult = (value: unknown) => `内容 ${FACET_SOURCE}：模型可读\n原文（${JSON.stringify(value).length} 个字符）：\n${JSON.stringify(value)}\n追踪 synthetic`;
 const turnsOf = (result: string, count = 0): LoggedTurn[] => [
   { index: 0, toolResults: [], tools: ['hub_start_run'] },
   { index: 1, toolResults: [{ id: 'r1', text: `${result}\n- 线索 ${FACET_SOURCE}（输入 facets）`, isError: false }], tools: ['hub_get_nodes'] },
@@ -265,6 +265,20 @@ for (const [name, make] of [
   assert.equal(check(4).ok, true); assert.equal(check(7).ok, false); assert.deepEqual([check(4).expected, check(4).actual], ['4', '4']);
   assert.equal(scenario.check(turnsOf('运行 run_synthetic').slice(0, 2)).find((c) => c.name === '分面未归位数与独立抽取相符')?.ok, false);
 });
+test('facet source pages allow only recognized preludes and verify full character counts', () => {
+  for (const prefix of ['', 'Hook allowed this call.\n\n']) {
+    const logs = turnsOf('运行 run_synthetic', 4);
+    logs[2].toolResults[0].text = prefix + logs[2].toolResults[0].text;
+    assert.equal(facetCountCheck('synthetic', 4, logs).ok, true);
+    assert.equal(withoutFacetPages(logs)[2].toolResults.length, 0);
+    logs[2].toolResults[0].text = logs[2].toolResults[0].text.replace(/原文（\d+ 个字符）/, '原文（1 个字符）');
+    assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
+  }
+  const logs = turnsOf('运行 run_synthetic', 4);
+  logs[2].toolResults[0].text = 'Unrecognized prelude\n' + logs[2].toolResults[0].text;
+  assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
+});
+
 test('facet source pagination is followed and reassembled before comparing', () => {
   const value = JSON.stringify(facetValue(4)); const split = 90;
   const page1 = `内容 ${FACET_SOURCE}：模型可读\n原文（${value.length} 个字符）：\n${value.slice(0, split)}\n部分：下一页：get_nodes {"reference":"${FACET_SOURCE}","cursor":"next-synthetic"}\n追踪 synthetic`;
@@ -276,6 +290,9 @@ test('facet source pagination is followed and reassembled before comparing', () 
   assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
   logs.push({ index: 3, toolResults: [{ id: 'page2', text: page2, isError: false }], tools: [] });
   assert.equal(facetCountCheck('synthetic', 4, logs).ok, true);
+  for (const page of logs.slice(2)) page.toolResults[0].text = 'Hook allowed this call.\n\n' + page.toolResults[0].text;
+  assert.equal(facetCountCheck('synthetic', 4, logs).ok, true);
+  assert.ok(withoutFacetPages(logs).slice(2).every(page => page.toolResults.length === 0));
 });
 test('truncated, skipped, duplicate null groups and wrong source pages cannot prove a count', () => {
   const raw = facetValue(4);

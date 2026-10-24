@@ -1,3 +1,6 @@
+import { abandonRun } from './management.ts';
+import { maintainRuns } from './maintenance.ts';
+import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
 // of a start, Hub-side runs for standing obligations). Every call that carries a CallContext reports the real reasons behind
 // its answers to that call's admin note (CallContext.adminNote) as well as to the process-wide adminLog.
@@ -41,6 +44,9 @@ function forCall(ctx: EngineContext, call: CallContext): EngineContext {
 }
 
 export interface RunsEngine extends RunsService {
+  maintain():Promise<void>;
+  startMaintenance():Promise<void>;
+  stopMaintenance():Promise<void>;
   /** For a run whose requirements are all facts the answer carries `result`: the reference and counts of the result computed at once. */
   startRun(user: Principal, input: Parameters<RunsService['startRun']>[1], context: CallContext): Promise<StartRunAnswer>;
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<SubmitAnswer>;
@@ -63,7 +69,19 @@ export interface RunsEngine extends RunsService {
 
 export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   const ctx = createEngineContext(deps);
+  let ongoing:Promise<void>|null=null;
+  let timer:ReturnType<typeof setInterval>|null=null;
+  const maintain=():Promise<void>=>ongoing??=(maintainRuns(ctx).finally(()=>{ongoing=null;}));
   return {
+    abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
+    maintain,
+    async startMaintenance(){
+      await maintain();
+      timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
+      timer.unref();
+    },
+    async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}await ongoing;},
+    listRequests(user,run) { return requestsOf(ctx,user,run); },
     async startRun(user, input, context) {
       return (await startRun(forCall(ctx, context), user, input, context, { host: 'local_circle' })).answer;
     },

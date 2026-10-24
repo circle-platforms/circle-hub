@@ -146,7 +146,8 @@ describe('the draft review (case-review) and its independent verification (case-
     // No fact about the case comes from a line the case does not write: the normal case has nothing to check, and the
     // negative case's expected refutation is neither met nor faked by another case's valid line.
     const normalCatalog = requirement(answer.result!, normal.id, 'catalog');
-    assert.equal(normalCatalog.status, 'satisfied', JSON.stringify(normalCatalog).slice(0, 800));
+    assert.equal(normalCatalog.status,'satisfied');
+    assert.equal(normalCatalog.layers[0].terminal,'pass','a settled fact is not rewritten by another requirement repair');
     assert.notEqual(normalCatalog.layers[0].code, 'core.catalog.param_out_of_range');
     const negativeCatalog = requirement(answer.result!, negative.id, 'catalog');
     assert.notEqual(negativeCatalog.status, 'satisfied');
@@ -206,7 +207,8 @@ describe('the draft review (case-review) and its independent verification (case-
     ]);
     const answer = await bed.service.submitResult(bed.reviewer, { run: draft.run, model: DRAFTER, items: handled(draft, 'findings', claims), cross_item: [{ nature: 'judgment', statement: '等级理由：覆盖了全部功能，有一些反向用例，兼容性不足；证据缺口：命令的已验证测试事实（足迹）还没有', grounds: [story], code: 'level', rank: 'P4' }] }, bed.call('sess-draft'));
     assert.equal(answer.acceptance, 'accepted');
-    assert.deepEqual(answer.errors.filter((e) => e.rounds_left !== undefined), []);
+    assert.deepEqual(answer.errors.filter(error=>error.requirement==='findings'),[],'the corrected findings have no repair errors');
+    assert.ok(answer.errors.every(error=>error.code==='missing_input'&&error.requirement==='catalog'&&error.path!==undefined&&error.fix?.includes('请求 rec:')),'remaining literal unknowns retain their actual requests');
     assert.equal(requirement(answer.result!, interval.id, 'findings').status, 'satisfied');
     assert.equal(requirement(answer.result!, interval.id, 'catalog').status, 'satisfied');
     const stored = await bed.service.getResult(bed.reviewer, draft.run);

@@ -56,7 +56,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.match(String(saved[0].body.detail.fix), /管理员.*恢复.*原样重交/);
     assert.match(answer.errors[0].message, /Hub.*未完成/);
     const view = (await h.service.getRun(h.alice, run.run))!.submissions[0];
-    assert.equal(view.acceptance, null); assert.match(view.errors[0].message, /未校验.*Hub/);
+    assert.equal(view.acceptance, null); assert.equal(view.errors[0].message,'未校验（中断）');
     assert.match(view.errors[0].fix ?? '', /管理员.*恢复.*原样重交/);
     assert.equal(saved[0].body.detail.hub_error, true); assert.deepEqual(saved[0].body.detail.repair, []);
     assert.equal((await h.kit.store.find({ key: INDEX.resultRun, value: run.run, kind: 'validation_result' })).items.length, 0);
