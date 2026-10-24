@@ -936,3 +936,10 @@ to the other scope; the root retains the declaration snapshot.
 Needs：依赖按实际交给函数的完整参数记录，不推断函数内部的名称族分支。要精确到只重产某个族，由产品包在对应接线任务中拆出只引用该族变量的独立产出范围。试运行保留读取审计，以及这个依赖边界，均经集成者确认（2026-10-24）。
 
 `var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
+
+Product-wide sync failures are isolated in the scope report; pointer failures are
+separate `pointers` rows with `line: null`. Successful build reconciliation still
+runs. Scope pointers use the observation captured before production and the exact
+successful action matching the returned composition, so a concurrent newer root
+cannot be overwritten or mistaken for this production's cause. An already aborted
+scope is reported without consulting production storage.

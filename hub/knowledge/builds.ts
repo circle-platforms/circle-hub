@@ -45,7 +45,7 @@ export type MoveRootResult =
 
 /** What reconciling the current root of one line did. */
 export interface LineReconciliation {
-  line: string;
+  line: string | null;
   from: string | null;
   to: string | null;
   build: string | null;

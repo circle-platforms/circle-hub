@@ -167,7 +167,7 @@ export function formatSyncReport(report: SyncReport): string {
   }
   if(report.scope){const scope=report.scope;lines.push(`  不分版本 [${OUTCOME_TEXT[scope.outcome]}]：构建未声明；${scope.reason}${scope.root ? ` 根 ${scope.root}` : ''}`);}
   for (const pointer of report.pointers) {
-    lines.push(`  当前根 ${pointer.line}：${pointer.moved ? `${pointer.from ?? '（无）'} → ${pointer.to}（${pointer.build}）` : pointer.reason}`);
+    lines.push(`  当前根 ${pointer.line ?? '不分版本'}：${pointer.moved ? `${pointer.from ?? '（无）'} → ${pointer.to}（${pointer.build}）` : pointer.reason}`);
   }
   for (const warning of report.warnings) lines.push(`注意：${warning}`);
   return `${lines.join('\n')}\n`;

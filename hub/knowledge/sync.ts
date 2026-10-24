@@ -310,13 +310,27 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   report.builds.sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
 
   if (output.scope !== undefined) {
-    const result = await processOwnTree(context, product, null, { variables:variableUses, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
-    const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
-    report.scope = scopeReport;
-    if (!dryRun && result.root !== null && result.composition !== null) {
-      const production = await context.store.latestProduction(productId, null);
-      const pointer = await context.records.pointers.get(pointerName(productId, null));
-      if (production !== null) await builds.moveRoot(productId, null, pointer?.target ?? null, result.root, production.record.digest, { by, composition: result.composition, expected_action: pointer?.action ?? null });
+    if(options.signal?.aborted) {
+      report.scope={outcome:'failed',reason:'同步被中止，不分版本范围没有处理；下一步：重新同步这条产品线',root:null,composition:null};
+    } else try {
+      const observed=dryRun?null:await context.records.pointers.get(pointerName(productId,null));
+      const result = await processOwnTree(context, product, null, { variables:variableUses, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
+      const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
+      report.scope = scopeReport;
+      if (!dryRun && result.root !== null && result.composition !== null) {
+        const pointerRow={line:null,from:observed?.target??null,to:result.root,build:null};
+        try {
+          const production=(await context.store.productionsOfRoot(result.root)).find(row=>row.detail.product===productId&&row.detail.build===null&&row.detail.composition===result.composition);
+          if(!production)throw new Error('缺少与不分版本组成对应的成功生产动作');
+          const moved=await builds.moveRoot(productId,null,observed?.target??null,result.root,production.record.digest,{by,composition:result.composition,expected_action:observed?.action??null});
+          const current=!moved.moved&&moved.current?.target===result.root?await context.store.pointerMove(moved.current.action):null;
+          report.pointers.push({...pointerRow,moved:moved.moved,reason:moved.moved?'已移动不分版本的当前根':moved.reason+(current?.composition===result.composition?'':'；下一步：重新同步这条产品线')});
+        } catch(error) {
+          report.pointers.push({...pointerRow,moved:false,reason:`移动不分版本当前根时出错：${describeError(error)}；下一步：管理员恢复指针和对应生产动作后重新同步这条产品线`});
+        }
+      }
+    } catch(error) {
+      report.scope={outcome:'failed',reason:`处理不分版本范围时出错：${describeError(error)}；下一步：管理员恢复来源或存储后重新同步这条产品线`,root:null,composition:null};
     }
   }
 
