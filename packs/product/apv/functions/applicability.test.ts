@@ -28,3 +28,30 @@ test('the product producer forwards the resolved closed vocabularies',()=>{
   const out=producer({slots:{cli:{parser:'markdown@1',model:markdown('# Synthetic\n\n'+text+'\n')}},params:closed});
   assert.deepEqual(out.entries.find(row=>row.statement===text)?.applicability,{licenses:['Permit-A']});
 });
+
+for(const [text,side,inclusive] of [
+  ['内存不少于 8 GB。','minimum',true],['内存至少 8G。','minimum',true],['内存大于 8GB。','minimum',false],
+  ['内存小于 8GB。','maximum',false],['内存不超过 8GB。','maximum',true],['内存 8GB 以上。','minimum',true],['内存 8GB 以下。','maximum',true],
+] as const)test('memory relation preserves its endpoint '+text,()=>{
+  const memory=entry(text).applicability?.memory;assert.ok(memory);
+  assert.deepEqual(memory[side],{bytes:8*1024**3,inclusive});
+  assert.equal(memory.raw,text.slice(0,-1));
+});
+for(const [unit,factor] of [['GB',1024**3],['G',1024**3],['MB',1024**2],['M',1024**2]] as const)test('memory unit converts exactly '+unit,()=>{
+  assert.deepEqual(entry('内存至少 2'+unit+'。').applicability?.memory?.minimum,{bytes:2*factor,inclusive:true});
+});
+test('an explicit size is equality and exact fractional sizes are not rounded',()=>{
+  const memory=entry('16 G 内存的设备。').applicability?.memory;assert.ok(memory);
+  assert.deepEqual(memory.minimum,{bytes:16*1024**3,inclusive:true});assert.deepEqual(memory.maximum,memory.minimum);
+  assert.equal(entry('内存至少1.5GB。').applicability?.memory?.minimum?.bytes,3*1024**3/2);
+  assert.equal(entry('内存至少0.1GB。').applicability,null);
+});
+test('vague memory, negation, exceptions, unsupported units and unsafe numbers stay in the source',()=>{
+  for(const text of ['内存较大时。','不适用于16G内存的设备。','内存至少8GB以外。','约16G内存的设备。','内存至少8TB。','内存至少999999999999999999GB。','内存大于8GB或内存小于4GB。'])assert.equal(entry(text).applicability,null,text);
+});
+
+test('an explicit absence and a memory bound retain their independent fields',()=>{
+  const value=entry('没有 Card-B 时，内存不超过8GB。').applicability;
+  assert.deepEqual(value?.components,{without:['Card-B']});
+  assert.deepEqual(value?.memory?.maximum,{bytes:8*1024**3,inclusive:true});
+});

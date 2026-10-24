@@ -406,7 +406,7 @@ function closedConditions(text:string,vocabulary:ClosedSets):Conditions {
   const unread={components:false,licenses:false,deployment_forms:false};
   const out:Conditions={};
   for(const clause of text.split(/[。；：\n]/u)){
-    const bad=[...clause.matchAll(/不|未|无|非|没|勿|除|之外|以外|其余|其他|等等?|可能|通常|一般|某些|部分|大概|也|还|亦/gu)].map(match=>match.index);
+    const bad=[...clause.matchAll(/不|未|无|非|没|勿|除|之外|以外|其余|其他|等等?|可能|通常|一般|某些|部分|大概|也|还|亦/gu)].filter(match=>!clause.startsWith('不少于',match.index)&&!clause.startsWith('不超过',match.index)).map(match=>match.index);
     const outside=(start:number,end:number)=>bad.some(at=>at<start||at>=end);
     const explicit=(pattern:RegExp,field:keyof ClosedSets,absent=false)=>{
       for(const match of clause.matchAll(pattern)){
@@ -442,6 +442,59 @@ function closedConditions(text:string,vocabulary:ClosedSets):Conditions {
   if(!unread.licenses&&licenses.size)out.licenses=[...licenses].sort(compareText);
   if(!unread.deployment_forms&&forms.size)out.deployment_forms=[...forms].sort(compareText);
   return out;
+}
+
+
+/** Binary memory units; accept only exact integer byte counts representable by JSON numbers. */
+function memoryBytes(number:string,unit:string):number|null {
+  const [whole,fraction='']=number.split('.');
+  const denominator=10n**BigInt(fraction.length);
+  const numerator=BigInt(whole+fraction)*(unit==='GB'||unit==='G'?1024n**3n:1024n**2n);
+  if(numerator%denominator!==0n)return null;
+  const bytes=numerator/denominator;
+  return bytes<=BigInt(Number.MAX_SAFE_INTEGER)?Number(bytes):null;
+}
+function memoryCondition(text:string,vocabulary:ClosedSets):Conditions['memory'] {
+  if(!text.includes('内存'))return undefined;
+  const dimension='(?<mark>\\*\\*|__)?(?<number>[0-9]{1,18}(?:\\.[0-9]{1,18})?)\\s*(?<unit>GB|G|MB|M)\\k<mark>(?![A-Za-z0-9_.])';
+  const patterns=[
+    new RegExp('内存\\s*(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension,'gu'),
+    new RegExp('(?<relation>不少于|至少|大于|小于|不超过)\\s*'+dimension+'\\s*(?:的)?内存(?:的设备)?','gu'),
+    new RegExp('内存\\s*(?:为\\s*)?'+dimension+'\\s*(?<relation>以上|以下)','gu'),
+    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*(?<relation>以上|以下)\\s*(?:的)?内存(?:的设备)?','gu'),
+    new RegExp('(?<![A-Za-z0-9_.+\\-])'+dimension+'\\s*内存的设备','gu'),
+  ];
+  const results:NonNullable<Conditions['memory']>[]=[];let unread=false;
+  for(const clause of text.split(/[。；：]/u)){
+    type Found={start:number;end:number;minimum?:{bytes:number;inclusive:boolean};maximum?:{bytes:number;inclusive:boolean}};
+    const found:Found[]=[];
+    for(const pattern of patterns)for(const match of clause.matchAll(pattern)){
+      const start=match.index,end=start+match[0].length;
+      if(found.some(previous=>start<previous.end&&end>previous.start))continue;
+      const bytes=memoryBytes(match.groups!.number!,match.groups!.unit!);
+      if(bytes===null){unread=true;continue;}
+      const relation=match.groups?.relation;
+      const lower=relation===undefined||relation==='不少于'||relation==='至少'||relation==='大于'||relation==='以上';
+      const upper=relation===undefined||relation==='小于'||relation==='不超过'||relation==='以下';
+      const inclusive=relation!=='大于'&&relation!=='小于';
+      found.push({start,end,...(lower?{minimum:{bytes,inclusive}}:{}),...(upper?{maximum:{bytes,inclusive}}:{})});
+    }
+    if(!found.length)continue;
+    found.sort((a,b)=>a.start-b.start);
+    const otherScopes=[...clause.matchAll(/(?:装有|没有)\s*([^。；：\n]{1,200}?)\s*时/gu)].filter(match=>closedSeries(match[1]!,vocabulary.components)!==null||closedSeries(match[1]!.replace(/\s*部件$/u,''),vocabulary.components)!==null).map(match=>({start:match.index,end:match.index+match[0].length}));
+    const outside=[...clause.matchAll(/不|未|无|非|没|除|之外|以外|等等?|可能|约|通常|一般|左右|较|或/gu)].some(match=>![...found,...otherScopes].some(span=>match.index>=span.start&&match.index<span.end));
+    if(outside){unread=true;continue;}
+    let minimum:Found['minimum'],maximum:Found['maximum'];let conflict=false;
+    for(const match of found){
+      if(match.minimum){if(minimum&&JSON.stringify(minimum)!==JSON.stringify(match.minimum))conflict=true;minimum=match.minimum;}
+      if(match.maximum){if(maximum&&JSON.stringify(maximum)!==JSON.stringify(match.maximum))conflict=true;maximum=match.maximum;}
+    }
+    if(conflict){unread=true;continue;}
+    results.push({...(minimum?{minimum}:{}),...(maximum?{maximum}:{}),raw:clause.slice(found[0]!.start,found.at(-1)!.end)});
+  }
+  if(unread||!results.length)return undefined;
+  const bounds=(value:NonNullable<Conditions['memory']>)=>JSON.stringify({minimum:value.minimum,maximum:value.maximum});
+  return results.every(value=>bounds(value)===bounds(results[0]!))?results[0]:undefined;
 }
 
 /** Platform values a manual may name: the pack's platform tokens (hyphen-joined) plus the Han words 虚拟/物理. */
@@ -541,7 +594,8 @@ function conditionsOf(text: string, vocabulary: ClosedSets): Conditions {
   const out: Conditions = {};
   if (found.platforms.size > 0) out.platforms = [...found.platforms].sort(compareText);
   if (found.models.size > 0) out.models = [...found.models].sort(compareText);
-  return {...out,...closedConditions(text,vocabulary)};
+  const memory=memoryCondition(text,vocabulary);
+  return {...out,...closedConditions(text,vocabulary),...(memory?{memory}:{})};
 }
 
 /** One series candidate: the items up to and through the field noun, tokens by field, or null when unread. */
