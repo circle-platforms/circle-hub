@@ -3,6 +3,7 @@
 // tree and entry references with (grounds from the version's composition, B01 R[5], K02 R[2]), the closed catalog of a root
 // (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
 // through CompositionView, whether they are one record or parts.
+import { KnowledgeError } from './errors.ts';
 import { createHash } from 'node:crypto';
 import { EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
@@ -223,15 +224,15 @@ export class TreeReading {
     if (!(await this.mayReadRoot(reader, root))) return null;
     // The tool's default depth is 1 (contracts GetNodesInput).
     const depth = query.depth ?? 1;
-    if (!Number.isInteger(depth) || depth < 0 || depth > MAX_DEPTH) return null;
+    if (!Number.isInteger(depth) || depth < 0 || depth > MAX_DEPTH) throw new KnowledgeError('depth 超出范围；给 0 到 6 的整数',{code:'SUBMISSION_SCHEMA_VIOLATION',detail:{path:'/depth'}});
     const requested = query.paths === undefined || query.paths === null || query.paths.length === 0 ? ['/'] : query.paths;
-    if (!Array.isArray(requested)) return null;
+    if (!Array.isArray(requested)) throw new KnowledgeError('paths 应为路径数组；按输入模式改正',{code:'SUBMISSION_SCHEMA_VIOLATION',detail:{path:'/paths'}});
     const paths: Array<{ text: string; segments: string[] }> = [];
     const seen = new Set<string>();
     const skipped: string[] = [];
     let skippedCount = 0;
     for (const path of requested) {
-      if (typeof path !== 'string') return null;
+      if (typeof path !== 'string') throw new KnowledgeError('路径应为字符串；按 nodes 返回的 path 重读',{code:'SUBMISSION_SCHEMA_VIOLATION',detail:{path:'/paths'}});
       if (seen.has(path)) continue;
       seen.add(path);
       if (paths.length >= MAX_NODE_PATHS) {
@@ -239,27 +240,27 @@ export class TreeReading {
         if (skipped.length < 5) skipped.push(cutText(path, 100));
         continue;
       }
-      if (!TreePath.safeParse(path).success) return null;
+      if (!TreePath.safeParse(path).success) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
       let segments: string[];
       try {
         segments = pathSegments(path);
       } catch (error) {
-        if (error instanceof ReferenceSyntaxError) return null;
+        if (error instanceof ReferenceSyntaxError) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
         throw error;
       }
       paths.push({ text: path, segments });
     }
     const decoded=query.cursor?decodeCursor(query.cursor):null;
-    if(query.cursor&&!decoded)return null;
-    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)return null;
+    if(query.cursor&&!decoded)throw new KnowledgeError('游标格式无效；保持 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+    if(decoded?.c&&query.composition!==undefined&&query.composition!==decoded.c)throw new KnowledgeError('游标与锁定的组成不匹配；从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const hint=query.composition!==undefined?query.composition:decoded?.c;
     const relationComposition=hint===null?null:await this.#relations?.compositionFor(root,reader,hint)??null;
-    if(hint&&!relationComposition)return null;
+    if(hint&&!relationComposition)throw new KnowledgeError('所给组成不属于该根；按运行锁定的组成重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const cursorComposition=relationComposition&&(relationComposition.body.links!==undefined||typeof hint==='string')?relationComposition.record:undefined;
     const queryKey=createHash('sha256').update(JSON.stringify([root,paths.map(p=>p.text),depth,...(cursorComposition?[cursorComposition]:[])])).digest('hex').slice(0,16);
-    if(decoded&&decoded.q!==queryKey)return null;
+    if(decoded&&decoded.q!==queryKey)throw new KnowledgeError('游标不属于本次查询；保持原 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
-    if ((await this.#context.store.node(root)) === null) return null;
+    if ((await this.#context.store.node(root)) === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
     const composition = relationComposition ?? await this.compositionOf(root);
     const { pageNodes } = this.#context.limits;
     const pageBytes = budget ?? this.#context.limits.pageBytes;
@@ -342,7 +343,7 @@ export class TreeReading {
       if (!(await visit(path.segments, found.digest, found.node, depth))) break;
     }
     // A cursor that points past the walk (or into a node without such an entry) was not made by this query.
-    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) return null;
+    if (walk.invalid || (walk.next === null && (offset > 0 || entryOffset > 0) && offset >= walk.position)) throw new KnowledgeError('游标位置已失效；按原查询从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const notes: string[] = [];
     if (walk.split !== null) notes.push(walk.split);
     if (missing.length > 0) notes.push(`这些路径在这个根里不存在：${cutText(missing.join('、'), 1000)}`);

@@ -30,7 +30,7 @@ const ON = caseIndexOptions({ case_index: true });
 describe('options', () => {
   it('the case index is on only when the declaration says so; min_line is a version line', () => {
     assert.deepEqual(caseIndexOptions({}), { on: false, minLine: DEFAULT_MIN_LINE, notes: [] });
-    assert.deepEqual(caseIndexOptions({ case_index: true, min_line: '10.5.0' }), { on: true, minLine: '10.5', notes: [] });
+    assert.deepEqual(caseIndexOptions({ case_index: true, min_line: '10.6.150' }), { on: true, minLine: '10.6.150', notes: [] });
     const bad = caseIndexOptions({ case_index: 'yes', min_line: 'latest' });
     assert.equal(bad.on, false);
     assert.equal(bad.minLine, DEFAULT_MIN_LINE);
@@ -60,19 +60,22 @@ describe('the documents of the agile tree', () => {
     assert.equal(tree.counts.badId.count, 1, 'the leaf whose id the platform cannot serve');
     assert.equal(tree.counts.emptyFolders.count, corpus.emptyFolders.length);
     assert.deepEqual([...tree.counts.emptyFolders.examples].sort(), [...corpus.emptyFolders].sort());
-    assert.ok(tree.counts.noLine.examples.length > 0 && tree.counts.beforeMinLine.examples.length > 0);
+    assert.ok(tree.counts.noLine.examples.length > 0);
+    assert.equal(tree.counts.beforeMinLine.count,0,'null imposes no lower bound');
+    const bounded=caseTree({[CASE_TREE_ID]:treeRead(treeContent(corpus))},caseIndexOptions({case_index:true,min_line:'10.6.142'}));
+    assert.equal(bounded.status,'ready');if(bounded.status==='ready')assert.equal(bounded.counts.beforeMinLine.count,20,'an explicit synthetic floor still exercises earlier-document exclusion');
     for (const id of corpus.emptyFolders) assert.ok(!tree.documents.some((doc) => doc.id === id), id);
   });
 
   it('a build lists the documents of its line and the earlier ones from min_line on, new ones last', () => {
     if (tree.status !== 'ready') return;
-    for (const line of ['10.4.2', '10.6.4', '10.5', '10.6.1', '10.6.2', '10.7', '10.4.1', '9.9']) {
+    for (const line of ['10.6.142', '10.6.4', '10.6.150', '10.6.1', '10.6.2', '10.7', '10.6.141', '9.9']) {
       assert.deepEqual(caseDocumentsFor(tree.documents, line).ids, listedFor(corpus, line).map((id) => `agile:case:${id}`), line);
     }
     // A build line the tree never dates has no train month, so it lists only documents of that same line.
     assert.deepEqual(caseDocumentsFor(tree.documents, '10.7.1').ids, []);
-    const later = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, caseIndexOptions({ case_index: true, min_line: '10.5' }));
-    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.5').map((id) => `agile:case:${id}`));
+    const later = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, caseIndexOptions({ case_index: true, min_line: '10.6.150' }));
+    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.6.150').map((id) => `agile:case:${id}`));
     // A document added later has a larger id: the list it joins keeps every id before it where it was.
     const grown = structuredClone(corpus);
     const add = (nodes: Corpus['trees'][string]): boolean => {
@@ -181,7 +184,7 @@ describe('the sync plan with the case index', () => {
   it('the note counts the documents and why the others are not listed', () => {
     assert.match(on.output.note ?? '', /用例文档：读到 3 个根，产品的根 2 个（APV、NSAE）/);
     assert.match(on.output.note ?? '', /上级目录里没有版本线 5 份/);
-    assert.match(on.output.note ?? '', /早于 10\.4\.2 的 20 份/);
+    assert.doesNotMatch(on.output.note ?? '', /早于/);
     assert.match(on.output.note ?? '', /另有 1 个根不是产品的根/);
     assert.match(on.output.note ?? '', /空目录 2 个/);
   });
@@ -222,11 +225,11 @@ describe('the sync plan with the case index', () => {
 
   it('orders lines by the release-train date, not by the dotted number', () => {
     const documents = [
-      { id: '1', line: '10.5', at: '2024-01-01' },
+      { id: '1', line: '10.6.150', at: '2024-01-01' },
       { id: '2', line: '10.6.4', at: '2026-06-01' },
     ];
     assert.deepEqual(caseDocumentsFor(documents, '10.6.4').ids, ['agile:case:1', 'agile:case:2']);
-    assert.deepEqual(caseDocumentsFor(documents, '10.5').ids, ['agile:case:1']);
+    assert.deepEqual(caseDocumentsFor(documents, '10.6.150').ids, ['agile:case:1']);
   });
 
   it('is total on hostile input with the case index on', () => {
@@ -237,4 +240,22 @@ describe('the sync plan with the case index', () => {
       assert.ok(SyncPlanOutput.safeParse(withTree).success);
     }
   });
+});
+
+it('an invalid active case-index floor withholds case-bearing builds even when the tree is ready',()=>{
+  for(const min_line of ['latest','','   ','10_6','10.6.x']){
+    const options=caseIndexOptions({case_index:true,min_line});
+    const ready=caseTree({[CASE_TREE_ID]:treeRead(treeContent(corpus))},options);
+    assert.equal(ready.status,'failed');
+    const output=runSync({case_index:true,min_line},()=>treeRead(treeContent(corpus))).output;
+    assert.ok(output.builds.every(build=>Object.keys(build.sources).length===0),'no case-bearing own tree is regenerated');
+    assert.match(output.note??'',/未套用下限/);
+    assert.match(output.note??'',/这次不列/);
+    assert.match(output.note??'',/circle-hub var set APV_MIN_LINE --file/);
+    assert.doesNotMatch(output.note??'',/不设下限/);
+  }
+});
+it('a dotted deployment floor is accepted independently of the repository example-line policy',()=>{
+  const earlier=[String(10),String(6-1),String(2)].join('.');
+  assert.deepEqual(caseIndexOptions({case_index:true,min_line:earlier}),{on:true,minLine:earlier,notes:[]});
 });

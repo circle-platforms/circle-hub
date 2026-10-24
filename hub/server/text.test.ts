@@ -1263,3 +1263,18 @@ test('start_run prints the locked product-wide root beside the build root', () =
   const text = toolText('start_run',startAnswer(run));
   assert.match(text,new RegExp(`不分版本的知识根 ${H('b')}`));
 });
+
+test('large function-only structure summaries have real cursor continuation without inventing source text',()=>{
+ const reference=`src:${H('e')}`;
+ const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['field'+i,'value'+i]));
+ const answer={call_result:'ok',errors:[],trace:TRACE,content:{reference,read_tier:'function_bytes_only',readable:false,structure:{parser:'xml@1',summary}}};
+ const seen=new Set<number>();let cursor:string|undefined;
+ for(let page=0;page<20;page++){
+   const text=toolText('get_nodes',answer,{paging:true,...(cursor?{cursor}:{})});withinBudget(text,'structure summary');assert.ok(!text.includes('原文（'));
+   for(const match of text.matchAll(/field(\d+) value\d+/g))seen.add(Number(match[1]));
+   const next=/get_nodes (\{[^\n]*"cursor"[^\n]*?\})/.exec(text);
+   if(!next)break;
+   const parsed=JSON.parse(next[1]);assert.equal(parsed.reference,reference);assert.notEqual(parsed.cursor,cursor);cursor=parsed.cursor;
+ }
+ assert.equal(seen.size,5000);
+});

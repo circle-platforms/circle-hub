@@ -552,6 +552,12 @@ K2 admission exclusions are applied before subject priming and before forming it
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
 
+### 外部读取覆盖限定
+
+外部输入及包声明的预期来源把 coverage 冻结进 SourceBinding。主张构造按其对象位置、根据/精确值的根摘要和检查声明的 reads 选取对应覆盖；运行级检查还涵盖它判定的条目位置。依据未完整来源的事实或判断加生成词表的 partial，并保留 qualifier.coverage；生产投影说明使用同一规则。完整的无关来源不被别的部分来源牵连，旧运行也不因一次后续完整读而升级。合计仅使用已声明覆盖的观察；所依外部来源缺覆盖时不伪造 total，原始旧绑定仍可解析。start_run 文字直接披露部分来源的读取覆盖。
+
+外部缺席与读取恢复：ReadOutcome/ExternalRead 的 absent 是系统对整份对象的确定观察。连接器保留原始应答，并提供带系统、对象、读取时刻的规范 JSON 观察；期望来源按原角色绑定它，声明 reads 的检查照常读取，其本身不替检查决定通过或驳回。必填输入缺席以 SOURCE_ABSENT 拒绝；输入重试耗尽以 SOURCE_RETRYABLE 给下次时间，期望来源重试耗尽也保留明确的缺失事实和重读后重开运行的动作。引用的新故障码按内部 reason 进入已有未完成路径，保留原修复轮记账规则。登录停止的具名管理员请求记录等 hub-unknown-exits 的接口，尚未声称已发请求。
+
 ## Transitional recovery metadata
 
 New unknown outcomes name `missing` at their producer. Evaluation binds every transitional layer to its missing facts

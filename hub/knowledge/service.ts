@@ -212,7 +212,11 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     rootInfo: (root) => builds.rootInfo(root),
     catalog: (root, catalogId): Promise<CatalogView | null> => reading.catalog(root, catalogId),
     treeReader: (lock?: TreeLock | null): TreeReader => reading.treeReader(lock ?? null),
-    getNodes:(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>contributionNodes(context,reading,contributions,query,reader),
+    getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>{
+      // Establish permission before even decoding a contribution cursor.
+      if(!(await reading.mayReadRoot(reader,query.root)))return null;
+      return contributionNodes(context,reading,contributions,query,reader);
+    },
     diffRoots: (from, to): Promise<RootDiff | null> => reading.diff(from, to),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => reading.diffEntries(from, to, diffOptions),
 

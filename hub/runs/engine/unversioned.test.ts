@@ -51,3 +51,24 @@ test('start locks the product-wide root and boundary accepts exactly the locked 
   assert.match(JSON.stringify(absent.run.target_basis),/这条产品线还没有不分版本的根/);
   assert.match(JSON.stringify(absent.run.target_basis),/同步这条产品线/);
 });
+
+for(const retry of [false,true])test(`typed required-source failures preserve the second-root snapshot (${retry})`,async t=>{
+ Object.assign(h.knowledge,{unversionedRoot:async()=>({root,composition,product:'meadow',build:null,source_count:0,produced_at:'2026-10-24T00:00:00.000Z'})});
+ const original=h.external.read.bind(h.external);t.after(()=>{h.external.read=original;});let seen=false;
+ h.external.read=async(id,context)=>{
+  seen=true;assert.deepEqual(context.unversioned,{root,composition});assert.equal(typeof context.adminNote,'function');context.adminNote?.('synthetic private read diagnostic');
+  return retry?{ok:false,id,reason:'synthetic retry wait',retry:{code:'SOURCE_TIMEOUT',attempts:3,at:'2026-10-24T00:01:00.000Z'}}:{ok:false,id,reason:'synthetic determined read failure',inputError:{code:'SOURCE_READ_FAILED',message:'合成读取已确定失败',fix:'修正来源后重新读取'}};
+ };
+ const answer=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{external:'toy:mindmap:docq7'}}},h.call());
+ assert.ok(seen);assert.equal(answer.call_result,'error');assert.equal(answer.errors[0].code,retry?'SOURCE_RETRYABLE':'SOURCE_READ_FAILED');
+ if(retry)assert.match(answer.errors[0].message,/2026-10-24T00:01/);else assert.equal(answer.errors[0].message,'合成读取已确定失败');
+});
+
+test('typed expected-source gaps preserve the second-root snapshot and admin diagnostic channel',async t=>{
+ Object.assign(h.knowledge,{unversionedRoot:async()=>({root,composition,product:'meadow',build:null,source_count:0,produced_at:'2026-10-24T00:00:00.000Z'})});
+ const original=h.external.read.bind(h.external);t.after(()=>{h.external.read=original;});let reads=0;
+ h.external.read=async(id,context)=>{reads++;assert.deepEqual(context.unversioned,{root,composition});assert.equal(typeof context.adminNote,'function');context.adminNote?.('synthetic expected diagnostic');return {ok:false,id,reason:'synthetic determined failure',inputError:{code:'SOURCE_READ_FAILED',message:'合成期望来源读取失败',fix:'恢复来源后重新读取'}};};
+ const map=await h.upload(h.alice,toyMap(standardDocument()),'application/json');
+ const detail=await h.service.startRunDetailed(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{reference:map}}},h.call());
+ assert.ok(reads>0);assert.equal(detail.answer.call_result,'ok',JSON.stringify(detail.answer.errors));assert.equal(detail.answer.run?.unversioned_root,root);assert.ok(detail.gaps?.some(gap=>gap.code==='SOURCE_READ_FAILED'));
+});

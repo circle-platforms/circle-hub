@@ -1,3 +1,4 @@
+import {addAdocSources} from './adoc/deployment.ts';
 // The sync plan of the product (product@1 sync.plan, SyncPlanInput -> SyncPlanOutput). Each round the Hub hands back every
 // page read so far; the plan is recomputed from them: index -> hub pages -> listing pages (depth 2, dead links tolerated,
 // pages of both name families; platform, customer and patch pages only when an `include` pattern opts them in), then the
@@ -48,10 +49,10 @@ function newestFirst(a: Build, b: Build): number {
   return compareNullable(b.built, a.built) || compareDotted(b.number, a.number) || compareText(a.name, b.name);
 }
 
-function optionsOf(value: unknown): { include: string[]; exclude: string[]; lines: Set<string> | null } {
+function optionsOf(value: unknown): { include: string[]; exclude: string[]; mainline_page_words:string[]; lines: Set<string> | null } {
   const options = isRecord(value) ? value : {};
   const lines = Array.isArray(options.lines) ? new Set(asStrings(options.lines).map(lineKey)) : null;
-  return { include: asStrings(options.include), exclude: asStrings(options.exclude), lines };
+  return { include: asStrings(options.include), exclude: asStrings(options.exclude), mainline_page_words:asStrings(options.mainline_page_words), lines };
 }
 
 export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
@@ -65,7 +66,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       const reason = read[INDEX_ID]?.reason;
       return { fetch: [], builds: [], done: true, note: `索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建` };
     }
-    const walk = { include: options.include, exclude: options.exclude };
+    const walk = { include: options.include, exclude: options.exclude, mainline_page_words:options.mainline_page_words };
     const first = planSync({ index, options: walk });
     const hubs: ReadHub[] = first.hubs.filter((hub) => Object.hasOwn(read, listingId(hub.page))).map((hub) => ({ page: hub.page, href: hub.href, model: htmlOf(read[listingId(hub.page)]) }));
     const plan = hubs.length > 0 ? planSync({ index, hubs, options: walk }) : first;
@@ -175,6 +176,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         released_at: released.iso,
         sources,
       });
+      addAdocSources(builds[builds.length-1],input.options,read,want,notes);
     };
     for (const build of chosen.values()) {
       const base = bases.get(build.name) ?? resolveBase(build, byName, [])?.name ?? build.name;
@@ -211,7 +213,9 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       `${plan.pages.length} 个列表页`,
       `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布，${kept.filter((b) => Object.keys(b.sources).length === 0 && b.base === b.name).length} 个只有名字）`,
     ];
-    if (withheld.size > 0) summary.push(`找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
+    if (withheld.size > 0) summary.push(caseIndex.invalidMinLine
+      ? `找到的 ${withheld.size} 个构建没有列出：min_line 无效，未套用下限，这次不列会带用例文档的构建，旧根不动`
+      : `找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
     if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);

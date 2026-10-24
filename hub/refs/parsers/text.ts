@@ -19,7 +19,10 @@ const KEY = 'text@1';
 const LIMITS: Readonly<ParseLimits> = { maxBytes: 16 * 1024 * 1024, maxDepth: 1, maxNodes: 1_000_000 };
 const LINE = /^[1-9][0-9]{0,8}$/;
 
-export type TextModel = { charset: string; lines: string[]; nulRemoved: number };
+export type TextModel = { charset: string; lines: string[]; nulRemoved: number;
+  /** Exact source text only when its UTF-8 encoding reproduces the original bytes, BOM and NUL included. */
+  raw_utf8?: string;
+};
 
 function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<TextModel> {
   const limits = effectiveLimits(LIMITS, options);
@@ -31,6 +34,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Te
   const { starts, ends } = split;
   const lines = starts.map((start, i) => removeNul(text.slice(start, ends[i])));
   const model: TextModel = { charset: decoded.charset, lines, nulRemoved: countNul(text) };
+  if(decoded.charset==='utf-8'){
+    const original=Buffer.from(bytes).toString('utf8');
+    if(Buffer.from(original,'utf8').equals(Buffer.from(bytes)))model.raw_utf8=original;
+  }
 
   // The lines joined with LF: the text of `l/1-<n>`, and every line is a slice of it.
   let joined: { text: string; at: Int32Array } | null = null;

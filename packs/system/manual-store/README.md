@@ -31,3 +31,5 @@ empty search, a store whose listing links another host, a folder outside the lis
 end-to-end test binds the spec and the qa search and syncs the Lumen API product through `manual:file`.
 
 Needs: none.
+
+缺席观察：读取声明的 `absent_codes` 包含 `manual.not_found`。仅在原始应答已保存、根据全部可读且无其他读取故障时，Hub 将该码转为带系统、对象、读取时刻和应答键的 SOURCE_ABSENT；原件照存，检查读取独立的规范 JSON 观察。401/403、未读完或凭据保留不作缺席。

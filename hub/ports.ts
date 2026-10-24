@@ -1,3 +1,5 @@
+import type {ProtocolCode} from '../contracts/generated/protocol.ts';
+import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
@@ -90,6 +92,8 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  /** Private diagnostics for the calling service; never part of read content. */
+  adminNote?:(reason:string)=>void;
   /** Ordinary-variable decisions frozen for this caller; never persisted as run parameters. */
   variables?: ReadonlyMap<string,string>;
   /** Whose credential and visibility the read uses: the user of a run, or an admin for a standing sync. */
@@ -119,15 +123,19 @@ export interface ExternalArtifact {
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
- * while other failures show the neutral SOURCE_UNAVAILABLE.
+ * while read exhaustion carries retry metadata and permission failures remain neutral.
  */
+export interface ExternalRedirect {status:number;location:string|null;observed_at:string;location_redacted?:true}
+
+export interface ExternalReadRetry {code:string;at:string;attempts:number}
+
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
+  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
-  accepts(id: string): Promise<boolean>;
+  accepts(id: string, context?:ExternalReadContext): Promise<boolean>;
   read(id: string, context: ExternalReadContext): Promise<ExternalRead>;
 }
 
@@ -202,6 +210,8 @@ export interface PackCatalogPort {
 }
 
 export interface ResourceListing {
+  /** A broken bound profile, admins only; absence is never silently treated as disabled. */
+  binding_error?:{code:string;message:string;fix:string};
   id: string;
   system_pack: string;
   name: string;
