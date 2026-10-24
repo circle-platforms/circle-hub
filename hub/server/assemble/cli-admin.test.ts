@@ -1730,3 +1730,19 @@ test('administrator sharing commands cover users package audiences policy listin
   for(const args of [['share','list'],['share','run',run,'--pack-users'],['unshare','run',run,'--pack-users'],['share','production',REVIEW_PACK],['unshare','production',REVIEW_PACK]]) assert.equal((await admin.run(args,{[OPERATOR_TOKEN_VARIABLE]:token})).code,1);
   const missing = await admin.run(['share','run','run_'+'1'.repeat(26),'--pack-users']); assert.equal(missing.code,1); assert.match(missing.text,/对你不可用/);
 });
+
+test('pack shapes lists only unruled identities and refuses nonadministrators',async()=>{
+ const admin=await setup();
+ assert.deepEqual((await expectOk(admin,['pack','shapes','synthetic'])).out,['没有未裁定的形状']);
+ const kit=await admin.kit();
+ try {
+  const fixtures=await import('../../../contracts/src/fixtures.ts');
+  await kit.store.put({kind:'validation_result',schema:'validation@1',provenance:'projected',body:{...fixtures.accepted,locks:{pack:'synthetic@10.6.0',pack_digest:fixtures.H},cross_item:[{...fixtures.judgment,qualifier:{...fixtures.judgment.qualifier,marks:['decision_shape_unruled']},statement:{text:'合成形状',data:{requirement:'r',interpreter:'future@1'}}}]}});
+ } finally {await kit.close();}
+ const listed=await expectOk(admin,['pack','shapes','synthetic']);
+ assert.match(listed.text,/r\tfuture@1\t1\trun_/);
+ assert.doesNotMatch(listed.text,/合成形状/);
+ const token=await userWithToken(admin,'普通读者');
+ const denied=await admin.run(['pack','shapes','synthetic'],{[OPERATOR_TOKEN_VARIABLE]:token});
+ assert.equal(denied.code,1);assert.match(denied.text,/管理员/);
+});

@@ -8,7 +8,7 @@ import { Submission } from '../../../contracts/src/submission.ts';
 import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
-import { RecordsError, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
+import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { RunDetail, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
@@ -137,4 +137,31 @@ async function hasSuccessor(ctx:EngineContext,run:RunRecord):Promise<boolean>{
 /** Shared refusal summaries contain registered descriptions only, never instance diagnostics. */
 function publicReceiptErrors(codes:readonly string[]){
   return codes.map(code=>({code,message:Object.hasOwn(PROTOCOL_CODES,code)?PROTOCOL_CODES[code as keyof typeof PROTOCOL_CODES].when:Object.hasOwn(CORE_VIOLATION_CODES,code)?CORE_VIOLATION_CODES[code as keyof typeof CORE_VIOLATION_CODES].when:isReason(code)?labelOf('reason',code):''}));
+}
+
+/** W04 R[2]: the administrator's inventory, across locked versions; tables never leave storage. */
+export async function unruledShapes(store: RecordStore, user: Principal, pack: string): Promise<Array<{requirement:string;interpreter:string;count:number;latest_run:string}>> {
+  if (user.role !== 'admin') throw new RecordsError('只有管理员可查看未裁定的形状', {code:'SOURCE_UNAVAILABLE'});
+  const rows = new Map<string,{requirement:string;interpreter:string;count:number;latest_run:string}>();
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const page:Page<StoredRecord<ValidationResult>>=await store.list<ValidationResult>({kind:'validation_result',limit:500,cursor});
+    for (const record of page.items) {
+      const result=record.body;
+      if (result.locks.pack.split('@')[0] !== pack) continue;
+      for (const claim of result.cross_item) {
+        const data=claim.statement.data;
+        if (!claim.qualifier.marks.includes('decision_shape_unruled') || typeof data?.requirement!=='string' || typeof data.interpreter!=='string') continue;
+        const key=JSON.stringify([data.requirement,data.interpreter]);
+        const occurrence=JSON.stringify([result.run,result.submission,key]);
+        if(seen.has(occurrence))continue;
+        seen.add(occurrence);
+        const row=rows.get(key)??{requirement:data.requirement,interpreter:data.interpreter,count:0,latest_run:result.run};
+        row.count++;row.latest_run=result.run;rows.set(key,row);
+      }
+    }
+    cursor=page.next;
+  } while(cursor!==null);
+  return [...rows.values()].sort((a,b)=>a.requirement.localeCompare(b.requirement)||a.interpreter.localeCompare(b.interpreter));
 }

@@ -296,3 +296,8 @@ Their owners must fix the generated types; this branch does not edit the pack's 
 The check-work contract now names both `CHECK_LIMITS_MIN` and `CHECK_LIMITS_MAX`; source-only tests anchor each bound
 to the independent sandbox protocol constants and reject values below the lower bound. `MappedIdentity` describes a
 mapped external account; it deliberately has its own diagnostic instead of reusing the missing-fact field type.
+
+W04 public RequirementSummary requires `rules` and `run_interpreters`. Historical persisted run@1 rows can omit both,
+without defaults being inserted into their record bodies; supplying just one is invalid. The engine derives a read view
+from the locked package when necessary. Missing locked declarations are explicitly unavailable and never become empty
+rule lists. Public run-summary@1 remains strict and requires both arrays.

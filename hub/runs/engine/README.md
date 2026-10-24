@@ -807,3 +807,24 @@ Shapes outside the locked requirement ledger are not executed. A cross-item judg
 interpreter, marked `decision_shape_unruled`; the package owner can rule on it in the next published version. No ruling
 request is created. Template violations, incompleteness and unchecked facts keep priority over that judgment. A judgment
 cannot satisfy a fact-only requirement, even when its expected outcome is support; it is unsatisfied with outcome_mismatch.
+
+`circle-hub pack shapes <pack>` is an administrator-only inventory of unruled cross-item shapes across the versions locked
+by validation results. It lists requirement, interpreter, occurrence count and the most recently encountered run. Revalidation
+of the same submission/shape is counted once. It neither prints nor returns inline tables. An empty result says
+“没有未裁定的形状”; the owner publishes a new ledger version to adopt a shape.
+
+The integrator confirmed that the existing run-level result boundary stays in place: `target:run` requirements produce
+cross-item claims, without new layer/status fields in validation@1. Unruled run-level shapes therefore appear there as
+qualified judgments beside the template facts. For `target:item`, RequirementResult also carries the judgment terminal and
+the fact-only outcome_mismatch status.
+
+For catalog@1, the integrator confirmed that runtime checks inherit only the unique catalog binding of the same
+requirement's template checks. Samples and actual evaluation share callCheck and therefore the same locked catalog and
+source context. Missing or ambiguous bindings remain unknown: the runner asks the package owner to publish an unambiguous
+binding and then starts a new run. A catalog declared only by another requirement is never guessed as the binding.
+
+Historical run@1 requirements may omit both ruling arrays; a half-written pair is refused. Public RunSummary fields stay
+required. Reading, listing and idempotent start reuse derive missing arrays from the run's locked package, retaining the
+original labels and all stored bytes. A missing locked package or requirement raises MissingRulingSummaryError with the
+fixed SOURCE_UNAVAILABLE code and an instruction to restore the locked package from backup before rereading or reusing the
+run. Current summaries do not acquire a dependency on reloading the package; list hydration shares a load per digest.
