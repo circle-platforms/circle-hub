@@ -814,6 +814,7 @@ export class ReadEngine {
             ...(manifest.run === null ? [] : [{ key: 'action.run', value: manifest.run }]),
             { key: 'connectors.external', value: indexValue(subject.id) },
             { key: 'connectors.resource', value: runtime.resource.id },
+            ...manifest.artifacts.map(artifact=>({key:'connectors.artifact',value:artifact.record})),
           ],
         });
         digest = record.digest;

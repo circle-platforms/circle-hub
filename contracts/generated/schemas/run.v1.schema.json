@@ -431,6 +431,21 @@
       "items": {
         "type": "object",
         "properties": {
+          "artifact": {
+            "description": "Exact source_artifact record returned by this read, independent of equal-byte captures",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "read_manifest": {
+            "description": "Observed read action that returned this exact capture",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "meta_artifact": {
+            "description": "Exact metadata source_artifact returned by the same read",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
           "coverage": {
             "description": "Observed coverage of the external read frozen with these bytes; absent on legacy bindings",
             "type": "object",

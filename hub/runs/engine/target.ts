@@ -135,7 +135,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     for(const supplied of Object.values(input.inputs).flat()){
       if('reference'in supplied){const ref=parseReference(supplied.reference);if(ref.scheme==='src')structuralLines.push(...await knowledge.feeding.sourceLines(user,ref.sha256,{product:pid}));}
       else if('external'in supplied&&await ctx.deps.external.accepts(supplied.external,{principal:user,purpose:'按来源结构选择版本'})){
-        const read=await ctx.deps.external.read(supplied.external,{principal:user,purpose:'按来源结构选择版本'});if(!read.ok)continue;const chosen=read.artifacts.find(row=>row.name==='content')??read.artifacts.find(row=>row.name==='original');if(chosen)structuralLines.push(...await knowledge.feeding.sourceLines(user,chosen.artifact.body.sha256,{product:pid,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(row=>row.name==='meta')?.artifact.body.sha256}));
+        const read=await ctx.deps.external.read(supplied.external,{principal:user,purpose:'按来源结构选择版本'});if(!read.ok)continue;const chosen=read.artifacts.find(row=>row.name==='content')??read.artifacts.find(row=>row.name==='original');if(chosen)structuralLines.push(...await knowledge.feeding.sourceLines(user,chosen.artifact.body.sha256,{product:pid,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(row=>row.name==='meta')?.artifact.body.sha256,metaRecord:read.artifacts.find(row=>row.name==='meta')?.artifact.digest,readManifest:read.manifest}));
       }
     }
     structuralLines=[...new Set(structuralLines)];if(structuralLines.length!==1)throw unresolved('/version',structuralLines.length?'来源结构存在多个版本层，不能自动选择':'来源结构未声明版本；缺版本事实，请在 start_run 指定版本', [...new Set((await knowledge.builds(pid)).map(build=>build.line))]);

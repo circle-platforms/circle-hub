@@ -345,7 +345,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     resolveCtx = {
       reader: identityOf(runnerPrincipal, run.run),
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
+      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -359,7 +359,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     resolveCtx = {
       reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
+      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -368,7 +368,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     };
   }
 
-  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable')await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});return value;}};}
+  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});}}return value;}};}
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
@@ -571,8 +571,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             if (!read.ok) { onError(new Error(read.reason), check.id); throw new Error('narrow read unavailable'); }
             const chosen = read.artifacts.find(a => a.name === 'content') ?? read.artifacts.find(a => a.name === 'original');
             if (!chosen) throw new Error('narrow read has no content');
-            await ctx.deps.knowledge.feeding?.observeSourceBounded(principal,chosen.artifact.body.sha256,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256});
-            const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function' });
+            await ctx.deps.knowledge.feeding?.observeSourceBounded(principal,chosen.artifact.body.sha256,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256,metaRecord:read.artifacts.find(a=>a.name==='meta')?.artifact.digest,readManifest:read.manifest});
+            const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function',record:chosen.artifact.digest });
             if (!content) throw new Error('narrow read unavailable');
             return { text: content.bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(content.bytes), reference: `src:${chosen.artifact.body.sha256}`, revision: read.revision, manifest: read.manifest };
           },

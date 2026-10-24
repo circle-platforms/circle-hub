@@ -6,6 +6,7 @@ import type { LeaseRequest } from './start.ts';
 // its fragment and the bound source, verifies that it resolves and fingerprints the item.
 // The expected_sources function names external objects to bind; each is read best effort as the caller: a failed read is
 // recorded as unavailable and never fails the run.
+import {Sha256} from '../../../contracts/src/common.ts';
 import type { SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import {
   ExpectedSourcesInput,
@@ -216,7 +217,7 @@ export async function bindExpected(
       let title: string | null = null;
       const meta = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.meta);
       if (meta !== undefined) {
-        const source = await ctx.deps.records.artifacts.source(user, meta.artifact.body.sha256, { consumer: 'function' });
+        const source = await ctx.deps.records.artifacts.source(user, meta.artifact.body.sha256, { consumer: 'function',record:meta.artifact.digest });
         try {
           const value: unknown = source?.bytes ? JSON.parse(new TextDecoder().decode(source.bytes)) : null;
           if (isObject(value) && typeof value.title === 'string' && value.title !== '') title = value.title;
@@ -224,10 +225,10 @@ export async function bindExpected(
           // A meta artifact that is not JSON gives no label.
         }
       }
-      await ctx.deps.knowledge.feeding?.observeSourceBounded(user,chosen.artifact.body.sha256,{composition,product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,requested:wanted.external});
+      await ctx.deps.knowledge.feeding?.observeSourceBounded(user,chosen.artifact.body.sha256,{composition,product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,metaRecord:meta?.artifact.digest,readManifest:read.manifest,requested:wanted.external});
       const reference = `src:${chosen.artifact.body.sha256}`;
-      if (out.sources.some((s) => s.reference === reference)) continue;
-      out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });
+      if (out.sources.some((s) => s.reference === reference&&s.artifact===chosen.artifact.digest)) continue;
+      out.sources.push({ reference,artifact:chosen.artifact.digest,...(Sha256.safeParse(read.manifest).success?{read_manifest:read.manifest}:{}),...(meta?{meta_artifact:meta.artifact.digest}:{}),role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });
     } catch (error) {
       miss(describe(error));
     }
