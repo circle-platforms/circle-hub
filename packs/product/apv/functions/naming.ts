@@ -1,3 +1,4 @@
+// U24 owner ruling 2026-10-24: line leading zeroes and trailing .0 do not change version-line identity; build ids remain exact.
 // Naming of the APV/NSAE product line (product knowledge, pack data): the two name families, build names, listing page
 // names and version lines. Pure functions over strings.
 import type { Family, PageKind } from './types.ts';
@@ -84,7 +85,7 @@ export function parseBuildName(name: string): BuildNameParts {
  * 10.6, 10.6.0 and 010.6 name one line. Text that is not a dotted number is only trimmed and lower-cased.
  */
 export function lineKey(line: string): string {
-  const text = line.trim().toLowerCase();
+  const text = line;
   if (!/^[0-9]{1,9}(?:\.[0-9]{1,9}){0,5}$/.test(text)) return text;
   const parts = text.split('.').map(digits);
   while (parts.length > 2 && parts[parts.length - 1] === '0') parts.pop();
@@ -188,9 +189,17 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
     tail = tail.slice(0, tail.length - trailing.length);
   }
   let kind: PageKind;
-  if (tail.some((token) => token === 'patch' || token.startsWith('patch'))) kind = 'patch';
+  // apv-pages@1 (declared for the owner's R6 rule, 2026-10-24): a page name is a patch page when its last tail token is
+  // exactly `patch` or `patch<n[.n]>` (a whole token, never a prefix), a mainline or platform page when every tail token
+  // is in the declared mainline word list (a closed declaration of the product, not a guess), and a customer page when
+  // its tail is exactly `customer_<identifier>`.
+  // Anything else is not a declared page form and is null: the retired rule matched a `patch` prefix and fell back to
+  // "customer" for whatever tokens were left.
+  const last = tail[tail.length - 1];
+  if (last !== undefined && /^patch(?:[0-9]+(?:\.[0-9]{1,3})?)?$/.test(last)) kind = 'patch';
   else if (extra.length === 0 && tail.every((token) => mainlineWords.includes(token))) kind = platform === null ? 'mainline' : 'platform';
-  else kind = 'customer';
+  else if (tail.length === 2 && tail[0] === 'customer' && /^[A-Za-z0-9]+$/.test(tail[1])) kind = 'customer';
+  else return null;
   return { family, line, platform, kind, tokens };
 }
 

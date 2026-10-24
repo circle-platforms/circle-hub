@@ -1,3 +1,4 @@
+import {FeedingLayer} from './feeding.ts';
 import {scheduleSync} from './sync-schedule.ts';
 import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
@@ -12,7 +13,7 @@ import type { CatalogView, SandboxLimits } from '../rules/api.ts';
 import { Builds, type LineReconciliation, type MoveRootOptions, type MoveRootResult } from './builds.ts';
 import { CalibrationStore, PLACEMENT_CHAIN, maskLiterals, type CalibrationState, type LabelledSamplesInput } from './calibration.ts';
 import { DEFAULT_KNOWLEDGE_LIMITS, DEFAULT_SANDBOX, WriteQueue, requireAdmin, type KnowledgeContext, type KnowledgeLimits, type KnowledgeRecords } from './context.ts';
-import { compareText, cutText } from './digest.ts';
+import { canonicalSize,compareText, cutText } from './digest.ts';
 import { ObservationLayer } from './layers.ts';
 import { ContributionLayer } from './contributions.ts';
 import { contributionNodes } from './contribution-pages.ts';
@@ -126,7 +127,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     },
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
-    feeding: options.feeding,
+    feedingReader: options.feeding,
     credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };
@@ -136,6 +137,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
+  const feeding=new FeedingLayer(context,reading);context.feeding=feeding;context.feedingReader??=feeding;
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
   const relations = new LinkReading(context, builds);
@@ -212,6 +214,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
     __context: context,
+    feeding,
     async builds(product: string, filter: { line?: string; released?: boolean } = {}): Promise<KnownBuild[]> {
       return (await builds.known(product)).filter(
         (build) => (filter.line === undefined || build.line === filter.line) && (filter.released === undefined || (build.released_at !== null) === filter.released),
@@ -226,6 +229,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       return { ...info, source_count: body.sources.length + (body.parts?.sources ?? []).reduce((n, p) => n + p.rows, 0) };
     },
     currentRoot: (product, line) => builds.currentRoot(product, line),
+    async seedlingRoot(product,line){const seed=await feeding.seedFor(product,line);if(!seed)return null;const info=(await builds.rootInfo(seed.root)).find(info=>info.composition===seed.composition&&info.build!==null);return info as RootInfo|null??null;},
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
     catalog: (root, catalogId): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId)),
@@ -236,7 +240,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>withReadCache(async()=>{
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
-      return contributionNodes(context,reading,contributions,query,reader);
+      const page=await contributionNodes(context,reading,contributions,query,reader);if(!page)return null;
+      const products=await reading.productsOfRoot(query.root);const rows=[];for(const product of products)rows.push(...await feeding.entries(reader,product,query.feeding_offset?.offset??Number.MAX_SAFE_INTEGER));
+      for(const node of page.nodes){const relevant=rows.filter(row=>row.validity==='valid'&&row.body.root===query.root&&(row.body.path===node.path||row.body.path===null&&node.path==='/'||Array.isArray(row.body.commands)&&row.body.commands.some((command:Record<string,unknown>)=>command.path===node.path)));const references=[];for(const row of relevant){if(references.length===100)break;const ref={object:row.body.object,reference:'rec:'+row.record};if(canonicalSize(page)+canonicalSize(references)+canonicalSize(ref)>context.limits.pageBytes-1024)break;references.push(ref);}if(relevant.length){node.feeding_objects=references;node.feeding_complete=references.length===relevant.length;if(!node.feeding_complete)page.coverage={...page.coverage,complete:false,note:[page.coverage.note,'喂入引用达到本页预算；从知识 index/facets 视图读取完整范围'].filter(Boolean).join('；')};}}
+      return page;
     }),
     diffRoots: (from, to): Promise<RootDiff | null> => withReadCache(()=>reading.diff(from, to)),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => withReadCache(()=>reading.diffEntries(from, to, diffOptions)),

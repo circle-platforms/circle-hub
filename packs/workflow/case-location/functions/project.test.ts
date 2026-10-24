@@ -57,7 +57,8 @@ describe('one item per document (default)', () => {
     assert.deepEqual(item, {
       id: '24001',
       label: '需求20931 证书链校验',
-      summary: '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931',
+      // apv-id-fields@1: no identifier is read out of a title, so the summary names the located layers only.
+      summary: '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL',
       location: { slot: 'documents', source: d.sha256, parser: 'kityminder@1', selector: 'n/24001n0' },
       fields,
     });
@@ -81,7 +82,7 @@ describe('one item per document (default)', () => {
       assert.deepEqual(together.items[k], alone);
       assertLocated(together.items[k], [a, b, c]);
     }
-    assert.match(together.items[1].summary!, /^不确定（没有版本层）：产品线 apv（APV）；版本未知/);
+    assert.match(together.items[1].summary!, /^不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（APV）；版本未知/);
     assert.equal(together.items[2].label, 'NSAE 10.6.2.31 升级', 'the label is the title the tree lists');
   });
 
@@ -115,7 +116,8 @@ describe('one item per document (default)', () => {
     );
     assert.equal(out.items[0].label, 'NSAE 10.6.1.57 回归', 'without meta the title is the map root text');
     assert.deepEqual([out.items[0].fields.root, out.items[0].fields.ancestors], [null, []]);
-    assert.match(out.items[0].summary!, /^不确定（运行没有绑定产品线，版本只在标题里）：产品线未定；版本 10\.6\.1\.57（标题，置信度低）/);
+    // A title is prose: no version is read out of it, so an unbound run has neither a product line nor a version.
+    assert.match(out.items[0].summary!, /^不确定（运行没有绑定产品线，没有版本层，发布火车层未知，模块层未知）：产品线未定；版本未知/);
     const rootless = doc('24022', smallMap('24022', 'x'), { title: 'x', ancestors: ['060：10.6.1'] });
     assert.deepEqual(
       items(run([rootless])).warnings.map((w) => w.code),
@@ -208,7 +210,7 @@ describe('one item per case (granularity case)', () => {
       case_title: 'bug 61500 证书链加载',
     });
     // The defect is named in the case text, not in the title: the summary says where it was read.
-    assert.match(first.summary!, /模块 SSL；缺陷 61500（脑图）$/);
+    assert.match(first.summary!, /模块 SSL$/);
     for (const item of out.items) assertLocated(item, [d]);
   });
 
@@ -268,7 +270,8 @@ describe('refusals and bad input', () => {
 });
 
 for (const granularity of ['document', 'case']) it(`a directory identifier belongs to both sibling documents at ${granularity} granularity`, () => {
-  const tree = { ...TREE, ancestors: [...TREE.ancestors, '需求20931 合成目录'] };
+  // The folder declares the identifier as a whole field; a prose folder name declares nothing (apv-id-fields@1).
+  const tree = { ...TREE, ancestors: [...TREE.ancestors, 'story:20931'] };
   const a = doc('synthetic-a', smallMap('synthetic-a', '合成文档甲'), { title: '合成文档甲', ...tree });
   const b = doc('synthetic-b', smallMap('synthetic-b', '合成文档乙'), { title: '合成文档乙', ...tree });
   const projected = items(run([a, b], { granularity })).items;

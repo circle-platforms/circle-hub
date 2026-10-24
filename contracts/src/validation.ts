@@ -1,3 +1,4 @@
+import {FeedingOffsetSchema} from '../generated/feeding-offset.ts';
 // Validation result (W08, validation@1): what the Hub's boundary validation produces for one submission.
 import { z } from 'zod';
 import {ReplacedCriterion} from './criterion.ts';
@@ -203,6 +204,7 @@ export const Partitions = z.strictObject(partitionArrays).superRefine((parts, ct
 export type Partitions = z.infer<typeof Partitions>;
 
 export const Locks = z.strictObject({
+  feeding_offset:FeedingOffsetSchema.optional(),
   pack: z.string().describe('pack id@version'),
   pack_digest: Sha256,
   unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),

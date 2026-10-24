@@ -169,6 +169,9 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
+  /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
+  position?(digest:string,tx?:Transaction):Promise<number|null>;
+  watermark?(tx?:Transaction):Promise<number>;
   getByKey<B = unknown>(kind: RecordKind, key: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
 
   /** Holds a typed business-key advisory lock until the given transaction commits or rolls back. */

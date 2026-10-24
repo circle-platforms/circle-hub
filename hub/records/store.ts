@@ -205,6 +205,9 @@ export class PgRecordStore implements RecordStore {
     return page<B>(result.rows, limit);
   }
 
+  async position(digest:string,tx?:Transaction):Promise<number|null>{const rows=await this.#db.query<{seq:string}>('SELECT seq FROM records WHERE digest=$1',[digest],tx);if(!rows.rows.length)return null;const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
+  async watermark(tx?:Transaction):Promise<number>{const rows=await this.#db.query<{seq:string}>('SELECT coalesce(max(seq),0)::text AS seq FROM records',[],tx);const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
+
   async lock(key: string, tx: Transaction): Promise<void> {
     if (!tx || typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('业务锁需要给定事务和有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
     // The dedicated namespace separates business identities from ingestion and authorization decisions.

@@ -22,3 +22,13 @@ export function fixedBugEntries(model:unknown,build:string|null):ProducerOutput{
  warnings.push('发布页没有原始结构化状态，已保留未声明条目；下一步：'+STATUS_NEXT);
  return {entries,warnings};
 }
+
+/** Closed original PLM fields for feeding; absent declarations stay null/empty, never inferred from prose. */
+export function structuredDefect(model:unknown):{id:string;status:string|null;affected_lines:string[];resolved_lines:string[];fix_builds:string[]}|null{
+ if(!isRecord(model)||model.kind!=='bug')return null;
+ const fields=isRecord(model.fields)?model.fields:model;
+ const id=typeof model.id==='string'?model.id:typeof fields.id==='string'?fields.id:null;if(id===null)throw Error('PLM 原件缺结构编号；补 id 后重新读取');
+ const strings=(key:string):string[]=>{const value=fields[key];if(value===undefined||value===null)return [];if(!Array.isArray(value)||value.some(v=>typeof v!=='string'))throw Error(key+' 必须是原始字符串数组；修正原件后重读');return value as string[];};
+ if(fields.status!==undefined&&fields.status!==null&&typeof fields.status!=='string')throw Error('status 必须是原始字符串或 null；修正原件后重读');
+ return {id,status:typeof fields.status==='string'?fields.status:null,affected_lines:strings('affected_lines'),resolved_lines:strings('resolved_lines'),fix_builds:strings('fix_builds')};
+}

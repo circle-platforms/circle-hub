@@ -464,6 +464,7 @@ CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固�
 
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
+R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。apv-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。apv-assets@1 只识别完整 Rel_APV/NSAE_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
 
 ## R4 的命令引用边界（1.1.0）
 
@@ -480,3 +481,5 @@ R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例
 ## 可执行槽 Schema 修正（1.1.20）
 
 槽声明仅保留 Hub 可执行的结构约束，去掉 pattern、patternProperties、format。摘要、引用解析、原件身份、路径及逐字引文仍由现有受理边界核验，槽位收到字符串不表示身份已核对。case-review 的 expected_quality 继续逐字核对冻结原件与全部期望叶子；knowledge-contribution 从权威 ContributionInput Schema 生成受限槽投影，不修改权威受理合约。生成器按 Schema 结构遍历，名为 pattern 或 format 的普通字段不会被误删。case-review-verify 与 quality-board 槽声明未发现这些关键字，无须升版。
+
+期望来源（U19/U20 与 apv-id-fields@1，所有者 2026-10-24）：只绑定作者显式声明的身份——运行参数 `stories`/`bugs`，或标题/上级目录里整段的 `bug:<编号列表>`、`story:<编号列表>` 字段；散文里的编号、标记词、错拼、补零、全角一律不读。关键词检索连候选来源也禁止：不再产出 `manual:spec-search`、`manual:qa-search` 或 `agile:search` 之类的检索读法，检索结果不作输入也不作查全依据。没有声明编号时不绑定来源，并写明缺的事实与下一步（作者补参数或字段，或由模型提交逐字引文经 Hub 核验）。

@@ -6,6 +6,7 @@ import {defectIndexKeys,mergeIndexBindings,narrowIndexId} from './index-default.
 // external type must be one the slot accepts. A record bound as input is a source whose provenance is the record: its
 // canonical JSON is stored as a generated artifact so that fragments of it can be cited.
 import type { SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import {Sha256} from '../../../contracts/src/common.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
@@ -27,6 +28,7 @@ export interface BoundSource {
   sha256: string;
   /** The Hub record the source was bound by, and the run that record belongs to (a handover when it is the predecessor). */
   record: { digest: string; run: string | null } | null;
+  sourceRecord?:string;metaSource?:string;metaRecord?:string;readManifest?:string;requested?:string;
 }
 
 interface Read {
@@ -37,6 +39,7 @@ interface Read {
   external: string | null;
   meta: Record<string, unknown> | null;
   record: { digest: string; run: string | null } | null;
+  sourceRecord?:string;metaSource?:string;metaRecord?:string;readManifest?:string;requested?:string;
 }
 
 const mediaAccepted = (slot: WorkflowInput, mediaType: string): boolean => slot.accepts.filter((a) => a.includes('/')).some((a) => a.toLowerCase() === essence(mediaType));
@@ -66,6 +69,7 @@ export async function bindInputs(
   build?:string,
   variables?:VariableSnapshot,
   unversioned?: ExternalReadContext['unversioned'],
+  feeding?:import('../../knowledge/feeding.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -110,7 +114,8 @@ export async function bindInputs(
         bytes: source.bytes,
         mediaType: source.mediaType,
         sha256: ref.sha256,
-        binding: { reference: `src:${ref.sha256}`, media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
+        sourceRecord:source.artifact.digest,
+        binding: { reference: `src:${ref.sha256}`,artifact:source.artifact.digest,media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
         external: null,
         meta: null,
         record: null,
@@ -166,7 +171,7 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
+    const readContext={ feeding_offset:feeding?.feeding_offset,principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
     const records = {artifacts,store};
     let requestId = id;
     let merged: Awaited<ReturnType<typeof mergeIndexBindings>> | null = null;
@@ -202,7 +207,7 @@ export async function bindInputs(
       gone(path, 'the read gave no original or content artifact');
       return null;
     }
-    const source = await artifacts.source(user, chosen.artifact.body.sha256, { consumer: 'function' });
+    const source = await artifacts.source(user, chosen.artifact.body.sha256, { consumer: 'function',record:chosen.artifact.digest });
     if (source === null || source.bytes === null) {
       gone(path, source === null ? 'read artifact not readable by the caller' : `bytes withheld (${source.readTier})`);
       return null;
@@ -210,7 +215,7 @@ export async function bindInputs(
     let meta: Record<string, unknown> | null = null;
     const metaArtifact = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.meta);
     if (metaArtifact !== undefined) {
-      const metaSource = await artifacts.source(user, metaArtifact.artifact.body.sha256, { consumer: 'function' });
+      const metaSource = await artifacts.source(user, metaArtifact.artifact.body.sha256, { consumer: 'function',record:metaArtifact.artifact.digest });
       if (metaSource?.bytes) {
         try {
           const value: unknown = JSON.parse(new TextDecoder().decode(metaSource.bytes));
@@ -226,9 +231,10 @@ export async function bindInputs(
       bytes: source.bytes,
       mediaType: source.mediaType,
       sha256: source.sha256,
-      binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType,...(read.coverage?{coverage:read.coverage}:{}), ...(title !== null ? { label: title } : {}) },
+      binding: { reference: `src:${source.sha256}`, artifact:chosen.artifact.digest,...(Sha256.safeParse(read.manifest).success?{read_manifest:read.manifest}:{}),...(metaArtifact?{meta_artifact:metaArtifact.artifact.digest}:{}),external, media_type: source.mediaType,...(read.coverage?{coverage:read.coverage}:{}), ...(title !== null ? { label: title } : {}) },
       external,
       meta,
+      sourceRecord:chosen.artifact.digest,metaSource:metaArtifact?.artifact.body.sha256,metaRecord:metaArtifact?.artifact.digest,readManifest:read.manifest,requested:id,
       record: null,
     };
   };
@@ -259,6 +265,7 @@ export async function bindInputs(
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
+      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,metaRecord:read.metaRecord,readManifest:read.readManifest,requested:read.requested});
       out.push({
         slot: slot.slot,
         role: slot.role,

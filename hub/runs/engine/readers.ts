@@ -4,6 +4,8 @@ import { isKnowledgeContributionSchema } from '../../../contracts/src/contributi
 // a run the Hub executes itself is shown to admins only (W06 R[3]). Records reach a reader only through the run they belong
 // to; absent and forbidden give the same null.
 import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
+import {parseReference} from '../../refs/api.ts';
+import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { runIsSharedWith } from '../../records/api.ts';
 import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
@@ -31,10 +33,11 @@ export function principalOf(reader: ReaderIdentity): Principal {
 }
 
 /** Preserve retained metadata and unexpected function-read failures; model-only byte withholding stays neutral. */
-export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): SourceReader {
+export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindings?:readonly SourceBinding[]): SourceReader {
   return {
     async read(sha256, reader) {
-      const source = await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
+      const pins=[...new Set((bindings??[]).flatMap(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact?[binding.artifact]:[];}))];
+      const source = pins.length?await artifacts.source(principalOf(reader),sha256,{consumer,record:pins[0]})??(reader.run?await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}):null):await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
       if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },
@@ -62,7 +65,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) {
+      if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) {
         if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
       } else if (reader.role !== 'admin') {
         const run = runOfRecord(record);

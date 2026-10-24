@@ -7,6 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
+import { IDENTITY } from './pack-files.ts';
 import { z } from 'zod';
 import { ChecksFile, PackManifest, PackSample, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import { readPackDirectory, runPublishCheck, validatePack } from '../../../hub/runs/api.ts';
@@ -27,7 +28,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', '1.4.4', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', IDENTITY.version, 'workflow'], 'the manifest carries the declared identity; the version is not written down twice');
     const files = await packFiles();
     assert.ok(files.includes('functions/locate.ts') && files.includes('samples/negative/declared-line-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -152,8 +153,8 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
       [
-        ['locate', 'advisory', 3, 4, ['author_samples_only']],
-        ['candidates', 'advisory', 1, 1, ['author_samples_only']],
+        ['locate', 'advisory', 2, 4, ['author_samples_only']],
+        ['candidates', 'advisory', 2, 1, ['author_samples_only']],
       ],
     );
   });

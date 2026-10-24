@@ -18,6 +18,7 @@ import { canonicalSize } from './digest.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
+  run?:string;classifications?:readonly string[];
   root: string | null;
   additionalRoots?: Array<{root:string;composition:string|null}>;
   product: string | null;
@@ -68,6 +69,7 @@ function scanPublicText(texts: readonly string[]): void {
 function identityOf(prepared: PreparedContribution): string {
   return digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
       source:{reference:prepared.source.reference,quote:prepared.source.quote},
+      ...(prepared.feeding===undefined?{}:{feeding:prepared.feeding}),
       ...(prepared.applicability_claim===undefined?{}:{applicability_claim:prepared.applicability_claim}),
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
@@ -129,6 +131,18 @@ export class ContributionLayer {
     if (additional) scope = { ...scope, root: additional.root, composition: additional.composition,
       additionalRoots: [...(scope.root === null ? [] : [{root:scope.root,composition:scope.composition}]),...(scope.additionalRoots??[]).filter(lock=>lock!==additional)] };
     if (scope.root !== input.root || scope.product === null) return fail('回注必须使用本次运行锁定的产品和根；缺少与锁定根的对应关系，按 start_run 的 root 原样填写，或为目标根另开运行','REFERENCE_UNRESOLVED');
+    if(input.feeding!==undefined){
+      const layer=this.#context.feeding;if(!layer)return fail('缺喂入核验服务；管理员恢复后重试');
+      const value=await layer.prepare(reader,input.feeding,{composition:scope.composition,product:scope.product,root:scope.root,run:scope.run,classifications:scope.classifications});
+      if(value.schema==='retraction@1')return fail('撤回请使用管理员喂入撤回入口，不得伪装对象回注');
+      const ref=parseReference(input.source.reference);if(ref.scheme!=='src'||ref.sha256!==value.source.bytes)return fail('回注主引文必须指向同一喂入原件');
+      await layer.quote(reader,{reference:input.source.reference,text:input.source.quote});
+      const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model',record:await layer.originalRecord(reader,value)});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
+      const node=await this.#reading.nodeAt(input.root,pathSegments(input.path));if(!node)return fail('归位路径在锁定树苗中不存在');
+      const fragment=await this.#reading.treeReader({composition:scope.composition}).read(input.root,input.path,null,{user:reader.id,role:reader.role});if(!fragment)return fail('归位节点当前不可读');
+      scanPublicText([input.statement,JSON.stringify(value),scope.model??'',scope.session??'']);
+      return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance:value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as 'observed'|'projected',records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
+    }
     const {composition, compositions, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader, cacheScope);
     let segments:string[];
     try{segments=pathSegments(input.path);}catch(error){if(error instanceof ReferenceSyntaxError)return fail(`归位路径不是规范写法：${error.message}；按 get_nodes 返回的 path 原样填写后重交`,'REFERENCE_UNRESOLVED');throw error;}
@@ -166,7 +180,7 @@ export class ContributionLayer {
         await pending;
       }
     };
-    const quote = async (quoted: ContributionInput['source']): Promise<KnowledgeContributionBody['source']> => {
+    const quote = async (quoted: ContributionInput['source']): Promise<import('zod').z.infer<typeof ContributionSource>> => {
       const resolved = await scope.resolve(quoted.reference);
       if (!resolved.ok) return fail(`${resolved.message}；缺少可核对的运行内原文。恢复读取条件后重交；未绑定该源或根时另开运行绑定它，片段不存在时用 get_nodes 返回的引用修正`, resolved.code ?? 'REFERENCE_UNRESOLVED');
       if (resolved.value.text === null || !quoteMatches(resolved.value.text, quoted.quote)) return fail(`引文没有逐字出自所引片段 ${resolved.value.reference}；用 get_nodes 重新读取这个引用，逐字修正引文后重交`, 'QUOTE_MISMATCH');
@@ -277,7 +291,9 @@ export class ContributionLayer {
     await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
     if (old.items.length > 0) return old.items[0].digest;
-    const body = KnowledgeContributionBody.parse({ ...prepared, session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
+    const principal=await this.#context.records.principals.get(prepared.submitted_by);
+    const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
+    const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
     return (await this.#context.store.putClaim(SCHEMAS.contribution, 'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})}], tx)).digest;
@@ -285,6 +301,7 @@ export class ContributionLayer {
 
   async read(digest: string, reader: Principal): Promise<StoredRecord | null> {
     const record = await this.#context.records.store.get(digest);
+    if(record?.kind==='claim'&&record.schema==='claim@1')return await this.#context.feeding?.readRecord(digest,reader)??null;
     const body = record === null ? null : KnowledgeStore.contributionOf(record);
     if(body===null||!(await this.mayRead(body.product,reader)))return null;
     const state=await this.#groundsState(body,reader,new Map());
@@ -308,6 +325,7 @@ export class ContributionLayer {
             if (record.kind !== 'source_artifact') return {visible:tree,held:false};
             const original = record as SourceArtifact;
             if (!original.body.visibility.admins) return {visible:false,held:false};
+            if(body.feeding?.schema==='fed-note@1'&&reader.role!=='admin'&&body.feeding.by!==reader.id)return {visible:false,held:false};
             const principal = tree ? await this.#custodian(reader) : reader;
             const current = await this.#context.records.artifacts.source(principal, original.body.sha256, {consumer:tree?'function':'model',record:digest});
             if(current===null)return {visible:false,held:false};
@@ -323,7 +341,7 @@ export class ContributionLayer {
   }
 
   #withheld(record:string,body:KnowledgeContributionBody):KnowledgeContributionView {
-    const {statement:_statement,source,relation,applicability_claim:_applicabilityClaim,...metadata}=body;const {quote:_quote,...safeSource}=source;
+    const {statement:_statement,source,relation,applicability_claim:_applicabilityClaim,feeding:_feeding,feeding_record:_feedingRecord,...metadata}=body;const {quote:_quote,...safeSource}=source;
     const safeOther=relation===undefined?undefined:(({quote:_quote,...rest})=>rest)(relation.other);
     return {record,contribution:WithheldContributionBody.parse({...metadata,source:safeSource,...(relation===undefined?{}:{relation:{kind:relation.kind,other:safeOther}})}),status:'credential_unreadable',
       note:`${labelOf('validity_status','credential_unreadable')}；缺少当前可供模型读取的原件，须由管理员核查扫描结论；确属误报才受理后重读，真凭据须清理并重新采集；不要转述陈述或引文`};
@@ -333,7 +351,8 @@ export class ContributionLayer {
     const record=await this.#context.records.store.get(digest);const body=record===null?null:KnowledgeStore.contributionOf(record);
     if(body===null||!(await this.mayRead(body.product,reader)))return null;
     const state=await this.#groundsState(body,reader,new Map());if(!state.visible)return null;
-    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:'valid',note:null};
+    const feedingState=body.feeding_record?await this.#context.feeding?.recordState(body.feeding_record,reader,digest):null;
+    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null};
   }
 
   async has(root:string,reader:Principal):Promise<boolean>{
@@ -397,6 +416,7 @@ export class ContributionLayer {
       if (body === null) continue;
       const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
       if(state.held){out.push(this.#withheld(record.digest,body));continue;}
+      if(body.feeding_record&&(await this.#context.feeding?.recordState(body.feeding_record,reader,record.digest))?.validity==='invalid'){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:'喂入主张根据已撤回或原件已修订；历史引文仍保留'});continue;}
       if (!digests.has(body.path)) {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });
         digests.set(body.path, fragment === null ? null : sha256Hex(fragment.text));

@@ -32,6 +32,8 @@ import {
   type UnversionedView,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
+import {KnowledgeError} from './errors.ts';
+import {seedlingOfRoot} from './seedling.ts';
 import type { FeedingCut } from './feeding-types.ts';
 
 /** The feeding-layer context a view read carries: the run's frozen cut (null offset: everything now in the layer). */
@@ -1260,12 +1262,14 @@ export class KnowledgeViews {
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
     let title: string;
     const feeding: FeedingNotes | null = await (async () => {
-      const reader = this.#context.feeding;
+      const reader = this.#context.feedingReader;
       if (reader === undefined) return null;
       const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
       if (handle === null) return null;
-      const offset = context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run);
-      return { context, cut: await reader.cut(handle.product.id, offset) };
+      if(reader===this.#context.feeding){const at=await resolve(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
+      const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
+      if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
+      return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
     })();
     if (request.type === 'impact') {
       const from = await resolve(request.from);

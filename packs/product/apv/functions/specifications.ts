@@ -1,6 +1,6 @@
 import type {ProducerOutput} from '../../../../contracts/src/product.ts';
 import {produceManualEntries} from './manual.ts';
-import {documentLines} from './documents.ts';
+import {documentLines, documentNameOf} from './documents.ts';
 import {PRODUCT_LINE} from './naming.ts';
 import {isRecord} from './util.ts';
 import type {MarkdownModel} from './types.ts';
@@ -36,7 +36,16 @@ export function specifications(input:unknown):ProducerOutput {
   const out=produceManualEntries(document.model as MarkdownModel,null,{...params,name:path,noTree:true});
   warnings.push(...out.warnings);
   if(out.warnings.some(w=>w.startsWith('内部错误')))throw new TypeError('规格章节生产未完成；下一步修复源章节后重产');
-  for(const entry of out.entries)entries.push({...entry,path:entry.path?.replace(/^\/manual\//,'/spec/')??null,data:{...entry.data,document_lines:documentLines(path+' '+title)},fragments:entry.fragments.map(fragment=>({...fragment,slot:'documents',source:document.sha256 as string}))});
+  for(const entry of out.entries)entries.push({...entry,path:entry.path?.replace(/^\/manual\//,'/spec/')??null,data:{...entry.data,document_lines:documentLines(documentNameOf(path))},fragments:entry.fragments.map(fragment=>({...fragment,slot:'documents',source:document.sha256 as string}))});
  }
  return {entries,warnings,...(documents.length===0&&catalog?{inventory:[{label:'规格',listed:{slot:'catalog',parser:'json@1',selector:'p/files'},complete:{slot:'catalog',parser:'json@1',selector:'p/complete'},selected:0}]}:{})};
+}
+
+/** Explicit specification records; source type, not document title, declares the role. */
+export function structuredSpecification(model:unknown):{id:string|null;title:string;linked_builds:string[]}{
+ if(!isRecord(model))throw Error('规格原件缺结构对象；恢复原件后重读');const fields=isRecord(model.fields)?model.fields:model;
+ if(fields.id!==undefined&&fields.id!==null&&typeof fields.id!=='string')throw Error('规格 id 必须是原始字符串；修正原件后重读');
+ if(fields.title!==undefined&&typeof fields.title!=='string')throw Error('规格 title 必须是原始字符串；修正原件后重读');
+ const linked=fields.linked_builds??[];if(!Array.isArray(linked)||linked.some(v=>typeof v!=='string'))throw Error('linked_builds 必须是原始字符串数组；修正原件后重读');
+ return {id:typeof fields.id==='string'?fields.id:null,title:typeof fields.title==='string'?fields.title:'',linked_builds:linked};
 }

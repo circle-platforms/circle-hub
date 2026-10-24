@@ -131,7 +131,7 @@ type Level = {
  * label that is only a version), with every line node of the path. Its versions must name one version line.
  */
 function versionLevel(labels: readonly Label[], conv: Convention, names: readonly string[], notes: Notes): Level {
-  const pure = labels.map(pureVersionOf);
+  const pure = labels.map((label) => pureVersionOf(label, names));
   const builds = labels.map(label => buildVersionsOf(label, names));
   const firstPure = pure.findIndex((v, at) => v !== null || builds[at].length > 0);
   const end = conv.trainAt >= 0 ? conv.trainAt : conv.lineNodes.length > 0 ? conv.lineNodes[0].at : firstPure;
@@ -148,7 +148,7 @@ function versionLevel(labels: readonly Label[], conv: Convention, names: readonl
     }
   }
   for (const n of conv.lineNodes) if (n.at > end) values.push({ at: n.at, value: n.line });
-  const level = { end, values, value: values[0].value, labels: new Set(values.map((v) => v.at)) };
+  const level = { end, values, value: values[0]?.value ?? null, labels: new Set(values.map((v) => v.at)) };
   if (unique(values.map((v) => lineOf(v.value))).length <= 1) return { ...level, disagreement: null };
   const distinct = (list: readonly string[]): string[] => list.filter((v, k) => list.findIndex((w) => lineOf(w) === lineOf(v)) === k);
   const lines = distinct(conv.lineNodes.map((n) => n.line));
@@ -231,7 +231,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   const root = typeof input.root === 'string' && input.root.trim() !== '' ? input.root : null;
   if (!Array.isArray(input.ancestors)) note(notes, '没有目录标签（不是数组）');
   let ancestors = strings(input.ancestors);
-  if (root !== null && ancestors.length > 0 && fold(ancestors[0]) === fold(root)) ancestors = ancestors.slice(1);
+  if (root !== null && ancestors.length > 0 && ancestors[0] === root) ancestors = ancestors.slice(1);
   if (ancestors.length > LIMITS.maxLabels) note(notes, `目录超过 ${LIMITS.maxLabels} 层，只看前 ${LIMITS.maxLabels} 层`);
   ancestors = ancestors.slice(0, LIMITS.maxLabels);
   const labels = ancestors.map(parseLabel);
@@ -246,8 +246,8 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   // ---- line, train, module and the version level
   const conv = convention(labels, notes);
   const level = versionLevel(labels, conv, names, notes);
-  const scans = labels.map((l) => schemeScan(l.text));
-  const titleScan = title === null ? null : schemeScan(parseLabel(title).text);
+  const scans = labels.map((l) => schemeScan(l.rest, names));
+  const titleScan = title === null ? null : schemeScan(parseLabel(title).text, names);
   scans.forEach((s) => rejected(s.rejects, '目录', notes));
   if (titleScan !== null) rejected(titleScan.rejects, '标题', notes);
   const versionsOf = (matches: readonly SchemeMatch[]): string[] => matches.filter((m) => m.kind === 'version').map((m) => m.value);
@@ -301,7 +301,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   // ---- the product by the root: a name of the bound line, else as the tree names it
   let productLine: string | null = null;
   let productName: string | null = null;
-  const rootName = root === null ? undefined : names.find((n) => fold(n) === fold(root));
+  const rootName = root === null ? undefined : names.find((n) => n === root);
   if (root === null) note(notes, '没有目录树的根，产品线定不出');
   else if (rootName !== undefined && productId !== null) {
     productLine = productId;
@@ -316,7 +316,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   const filled: string[] = [];
   const conflicts: Conflict[] = [];
   if (declared.product !== null) {
-    const declaredName = names.find((n) => fold(n) === fold(declared.product!));
+    const declaredName = names.find((n) => n === declared.product!);
     if (root === null) {
       productName = declaredName ?? shown(declared.product, LIMITS.maxText);
       productLine = declaredName !== undefined && productId !== null ? productId : null;
@@ -325,7 +325,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     } else if (productLine !== null) {
       if (declaredName !== undefined) note(notes, `调用方声明的产品 ${declared.product} 与目录树的根同属产品线 ${productLine}`);
       else conflicts.push({ field: 'product', declared: declared.product, tree: productName! });
-    } else if (fold(declared.product) === fold(root)) note(notes, `调用方声明的产品 ${declared.product} 与目录树的根一致，但它不是这条产品线的名称`);
+    } else if (declared.product === root) note(notes, `调用方声明的产品 ${declared.product} 与目录树的根一致，但它不是这条产品线的名称`);
     else if (!bound) note(notes, `运行没有绑定产品线，调用方声明的产品 ${declared.product} 与目录树的根是否同属一条产品线定不出`);
     else conflicts.push({ field: 'product', declared: declared.product, tree: productName! });
   }
@@ -363,6 +363,8 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
   else if (versionSource === 'parameter') versionDoubts.push({ text: '版本来自调用方声明，未经目录树核对', brief: '版本是声明的', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
   else if (versionSource === 'none') versionDoubts.push({ text: '目录里没有版本层，版本未知', brief: '没有版本层', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
 
+  if (conv.train === null) versionDoubts.push({text:'缺少声明语法的发布火车层',brief:'发布火车层未知',missing:'apv-directory@1 的发布火车层身份',next:'下一步由包作者补目录语法或作者调整目录层级后重产。'});
+  if (conv.module === null) versionDoubts.push({text:'缺少声明语法的模块层',brief:'模块层未知',missing:'apv-directory@1 的模块层身份',next:'下一步由包作者补目录语法或作者调整目录层级后重产。'});
   // ---- build names as written, of the line's families
   const builds = writtenBuilds([...ancestors, ...(title !== null ? [title] : []), ...path, ...(caseTitle !== null ? [caseTitle] : [])], names, LIMITS.maxBuildNames);
   if (builds.foreign.length > 0) {
@@ -445,9 +447,9 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
   }
   if (doubts.length === 0) return { verdict: 'support', statement: `按目录树定位${basis}：${described(answer)}`, brief: '' };
   return {
-    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位不确定：${doubts.map((d) => d.text).join('；')}。${doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]).join('')}已知${basis}：${described(answer)}`),
+    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位不确定：${doubts.map((d) => d.text).join('；')}。${[...new Set(doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]))].join('')}已知${basis}：${described(answer)}`),
     reason: 'missing_input',
-    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]).join('')}已知${basis}：${described(answer)}`,
+    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${[...new Set(doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]))].join('')}已知${basis}：${described(answer)}`,
     brief: doubts.map((d) => d.brief).join('，'),
   };
 }

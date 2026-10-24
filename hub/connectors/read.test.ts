@@ -127,6 +127,7 @@ test('a mind map read gives the original, content (the inner KityMinder document
   assert.equal(manifest.body.action, 'read');
   assert.equal(manifest.body.result, 'completed');
   assert.equal(manifest.body.principal, w.k.user.id);
+  for(const artifact of [original,content,meta]){const actions=await w.k.records.store.find({key:'connectors.artifact',value:artifact.digest,kind:'action',limit:100});assert.ok(actions.items.some(action=>action.digest===read.manifest),'exact captures point to the read that returned them');}
   assert.equal(manifest.body.original, 'case');
   assert.deepEqual(manifest.body.requests.map((r) => [r.key, r.route, r.method, r.ok, r.artifact === original.digest]), [['case', 'case-data', 'POST', true, true]]);
   assert.deepEqual(manifest.body.reads.map((r) => [r.external, r.ok]), [['agile:tree:7714', true]]);

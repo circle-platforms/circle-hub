@@ -208,6 +208,7 @@ export function productNamesOf(run: Pick<RunRecord, 'target_basis'>): string[] {
 /** The facts about a run that checks and pack functions may use, from the frozen run record. */
 export function runContextOf(run: RunRecord): RunContext {
   return {
+    ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),
     product: run.product ?? null,
     names: productNamesOf(run),
     line: run.version ?? null,
@@ -344,7 +345,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     resolveCtx = {
       reader: identityOf(runnerPrincipal, run.run),
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
+      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -358,7 +359,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     resolveCtx = {
       reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
+      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -367,6 +368,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     };
   }
 
+  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});}}return value;}};}
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
@@ -565,11 +567,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           binding: source, boundText: bound.text,
           read: async external => {
             const principal = principalOf(resolveCtx.reader);
-            const read = await ctx.deps.external.read(external, { principal, run: run.run, purpose: `检查 ${check.id} 条目 ${item ?? ''} 收窄读取`, ...(run.build ? { build: run.build } : {}) });
+            const read = await ctx.deps.external.read(external, { principal, run: run.run, purpose: `检查 ${check.id} 条目 ${item ?? ''} 收窄读取`,feeding_offset:run.feeding_offset, ...(run.build ? { build: run.build } : {}) });
             if (!read.ok) { onError(new Error(read.reason), check.id); throw new Error('narrow read unavailable'); }
             const chosen = read.artifacts.find(a => a.name === 'content') ?? read.artifacts.find(a => a.name === 'original');
             if (!chosen) throw new Error('narrow read has no content');
-            const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function' });
+            await ctx.deps.knowledge.feeding?.observeSourceBounded(principal,chosen.artifact.body.sha256,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256,metaRecord:read.artifacts.find(a=>a.name==='meta')?.artifact.digest,readManifest:read.manifest});
+            const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function',record:chosen.artifact.digest });
             if (!content) throw new Error('narrow read unavailable');
             return { text: content.bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(content.bytes), reference: `src:${chosen.artifact.body.sha256}`, revision: read.revision, manifest: read.manifest };
           },
@@ -1143,7 +1146,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       total: items.length,
       ...(submission !== null && hasItemJudgments ? { note: `提交处理了 ${handled} 个条目，共 ${items.length} 个` } : {}),
     },
-    locks: { ...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());

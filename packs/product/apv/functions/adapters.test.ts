@@ -10,7 +10,7 @@ import { ProducerOutput, ProductDeclaration, SelectBuildOutput, SyncPlanOutput, 
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import { fileKey as siteFileKey } from '../../../system/build-site/functions/reads.ts';
 import { assertTotal, fixtureBytes, hostileInputs, html, markdown, xml } from '../testing/test-support.ts';
-import { documentLines, folderLine, folderNames } from './documents.ts';
+import { documentLines, folderLine, folderNames, documentNameOf} from './documents.ts';
 import { fixedBugEntries } from './fixed-bugs.ts';
 import { commandTree, manual, releaseNotes } from './producers.ts';
 import select, { chooseBuild } from './select.ts';
@@ -297,8 +297,15 @@ describe('the version lines of documents', () => {
     assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
     assert.equal(folderLine('rel_other_10_9'), null);
     assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
-    assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
-    assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);
+    // apv-documents@1: a version association comes from a document's own name, never from prose. The declared name form
+    // is the base name without an `@<revision>` suffix and without a text extension, and the whole remainder must be an
+    // optional product name, a separator, an optional `v` and two to four dotted numbers.
+    assert.deepEqual(documentLines(documentNameOf('spec/NSAE_10.6.4.md')), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
+    assert.deepEqual(documentLines(documentNameOf('spec/APV V10.7.0@draft.md')).map((d) => d.line), ['10.7']);
+    assert.deepEqual(documentLines(documentNameOf('spec/APV-10_7.md')).map((d) => d.line), ['10.7']);
+    assert.equal(documentNameOf('spec/APV 10_7@draft.md'), 'APV 10_7');
+    assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [], 'a title is prose and is not scanned');
+    assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异'), [], 'several versions in one text are no declaration');
     assert.deepEqual(documentLines('192.0.2.10 与 2026.05.10 与 10.6.4.17'), [], 'addresses, dates and build numbers are no lines');
   });
 });
