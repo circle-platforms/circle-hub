@@ -219,3 +219,25 @@ test('local tools refuse CommonJS files and createRequire package loads', async 
     assert.equal(hit.fix, fix);
   }
 });
+
+test('a reviewed browser module exempts only its exact path and bytes from static dynamic-import checks',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const bytes=await readFile(new URL('../../../packs/product/apv/functions/adoc/vendor/core.mjs',import.meta.url));
+ const path='functions/adoc/vendor/core.mjs';const entry={module:path,export:'load',file:'product.json',field:'/producers/0/function'};
+ assert.deepEqual(await scanFunctions(new Map([[path,bytes]]),[entry]),[]);
+ const changed=Buffer.concat([bytes,Buffer.from('\n')]);
+ assert.ok((await scanFunctions(new Map([[path,changed]]),[entry])).some(p=>p.rule==='functions.import_builtin'));
+ const renamed='functions/vendor/renamed.mjs';
+ assert.ok((await scanFunctions(new Map([[renamed,bytes]]),[{...entry,module:renamed}])).some(p=>p.rule==='functions.import_builtin'));
+});
+test('executing denied dynamic imports is still refused even at the reviewed relative path',async()=>{
+ const path='functions/adoc/vendor/core.mjs',packDir=join(temp.path,'reviewed-runtime');
+ await mkdir(join(packDir,'functions/adoc/vendor'),{recursive:true});
+ for(const spec of ['node:fs','node:fs/promises','node:async_hooks']){
+  const source=`export default async function(){return import(${JSON.stringify(spec)});}`;
+  await writeFile(join(packDir,path),source);
+  const scanned=await scanFunctions(new Map([[path,encode(source)]]),[{module:path,export:'default',file:'product.json',field:'/producers/0/function'}]);
+  assert.ok(scanned.some(p=>p.rule==='functions.import_builtin'));
+  await assert.rejects(callPackFunction({packDir,module:path},null,{}, {requireOsIsolation:false}),e=>e instanceof SandboxError&&e.code==='IMPORT_NOT_DECLARED');
+ }
+});
