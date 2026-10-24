@@ -134,6 +134,7 @@ before(async () => {
   const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: site.site(), requireOsIsolation: true });
   const resource = await hub.addResource({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${hub.stubs!.buildSite.origin}${site.SITE_BASE}` }, settings: { index_page: 'index.html' } });
   assert.ok(resource.id);
+  for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成台架验收显式部署设置');
   const synced = await hub.knowledgeSync(product.line, { options: { case_index: false } }); assert.equal(synced.error, null, JSON.stringify(synced));
   bed = { hub, product, site, reviewer: await hub.createUser('合成运行用户') };
   await bed.hub.assignPack(bed.reviewer.principal, 'test-bed'); await bed.hub.assignPack(bed.reviewer.principal, 'case-compile');

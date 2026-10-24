@@ -2,6 +2,68 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "unversioned": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "composition": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "build": {
+              "type": "null"
+            },
+            "skipped_sources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "documents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cut_entries": {
+                  "description": "product-wide entries omitted by the links first-page payload budget; repeated unchanged on later pages",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "entries",
+                "documents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "root",
+            "composition",
+            "build",
+            "skipped_sources",
+            "totals"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "schema": {
       "type": "string",
       "const": "facet-view@1"
@@ -74,6 +136,15 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "unversioned_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unversioned_root": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
@@ -93,6 +164,16 @@
     "totals": {
       "type": "object",
       "properties": {
+        "unversioned_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unversioned_documents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "empty": {
           "type": "object",
           "propertyNames": {
@@ -119,7 +200,7 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991,
-      "description": "listed sources the producers could not use in this root: the counts do not cover what they would have given"
+      "description": "listed sources the producers could not use across the build root and its locked product-wide root together: the counts do not cover their possible entries"
     },
     "notes": {
       "type": "array",

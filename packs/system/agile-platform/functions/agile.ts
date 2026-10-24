@@ -2,7 +2,7 @@
 // with HTTP 200 and an envelope {code, msg, data}; the Hub logs in (the profile's login rule) and checks the envelope. Reads:
 // - agile:tree:<root id>: the whole subtree of a root ({label, id, cases, children} nodes) and the root's title, found in the
 //   paged root listing (10 per page with a total; pages past the end repeat page 1, so only the announced pages are read).
-// - agile:tree:roots: every configured root (settings.roots, the first MAX_ROOTS of them) at once, one subtree request per
+// - agile:tree:roots: every configured root (all settings.roots within the Hub read budgets) at once, one subtree request per
 //   root and, for a root whose subtree answer does not carry its own node, the listing pages that name it, at most
 //   ROOTS_IN_FLIGHT requests per round (the connectors send the requests of a round together, within the resource's own
 //   limits). Content: {roots: [{id, title}], documents: [{id, title, ancestors, root, listed}], repeated, complete,
@@ -13,7 +13,7 @@
 // - agile:mindmap:<document id>: the document (data is the KityMinder JSON encoded once more as a string). Artifacts: the
 //   original answer, content (the inner KityMinder JSON, application/json) and meta {id, title, ancestors, root}: the title
 //   and the labels of the folders above the document from the root down, found in the trees of the configured roots
-//   (settings.roots, the first MAX_ROOTS of them), read as nested reads, which the Hub caches; a document in none of them
+//   (all settings.roots within the Hub read budgets), read as nested reads, which the Hub caches; a document in none of them
 //   refreshes the cached trees once. A document no tree places while a root was not read is incomplete (meta unknown).
 // - agile:case:<document id>: the document alone, for the case index: the case-data request only, no nested read. Content:
 //   the KityMinder JSON with one more wrapper member, `agile: {id}` (kityminder@1 keeps wrapper members in model.meta), so
@@ -21,20 +21,20 @@
 // - agile:search:<terms joined by +>[+!<document id>...]: the documents of the configured roots whose titles contain the most
 //   terms (the best five), with an outline of the best three, leaving out the documents a `!` part names (the reviewed
 //   document itself); a hint for similar test lists, never a ground for product behaviour. Incomplete when a root was not read.
-// The connectors allow MAX_NESTED_READS (20) nested reads over all rounds of a read: round 1 reads at most MAX_ROOTS (10)
-// trees and the refresh at most those again.
+// Mindmap/search use one aggregate nested tree read and at most one refresh, independent of configured-root count.
 import { createHash } from 'node:crypto';
 
 type Planned = { key: string; route: string; body?: unknown };
 type NestedAsk = { external: string; refresh?: boolean };
-type PlanOutput = { requests: Planned[]; reads?: NestedAsk[]; done: boolean; original?: string };
+type PlanOutput = { concurrency?:number; requests: Planned[]; reads?: NestedAsk[]; done: boolean; original?: string };
 type Response = { ok?: boolean; json?: unknown; sha256?: string | null };
-type Nested = { ok?: boolean; cached?: boolean; content?: unknown; meta?: unknown };
+type Nested = { ok?: boolean; cached?: boolean; content?: unknown; meta?: unknown;coverage?:{complete:boolean} };
 type TreeNode = { label?: unknown; title?: unknown; name?: unknown; id?: unknown; cases?: unknown; children?: unknown };
 
 const PAGE_SIZE = 10;
 const MAX_PAGES = 50;
 /** Roots read by one read: half the connectors' nested reads (20 over all rounds), so a refresh of every one still fits. */
+/** @deprecated Historical cap, retained as a source API constant; configured roots are no longer sliced. */
 export const MAX_ROOTS = 10;
 /** Documents one search key may leave out. */
 const MAX_EXCLUDED = 8;
@@ -82,24 +82,25 @@ export function rootsOf(settings: Record<string, unknown>): string[] {
   return out;
 }
 
-/** The configured roots a read reads (the first MAX_ROOTS) and the ones beyond that limit. */
+/** All configured roots; the Hub request and byte budgets decide whether this read can complete. */
 function readRootsOf(settings: Record<string, unknown>): { read: string[]; beyond: string[] } {
   const all = rootsOf(settings);
-  return { read: all.slice(0, MAX_ROOTS), beyond: all.slice(MAX_ROOTS) };
+  return { read: all, beyond: [] };
 }
 
 const treeId = (root: string): string => `agile:tree:${root}`;
 
 /** The roots whose trees are not at hand: read but not ok, and configured beyond the limit. */
 function unreadRoots(reads: Record<string, Nested>, settings: Record<string, unknown>): string[] {
+  const aggregate=reads[treeId(ROOTS_KEY)];
+  if(aggregate!==undefined){const content=isRecord(aggregate.content)?aggregate.content:{};if(aggregate.ok!==true || aggregate.coverage?.complete===false || content.complete===false)return rootsOf(settings);return Array.isArray(content.unread)?content.unread.filter((v):v is string=>typeof v==='string'):[];}
   const { read, beyond } = readRootsOf(settings);
   return [...read.filter((root) => reads[treeId(root)]?.ok !== true), ...beyond];
 }
 
-function unreadNote(unread: readonly string[], settings: Record<string, unknown>): string {
-  const beyond = readRootsOf(settings).beyond.length;
-  const named = unread.slice(0, 12).join('、');
-  return `${unread.length} 个配置的根没有读到（${named}${unread.length > 12 ? ' 等' : ''}）${beyond > 0 ? `，其中 ${beyond} 个超出一次读取最多 ${MAX_ROOTS} 个根的上限` : ''}`;
+function unreadNote(unread: readonly string[], _settings: Record<string, unknown>): string {
+  const named=unread.slice(0,12).join('、');
+  return `${unread.length} 个配置的根未确认完整读到（${named}${unread.length>12?' 等':''}）；恢复失败读取后重读范围，不能按完整范围判定`;
 }
 
 function labelOf(node: TreeNode): string | null {
@@ -253,7 +254,7 @@ export function documentsOf(tree: Tree, limit = 100_000): Located[] {
 
 // ---------------------------------------------------------------- agile:tree:roots
 
-/** Requests one round of the roots read sends at most. */
+/** Historical planning hint retained for source consumers; physical concurrency is enforced by the resource limiter. */
 export const ROOTS_IN_FLIGHT = 4;
 /** Planner rounds the connectors run (contracts MAX_READ_ROUNDS; a test keeps them equal). */
 export const READ_ROUNDS = 5;
@@ -296,7 +297,7 @@ function listedTitles(responses: Record<string, Response>): Map<string, string> 
 /**
  * Round 1 asks for the first listing page and the first subtrees; later rounds for the subtrees left and, while a root whose
  * subtree came back carries no title (neither its own node in the answer nor a listing page read so far names it), the
- * listing pages the total announces; never more than ROOTS_IN_FLIGHT at once. A round that still sends subtrees is not the
+ * listing pages the total announces; with physical concurrency capped by ROOTS_IN_FLIGHT. A round that still sends subtrees is not the
  * last: their answers may need pages. The first listing page is the original.
  */
 export function rootsPlan(input: unknown): PlanOutput {
@@ -315,11 +316,11 @@ export function rootsPlan(input: unknown): PlanOutput {
       for (let page = 2; page <= pages; page++) if (!Object.hasOwn(responses, pageKey(page))) wanted.push({ key: pageKey(page), route: 'roots', body: { page } });
     }
   }
-  const requests = wanted.slice(0, ROOTS_IN_FLIGHT);
+  const requests = wanted;
   const sendsSubtrees = requests.some((request) => request.route === 'subtree');
   // The last round stops whatever is left.
-  const done = roots.length === 0 || round >= READ_ROUNDS || (round > 1 && !sendsSubtrees && wanted.length <= ROOTS_IN_FLIGHT);
-  return { requests, done, original: pageKey(1) };
+  const done = roots.length === 0 || (round > 1 && !sendsSubtrees);
+  return { concurrency:ROOTS_IN_FLIGHT, requests, done, original: pageKey(1) };
 }
 
 export type TreeDocument = { id: string; title: string | null; ancestors: string[]; root: string; listed: boolean };
@@ -393,15 +394,25 @@ export function rootsProject(input: unknown): unknown {
   };
 }
 
+/** The aggregate has the same configured-root order and document order as the individual tree views. */
+function locatedDocuments(reads:Record<string,Nested>,roots:readonly string[]):Located[] {
+  const aggregate=reads[treeId(ROOTS_KEY)];
+  if(aggregate!==undefined){
+    const content=aggregate.ok===true && isRecord(aggregate.content)?aggregate.content:null;
+    if(content===null || !Array.isArray(content.documents))return [];
+    const names=Array.isArray(content.roots)?content.roots:[];
+    return content.documents.flatMap(doc=>{
+      if(!isRecord(doc) || typeof doc.id!=='string' || typeof doc.root!=='string' || !roots.includes(doc.root))return [];
+      const root=names.find(value=>isRecord(value) && value.id===doc.root);
+      return [{id:doc.id,title:typeof doc.title==='string'?doc.title:null,ancestors:Array.isArray(doc.ancestors)?doc.ancestors.filter((v):v is string=>typeof v==='string'):[],root:{id:doc.root,title:isRecord(root) && typeof root.title==='string'?root.title:null}}];
+    });
+  }
+  return roots.flatMap(root=>{const tree=treeOf(reads[treeId(root)]);return tree===null?[]:documentsOf(tree);});
+}
+
 /** The document in the first configured tree that holds it, or null. */
 export function locate(reads: Record<string, Nested>, roots: readonly string[], id: string): Located | null {
-  for (const root of roots) {
-    const tree = treeOf(reads[treeId(root)]);
-    if (tree === null) continue;
-    const found = documentsOf(tree).find((doc) => doc.id === id);
-    if (found !== undefined) return found;
-  }
-  return null;
+  return locatedDocuments(reads,roots).find(doc=>doc.id===id)??null;
 }
 
 // ---------------------------------------------------------------- agile:mindmap:<document>
@@ -410,9 +421,9 @@ export function mindmapPlan(input: unknown): PlanOutput {
   const { round, key, settings, reads } = partsOf(input);
   if (!ID.test(key)) return { requests: [], done: true };
   const roots = readRootsOf(settings).read;
-  if (round === 1) return { requests: [{ key: 'case', route: 'case-data', body: { id: bodyId(key) } }], reads: roots.map((root) => ({ external: treeId(root) })), done: roots.length === 0, original: 'case' };
+  if (round === 1) return { requests: [{ key: 'case', route: 'case-data', body: { id: bodyId(key) } }], reads: roots.length?[{external:treeId(ROOTS_KEY)}]:[], done: roots.length === 0, original: 'case' };
   // A document added after the trees were cached is in none of them: the cached trees are read again once.
-  const stale = roots.filter((root) => reads[treeId(root)]?.cached === true);
+  const stale = reads[treeId(ROOTS_KEY)]?.cached===true?[ROOTS_KEY]:roots.filter((root)=>reads[treeId(root)]?.cached===true);
   if (locate(reads, roots, key) !== null || stale.length === 0) return { requests: [], done: true };
   return { requests: [], reads: stale.map((root) => ({ external: treeId(root), refresh: true })), done: true };
 }
@@ -436,7 +447,7 @@ export function mindmapProject(input: unknown): unknown {
       ? {}
       : unread.length > 0
         ? { complete: false, note: `没有在读到的根里找到这份文档，${unreadNote(unread, settings)}：标题和上级目录未知` }
-        : { note: '配置的根里没有这份文档：标题和上级目录未知' }),
+        : { note: '这份文档在本产品配置的根之外；已读完配置根，后续由资源管理员核对归属及 roots 配置' }),
   };
 }
 
@@ -559,15 +570,12 @@ export type Ranked = Located & { matched: string[] };
 export function rankDocuments(reads: Record<string, Nested>, roots: readonly string[], terms: readonly string[], exclude: readonly string[] = []): Ranked[] {
   const scored: Array<Ranked & { order: number }> = [];
   let order = 0;
-  for (const root of roots) {
-    const tree = treeOf(reads[treeId(root)]);
-    if (tree === null) continue;
-    for (const doc of documentsOf(tree)) {
-      if (exclude.includes(doc.id)) continue;
-      const matched = doc.title === null ? [] : terms.filter((term) => containsTerm(doc.title as string, term));
-      if (matched.length > 0) scored.push({ ...doc, matched, order: order++ });
-    }
+  for (const doc of locatedDocuments(reads,roots)) {
+    if(exclude.includes(doc.id))continue;
+    const matched=doc.title===null?[]:terms.filter(term=>containsTerm(doc.title as string,term));
+    if(matched.length)scored.push({...doc,matched,order:order++});
   }
+
   return scored
     .sort((a, b) => b.matched.length - a.matched.length || a.order - b.order)
     .slice(0, SEARCH_LIMIT)
@@ -580,7 +588,7 @@ export function searchPlan(input: unknown): PlanOutput {
   const { terms, exclude } = searchKeyOf(key);
   if (terms.length === 0 || roots.length === 0) return { requests: [], done: true };
   // The first root listing page is the answer as received; the result is derived from the cached trees and the outlines.
-  if (round === 1) return { requests: [{ key: 'listing', route: 'roots', body: { page: 1 } }], reads: roots.map((root) => ({ external: treeId(root) })), done: false, original: 'listing' };
+  if (round === 1) return { requests: [{ key: 'listing', route: 'roots', body: { page: 1 } }], reads: [{external:treeId(ROOTS_KEY)}], done: false, original: 'listing' };
   const best = rankDocuments(reads, roots, terms, exclude).slice(0, OUTLINE_LIMIT);
   return { requests: best.map((doc, k) => ({ key: `case-${k + 1}`, route: 'case-data', body: { id: bodyId(doc.id) } })), done: true };
 }

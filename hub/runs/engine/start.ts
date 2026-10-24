@@ -20,7 +20,7 @@ import { parseReference, recReference, resolveReference } from '../../refs/api.t
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
 import { evaluate, type Evaluation } from './evaluate.ts';
-import { factClaim, rootDigest, strongestRole } from './claims.ts';
+import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
@@ -465,7 +465,7 @@ async function startFresh(
   const runId = newId('run', at.getTime());
   const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables);
+  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
@@ -494,7 +494,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
-  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables);
+  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
@@ -517,6 +517,7 @@ async function startFresh(
         workflow,
         packDigest: workflow.pack.digest,
         root: target.root?.root ?? null,
+        unversionedRoot: target.unversionedRoot?.root ?? null,
         boundShas,
         boundRecords,
         subjectShas: bound.filter((b) => b.slot === workflow.workflow.subject).map((b) => b.sha256),
@@ -553,6 +554,7 @@ async function startFresh(
     ...(target.buildName !== null ? { build: target.buildName } : {}),
     target_basis: target.basis,
     ...(target.root !== null ? { root: target.root.root } : {}),
+    ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
     requirements: workflow.requirements.map(requirementSummary),
     items,
@@ -673,6 +675,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
     }
     // Projection notes are advisory cross-item facts, never evidence satisfying a requirement.
     evaluation.result.cross_item.push({...factClaim({
+      coverage:sourceCoverage(run.sources,grounds),
       outcome:{verdict:'support',statement:note.data.message,grounds,...(note.data.data === undefined ? {} : {data:note.data.data})},
       rule:`${workflow.pack.id}.projection@${workflow.pack.version}`,judges:strongestRole(roles) ?? 'subject',
       overClaims:false,discrimination:false,bound:[runDigest, workflow.pack.digest, ...(run.root === undefined ? [] : [run.root]), ...grounds.flatMap(ref => {const digest = rootDigest(ref); return digest === null ? [] : [digest];})],

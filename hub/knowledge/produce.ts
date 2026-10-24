@@ -1,3 +1,5 @@
+import {resolveProductVariables,productionVariableUses} from './variables.ts';
+import type {VariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
 // context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
 // batches, memoized), validate its output, verify every entry (kind, storable text, fragments, path), place what code could
@@ -49,6 +51,7 @@ import {
   type CallTotals,
   type ElementPeek,
   type ListCallContext,
+  callSingleProducer,
   type ListState,
 } from './lists.ts';
 import { MAX_DESCRIPTION, type PlacementChild, type PlacementOutcome, type PlacementSpan } from './placement.ts';
@@ -79,8 +82,10 @@ const MAX_REASON_TEXT = 2000;
 const ENTRY_KINDS_TEXT = ENTRY_KIND.map((kind) => `${kind} ${labelOf('entry_kind', kind)}`).join('、');
 
 export interface ProduceInput {
+  variables?:VariableUse[];
   product: ProductHandle;
-  build: KnownBuild;
+  build: KnownBuild | null;
+  scope?: BuildInfo['sources'];
   /** The admin whose context reads the sources; default the service's admin. */
   by?: Principal | null;
   /** The sync this production belongs to. */
@@ -96,7 +101,7 @@ export interface ProduceInput {
 
 export interface ProduceResult {
   ok: boolean;
-  build: string;
+  build: string | null;
   root: string | null;
   /** Digest of the tree_root record. */
   composition: string | null;
@@ -145,20 +150,20 @@ export interface PlannedSource {
 }
 
 /** The declared sources of every producer for one build. */
-export function plannedSources(product: ProductHandle, build: BuildInfo): PlannedSource[] {
+export function plannedSources(product: ProductHandle, build: BuildInfo | null, scope: BuildInfo['sources'] = {}): PlannedSource[] {
   const out: PlannedSource[] = [];
-  const values: Partial<Record<TemplateVariable, string>> = { product: product.product.id, line: build.line, build: build.name, base: build.base, family: build.family };
-  if (build.platform !== null) values.platform = build.platform;
-  for (const producer of product.product.producers) {
+  const values: Partial<Record<TemplateVariable, string>> = { product: product.product.id, ...(build === null ? {} : { line: build.line, build: build.name, base: build.base, family: build.family }) };
+  if (build !== null && build.platform !== null) values.platform = build.platform;
+  for (const producer of product.product.producers.filter(p => (p.unversioned === true) === (build === null))) {
     for (const [slot, source] of Object.entries(producer.inputs)) {
       const optional = source.optional === true;
       if ('source' in source) {
-        const held = Object.hasOwn(build.sources, source.source) ? build.sources[source.source] : null;
-        const basis: CompositionBasis = build.released_at !== null ? 'release_record' : 'declared';
+        const held = Object.hasOwn(build?.sources ?? scope, source.source) ? (build?.sources ?? scope)[source.source] : null;
+        const basis: CompositionBasis = build !== null && build.released_at !== null ? 'release_record' : 'declared';
         if (source.many === true) {
           // A role holding one id is a list of one.
           const list = held === null ? null : typeof held === 'string' ? [held] : [...held];
-          out.push({ producer: producer.id, slot, external: null, list, many: true, batch: source.batch ?? DEFAULT_BATCH, optional, basis, problem: list === null ? `构建 ${build.name} 没有 ${source.source} 来源` : null });
+          out.push({ producer: producer.id, slot, external: null, list, many: true, batch: source.batch ?? DEFAULT_BATCH, optional, basis, problem: list === null ? `构建 ${build?.name ?? '不分版本'} 没有 ${source.source} 来源` : null });
           continue;
         }
         const external = typeof held === 'string' ? held : null;
@@ -171,7 +176,7 @@ export function plannedSources(product: ProductHandle, build: BuildInfo): Planne
           batch: 0,
           optional,
           basis,
-          problem: external === null ? (held === null ? `构建 ${build.name} 没有 ${source.source} 来源` : `构建 ${build.name} 的 ${source.source} 来源是一个列表，生产器的这个输入没有声明 many`) : null,
+          problem: external === null ? (held === null ? `构建 ${build?.name ?? '不分版本'} 没有 ${source.source} 来源` : `构建 ${build?.name ?? '不分版本'} 的 ${source.source} 来源是一个列表，生产器的这个输入没有声明 many`) : null,
         });
       } else {
         const base = { producer: producer.id, slot, list: null, many: false, batch: 0, optional, basis: 'declared' as const };
@@ -413,7 +418,7 @@ async function keepLists(context: KnowledgeContext, lists: readonly ListedIds[],
 
 export async function produceTree(context: KnowledgeContext, input: ProduceInput): Promise<ProduceResult> {
   const startedAt = context.now().toISOString();
-  const { product } = input;
+  let { product } = input;
   const build = input.build;
   const by = await requireAdmin(context, input.by, '生产知识树');
   const pack = { id: product.id, version: product.version, digest: product.digest };
@@ -428,7 +433,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   let listLoader: ListLoader | null = null;
   const result = (partial: Partial<ProduceResult>): ProduceResult => ({
     ok: false,
-    build: build.name,
+    build: build?.name ?? null,
     root: null,
     composition: null,
     action: null,
@@ -450,23 +455,26 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     ...partial,
   });
 
+  if(input.variables===undefined){
+    const resolved=await resolveProductVariables(product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
+    if('problems' in resolved)return result({reason:resolved.problems.join('；')});
+    product=resolved.product;
+    input={...input,product,variables:resolved.uses,loader:input.loader??new SourceLoader({external:context.external,artifacts:context.records.artifacts,parsers:context.parsers,variables:resolved.snapshot},by,'knowledge production')};
+  }
+  input={...input,variables:productionVariableUses(product,build===null,input.variables??[])};
+  product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null)) } };
+  product.product.catalogs = product.product.catalogs.filter(catalog => catalog.producer === undefined || product.product.producers.some(producer => producer.id === catalog.producer));
   // The build's own identity goes into every record of the production, the failure included: it is checked first.
-  const parsedInfo = BuildInfo.safeParse({
-    name: build.name,
-    family: build.family,
-    line: build.line,
-    base: build.base,
-    platform: build.platform,
-    built_at: build.built_at,
-    released_at: build.released_at,
-    sources: build.sources,
-  });
-  if (!parsedInfo.success) return result({ reason: '构建信息不符合 build-info@1，没有生产，也没有记录' });
-  const info = parsedInfo.data;
-  const unrecordable = buildProblem(lineProduct, info);
-  if (unrecordable !== null) return result({ reason: `${unrecordable}；没有生产，也没有记录` });
-  // Recorded with list roles by reference; the ids are kept once as objects.
-  const recorded = recordedOf(info);
+  // infoOf deliberately strips the KnownBuild root before validation.
+  let info: BuildInfo | null = null;
+  if (build !== null) {
+    try { info = infoOf(build); } catch { return result({ reason: '构建信息不符合 build-info@1，没有生产，也没有记录' }); }
+  }
+  if (info !== null) {
+    const unrecordable = buildProblem(lineProduct, info);
+    if (unrecordable !== null) return result({ reason: `${unrecordable}；没有生产，也没有记录` });
+  }
+  const recorded = info === null ? { build: null, lists: [] } : recordedOf(info);
   let listsKept = false;
   const keep = async (): Promise<void> => {
     if (listsKept) return;
@@ -475,7 +483,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   };
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
-  const handed: KnownBuild = { ...info, root: null };
+  const handed = info === null ? null : { ...info, root: null };
   const handedDigest = buildDigest(handed);
 
   const fail = async (reason: string): Promise<ProduceResult> => {
@@ -492,11 +500,11 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const configured=product.product.links===undefined?undefined:LinkDeclaration.array().max(32).safeParse(product.product.links);
   if(configured&&!configured.success)return fail('产品链接声明无效，修正声明后重新生产');
   const links=configured?.success?configured.data:[];
-  if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
+  if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!input.product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
   if(links&&new Set(links.map(rule=>rule.id)).size!==links.length)return fail('产品链接声明编号重复，修正后重新生产');
 
-  if (build.base !== build.name) return fail(`构建 ${build.name} 是 ${build.base} 的别名，没有自己的树`);
-  if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
+  if (build !== null && build.base !== build.name) return fail(`构建 ${build?.name ?? '不分版本'} 是 ${build.base} 的别名，没有自己的树`);
+  if (product.product.producers.length === 0) return fail(input.product.product.producers.length === 0 ? '产品包没有声明生产器' : build === null ? '产品包没有为不分版本范围声明生产器；请产品包作者声明 unversioned 生产器后重试同步' : '产品包没有为构建范围声明生产器；请产品包作者声明构建生产器后重试同步');
   const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
   const cap = context.limits.maxBuildBytes;
   listLoader = new ListLoader(context, loader, {
@@ -504,7 +512,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     concurrency: input.readConcurrency ?? context.limits.listReadConcurrency,
   });
 
-  const planned = plannedSources(product, info);
+  const planned = plannedSources(product, info, input.scope);
   for (const producer of product.product.producers) {
     const many = planned.filter((s) => s.producer === producer.id && s.many);
     if (many.length > 1) return fail(`生产器 ${producer.id} 声明了 ${many.length} 个列表输入（${many.map((s) => s.slot).join('、')}），一个生产器最多一个`);
@@ -604,8 +612,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     const slots = slotsOf.get(producer.id) ?? new Map<string, ParsedSource | null>();
     const list = planned.find((s) => s.producer === producer.id && s.many);
     if (list === undefined) {
-      totals.made++;
-      const output = await runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });
+      const output = product.product.variables?.length
+        ? await callSingleProducer(context,product,producer,handed,slots,totals)
+        : await (async()=>{totals.made++;return runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });})();
       if (!output.ok) return fail(output.reason);
       take(producer.id, verifyOutput(context, producer.id, output.value, singleSources(slots), loader, pathCache), { entries: 0, spans: 0 });
       continue;
@@ -657,7 +666,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const model = context.placer.model;
   if (spans.length > 0 && model !== null) {
     const threshold = await context.calibration.threshold(PLACEMENT_CHAIN, model);
-    outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build.name }, onProblem: (text) => problems.warn(`归类：${text}`) });
+    outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build?.name ?? '未声明' }, onProblem: (text) => problems.warn(`归类：${text}`) });
     // Recorded so that a later sync places again when the judge failed or the chain's calibration changed.
     placement = {
       model,
@@ -824,8 +833,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         unplacedRows,
         parts: parted ? { composition, unplaced: unplacedRows, sources: listRows, entryBytes } : null,
         body: (parts) => ({
+          variables:input.variables??[],
           product: lineProduct,
-          version: { line: info.line, build: info.name, family: info.family, platform: info.platform },
+          version: info === null ? null : { line: info.line, build: info.name, family: info.family, platform: info.platform },
           build: recorded.build,
           root: root.digest,
           producer: {
@@ -857,10 +867,12 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
             tx,
           );
           // A build produced without a build record (not by a sync) gets one, so that builds are known from their records alone.
+          if (info !== null) {
           const named = await context.store.buildsNamed(lineProduct, info.name, tx);
           if (!named.some((b) => b.body.build.name === info.name)) {
             const roles = listRoles(info);
             await context.store.putBuild({ product: lineProduct, build: withoutLists(info), ...(roles.length > 0 ? { lists: roles } : {}), pack, plan: null, sync }, tx);
+          }
           }
           return action;
         },
@@ -888,7 +900,7 @@ interface ListInput {
   product: ProductHandle;
   producer: Producer;
   /** The build as the function receives it, and its digest (part of every memo key). */
-  build: KnownBuild;
+  build: KnownBuild | null;
   buildDigest: string;
   slots: ReadonlyMap<string, ParsedSource | null>;
   list: PlannedSource;
@@ -1283,7 +1295,7 @@ interface ProduceActionInput {
   product: string;
   pack: { id: string; version: string; digest: string };
   /** The build as listed, list roles by reference. */
-  build: RecordedBuild;
+  build: RecordedBuild | null;
   root: string | null;
   composition: string | null;
   sources: ProduceDetail['sources'];
@@ -1326,7 +1338,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     detail: detail as unknown as Record<string, unknown>,
   };
   const index = [
-    { key: INDEX.produce, value: buildKey(input.product, input.build.name) },
+    { key: input.build === null ? INDEX.produceScope : INDEX.produce, value: input.build === null ? input.product : buildKey(input.product, input.build.name) },
     { key: INDEX.produceProduct, value: input.product },
     ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root }]),
     ...(input.sync === null ? [] : [{ key: INDEX.sync, value: input.sync }]),

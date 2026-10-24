@@ -95,7 +95,7 @@ describe('producing a root', () => {
 
     const infos = await w.knowledge.rootInfo(root);
     assert.equal(infos.length, 1);
-    assert.equal(infos[0].build.name, 'Rel_ACME_1_2_15');
+    assert.equal(infos[0].build!.name, 'Rel_ACME_1_2_15');
     assert.equal(infos[0].composition, result.composition);
     const action = await w.kit.store.get(result.action as string);
     assert.equal((action?.body as { action: string; result: string }).action, 'generate');

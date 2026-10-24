@@ -1,6 +1,6 @@
 // What every part of the knowledge service shares: the records it writes, the ports it consumes, the clock and the limits.
 import type { ExternalReaderPort, PacksPort } from '../ports.ts';
-import type { Artifacts, ObjectStore, Pointers, Principal, Principals, RecordStore, User } from '../records/api.ts';
+import type { Artifacts, ObjectStore, Pointers, Principal, Principals, RecordStore, RecordVariables, User } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { SandboxLimits } from '../rules/api.ts';
 import type { CalibrationStore } from './calibration.ts';
@@ -10,6 +10,7 @@ import type { KnowledgeStore } from './store.ts';
 
 /** The parts of the records kit the knowledge package uses. */
 export interface KnowledgeRecords {
+  variables?: Pick<RecordVariables,'snapshot'|'valueAt'|'history'>;
   store: RecordStore;
   artifacts: Artifacts;
   pointers: Pointers;
@@ -107,6 +108,7 @@ export class WriteQueue {
 }
 
 export interface KnowledgeContext {
+  additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

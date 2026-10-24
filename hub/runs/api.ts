@@ -68,3 +68,4 @@ export {
 export type { FileContent, PackDescription, WrittenManifest, WrittenPack } from './packs/testing/builder.ts';
 
 export {recheckEffectChecks} from './engine/recheck-effect.ts';
+export { packSchema } from './engine/slots.ts';

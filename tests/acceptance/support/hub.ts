@@ -111,6 +111,8 @@ export async function openBed(options: BedOptions): Promise<Bed> {
     });
     const storeResource = await hub.addResource({ system_pack: SYSTEM.store, name: '合成文档库', environment: 'test', origins: { 'manual-store': stubs.webdav.origin } });
 
+    for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成验收显式部署设置');
+
     const syncs: Bed['syncs'] = { two: null, one: null };
     if (options.syncTwoName !== false) {
       const sync = typeof options.syncTwoName === 'object' ? options.syncTwoName : {};

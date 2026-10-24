@@ -14,6 +14,38 @@
       "type": "string",
       "minLength": 1
     },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "schema": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "default": {}
+        },
+        "required": [
+          "name",
+          "description",
+          "schema",
+          "default"
+        ],
+        "additionalProperties": false
+      }
+    },
     "names": {
       "minItems": 1,
       "type": "array",
@@ -234,6 +266,10 @@
       "items": {
         "type": "object",
         "properties": {
+          "unversioned": {
+            "description": "only produce the product-wide root; absent or false produces build roots",
+            "type": "boolean"
+          },
           "id": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_-]*$"

@@ -258,3 +258,23 @@ export function trackedFileText(path: string, onBytes?: (bytes: Uint8Array) => v
   onBytes?.(bytes);
   return bytes.toString('utf8').replaceAll('\0', '');
 }
+
+const RELEASE_LINE_NUMBER = '10[._][0-5](?![0-9])(?:[._][0-9]+)*';
+const RELEASE_CONTEXT = new RegExp([
+  '(?:版本线|版本分支|(?:version|release)\\s+line)\\s*[:：=]?\\s*[`\'"（(]?',
+  '\\b(?:min_?line|version_?line|release_?line|build_?line|line)[`\'"]?\\s*(?::|=|===|==)\\s*[`\'"]?',
+  '\\b(?:min_?line|version_?line|release_?line|build_?line|line)\\s*:\\s*[A-Za-z_$][A-Za-z0-9_$ |\\[\\]]{0,100}=\\s*[`\'"]?',
+  '[`\'"][0-9]{3}[:：]',
+  '--(?:min-line|line)\\s+[`\'"]?',
+  '\\b(?:lineKey|sameLine|compareLines|caseDocumentsFor|listedFor)\\s*\\(\\s*[`\'"]',
+].map(context=>'(?:'+context+')'+RELEASE_LINE_NUMBER).join('|'),'i');
+const RELEASE_BUILD = new RegExp('(?:Rel|Beta)[_.][A-Za-z][A-Za-z0-9_-]*[_.]'+RELEASE_LINE_NUMBER,'i');
+const lockFile=(file:string):boolean=>/(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|[^/]+\.lock|bun\.lockb)$/.test(file);
+
+/** Release-line syntax in a release context, never an arbitrary dotted number; diagnostics disclose locations only. */
+export function versionLineProblems(file:string,text:string,byteDigest?:string):string[]{
+  if(archived(file)||lockFile(file))return [];
+  const pinned=VENDORED_SYNTHETIC_PATHS[file];
+  if(pinned&&byteDigest===pinned.sha256&&createHash('sha256').update(text).digest('hex')===pinned.sha256)return [];
+  return text.split('\n').flatMap((line,index)=>RELEASE_CONTEXT.test(line)||RELEASE_BUILD.test(line)?[`${file}:${index+1}: protected release line`]:[]);
+}

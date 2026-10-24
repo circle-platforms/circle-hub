@@ -5809,6 +5809,11 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
+        "unversioned_root": {
+          "description": "product-wide knowledge root locked for this run",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "root": {
           "description": "knowledge root digest locked at start_run",
           "type": "string",

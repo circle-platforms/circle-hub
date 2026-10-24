@@ -117,26 +117,26 @@ describe('the read functions', () => {
 
   test('the mind-map plan reads the document and the configured trees, then refreshes cached trees once when the document is in none', () => {
     const first = mindmapPlan({ round: 1, external: { key: DOCUMENTS.review }, settings: { roots: [ROOTS.second] } });
-    assert.deepEqual(first.reads, [{ external: `agile:tree:${ROOTS.second}` }]);
+    assert.deepEqual(first.reads, [{ external: 'agile:tree:roots' }]);
     const tree = { ok: true, cached: true, content: { root: { id: ROOTS.second, title: 'COMET' }, children: agileTrees()[ROOTS.second] } };
     assert.deepEqual(mindmapPlan({ round: 2, external: { key: DOCUMENTS.review }, settings: { roots: [ROOTS.second] }, reads: { [`agile:tree:${ROOTS.second}`]: tree } }), { requests: [], done: true });
     assert.deepEqual(mindmapPlan({ round: 2, external: { key: 'nowhere' }, settings: { roots: [ROOTS.second] }, reads: { [`agile:tree:${ROOTS.second}`]: tree } }).reads, [{ external: `agile:tree:${ROOTS.second}`, refresh: true }]);
   });
 
-  test('at most ten configured roots are read, so the reads of every round stay within the nested-read limit', () => {
+  test('one aggregate tree read covers all configured roots within the nested-read limit', () => {
     const roots = Array.from({ length: 25 }, (_, k) => String(7000 + k));
-    assert.equal(MAX_ROOTS * 2 <= MAX_NESTED_READS, true, 'a refresh of every root read fits too');
+    assert.equal(2 <= MAX_NESTED_READS, true, 'one aggregate and its refresh fit the limit');
     const first = mindmapPlan({ round: 1, external: { key: DOCUMENTS.review }, settings: { roots } });
     assert.ok(ReadPlanOutput.safeParse(first).success, 'the plan of round 1 is a valid read plan');
-    assert.deepEqual(first.reads?.map((r) => r.external), roots.slice(0, MAX_ROOTS).map((r) => `agile:tree:${r}`));
-    const cached = Object.fromEntries(roots.slice(0, MAX_ROOTS).map((r) => [`agile:tree:${r}`, { ok: true, cached: true, content: { root: { id: r, title: null }, children: [] } }]));
+    assert.deepEqual(first.reads,[{external:'agile:tree:roots'}]);
+    const cached = {'agile:tree:roots':{ok:true,cached:true,content:{roots:roots.map(id=>({id,title:id})),documents:[],complete:true}}};
     const second = mindmapPlan({ round: 2, external: { key: DOCUMENTS.review }, settings: { roots }, reads: cached });
     assert.ok(ReadPlanOutput.safeParse(second).success);
     assert.equal((first.reads?.length ?? 0) + (second.reads?.length ?? 0) <= MAX_NESTED_READS, true);
-    assert.deepEqual(second.reads?.map((r) => r.external), roots.slice(0, MAX_ROOTS).map((r) => `agile:tree:${r}`), 'only the roots read in round 1 are refreshed');
+    assert.deepEqual(second.reads,[{external:'agile:tree:roots',refresh:true}]);
     const search = searchPlan({ round: 1, external: { key: '健康检查' }, settings: { roots } });
     assert.ok(ReadPlanOutput.safeParse(search).success);
-    assert.equal(search.reads?.length, MAX_ROOTS);
+    assert.deepEqual(search.reads,[{external:'agile:tree:roots'}]);
   });
 
   test('a document the trees could not place is unknown, not a document without folders, when a root was not read', () => {

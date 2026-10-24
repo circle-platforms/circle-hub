@@ -118,6 +118,8 @@ export type HubPage = {
 };
 
 export type PlanSyncOptions = {
+  /** Additional literal tokens of mainline pages; empty in synthetic defaults. */
+  mainline_page_words?: string[];
   /** Glob patterns (* and ?) over page names that opt a listing page in whatever its kind, for example rel_apv_*_hg_k. */
   include?: string[];
   /** Glob patterns over page names that opt a listing or hub page out; they win over include. */

@@ -1,3 +1,4 @@
+import {ENVIRONMENT} from '../../contracts/generated/vocabulary.ts';
 // Synthetic deployment references, migration and live credential binding.
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
@@ -38,7 +39,7 @@ test('two resources share credential versions: rotation refreshes sessions and o
     t.after(() => stub.close());
     const common = { ...input, origins: { 'agile-api': stub.origin, 'agile-oauth': stub.origin }, allow_plaintext: [stub.origin], credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' }, settings: { 'root#': '${var:DEMO_ROOT}' } };
     await k.records.variables.setVariable(k.admin, 'DEMO_ROOT', 'demo-root', 'DEMO_REASON');
-    const first = await k.connectors.admin.addResource(k.admin, common), second = await k.connectors.admin.addResource(k.admin, { ...common, name: 'DEMO_SECOND' });
+    const first = await k.connectors.admin.addResource(k.admin, common), second = await k.connectors.admin.addResource(k.admin, { ...common, name: 'DEMO_SECOND',environment:'production' });
     const set = async (password: string) => k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'reader', short: true, consumers: [first, second].map(r => resourceConsumer(r, 'username')) }, { name: 'DEMO_PASSWORD', value: password, consumers: [first, second].map(r => resourceConsumer(r, 'password')) }], 'DEMO_ROTATION');
     await set('DEMO!Password42');
     const other = k.make();
@@ -100,7 +101,7 @@ test('migrations retain only the current and previous named secret entries', asy
     const first = await k.connectors.admin.addResource(k.admin, named);
     await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'demo-reader', consumers: [resourceConsumer(first, 'username')] }], 'DEMO_INITIAL');
     for (let index = 0; index < 2; index++) {
-        const r = await k.connectors.admin.addResource(k.admin, { ...named, name: 'DEMO_MIGRATION_' + index });
+        const r = await k.connectors.admin.addResource(k.admin, { ...named, name: 'DEMO_MIGRATION_' + index,environment:ENVIRONMENT.filter(value=>value!=='test')[index] });
         const legacy = { ...r, credentials: { ...r.credentials, username: `connector.${r.id}.username` } };
         const object = await k.records.objects.put(canonicalBytes(legacy), 'application/json');
         await k.records.authorizations.configureResource(k.admin, r.id, object.sha256, 'DEMO_LEGACY');

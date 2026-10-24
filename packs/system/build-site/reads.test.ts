@@ -108,9 +108,9 @@ describe('reads through the connectors', () => {
     assert.equal(site.requests.filter((r) => r.method !== 'GET').length, 0);
   });
 
-  test('a dead link is a failed read, never an exception', async () => {
+  test('a dead link is a determinate absence, never an exception', async () => {
     const dead = await read('buildsite:listing:rel_orbit_6_9');
-    assert.equal(dead.ok, false);
+    assert.ok(dead.ok && dead.absent?.code==='SOURCE_ABSENT');
     assert.equal(site.requests.at(-1)?.path, '/builds/rel_orbit_6_9.html');
     assert.equal((await read('buildsite:listing:a..b/c')).ok, false, 'a key that names no page plans nothing');
   });

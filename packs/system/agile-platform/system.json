@@ -1,7 +1,7 @@
 {
   "schema": "system@1",
   "title": "敏捷测试平台",
-  "description": "敏捷测试平台的只读访问：根的子树（agile:tree:<根编号>；agile:tree:roots 一次读设置 roots 里的每个根，content 为每份文档的编号、标题和从根往下的上级目录）、脑图文档（agile:mindmap:<文档编号>，content 为解开的 KityMinder JSON，meta 为标题和上级目录；agile:case:<文档编号> 只读文档本身，content 多一个成员 agile: {id}，供用例索引）和相似测试清单的检索（agile:search:<检索词，用 + 连接>[+!<文档编号>]，! 开头的部分排除这份文档，只作线索）。应答都是 HTTP 200 加信封 {code, msg, data}，code 1000 表示成功。登录：POST /oauth/login/，密码按 Base64(SHA-512(明文)) 发送；令牌在 data.token、到期时间在 data.expire（秒）；失败不重试，停到管理员处理为止。设置 roots 列出要读的根编号：一次读取最多读前 10 个，读不到根时结果标为不完整。只有读路由。",
+  "description": "敏捷平台只读访问：配置根的子树、脑图及相似清单检索。所有配置根按读取预算读取，覆盖不足时明确披露；脑图和搜索共享聚合树，文档不在完整的配置范围内时直说。HTTP 200 信封 code=1000 成功；登录换令牌，明确过期仅登录一次，再失败即停。",
   "roles": [
     { "name": "agile-oauth", "description": "登录接口所在的地址（只用于登录，不读数据）" },
     { "name": "agile-api", "description": "平台接口所在的地址；请求头 Authorization 直接带令牌，不加前缀" }

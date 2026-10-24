@@ -9,7 +9,7 @@ import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import type { Principal, VariableSnapshot } from '../../records/api.ts';
-import { EXTERNAL_ARTIFACT, type LoadedWorkflow } from '../../ports.ts';
+import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognize, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
@@ -63,6 +63,7 @@ export async function bindInputs(
   composition?: string | null,
   build?:string,
   variables?:VariableSnapshot,
+  unversioned?: ExternalReadContext['unversioned'],
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -159,18 +160,29 @@ export async function bindInputs(
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;
     }
-    if (!(await ctx.deps.external.accepts(id))) {
+    if (!(await ctx.deps.external.accepts(id,{principal:user,run:runId,purpose:`运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`)}))) {
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+    const read = await ctx.deps.external.read(id, { principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
     if (!read.ok) {
       if (read.inputError !== undefined) {
-        schemaError(path, read.inputError.message, read.inputError.fix);
+        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
+        else schemaError(path, read.inputError.message, read.inputError.fix);
+        notes.push(`${path}: ${read.reason}`);
+        return null;
+      }
+      if(read.retry) {
+        errors.push(protocolError('SOURCE_RETRYABLE',`缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`,{path}));
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
       gone(path, read.reason);
+      return null;
+    }
+    if(read.absent) {
+      const observation=read.absent;
+      errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path}));
       return null;
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
@@ -202,7 +214,7 @@ export async function bindInputs(
       bytes: source.bytes,
       mediaType: source.mediaType,
       sha256: source.sha256,
-      binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType, ...(title !== null ? { label: title } : {}) },
+      binding: { reference: `src:${source.sha256}`, external, media_type: source.mediaType,...(read.coverage?{coverage:read.coverage}:{}), ...(title !== null ? { label: title } : {}) },
       external,
       meta,
       record: null,

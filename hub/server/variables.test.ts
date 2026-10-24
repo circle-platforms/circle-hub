@@ -23,7 +23,7 @@ async function setup(t: any) {
     const value = randomBytes(24).toString('base64url');
     let by: Principal = admin;
     let pack: any = null;
-    const session: VariableCommandSession = { ctx: { io: { cwd: kit.dataDir } }, options: { readSecret: async () => { reads++; return value; } }, admin: async () => by, records: async () => kit, hub: async () => ({ packs: { pack: async () => pack } as any }), out: line => lines.push(line), err: line => lines.push(line) };
+    const session: VariableCommandSession = { ctx: { io: { cwd: kit.dataDir } }, options: { readSecret: async () => { reads++; return value; } }, admin: async () => by, records: async () => kit, hub: async () => ({ registry:{variableDeclarations:async()=>[]},packs: { pack: async () => pack } as any }), out: line => lines.push(line), err: line => lines.push(line) };
     const definition = async (name = 'DEMO_KEY', item = 'password', rule = 'plain') => { const id = newId('res'); const body = { schema: 'resource@1', id, system_pack: 'demo-system@1.0.0', system_pack_digest: 'b'.repeat(64), enabled: true, origins: { api: 'https://service.example.invalid' }, allow_plaintext: [], credentials: { [item]: '${secret:' + name + '}' }, credential_digests: { [item]: rule } }; const object = await kit.objects.put(canonicalBytes(body), 'application/json'); await kit.authorizations.configureResource(admin, id, object.sha256, '合成引用'); return { id, body }; };
     return { kit, admin, user, session, lines, value, definition, get reads() { return reads; }, act: (principal: Principal) => by = principal, pack: (v: any) => pack = v };
 }
@@ -188,4 +188,47 @@ test('var set cannot change a binding selected through an older stored source re
  await writeFile(join(f.kit.dataDir,'bind.json'),JSON.stringify('lease_token'));
  await assert.rejects(variableCommand(f.session,['set','DEMO_BIND','--file','bind.json','--reason','DEMO_CHANGE']),/绑定|引用/);
  assert.equal(await f.kit.variables.valueAt('DEMO_BIND',(await f.kit.variables.snapshot()).get('DEMO_BIND')!),'build');
+});
+
+test('product publication names hide secret and deployment collisions behind one boolean',async t=>{
+ const f=await setup(t);
+ const {productVariableNameAvailable}=await import('./variables.ts');
+ const check=(name:string)=>f.kit.store.withTransaction(async tx=>{
+   await f.kit.variables.lockNames([name],tx);
+   return productVariableNameAvailable(f.kit,name,tx);
+ });
+ assert.equal(await check('DEMO_FREE'),true);
+ await f.kit.variables.setSecrets(f.admin,[{name:'DEMO_PRIVATE',value:f.value,digest_rule:'plain',consumers:[{definition:(await f.definition('DEMO_PRIVATE')).id,item:'password',sends_to:'b'.repeat(64)}]}],'合成密钥');
+ assert.equal(await check('DEMO_PRIVATE'),false);
+ const definition=await f.definition();
+ (definition.body as any).settings={choice:'${var:DEMO_CHOICE}'};
+ const object=await f.kit.objects.put(canonicalBytes(definition.body),'application/json');
+ await f.kit.authorizations.configureResource(f.admin,definition.id,object.sha256,'合成设置');
+ assert.equal(await check('DEMO_CHOICE'),false);
+});
+
+test('var set validates product schemas and list includes unset, invalid and unused names',async t=>{
+ const f=await setup(t);
+ const product={schema:'product@1',id:'demo-product',title:'Synthetic',names:['Demo'],catalogs:[],producers:[{id:'demo',title:'Demo',function:{module:'functions/demo.ts'},inputs:{},params:{choices:'${var:DEMO_CHOICES}'}}],variables:[{name:'DEMO_CHOICES',description:'Synthetic choices',schema:{type:'array',items:{type:'string'}},default:[]}]};
+ const declarations=async()=>[{pack:'demo-product',version:'1.0.0',product}];
+ f.session.hub=async()=>({packs:{} as any,registry:{variableDeclarations:declarations} as any});
+ await variableCommand(f.session,['list']);
+ assert.match(f.lines.join('\n'),/DEMO_CHOICES.*没设置.*circle-hub var set/);
+ await writeFile(join(f.kit.dataDir,'choices.txt'),'synthetic value');
+ await assert.rejects(variableCommand(f.session,['set','DEMO_CHOICES','--file','choices.txt','--text','--reason','合成类型']),e=>e instanceof Error&&e.message.includes('demo-product')&&e.message.includes('去掉 --text')&&!e.message.includes('synthetic value'));
+ assert.equal((await f.kit.variables.snapshot()).has('DEMO_CHOICES'),false);
+ await writeFile(join(f.kit.dataDir,'choices.json'),'["synthetic"]');
+ await variableCommand(f.session,['set','DEMO_CHOICES','--file','choices.json','--reason','合成设置']);
+ await f.kit.variables.setVariable(f.admin,'DEMO_UNUSED',1,'合成未使用');
+ await f.kit.variables.setVariable(f.admin,'DEMO_CHOICES',17,'合成旧值不合模式');
+ f.lines.length=0;await variableCommand(f.session,['list']);
+ assert.match(f.lines.join('\n'),/DEMO_CHOICES.*不合.*demo-product/);
+ assert.match(f.lines.join('\n'),/DEMO_UNUSED.*设置了，没有使用者/);
+});
+
+test('a published ordinary-variable name cannot later be enrolled as a secret',async t=>{
+ const f=await setup(t);await f.definition('DEMO_OWNED_NAME');
+ f.session.hub=async()=>({packs:{} as any,registry:{variableDeclarations:async()=>[{pack:'demo-owner',version:'1.0.0',product:{variables:[{name:'DEMO_OWNED_NAME'}]} as any}]}});
+ await assert.rejects(namedSecretCommand(f.session,['set','--name','DEMO_OWNED_NAME','--reason','合成占名']),/名字不可用/);
+ assert.equal(f.reads,0);assert.equal((await f.kit.variables.history(f.admin,'secret','DEMO_OWNED_NAME')).length,0);
 });

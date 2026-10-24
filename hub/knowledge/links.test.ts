@@ -1,5 +1,6 @@
 // Relations are generic: synthetic terms and notes, no product dialect or model calls.
 import assert from 'node:assert/strict';
+import {canonicalBytes} from '../records/api.ts';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -124,7 +125,9 @@ test('an existing run is found by its writer index and cannot be redirected to a
   f.w.product.product.links=[{...rule,normalize:undefined}];f.w.product.digest='e'.repeat(64);
   const next=await f.w.knowledge.produceTree({product:f.w.product,build});assert.ok(next.ok);await f.w.knowledge.reconcileLine('widget',build.line,f.w.admin);
   const reader=createKnowledgeReader(f.w.knowledge),context:ExternalReadContext={principal:f.w.user,run,purpose:'stored run'};
-  const locked=await f.json(await reader.read('knowledge:links:widget:10.6.1',context));assert.deepEqual(locked.bytes,old.bytes);
+  const locked=await f.json(await reader.read('knowledge:links:widget:10.6.1',context));
+  const pinnedNotes=old.view.notes.map(note=>note==='这条产品线还没有不分版本的根；下一步：同步这条产品线'?'本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）':note);
+  assert.deepEqual(locked.bytes,canonicalBytes({...old.view,notes:pinnedNotes}));
   assert.equal((await reader.read('knowledge:links:widget:10.6.1?composition='+next.composition,context)).ok,false);
   assert.equal((await reader.read('knowledge:links:widget:'+build.name,{...context,composition:next.composition,build:build.name})).ok,false,'a supplied context must not replace the stored run composition');
 
@@ -372,4 +375,19 @@ test('link request refusals keep their reason and bare id while genuine failures
   assert.ok(!tooLarge.ok);assert.equal(tooLarge.id,bare);assert.match(tooLarge.reason,/字节上限/);assert.doesNotMatch(tooLarge.reason,/知识视图出错|^Error:/);
   t.mock.method(LinkReading.prototype,'page',async()=>{throw new Error('synthetic unexpected page failure');});
   const failed=await reader.read(bare+'@'+f.first.composition,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(!failed.ok);assert.match(failed.reason,/知识视图出错/);
+});
+
+test('link pagination retains the product-wide snapshot when its pointer moves between pages',async t=>{
+ const f=await fixture(t);
+ const producer=Producer.parse({...extraProducer('scope_docs',{entries:[{...content('/scope','case','Scope document'),data:{document:'synthetic-scope'}}]},{tree:{external:'site:tree:links'}}),unversioned:true});
+ f.w.product.product.producers.push(producer);f.w.product.digest='d'.repeat(64);
+ const firstScope=await f.w.knowledge.produceTree({product:f.w.product,build:null});assert.ok(firstScope.ok);
+ await f.w.knowledge.moveRoot('widget',null,null,firstScope.root!,firstScope.action);
+ const first=(await f.json(await f.read('limit=1'))).view;assert.ok(first.next);
+ producer.params={entries:[{...content('/scope','case','Changed scope document'),data:{document:'synthetic-scope'}}]};f.w.product.digest='e'.repeat(64);
+ const nextScope=await f.w.knowledge.produceTree({product:f.w.product,build:null});assert.ok(nextScope.ok);
+ await f.w.knowledge.moveRoot('widget',null,firstScope.root,nextScope.root!,nextScope.action);
+ const second=(await f.json(await f.read('limit=1&cursor='+encodeURIComponent(first.next)))).view;
+ assert.equal(second.unversioned?.composition,firstScope.composition);
+ assert.notEqual(second.unversioned?.composition,nextScope.composition);
 });

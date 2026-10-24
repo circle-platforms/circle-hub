@@ -20,11 +20,13 @@ import {
   type AuthorizationRecord,
   type Authorizations,
   type ObjectStore,
+  type Page,
+  type RecordStore,
+  type Transaction,
   type Principal,
   type Principals,
   type User,
   type Vault,
-  type RecordStore,
   type RecordVariables,
   type PreparedSecrets,
   type SecretWrite,
@@ -33,6 +35,8 @@ import { ConnectorError } from './errors.ts';
 import type { ConnectorLog } from './http.ts';
 import type { ProfileCache } from './profiles.ts';
 import type { Redactor } from './redact.ts';
+
+const CONFIGURATION_QUEUES=new WeakMap<RecordStore,Promise<void>>();
 
 export interface AddResourceInput {
   /** `id` or `id@x.y.z` of a published system pack; the definition binds the exact version (and digest) current now. */
@@ -81,8 +85,8 @@ export interface ResourceState {
 }
 
 export interface ResourceRegistryOptions {
-  objects: ObjectStore;
   store: RecordStore;
+  objects: ObjectStore;
   variables: RecordVariables;
   authorizations: Authorizations;
   principals: Principals;
@@ -376,12 +380,12 @@ export class ResourceRegistry {
     return state;
   }
 
-  async #read(): Promise<ResourceState[]> {
+  async #read(tx?:Transaction): Promise<ResourceState[]> {
     const latest = new Map<string, AuthorizationRecord>();
     const definition = new Map<string, AuthorizationRecord>();
     let cursor: string | null = null;
     do {
-      const page = await this.#o.authorizations.history({ permission: PERMISSION, newestFirst: true, limit: 500, cursor });
+      const page:Page<AuthorizationRecord> = tx ? await this.#o.store.find<AuthorizationRecord['body']>({kind:'authorization',key:'authz.permission',value:PERMISSION,newestFirst:true,limit:500,cursor},tx) : await this.#o.authorizations.history({ permission: PERMISSION, newestFirst: true, limit: 500, cursor });
       for (const record of page.items) {
         const id = record.body.object;
         // Other resource configurations (an accepted credential scan, for example) share the permission kind.
@@ -452,7 +456,10 @@ export class ResourceRegistry {
     const resolved = await this.#o.variables.resolveVariables(record.settings,record.id,snapshot);
     if (Buffer.byteLength(JSON.stringify(resolved.value),'utf8') > 65536) throw new ConnectorError('RESOURCE_INVALID','解析后的设置超过 64 KiB');
     const stored = await this.#o.objects.put(canonicalBytes(record), 'application/json');
-    await this.#o.store.withTransaction(async tx => {
+    const bound=await this.#o.profiles.load(record.system_pack);
+    if(bound.pack.digest!==record.system_pack_digest)throw new ConnectorError('PACK_UNAVAILABLE','缺少资源绑定的原包；请管理员恢复原包或重新配置后启用');
+    await this.#configuration(async tx => {
+      await this.#unique(record,bound.profile,tx);
       await this.#o.variables.lockNames([...refs.map(r=>r.name),...(prepared?.items.map(i=>i.name)??[])],tx);
       for (const ref of refs) {
         const rows = await this.#o.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${ref.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
@@ -467,6 +474,37 @@ export class ResourceRegistry {
       await this.#o.authorizations.configureResourceInTransaction(admin,record.id,stored.sha256,note ?? '',tx);
     });
     this.invalidate();
+  }
+
+  async #configuration<T>(work:(tx:Transaction)=>Promise<T>):Promise<T> {
+    // One waiter per pool holds a SQL connection; other callers wait without reserving a connection.
+    const before=CONFIGURATION_QUEUES.get(this.#o.store)??Promise.resolve();
+    let release!:()=>void;
+    const waiting=new Promise<void>(resolve=>{release=resolve;});
+    CONFIGURATION_QUEUES.set(this.#o.store,waiting);
+    await before;
+    try {
+      return await this.#o.store.withTransaction(async tx=>{
+        await this.#o.store.lock('connectors.resource-configurations',tx);
+        return work(tx);
+      });
+    } finally {this.invalidate();release();if(CONFIGURATION_QUEUES.get(this.#o.store)===waiting)CONFIGURATION_QUEUES.delete(this.#o.store);}
+  }
+
+  async #unique(resource:ResourceRecord,profile:SystemProfile,tx:Transaction):Promise<void> {
+    const types=new Set(profile.reads.map(read=>read.external));
+    for(const state of await this.#read(tx)) {
+      if(!state.enabled || state.resource.id===resource.id || state.resource.environment!==resource.environment)continue;
+      let loaded;
+      try {
+        loaded=await this.#o.profiles.load(state.resource.system_pack);
+        if(loaded.pack.digest!==state.resource.system_pack_digest)throw new Error('bound pack differs');
+      } catch(error) {
+        throw new ConnectorError('RESOURCE_INVALID',`缺少已启用资源 ${state.resource.id} 的绑定读取类型；请管理员恢复原包或停用它后再配置`,{cause:error});
+      }
+      const overlap=loaded.profile.reads.map(read=>read.external).filter(type=>types.has(type));
+      if(overlap.length)throw new ConnectorError('RESOURCE_INVALID',`环境 ${resource.environment} 的外部类型 ${overlap.join('、')} 已由资源 ${state.resource.id} 启用；停用冲突资源或选择其他环境后再配置`);
+    }
   }
 
   async #viewer(by: Principal): Promise<User | null> {

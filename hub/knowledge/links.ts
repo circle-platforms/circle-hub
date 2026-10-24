@@ -23,7 +23,7 @@ export function relationNode(entries:readonly {kind:string;producers:readonly st
 
 type UncheckedLiteral=Backlinks['entries'][number]&{rule:string;literals:number};
 export interface RelationFacts { links: LinkEdge[]; drift: LinkDrift[]; entries: number; literals: number;diagnostics:LinkDiagnostic[];rule_diagnostics:LinkRuleDiagnostic[];unchecked:UncheckedLiteral[] }
-export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string }
+export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string;maxBytes?:number }
 /** A known request refusal, distinct from unavailable immutable records or computation failures. */
 export class LinkRefusal extends Error {}
 export class RelationReadError extends Error {
@@ -134,14 +134,14 @@ export class LinkReading {
     if(composition){const body=await this.#context.store.composition(composition);return body?.root===root&&await this.#allowed(body.product,reader)?new CompositionView(this.#context.store,composition,body):null;}
     const productions=await this.#context.store.productionsOfRoot(root),selected=new Map<string,CompositionView>();
     const seen=new Set<string>();
-    for(const p of productions){const key=p.detail.product+'/'+p.detail.build.line;if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const info=await this.#builds.currentRoot(p.detail.product,p.detail.build.line);if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
+    for(const p of productions){const key=canonicalize([p.detail.product,p.detail.build?.line ?? null]);if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const info=await this.#builds.currentRoot(p.detail.product,(p.detail.build?.line ?? null));if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
     if(selected.size!==1)return null;return [...selected.values()][0];
   }
   async #allowed(product:string,reader:Principal):Promise<boolean>{
     const user=await this.#context.records.principals.get(reader.id);if(!user||user.disabled)return false;
     return user.role==='admin'||(await this.#context.packs.readableProducts(reader)).has(product);
   }
-  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string}>{
+  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string;unversioned?:{root:string;composition:string}|null}>{
     if(!RunId.safeParse(run).success)throw new LinkRefusal('运行编号写法不对');
     // Record ids are storage ids; the run writer publishes its logical ids through this index.
     const page=await this.#context.records.store.find({key:'runs.id',value:run,kind:'run',limit:1});
@@ -152,7 +152,11 @@ export class LinkReading {
       const data=claim.statement.data;
       return data?.field==='build'&&data.root===body.root&&Sha256.safeParse(data.composition).success&&claim.validity.bound.includes(String(data.composition))?[String(data.composition)]:[];
     });
-    return {found:true,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
+    const scopeBasis=body.target_basis.find(c=>c.statement.data?.field==='unversioned_root'&&c.statement.data?.root===body.unversioned_root);
+    const scopeComposition=scopeBasis?.statement.data?.composition;
+    const unversioned=body.unversioned_root===undefined?null:typeof scopeComposition==='string'&&scopeBasis!.validity.bound.includes(scopeComposition)?{root:body.unversioned_root,composition:scopeComposition}:undefined;
+    if(body.unversioned_root!==undefined&&unversioned===undefined)throw new LinkRefusal('运行缺少不分版本的组成快照；恢复运行记录后重读');
+    return {found:true,unversioned,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
   }
   async facts(composition:CompositionView):Promise<RelationFacts>{
     try{
@@ -181,7 +185,7 @@ export class LinkReading {
   async page(composition:CompositionView,request:LinkRequest={}):Promise<LinksView>{
     const prefix=request.prefix??'/',target=request.target??null,rule=request.rule??null;
     try{pathSegments(prefix);if(target!==null)pathSegments(target);}catch(error){if(error instanceof ReferenceSyntaxError)throw new LinkRefusal(error.message);throw error;}
-    const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:request.build??composition.body.version.build,root:composition.body.root},composition:composition.record,prefix,target,rule};
+    const common={schema:'links-view@1' as const,product:composition.body.product,build:{build:request.build??(composition.body.version?.build ?? '未声明'),root:composition.body.root},composition:composition.record,prefix,target,rule};
     if(composition.body.links===undefined)return {...common,configured:false,links:[],drift:[],totals:null,next:null,truncated:false,notes:['这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取']};
     if(rule!==null&&!composition.body.links.some(declaration=>declaration.id===rule))throw new LinkRefusal('这份组成没有请求的链接声明，请按声明编号重读');
     const facts=await this.facts(composition),links=facts.links.filter(edge=>beneath(edge.path,prefix)&&(target===null||edge.target===target&&edge.path!==edge.target)&&(rule===null||edge.rule===rule));
@@ -204,7 +208,7 @@ export class LinkReading {
       if(item.diagnostic)output.diagnostics!.push(item.diagnostic);
       else if(item.edge)output.links.push(item.edge);
       else if(item.group&&item.occurrence){const key=canonicalize([item.group.rule,item.group.literal]),g=picked.get(key)??{...item.group,occurrences:[]};g.occurrences.push(item.occurrence);picked.set(key,g);output.drift=[...picked.values()];}
-      if(canonicalBytes(output).byteLength>this.#context.limits.maxViewBytes-4096){
+      if(canonicalBytes(output).byteLength>Math.min(this.#context.limits.maxViewBytes,request.maxBytes??this.#context.limits.maxViewBytes)-4096){
         if(at===offset)throw new LinkRefusal('单条链接视图记录超过当前服务字节上限；需维护者补充分段读取能力后，再核验这份组成');
         if(item.diagnostic)output.diagnostics!.pop();else if(item.edge)output.links.pop();else if(item.group){const g=picked.get(canonicalize([item.group.rule,item.group.literal]))!;g.occurrences.pop();output.drift=[...picked.values()].filter(g=>g.occurrences.length);}
         break;
@@ -225,7 +229,7 @@ export class LinkReading {
       }
       candidates.sort((a,b)=>compareText(a.record,b.record));
       const candidate=candidates[0];if(!candidate)return async()=>undefined;
-      return async(path:string)=>absent(null,'这个根没有唯一当前组成；下一步：按明确的组成读取关联视图 '+'knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.build)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record);
+      return async(path:string)=>absent(null,'这个根没有唯一当前组成；下一步：按明确的组成读取关联视图 '+'knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent((candidate.body.version?.build ?? '未声明'))+'?target='+encodeURIComponent(path)+'&composition='+candidate.record);
     }
     if(view.body.links===undefined)return async()=>absent(view.record,'这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
     if(view.body.links.length===0)return async()=>undefined;
@@ -244,7 +248,7 @@ export class LinkReading {
       if(!view.body.links!.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
       try{
         const index=await compact(),value=index.targets.get(path)??{total:0,entries:[]};
-        const viewId="knowledge:links:"+encodeURIComponent(view.body.product)+":"+encodeURIComponent(view.body.version.build)+"?target="+encodeURIComponent(path)+"&composition="+view.record;
+        const viewId="knowledge:links:"+encodeURIComponent(view.body.product)+":"+encodeURIComponent((view.body.version?.build ?? '未声明'))+"?target="+encodeURIComponent(path)+"&composition="+view.record;
         return {view_id:viewId,composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:value.total>20?['还有未列出的反向引用；读取 '+viewId+' 并沿游标翻页']:[]};
       }catch(error){
         const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请管理员或维护者修复关联索引，再重新执行本次计算',error);

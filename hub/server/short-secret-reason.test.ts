@@ -15,7 +15,7 @@ test('short secret CLI rejection writes neither a vault entry nor a decision and
  const source={schema:'resource@1',id,system_pack:'demo-system@1.0.0',system_pack_digest:'b'.repeat(64),origins:{api:'https://service.example.invalid'},allow_plaintext:[],credentials:{username:'${secret:DEMO_LOGIN}'},credential_digests:{username:'plain'}};
  const object=await kit.objects.put(canonicalBytes(source),'application/json');await kit.authorizations.configureResource(admin,id,object.sha256,'合成引用');
  const count=(await kit.store.list({kind:'authorization'})).items.length;const output:string[]=[];
- const session:VariableCommandSession={ctx:{io:{cwd:kit.dataDir}},options:{readSecret:async()=> 'reader'},admin:async()=>admin,records:async()=>kit,hub:async()=>({packs:{} as any}),out:s=>output.push(s),err:s=>output.push(s)};
+ const session:VariableCommandSession={ctx:{io:{cwd:kit.dataDir}},options:{readSecret:async()=> 'reader'},admin:async()=>admin,records:async()=>kit,hub:async()=>({registry:{variableDeclarations:async()=>[]},packs:{} as any}),out:s=>output.push(s),err:s=>output.push(s)};
  await assert.rejects(namedSecretCommand(session,['set','--name','DEMO_LOGIN','--short','DEMO_LOGIN','--reason','portal reader enrolled']),error=>error instanceof Error&&/理由不能含密钥/.test(error.message)&&!error.message.includes('reader'));
  assert.equal((await kit.store.list({kind:'authorization'})).items.length,count);assert.deepEqual(await kit.vault.list(),[]);
  assert.ok(!output.join('\n').includes('reader'));assert.ok(!JSON.stringify((await kit.store.list({kind:'authorization'})).items).includes('reader'));
