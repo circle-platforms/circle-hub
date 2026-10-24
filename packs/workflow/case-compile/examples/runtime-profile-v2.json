@@ -3,7 +3,7 @@
   "synthetic": true,
   "runtime": {
     "minimum_version": "synthetic-runtime-v2",
-    "contract_sha256": "97d953eca6d675d9af61b01b0aa8525178e31fded50eeaf4c8887bb09cdc1d5b"
+    "contract_sha256": "88902eb21818e85c5ece4d3ce174bcc6f75b627af62eeca095407c3fbef7fc0d"
   },
   "bed": "bed-a",
   "workbook": {

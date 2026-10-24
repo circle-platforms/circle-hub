@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.4.10",
+  "version": "1.4.11",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
@@ -83,7 +83,7 @@
     },
     {
       "path": "functions/cases-commands.ts",
-      "sha256": "9ccf69de96f7fa80c937141649bc4754072b10256ce269ce25ef1b615d00e394",
+      "sha256": "4104ac5e2ad8b383bb193e695690d565c75c772dcca146df867d965bccacb47d",
       "size": 3320
     },
     {
@@ -113,7 +113,7 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "46c72ca81eabab611235b39a924382ed7f8c41ffb76f126874334f1ef4db82ca",
+      "sha256": "e4b1c65cc8c9b637a833c2fc663170d9a7c873819bcf5ab4f21f82f8f4f298fc",
       "size": 11908
     },
     {
