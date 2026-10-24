@@ -19,7 +19,7 @@ async function setup(t:any,allowed:boolean,echo=false,connectorFailure=false,ove
   let artifact=read.artifacts[0].artifact;
   if(id===flagged&&echo)artifact=await w.kit.artifacts.ingest({bytes:Buffer.from(String((w.external.objects.get(id) as any).bytes)),mediaType:'application/json',origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false},readTier:'retain_only'});
   const withheld=connectorFailure&&artifact.body.read_tier==='retain_only',at=clock.toISOString();
-  const body=ReadManifest.parse({action:'read',run:null,item:null,inputs:[],component:'connectors@1',lease:null,started_at:at,ended_at:at,result:withheld?'error':'completed',error_code:withheld?'SOURCE_CREDENTIAL':null,external:id,revision:null,resource:newId('res'),environment:'test',system_pack:{id:'synthetic-documents',version:'1.0.0',digest:'b'.repeat(64)},read:'document',principal:w.admin.id,purpose:'synthetic credential policy',requests:[{key:'page',round:1,route:'page',method:'GET',path:'/synthetic',query:{},started_at:at,ended_at:at,status:200,ok:!withheld,error:withheld?'SOURCE_CREDENTIAL':null,sha256:artifact.body.sha256,size:artifact.body.size,media_type:artifact.body.media_type,etag:null,artifact:artifact.digest,after_login:false}],reads:[],original:'page',artifacts:withheld?[]:[{name:'original',record:artifact.digest,sha256:artifact.body.sha256,size:artifact.body.size,media_type:artifact.body.media_type}],coverage:{complete:!withheld,examined:1,total:1},reason:withheld?'synthetic credential hold':null,warnings:[]});
+  const body=ReadManifest.parse({action:'read',run:null,item:null,inputs:[],component:'connectors@1',lease:null,started_at:at,ended_at:at,result:withheld?'error':'completed',error_code:withheld?'SOURCE_CREDENTIAL':null,external:id,revision:null,resource:newId('res'),environment:'test',system_pack:{id:'synthetic-documents',version:'1.0.0',digest:'b'.repeat(64)},read:'document',principal:context.principal.id,purpose:'synthetic credential policy',requests:[{key:'page',round:1,route:'page',method:'GET',path:'/synthetic',query:{},started_at:at,ended_at:at,status:200,ok:!withheld,error:withheld?'SOURCE_CREDENTIAL':null,sha256:artifact.body.sha256,size:artifact.body.size,media_type:artifact.body.media_type,etag:null,artifact:artifact.digest,after_login:false}],reads:[],original:'page',artifacts:withheld?[]:[{name:'original',record:artifact.digest,sha256:artifact.body.sha256,size:artifact.body.size,media_type:artifact.body.media_type}],coverage:{complete:!withheld,examined:1,total:1},reason:withheld?'synthetic credential hold':null,warnings:[]});
   const manifest=await w.kit.store.put({kind:'action',schema:'read-manifest@1',provenance:'observed',body});
   return withheld?{ok:false,id,reason:'synthetic credential hold',manifest:manifest.digest}:{...read,artifacts:[{name:'original',artifact}],manifest:manifest.digest};
  };
@@ -74,4 +74,16 @@ test('the declared source policy handles more than one hundred ordinary findings
  assert.equal(read.ok,true,JSON.stringify(read));if(!read.ok)return;
  assert.equal(read.artifacts[0].artifact.body.read_tier,'model_readable');assert.equal(read.artifacts[0].artifact.body.scan.truncated,false);
  const source=await w.kit.artifacts.source(w.user,read.artifacts[0].artifact.body.sha256);assert.ok(source?.bytes);assert.equal(Object.keys(JSON.parse(Buffer.from(source.bytes).toString()).entries).length,144);
+});
+
+for(const failure of [false,true])test(`configured acceptance uses the administrator and records a failed attempt (${failure})`,async t=>{
+ const w=await setup(t,true);
+ const ingest=w.kit.artifacts.ingest.bind(w.kit.artifacts);w.kit.artifacts.ingest=input=>ingest({...input,visibility:{admins:true,packs:[],shareable:false,...input.visibility,readers:[w.user.id]}});
+ const {knowledgeSourceLoader}=await import('./credential-policy.ts');const {createDefaultRegistry}=await import('../refs/api.ts');
+ if(failure)w.kit.artifacts.acceptFindings=async()=>{throw Error('synthetic acceptance failure');};
+ const loader=knowledgeSourceLoader({records:w.kit,store:w.knowledge.store,parsers:createDefaultRegistry(),external:w.external,admin:w.admin,now:()=>new Date('2026-10-24T00:00:00.000Z'),credentialAcceptance:{autoAcceptSources:[{systemPack:'synthetic-documents',slot:'cases'}]}} as never,w.user,'synthetic nonadministrator source read');
+ const load=await loader.read(flagged);assert.ok(load.ok);if(!load.ok)return;
+ const result=await loader.readable(load,2*1024*1024,{slot:'cases'});
+ assert.equal(result.ok,!failure);
+ if(failure){const rows=await w.kit.store.find<any>({key:'knowledge.credential.acceptance-failed',value:load.artifact.body.sha256,kind:'action',limit:10});assert.equal(rows.items.length,1);assert.equal(rows.items[0].body.detail.administrator,w.admin.id);assert.ok(rows.items[0].body.detail.next_action);}
 });

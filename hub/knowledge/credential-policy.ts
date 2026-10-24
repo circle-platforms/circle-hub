@@ -43,17 +43,23 @@ export function knowledgeSourceLoader(context:KnowledgeContext,by:Principal,purp
   const manifest=await loader.manifest(load.manifest);
   const belongs=manifest?.external===load.id&&(manifest.artifacts.some(item=>item.record===load.artifact.digest&&item.sha256===sha)||manifest.requests.some(item=>item.artifact===load.artifact.digest&&item.sha256===sha));
   const configured=belongs&&slot!==undefined&&(context.credentialAcceptance?.autoAcceptSources??[]).some(source=>source.systemPack===manifest!.system_pack.id&&source.slot===slot);
+  let failedAcceptance:string|null=null;
   // Explicit retention includes actual request-credential echoes and is never lifted automatically.
   if(configured&&!expired&&body.visibility.admins&&body.author.user===null&&body.requested_read_tier==='model_readable'&&body.scan.findings.length>0){
+   const administrator=context.admin??by;
    try{
-    const page=await context.records.artifacts.scanFindings(by,sha);
-    await context.records.artifacts.acceptFindings(by,sha,'部署已点名的实验室示例资料',{detectors:Object.keys(page.detectors),automatic:true});
-    const accepted=await context.records.artifacts.source(by,sha,{consumer:'model',record:load.artifact.digest});
+    const page=await context.records.artifacts.scanFindings(administrator,sha);
+    await context.records.artifacts.acceptFindings(administrator,sha,'部署已点名的实验室示例资料',{detectors:Object.keys(page.detectors),automatic:true});
+    const accepted=await context.records.artifacts.source(administrator,sha,{consumer:'model',record:load.artifact.digest});
     if(accepted?.bytes){await clearRequests(context,sha);return;}
-   }catch{/* A definite hold remains a hold; record an actionable administrator question below. */}
+   }catch{
+    const at=context.now().toISOString();
+    const action=await context.store.putAction({action:ACTION.read,run:null,item:null,inputs:[`src:${sha}`,`rec:${load.artifact.digest}`],component:COMPONENTS.sync,lease:null,started_at:at,ended_at:at,result:'error',error_code:'SOURCE_UNAVAILABLE',acceptance:null,codes:[],detail:{automatic:true,administrator:administrator.id,reason:'check_error',operation:'acceptFindings',missing:'缺少自动接受成功的事实',next_action:'管理员核对扫描、接受权限和撤回决定，显式核对或修正来源后重新同步'}},[{key:'knowledge.credential.acceptance-failed',value:sha}]);
+    failedAcceptance=action.digest;
+   }
   }
   if(active.length>0)return;
-  await requestKnowledgeFact(context,{kind:body.requested_read_tier==='retain_only'?'repair':'clarification',subject:`凭据命中 ${sha}`,missing:body.requested_read_tier==='retain_only'?'来源被明确要求仅保留，不能自动接受':'来源凭据命中尚无有效接受',action:body.requested_read_tier==='retain_only'?'管理员核对明确保留的原因；如为凭据回显，联系来源负责人去掉回显并按需更换凭据后重读，不能自动解除':'管理员分页核对命中，只按检测类显式接受已确认的示例，或修正来源后重新同步',inputs:[`src:${sha}`],credential:{sha256:sha,record:load.artifact.digest,external:load.id},deadlineHours:context.credentialAcceptance?.deadlineHours??72});
+  await requestKnowledgeFact(context,{kind:body.requested_read_tier==='retain_only'?'repair':'clarification',subject:`凭据命中 ${sha}`,missing:body.requested_read_tier==='retain_only'?'来源被明确要求仅保留，不能自动接受':'来源凭据命中尚无有效接受',action:body.requested_read_tier==='retain_only'?'管理员核对明确保留的原因；如为凭据回显，联系来源负责人去掉回显并按需更换凭据后重读，不能自动解除':'管理员分页核对命中，只按检测类显式接受已确认的示例，或修正来源后重新同步',inputs:[`src:${sha}`,...(failedAcceptance?[`rec:${failedAcceptance}`]:[])],credential:{sha256:sha,record:load.artifact.digest,external:load.id},deadlineHours:context.credentialAcceptance?.deadlineHours??72});
  };
  loader=new SourceLoader({external:context.external,artifacts:context.records.artifacts,parsers:context.parsers,records:context.records.store,onCredential:handle,onReadable:async load=>{if(load.artifact.body.scan.findings.length>0&&!cleared.has(load.artifact.body.sha256)){cleared.add(load.artifact.body.sha256);await clearRequests(context,load.artifact.body.sha256);}}},by,purpose);
  return loader;
