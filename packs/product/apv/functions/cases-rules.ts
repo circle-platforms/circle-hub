@@ -3,7 +3,7 @@
 // - the case rule of the team's test mind maps, as the case-review workflow pack's projection reads them (its defaults:
 //   case priority 2, group priority 1, precondition priority 3); a case is a node the tagged rule or the marked rule names;
 // - the tag spellings that make a case negative (case-review tags.ts; a test keeps both equal);
-// - the expected-result phrases that say nothing checkable (vague_expected).
+// Expected quality is a client judgment, never a producer text match.
 
 /** Build role of the case documents (a list of agile:case ids) and of the agile tree they were located in. */
 export const CASE_DOCUMENTS_ROLE = 'case_documents';
@@ -102,59 +102,5 @@ export function isBlank(text: string): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------- vague expected results
+// Expected quality is not computed in the product producer.
 
-/**
- * Expected results that state no observable outcome (author-written from the phrases test lists use for "it works"; the
- * case-review tables hold no such list yet, see README). Matched whole, after VagueKey's folding.
- */
-export const VAGUE_EXPECTED: readonly string[] = [
-  '正常',
-  '成功',
-  '通过',
-  '正确',
-  '无异常',
-  '没有异常',
-  '符合预期',
-  '与预期一致',
-  '同预期',
-  '结果正确',
-  '结果正常',
-  '显示正确',
-  '显示正常',
-  '功能正常',
-  '运行正常',
-  '工作正常',
-  '设备正常',
-  '系统正常',
-  '操作成功',
-  '执行成功',
-  '配置成功',
-  '设置成功',
-  '生效',
-  '配置生效',
-  '功能生效',
-  'ok',
-  'pass',
-  'passed',
-  'success',
-  'normal',
-  'as expected',
-];
-
-/** The folded form vague phrases are compared in: NFKC, lower case, no white space, no punctuation at either end. */
-export function vagueKey(text: string): string {
-  const chars = [...text.normalize('NFKC').toLowerCase().replace(/\s+/gu, '')];
-  let start = 0;
-  let end = chars.length;
-  while (start < end && EDGE.has(chars[start])) start += 1;
-  while (end > start && (EDGE.has(chars[end - 1]) || chars[end - 1] === '~' || chars[end - 1] === '～')) end -= 1;
-  return chars.slice(start, end).join('');
-}
-
-const VAGUE_KEYS = new Set(VAGUE_EXPECTED.map(vagueKey));
-
-/** True when the text, folded, is one of the vague phrases. */
-export function isVague(text: string): boolean {
-  return VAGUE_KEYS.has(vagueKey(text));
-}

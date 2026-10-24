@@ -75,10 +75,13 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
         continue;
       }
       const violations = violationsOf(fields, thresholds);
+      const noJudgment=fields.ratios.vague.den===0;
+      if(noJudgment)out.push({verdict:'unknown',reason:'missing_input',missing:'分组 '+id+' 的已受理期望质量判断；下一步由运行者补交当前原件的 case-review 期望判断并绑定其 rec: 结果和同根 cases 索引，重新开始看板',statement:'含糊期望阈值未核对：已判断数为 0，没有可用分母；下一步补交评审并重跑',grounds:[...grounds,...(fields.quality?.sources??[])],tier:TIER,item:id,pointer,data:{quality:fields.quality}});
       if (violations.length === 0) {
+        if(noJudgment)continue;
         out.push({
           verdict: 'support',
-          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.counts.cases)} ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.cases)} ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
+          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.ratios.vague.den)} ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.cases)} ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
           grounds,
           tier: TIER,
           item: id,

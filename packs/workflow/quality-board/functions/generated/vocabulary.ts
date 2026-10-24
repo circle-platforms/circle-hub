@@ -3,7 +3,11 @@ export const KNOWLEDGE_COUNT = ['tree_unplaced_entries', 'commandless_cases'] as
 export type KnowledgeCount = (typeof KNOWLEDGE_COUNT)[number];
 export const KNOWLEDGE_COUNT_LABEL = { 'tree_unplaced_entries': '未挂到树上位置的条目', 'commandless_cases': '未归位（没有命令归属的用例）' } as const satisfies Record<KnowledgeCount, string>;
 export function isKnowledgeCount(value: unknown): value is KnowledgeCount { return typeof value === 'string' && (KNOWLEDGE_COUNT as readonly string[]).includes(value); }
-export interface AxisValues { knowledge_count: KnowledgeCount; }
+export const JUDGMENT_STATUS = ['judged', 'unjudged'] as const;
+export type JudgmentStatus = (typeof JUDGMENT_STATUS)[number];
+export const JUDGMENT_STATUS_LABEL = { 'judged': '已判断', 'unjudged': '未判断' } as const satisfies Record<JudgmentStatus, string>;
+export function isJudgmentStatus(value: unknown): value is JudgmentStatus { return typeof value === 'string' && (JUDGMENT_STATUS as readonly string[]).includes(value); }
+export interface AxisValues { knowledge_count: KnowledgeCount; judgment_status: JudgmentStatus; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { knowledge_count: KNOWLEDGE_COUNT_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { knowledge_count: KNOWLEDGE_COUNT_LABEL, judgment_status: JUDGMENT_STATUS_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

@@ -15,7 +15,7 @@ test('pack vocabulary targets contain only their required axes and deterministic
   assert.equal(Object.keys(files).length, Object.keys(PACK_VOCABULARY_TARGETS).length);
   const apv='packs/product/apv/functions/generated/vocabulary.ts';
   assert.ok(files[apv]);
-  assert.deepEqual(PACK_VOCABULARY_TARGETS[apv],{axes:['applicability_field'],labels:true});
+  assert.deepEqual(PACK_VOCABULARY_TARGETS[apv],{axes:['applicability_field','judgment_status'],labels:true});
   for (const [path, text] of Object.entries(files)) {
     assert.match(text, /^\/\/ 生成物，勿手改/);
     if (PACK_VOCABULARY_TARGETS[path].labels) continue;

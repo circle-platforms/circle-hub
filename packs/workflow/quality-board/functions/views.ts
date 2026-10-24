@@ -9,7 +9,7 @@ const COMMANDLESS_CASES = labelOf('knowledge_count', 'commandless_cases');
 const HEX = /^[0-9a-f]{64}$/;
 
 /** The by fields the board's metrics are defined over. */
-export const REQUIRED_BY = ['line', 'module', 'has_expected', 'vague_expected', 'negative'];
+export const REQUIRED_BY = ['line', 'module', 'has_expected', 'negative'];
 
 export type ViewFailure = { ok: false; code: string; message: string; fix: string };
 export type ViewRead = { ok: true; view: FacetViewData } | ViewFailure;

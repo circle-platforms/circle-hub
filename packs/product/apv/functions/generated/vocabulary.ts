@@ -3,7 +3,11 @@ export const APPLICABILITY_FIELD = ['models', 'platforms', 'builds', 'components
 export type ApplicabilityField = (typeof APPLICABILITY_FIELD)[number];
 export const APPLICABILITY_FIELD_LABEL = { 'models': '型号', 'platforms': '平台', 'builds': '起止构建', 'components': '部件', 'memory': '内存', 'licenses': '许可', 'deployment_forms': '部署形态' } as const satisfies Record<ApplicabilityField, string>;
 export function isApplicabilityField(value: unknown): value is ApplicabilityField { return typeof value === 'string' && (APPLICABILITY_FIELD as readonly string[]).includes(value); }
-export interface AxisValues { applicability_field: ApplicabilityField; }
+export const JUDGMENT_STATUS = ['judged', 'unjudged'] as const;
+export type JudgmentStatus = (typeof JUDGMENT_STATUS)[number];
+export const JUDGMENT_STATUS_LABEL = { 'judged': '已判断', 'unjudged': '未判断' } as const satisfies Record<JudgmentStatus, string>;
+export function isJudgmentStatus(value: unknown): value is JudgmentStatus { return typeof value === 'string' && (JUDGMENT_STATUS as readonly string[]).includes(value); }
+export interface AxisValues { applicability_field: ApplicabilityField; judgment_status: JudgmentStatus; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { applicability_field: APPLICABILITY_FIELD_LABEL, judgment_status: JUDGMENT_STATUS_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "527c27201db62afb4ba18183b8eda64fbf62d3cf587992d94ffa6e283e22e7a3",
-      "size": 3115
+      "sha256": "d09708d9d0ea434d14c91c709d8e71edbdabc704fa27502fdf81ec8567fc20bf",
+      "size": 3716
     },
     {
       "path": "examples/start-run.json",
@@ -42,6 +42,11 @@
       "size": 4131
     },
     {
+      "path": "functions/expected-quality.ts",
+      "sha256": "9dc02d1a422ffc5810317940e706fcf4db1088fd40f9ddfba64a17132efa40b4",
+      "size": 2786
+    },
+    {
       "path": "functions/expected-sources.ts",
       "sha256": "d354d43571e906ab58bf2464c7aef89b41620e2e2b97819895645c333facce72",
       "size": 21506
@@ -58,8 +63,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "4fec2878fa4cf48db688f15da6c7402545d98b9990b4d60857ecd3d328bc5c94",
-      "size": 27394
+      "sha256": "136fd931841ce9d6de794a35ffba0bb4e4d660b4a7460e6d53d8bb3727617508",
+      "size": 27495
     },
     {
       "path": "functions/projection.ts",
@@ -93,13 +98,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a24272bf7147733287bd1a817eee02eb90d4b6efab94820919337853bbaa4597",
-      "size": 12902
+      "sha256": "858e34d3096e84acf21fc8d8ae67f3e1a85332fe5302e73b9b3b59967a793ef0",
+      "size": 12966
     },
     {
       "path": "requirements.json",
-      "sha256": "d78c0d83af0074abad7baa7db2aee1816f69ea79e20ff8656bbc1dd4e3e64124",
-      "size": 3542
+      "sha256": "2e6bb4f8d58d6404a68fa8b1651482701004584933e51e4c813ca3f8be1855ad",
+      "size": 4776
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -218,8 +223,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "6155249d46fe5be3783ac9abfa2a833620a0a1c7205252d7bddb770dfd4b3e4e",
-      "size": 2381
+      "sha256": "57adab74c6c1822fc9b6d23e090b6f8346c4256aae3c24cb78a1b81924e6a41d",
+      "size": 4002
     },
     {
       "path": "tables/catalog.json",

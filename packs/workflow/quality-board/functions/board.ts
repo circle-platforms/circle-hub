@@ -1,3 +1,4 @@
+import {labelOf} from './generated/vocabulary.ts';
 // The board: one group per (line, module) of the facet view (module null is the group 'unplaced', and so is a null line),
 // rows that split a group by the other fields summed. The metrics are exactly the definitions of the owner's real-sample
 // measurement: a case without an expected result has has_expected false; a case with only vague expected results has
@@ -10,6 +11,7 @@ import type { CheckOutcome, FacetViewData, Fraction, GroupBoard, GroupCounts } f
 
 /** The group name of a null line or module. */
 export const UNPLACED = 'unplaced';
+const UNJUDGED=labelOf('judgment_status','unjudged');
 
 /** The item id of a (line, module) pair. */
 export function groupId(line: string | null, module: string | null): string {
@@ -23,7 +25,7 @@ export function displayOf(num: number, den: number): number {
 
 /** One decimal place with a percent sign, for summaries and statements. */
 export function percentOf(num: number, den: number): string {
-  return `${(den === 0 ? 0 : Math.round((num / den) * 1000) / 10).toFixed(1)}%`;
+  return den === 0 ? '无已判断分母' : `${(Math.round((num / den) * 1000) / 10).toFixed(1)}%`;
 }
 
 function fraction(num: number, den: number): Fraction {
@@ -31,8 +33,9 @@ function fraction(num: number, den: number): Fraction {
 }
 
 /** The one-line summary of a group (at most 200 characters): cases, missing percent, vague percent, negative percent. */
-export function summaryOf(counts: GroupCounts): string {
-  return clip(`用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）`, 200);
+export function summaryOf(counts: GroupCounts, quality?: GroupBoard['quality']): string {
+  const judged=quality?.judged??0,unjudged=quality?.unjudged??counts.cases;
+  return clip(`用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${judged?percentOf(counts.vague, judged):UNJUDGED}，已判断 ${judged} 个）；${UNJUDGED} ${unjudged} 个；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）`, 200);
 }
 
 /**
@@ -51,7 +54,7 @@ export function groupBoard(view: FacetViewData): GroupBoard[] {
     if (held === undefined) groups.set(key, (held = { line, module, counts: { cases: 0, missing: 0, vague: 0, negative: 0 } }));
     held.counts.cases += row.count;
     if (row.values.has_expected === false) held.counts.missing += row.count;
-    if (row.values.has_expected === true && row.values.vague_expected === true) held.counts.vague += row.count;
+    // Retired vague_expected flags never count as accepted judgments.
     if (row.values.negative === true) held.counts.negative += row.count;
   }
   return [...groups.values()]
@@ -60,14 +63,15 @@ export function groupBoard(view: FacetViewData): GroupBoard[] {
       module: group.module,
       id: groupId(group.line, group.module),
       counts: group.counts,
+      quality: {judged:0,unjudged:group.counts.cases,conflicted:0,sources:[]},
       ratios: {
         missing: fraction(group.counts.missing, group.counts.cases),
-        vague: fraction(group.counts.vague, group.counts.cases),
+        vague: fraction(0, 0),
         negative: fraction(group.counts.negative, group.counts.cases),
       },
       display: {
         missing: displayOf(group.counts.missing, group.counts.cases),
-        vague: displayOf(group.counts.vague, group.counts.cases),
+        vague: null,
         negative: displayOf(group.counts.negative, group.counts.cases),
       },
     }))
@@ -129,12 +133,12 @@ export function boardOutcomes(subject: unknown): CheckOutcome[] {
       }
       out.push({
         verdict: 'support',
-        statement: summaryOf(fields.counts) + coverageSummary(fields.coverage) + (fields.coverage ? `；出现的类型：${fields.coverage.present.join('、') || '无'}` : '') + (fields.coverage?.partial ? '；补取动作：同步未读来源并重新读取同根标签视图，若仍截断则报告分面补读能力缺口' : ''),
-        grounds: [...grounds, ...(fields.coverage ? [fields.coverage.source] : [])],
+        statement: summaryOf(fields.counts, fields.quality) + coverageSummary(fields.coverage) + (fields.coverage ? `；出现的类型：${fields.coverage.present.join('、') || '无'}` : '') + (fields.coverage?.partial ? '；补取动作：同步未读来源并重新读取同根标签视图，若仍截断则报告分面补读能力缺口' : ''),
+        grounds: [...grounds, ...(fields.quality?.sources??[]), ...(fields.coverage ? [fields.coverage.source] : [])],
         tier: TIER,
         item: id,
         pointer,
-        data: { ...(fields.coverage ? { coverage: fields.coverage } : {}), line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
+        data: { quality:fields.quality, ...(fields.coverage ? { coverage: fields.coverage } : {}), line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
       });
     } catch (error) {
       out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`看板检查出错（任务包缺陷）：${internalError(error)}`), reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });

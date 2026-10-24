@@ -113,7 +113,7 @@ function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unk
         ...(!k.tags.some(tag => tag.trim().length > 0) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: k.expected_count,
         has_expected: k.has_expected,
-        vague_expected: k.vague_expected,
+        vague_expected: undefined,
         steps_count: k.steps_count,
         commands: paths,
         stories: k.stories,

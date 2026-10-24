@@ -334,6 +334,7 @@ function projectDocument(
           tags,
           tagsNormalized,
           expected: [],
+          expectedSelectors: [],
           expectedCount: 0,
           steps: [],
           preconditions: [],
@@ -378,6 +379,7 @@ function projectDocument(
         }
       } else if (visit.leaf) {
         pushLimited(fields.expected, visit.text);
+        pushLimited(fields.expectedSelectors!, locate(v).selector);
         state.expected += 1;
         if (parentStep !== -1 && parentStep < fields.steps.length) pushLimited(fields.steps[parentStep].expected, visit.text);
       } else {

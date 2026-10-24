@@ -7,7 +7,10 @@
       "interpreter": "structure@1",
       "table": "tables/structure.json",
       "applies": "run",
-      "subject": { "module": "functions/subjects.ts", "export": "structureSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
       "judges": "subject",
       "tier": "blocking"
     },
@@ -17,16 +20,25 @@
       "interpreter": "structure@1",
       "table": "tables/structure-node-ids.json",
       "applies": "run",
-      "subject": { "module": "functions/subjects.ts", "export": "structureSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
       "judges": "subject",
       "tier": "advisory"
     },
     {
       "id": "tags",
       "title": "标签写法一致",
-      "function": { "module": "functions/checks.ts", "export": "tagSpelling" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "tagSpelling"
+      },
       "applies": "run",
-      "subject": { "module": "functions/subjects.ts", "export": "structureSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
       "judges": "subject",
       "tier": "advisory"
     },
@@ -36,7 +48,10 @@
       "interpreter": "catalog@1",
       "table": "tables/cited-commands.json",
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "commandSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
       "catalog": "commands@1",
       "judges": "subject",
       "tier": "blocking"
@@ -47,7 +62,10 @@
       "interpreter": "catalog@1",
       "table": "tables/command-claims.json",
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "commandSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
       "catalog": "commands@1",
       "judges": "artifact_under_verification",
       "tier": "blocking"
@@ -64,7 +82,10 @@
     {
       "id": "findings_sources",
       "title": "发现有位置和逐字引文、引用的命令行出自用例、不只靠线索",
-      "function": { "module": "functions/checks.ts", "export": "findingSources" },
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "findingSources"
+      },
       "applies": "item",
       "judges": "artifact_under_verification",
       "tier": "blocking",
@@ -76,10 +97,24 @@
       "interpreter": "catalog@1",
       "table": "tables/catalog.json",
       "applies": "item",
-      "subject": { "module": "functions/subjects.ts", "export": "scanSubject" },
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "scanSubject"
+      },
       "catalog": "commands@1",
       "judges": "subject",
       "tier": "advisory"
+    },
+    {
+      "id": "expected_quality_evidence",
+      "title": "期望质量的完整逐字证据",
+      "function": {
+        "module": "functions/expected-quality.ts"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "R3：语义由模型主张；原件、用例所属全部期望叶子及逐字引文由 Hub 核验，不使用含糊短语表"
     }
   ]
 }
