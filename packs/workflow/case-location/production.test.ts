@@ -3,6 +3,7 @@
 // the validation result with no submission; each answer, written down here first, comes back as the data of a fact claim.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { IDENTITY } from './pack-files.ts';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { createPacksPort, createWorkflowStore } from '../../../hub/runs/api.ts';
@@ -158,7 +159,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.4.4', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: `case-location.candidates@${IDENTITY.version}`, independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
@@ -195,7 +196,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.4.4', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: `case-location.locate@${IDENTITY.version}`, independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
