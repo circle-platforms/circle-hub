@@ -20,11 +20,6 @@ export interface ProjectLimits {
 }
 export const LIMITS: ProjectLimits = { maxItems: 4000, outputBytes: 6 * 1024 * 1024 };
 
-/** The conclusion sentence when the bound view names no catalog: the changes were counted by entry kind alone. */
-const CATALOG_HINT = {
-  kind: 'catalog-hint',
-  message: '影响视图没有限定目录：只按条目种类比，可能混进其他生产器在同一路径上的同类条目（标识加 catalog=commands@1 限定到命令目录）',
-};
 
 interface Warning {
   code: string;
@@ -73,6 +68,15 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
       `视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1（带上 changed=definition 和目录）`,
     );
   }
+  // The view must be filtered to the command catalog (decision 11): without it the change count is by entry kind alone
+  // and members of other producers on the same paths would widen the sweep. Refuse instead of hinting.
+  if (parsed.view.catalog !== 'commands@1') {
+    return refusal(
+      'catalog',
+      `影响视图没有限定到命令目录 catalog=commands@1${parsed.view.catalog === null ? '' : `，带的是 ${parsed.view.catalog}`}，只按条目种类比会混进其他生产器在同一路径上的同类条目`,
+      '视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1（带上 catalog=commands@1）',
+    );
+  }
   // The behaviour view of the same pair of builds (optional): never in the sweep, only a clue paragraph.
   const clue = behaviourClue(input, parsed.view);
   if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
@@ -86,7 +90,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
   const out = {
     items: sweep.items.map((item) => itemOf(item, sha256)),
-    groups: [note, ...(clue !== null ? [clue] : []), ...(parsed.view.catalog === null ? [CATALOG_HINT] : [])],
+    groups: [note, ...(clue !== null ? [clue] : [])],
     warnings: sweep.warnings.slice(0, 100),
   };
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');

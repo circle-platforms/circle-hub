@@ -251,6 +251,11 @@ export function parseManifest(input: unknown): ParsedManifest {
         ipv4: readAddresses(4, 'ipv4'),
         ipv6: readAddresses(6, 'ipv6'),
       });
+      // A device no interface address at all cannot be reached on the bed: refuse it at import (task hub-pack-findings 9).
+      const pushed = devices[devices.length - 1];
+      if (pushed.ipv4.length === 0 && pushed.ipv6.length === 0) {
+        problems.push({ pointer: devicePointer, message: `设备 ${dName || deviceAt} 没有接口地址（ipv4 和 ipv6 都是空的），上台架后无法访问`, fix: '至少写一个接口地址，例如 "ipv4": ["192.0.2.10/26"]；没有地址的占位设备请从清单里删掉' });
+      }
     });
     // Services.
     const services: ManifestService[] = [];

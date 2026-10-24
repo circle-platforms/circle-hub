@@ -30,8 +30,8 @@ export interface ChangeSpec {
 export interface BuildOptions {
   /** The changed kinds the view was asked for; default definition-only (decision 11). */
   changedKinds?: string[];
-  /** The catalog the view was filtered to (catalog-entry@1 members compared by syntax); absent: no catalog filter. */
-  catalog?: string;
+  /** The catalog the view was filtered to (catalog-entry@1 members compared by syntax); null: no catalog filter. */
+  catalog?: string | null;
   skipped?: { from: number; to: number };
   truncated?: boolean;
   changedPaths?: number;
@@ -145,7 +145,9 @@ export function buildImpact(changes: readonly ChangeSpec[], options: BuildOption
   return {
     schema: 'impact-view@1',
     product: 'widget',
-    ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
+    // The pack requires catalog=commands@1 (decision 11); fixtures stand for valid bindings, so it is the default.
+    // A test of the refusal passes `catalog: null` to omit the field.
+    ...(options.catalog === null ? {} : { catalog: options.catalog ?? 'commands@1' }),
     from: { build: 'Rel_W_1_0_1', root: FROM_ROOT },
     to: { build: 'Rel_W_1_0_2', root: TO_ROOT },
     changed_kinds: options.changedKinds ?? ['definition'],

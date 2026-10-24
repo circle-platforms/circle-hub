@@ -56,3 +56,20 @@ describe('checks on a subject', () => {
     assert.equal(outcome.verdict, 'refute');
   });
 });
+
+describe('an empty scope is a deterministic support, not an unknown', () => {
+  it('in_scope gives an empty-scope support when the projection note exists and there are no items', () => {
+    const outcomes = checkOutcomes('in_scope', { items: [], note: { ...NOTE, considered: [], uncovered: [], skipped_to: 0, truncated: false, changed_paths: 0 } });
+    assert.equal(outcomes.length, 1, JSON.stringify(outcomes));
+    assert.equal(outcomes[0].verdict, 'support');
+    assert.equal(outcomes[0].item, undefined);
+    assert.match(outcomes[0].statement, /回归范围是空的/);
+  });
+
+  it('keeps the unknown when the subject carries no note (malformed subject)', () => {
+    const outcomes = checkOutcomes('in_scope', { items: [], note: null });
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].verdict, 'unknown');
+    assert.equal(outcomes[0].reason, 'check_error');
+  });
+});
