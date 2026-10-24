@@ -26,6 +26,15 @@ async function safeAnswer(ctx:EngineContext,request:RequestView,source:string,su
  const at=ctx.now().toISOString();
  await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:request.run??null,item:request.item??null,inputs:['rec:'+request.record,'rec:'+source],component:'criterion-change@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request:request.record,answer:source,criterion_answer:summary,...(superseded?{superseded:true}:{})}},index:[{key:'runs.request.answer',value:request.record}]},tx);
 }
+/** Instructions follow the binding interface: source roots are inputs, exact fragments remain quotations. */
+export function criterionReviewInstruction(run:string,source:string,change:CriterionChange,administrator:string):{next_action:string;unsupported:string[]}{
+ const originals=[...new Set([change.criterion,...change.grounds.map(ground=>ground.reference)])];
+ const unsupported=originals.filter(reference=>parseReference(reference).scheme==='tree');
+ if(unsupported.length)return {unsupported,next_action:'能力缺口：当前复核输入不能绑定锁定知识树片段 '+unsupported.join('、')+'；管理员 '+administrator+' 安排维护人补齐按复核者现有读权绑定这些片段的只读能力。修复后，作者以外的账号以 '+run+' 为前驱重开 criterion-review，declaration 显式绑定 rec:'+source+'，补绑所列期望片段再确认；不继承作者原件读权。原判据继续生效，接受后开新修订'};
+ const refs=[...new Set(originals.map(reference=>{const ref=parseReference(reference);return ref.scheme==='src'?'src:'+ref.sha256:formatReference(ref);} ))];
+ const input={pack:'criterion-review',predecessor:run,inputs:{declaration:{reference:'rec:'+source},evidence:refs.map(reference=>({reference}))}};
+ return {unsupported,next_action:'作者以外的账号以 start_run 开复核运行，显式绑定声明提交及期望原件，quotes 仍指向原片段：'+JSON.stringify(input)+'；缺原件读权时由管理员补授权或由有权的非作者复核；接受以后以声明运行为前驱开新修订'};
+}
 export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,source:string,changes:Array<{index:number;change:CriterionChange}>,result:ValidationResult,tx:Transaction):Promise<void>{
  if(!changes.length)return;
  if(!run.submission_due)throw new Error('criterion request requires the frozen submission deadline');
@@ -44,9 +53,8 @@ export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,s
     if(last?.kind==='submission'&&last.digest===source)continue;
     await safeAnswer(ctx,previous,source,{message:'由后一份提交的同名声明取代',replacement:'rec:'+source},tx,true);
    }
-   const refs=[...new Set([change.criterion,...change.grounds.map(ground=>ground.reference)])];
-   const input={pack:'criterion-review',predecessor:run.run,inputs:{declaration:{reference:'rec:'+source},evidence:refs.map(reference=>({reference}))}};
-   const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:'判据变更声明尚未由作者以外的账号复核：'+change.assertion,next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+'作者以外的账号以 start_run 开复核运行，显式绑定声明提交及期望片段：'+JSON.stringify(input)+'；缺原件读权时由管理员补授权或由有权的非作者复核；接受以后以声明运行为前驱开新修订',source,code:'awaiting_step',item:change.item,declaration:pointer});
+   const instruction=criterionReviewInstruction(run.run,source,change,people.find(user=>user.role==='admin')?.id??audience.id);
+   const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:(instruction.unsupported.length?'复核入口缺少锁定知识树片段的只读绑定能力；':'')+'判据变更声明尚未由作者以外的账号复核：'+change.assertion,next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+instruction.next_action,source,code:'awaiting_step',item:change.item,declaration:pointer});
    request={...created.body,record:created.digest,answered_by:null};
   }
   result.errors.push({code:'awaiting_step',item:change.item,path:pointer,message:`判据变更声明：${change.assertion}；旧值 ${change.old}；新值 ${change.new}；等待作者以外的账号复核`,fix:`缺失事实：声明尚未复核；请求 rec:${request.record}，受众 ${request.audience}，期限 ${request.due}；${request.next_action}`});

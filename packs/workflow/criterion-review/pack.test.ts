@@ -13,3 +13,7 @@ test('the generic criterion review package and both decision polarities pass pub
  const valid=await validatePack(directory.pack);assert.ok(valid.ok,JSON.stringify(valid));
  const published=await runPublishCheck({pack:valid.pack,packDir:staged,sandbox:{requireOsIsolation:await osIsolationAvailable()}});assert.deepEqual(refusalsOf(published,valid.pack),[]);assert.equal(published.samples.passed,4);
 });
+test('review evidence accepts every concrete media type declared by a core parser',async()=>{
+ const {readFile}=await import('node:fs/promises'),{createDefaultRegistry}=await import('../../../hub/refs/api.ts');const workflow=JSON.parse(await readFile(new URL('./workflow.json',import.meta.url),'utf8'));const accepts=workflow.inputs.find((slot:any)=>slot.slot==='evidence').accepts.map((media:string)=>media.toLowerCase());
+ for(const media of new Set(createDefaultRegistry().list().flatMap(parser=>parser.mediaTypes).filter(media=>!media.includes('*'))))assert.ok(accepts.includes(media.toLowerCase()),media);
+});

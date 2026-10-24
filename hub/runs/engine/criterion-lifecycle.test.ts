@@ -29,3 +29,7 @@ test('legacy runs without a submission deadline reject declarations but do not i
  const {submission_due,...record}=source.body;const id=newId('run');await putRun(h.kit.store,{...record,run:id},source.created_at);
  const answer=await h.submit(id,[h.proposal]);assert.equal(answer.acceptance,'not_accepted');assert.ok(answer.errors.some(row=>row.path==='/criterion_changes'&&row.message.includes('期限')));assert.equal((await createRequestService(h.kit).all(id)).filter(row=>row.declaration).length,0);
 });
+test('the request next action can be executed when criterion and grounds cite source fragments',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const {installReview}=await import('./testing/criterion-review.ts');await installReview(h);const run=await h.start();const proposal={...h.proposal,criterion:h.expected+'/text@1/l/1',grounds:[{reference:h.expected+'/text@1/l/2',quote:'第二依据'}]};assert.equal((await h.submit(run.run,[proposal])).acceptance,'accepted');
+ const request=(await createRequestService(h.kit).all(run.run)).find(row=>row.declaration)!;const action=JSON.parse(request.next_action.slice(request.next_action.indexOf('{'),request.next_action.lastIndexOf('}')+1));const started=await h.service.startRun(h.admin,action,h.call());assert.equal(started.call_result,'ok',JSON.stringify(started));assert.deepEqual(action.inputs.evidence,[{reference:h.expected}]);assert.equal(started.run!.items[0].fields.criterion,proposal.criterion);
+});

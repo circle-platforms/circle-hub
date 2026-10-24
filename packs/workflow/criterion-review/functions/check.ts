@@ -11,7 +11,7 @@ export default function(input:any):unknown{
  const allowed=new Set([fields.criterion,...(fields.grounds??[]).map((value:any)=>value.reference)].filter((value:any)=>typeof value==='string').map(root));allowed.delete(null);
  for(const quote of claim.quotes){
   if(typeof quote?.reference!=='string'||typeof quote.text!=='string'||!quote.text.trim()||!allowed.has(root(quote.reference)))return bad('复核引文只能取声明所引的期望来源，不得换成被判对象或无关来源');
-  if(typeof input.sources?.[quote.reference]!=='string')return [{verdict:'unknown',reason:'missing_input',missing:'缺少复核引文的可读原件 '+quote.reference+'；下一步：在 evidence 补绑这个原片段，缺读权时由管理员授权或有权的非作者复核',statement:'缺少复核引文的可读原件；绑定或授权后重开复核运行',grounds:[],tier:'blocking'}];
+  if(typeof input.sources?.[quote.reference]!=='string')return [{verdict:'unknown',reason:'missing_input',missing:'缺少复核引文的可读原件 '+quote.reference+'；下一步：src 以原件根引用补绑 evidence，rec 可带片段，引文保留原片段；缺读权时由管理员授权或有权的非作者复核',statement:'缺少复核引文的可读原件；绑定或授权后重开复核运行',grounds:[],tier:'blocking'}];
  }
  return [{verdict:'support',statement:claim.code==='accept'?'账号确认接受判据变更':'账号确认不接受判据变更',grounds:[item.location,...claim.quotes.map((quote:any)=>quote.reference)],tier:'blocking',data:{criterion_review:{accepted:claim.code==='accept',reason:claim.data.reason}}}];
 }

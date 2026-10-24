@@ -17,12 +17,20 @@
     {
       "slot": "evidence",
       "role": "expected",
-      "description": "声明引用的期望来源片段，按本账号现有权限补绑",
+      "description": "声明所引的期望原件（src 绑定整件，rec 可选片段），引文仍用精确片段；按本账号现有权限读取",
       "accepts": [
-        "text/plain",
-        "text/markdown",
         "application/json",
-        "application/xml"
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/xhtml+xml",
+        "application/xml",
+        "text/csv",
+        "text/html",
+        "text/markdown",
+        "text/plain",
+        "text/tab-separated-values",
+        "text/x-markdown",
+        "text/xml"
       ],
       "required": false,
       "many": true
