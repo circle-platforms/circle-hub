@@ -1,7 +1,6 @@
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
-import {readFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {readPackDirectory} from '../runs/api.ts';
 import {ProductDeclaration} from '../../contracts/src/product.ts';
 import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, MAX_NODE_CONTRIBUTIONS, type KnowledgeContributionPageView, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
@@ -210,7 +209,22 @@ export class ContributionLayer {
       const producer=composition.body.producer;
       const pack=await this.#context.packs.pack(`${producer.pack}@${producer.version}`);
       if(pack===null||pack.digest!==producer.digest)return fail('缺少产出此组成的原包版本；恢复该版本后重交','REFERENCE_UNRESOLVED');
-      const declaration=ProductDeclaration.parse(JSON.parse(await readFile(join(pack.directory,'product.json'),'utf8')));
+      if(pack.kind!=='product')return fail('原条目的生产器包不是产品包，没有可核验的生产器声明；恢复该包版本后重交','REFERENCE_UNRESOLVED');
+      let raw:unknown;
+      try {
+        const current=await this.#context.packs.productById(producer.pack);
+        if(current?.id===pack.id&&current.version===pack.version&&current.digest===producer.digest)raw=current.product;
+        else {
+          const loaded=await readPackDirectory(pack.directory);
+          if(!loaded.ok||loaded.pack.digest!==producer.digest||loaded.pack.manifest.kind!=='product'||loaded.pack.manifest.id!==pack.id||loaded.pack.manifest.version!==pack.version)throw new Error('unverified product declaration');
+          const file=loaded.pack.files.find(file=>file.path==='product.json');
+          if(!file)throw new Error('missing product declaration');
+          raw=JSON.parse(Buffer.from(file.bytes).toString('utf8'));
+        }
+      } catch { return fail('缺少与原包版本及摘要一致的已核验产品声明；请管理员恢复该版本的完整包后重交','REFERENCE_UNRESOLVED'); }
+      const parsed=ProductDeclaration.safeParse(raw);
+      if(!parsed.success)return fail('原包的已核验产品声明不符合 product@1；请管理员恢复正确声明后重交','REFERENCE_UNRESOLVED');
+      const declaration=parsed.data;
       if([...producers].some(id=>declaration.producers.find(p=>p.id===id)?.placement!=='judgment_allowed'))
         return fail('原条目的生产器未允许 bot 提议归位；仅接受声明 judgment_allowed 的生产器所产出的条目');
     }

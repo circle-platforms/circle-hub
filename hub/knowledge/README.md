@@ -927,3 +927,9 @@ Needs：kb-unversioned 提供并接入 additionalScopeRoots 的部署回调；�
 第 10 条续接：本次合入 hub-redesign 的 be27627f（含 d2236556）。目录未核对约束由通用签名字段保留，
 不会在 catalogData 边界丢掉；未知结果的 missing 位于顶层，未预填 exit。参数定位与修复说明不作为目录
 语法差异，生产警告保留完整 XML 参数路径，参数元数据用相对重载片段的路径，避免元素移位制造变更。
+
+Placement permission uses the validated declaration of the exact producing product
+version and digest. Historical versions without a matching current handle are read
+through the public manifest-verifying pack reader. Non-product handles, absent or
+corrupt files and invalid declarations produce positioned admission refusals; an
+unverified edited extraction never grants permission.
