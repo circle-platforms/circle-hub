@@ -14,6 +14,7 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
   if(at>=0){const query=body.slice(at+1).split('&').filter(pair=>!pair.startsWith('after='));beginning=body.slice(0,at)+(query.length?'?'+query.join('&'):'')+(revision?'@'+revision:'');}
  }
  const delivered=new Set<string>();
+ const placements=new Set<string>();
  let first:Extract<ExternalRead,{ok:true}>|null=null,merged:any=null,next:string|null=beginning;
  const visited=new Set<string>(),inputs:string[]=[];
  while(next!==null){
@@ -32,6 +33,7 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
   const pageKeys:string[]=page.schema==='index-view@1'?Object.entries(page.keys).flatMap(([key,values])=>(values as string[]).map(value=>canonicalize([key,value]))):page.schema==='facet-view@1'?page.rows.map((row:any)=>canonicalize(row.values)):page.changes.map((change:any)=>change.path);
   if(page.next&&pageKeys.length===0)return fail('知识视图给出了空的续读页，无法推进；请管理员修复分页后重试');
   for(const key of pageKeys){if(delivered.has(key))return fail('知识视图续读重复交付同一项；请管理员修复游标后重试');delivered.add(key);}
+  if(page.schema==='impact-view@1')for(const placement of page.placements){if(placements.has(placement.path))return fail('知识视图续读重复交付同一节点的附着条目；请管理员修复游标后重试');placements.add(placement.path);}
   inputs.push(`src:${source.sha256}`);
   if(merged===null)merged=page;
   else{

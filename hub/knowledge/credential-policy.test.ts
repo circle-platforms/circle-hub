@@ -78,7 +78,7 @@ test('the declared source policy handles more than one hundred ordinary findings
 
 for(const failure of [false,true])test(`configured acceptance uses the administrator and records a failed attempt (${failure})`,async t=>{
  const w=await setup(t,true);
- const ingest=w.kit.artifacts.ingest.bind(w.kit.artifacts);w.kit.artifacts.ingest=input=>ingest({...input,visibility:{admins:true,packs:[],shareable:false,...input.visibility,readers:[w.user.id]}});
+ const ingest=w.kit.artifacts.ingest.bind(w.kit.artifacts);w.kit.artifacts.ingest=input=>ingest({...input,visibility:{...input.visibility,readers:[w.user.id]}});
  const {knowledgeSourceLoader}=await import('./credential-policy.ts');const {createDefaultRegistry}=await import('../refs/api.ts');
  if(failure)w.kit.artifacts.acceptFindings=async()=>{throw Error('synthetic acceptance failure');};
  const loader=knowledgeSourceLoader({records:w.kit,store:w.knowledge.store,parsers:createDefaultRegistry(),external:w.external,admin:w.admin,now:()=>new Date('2026-10-24T00:00:00.000Z'),credentialAcceptance:{autoAcceptSources:[{systemPack:'synthetic-documents',slot:'cases'}]}} as never,w.user,'synthetic nonadministrator source read');

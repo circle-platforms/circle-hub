@@ -29,3 +29,16 @@ test('impact exclusions on an earlier page remain incomplete at the final page a
  const bound=await completeKnowledgeView(id,{principal:w.user,run:null,purpose:'synthetic exclusion regression'},reader,w.kit);
  assert.equal(bound.ok,false);if(!bound.ok)assert.match(bound.reason,/未交付|凭据/);
 });
+
+test('complete impact binding refuses a placement node delivered on two distinct change pages',async t=>{
+ const w=await makeWorld(postgres);t.after(()=>w.close());
+ const root='a'.repeat(64),id='knowledge:impact:acme:Synthetic_10_6_1..Synthetic_10_6_2?changed=definition&attached=case';
+ const reader={accepts:async()=>true,read:async(uri:string)=>{
+  const second=uri!==id,digest=(second?'2':'1').repeat(64),path=second?'/b':'/a';
+  const view={schema:'impact-view@1',product:'acme',from:{build:'Synthetic_10_6_1',root},to:{build:'Synthetic_10_6_2',root},changed_kinds:['definition'],attached_kinds:['case'],changes:[{path,change:'added',before:[],after:[digest]}],placements:[{path:'/a',from:[],to:['3'.repeat(64)]}],entries:{[digest]:{entry:digest,kind:'definition',statement:'synthetic',data:{},reference:`tree:${root}${path}@${digest}`}},totals:{changed_paths:2,attached_from:0,attached_to:1},truncated:!second,next:second?null:id+'&after=synthetic',skipped:{from:0,to:0},notes:[]};
+  const artifact=await w.kit.artifacts.ingest({bytes:canonicalBytes(view),mediaType:'application/json',origin:{generated:{generator:'synthetic@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
+  return {ok:true as const,id:uri,revision:root+'..'+root,manifest:'a'.repeat(64),artifacts:[{name:'original',artifact}]};
+ }};
+ const bound=await completeKnowledgeView(id,{principal:w.user,run:null,purpose:'synthetic duplicate placement'},reader,w.kit);
+ assert.equal(bound.ok,false);if(!bound.ok)assert.match(bound.reason,/重复.*节点/);
+});
