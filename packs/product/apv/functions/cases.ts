@@ -342,6 +342,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         steps_count: node.steps,
         commands: paths,
         command_identities: results.flatMap(r=>r.identities??[]),
+        command_tree_root: catalog.tree_root ?? null,
         stories: [...stories].sort(byNumber),
         defects: [...defects].sort(byNumber),
         line: located.line,
