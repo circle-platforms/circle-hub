@@ -535,9 +535,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
   const handed = info === null ? null : { ...info, root: null };
-  const inventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct))inventory.set(row.body.build.name,row.record.digest);
-  if(inventory.size>50000)return result({reason:'已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产'});
-  context={...context,knownBuildInventory:[...inventory].sort(([a],[b])=>compareText(a,b)).map(([name,record])=>({name,record}))};
+  const buildNameInventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct))buildNameInventory.set(row.body.build.name,row.record.digest);
+  if(buildNameInventory.size>50000)return result({reason:'已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产'});
+  context={...context,knownBuildInventory:[...buildNameInventory].sort(([a],[b])=>compareText(a,b)).map(([name,record])=>({name,record}))};
   const applicabilityClosedSets:Record<string,string[]>={};
   for(const [field,name]of Object.entries(product.product.applicability?.closed_sets??{})){
     const uses=(input.variables??[]).filter(use=>use.name===name);if(!uses.length)continue;

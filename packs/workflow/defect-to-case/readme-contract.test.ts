@@ -16,6 +16,6 @@ test('the dynamic dedup declaration documents engine reads and bounded recovery'
   const check = checks.checks.find((entry: { id: string }) => entry.id === 'duplicate_check');
   assert.deepEqual(check.reads.narrow, { slot: 'indexed_cases', key_path: '/read_keys', into: '/indexed_cases', max_keys: 100, max_entries: 5000 });
   for (const word of ['key_path', 'max_keys', 'max_entries', '读取清单', '同一修订']) assert.ok(readme.includes(word), word);
-  assert.match(skill, /only=.*fields=commands,document,node,title,negative/);
+  assert.match(skill, /only=.*fields=commands,document,node,title,negative,case_structure/);
   assert.doesNotMatch(readme + skill, /动态.*接口.*待|当前包不能在检查中派生新读取|ItemSubjectInput 没有动态查询/);
 });

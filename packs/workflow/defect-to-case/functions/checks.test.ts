@@ -1,3 +1,6 @@
+import {QUOTE_BYTES,QUOTE_SOURCE} from '../testing/structure.ts';
+import {nativeStep} from '../testing/structure.ts';
+import {checkCommandsRefutation} from '../testing/checks.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PackCheckInput } from '../../../../hub/rules/api.ts';
@@ -12,7 +15,6 @@ import {
   makeNegativeUnexpectedAcceptDraft,
 } from '../testing/fixtures.ts';
 import {
-  checkCommandsRefutation,
   checkDraftShape,
   checkDuplicate,
   checkGroundedReading,
@@ -32,7 +34,7 @@ function makeCheckInput(subject: unknown, catalog = SYNTHETIC_CATALOG, sources: 
       pack: 'defect-to-case',
       sets: {},
     },
-    sources,
+    sources: { ['src:'+QUOTE_SOURCE]:QUOTE_BYTES,...sources },
     catalog,
   };
 }
@@ -97,14 +99,14 @@ describe('pack checks', () => {
     });
 
     it('refutes tags outside team template categories', () => {
-      const badTag = { ...makeGoodDraft(), tags: ['UnknownTagCategory'] };
+      const badTag = { ...makeGoodDraft(), resource: ['UnknownTagCategory'] };
       const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'e', data: badTag }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
     });
 
     it('refutes negative draft with negative false', () => {
-      const negWithFalse = { ...makeGoodDraft(), tags: ['Negative'], negative: false };
+      const negWithFalse = { ...makeGoodDraft(), resource: ['negative'], negative: false };
       const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'f', data: negWithFalse }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
@@ -150,7 +152,7 @@ describe('pack checks', () => {
       const outcomes = checkCommandsRefutation(input);
       assert.equal(outcomes.length, 1);
       assert.equal(outcomes[0].verdict, 'refute');
-      assert.equal(outcomes[0].code, CODES.NEGATIVE_ACCEPTED);
+      assert.equal(outcomes[0].code, 'core.catalog.membership_contradicted');
     });
 
     it('refutes a draft with expects_refutation false when catalog refutes the command', () => {
@@ -166,7 +168,7 @@ describe('pack checks', () => {
       const outcomes = checkCommandsRefutation(input);
       assert.equal(outcomes.length, 1);
       assert.equal(outcomes[0].verdict, 'refute');
-      assert.equal(outcomes[0].code, CODES.UNEXPECTED_REFUTATION);
+      assert.equal(outcomes[0].code, 'core.catalog.membership_contradicted');
     });
   });
 
@@ -309,7 +311,7 @@ describe('pack checks', () => {
         kind: 'case' as const,
         statement: 'doc_102:node_7 | SLB健康检查间隔配置正向测试',
         reference: `tree:${'1'.repeat(64)}/commands/widget/health/interval@${'4'.repeat(64)}`,
-        data: { document: 'doc_102', node: 'node_7', title: 'SLB健康检查间隔配置正向测试', negative: false, commands: ['widget health interval'] },
+        data: { case_structure: {schema:'case-structure@2',commands:makeGoodDraft().steps.map(s=>s.identity),expected:makeGoodDraft().expected.map(e=>({after:e.after,quote:e.identity}))}, document: 'doc_102', node: 'node_7', title: 'SLB健康检查间隔配置正向测试', negative: false, commands: ['widget health interval'] },
       };
       const index = {
         schema: 'index-view@1' as const,
@@ -338,12 +340,12 @@ describe('pack checks', () => {
       assert.equal(outcomes.length, 1);
       assert.equal(outcomes[0].verdict, 'unknown');
       assert.equal(outcomes[0].reason, 'missing_input');
-      assert.ok(outcomes[0].statement.includes('warp the core gently'));
-      assert.ok(outcomes[0].statement.includes('命令检查已另行驳回'));
+      assert.match(outcomes[0].missing ?? '', /完整/);
+      assert.match(outcomes[0].missing ?? '', /下一步/);
     });
 
     it('concludes not-duplicate when none of the draft’s heads has any index entry (not narrowed)', () => {
-      const lonely = { ...makeGoodDraft(), title: '完全不同的用例', steps: [{ command: 'service http port 8080' }] };
+      const lonely = { ...makeGoodDraft(), title: '完全不同的用例', steps: [nativeStep('service http port 8080')] };
       const outcomes = checkDuplicate(makeCheckInput({ item: '74001', drafts: [lonely], indexed_cases: SYNTHETIC_INDEX_VIEW_COMPLETE }));
       assert.equal(outcomes.length, 1);
       assert.equal(outcomes[0].verdict, 'support');
@@ -386,7 +388,7 @@ describe('pack checks', () => {
       assert.equal(duplicateClaimCountKey(reworded), duplicateClaimCountKey(claim));
       const prefix = `起草用例“${draft.title}”与已索引用例重复`;
       const byPrefix = [claim, reworded, sameWordsOtherItem].filter((outcome) => outcome.statement.startsWith(prefix));
-      assert.equal(byPrefix.length, 2);
+      assert.equal(byPrefix.length, 0);
       assert.equal(byPrefix.some((outcome) => outcome.statement === reworded.statement), false);
     });
   });

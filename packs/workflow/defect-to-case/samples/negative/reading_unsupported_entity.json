@@ -10,6 +10,7 @@
         {
           "text": "阅读引入未载实体",
           "data": {
+            "id": "draft-good",
             "title": "健康检查配置测试",
             "priority": 2,
             "negative": false,
@@ -20,7 +21,28 @@
             "steps": [
               {
                 "command": "widget health interval 60",
-                "note": "设置间隔为60秒"
+                "identity": {
+                  "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+                  "path": "/commands/widget/health/interval",
+                  "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params",
+                  "parameters": [
+                    {
+                      "position": 0,
+                      "name": "seconds",
+                      "raw": "60",
+                      "type": {
+                        "name": "int",
+                        "catalog_type": "int",
+                        "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params/0",
+                        "grammar": "synthetic-catalog@1"
+                      },
+                      "parsed": {
+                        "kind": "int",
+                        "value": 60
+                      }
+                    }
+                  ]
+                }
               }
             ],
             "expected": [
@@ -33,12 +55,18 @@
               }
             ],
             "tags": [
-              "Functional"
+              "functional"
+            ],
+            "resource": [
+              "functional"
             ]
           }
         }
       ]
     }
+  },
+  "sources": {
+    "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982": "{\"id\":\"74001\",\"kind\":\"bug\",\"title\":\"SLB健康检查间隔无法保存\",\"fix_field\":\"fix\",\"fields\":{\"id\":\"74001\",\"title\":\"SLB健康检查间隔无法保存\",\"status\":\"closed\",\"resolution\":\"fixed\",\"severity\":\"major\",\"assignedTo\":\"synthetic-tester\",\"steps\":\"进入合成页面，修改间隔后保存\",\"fix\":\"修复说明：修复参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval <1-300>。期望结果：健康检查间隔设置成功，系统运行正常。\"},\"html_fields\":[\"steps\",\"fix\"]}"
   },
   "expect": [
     {

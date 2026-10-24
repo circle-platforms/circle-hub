@@ -5,7 +5,7 @@
 ## 1. 任务目标与输入
 
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`）。推荐省略 `only`，由检查按草稿命令头动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单，可预先收窄到草稿要用的命令（`knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,case_structure`）。推荐省略 `only`，由检查按草稿声明的命令路径动态读取；若预先限制范围，`only` 在开始运行时写上（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`）；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其余字段也要列上。草稿的命令集合与 `only` 不相交时查重记未知。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。
@@ -44,7 +44,7 @@ Hub 对提交进行两层核对：
    - `shape`（结构）：空标题、缺失步骤或期望结果、优先级越界、非标准标签、同次提交重复用例（退回修复，最多 2 轮）。
    - `commands`（命令与参数）：参数类型不符、参数越界或命令不存在；反向用例反驳与预期不一致（退回修复，最多 2 轮）。
    - `grounded`（依据）：只允许本条缺陷 src 原件的 json@1/p/fields/<fix_field>、json@1/p/fix_notes/<序号>/comment，或 manual 槽绑定手册的 src 片段；其他字段、未冻结的序号、其他来源及 tree:/rec: 均退回修正，改引对应原件；每个期望结果必须自带 quote；缺失 quote、把 quote 放在用例一级而非期望结果内部、或 quote 缺失 reference/text 均会被拒；期望文字不是自身引文的逐字片段（退回修复，最多 2 轮）。
-   - `not_duplicate`（去重）：若与已索引用例存在相同规范化命令头集合（每行取锁定目录中最长前缀）、相同正反向且规范化标题相同，判定为重复用例违规（提示档）；当前不比较期望结果原文。若索引存在跳过文档且未见重复，诚实判定为未知（完整性未证明）。
+   - `not_duplicate`（去重）：按 case-structure@2 的命令路径、类型参数、期望原件引文身份与 after 比较，完全相等为重复（提示档）。标题、标签及正反向标记不作键；缺完整身份或完整索引范围为未知，补声明和原件后重开。
 
 ## 5. 提交样例
 
@@ -103,11 +103,11 @@ Hub 对提交进行两层核对：
 }
 ```
 
-查重未知时必须自动补取：先修正解析不出命令头的草稿；only 未覆盖就重读含草稿命令头的索引并重开；缺键、截断、每键上限、缺 commands 字段或未读来源，就补齐相应事实后重开核对。接口仍拿不到完整数据时明确报告能力缺口，不把未知转述成没有重复。参数值不同不改变命令头集合的比较。
+查重未知时必须自动补取：先补完整命令身份；only 未覆盖就重读含草稿命令路径的索引并重开；缺键、截断、每键上限、缺 commands 字段或未读来源，就补齐相应事实后重开核对。接口仍拿不到完整数据时明确报告能力缺口，不把未知转述成没有重复。参数类型与解析值参与结构键，参数值不同不算同一结构。
 
 ### 检查时按草稿动态读取
-Hub 在 duplicate_check 构造主体后，按锁定目录解析出的草稿命令头从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
+Hub 在 duplicate_check 构造主体后，按草稿声明的完整命令身份 path从已绑定 indexed_cases 的同一修订重读收窄索引。推荐输入仅指定 fields=commands,document,node,title,negative,case_structure，不预先指定 only；若输入已有 only，后续读取只能在其范围内收窄，不能扩大。
 
-缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令头，逗号分隔>&fields=commands,document,node,title,negative`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。
+缺键、截断或超限不算没有重复：按结果里的 missing_fact 和 next_action 重读或调高上限；修订已不可读或永久跳过文档时补建新修订后重开。需要客户端补读时使用 `knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,case_structure`，逐键 URL 编码。不能在旧运行中重交并期待改变已冻结的来源身份。可见重复照样驳回，未知不得转述为通过。
 
 每条草稿声明稳定 id、每步完整 identity、每个 expected 的 identity/after；引用必须带原始 byte span。不要用相同标题或文字前缀查重。索引须有作者 case_structure；缺声明就请求作者补结构后重产新根，缺原件就补读，截断按冻结根续读。不能把不完整键当空集合。发布状态只取原始 JSON status，缺字段请发布页或缺陷系统维护者补声明。

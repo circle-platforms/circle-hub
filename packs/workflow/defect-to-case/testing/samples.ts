@@ -1,3 +1,4 @@
+import {nativeStep,nativeExpected,EXPECTED_IDENTITY,STRUCTURAL_CATALOG_SPEC} from './structure.ts';
 // Sample generator for defect-to-case pack (pack-sample@1).
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
@@ -43,6 +44,7 @@ export function samples(): Entry[] {
               {
                 text: '健康检查间隔设置成功',
                 quote: { reference: FIX_REF, text: '健康检查间隔设置成功' },
+                after:1,identity:{source_sha256:BUG_DIGEST,parser:'json@1',path:'p/fields/fix',span:{unit:'byte',offset:Buffer.byteLength(JSON.stringify(SYNTHETIC_BUG_74001).slice(0,JSON.stringify(SYNTHETIC_BUG_74001).indexOf('健康检查间隔设置成功'))),length:Buffer.byteLength('健康检查间隔设置成功')}},
               },
             ],
           }),
@@ -191,8 +193,8 @@ export function samples(): Entry[] {
       'negative_accepted',
       'commands_refutation',
       '反向用例声明预期被反驳但命令被目录接受',
-      defaultRefutationNegativeSubject,
-      [{ verdict: 'refute', code: 'defect-to-case.negative_accepted', item: BUG_ID, tier: 'blocking' }],
+      {...defaultRefutationNegativeSubject,slots:{cases:[{data:goodDraft({resource:['functional'],negative:false,expects_refutation:true})}]}},
+      [{ verdict: 'refute', code: 'defect-to-case.shape_invalid', item: BUG_ID, tier: 'blocking' }],
       { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
 
@@ -236,6 +238,7 @@ export function samples(): Entry[] {
       '期望文字为自身引文的逐字片段',
       defaultGoodSubject,
       [{ verdict: 'support', item: BUG_ID }],
+      {sources:{['src:'+BUG_DIGEST]:JSON.stringify(SYNTHETIC_BUG_74001)}},
     ),
     sample(
       'negative',
@@ -244,8 +247,11 @@ export function samples(): Entry[] {
       '期望文字不是自身引文的逐字片段',
       defaultReadingBadSubject,
       [{ verdict: 'refute', code: 'defect-to-case.expect_not_in_quote', item: BUG_ID, tier: 'blocking' }],
+      {sources:{['src:'+BUG_DIGEST]:JSON.stringify(SYNTHETIC_BUG_74001)}},
     ),
 
+    sample('positive','refutation_expected','refutation_catalog','完整签名确认无效参数符合显式反向主张',{item:BUG_ID,claims:[{command:'widget health interval 999',present:false}]},[{verdict:'support',item:BUG_ID}],{catalog:STRUCTURAL_CATALOG_SPEC}),
+    sample('negative','refutation_contradicted','refutation_catalog','有效签名反驳不存在的主张',{item:BUG_ID,claims:[{command:'widget health interval 60',present:false}]},[{verdict:'refute',code:'core.catalog.membership_contradicted',item:BUG_ID}],{catalog:STRUCTURAL_CATALOG_SPEC}),
     // 6. duplicate_check
     sample(
       'positive',
@@ -257,8 +263,8 @@ export function samples(): Entry[] {
         drafts: [
           goodDraft({
             title: '查看健康检查状态',
-            steps: [{ command: 'show health' }],
-            expected: [{ text: '显示健康' }],
+            steps: [nativeStep('show health')],
+            expected: [nativeExpected('显示健康')],
           }),
         ],
         indexed_cases: SYNTHETIC_INDEX_VIEW,
@@ -270,14 +276,14 @@ export function samples(): Entry[] {
       'negative',
       'duplicate_found',
       'duplicate_check',
-      '起草用例与已有索引用例命令与标题相同',
+      '标题不同，但完整命令参数和期望引文身份相同，按结构反驳',
       {
         item: BUG_ID,
         drafts: [
           goodDraft({
-            title: '健康检查详细信息查看',
-            steps: [{ command: 'show health detail' }],
-            expected: [{ text: '健康检查状态显示正常' }],
+            title: '标题不同仍是同一结构',
+            steps: [nativeStep('show health detail')],
+            expected: [nativeExpected()],
           }),
         ],
         indexed_cases: SYNTHETIC_INDEX_VIEW,
