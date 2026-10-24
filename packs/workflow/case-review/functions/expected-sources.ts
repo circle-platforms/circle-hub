@@ -1,17 +1,15 @@
-// Expected sources of a case-review run (pack function): the PLM stories and bugs named in the document title and the folders
-// above it, and a manual search for the feature words of the title. Only external object ids come out; the Hub reads them
-// with the system packs and binds what it read (role expected) with its revision.
+// Expected sources of a case-review run (pack function): the PLM stories and bugs its author declared. Only external
+// object ids come out; the Hub reads them with the system packs and binds what it read (role expected) with its revision.
 //
-// Id conventions of real titles (numbers here are invented): "bug to case 70412", "Bug 118000&118001", "bug57001", "Test
-// List of Bug 138001", "需求20931", "Story#20777", "PLM20518-...", "bug to case-需求20931" (the word next to the number wins),
-// and unmarked numbers at the start: "31057-...", "146001 146002...", "回归 - 112233", "Test-129001-...".
-// Only a word right before a number names its kind: bug, 缺陷 (bug); story, 需求 (story). "bug to case" names a document type
-// and "PLM" the system, and real titles put story numbers after both, so the numbers after them are unmarked. An unmarked id
-// takes the kind whose id range alone contains it when the product pack gives the ranges (parameters.idRanges); otherwise both
-// kinds are read (parameters.bareIds). The defect system numbers stories and bugs apart, so both records may exist and one of
-// them be unrelated to the document: the reason and the warning say so, and the reviewer checks the record's title before
-// citing it (or names the kind with stories / bugs).
-// Release-train labels ("201：3.2.1-主线-2026/06/30"), years, dates and version numbers are not ids.
+// Identifiers (apv-id-fields@1, declared for the owner's R6 rule 2026-10-24): an identifier comes from a whole field the
+// author wrote — `bug:<decimal list>` or `story:<decimal list>` — in the title the source system lists or in a folder label
+// above the document, or from the run parameters `stories` / `bugs`. Nothing is read out of prose: no marker word ("bug to
+// case", "需求", "Story#", "PLM"), no misspelling of one, no unmarked number at the start, no padded or date-shaped number
+// and no folded full-width form. Without a declared identifier the run binds no expected source and says what is missing
+// and who declares it (the author writes the field or the parameters, or a model proposes the link with a verbatim quote
+// the Hub verifies).
+// Keyword retrieval selects no candidate source at all (owner rulings U19/U20, 2026-10-24): no spec search, no test
+// strategy search and no similar-list hint is bound, and their results are neither an input nor a basis of recall.
 import { PACK, failure, guarded, isRecord, warningSink, type WarningSink } from './common.ts';
 import { clip, collapseWhitespace, isBlank, mustEncodeInExternalId, percentEncode, textOf } from './text.ts';
 import type { ExternalObjectId, FoundId, IdKind, IdRange, SourceBasis, SourcesOutput } from './types.ts';
