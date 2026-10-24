@@ -49,6 +49,7 @@ export interface OfferContext {
   workflow: LoadedWorkflow;
   packDigest: string;
   root: string | null;
+  unversionedRoot?: string | null;
   /** Digests of the sources bound to the new run (inputs and expected sources), and its subject sources. */
   boundShas: ReadonlySet<string>;
   boundRecords: ReadonlySet<string>;
@@ -79,7 +80,7 @@ async function unchanged(offer: OfferContext, claims: readonly Claim[]): Promise
       const [old, now] = await Promise.all([offer.fragmentText(reference), offer.fragmentText(target)]);
       if (old === null || now === null || old !== now) return false;
     } else if (ref.scheme === 'tree') {
-      if (offer.root === null || ref.root !== offer.root) return false;
+      if (![offer.root, offer.unversionedRoot].includes(ref.root)) return false;
     } else if (ref.scheme === 'rec') {
       if (!offer.boundRecords.has(ref.record)) return false;
     } else return false;
@@ -92,7 +93,7 @@ export async function reuseOffers(offer: OfferContext, items: readonly ItemProje
   const out = new Map<string, string>();
   const p = offer.predecessor;
   if (!hasItemJudgments(offer.workflow)) return out;
-  if (p.pack_digest !== offer.packDigest || (p.root ?? null) !== offer.root) return out;
+  if (p.pack_digest !== offer.packDigest || (p.root ?? null) !== offer.root || (p.unversioned_root ?? null) !== (offer.unversionedRoot ?? null)) return out;
   const latest = await latestAccepted(offer.ctx.deps.records.store, p.run);
   if (latest === null) return out;
   const views: SubmissionViews = new Map();

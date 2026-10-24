@@ -418,6 +418,22 @@ describe('pages', () => {
   });
 });
 
+test('knowledge console lists product-wide roots and renders undeclared builds safely', async () => {
+  const originalInfo=server.deps.knowledge.rootInfo;
+  const originalRoot=server.deps.knowledge.unversionedRoot;
+  const info={root:ROOT_1,composition:'c'.repeat(64),product:'line-a',build:null,source_count:17,produced_at:'2026-10-24T00:00:00.000Z'};
+  try {
+    server.deps.knowledge.unversionedRoot=async product=>product==='line-a'?info:null;
+    server.deps.knowledge.rootInfo=async ()=>[info];
+    const user=await person(['review']);const session=await signIn(user.token);
+    const overview=await get('/console/knowledge',session);
+    assert.match(overview.body,/不分版本/);assert.match(overview.body,/来源 17 个/);
+    assert.match((await get(`/console/knowledge/root?root=${ROOT_1}`,session)).body,/构建未声明/);
+    server.deps.knowledge.unversionedRoot=async ()=>null;
+    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*—/);
+  } finally { server.deps.knowledge.rootInfo=originalInfo;server.deps.knowledge.unversionedRoot=originalRoot; }
+});
+
 test('full administrator reasons are escaped in console details and unavailable to an ordinary reader',async()=>{
  const user=await person();
  await server.records.callLog.append({traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,runId:null,userId:user.user.id,tool:'submit_result',arguments:{},callResult:'ok',durationMs:1,adminNote:'摘要',adminReasons:['合成完整理由 <script>unsafe</script>']});

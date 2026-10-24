@@ -78,3 +78,8 @@ test('an invalid configured root stays a production refusal instead of becoming 
  const value=input();value.params.root=configured.adoc.APV.root;
  await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='apv.adoc.invalid_root');
 });
+
+test('configured adoc production refuses a missing build with a concrete recovery action',async()=>{
+ for(const root of ['synthetic/{line}',null]){const value=input();value.params.root=root;delete value.build;
+ await assert.rejects(familyManual(value),error=>error instanceof TypeError&&error.message.includes('缺少 build')&&error.message.includes('下一步'));}
+});

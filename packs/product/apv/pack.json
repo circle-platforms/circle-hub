@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "0a280c557907e2d7481090e0fbafb65e4b0192261dffb74731035091aa279375",
-      "size": 10312
+      "sha256": "6fb85c2620f9145a976cdcf840dcdd3a056dd85f4f9cf37b94e6d7416ff64f40",
+      "size": 10465
     },
     {
       "path": "functions/adoc/engine.ts",

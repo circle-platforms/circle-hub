@@ -229,7 +229,6 @@
     }
   },
   "required": [
-    "build",
     "slots",
     "params"
   ],

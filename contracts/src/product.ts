@@ -118,6 +118,7 @@ export const SyncPlanInput = z.strictObject({
 export type SyncPlanInput = z.infer<typeof SyncPlanInput>;
 
 export const SyncPlanOutput = z.strictObject({
+  scope: BuildInfo.shape.sources.optional().describe('product-wide sources without a declared build'),
   fetch: z.array(ExternalObjectId).describe('more pages to read before the plan is complete; asked again with their answers'),
   builds: z.array(BuildInfo).describe('every build found so far; the list of the last round is the plan'),
   done: z.boolean(),
@@ -197,6 +198,7 @@ export type ProducerPlacement = Placement;
  * into the source by parser and selector, and the Hub verifies that each one exists before it is hung on the tree (K02 R[0]).
  */
 export const Producer = z.strictObject({
+  unversioned: z.boolean().optional().describe('only produce the product-wide root; absent or false produces build roots'),
   id: z.string().regex(/^[a-z][a-z0-9_-]*$/),
   title: z.string().min(1),
   function: PackFunctionRef,
@@ -218,7 +220,7 @@ export const ProducerSlot = z.strictObject({
 
 /** Input of a producer function. A slot whose source could not be read and was declared optional is null. */
 export const ProducerInput = z.strictObject({
-  build: KnownBuild,
+  build: KnownBuild.optional(),
   slots: z.record(SlotName, ProducerSlot.nullable()),
   lists: z.record(SlotName, z.array(ProducerSlot)).optional().describe('the batch of each list slot (many: true); the other slots are the same in every call'),
   batch: z.strictObject({ index: z.number().int().nonnegative(), of: z.number().int().min(1) }).optional().describe('which batch this call is, when the producer has a list slot'),
