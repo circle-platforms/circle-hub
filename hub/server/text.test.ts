@@ -78,9 +78,9 @@ function toySlots(): SlotSchema {
 }
 
 const REQUIREMENTS: RunSummary['requirements'] = [
-  { key: 'structure', name: '结构', description: '结构（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 0 },
-  { key: 'catalog', name: '命令目录', description: '命令目录（合成）', layers: ['static', 'dynamic'], done_rule: 'gating', accepted_producer: 'fact', repair_rounds: 1 },
-  { key: 'findings', name: '发现', description: '发现（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'independent_judgment', repair_rounds: 2 },
+  { key: 'structure', name: '结构', description: '结构（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 0, rules: [], run_interpreters: [] },
+  { key: 'catalog', name: '命令目录', description: '命令目录（合成）', layers: ['static', 'dynamic'], done_rule: 'gating', accepted_producer: 'fact', repair_rounds: 1, rules: [], run_interpreters: [] },
+  { key: 'findings', name: '发现', description: '发现（合成）', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'independent_judgment', repair_rounds: 2, rules: [], run_interpreters: [] },
 ];
 const FACTS_ONLY = REQUIREMENTS.filter((r) => r.accepted_producer === 'fact');
 
@@ -405,8 +405,8 @@ describe('start_run text', () => {
       const order = ['规程：', '要求项：', '来源：', '条目（', '槽位模式', '示例 submit_result'].map((head) => indexOf(lines, (l) => l.startsWith(head)));
       assert.ok(order.every((at, i) => at > 2 && (i === 0 || at > order[i - 1])), `the order of the parts: ${order.join(', ')}`);
       assert.equal(lines[order[0] + 1], '# 规程（合成）', 'the procedure as the pack wrote it');
-      assert.ok(lines.includes('- catalog 命令目录：接受的生产者 事实；判定层 静态、动态；门禁型；修复轮数 1'));
-      assert.ok(lines.includes('- findings 发现：接受的生产者 独立判断；判定层 静态（动态：本层不适用）；记账型；修复轮数 2'));
+      assert.ok(lines.includes('- catalog 命令目录：接受的生产者 事实；判定层 静态、动态；门禁型；修复轮数 1；规则 无；运行内表的已裁定解释器 无'));
+      assert.ok(lines.includes('- findings 发现：接受的生产者 独立判断；判定层 静态（动态：本层不适用）；记账型；修复轮数 2；规则 无；运行内表的已裁定解释器 无'));
       assert.ok(lines.includes(`- 被判对象 ${SUBJECT}（输入 map，外部对象 toy:mindmap:docq7@1，application/json，分区浇灌用例）`));
       assert.ok(lines.includes('- 数据缺口：期望来源 toy:broken:offline：对你不可用'), 'a gap is named as a gap');
       const shown = itemIdsOf(text);
@@ -1285,4 +1285,11 @@ test('large function-only structure summaries have real cursor continuation with
    const parsed=JSON.parse(next[1]);assert.equal(parsed.reference,reference);assert.notEqual(parsed.cursor,cursor);cursor=parsed.cursor;
  }
  assert.equal(seen.size,5000);
+});
+
+test('start_run states the rules and ledger interpreters that judge each requirement',()=>{
+ const run=runOf(items(1));
+ run.requirements[0].rules=['range@1'];run.requirements[0].run_interpreters=['structure@1'];
+ const text=toolText('start_run',startAnswer(run));
+ assert.match(text,/规则 range@1/);assert.match(text,/运行内表的已裁定解释器 structure@1/);
 });

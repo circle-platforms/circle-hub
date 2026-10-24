@@ -163,7 +163,7 @@ export const summary = {
     { reference: `src:${H}`, role: 'subject', slot: 'mindmap', external: 'mind-map:document:1@3', media_type: 'application/json' },
     { reference: `src:${H2}`, role: 'expected', external: 'tracker:story:42@7', label: '合成需求' },
   ],
-  requirements: [{ key: 'structure', name: '结构', description: '用例结构', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 2 }],
+  requirements: [{ key: 'structure', name: '结构', description: '用例结构', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 2, rules: [], run_interpreters: [] }],
   items: [{ id: 'doc-1:n7', label: '端口越界', location: `src:${H}/mindmap@1/n7`, fields: { priority: 1 }, digest: H2, reuse: `rec:${H}#/partitions/delivered/0` }],
   slots: {
     schema: { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', properties: { findings: { type: 'array' } }, additionalProperties: false },

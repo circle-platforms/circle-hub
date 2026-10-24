@@ -785,6 +785,50 @@ never rewritten or redacted under their original digests.
 
 The sharing/unknown-exit merge keeps visibility filtering before stable pagination, alongside unanswered and overdue requests. System-input deliveries remain independent of user-submission receipt lookup. Sharing grants accepted validation bodies and the run/submission/action records declared by B04; run-bound request and hypothesis-set records remain owner/administrator-only in both record readers, matching the request listing policy. Management delivery stays current without changing historical technical results.
 
+### Runtime table admission (W04)
+
+A submission's inline table is declared data. For a ledger-approved interpreter the Hub rebuilds each sample's default
+item subject from the frozen projection, resolved slots and evidence, and reruns the same interpreter. Admission requires
+matching positive and negative expectations and an observed external-read origin or an upload by another account.
+Unknown source provenance names the missing source record and asks the runner to reread or re-upload and bind it.
+Failed contrasts, missing polarities and author-only examples keep the submission accepted, with conditional conclusions.
+The evidence is `detail.admission` on the submission's existing validate action, including table digest, expectations,
+observed source provenance and actual outcomes. No additional validate action is written: author/session lineage and the
+per-submission repair-round accounting keep their existing identity.
+
+Admitted runtime checks are added to the locked template checks, never substituted for them. Their warrant is
+`运行内检查@<canonical table sha256>`; validity additionally binds the current run body, submission and table digests.
+Their grounds point to the stored submission's sample list. The admission of that submission is found on its existing
+validate action (linked by submission record and argument digest); this avoids a circular result/action digest reference.
+An admitted outside-author contrast establishes discriminating power. Otherwise the runtime conclusion is conditional and
+its discriminating power is not established; a requirement asking for discrimination remains unsatisfied.
+
+Shapes outside the locked requirement ledger are not executed. A cross-item judgment records only the requirement and
+interpreter, marked `decision_shape_unruled`; the package owner can rule on it in the next published version. No ruling
+request is created. Template violations, incompleteness and unchecked facts keep priority over that judgment. A judgment
+cannot satisfy a fact-only requirement, even when its expected outcome is support; it is unsatisfied with outcome_mismatch.
+
+`circle-hub pack shapes <pack>` is an administrator-only inventory of unruled cross-item shapes across the versions locked
+by validation results. It lists requirement, interpreter, occurrence count and the most recently encountered run. Revalidation
+of the same submission/shape is counted once. It neither prints nor returns inline tables. An empty result says
+“没有未裁定的形状”; the owner publishes a new ledger version to adopt a shape.
+
+The integrator confirmed that the existing run-level result boundary stays in place: `target:run` requirements produce
+cross-item claims, without new layer/status fields in validation@1. Unruled run-level shapes therefore appear there as
+qualified judgments beside the template facts. For `target:item`, RequirementResult also carries the judgment terminal and
+the fact-only outcome_mismatch status.
+
+For catalog@1, the integrator confirmed that runtime checks inherit only the unique catalog binding of the same
+requirement's template checks. Samples and actual evaluation share callCheck and therefore the same locked catalog and
+source context. Missing or ambiguous bindings remain unknown: the runner asks the package owner to publish an unambiguous
+binding and then starts a new run. A catalog declared only by another requirement is never guessed as the binding.
+
+Historical run@1 requirements may omit both ruling arrays; a half-written pair is refused. Public RunSummary fields stay
+required. Reading, listing and idempotent start reuse derive missing arrays from the run's locked package, retaining the
+original labels and all stored bytes. A missing locked package or requirement raises MissingRulingSummaryError with the
+fixed SOURCE_UNAVAILABLE code and an instruction to restore the locked package from backup before rereading or reusing the
+run. Current summaries do not acquire a dependency on reloading the package; list hydration shares a load per digest.
+
 
 ## Declared predecessor input defaults
 

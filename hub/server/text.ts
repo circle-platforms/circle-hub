@@ -340,6 +340,8 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
     `${axisLabel('layer')} ${declared}${undeclared.length > 0 ? `（${undeclared.join('；')}）` : ''}`,
     labelOf('done_rule', q.done_rule),
     `修复轮数 ${q.repair_rounds}`,
+    `规则 ${q.rules.length ? q.rules.join('、') : '无'}`,
+    `运行内表的已裁定解释器 ${q.run_interpreters.length ? q.run_interpreters.join('、') : '无'}`,
   ].join('；');
 }
 

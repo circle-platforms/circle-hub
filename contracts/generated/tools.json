@@ -303,6 +303,22 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "locked rule@version identities that judge this requirement"
+                    },
+                    "run_interpreters": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                      },
+                      "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
                     }
                   },
                   "required": [
@@ -312,7 +328,9 @@
                     "layers",
                     "done_rule",
                     "accepted_producer",
-                    "repair_rounds"
+                    "repair_rounds",
+                    "rules",
+                    "run_interpreters"
                   ],
                   "additionalProperties": false
                 }
@@ -1274,6 +1292,22 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "locked rule@version identities that judge this requirement"
+                  },
+                  "run_interpreters": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    },
+                    "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
                   }
                 },
                 "required": [
@@ -1283,7 +1317,9 @@
                   "layers",
                   "done_rule",
                   "accepted_producer",
-                  "repair_rounds"
+                  "repair_rounds",
+                  "rules",
+                  "run_interpreters"
                 ],
                 "additionalProperties": false
               }
@@ -3272,6 +3308,90 @@
             ],
             "additionalProperties": false
           }
+        },
+        "checks": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requirement": {
+                "type": "string",
+                "minLength": 1
+              },
+              "interpreter": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              "table": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "samples": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expect": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "verdict": {
+                            "type": "string",
+                            "enum": [
+                              "support",
+                              "refute",
+                              "unknown",
+                              "abstain"
+                            ]
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "tier": {
+                            "type": "string",
+                            "enum": [
+                              "blocking",
+                              "advisory"
+                            ]
+                          },
+                          "item": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "verdict"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "item",
+                    "expect"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "requirement",
+              "interpreter",
+              "table",
+              "samples"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -3279,7 +3399,40 @@
         "model",
         "items"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
     },
     "outputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
