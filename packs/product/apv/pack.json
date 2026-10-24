@@ -193,8 +193,8 @@
     },
     {
       "path": "functions/sync.ts",
-      "sha256": "fb8968dd47c69d5d2dc100e34a3ff11a6cf01da1390c4801ff904a383ebf6750",
-      "size": 16853
+      "sha256": "44b7daa409f8ffaa247fafdc436a920d4ddb0391561560bd72233ad6dff59ed9",
+      "size": 17632
     },
     {
       "path": "functions/types.ts",
@@ -208,8 +208,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "a7893fa203fe4f375b23e67703de00758b4bdaa66ca982f42a8fc8a875e8419e",
-      "size": 6746
+      "sha256": "e228ebf3f38f9aa3c18517a45efc38bb79457e896307c032701d149bd5a7827b",
+      "size": 7047
     },
     {
       "path": "samples/release-notes-v2.json",

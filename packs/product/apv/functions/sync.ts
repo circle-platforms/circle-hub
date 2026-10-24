@@ -6,7 +6,8 @@ import {specificationScope} from './specifications.ts';
 // builds of the listing pages. The plan lists:
 // - every released build of a mainline page on the main platform, and every released build of an opted-in page;
 // - the newest build of each version line and name family on the main platform, released or not (a line under test may have
-//   no release yet: such a build has released_at null);
+//   no release yet: such a build has released_at null), and likewise the newest build of each version line, name family
+//   and platform of an opted-in page, released or not (a Beta build under test may have no release yet);
 // - the base of every listed alias, so that an NSAE name resolves to the build whose tree it uses.
 // A build with its own command tree (an APV name, or an NSAE name of the newest lines) is its own base and carries the
 // sources tree (and fixed_bugs when linked); an NSAE name without a tree is an alias of the build its "based on" chain ends
@@ -131,11 +132,19 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       const mainline = pageOf.get(build.name)?.kind === 'mainline';
       if ((mainline && build.platform === null) || !mainline) chosen.set(build.name, build);
     }
-    // The newest build of each line and family on the main platform, released or not.
+    // The newest build of each line and family on the main platform, released or not, and the newest build of each
+    // line, family and platform of an opted-in page, released or not (a Beta build of a platform line may have no
+    // release yet: it is listed with released_at null, so an include-unreleased sync can produce its root; whether
+    // that root exists still depends on the page linking the build's command tree).
     const newest = new Map<string, Build>();
     for (const build of ofProduct) {
-      if (!onLines(build) || build.platform !== null || pageOf.get(build.name)?.kind !== 'mainline') continue;
-      const key = `${lineKey(build.line as string)}\u0000${build.family}`;
+      if (!onLines(build)) continue;
+      const kind = pageOf.get(build.name)?.kind;
+      const mainlineMain = kind === 'mainline' && build.platform === null;
+      const optedIn = kind !== undefined && kind !== 'mainline';
+      if (!mainlineMain && !optedIn) continue;
+      const line = lineKey(build.line as string);
+      const key = mainlineMain ? `${line}\u0000${build.family}` : `${line}\u0000${build.family}\u0000${build.platform ?? ''}`;
       const best = newest.get(key);
       if (best === undefined || newestFirst(build, best) < 0) newest.set(key, build);
     }
