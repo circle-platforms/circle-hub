@@ -103,7 +103,7 @@ Hub 之外读到的（模型在 Circle 里自己看的）不触发；只有上�
 
 ## 6. 过渡（决定 62：旧每构建根不动）
 
-- 现有每构建知识根上的用例索引**不动**：继续由现有同步生产，视图对旧根照旧。
+- 旧每构建根保留不动、不再新增用例索引；视图对旧根照旧。
 - 新树苗路径上，视图先读喂入层；喂入层里这个版本没有任何用例时，**照实报**"这个版本的用例还没有被用到过"，给出口（用到即进来：下次运行读到即入层），不报错、不回退去整批生产。
 - `knowledge-structure@1` 的 schema 草案进 `contracts/model.json` 的路径：与 seedling@1 并列，五类对象 + version-binding + usage/feeding-offset/retraction 三记录 + 视图闭集；生成走 gen:contracts。**实现前不改 contracts，本页即草案。**
 

@@ -98,7 +98,8 @@
           "type": "string",
           "enum": [
             "same_subject",
-            "contradicts"
+            "contradicts",
+            "covers"
           ]
         },
         "other": {

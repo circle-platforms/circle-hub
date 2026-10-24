@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import * as packSchemas from './pack.ts';
 import * as productSchemas from './product.ts';
 import * as knowledgeSchemas from './knowledge.ts';
+import * as feedingSchemas from './feeding.ts';
 import * as resourceSchemas from './resources.ts';
 import * as tableSchemas from './tables.ts';
 import * as viewSchemas from './views.ts';
@@ -25,6 +26,7 @@ export * from './validation.ts';
 export * from './run.ts';
 export * from './submission.ts';
 export * from './contributions.ts';
+export * from './feeding.ts';
 export * from './records.ts';
 export * from './variables.ts';
 export * from './annotations.ts';
@@ -61,6 +63,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'pack.ts': packSchemas.schemas,
   'product.ts': productSchemas.schemas,
   'knowledge.ts': knowledgeSchemas.schemas,
+  'feeding.ts': feedingSchemas.FEEDING_SCHEMAS,
   'resources.ts': resourceSchemas.schemas,
   'tables.ts': tableSchemas.schemas,
   'views.ts': viewSchemas.schemas,

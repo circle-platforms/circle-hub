@@ -378,6 +378,7 @@
             "enum": [
               "release_record",
               "device_echo",
+              "source_structure",
               "declared"
             ]
           },
@@ -623,6 +624,7 @@
             "enum": [
               "release_record",
               "device_echo",
+              "source_structure",
               "declared"
             ]
           },
@@ -904,6 +906,7 @@
             "enum": [
               "release_record",
               "device_echo",
+              "source_structure",
               "declared"
             ]
           },

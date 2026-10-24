@@ -2461,7 +2461,8 @@
                                       "type": "string",
                                       "enum": [
                                         "same_subject",
-                                        "contradicts"
+                                        "contradicts",
+                                        "covers"
                                       ]
                                     },
                                     "other": {
@@ -3113,7 +3114,8 @@
                                       "type": "string",
                                       "enum": [
                                         "same_subject",
-                                        "contradicts"
+                                        "contradicts",
+                                        "covers"
                                       ]
                                     },
                                     "other": {
